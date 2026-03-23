@@ -28,6 +28,7 @@ type DocsHandler struct {
 	searchSvc     *service.DocsSearchService
 	importService *service.DocsImportService
 	embeddingSvc  *service.DocsEmbeddingService
+	agentService  *service.AgentService
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -42,6 +43,7 @@ func NewDocsHandler(
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
 	embeddingSvc *service.DocsEmbeddingService,
+	agentService *service.AgentService,
 ) *DocsHandler {
 	return &DocsHandler{
 		spaceSvc:      spaceSvc,
@@ -54,6 +56,7 @@ func NewDocsHandler(
 		searchSvc:     searchSvc,
 		importService: importService,
 		embeddingSvc:  embeddingSvc,
+		agentService:  agentService,
 	}
 }
 
@@ -298,6 +301,9 @@ func (h *DocsHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	if doc != nil && h.embeddingSvc != nil {
 		_ = h.embeddingSvc.QueueSpaceSync(r.Context(), doc.WorkspaceID, doc.SpaceID)
+	}
+	if h.agentService != nil {
+		_ = h.agentService.ClearEpicSpecForDocument(r.Context(), docID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

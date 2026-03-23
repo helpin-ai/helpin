@@ -103,6 +103,9 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	}
 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
+	}
 	userPrompt := BuildUserPrompt(
 		execCtx.Story,
 		execCtx.Epic,
@@ -110,6 +113,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
+		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
 	)

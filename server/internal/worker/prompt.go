@@ -113,6 +113,7 @@ func BuildUserPrompt(
 	ticket *model.SupportConversation,
 	ticketMessages []model.SupportMessage,
 	checklist []model.PMChecklistItem,
+	artifactContext *ArtifactContext,
 	planningStage string,
 	initialInstructions string,
 ) string {
@@ -175,6 +176,10 @@ func BuildUserPrompt(
 		}
 	}
 
+	if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
+		parts = append(parts, artifactSection)
+	}
+
 	if strings.TrimSpace(initialInstructions) != "" {
 		parts = append(parts, "\nAdditional instructions:\n"+strings.TrimSpace(initialInstructions))
 	}
@@ -192,6 +197,62 @@ func BuildUserPrompt(
 		parts = append(parts, "\nPlease complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.")
 	}
 
+	return strings.Join(parts, "\n")
+}
+
+func BuildExecutionSupplementPrompt(run *model.AgentRun, artifactContext *ArtifactContext) string {
+	var parts []string
+
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
+		parts = append(parts, "This is an interactive transcript that may resume after a human reply.")
+		parts = append(parts, "If the latest human message answers a question, gives feedback, or requests changes, continue the work from that reply.")
+		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, ask another focused question with request_human_input, request approval with request_human_approval, or reach a durable final outcome.")
+	}
+
+	if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
+		parts = append(parts, "Use the latest persisted artifacts below as the current source of truth when they conflict with older transcript content.")
+		parts = append(parts, strings.TrimSpace(artifactSection))
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
+func formatArtifactContext(ctx *ArtifactContext) string {
+	if ctx == nil || len(ctx.Entries) == 0 {
+		return ""
+	}
+
+	var parts []string
+	parts = append(parts, "\nCurrent persisted artifacts:")
+	for _, entry := range ctx.Entries {
+		content := strings.TrimSpace(entry.Content)
+		if content == "" {
+			continue
+		}
+
+		header := strings.TrimSpace(entry.Label)
+		if header == "" {
+			header = "Artifact"
+		}
+		var qualifiers []string
+		if source := strings.TrimSpace(entry.Source); source != "" {
+			qualifiers = append(qualifiers, "source="+source)
+		}
+		if status := strings.TrimSpace(entry.Status); status != "" {
+			qualifiers = append(qualifiers, "status="+status)
+		}
+		if format := strings.TrimSpace(entry.Format); format != "" {
+			qualifiers = append(qualifiers, "format="+format)
+		}
+		if len(qualifiers) > 0 {
+			header += " [" + strings.Join(qualifiers, ", ") + "]"
+		}
+		parts = append(parts, header+":")
+		parts = append(parts, content)
+	}
+	if len(parts) == 1 {
+		return ""
+	}
 	return strings.Join(parts, "\n")
 }
 

@@ -258,13 +258,25 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 		return ExecuteRunResult{}, nil
 	}
-	completedFromApprovedPreview, err := a.applyApprovedInteractivePreview(ctx, state, &planningInput)
+	approvedPreviewAction, err := a.applyApprovedInteractivePreview(ctx, state, &planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
-	if completedFromApprovedPreview {
+	switch approvedPreviewAction {
+	case "create_stories":
 		return ExecuteRunResult{}, nil
+	case "persist_prd":
+		now := time.Now()
+		state.run.Status = model.AgentRunStatusRunning
+		state.run.ExecutionStage = strPtr("continuing")
+		state.run.LastHeartbeatAt = &now
+		state.run.CompletedAt = nil
+		if err := a.runRepo.Update(ctx, state.run); err != nil {
+			return ExecuteRunResult{}, err
+		}
+		a.runRepo.Notify(ctx, state.run)
+		return ExecuteRunResult{ContinueExecution: true}, nil
 	}
 
 	if err := a.preparePlanningRepository(ctx, state, planningInput); err != nil {
@@ -310,7 +322,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		allowedTools = stringSliceToSet(planningInput.AllowedTools)
 	}
 
-	history, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
+	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -344,6 +356,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		ResolvedProfile:        state.resolved,
 		AllowedTools:           allowedTools,
 		Services:               bridge,
+		ArtifactContext:        artifactContext,
+		ProviderContinuation:   providerContinuation,
 		ConversationHistory:    history,
 		Heartbeat: func(stage string) error {
 			if ctx.Err() != nil {
@@ -429,6 +443,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
 	completedAt := time.Now()
+	normalizeApprovalStateAfterExecution(state.run, waitForApproval)
 	if waitForApproval {
 		state.run.Status = "awaiting_approval"
 		state.run.CompletedAt = nil
@@ -491,6 +506,19 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 		return false, true
 	}
 	return waitForApproval, false
+}
+
+func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
+	if run == nil {
+		return
+	}
+	if waitForApproval {
+		run.ApprovalState = "pending"
+		return
+	}
+	if run.ApprovalState != "approved" {
+		run.ApprovalState = "not_required"
+	}
 }
 
 func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
@@ -560,23 +588,31 @@ func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context,
 	return nil
 }
 
-func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, error) {
+func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, *workerpkg.ArtifactContext, *workerpkg.ProviderContinuation, error) {
+	artifactContext, err := a.loadRunArtifactContext(ctx, state)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	providerContinuation, err := a.loadProviderContinuation(ctx, state)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	if a.runMessageRepo == nil {
-		return nil, nil
+		return nil, artifactContext, providerContinuation, nil
 	}
 
 	messages, err := a.runMessageRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	if len(messages) == 0 {
-		prompt, err := a.buildInitialRunUserPrompt(ctx, state, planningInput, initialInstructions)
+		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		messages = append(messages, *created)
 	}
@@ -585,10 +621,10 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 	for _, message := range messages {
 		history = append(history, runMessageToExecutionMessage(message))
 	}
-	return history, nil
+	return history, artifactContext, providerContinuation, nil
 }
 
-func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, planningInput planningRunInput, initialInstructions string) (string, error) {
+func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, artifactContext *workerpkg.ArtifactContext, planningInput planningRunInput, initialInstructions string) (string, error) {
 	var checklist []model.PMChecklistItem
 	if state.story != nil {
 		items, err := a.checklistRepo.List(ctx, state.story.ID)
@@ -614,15 +650,251 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 		state.conversation,
 		ticketMessages,
 		checklist,
+		artifactContext,
 		planningInput.Stage,
 		initialInstructions,
 	), nil
 }
 
+func (a *AgentRunActivities) loadProviderContinuation(ctx context.Context, state *resolvedRunState) (*workerpkg.ProviderContinuation, error) {
+	if state == nil || state.run == nil || state.agent == nil || a.artifactRepo == nil {
+		return nil, nil
+	}
+	if !workerpkg.ProviderSupportsResponseContinuation(strings.TrimSpace(derefString(state.agent.Provider))) {
+		return nil, nil
+	}
+
+	artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeProviderResponseCheckpoint || artifact.InlineContent == nil {
+			continue
+		}
+		var checkpoint model.ProviderResponseCheckpoint
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &checkpoint); err != nil {
+			return nil, fmt.Errorf("parse provider response checkpoint: %w", err)
+		}
+		if strings.TrimSpace(checkpoint.ResponseID) == "" {
+			continue
+		}
+		return &workerpkg.ProviderContinuation{
+			Provider:           strings.TrimSpace(checkpoint.Provider),
+			ResponseID:         strings.TrimSpace(checkpoint.ResponseID),
+			PreviousResponseID: strings.TrimSpace(checkpoint.PreviousResponseID),
+			AfterSequenceNo:    checkpoint.AssistantMessageSeqNo,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *resolvedRunState) (*workerpkg.ArtifactContext, error) {
+	if state == nil || state.run == nil {
+		return nil, nil
+	}
+
+	artifactContext := &workerpkg.ArtifactContext{}
+	if a.artifactRepo != nil {
+		artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+		if err != nil {
+			return nil, err
+		}
+		entries, err := buildArtifactContextEntries(artifacts)
+		if err != nil {
+			return nil, err
+		}
+		artifactContext.Entries = append(artifactContext.Entries, entries...)
+	}
+	if state.epic != nil && state.epic.SpecDocumentID != nil && strings.TrimSpace(*state.epic.SpecDocumentID) != "" && a.docsContentRepo != nil {
+		content, err := a.docsContentRepo.GetByDocumentID(ctx, *state.epic.SpecDocumentID)
+		if err != nil {
+			return nil, err
+		}
+		if content != nil && strings.TrimSpace(content.ContentText) != "" {
+			artifactContext.Entries = append(artifactContext.Entries, workerpkg.ArtifactContextEntry{
+				Label:   "Linked epic spec document",
+				Source:  "spec_document",
+				Status:  "approved",
+				Format:  "text",
+				Content: strings.TrimSpace(content.ContentText),
+			})
+		}
+	}
+	if len(artifactContext.Entries) == 0 {
+		return nil, nil
+	}
+	return artifactContext, nil
+}
+
+func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpkg.ArtifactContextEntry, error) {
+	if len(artifacts) == 0 {
+		return nil, nil
+	}
+	sorted := append([]model.AgentRunArtifact(nil), artifacts...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].SequenceNo == sorted[j].SequenceNo {
+			return sorted[i].CreatedAt.Before(sorted[j].CreatedAt)
+		}
+		return sorted[i].SequenceNo < sorted[j].SequenceNo
+	})
+
+	applied := make(map[string]model.AppliedApprovedRunPreview)
+	latestRunPreview := make(map[string]workerpkg.PublishedPreview)
+	latestApproved := make(map[string]approvedPreviewContextEntry)
+	otherEntries := make([]workerpkg.ArtifactContextEntry, 0)
+
+	for _, artifact := range sorted {
+		if artifact.InlineContent == nil {
+			continue
+		}
+		switch strings.TrimSpace(artifact.ArtifactType) {
+		case model.AgentRunArtifactTypeApprovedPreviewApplied:
+			var marker model.AppliedApprovedRunPreview
+			if err := json.Unmarshal([]byte(*artifact.InlineContent), &marker); err != nil {
+				return nil, fmt.Errorf("parse approved preview applied artifact: %w", err)
+			}
+			if id := strings.TrimSpace(marker.ApprovedArtifactID); id != "" {
+				applied[id] = marker
+			}
+		case workerpkg.RunPreviewArtifactType:
+			var preview workerpkg.PublishedPreview
+			if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
+				return nil, fmt.Errorf("parse run preview artifact: %w", err)
+			}
+			latestRunPreview[strings.TrimSpace(preview.PanelKey)] = preview
+		case model.AgentRunArtifactTypeApprovedPreview:
+			var preview model.ApprovedRunPreview
+			if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
+				return nil, fmt.Errorf("parse approved preview artifact: %w", err)
+			}
+			status := "approved"
+			if marker, ok := applied[artifact.ID]; ok && strings.TrimSpace(marker.Action) != "" {
+				status = "approved_and_" + strings.TrimSpace(marker.Action)
+			}
+			latestApproved[strings.TrimSpace(preview.PanelKey)] = approvedPreviewContextEntry{
+				Preview: preview,
+				Status:  status,
+			}
+		default:
+			if entry := buildOtherArtifactContextEntry(artifact); entry != nil {
+				otherEntries = append(otherEntries, *entry)
+			}
+		}
+	}
+
+	panelKeys := make([]string, 0, len(latestRunPreview)+len(latestApproved))
+	seenPanels := make(map[string]bool)
+	for panelKey := range latestRunPreview {
+		if panelKey == "" || seenPanels[panelKey] {
+			continue
+		}
+		panelKeys = append(panelKeys, panelKey)
+		seenPanels[panelKey] = true
+	}
+	for panelKey := range latestApproved {
+		if panelKey == "" || seenPanels[panelKey] {
+			continue
+		}
+		panelKeys = append(panelKeys, panelKey)
+		seenPanels[panelKey] = true
+	}
+	sort.Strings(panelKeys)
+
+	entries := make([]workerpkg.ArtifactContextEntry, 0, len(panelKeys)*2+len(otherEntries))
+	for _, panelKey := range panelKeys {
+		if preview, ok := latestRunPreview[panelKey]; ok {
+			content, err := renderArtifactContextContent(preview.Format, preview.Content)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, workerpkg.ArtifactContextEntry{
+				Label:   fmt.Sprintf("Current preview for %s", panelKey),
+				Source:  workerpkg.RunPreviewArtifactType,
+				Status:  "draft",
+				Format:  preview.Format,
+				Content: content,
+			})
+		}
+		if approved, ok := latestApproved[panelKey]; ok {
+			content, err := renderArtifactContextContent(approved.Preview.Format, approved.Preview.Content)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, workerpkg.ArtifactContextEntry{
+				Label:   fmt.Sprintf("Approved preview for %s", panelKey),
+				Source:  model.AgentRunArtifactTypeApprovedPreview,
+				Status:  approved.Status,
+				Format:  approved.Preview.Format,
+				Content: content,
+			})
+		}
+	}
+	entries = append(entries, otherEntries...)
+	return entries, nil
+}
+
+type approvedPreviewContextEntry struct {
+	Preview model.ApprovedRunPreview
+	Status  string
+}
+
+func buildOtherArtifactContextEntry(artifact model.AgentRunArtifact) *workerpkg.ArtifactContextEntry {
+	content := strings.TrimSpace(derefString(artifact.InlineContent))
+	if content == "" {
+		return nil
+	}
+	switch strings.TrimSpace(artifact.ArtifactType) {
+	case "product_spec_draft":
+		return &workerpkg.ArtifactContextEntry{
+			Label:   "Structured product spec draft artifact",
+			Source:  artifact.ArtifactType,
+			Status:  "draft",
+			Format:  artifact.Format,
+			Content: content,
+		}
+	case "story_plan_proposal":
+		return &workerpkg.ArtifactContextEntry{
+			Label:   "Structured story plan proposal artifact",
+			Source:  artifact.ArtifactType,
+			Status:  "draft",
+			Format:  artifact.Format,
+			Content: content,
+		}
+	default:
+		return nil
+	}
+}
+
+func renderArtifactContextContent(format string, raw json.RawMessage) (string, error) {
+	switch strings.TrimSpace(format) {
+	case workerpkg.PreviewFormatMarkdown:
+		var markdown string
+		if err := json.Unmarshal(raw, &markdown); err != nil {
+			return "", fmt.Errorf("parse markdown artifact content: %w", err)
+		}
+		return strings.TrimSpace(markdown), nil
+	case workerpkg.PreviewFormatJSON:
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", fmt.Errorf("parse json artifact content: %w", err)
+		}
+		pretty, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("format json artifact content: %w", err)
+		}
+		return string(pretty), nil
+	default:
+		return strings.TrimSpace(string(raw)), nil
+	}
+}
+
 func runMessageToExecutionMessage(message model.AgentRunMessage) workerpkg.ExecutionMessage {
 	execMessage := workerpkg.ExecutionMessage{
-		Role:    message.Role,
-		Content: message.Content,
+		SequenceNo: message.SequenceNo,
+		Role:       message.Role,
+		Content:    message.Content,
 	}
 	if len(message.ContentBlocks) > 0 && string(message.ContentBlocks) != "null" {
 		var blocks []workerpkg.ExecutionBlock
@@ -666,7 +938,11 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 		return fmt.Errorf("marshal usage: %w", err)
 	}
 
-	if _, err = a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", strings.TrimSpace(result.AssistantText), blocks, invocations, usagePayload); err != nil {
+	assistantMessage, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", strings.TrimSpace(result.AssistantText), blocks, invocations, usagePayload)
+	if err != nil {
+		return err
+	}
+	if err := a.persistProviderResponseCheckpoint(ctx, state, result, assistantMessage); err != nil {
 		return err
 	}
 
@@ -707,6 +983,29 @@ func finalRoundToolMessages(messages []workerpkg.ExecutionMessage) []workerpkg.E
 		results = append(results, message)
 	}
 	return results
+}
+
+func (a *AgentRunActivities) persistProviderResponseCheckpoint(ctx context.Context, state *resolvedRunState, result *workerpkg.ExecutionResult, assistantMessage *model.AgentRunMessage) error {
+	if a.artifactRepo == nil || state == nil || state.run == nil || state.agent == nil || result == nil || assistantMessage == nil || result.ProviderContinuation == nil {
+		return nil
+	}
+	if strings.TrimSpace(result.ProviderContinuation.ResponseID) == "" {
+		return nil
+	}
+
+	provider := strings.TrimSpace(derefString(state.agent.Provider))
+	if provider == "" {
+		provider = strings.TrimSpace(result.ProviderContinuation.Provider)
+	}
+
+	_, err := a.appendRunArtifact(ctx, state.run, model.AgentRunArtifactTypeProviderResponseCheckpoint, "json", model.ProviderResponseCheckpoint{
+		Provider:              provider,
+		ResponseID:            strings.TrimSpace(result.ProviderContinuation.ResponseID),
+		PreviousResponseID:    strings.TrimSpace(result.ProviderContinuation.PreviousResponseID),
+		AssistantMessageSeqNo: assistantMessage.SequenceNo,
+		RecordedAt:            time.Now().UTC(),
+	})
+	return err
 }
 
 func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string, blocks, toolInvocations, tokenUsage json.RawMessage) (*model.AgentRunMessage, error) {
@@ -818,40 +1117,40 @@ func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Cont
 	return nil
 }
 
-func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context, state *resolvedRunState, input *planningRunInput) (bool, error) {
+func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context, state *resolvedRunState, input *planningRunInput) (string, error) {
 	if state == nil || state.run == nil || state.epic == nil || input == nil {
-		return false, nil
+		return "", nil
 	}
 	if state.run.TargetType != "epic" || state.run.InvocationMode != model.InvocationModeInteractive || strings.TrimSpace(input.Stage) != "" {
-		return false, nil
+		return "", nil
 	}
 	if a.artifactRepo == nil {
-		return false, nil
+		return "", nil
 	}
 
 	artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	approvedArtifact, approvedPreview, err := nextUnappliedApprovedPreview(artifacts)
 	if err != nil || approvedArtifact == nil || approvedPreview == nil {
-		return false, err
+		return "", err
 	}
 
 	var appliedAction string
 	switch strings.ToLower(strings.TrimSpace(approvedPreview.Phase)) {
 	case "prd":
 		if err := a.applyApprovedPRDPreview(ctx, state, input, approvedPreview); err != nil {
-			return false, err
+			return "", err
 		}
 		appliedAction = "persist_prd"
 	case "stories":
 		if err := a.applyApprovedStoryPlanPreview(ctx, state, input, approvedPreview); err != nil {
-			return false, err
+			return "", err
 		}
 		appliedAction = "create_stories"
 	default:
-		return false, fmt.Errorf("unsupported approved preview phase %q", approvedPreview.Phase)
+		return "", fmt.Errorf("unsupported approved preview phase %q", approvedPreview.Phase)
 	}
 
 	if _, err := a.appendRunArtifact(ctx, state.run, model.AgentRunArtifactTypeApprovedPreviewApplied, "json", model.AppliedApprovedRunPreview{
@@ -860,10 +1159,10 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 		Action:             appliedAction,
 		AppliedAt:          time.Now().UTC(),
 	}); err != nil {
-		return false, err
+		return "", err
 	}
 
-	return appliedAction == "create_stories", nil
+	return appliedAction, nil
 }
 
 func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.AgentRunArtifact, *model.ApprovedRunPreview, error) {
@@ -969,7 +1268,6 @@ func (a *AgentRunActivities) applyApprovedPRDPreview(ctx context.Context, state 
 		}
 		state.epic.SpecDocumentID = &doc.ID
 		state.epic.ApprovedSpecVersionID = &version.ID
-		state.epic.PlanningState = model.EpicPlanningStateReadyForStoryPlanning
 		if err := a.epicRepo.Update(ctx, state.epic); err != nil {
 			return err
 		}
@@ -1733,11 +2031,11 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	if input.SpecDocumentID != "" {
 		sections = append(sections, fmt.Sprintf("Existing canonical spec document ID: %s", input.SpecDocumentID))
 
-		// Inject draft content when doc exists but is not approved (Branch D).
+		// Inject durable draft content when a spec doc exists but is not approved.
 		if input.SpecVersionID == "" {
 			if content, err := a.docsContentRepo.GetByDocumentID(ctx, input.SpecDocumentID); err == nil && content != nil && strings.TrimSpace(content.ContentText) != "" {
 				hasSpecContent = true
-				sections = append(sections, "IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the approval checkpoint (Branch D). Present the draft and ask the human to approve or revise it.")
+				sections = append(sections, "IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the current draft instead of starting over. Present the draft, revise it if needed, and request PRD approval before any story planning.")
 				sections = append(sections, "Current spec draft:\n"+truncatePlanningText(content.ContentText, 12000))
 			}
 		}
@@ -1745,6 +2043,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	if input.SpecVersionID != "" {
 		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
 		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for story planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
+		sections = append(sections, "If ensure_epic_spec_doc or other tool output shows has_approved_spec=true, treat PRD persistence as already complete. Do NOT call ensure_epic_spec_doc, write_document_content, link_document_to_object, or approve_epic_spec again unless the human explicitly asks you to rewrite the canonical doc.")
 	}
 	if state.epic != nil && state.epic.TeamID != nil && strings.TrimSpace(*state.epic.TeamID) != "" {
 		sections = append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*state.epic.TeamID)))
@@ -1794,22 +2093,37 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		sections = append(sections, "Stories already linked to this epic:\n"+strings.Join(lines, "\n"))
 	}
 
-	// Explicit branch signal for the agent.
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
 	hasStories := len(state.epicStories) > 0
+	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicStories)))
 	switch {
 	case hasApprovedSpec && hasStories:
-		sections = append(sections, "Planning state: PRD approved, stories exist. Enter clarification mode (Branch A). Ask the human what they need.")
+		sections = append(sections, "Next-step guidance: the PRD is approved and stories already exist. Do not redraft the PRD or recreate existing stories. Enter clarification or extension mode, inspect current stories if needed, and only add new stories if the human explicitly asks for them.")
 	case hasApprovedSpec && !hasStories:
-		sections = append(sections, "Planning state: PRD approved, no stories yet. Skip PRD drafting and proceed to story planning (Branch B).")
+		sections = append(sections, "Next-step guidance: the PRD is approved and no stories exist yet. Skip PRD drafting entirely and proceed directly to story planning from the approved spec and current codebase context.")
 	case hasSpecDoc && hasSpecContent:
-		sections = append(sections, "Planning state: PRD draft exists but is not approved. Resume from the approval checkpoint (Branch D). Present the draft and ask to approve or revise.")
+		sections = append(sections, "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any story planning.")
 	default:
-		sections = append(sections, "Planning state: No approved PRD. Follow the full planning loop (Branch C).")
+		sections = append(sections, "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval.")
 	}
 
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func formatInteractivePlanningFacts(input planningRunInput, hasDraftSpec bool, storyCount int) string {
+	facts := []string{
+		fmt.Sprintf("- approved_spec_exists=%t", strings.TrimSpace(input.SpecVersionID) != ""),
+		fmt.Sprintf("- draft_spec_exists=%t", hasDraftSpec),
+		fmt.Sprintf("- existing_story_count=%d", storyCount),
+	}
+	if strings.TrimSpace(input.SpecDocumentID) != "" {
+		facts = append(facts, fmt.Sprintf("- spec_document_id=%s", strings.TrimSpace(input.SpecDocumentID)))
+	}
+	if strings.TrimSpace(input.SpecVersionID) != "" {
+		facts = append(facts, fmt.Sprintf("- approved_spec_version_id=%s", strings.TrimSpace(input.SpecVersionID)))
+	}
+	return "Current durable planning facts:\n" + strings.Join(facts, "\n")
 }
 
 func (a *AgentRunActivities) preparePlanningRepository(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
@@ -1967,11 +2281,6 @@ func (a *AgentRunActivities) finalizeDraftSpecRun(ctx context.Context, state *re
 	state.epic.SpecClarifications = model.MarshalSpecClarifications(clarifications)
 	state.epic.SpecClarifiedAt = nil
 	state.epic.SpecClarifiedBy = nil
-	if len(clarifications) > 0 {
-		state.epic.PlanningState = model.EpicPlanningStateAwaitingClarification
-	} else {
-		state.epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
-	}
 	state.epic.LastPlanningRunID = &state.run.ID
 	if err := a.epicRepo.Update(ctx, state.epic); err != nil {
 		return err
@@ -2018,7 +2327,6 @@ func (a *AgentRunActivities) finalizePlanStoriesRun(ctx context.Context, state *
 	}
 
 	state.epic.LastPlanningRunID = &state.run.ID
-	state.epic.PlanningState = model.EpicPlanningStateAwaitingPlanApproval
 	if err := a.epicRepo.Update(ctx, state.epic); err != nil {
 		return err
 	}

@@ -20,6 +20,8 @@ func normalizeModelProvider(provider string) string {
 		return model.AgentModelProviderOpenAI
 	case model.AgentModelProviderOpenRouter:
 		return model.AgentModelProviderOpenRouter
+	case model.AgentModelProviderOpenRouterResponses:
+		return model.AgentModelProviderOpenRouterResponses
 	default:
 		return strings.TrimSpace(provider)
 	}
@@ -203,7 +205,7 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 	}
 	if agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
 		switch normalizeModelProvider(*agent.Provider) {
-		case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter:
+		case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 			return true
 		}
 	}

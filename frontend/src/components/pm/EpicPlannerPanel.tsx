@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { Bot, Loader2, MessageSquareMore, Play } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareMore, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
@@ -49,6 +49,7 @@ export function EpicPlannerPanel({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(lastRunId ?? null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [additionalContext, setAdditionalContext] = useState('');
+  const [additionalContextOpen, setAdditionalContextOpen] = useState(false);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [starting, setStarting] = useState(false);
   const lastReportedCompletedRunIdRef = useRef<string | null>(null);
@@ -190,6 +191,7 @@ export function EpicPlannerPanel({
         setDrawerOpen(true);
       }
       setAdditionalContext('');
+      setAdditionalContextOpen(false);
     } finally {
       setStarting(false);
     }
@@ -209,57 +211,71 @@ export function EpicPlannerPanel({
 
       {canEdit ? (
         <div className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Planner</Label>
+              <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a product planner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No planner selected</SelectItem>
+                  {plannerAgents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.is_system ? `${agent.name} (System)` : agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedPlanner && !selectedPlanner.system_prompt ? (
+                <p className="text-[11px] text-muted-foreground">
+                  This planner is missing system instructions on the agent.
+                </p>
+              ) : null}
+            </div>
+            <Button onClick={handleStart} disabled={!selectedAgentId || starting} className="w-full gap-1.5 md:w-auto md:min-w-44">
+              {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Start Planner Run
+            </Button>
+          </div>
+
           <div className="space-y-1.5">
-            <Label className="text-xs">Planner</Label>
-            <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a product planner..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No planner selected</SelectItem>
-                {plannerAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.is_system ? `${agent.name} (System)` : agent.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedPlanner ? (
-              <p className="text-[11px] text-muted-foreground">
-                {selectedPlanner.system_prompt
-                  ? selectedPlanner.is_system
-                    ? 'This built-in planner is using the system instructions stored on the agent.'
-                    : 'This planner is using the system instructions stored on the agent.'
-                  : 'This planner is missing system instructions on the agent.'}
-              </p>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-md border border-border/60 px-3 py-2 text-left transition-colors hover:bg-accent/30"
+              onClick={() => setAdditionalContextOpen((open) => !open)}
+            >
+              <div>
+                <p className="text-xs font-medium">Additional Context (Optional)</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {additionalContextOpen
+                    ? 'Add constraints, priorities, or business context for this run.'
+                    : additionalContext.trim()
+                      ? 'Context attached for this run. Expand to edit.'
+                      : 'Collapsed by default. Expand to add guidance for the planner.'}
+                </p>
+              </div>
+              {additionalContextOpen ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {additionalContextOpen ? (
+              <div className="space-y-1.5 rounded-md border border-border/60 p-2.5">
+                <Textarea
+                  value={additionalContext}
+                  onChange={(event) => setAdditionalContext(event.target.value)}
+                  placeholder="Add constraints, priorities, or business context before starting this run."
+                  rows={3}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  This context is sent with the first message so the planner can scope work without extra back-and-forth.
+                </p>
+              </div>
             ) : null}
           </div>
-
-          {selectedPlanner ? (
-            <div className="rounded-md border border-border/60 px-3 py-2">
-              <p className="text-sm font-medium">Run mode comes from the agent</p>
-              <p className="text-xs text-muted-foreground">
-                This planner starts in{' '}
-                <span className="font-medium text-foreground">{selectedPlanner.default_invocation_mode}</span>{' '}
-                mode. Change that on the agent if you want this run to open as a live chat by default.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Additional Context</Label>
-            <Textarea
-              value={additionalContext}
-              onChange={(event) => setAdditionalContext(event.target.value)}
-              placeholder="Optional guidance for the planner. It should use tools to update the epic spec and create stories directly."
-              rows={3}
-            />
-          </div>
-
-          <Button onClick={handleStart} disabled={!selectedAgentId || starting} className="w-full gap-1.5">
-            {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Start Planner Run
-          </Button>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">You do not have permission to start or reply to epic planner runs.</p>

@@ -1252,6 +1252,12 @@ export interface SendAgentRunRequestChangesRequest {
   content: string;
 }
 
+export interface ResumeAgentRunRequest {
+  intent: 'reply' | 'approve' | 'request_changes';
+  content?: string;
+  send_message?: boolean;
+}
+
 export interface StoryImplementationBrief {
   approach: string;
   files_to_modify: FileChange[];

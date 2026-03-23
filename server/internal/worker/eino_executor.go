@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -82,11 +83,15 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
+		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
+	}
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -100,6 +105,33 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	runCtx := *execCtx
 	runCtx.Context = ctx
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("native_sdk_starting")
+	}
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	stopHeartbeat := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+	defer stopHeartbeat()
+	if execCtx.Heartbeat != nil {
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					_ = execCtx.Heartbeat("native_sdk_running")
+				case <-done:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 	result, execErr := ExecuteWithEino(ctx, e.modelFactory, execCtx.Agent, systemPrompt, history, e.tools.DefinitionsFor(execCtx.AllowedTools), &runCtx, e.tools, config.MaxIterations, func(event ExecutionEvent) {
 		if execCtx.OnExecutionEvent != nil {
 			execCtx.OnExecutionEvent(event)
@@ -114,6 +146,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			_ = execCtx.Heartbeat("tool_" + event.ToolName)
 		}
 	})
+	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
 		return fmt.Errorf("eino execution: %w", execErr)
 	}
@@ -151,6 +184,9 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	convLog, _ := json.MarshalIndent(result.Messages, "", "  ")
 	seqNo++
 	e.saveArtifact(ctx, run, "conversation_log", "json", string(convLog), seqNo)
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("native_sdk_finished")
+	}
 
 	if execCtx.PendingSupportDraft != nil {
 		summary, _ := json.Marshal(map[string]any{

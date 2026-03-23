@@ -5,6 +5,7 @@ const (
 	QueueAgentNativeAutonomous  = "agent-native-autonomous"
 	QueueAgentOpenCode          = "agent-opencode-autonomous"
 	QueueAutomation             = "automation-default"
+	WorkflowSignalResume        = "ResumeRun"
 	WorkflowSignalApprove       = "ApproveRun"
 	WorkflowSignalHandoff       = "HandoffRun"
 	WorkflowSignalMessage       = "RunMessage"

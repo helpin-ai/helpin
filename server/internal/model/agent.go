@@ -6,12 +6,12 @@ import (
 )
 
 const (
-	AgentPresetEpicPlanner = "epic_planner"
+	AgentPresetEpicPlanner  = "epic_planner"
 	AgentPresetStoryPlanner = "story_planner"
-	AgentPresetCRMOperator = "crm_operator"
+	AgentPresetCRMOperator  = "crm_operator"
 	AgentPresetSupportAgent = "support_agent"
-	AgentPresetCodeBuilder = "code_builder"
-	AgentPresetReviewAgent = "review_agent"
+	AgentPresetCodeBuilder  = "code_builder"
+	AgentPresetReviewAgent  = "review_agent"
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"
@@ -169,6 +169,12 @@ type ApproveAgentRunRequest struct {
 }
 
 const (
+	AgentRunResumeIntentReply          = "reply"
+	AgentRunResumeIntentApprove        = "approve"
+	AgentRunResumeIntentRequestChanges = "request_changes"
+)
+
+const (
 	AgentRunStatusQueued           = "queued"
 	AgentRunStatusRunning          = "running"
 	AgentRunStatusAwaitingInput    = "awaiting_input"
@@ -198,6 +204,12 @@ type SendAgentRunMessageRequest struct {
 
 type SendAgentRunRequestChangesRequest struct {
 	Content string `json:"content"`
+}
+
+type ResumeAgentRunRequest struct {
+	Intent      string `json:"intent"`
+	Content     string `json:"content,omitempty"`
+	SendMessage bool   `json:"send_message,omitempty"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.

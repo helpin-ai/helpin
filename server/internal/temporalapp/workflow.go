@@ -14,14 +14,20 @@ type AgentRunWorkflowInput struct {
 
 // ExecuteRunResult summarizes the execution activity outcome.
 type ExecuteRunResult struct {
-	WaitForApproval bool
-	AwaitingInput   bool
+	WaitForApproval   bool
+	AwaitingInput     bool
 	ContinueExecution bool
 }
 
 // RunMessageSignal resumes an interactive run with a new user message.
 type RunMessageSignal struct {
 	Content string `json:"content"`
+}
+
+// RunResumeSignal resumes an interactive run with a generic human intent.
+type RunResumeSignal struct {
+	Intent  string `json:"intent"`
+	Content string `json:"content,omitempty"`
 }
 
 // AgentRunWorkflow is the Temporal workflow for a single agent run.
@@ -71,6 +77,7 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 	approveCh := workflow.GetSignalChannel(ctx, WorkflowSignalApprove)
 	handoffCh := workflow.GetSignalChannel(ctx, WorkflowSignalHandoff)
 	messageCh := workflow.GetSignalChannel(ctx, WorkflowSignalMessage)
+	resumeCh := workflow.GetSignalChannel(ctx, WorkflowSignalResume)
 	executeCtx := workflow.WithActivityOptions(ctx, executeAO)
 
 	for {
@@ -86,6 +93,12 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			currentStage = "awaiting_approval"
 			for waitingApproval {
 				selector := workflow.NewSelector(ctx)
+				selector.AddReceive(resumeCh, func(c workflow.ReceiveChannel, more bool) {
+					var signal RunResumeSignal
+					c.Receive(ctx, &signal)
+					waitingApproval = false
+					currentStage = workflowStageForResumeSignal(signal, true)
+				})
 				selector.AddReceive(approveCh, func(c workflow.ReceiveChannel, more bool) {
 					var ignored struct{}
 					c.Receive(ctx, &ignored)
@@ -113,6 +126,12 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			currentStage = "awaiting_input"
 			for waitingInput {
 				selector := workflow.NewSelector(ctx)
+				selector.AddReceive(resumeCh, func(c workflow.ReceiveChannel, more bool) {
+					var signal RunResumeSignal
+					c.Receive(ctx, &signal)
+					waitingInput = false
+					currentStage = workflowStageForResumeSignal(signal, false)
+				})
 				selector.AddReceive(messageCh, func(c workflow.ReceiveChannel, more bool) {
 					var msg RunMessageSignal
 					c.Receive(ctx, &msg)
@@ -155,4 +174,23 @@ func markRunFailed(ctx workflow.Context, runID string, err error) {
 		return
 	}
 	_ = workflow.ExecuteActivity(ctx, "AgentRunActivities.MarkRunFailedActivity", runID, err.Error()).Get(ctx, nil)
+}
+
+func workflowStageForResumeSignal(signal RunResumeSignal, waitingApproval bool) string {
+	switch signal.Intent {
+	case "approve":
+		return "approval_received"
+	case "request_changes":
+		return "feedback_received"
+	case "reply":
+		if waitingApproval {
+			return "feedback_received"
+		}
+		return "input_received"
+	default:
+		if waitingApproval {
+			return "feedback_received"
+		}
+		return "input_received"
+	}
 }

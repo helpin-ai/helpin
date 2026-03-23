@@ -57,6 +57,28 @@ func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
 	}
 }
 
+func TestRequestHumanApprovalToolReturnsAwaitingApprovalPayload(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolRequestHumanApproval: true,
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, ToolRequestHumanApproval, json.RawMessage(`{
+		"phase": "prd",
+		"title": "Approve PRD",
+		"summary": "Review the latest draft."
+	}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !strings.Contains(output, `"status": "awaiting_approval"`) || !strings.Contains(output, `"phase": "prd"`) {
+		t.Fatalf("expected awaiting_approval payload, got %s", output)
+	}
+}
+
 func TestPublishPreviewToolReturnsPublishedPayload(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{

@@ -15,59 +15,59 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health             *handler.HealthHandler
-	Auth               *handler.AuthHandler
-	Organization       *handler.OrganizationHandler
-	Workspace          *handler.WorkspaceHandler
-	Settings           *handler.SettingsHandler
-	Invite             *handler.InviteHandler
-	PMWorkflow         *handler.PMWorkflowHandler
-	PMImport           *handler.PMImportHandler
-	PMLabel            *handler.PMLabelHandler
-	PMEpic             *handler.PMEpicHandler
-	PMSprint           *handler.PMSprintHandler
-	PMStory            *handler.PMStoryHandler
-	PMComment          *handler.PMCommentHandler
-	PMAttachment       *handler.PMAttachmentHandler
-	PMObjective        *handler.PMObjectiveHandler
-	PMChecklistItem    *handler.PMChecklistItemHandler
-	PMExternalLink     *handler.PMExternalLinkHandler
-	PMView             *handler.PMViewHandler
-	PMAutomation       *handler.PMAutomationHandler
-	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	Health              *handler.HealthHandler
+	Auth                *handler.AuthHandler
+	Organization        *handler.OrganizationHandler
+	Workspace           *handler.WorkspaceHandler
+	Settings            *handler.SettingsHandler
+	Invite              *handler.InviteHandler
+	PMWorkflow          *handler.PMWorkflowHandler
+	PMImport            *handler.PMImportHandler
+	PMLabel             *handler.PMLabelHandler
+	PMEpic              *handler.PMEpicHandler
+	PMSprint            *handler.PMSprintHandler
+	PMStory             *handler.PMStoryHandler
+	PMComment           *handler.PMCommentHandler
+	PMAttachment        *handler.PMAttachmentHandler
+	PMObjective         *handler.PMObjectiveHandler
+	PMChecklistItem     *handler.PMChecklistItemHandler
+	PMExternalLink      *handler.PMExternalLinkHandler
+	PMView              *handler.PMViewHandler
+	PMAutomation        *handler.PMAutomationHandler
+	PMStoryTemplate     *handler.PMStoryTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
-	Search             *handler.SearchHandler
-	Agent              *handler.AgentHandler
-	SupportInbox       *handler.SupportInboxHandler
-	SupportInboxWidget *handler.SupportInboxWidgetHandler
-	Git                *handler.GitHandler
-	Docs               *handler.DocsHandler
-	Notification       *handler.NotificationHandler
-	UserNotifSettings  *handler.UserNotificationSettingsHandler
-	CRMContact         *handler.CRMContactHandler
-	CRMCompany         *handler.CRMCompanyHandler
-	CRMDeal            *handler.CRMDealHandler
-	CRMAssociation     *handler.CRMAssociationHandler
-	Associations       *handler.AssociationsHandler
-	CRMActivity        *handler.CRMActivityHandler
-	CRMProperty        *handler.CRMPropertyHandler
-	CRMList            *handler.CRMListHandler
-	CRMImport          *handler.CRMImportHandler
-	CRMEmail           *handler.CRMEmailHandler
-	CRMCalendar        *handler.CRMCalendarHandler
-	CRMEnrichment      *handler.CRMEnrichmentHandler
-	CRMSignal          *handler.CRMSignalHandler
-	CRMSummary         *handler.CRMSummaryHandler
-	CRMSuggestion      *handler.CRMSuggestionHandler
-	CRMSequence        *handler.CRMSequenceHandler
-	CRMWritingProfile  *handler.CRMWritingProfileHandler
-	CRMSearch          *handler.CRMSearchHandler
-	CRMDealAutomation  *handler.CRMDealAutomationHandler
-	AutomationRule     *handler.AutomationRuleHandler
-	PMRoadmap          *handler.PMRoadmapHandler
-	SDKAssets          *handler.SDKAssetsHandler
-	SupportAI          *handler.SupportAIHandler
-	PostmarkInbound    *handler.PostmarkInboundHandler
+	Search              *handler.SearchHandler
+	Agent               *handler.AgentHandler
+	SupportInbox        *handler.SupportInboxHandler
+	SupportInboxWidget  *handler.SupportInboxWidgetHandler
+	Git                 *handler.GitHandler
+	Docs                *handler.DocsHandler
+	Notification        *handler.NotificationHandler
+	UserNotifSettings   *handler.UserNotificationSettingsHandler
+	CRMContact          *handler.CRMContactHandler
+	CRMCompany          *handler.CRMCompanyHandler
+	CRMDeal             *handler.CRMDealHandler
+	CRMAssociation      *handler.CRMAssociationHandler
+	Associations        *handler.AssociationsHandler
+	CRMActivity         *handler.CRMActivityHandler
+	CRMProperty         *handler.CRMPropertyHandler
+	CRMList             *handler.CRMListHandler
+	CRMImport           *handler.CRMImportHandler
+	CRMEmail            *handler.CRMEmailHandler
+	CRMCalendar         *handler.CRMCalendarHandler
+	CRMEnrichment       *handler.CRMEnrichmentHandler
+	CRMSignal           *handler.CRMSignalHandler
+	CRMSummary          *handler.CRMSummaryHandler
+	CRMSuggestion       *handler.CRMSuggestionHandler
+	CRMSequence         *handler.CRMSequenceHandler
+	CRMWritingProfile   *handler.CRMWritingProfileHandler
+	CRMSearch           *handler.CRMSearchHandler
+	CRMDealAutomation   *handler.CRMDealAutomationHandler
+	AutomationRule      *handler.AutomationRuleHandler
+	PMRoadmap           *handler.PMRoadmapHandler
+	SDKAssets           *handler.SDKAssetsHandler
+	SupportAI           *handler.SupportAIHandler
+	PostmarkInbound     *handler.PostmarkInboundHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -605,6 +605,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)

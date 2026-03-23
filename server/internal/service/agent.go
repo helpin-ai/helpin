@@ -973,46 +973,180 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	return run, nil
 }
 
-// SendRunMessage appends a user message to an awaiting-input run and resumes the workflow.
-func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
-	if s.runMessageRepo == nil {
-		return nil, fmt.Errorf("run messages are not configured")
+// ResumeRun resumes a paused interactive run using one generic intent path.
+func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, error) {
+	run, _, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, req)
+	if err != nil {
+		return nil, err
 	}
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		return nil, fmt.Errorf("content is required")
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
+		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
+		if storyErr == nil && story != nil {
+			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+				WorkspaceID: run.WorkspaceID,
+				TriggerType: model.TriggerAgentRunApproved,
+				StoryID:     story.ID,
+				StateID:     story.WorkflowStateID,
+				AgentID:     run.AgentID,
+				RunID:       run.ID,
+			}, nil)
+		}
+	}
+	return run, nil
+}
+
+// SendRunMessage appends a user message to a paused interactive run and resumes the workflow.
+func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
+	_, message, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentReply,
+		Content: req.Content,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, fmt.Errorf("resume did not create a run message")
+	}
+	return message, nil
+}
+
+func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, *model.AgentRunMessage, error) {
+	intent := normalizeResumeIntent(req.Intent)
+	if intent == "" {
+		return nil, nil, fmt.Errorf("intent is required")
 	}
 
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if run.Status != model.AgentRunStatusAwaitingInput {
-		return nil, fmt.Errorf("run is not awaiting input")
+	if run.Status == model.AgentRunStatusAwaitingApproval && run.ApprovalState != "pending" {
+		run.ApprovalState = "pending"
+	}
+	if run.Status != model.AgentRunStatusAwaitingInput && run.Status != model.AgentRunStatusAwaitingApproval {
+		return nil, nil, fmt.Errorf("run is not paused for human input")
 	}
 
-	message, err := s.createRunMessage(ctx, run, "user", "user_reply", content)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, content); err != nil {
-		return nil, err
+	var (
+		message     *model.AgentRunMessage
+		signal      temporalapp.RunResumeSignal
+		replyText   string
+		stage       = "resuming"
+		approvalSet bool
+	)
+
+	switch intent {
+	case model.AgentRunResumeIntentReply:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		message, err = s.createRunMessage(ctx, run, "user", "user_reply", replyText)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
+			return nil, nil, err
+		}
+		signalIntent := model.AgentRunResumeIntentReply
+		if run.Status == model.AgentRunStatusAwaitingApproval {
+			if isExplicitInteractiveApprovalReply(replyText) {
+				run.ApprovalState = "approved"
+				approvalSet = true
+				stage = "approved"
+				signalIntent = model.AgentRunResumeIntentApprove
+			} else {
+				run.ApprovalState = "rejected"
+			}
+		}
+		signal = temporalapp.RunResumeSignal{
+			Intent:  signalIntent,
+			Content: replyText,
+		}
+	case model.AgentRunResumeIntentApprove:
+		if run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run does not require approval")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			replyText = "approve"
+		}
+		if req.SendMessage || strings.TrimSpace(req.Content) != "" {
+			if s.runMessageRepo == nil {
+				return nil, nil, fmt.Errorf("run messages are not configured")
+			}
+			message, err = s.createRunMessage(ctx, run, "user", "approval", replyText)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
+			return nil, nil, err
+		}
+		run.ApprovalState = "approved"
+		approvalSet = true
+		stage = "approved"
+		signal = temporalapp.RunResumeSignal{
+			Intent:  model.AgentRunResumeIntentApprove,
+			Content: replyText,
+		}
+	case model.AgentRunResumeIntentRequestChanges:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		if run.Status != model.AgentRunStatusAwaitingApproval || run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run is not awaiting approval")
+		}
+		message, err = s.createRunMessage(ctx, run, "user", "request_changes", replyText)
+		if err != nil {
+			return nil, nil, err
+		}
+		run.ApprovalState = "rejected"
+		signal = temporalapp.RunResumeSignal{
+			Intent:  model.AgentRunResumeIntentRequestChanges,
+			Content: replyText,
+		}
+	default:
+		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
 	}
 
 	now := time.Now()
 	run.Status = model.AgentRunStatusRunning
-	run.ExecutionStage = strPtr("resuming")
+	run.ExecutionStage = strPtr(stage)
 	run.LastHeartbeatAt = &now
 	run.CompletedAt = nil
+	if !approvalSet && intent != model.AgentRunResumeIntentRequestChanges && run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+		run.ApprovalState = "not_required"
+	}
 	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	_ = s.runEngine.SignalMessage(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), content)
+	_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), signal)
 	s.publishRunEvent(run, actorID)
-	return message, nil
+	return run, message, nil
+}
+
+func normalizeResumeIntent(intent string) string {
+	switch strings.TrimSpace(strings.ToLower(intent)) {
+	case model.AgentRunResumeIntentReply:
+		return model.AgentRunResumeIntentReply
+	case model.AgentRunResumeIntentApprove:
+		return model.AgentRunResumeIntentApprove
+	case model.AgentRunResumeIntentRequestChanges:
+		return model.AgentRunResumeIntentRequestChanges
+	default:
+		return ""
+	}
 }
 
 func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Context, run *model.AgentRun, actorID, reply string) error {
@@ -1034,7 +1168,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	if sourceMessage == nil || approval == nil || preview == nil {
+	if sourceMessage == nil || approval == nil {
 		return nil
 	}
 	existingArtifacts, err := s.artifactRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
@@ -1052,6 +1186,15 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		if strings.TrimSpace(existing.SourceMessageID) == sourceMessage.ID {
 			return nil
 		}
+	}
+	if preview == nil {
+		preview, err = latestRunPreviewArtifact(existingArtifacts, previewPanelKeyForApprovalPhase(approval.Phase))
+		if err != nil {
+			return err
+		}
+	}
+	if preview == nil {
+		return nil
 	}
 
 	payload := model.ApprovedRunPreview{
@@ -1094,12 +1237,40 @@ func latestApprovalCheckpoint(messages []model.AgentRunMessage) (*model.AgentRun
 			continue
 		}
 		preview := worker.ExtractLatestPublishedPreview(invocations[:approvalIndex], "")
-		if preview == nil {
-			continue
-		}
 		return &message, approval, preview, nil
 	}
 	return nil, nil, nil, nil
+}
+
+func previewPanelKeyForApprovalPhase(phase string) string {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "prd":
+		return "prd_draft"
+	case "stories":
+		return "story_plan"
+	default:
+		return ""
+	}
+}
+
+func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
+	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+			continue
+		}
+
+		var payload worker.PublishedPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			return nil, fmt.Errorf("parse run preview artifact: %w", err)
+		}
+		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+			continue
+		}
+		return &payload, nil
+	}
+	return nil, nil
 }
 
 func isExplicitInteractiveApprovalReply(reply string) bool {
@@ -1132,87 +1303,17 @@ func isExplicitInteractiveApprovalReply(reply string) bool {
 
 // ApproveRun approves a pending outcome, publishing support drafts when requested.
 func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actorID string, req model.ApproveAgentRunRequest) (*model.AgentRun, error) {
-	_ = req
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.ApprovalState != "pending" {
-		return nil, fmt.Errorf("run does not require approval")
-	}
-
-	now := time.Now()
-	run.ApprovalState = "approved"
-	if run.Status == "awaiting_approval" {
-		run.Status = model.AgentRunStatusRunning
-		run.CompletedAt = nil
-		run.LastHeartbeatAt = &now
-		run.ExecutionStage = strPtr("approved")
-	}
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
-	}
-	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
-		return nil, err
-	}
-	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
-	s.publishRunEvent(run, actorID)
-
-	// Evaluate automation rules for the run approval event
-	if s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
-		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
-		if storyErr == nil && story != nil {
-			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
-				WorkspaceID: run.WorkspaceID,
-				TriggerType: model.TriggerAgentRunApproved,
-				StoryID:     story.ID,
-				StateID:     story.WorkflowStateID,
-				AgentID:     run.AgentID,
-				RunID:       run.ID,
-			}, nil)
-		}
-	}
-
-	return run, nil
+	return s.ResumeRun(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:      model.AgentRunResumeIntentApprove,
+		SendMessage: req.SendMessage,
+	})
 }
 
 func (s *AgentService) RequestRunChanges(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunRequestChangesRequest) (*model.AgentRun, error) {
-	if s.runMessageRepo == nil {
-		return nil, fmt.Errorf("run messages are not configured")
-	}
-
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		return nil, fmt.Errorf("content is required")
-	}
-
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.Status != model.AgentRunStatusAwaitingApproval || run.ApprovalState != "pending" {
-		return nil, fmt.Errorf("run is not awaiting approval")
-	}
-
-	if _, err := s.createRunMessage(ctx, run, "user", "request_changes", content); err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	run.ApprovalState = "rejected"
-	run.Status = model.AgentRunStatusRunning
-	run.CompletedAt = nil
-	run.LastHeartbeatAt = &now
-	run.ExecutionStage = strPtr("resuming")
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
-	}
-	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
-		return nil, err
-	}
-	_ = s.runEngine.SignalMessage(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), content)
-	s.publishRunEvent(run, actorID)
-	return run, nil
+	return s.ResumeRun(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentRequestChanges,
+		Content: req.Content,
+	})
 }
 
 // HandoffRun records an explicit handoff from a run to another agent or user.

@@ -10,6 +10,7 @@ import type {
   AgentModelProviderOption,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
+  ResumeAgentRunRequest,
   StartAgentRunRequest,
   SendAgentRunMessageRequest,
   SendAgentRunRequestChangesRequest,
@@ -57,6 +58,8 @@ export const agentService = {
     api.get<AgentRun>(`/pm/agent-runs/${runId}${qs(workspaceId)}`),
   listRunMessages: (workspaceId: string, runId: string) =>
     api.get<AgentRunMessage[]>(`/pm/agent-runs/${runId}/messages${qs(workspaceId)}`),
+  resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
+    api.post<AgentRun>(`/pm/agent-runs/${runId}/resume${qs(workspaceId)}`, payload),
   sendRunMessage: (workspaceId: string, runId: string, payload: SendAgentRunMessageRequest) =>
     api.post<AgentRunMessage>(`/pm/agent-runs/${runId}/messages${qs(workspaceId)}`, payload),
   listRunArtifacts: (workspaceId: string, runId: string) =>

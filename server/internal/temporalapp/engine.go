@@ -100,10 +100,9 @@ func (e *RunEngine) CancelRun(ctx context.Context, workflowID, workflowRunID str
 
 // SignalApprove signals approval to a waiting workflow.
 func (e *RunEngine) SignalApprove(ctx context.Context, workflowID, workflowRunID string) error {
-	if e == nil || e.client == nil || workflowID == "" {
-		return nil
-	}
-	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalApprove, struct{}{})
+	return e.SignalResume(ctx, workflowID, workflowRunID, RunResumeSignal{
+		Intent: model.AgentRunResumeIntentApprove,
+	})
 }
 
 // SignalHandoff notifies a workflow that a handoff was recorded.
@@ -116,12 +115,18 @@ func (e *RunEngine) SignalHandoff(ctx context.Context, workflowID, workflowRunID
 
 // SignalMessage resumes an awaiting-input workflow with a new user message.
 func (e *RunEngine) SignalMessage(ctx context.Context, workflowID, workflowRunID, content string) error {
+	return e.SignalResume(ctx, workflowID, workflowRunID, RunResumeSignal{
+		Intent:  model.AgentRunResumeIntentReply,
+		Content: content,
+	})
+}
+
+// SignalResume resumes a paused workflow with a generic human intent.
+func (e *RunEngine) SignalResume(ctx context.Context, workflowID, workflowRunID string, payload RunResumeSignal) error {
 	if e == nil || e.client == nil || workflowID == "" {
 		return nil
 	}
-	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalMessage, RunMessageSignal{
-		Content: content,
-	})
+	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalResume, payload)
 }
 
 // DescribeRun returns the Temporal execution state for a workflow-backed run.
@@ -263,6 +268,7 @@ func (e *RunEngine) QueueContentSourceSync(ctx context.Context, workspaceID, con
 	}
 	return nil
 }
+
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID

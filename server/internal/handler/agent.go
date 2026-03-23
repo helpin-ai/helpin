@@ -199,6 +199,26 @@ func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+// ResumeRun handles POST /api/pm/agent-runs/{id}/resume.
+func (h *AgentHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ResumeAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.ResumeRun(r.Context(), workspaceID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
 // ApproveRun handles POST /api/pm/agent-runs/{id}/approve.
 func (h *AgentHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

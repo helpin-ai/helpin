@@ -8,8 +8,8 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.11
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.3
-	github.com/cloudwego/eino v0.8.3
-	github.com/cloudwego/eino-ext/components/model/claude v0.1.15
+	github.com/cloudwego/eino v0.9.0-alpha.7
+	github.com/cloudwego/eino-ext/components/model/claude v0.1.16
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.10
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
@@ -39,6 +39,8 @@ require (
 	cloud.google.com/go/auth v0.7.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/JohannesKaufmann/dom v0.2.0 // indirect
 	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/RadhiFadlillah/whatlanggo v0.0.0-20240916001553-aac1f0f737fc // indirect
@@ -46,7 +48,7 @@ require (
 	github.com/antchfx/htmlquery v1.3.5 // indirect
 	github.com/antchfx/xmlquery v1.5.0 // indirect
 	github.com/antchfx/xpath v1.3.5 // indirect
-	github.com/anthropics/anthropic-sdk-go v1.4.0 // indirect
+	github.com/anthropics/anthropic-sdk-go v1.26.0 // indirect
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.6 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.29.1 // indirect
@@ -71,6 +73,7 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/cloudwego/eino-ext/components/model/agenticopenai v0.1.0-alpha.2 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.14 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -85,6 +88,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
 	github.com/go-shiori/go-readability v0.0.0-20241012063810-92284fa8a71f // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
@@ -124,6 +128,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.5.1 // indirect
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
 	github.com/nlnwa/whatwg-url v0.6.2 // indirect
+	github.com/openai/openai-go/v3 v3.22.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -158,7 +163,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
-	golang.org/x/oauth2 v0.22.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/api v0.189.0 // indirect

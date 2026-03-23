@@ -1,13 +1,14 @@
-import { type ComponentPropsWithoutRef, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatDistanceToNow, parseISO, differenceInSeconds } from 'date-fns';
-import { Bot, FileText, Loader2, Send, ShieldCheck, Sparkles, StopCircle, Wrench } from 'lucide-react';
+import { type ComponentPropsWithoutRef, type CSSProperties, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatDistanceToNow, parseISO } from 'date-fns';
+import { Bot, FileText, Loader2, Send, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import { AgentRunDetail } from '@/components/pm/AgentRunDetail';
 import { StructuredQuestionCard } from '@/components/pm/StructuredQuestionCard';
 import { parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
 import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, type PublishedPreview } from '@/components/pm/agentRunPreviews';
-import { ACTIVE_RUN_STATUSES, STATUS_META } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { StreamingTagRouter, INITIAL_SEGMENTS, type StreamSegments } from '@/components/pm/streamingTagRouter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,10 @@ interface ParsedApprovalRequestWithMeta extends ParsedApprovalRequest {
   messageId: string;
   index: number;
 }
+
+const RIGHT_PANEL_MIN_WIDTH_PCT = 24;
+const RIGHT_PANEL_MAX_WIDTH_PCT = 48;
+const RIGHT_PANEL_DEFAULT_WIDTH_PCT = 34;
 
 function toolEventSignature(name: string, content?: string) {
   return `${name.trim().toLowerCase()}\u0000${(content ?? '').trim()}`;
@@ -158,8 +163,9 @@ export function getVisibleLiveTools(liveTools: LiveToolEvent[], messages: AgentR
 
 function MarkdownContent({ content, className }: { content: string; className?: string }) {
   return (
-    <div className={cn('text-sm leading-6 text-foreground', className)}>
+    <div className={cn('text-[13px] leading-6 text-foreground', className)}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
@@ -168,6 +174,16 @@ function MarkdownContent({ content, className }: { content: string; className?: 
           h1: ({ children }) => <h1 className="mb-3 text-base font-semibold last:mb-0">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-3 text-sm font-semibold last:mb-0">{children}</h2>,
           h3: ({ children }) => <h3 className="mb-2 text-sm font-semibold last:mb-0">{children}</h3>,
+          table: ({ children }) => (
+            <div className="mb-3 overflow-x-auto rounded-md border border-border/60 last:mb-0">
+              <table className="min-w-full border-collapse">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          tr: ({ children }) => <tr className="border-b border-border/60 last:border-b-0">{children}</tr>,
+          th: ({ children }) => <th className="px-3 py-2 text-left text-[12px] font-semibold text-foreground">{children}</th>,
+          td: ({ children }) => <td className="px-3 py-2 align-top text-[13px] leading-5 text-foreground">{children}</td>,
           blockquote: ({ children }) => (
             <blockquote className="mb-3 border-l-2 border-border pl-3 text-muted-foreground last:mb-0">
               {children}
@@ -207,7 +223,7 @@ function MarkdownContent({ content, className }: { content: string; className?: 
 }
 
 function isInlineApprovalRun(run: AgentRun | null): boolean {
-  return !!run && run.invocation_mode === 'interactive' && run.status === 'awaiting_input';
+  return !!run && run.invocation_mode === 'interactive' && (run.status === 'awaiting_input' || run.status === 'awaiting_approval');
 }
 
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
@@ -451,7 +467,10 @@ export function AgentRunDrawer({
   const rafPendingRef = useRef(false);
   const [liveTools, setLiveTools] = useState<LiveToolEvent[]>([]);
   const [livePreviews, setLivePreviews] = useState<PublishedPreview[]>([]);
+  const [rightPanelWidthPct, setRightPanelWidthPct] = useState(RIGHT_PANEL_DEFAULT_WIDTH_PCT);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const splitLayoutRef = useRef<HTMLDivElement>(null);
+  const isDraggingSplitRef = useRef(false);
   const reloadTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const lastReloadRef = useRef(0);
   const runRef = useRef<AgentRun | null>(null);
@@ -605,7 +624,7 @@ export function AgentRunDrawer({
           }
           break;
         case 'assistant_message_completed':
-          setLiveSegments(streamRouterRef.current.finalize(stream.text));
+          setLiveSegments(streamRouterRef.current.finalize());
           break;
         case 'tool_call_started':
           upsertLiveTool({
@@ -697,7 +716,10 @@ export function AgentRunDrawer({
   const sendReplyContent = useCallback(async (content: string) => {
     if (!run || !content.trim()) return;
     try {
-      await agentService.sendRunMessage(workspaceId, run.id, { content: content.trim() });
+      await agentService.resumeRun(workspaceId, run.id, {
+        intent: 'reply',
+        content: content.trim(),
+      });
       await loadRun(run.id);
     } catch { /* handled by caller */ }
   }, [loadRun, run, workspaceId]);
@@ -705,11 +727,10 @@ export function AgentRunDrawer({
   const handleApprove = async (currentRunId: string) => {
     setActingOnRun(currentRunId);
     try {
-      if (run?.id === currentRunId && isInlineApprovalRun(run)) {
-        await agentService.sendRunMessage(workspaceId, currentRunId, { content: 'approve' });
-      } else {
-        await agentService.approveRun(workspaceId, currentRunId, { send_message: true });
-      }
+      await agentService.resumeRun(workspaceId, currentRunId, {
+        intent: 'approve',
+        send_message: true,
+      });
       await loadRun(currentRunId);
     } finally {
       setActingOnRun(null);
@@ -720,11 +741,10 @@ export function AgentRunDrawer({
     if (!content) return;
     setActingOnRun(currentRunId);
     try {
-      if (run?.id === currentRunId && isInlineApprovalRun(run)) {
-        await agentService.sendRunMessage(workspaceId, currentRunId, { content });
-      } else {
-        await agentService.requestRunChanges(workspaceId, currentRunId, { content });
-      }
+      await agentService.resumeRun(workspaceId, currentRunId, {
+        intent: 'request_changes',
+        content,
+      });
       await loadRun(currentRunId);
     } finally {
       setActingOnRun(null);
@@ -740,6 +760,50 @@ export function AgentRunDrawer({
       setActingOnRun(null);
     }
   };
+
+  const stopSplitDrag = useCallback(() => {
+    if (!isDraggingSplitRef.current) return;
+    isDraggingSplitRef.current = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  const handleSplitPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    isDraggingSplitRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isDraggingSplitRef.current) return;
+      const layout = splitLayoutRef.current;
+      if (!layout) return;
+
+      const rect = layout.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const nextWidth = ((rect.right - event.clientX) / rect.width) * 100;
+      const clampedWidth = Math.min(
+        RIGHT_PANEL_MAX_WIDTH_PCT,
+        Math.max(RIGHT_PANEL_MIN_WIDTH_PCT, nextWidth),
+      );
+      setRightPanelWidthPct(clampedWidth);
+    };
+
+    const handlePointerUp = () => {
+      stopSplitDrag();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      stopSplitDrag();
+    };
+  }, [stopSplitDrag]);
 
   const displayArtifacts = useMemo(() => mergeArtifactsForDisplay(artifacts), [artifacts]);
 
@@ -840,10 +904,6 @@ export function AgentRunDrawer({
     return latestApprovalRequest;
   }, [latestApprovalRequest, latestAssistantMessageId]);
 
-  const hasActiveApprovalCard = !!currentApprovalRequest && (
-    run?.status === 'awaiting_approval' || isInlineApprovalRun(run)
-  );
-
   const resolvedTitle = title ?? (run?.invocation_mode === 'interactive' ? 'Interactive Agent Run' : 'Agent Run');
   const resolvedDescription = description ?? (run ? `${run.target_type} · ${formatMessageTimestamp(run.created_at)}` : 'Run conversation and artifacts');
 
@@ -875,34 +935,12 @@ export function AgentRunDrawer({
             </div>
           ) : run ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              {/* Compact status bar */}
-              <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Badge variant={STATUS_META[run.status]?.variant ?? 'secondary'} className="gap-1 px-1.5 py-0 text-[10px] shrink-0">
-                    {run.status === 'running' ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                    {STATUS_META[run.status]?.label ?? run.status}
-                  </Badge>
-                  {(() => {
-                    if (!run.started_at) return null;
-                    const start = parseISO(run.started_at);
-                    const end = run.completed_at ? parseISO(run.completed_at) : new Date();
-                    const secs = differenceInSeconds(end, start);
-                    const label = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${secs % 60 > 0 ? ` ${secs % 60}s` : ''}`;
-                    return <span className="text-xs text-muted-foreground">({label})</span>;
-                  })()}
-                </div>
-                <div className="flex gap-1.5 shrink-0">
-                  {(run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_input' || run.status === 'awaiting_approval') && (
-                    <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" disabled={actingOnRun === run.id} onClick={() => handleCancel(run.id)}>
-                      <StopCircle className="h-3 w-3" />
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
-                <div className="flex min-h-0 flex-col space-y-2">
+              <div
+                ref={splitLayoutRef}
+                className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,calc(100%-var(--run-drawer-right-pane-width)-0.5rem))_0.5rem_minmax(280px,var(--run-drawer-right-pane-width))] lg:gap-0"
+                style={{ '--run-drawer-right-pane-width': `${rightPanelWidthPct}%` } as CSSProperties}
+              >
+                <div className="flex min-h-0 flex-col space-y-2 lg:pr-4">
 
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-border/60 bg-muted/15 p-3">
                     {messages.length === 0 && !hasLiveContent && !liveSegments.isThinking ? (
@@ -1046,12 +1084,25 @@ export function AgentRunDrawer({
                     <div ref={chatEndRef} />
                   </div>
 
-                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : run.status === 'awaiting_input') && canEdit && !hasActiveApprovalCard ? (
+                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : run.status === 'awaiting_input') && canEdit ? (
                     <ReplyForm onSubmit={(content) => void sendReplyContent(content)} />
                   ) : null}
                 </div>
 
-                <div className="min-h-0 space-y-3 overflow-y-auto">
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize transcript and details panels"
+                  aria-valuemin={RIGHT_PANEL_MIN_WIDTH_PCT}
+                  aria-valuemax={RIGHT_PANEL_MAX_WIDTH_PCT}
+                  aria-valuenow={Math.round(rightPanelWidthPct)}
+                  className="relative hidden cursor-col-resize touch-none select-none lg:block"
+                  onPointerDown={handleSplitPointerDown}
+                >
+                  <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70" />
+                </div>
+
+                <div className="min-h-0 space-y-3 overflow-y-auto lg:pl-4">
                   {/* Run details (metadata + artifacts) */}
                   <AgentRunDetail
                     run={run}
@@ -1080,7 +1131,7 @@ export function AgentRunDrawer({
                           </p>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Use the approval card in the chat transcript to approve or request changes.
+                          You can reply below, or use the latest approval card in the chat transcript for approve and request-changes shortcuts.
                         </p>
                       </div>
                     </div>
@@ -1095,11 +1146,6 @@ export function AgentRunDrawer({
                         </p>
                       </div>
                       <div className="space-y-2">
-                        {latestSpecDraftPreview.summary ? (
-                          <div>
-                            <p className="text-xs text-muted-foreground">{latestSpecDraftPreview.summary}</p>
-                          </div>
-                        ) : null}
                         <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
                           <MarkdownContent content={latestSpecDraftPreview.markdown} className="text-[12px] leading-5" />
                         </div>

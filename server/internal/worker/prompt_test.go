@@ -12,8 +12,8 @@ func TestBuildSystemPromptDirectEpicRunUsesAgentSystemPrompt(t *testing.T) {
 
 	prompt := BuildSystemPrompt(
 		&model.Agent{
-			Name:       "Planner",
-			PresetKey:  model.AgentPresetEpicPlanner,
+			Name:         "Planner",
+			PresetKey:    model.AgentPresetEpicPlanner,
 			SystemPrompt: &systemPrompt,
 		},
 		nil,
@@ -72,6 +72,7 @@ func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		"",
 		"Run mode: interactive\nOperator notes:\nFocus on B2B admins first.",
 	)
@@ -89,6 +90,83 @@ func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Run mode: interactive") {
 		t.Fatalf("expected initial instructions to be preserved\n%s", prompt)
+	}
+}
+
+func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMEpic{Name: "Billing refresh"},
+		nil,
+		nil,
+		nil,
+		nil,
+		&ArtifactContext{
+			Entries: []ArtifactContextEntry{
+				{
+					Label:   "Current preview for prd_draft",
+					Source:  "run_preview",
+					Status:  "draft",
+					Format:  "markdown",
+					Content: "# Problem\n\nCurrent draft body",
+				},
+			},
+		},
+		"",
+		"",
+	)
+
+	if !strings.Contains(prompt, "Current persisted artifacts:") {
+		t.Fatalf("expected artifact context heading in prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Current preview for prd_draft [source=run_preview, status=draft, format=markdown]:") {
+		t.Fatalf("expected artifact context metadata in prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Current draft body") {
+		t.Fatalf("expected artifact content in prompt\n%s", prompt)
+	}
+}
+
+func TestBuildExecutionSupplementPromptIncludesResumeGuidanceAndArtifacts(t *testing.T) {
+	supplement := BuildExecutionSupplementPrompt(
+		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		&ArtifactContext{
+			Entries: []ArtifactContextEntry{
+				{
+					Label:   "Current preview for prd_draft",
+					Source:  "run_preview",
+					Status:  "draft",
+					Format:  "markdown",
+					Content: "# Problem\n\nLatest draft body",
+				},
+			},
+		},
+	)
+
+	for _, marker := range []string{
+		"This is an interactive transcript that may resume after a human reply.",
+		"Do not treat a human reply as the end of the run by default.",
+		"Use the latest persisted artifacts below as the current source of truth",
+		"Latest draft body",
+	} {
+		if !strings.Contains(supplement, marker) {
+			t.Fatalf("expected supplement to contain %q\n%s", marker, supplement)
+		}
+	}
+}
+
+func TestProviderSupportsResponseContinuation(t *testing.T) {
+	if !ProviderSupportsResponseContinuation(model.AgentModelProviderOpenAI) {
+		t.Fatal("expected openai to support response continuation")
+	}
+	for _, provider := range []string{
+		model.AgentModelProviderOpenRouter,
+		model.AgentModelProviderOpenRouterResponses,
+		model.AgentModelProviderAnthropic,
+	} {
+		if ProviderSupportsResponseContinuation(provider) {
+			t.Fatalf("expected provider %q not to support response continuation", provider)
+		}
 	}
 }
 

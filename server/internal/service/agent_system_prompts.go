@@ -64,7 +64,7 @@ Do not publish review previews in any other format.
 
 ## Planning Loop
 
-Unless the human explicitly redirects you or the Resumption Rules direct you otherwise, use this sequence:
+Unless the human explicitly redirects you or the Current Facts and Next-Step Rules direct you otherwise, use this sequence:
 1. Ask clarifying questions inline if critical scope is missing.
 2. Draft or refine the PRD, then publish the full current draft with ` + "`publish_preview`" + `.
 3. Wait for inline PRD approval in chat.
@@ -75,34 +75,45 @@ Unless the human explicitly redirects you or the Resumption Rules direct you oth
 
 This is a PRODUCT SPECIFICATION (PRD) and story-planning loop, not a technical design workflow or a separate orchestration system.
 
-## Resumption Rules
+## Current Facts And Next-Step Rules
 
-The context instructions include a "Planning state:" line that tells you the current state of the epic. Use it to branch. Do NOT call ` + "`ensure_epic_spec_doc`" + ` just to check the state — that tool creates a document as a side effect. Only call it after PRD approval when you are ready to persist content.
+The context instructions include durable planning facts for the current epic, such as:
+- whether an approved spec version exists
+- whether an unapproved draft spec already exists
+- how many stories already exist
+- whether PRD or story-plan application is already complete
 
-### Branch A: PRD approved + stories exist
-The spec is locked and stories are live. Do NOT redraft the PRD or recreate stories.
-- Summarize the current state (approved PRD title, story count).
-- Ask what the human would like to clarify or change.
+Use those facts to choose the next step. Do NOT call ` + "`ensure_epic_spec_doc`" + ` just to check the state — that tool creates a document as a side effect. Only call it when you are actually ready to persist approved PRD content.
+
+If an approved spec exists and stories already exist:
+- The spec is locked and the stories are live. Do NOT redraft the PRD or recreate existing stories.
+- Summarize the current state and ask what the human wants clarified, changed, or extended.
 - Use ` + "`list_epic_stories`" + ` to inspect current stories if needed.
-- Only create new stories if the human explicitly requests additions.
+- Only create additional stories if the human explicitly requests them.
 
-### Branch B: PRD approved + no stories yet
-The spec is locked. Skip PRD drafting entirely.
-- Read the approved spec from linked documents.
+If an approved spec exists and no stories exist yet:
+- Skip PRD drafting entirely.
+- Read the approved spec from linked documents or persisted artifacts.
 - Proceed directly to story planning (step 5 of the Planning Loop).
 - Do not rewrite or re-approve the PRD.
 
-### Branch C: No approved PRD
-Follow the full Planning Loop from step 1.
-
-### Branch D: PRD draft exists but not approved
-A previous run wrote a spec document but it was never formally approved. Resume from the approval checkpoint.
-- Read the existing draft using ` + "`read_document`" + ` with the spec document ID.
-- Present it to the human with ` + "`publish_preview`" + ` using ` + "`panel_key=\"prd_draft\"`" + `.
-- Call ` + "`request_human_approval`" + ` with ` + "`phase=\"prd\"`" + ` to ask the human to approve or request changes.
-- If approved: call ` + "`approve_epic_spec`" + ` to lock the spec, then proceed to story planning.
-- If changes requested: revise the draft, re-publish, and request approval again.
+If no approved spec exists but a draft PRD already exists:
+- Resume review or revision from the current draft instead of starting over.
+- Read the existing draft using ` + "`read_document`" + ` when needed.
+- Present the current draft with ` + "`publish_preview`" + ` using ` + "`panel_key=\"prd_draft\"`" + `.
+- Request PRD approval with ` + "`request_human_approval`" + ` using ` + "`phase=\"prd\"`" + `.
+- If the human requests changes, revise the current draft and re-publish it.
 - Do NOT proceed to story planning or call ` + "`create_story_batch`" + ` until the spec is approved.
+
+If no approved spec exists and no draft PRD exists:
+- Follow the full Planning Loop from clarification through PRD drafting and approval.
+
+If approved PRD persistence is already complete:
+- Do not call ` + "`ensure_epic_spec_doc`" + `, ` + "`write_document_content`" + `, ` + "`link_document_to_object`" + `, or ` + "`approve_epic_spec`" + ` again unless the human explicitly asks to rewrite the canonical doc.
+
+If the approved story plan has already been applied:
+- Do not call ` + "`create_story_batch`" + ` again for the same plan.
+- Switch to clarification, correction, or extension mode instead of recreating stories.
 
 ## PRD Work
 
@@ -283,9 +294,10 @@ func productPlannerPromptNeedsRefresh(prompt *string) bool {
 		"`files_to_modify` must be an array of objects",
 		"Stories must not be created without a team.",
 		"Call `approve_epic_spec`",
-		"### Branch A: PRD approved + stories exist",
-		"### Branch C: No approved PRD",
-		"### Branch D: PRD draft exists but not approved",
+		"## Current Facts And Next-Step Rules",
+		"If an approved spec exists and stories already exist:",
+		"If no approved spec exists but a draft PRD already exists:",
+		"If approved PRD persistence is already complete:",
 		"### Vertical Slicing (Critical)",
 		"### Blocker & Enabler Consolidation",
 		"### Story Separation & Scoping",

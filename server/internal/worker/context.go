@@ -46,8 +46,29 @@ type ExecutionContext struct {
 	OnPROpen                  func(metadata PRMetadata, title string) error
 	PlanningTurnKind          string
 	PlanningTurnAttempt       int
+	ArtifactContext           *ArtifactContext
+	ProviderContinuation      *ProviderContinuation
 	ConversationHistory       []ExecutionMessage
 	LastExecutionResult       *ExecutionResult
+}
+
+type ArtifactContext struct {
+	Entries []ArtifactContextEntry
+}
+
+type ArtifactContextEntry struct {
+	Label   string
+	Source  string
+	Status  string
+	Format  string
+	Content string
+}
+
+type ProviderContinuation struct {
+	Provider       string
+	ResponseID     string
+	PreviousResponseID string
+	AfterSequenceNo int
 }
 
 const (

@@ -110,7 +110,6 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	}
 
 	epic.ApprovedSpecVersionID = &version.ID
-	epic.PlanningState = model.EpicPlanningStateReadyForStoryPlanning
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
 	}
@@ -408,7 +407,6 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, err
 	}
 
-	epic.PlanningState = model.EpicPlanningStateStoriesCreated
 	epic.LastPlanningRunID = &run.ID
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
@@ -559,7 +557,6 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		}
 	}
 
-	epic.PlanningState = model.EpicPlanningStateStoriesCreated
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
 	}
@@ -1117,4 +1114,35 @@ func decodePlanningRunSummary(raw json.RawMessage) (epicPlanningRunSummary, erro
 func isValidUUID(s string) bool {
 	_, err := uuid.Parse(s)
 	return err == nil
+}
+
+// ClearEpicSpecForDocument resets spec approval state on any epic
+// whose spec document matches the given document ID.
+func (s *AgentService) ClearEpicSpecForDocument(ctx context.Context, documentID string) error {
+	links, err := s.docsLinkRepo.ListByDocument(ctx, documentID)
+	if err != nil {
+		return fmt.Errorf("list links for document %s: %w", documentID, err)
+	}
+	for _, link := range links {
+		if link.LinkedObjectType != "epic" {
+			continue
+		}
+		epic, err := s.epicRepo.GetByID(ctx, link.LinkedObjectID)
+		if err != nil {
+			slog.ErrorContext(ctx, "fetch epic for spec cleanup", "error", err, "epic_id", link.LinkedObjectID)
+			continue
+		}
+		if epic == nil || epic.Epic.SpecDocumentID == nil || *epic.Epic.SpecDocumentID != documentID {
+			continue
+		}
+		epic.Epic.SpecDocumentID = nil
+		epic.Epic.ApprovedSpecVersionID = nil
+		if err := s.epicRepo.Update(ctx, &epic.Epic); err != nil {
+			slog.ErrorContext(ctx, "clear epic spec state", "error", err, "epic_id", epic.Epic.ID)
+			continue
+		}
+		slog.InfoContext(ctx, "cleared epic spec state after document deletion",
+			"epic_id", epic.Epic.ID, "document_id", documentID)
+	}
+	return nil
 }

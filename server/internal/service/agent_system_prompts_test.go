@@ -17,6 +17,11 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"You run the full PRD-to-stories loop inside a single interactive agent run.",
 		"There is no hidden planner phase machine deciding the next step for you.",
 		"Approval checkpoints happen inline in the same chat:",
+		"## Current Facts And Next-Step Rules",
+		"If an approved spec exists and stories already exist:",
+		"If an approved spec exists and no stories exist yet:",
+		"If no approved spec exists but a draft PRD already exists:",
+		"If approved PRD persistence is already complete:",
 		"`request_human_input`",
 		"`request_human_approval`",
 		"`publish_preview`",
@@ -44,6 +49,11 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 	for _, legacyPhase := range []string{"awaiting_prd_approval", "awaiting_story_approval"} {
 		if strings.Contains(*prompt, legacyPhase) {
 			t.Fatalf("expected planner prompt to avoid legacy hard-approval phase %q\n%s", legacyPhase, *prompt)
+		}
+	}
+	for _, branchMarker := range []string{"### Branch A:", "### Branch B:", "### Branch C:", "### Branch D:"} {
+		if strings.Contains(*prompt, branchMarker) {
+			t.Fatalf("expected planner prompt to avoid branch choreography %q\n%s", branchMarker, *prompt)
 		}
 	}
 }

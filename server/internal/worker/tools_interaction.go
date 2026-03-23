@@ -64,7 +64,7 @@ func toolRequestHumanApproval(ctx *ExecutionContext, input json.RawMessage) (str
 	}
 
 	payload, _ := json.MarshalIndent(map[string]any{
-		"status":  "awaiting_input",
+		"status":  "awaiting_approval",
 		"phase":   req.Phase,
 		"title":   req.Title,
 		"summary": req.Summary,

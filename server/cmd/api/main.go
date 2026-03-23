@@ -887,6 +887,7 @@ func main() {
 			docsSearchService,
 			docsImportService,
 			docsEmbeddingService,
+			agentService,
 		),
 	}
 

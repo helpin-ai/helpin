@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	agenticopenai "github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	einoclaude "github.com/cloudwego/eino-ext/components/model/claude"
-	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
@@ -39,9 +39,10 @@ type ExecutionBlock struct {
 }
 
 type ExecutionMessage struct {
-	Role    string           `json:"role"`
-	Content string           `json:"content,omitempty"`
-	Blocks  []ExecutionBlock `json:"blocks,omitempty"`
+	SequenceNo int              `json:"sequence_no,omitempty"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
+	Blocks     []ExecutionBlock `json:"blocks,omitempty"`
 }
 
 type ExecutionUsage struct {
@@ -61,12 +62,13 @@ type ExecutionEvent struct {
 }
 
 type ExecutionResult struct {
-	Messages        []ExecutionMessage
-	AssistantBlocks []ExecutionBlock
-	AssistantText   string
-	ToolInvocations []appmodel.ToolInvocation
-	Usage           ExecutionUsage
-	MaxStepsReached bool
+	Messages             []ExecutionMessage
+	AssistantBlocks      []ExecutionBlock
+	AssistantText        string
+	ToolInvocations      []appmodel.ToolInvocation
+	Usage                ExecutionUsage
+	ProviderContinuation *ProviderContinuation
+	MaxStepsReached      bool
 }
 
 type EinoModelFactory struct {
@@ -78,18 +80,7 @@ type EinoModelFactory struct {
 }
 
 func (f *EinoModelFactory) Resolve(ctx context.Context, agent *appmodel.Agent, tools []ToolDefinition) (einomodel.ToolCallingChatModel, string, error) {
-	provider := "anthropic"
-	if agent != nil && agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
-		provider = strings.TrimSpace(*agent.Provider)
-	}
-	modelName := ""
-	if agent != nil && agent.Model != nil {
-		modelName = strings.TrimSpace(*agent.Model)
-	}
-	if modelName == "" {
-		modelName = defaultModelForProvider(provider)
-	}
-
+	provider, modelName := resolveProviderAndModel(agent)
 	baseModel, err := f.resolveBaseModel(ctx, provider, modelName)
 	if err != nil {
 		return nil, "", err
@@ -109,6 +100,26 @@ func (f *EinoModelFactory) Resolve(ctx context.Context, agent *appmodel.Agent, t
 	return withTools, modelName, nil
 }
 
+func (f *EinoModelFactory) ResolveAgentic(ctx context.Context, agent *appmodel.Agent, tools []ToolDefinition) (einomodel.AgenticModel, string, error) {
+	provider, modelName := resolveProviderAndModel(agent)
+	baseModel, err := f.resolveAgenticBaseModel(ctx, provider, modelName)
+	if err != nil {
+		return nil, "", err
+	}
+	toolInfos, err := toEinoToolInfos(tools)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(toolInfos) == 0 {
+		return baseModel, modelName, nil
+	}
+	withTools, err := baseModel.WithTools(toolInfos)
+	if err != nil {
+		return nil, "", err
+	}
+	return withTools, modelName, nil
+}
+
 func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, modelName string) (einomodel.ToolCallingChatModel, error) {
 	switch provider {
 	case "anthropic":
@@ -120,16 +131,26 @@ func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, model
 			Model:     modelName,
 			MaxTokens: defaultMaxTokensForProvider(provider),
 		})
-	case "openai":
+	default:
+		if providerUsesAgenticResponses(provider) {
+			return nil, fmt.Errorf("provider %q must use the Responses-based agentic model path", provider)
+		}
+		return nil, fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider, modelName string) (einomodel.AgenticModel, error) {
+	switch provider {
+	case appmodel.AgentModelProviderOpenAI:
 		if strings.TrimSpace(f.OpenAIAPIKey) == "" {
 			return nil, fmt.Errorf("openai API key is not configured")
 		}
-		return einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+		return agenticopenai.New(ctx, &agenticopenai.Config{
 			APIKey:  f.OpenAIAPIKey,
 			BaseURL: strings.TrimSpace(f.OpenAIBaseURL),
 			Model:   modelName,
 		})
-	case "openrouter":
+	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(f.OpenRouterKey) == "" {
 			return nil, fmt.Errorf("openrouter API key is not configured")
 		}
@@ -137,21 +158,49 @@ func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, model
 		if baseURL == "" {
 			baseURL = "https://openrouter.ai/api/v1"
 		}
-		return einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+		return agenticopenai.New(ctx, &agenticopenai.Config{
 			APIKey:  f.OpenRouterKey,
 			BaseURL: baseURL,
 			Model:   modelName,
 		})
 	default:
-		return nil, fmt.Errorf("unsupported provider %q", provider)
+		return nil, fmt.Errorf("provider %q does not support the Responses-based agentic model path", provider)
 	}
+}
+
+func resolveProviderAndModel(agent *appmodel.Agent) (string, string) {
+	provider := appmodel.AgentModelProviderAnthropic
+	if agent != nil && agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
+		provider = strings.TrimSpace(*agent.Provider)
+	}
+	modelName := ""
+	if agent != nil && agent.Model != nil {
+		modelName = strings.TrimSpace(*agent.Model)
+	}
+	if modelName == "" {
+		modelName = defaultModelForProvider(provider)
+	}
+	return provider, modelName
+}
+
+func providerUsesAgenticResponses(provider string) bool {
+	switch strings.TrimSpace(provider) {
+	case appmodel.AgentModelProviderOpenAI, appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
+		return true
+	default:
+		return false
+	}
+}
+
+func ProviderSupportsResponseContinuation(provider string) bool {
+	return strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI
 }
 
 func defaultModelForProvider(provider string) string {
 	switch provider {
-	case "openai":
+	case appmodel.AgentModelProviderOpenAI:
 		return "gpt-4.1"
-	case "openrouter":
+	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		return "openai/gpt-4.1"
 	default:
 		return "claude-sonnet-4-20250514"
@@ -187,6 +236,11 @@ func ExecuteWithEino(
 	}
 	if maxSteps <= 0 {
 		maxSteps = 25
+	}
+
+	provider, _ := resolveProviderAndModel(agent)
+	if providerUsesAgenticResponses(provider) {
+		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent)
 	}
 
 	modelWithTools, _, err := factory.Resolve(ctx, agent, tools)
@@ -288,6 +342,131 @@ func ExecuteWithEino(
 	return result, ErrMaxToolStepsReached
 }
 
+func executeWithEinoAgentic(
+	ctx context.Context,
+	factory *EinoModelFactory,
+	agent *appmodel.Agent,
+	systemPrompt string,
+	history []ExecutionMessage,
+	tools []ToolDefinition,
+	execCtx *ExecutionContext,
+	registry *ToolRegistry,
+	maxSteps int,
+	onEvent func(ExecutionEvent),
+) (*ExecutionResult, error) {
+	modelWithTools, _, err := factory.ResolveAgentic(ctx, agent, tools)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, _ := resolveProviderAndModel(agent)
+	effectiveSystemPrompt := systemPrompt
+	effectiveHistory := history
+	agenticOpts := make([]einomodel.Option, 0, 1)
+	if continuation := execCtx.ProviderContinuation; continuation != nil && strings.TrimSpace(continuation.ResponseID) != "" && ProviderSupportsResponseContinuation(provider) {
+		effectiveSystemPrompt = ""
+		effectiveHistory = filterExecutionHistoryAfterSequence(history, continuation.AfterSequenceNo)
+		agenticOpts = append(agenticOpts, agenticopenai.WithExtraFields(map[string]any{
+			"previous_response_id": strings.TrimSpace(continuation.ResponseID),
+		}))
+	}
+
+	messages, err := toAgenticMessages(effectiveSystemPrompt, effectiveHistory)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ExecutionResult{
+		Messages: append([]ExecutionMessage(nil), history...),
+	}
+
+	for step := 0; step < maxSteps; step++ {
+		assistantMsg, assistantBlocks, usage, continuation, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, agenticOpts...)
+		if err != nil {
+			return nil, err
+		}
+		result.Usage.InputTokens += usage.InputTokens
+		result.Usage.OutputTokens += usage.OutputTokens
+		result.AssistantBlocks = assistantBlocks
+		result.AssistantText = extractTextFromExecutionBlocks(assistantBlocks)
+		result.ProviderContinuation = continuation
+		result.Messages = append(result.Messages, ExecutionMessage{
+			Role:    "assistant",
+			Content: result.AssistantText,
+			Blocks:  assistantBlocks,
+		})
+		messages = append(messages, assistantMsg)
+
+		toolCalls := executionToolCalls(assistantBlocks)
+		if len(toolCalls) == 0 {
+			return result, nil
+		}
+
+		stopAfterToolRound := false
+		for _, toolCall := range toolCalls {
+			argsJSON := normalizeToolArguments(string(toolCall.Input))
+			toolName := toolCall.ToolName
+
+			if onEvent != nil {
+				onEvent(ExecutionEvent{
+					Type:       "tool_call_started",
+					ToolCallID: toolCall.ToolCallID,
+					ToolName:   toolName,
+					ToolInput:  toolInputForEvent(toolName, argsJSON),
+				})
+			}
+
+			start := time.Now()
+			output, toolErr := registry.ExecuteAllowed(execCtx, toolName, argsJSON)
+			duration := time.Since(start)
+			isError := toolErr != nil
+			if toolErr != nil {
+				output = toolErr.Error()
+			}
+
+			summary := truncate(output, 500)
+			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
+				ToolName:      toolName,
+				Input:         argsJSON,
+				OutputSummary: summary,
+				DurationMs:    duration.Milliseconds(),
+			})
+			if onEvent != nil {
+				onEvent(ExecutionEvent{
+					Type:          "tool_call_finished",
+					ToolCallID:    toolCall.ToolCallID,
+					ToolName:      toolName,
+					OutputSummary: summary,
+					DurationMs:    duration.Milliseconds(),
+				})
+			}
+
+			result.Messages = append(result.Messages, ExecutionMessage{
+				Role:    "tool",
+				Content: output,
+				Blocks: []ExecutionBlock{{
+					Type:       ExecutionBlockTypeToolResult,
+					ToolCallID: toolCall.ToolCallID,
+					ToolName:   toolName,
+					Input:      argsJSON,
+					Output:     output,
+					IsError:    isError,
+				}},
+			})
+			messages = append(messages, schema.FunctionToolResultAgenticMessage(toolCall.ToolCallID, toolName, output))
+			if IsHumanInteractionTool(toolName) {
+				stopAfterToolRound = true
+			}
+		}
+		if stopAfterToolRound {
+			return result, nil
+		}
+	}
+
+	result.MaxStepsReached = true
+	return result, ErrMaxToolStepsReached
+}
+
 func streamAssistantMessage(
 	ctx context.Context,
 	model einomodel.BaseChatModel,
@@ -353,6 +532,39 @@ func streamAssistantMessage(
 	return finalMsg, blocks, usage, nil
 }
 
+func generateAssistantAgenticMessage(
+	ctx context.Context,
+	model einomodel.AgenticModel,
+	messages []*schema.AgenticMessage,
+	onEvent func(ExecutionEvent),
+	opts ...einomodel.Option,
+) (*schema.AgenticMessage, []ExecutionBlock, ExecutionUsage, *ProviderContinuation, error) {
+	if onEvent != nil {
+		onEvent(ExecutionEvent{Type: "assistant_message_started"})
+	}
+	finalMsg, err := model.Generate(ctx, messages, opts...)
+	if err != nil {
+		return nil, nil, ExecutionUsage{}, nil, err
+	}
+	if finalMsg == nil {
+		finalMsg = &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	}
+	blocks := fromSchemaAgenticAssistantMessage(finalMsg)
+	if onEvent != nil {
+		onEvent(ExecutionEvent{
+			Type: "assistant_message_completed",
+			Text: extractTextFromExecutionBlocks(blocks),
+		})
+	}
+
+	usage := ExecutionUsage{}
+	if finalMsg.ResponseMeta != nil && finalMsg.ResponseMeta.TokenUsage != nil {
+		usage.InputTokens = finalMsg.ResponseMeta.TokenUsage.PromptTokens
+		usage.OutputTokens = finalMsg.ResponseMeta.TokenUsage.CompletionTokens
+	}
+	return finalMsg, blocks, usage, providerContinuationFromAgenticMessage(finalMsg), nil
+}
+
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
 	messages := make([]*schema.Message, 0, len(history)+1)
 	if strings.TrimSpace(systemPrompt) != "" {
@@ -406,6 +618,55 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 	return messages, nil
 }
 
+func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.AgenticMessage, error) {
+	messages := make([]*schema.AgenticMessage, 0, len(history)+1)
+	if strings.TrimSpace(systemPrompt) != "" {
+		messages = append(messages, schema.SystemAgenticMessage(systemPrompt))
+	}
+	for _, msg := range history {
+		switch msg.Role {
+		case "user":
+			messages = append(messages, schema.UserAgenticMessage(nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))))
+		case "assistant":
+			assistant := &schema.AgenticMessage{
+				Role:          schema.AgenticRoleTypeAssistant,
+				ContentBlocks: make([]*schema.ContentBlock, 0, len(msg.Blocks)+1),
+			}
+			if len(msg.Blocks) == 0 && strings.TrimSpace(msg.Content) != "" {
+				assistant.ContentBlocks = append(assistant.ContentBlocks, schema.NewContentBlock(&schema.AssistantGenText{Text: msg.Content}))
+			}
+			for _, block := range msg.Blocks {
+				switch block.Type {
+				case ExecutionBlockTypeText:
+					if strings.TrimSpace(block.Text) != "" {
+						assistant.ContentBlocks = append(assistant.ContentBlocks, schema.NewContentBlock(&schema.AssistantGenText{Text: block.Text}))
+					}
+				case ExecutionBlockTypeToolCall:
+					assistant.ContentBlocks = append(assistant.ContentBlocks, schema.NewContentBlock(&schema.FunctionToolCall{
+						CallID:    block.ToolCallID,
+						Name:      block.ToolName,
+						Arguments: string(block.Input),
+					}))
+				}
+			}
+			messages = append(messages, assistant)
+		case "tool":
+			if len(msg.Blocks) == 0 {
+				continue
+			}
+			for _, block := range msg.Blocks {
+				if block.Type != ExecutionBlockTypeToolResult {
+					continue
+				}
+				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, block.Output))
+			}
+		default:
+			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
+		}
+	}
+	return messages, nil
+}
+
 func fromSchemaAssistantMessage(msg *schema.Message) []ExecutionBlock {
 	if msg == nil {
 		return nil
@@ -436,6 +697,37 @@ func fromSchemaAssistantMessage(msg *schema.Message) []ExecutionBlock {
 	return dedupeAdjacentTextBlocks(blocks)
 }
 
+func fromSchemaAgenticAssistantMessage(msg *schema.AgenticMessage) []ExecutionBlock {
+	if msg == nil {
+		return nil
+	}
+	blocks := make([]ExecutionBlock, 0, len(msg.ContentBlocks))
+	for _, block := range msg.ContentBlocks {
+		if block == nil {
+			continue
+		}
+		switch block.Type {
+		case schema.ContentBlockTypeAssistantGenText:
+			if block.AssistantGenText != nil && strings.TrimSpace(block.AssistantGenText.Text) != "" {
+				blocks = append(blocks, ExecutionBlock{
+					Type: ExecutionBlockTypeText,
+					Text: block.AssistantGenText.Text,
+				})
+			}
+		case schema.ContentBlockTypeFunctionToolCall:
+			if block.FunctionToolCall != nil {
+				blocks = append(blocks, ExecutionBlock{
+					Type:       ExecutionBlockTypeToolCall,
+					ToolCallID: block.FunctionToolCall.CallID,
+					ToolName:   block.FunctionToolCall.Name,
+					Input:      normalizeToolArguments(block.FunctionToolCall.Arguments),
+				})
+			}
+		}
+	}
+	return dedupeAdjacentTextBlocks(blocks)
+}
+
 func extractTextFromExecutionBlocks(blocks []ExecutionBlock) string {
 	var parts []string
 	for _, block := range blocks {
@@ -462,6 +754,22 @@ func chunkTextDelta(chunk *schema.Message) string {
 	return strings.Join(parts, "")
 }
 
+func chunkAgenticTextDelta(chunk *schema.AgenticMessage) string {
+	if chunk == nil {
+		return ""
+	}
+	var parts []string
+	for _, block := range chunk.ContentBlocks {
+		if block == nil || block.Type != schema.ContentBlockTypeAssistantGenText || block.AssistantGenText == nil {
+			continue
+		}
+		if strings.TrimSpace(block.AssistantGenText.Text) != "" {
+			parts = append(parts, block.AssistantGenText.Text)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 func normalizeToolArguments(raw string) json.RawMessage {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -483,6 +791,45 @@ func toolInputForEvent(toolName string, input json.RawMessage) string {
 		return strings.TrimSpace(string(input))
 	}
 	return summarizeToolInput(input)
+}
+
+func executionToolCalls(blocks []ExecutionBlock) []ExecutionBlock {
+	toolCalls := make([]ExecutionBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Type == ExecutionBlockTypeToolCall {
+			toolCalls = append(toolCalls, block)
+		}
+	}
+	return toolCalls
+}
+
+func providerContinuationFromAgenticMessage(msg *schema.AgenticMessage) *ProviderContinuation {
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.OpenAIExtension == nil {
+		return nil
+	}
+	ext := msg.ResponseMeta.OpenAIExtension
+	if strings.TrimSpace(ext.ID) == "" {
+		return nil
+	}
+	return &ProviderContinuation{
+		Provider:           appmodel.AgentModelProviderOpenAI,
+		ResponseID:         strings.TrimSpace(ext.ID),
+		PreviousResponseID: strings.TrimSpace(ext.PreviousResponseID),
+	}
+}
+
+func filterExecutionHistoryAfterSequence(history []ExecutionMessage, afterSequenceNo int) []ExecutionMessage {
+	if afterSequenceNo <= 0 {
+		return append([]ExecutionMessage(nil), history...)
+	}
+	filtered := make([]ExecutionMessage, 0, len(history))
+	for _, message := range history {
+		if message.SequenceNo <= afterSequenceNo {
+			continue
+		}
+		filtered = append(filtered, message)
+	}
+	return filtered
 }
 
 func nonEmptyText(values ...string) string {
