@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -67,6 +68,7 @@ type AgentRun struct {
 	ParentRunID       *string         `json:"parent_run_id" gorm:"type:uuid;index"`
 	HandoffState      *string         `json:"handoff_state"`
 	ApprovalState     string          `json:"approval_state" gorm:"not null;default:'not_required'"`
+	PauseReason       string          `json:"pause_reason" gorm:"not null;default:'none'"`
 	TriggeredByUserID *string         `json:"triggered_by_user_id" gorm:"type:uuid"`
 	Status            string          `json:"status" gorm:"not null;default:'queued'"`
 	WorkflowID        *string         `json:"workflow_id"`
@@ -175,14 +177,84 @@ const (
 )
 
 const (
-	AgentRunStatusQueued           = "queued"
-	AgentRunStatusRunning          = "running"
-	AgentRunStatusAwaitingInput    = "awaiting_input"
-	AgentRunStatusAwaitingApproval = "awaiting_approval"
-	AgentRunStatusCompleted        = "completed"
-	AgentRunStatusFailed           = "failed"
-	AgentRunStatusCancelled        = "cancelled"
+	AgentRunStatusQueued    = "queued"
+	AgentRunStatusRunning   = "running"
+	AgentRunStatusPaused    = "paused"
+	AgentRunStatusCompleted = "completed"
+	AgentRunStatusFailed    = "failed"
+	AgentRunStatusCancelled = "cancelled"
 )
+
+const (
+	AgentRunPauseReasonNone          = "none"
+	AgentRunPauseReasonHumanInput    = "human_input"
+	AgentRunPauseReasonHumanApproval = "human_approval"
+)
+
+func NormalizeAgentRunPauseState(run *AgentRun) {
+	if run == nil {
+		return
+	}
+
+	status, pauseReason := NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
+	run.Status = status
+	run.PauseReason = pauseReason
+}
+
+func NormalizeAgentRunStatus(status string, pauseReason string, approvalState string, executionStage *string) (string, string) {
+	reason := normalizeAgentRunPauseReason(status, pauseReason, approvalState, executionStage)
+	switch strings.TrimSpace(status) {
+	case AgentRunStatusPaused:
+		return AgentRunStatusPaused, reason
+	default:
+		return strings.TrimSpace(status), AgentRunPauseReasonNone
+	}
+}
+
+func IsAgentRunPausedStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case AgentRunStatusPaused:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAgentRunActiveStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case AgentRunStatusQueued, AgentRunStatusRunning, AgentRunStatusPaused:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
+	switch strings.TrimSpace(pauseReason) {
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval:
+		return strings.TrimSpace(pauseReason)
+	}
+	if strings.TrimSpace(approvalState) == "pending" {
+		return AgentRunPauseReasonHumanApproval
+	}
+	switch strings.TrimSpace(derefString(executionStage)) {
+	case "awaiting_approval":
+		return AgentRunPauseReasonHumanApproval
+	case "awaiting_input":
+		return AgentRunPauseReasonHumanInput
+	}
+	if strings.TrimSpace(status) == AgentRunStatusPaused {
+		return AgentRunPauseReasonHumanInput
+	}
+	return AgentRunPauseReasonNone
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
 
 // HandoffAgentRunRequest records an explicit handoff from a run.
 type HandoffAgentRunRequest struct {

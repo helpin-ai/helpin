@@ -235,3 +235,27 @@ func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestRenderPlannedStoryDescriptionRendersHTML(t *testing.T) {
+	html := renderPlannedStoryDescription(model.ProposedStory{
+		Description: "Document all new metrics and validation checks.",
+		AcceptanceCriteria: []string{
+			"GIVEN metrics docs WHEN opened THEN names and labels are documented",
+			"GIVEN Prometheus scrapes /metrics WHEN queried THEN new metrics are exposed",
+		},
+		DependencyRefs: []string{"METRICS-1"},
+	})
+
+	if html == "" {
+		t.Fatal("expected non-empty html description")
+	}
+	if !strings.Contains(html, "<h2") || !strings.Contains(html, "Summary") {
+		t.Fatalf("expected summary heading to render as html, got %q", html)
+	}
+	if !strings.Contains(html, "<li>") {
+		t.Fatalf("expected acceptance criteria/dependencies to render as html list, got %q", html)
+	}
+	if strings.Contains(html, "## Summary") {
+		t.Fatalf("expected markdown headings to be converted, got %q", html)
+	}
+}

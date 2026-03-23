@@ -1131,7 +1131,7 @@ export type AgentPresetKey =
   | 'code_builder'
   | 'review_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
-export type AgentRunStatus = 'queued' | 'running' | 'awaiting_input' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
+export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
@@ -1139,6 +1139,7 @@ export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'reje
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval';
 
 export interface Agent {
   id: string;
@@ -1187,6 +1188,7 @@ export interface AgentRun {
   parent_run_id?: string;
   handoff_state?: string;
   approval_state: AgentApprovalState;
+  pause_reason: AgentRunPauseReason;
   triggered_by_user_id?: string;
   status: AgentRunStatus;
   workflow_id?: string;

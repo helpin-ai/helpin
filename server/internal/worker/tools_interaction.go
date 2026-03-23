@@ -48,8 +48,9 @@ func toolRequestHumanInput(ctx *ExecutionContext, input json.RawMessage) (string
 	}
 
 	payload, _ := json.MarshalIndent(map[string]any{
-		"status":    "awaiting_input",
-		"questions": req.Questions,
+		"status":       appmodel.AgentRunStatusPaused,
+		"pause_reason": appmodel.AgentRunPauseReasonHumanInput,
+		"questions":    req.Questions,
 	}, "", "  ")
 	return string(payload), nil
 }
@@ -64,10 +65,11 @@ func toolRequestHumanApproval(ctx *ExecutionContext, input json.RawMessage) (str
 	}
 
 	payload, _ := json.MarshalIndent(map[string]any{
-		"status":  "awaiting_approval",
-		"phase":   req.Phase,
-		"title":   req.Title,
-		"summary": req.Summary,
+		"status":       appmodel.AgentRunStatusPaused,
+		"pause_reason": appmodel.AgentRunPauseReasonHumanApproval,
+		"phase":        req.Phase,
+		"title":        req.Title,
+		"summary":      req.Summary,
 	}, "", "  ")
 	return string(payload), nil
 }

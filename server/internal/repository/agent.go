@@ -184,7 +184,7 @@ func (r *AgentRunRepository) ListByTarget(ctx context.Context, workspaceID, targ
 func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running", "awaiting_input", "awaiting_approval"}).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running", "paused"}).
 		Order("created_at DESC").
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -198,7 +198,7 @@ func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID
 // ListActive returns queued, running, or approval-pending runs in a workspace.
 func (r *AgentRunRepository) ListActive(ctx context.Context, workspaceID string, limit int) ([]model.AgentRun, error) {
 	query := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND status IN ?", workspaceID, []string{"queued", "running", "awaiting_input", "awaiting_approval"}).
+		Where("workspace_id = ? AND status IN ?", workspaceID, []string{"queued", "running", "paused"}).
 		Order("created_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)

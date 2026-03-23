@@ -33,8 +33,8 @@ func TestRequestHumanInputToolReturnsAwaitingInputPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status": "awaiting_input"`) || !strings.Contains(output, `"id": "q1"`) {
-		t.Fatalf("expected awaiting_input payload, got %s", output)
+	if !strings.Contains(output, `"status": "paused"`) || !strings.Contains(output, `"pause_reason": "human_input"`) || !strings.Contains(output, `"id": "q1"`) {
+		t.Fatalf("expected paused human_input payload, got %s", output)
 	}
 }
 
@@ -74,8 +74,8 @@ func TestRequestHumanApprovalToolReturnsAwaitingApprovalPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status": "awaiting_approval"`) || !strings.Contains(output, `"phase": "prd"`) {
-		t.Fatalf("expected awaiting_approval payload, got %s", output)
+	if !strings.Contains(output, `"status": "paused"`) || !strings.Contains(output, `"pause_reason": "human_approval"`) || !strings.Contains(output, `"phase": "prd"`) {
+		t.Fatalf("expected paused human_approval payload, got %s", output)
 	}
 }
 

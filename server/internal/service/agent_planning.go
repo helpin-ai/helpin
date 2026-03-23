@@ -397,9 +397,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	outputSummary, _ := json.Marshal(runSummary)
 	run.OutputSummary = outputSummary
 	run.ApprovalState = "approved"
-	if run.Status == "awaiting_approval" {
+	if model.IsAgentRunPausedStatus(run.Status) && run.PauseReason == model.AgentRunPauseReasonHumanApproval {
 		now := time.Now()
 		run.Status = "completed"
+		run.PauseReason = model.AgentRunPauseReasonNone
 		run.CompletedAt = &now
 		run.ExecutionStage = strPtr("approved")
 	}
@@ -679,7 +680,8 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	if err != nil || activeRun == nil {
 		return err
 	}
-	if activeRun.Status != "awaiting_approval" || activeRun.ApprovalState != "pending" {
+	model.NormalizeAgentRunPauseState(activeRun)
+	if activeRun.Status != model.AgentRunStatusPaused || activeRun.PauseReason != model.AgentRunPauseReasonHumanApproval || activeRun.ApprovalState != "pending" {
 		return nil
 	}
 	if parsePlanningRunStage(activeRun.Input) != stage {
@@ -689,6 +691,7 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	now := time.Now()
 	activeRun.ApprovalState = "approved"
 	activeRun.Status = "completed"
+	activeRun.PauseReason = model.AgentRunPauseReasonNone
 	activeRun.CompletedAt = &now
 	activeRun.ExecutionStage = strPtr("approved")
 	if err := s.runRepo.Update(ctx, activeRun); err != nil {
@@ -905,7 +908,13 @@ func renderPlannedStoryDescription(story model.ProposedStory) string {
 	if len(sections) == 0 {
 		return ""
 	}
-	return strings.Join(sections, "\n\n")
+	markdown := strings.Join(sections, "\n\n")
+	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(markdown))
+	if err != nil {
+		slog.Warn("failed to render planned story markdown to html", "error", err)
+		return markdown
+	}
+	return strings.TrimSpace(rendered)
 }
 
 func validateSpecClarifications(updated, current []model.SpecClarificationItem) ([]model.SpecClarificationItem, int, error) {

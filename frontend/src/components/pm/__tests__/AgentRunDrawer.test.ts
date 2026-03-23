@@ -15,7 +15,7 @@ describe('AgentRunDrawer tool parsing', () => {
         {
           type: 'tool_result',
           tool_name: 'request_human_input',
-          output: '{"status":"awaiting_input"}',
+          output: '{"status":"paused","pause_reason":"human_input"}',
           is_error: false,
         },
       ],
@@ -25,7 +25,7 @@ describe('AgentRunDrawer tool parsing', () => {
 
     expect(parsed).toEqual({
       name: 'request_human_input',
-      content: '{"status":"awaiting_input"}',
+      content: '{"status":"paused","pause_reason":"human_input"}',
       input: '',
       isError: false,
     });

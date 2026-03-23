@@ -6,9 +6,9 @@ import remarkGfm from 'remark-gfm';
 
 import { AgentRunDetail } from '@/components/pm/AgentRunDetail';
 import { StructuredQuestionCard } from '@/components/pm/StructuredQuestionCard';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
 import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, type PublishedPreview } from '@/components/pm/agentRunPreviews';
-import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { StreamingTagRouter, INITIAL_SEGMENTS, type StreamSegments } from '@/components/pm/streamingTagRouter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -223,7 +223,7 @@ function MarkdownContent({ content, className }: { content: string; className?: 
 }
 
 function isInlineApprovalRun(run: AgentRun | null): boolean {
-  return !!run && run.invocation_mode === 'interactive' && (run.status === 'awaiting_input' || run.status === 'awaiting_approval');
+  return !!run && run.invocation_mode === 'interactive' && isPausedAgentRun(run);
 }
 
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
@@ -558,7 +558,7 @@ export function AgentRunDrawer({
       const detail = (event as CustomEvent).detail as {
         entity_id?: string;
         parent_id?: string;
-        data?: { status?: string };
+        data?: { status?: string; pause_reason?: string };
       } | undefined;
       if (!detail) return;
       if (detail.entity_id !== runId && detail.parent_id !== runId) return;
@@ -567,8 +567,7 @@ export function AgentRunDrawer({
       // Only reload on meaningful status transitions, not heartbeats/running updates.
       // During streaming, live events handle real-time UI — no need to refetch.
       if (
-        eventStatus === 'awaiting_input' ||
-        eventStatus === 'awaiting_approval' ||
+        eventStatus === 'paused' ||
         eventStatus === 'completed' ||
         eventStatus === 'failed' ||
         eventStatus === 'cancelled'
@@ -808,7 +807,7 @@ export function AgentRunDrawer({
   const displayArtifacts = useMemo(() => mergeArtifactsForDisplay(artifacts), [artifacts]);
 
   const latestQuestionPrompt = useMemo(() => {
-    if (run?.status !== 'awaiting_input') return null;
+    if (!run || getAgentRunDisplayStatus(run) !== 'awaiting_input') return null;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
       if (message.role !== 'assistant') continue;
@@ -818,7 +817,7 @@ export function AgentRunDrawer({
       }
     }
     return null;
-  }, [messages, run?.status]);
+  }, [messages, run]);
 
   const persistedPreviewsByKey = useMemo(() => {
     const previews = new Map<string, PublishedPreview>();
@@ -964,7 +963,7 @@ export function AgentRunDrawer({
                       const isLatestApproval =
                         currentApprovalRequest?.messageId === message.id &&
                         (
-                          run.status === 'awaiting_approval' ||
+                          getAgentRunDisplayStatus(run) === 'awaiting_approval' ||
                           (
                             isInlineApprovalRun(run)
                           )
@@ -1084,7 +1083,7 @@ export function AgentRunDrawer({
                     <div ref={chatEndRef} />
                   </div>
 
-                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : run.status === 'awaiting_input') && canEdit ? (
+                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : getAgentRunDisplayStatus(run) === 'awaiting_input') && canEdit ? (
                     <ReplyForm onSubmit={(content) => void sendReplyContent(content)} />
                   ) : null}
                 </div>
@@ -1113,7 +1112,7 @@ export function AgentRunDrawer({
                     showArtifacts={false}
                   />
 
-                  {run.status === 'awaiting_approval' ? (
+                  {getAgentRunDisplayStatus(run) === 'awaiting_approval' ? (
                     <div className="rounded-md border border-amber-300/50 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/20">
                       <div className="mb-2 flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-amber-900 dark:text-amber-200" />

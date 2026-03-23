@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
-import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
@@ -85,7 +85,8 @@ function AgentRunRow({
   agentName: string;
   onOpen: (run: AgentRun) => void;
 }) {
-  const statusLabel = STATUS_LABELS[run.status] ?? run.status;
+  const displayStatus = getAgentRunDisplayStatus(run);
+  const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus;
 
   return (
     <button
@@ -98,7 +99,7 @@ function AgentRunRow({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">{agentName}</p>
             <Badge variant={statusVariant(run.status)} className="gap-1 px-1.5 py-0 text-[10px]">
-              {STATUS_ICONS[run.status]}
+              {STATUS_ICONS[displayStatus]}
               {statusLabel}
             </Badge>
             <Badge variant="outline" className="text-[10px]">

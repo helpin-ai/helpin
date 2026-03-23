@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { STATUS_META } from './agentRunConstants';
+import { getAgentRunDisplayStatus, isPausedAgentRun, STATUS_META } from './agentRunConstants';
 import { AgentRunArtifactView } from './AgentRunArtifactView';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
 import { formatDistanceToNow, parseISO, differenceInSeconds } from 'date-fns';
@@ -50,9 +50,10 @@ function MetadataItem({ label, value }: { label: string; value?: string | null }
 }
 
 export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprove, showArtifacts = true }: Props) {
-  const meta = STATUS_META[run.status] ?? STATUS_META.queued;
+  const displayStatus = getAgentRunDisplayStatus(run);
+  const meta = STATUS_META[displayStatus] ?? STATUS_META.queued;
   const duration = formatDuration(run.started_at, run.completed_at);
-  const isActive = run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_input' || run.status === 'awaiting_approval';
+  const isActive = run.status === 'queued' || run.status === 'running' || isPausedAgentRun(run);
   const acting = actingOnRun === run.id;
   const queueName = run.runner_pool || run.task_queue || 'automation-default';
   const queuedForSeconds = run.status === 'queued'
@@ -77,7 +78,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Badge variant={meta.variant} className="gap-1 px-1.5 py-0 text-[10px] shrink-0">
-            {STATUS_ICONS[run.status]}
+            {STATUS_ICONS[displayStatus]}
             {meta.label}
           </Badge>
           <span className="text-xs text-muted-foreground">

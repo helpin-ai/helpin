@@ -202,6 +202,7 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 
 	now := time.Now()
 	state.run.Status = model.AgentRunStatusRunning
+	state.run.PauseReason = model.AgentRunPauseReasonNone
 	if state.run.StartedAt == nil {
 		state.run.StartedAt = &now
 	}
@@ -246,6 +247,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 		completedAt := time.Now()
 		state.run.Status = model.AgentRunStatusCompleted
+		state.run.PauseReason = model.AgentRunPauseReasonNone
 		state.run.CompletedAt = &completedAt
 		state.run.ExecutionStage = strPtr("completed")
 		state.run.LastHeartbeatAt = &completedAt
@@ -269,6 +271,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	case "persist_prd":
 		now := time.Now()
 		state.run.Status = model.AgentRunStatusRunning
+		state.run.PauseReason = model.AgentRunPauseReasonNone
 		state.run.ExecutionStage = strPtr("continuing")
 		state.run.LastHeartbeatAt = &now
 		state.run.CompletedAt = nil
@@ -291,6 +294,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	now := time.Now()
 	state.run.Status = "running"
+	state.run.PauseReason = model.AgentRunPauseReasonNone
 	state.run.StartedAt = &now
 	state.run.ExecutionStage = strPtr("starting")
 	state.run.LastHeartbeatAt = &now
@@ -445,7 +449,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	completedAt := time.Now()
 	normalizeApprovalStateAfterExecution(state.run, waitForApproval)
 	if waitForApproval {
-		state.run.Status = "awaiting_approval"
+		state.run.Status = model.AgentRunStatusPaused
+		state.run.PauseReason = model.AgentRunPauseReasonHumanApproval
 		state.run.CompletedAt = nil
 		if approvalRequest != nil && strings.TrimSpace(approvalRequest.Phase) != "" {
 			state.run.ExecutionStage = strPtr(strings.TrimSpace(approvalRequest.Phase))
@@ -453,14 +458,17 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			state.run.ExecutionStage = strPtr("awaiting_approval")
 		}
 	} else if waitForInput {
-		state.run.Status = "awaiting_input"
+		state.run.Status = model.AgentRunStatusPaused
+		state.run.PauseReason = model.AgentRunPauseReasonHumanInput
 		state.run.CompletedAt = nil
 		state.run.ExecutionStage = strPtr("awaiting_input")
 	} else if continueExecution {
 		state.run.Status = model.AgentRunStatusRunning
+		state.run.PauseReason = model.AgentRunPauseReasonNone
 		state.run.CompletedAt = nil
 	} else {
 		state.run.Status = "completed"
+		state.run.PauseReason = model.AgentRunPauseReasonNone
 		state.run.CompletedAt = &completedAt
 		state.run.ExecutionStage = strPtr("completed")
 	}
@@ -1366,6 +1374,7 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 
 	completedAt := time.Now()
 	state.run.Status = model.AgentRunStatusCompleted
+	state.run.PauseReason = model.AgentRunPauseReasonNone
 	state.run.CompletedAt = &completedAt
 	state.run.ExecutionStage = strPtr("completed")
 	state.run.LastHeartbeatAt = &completedAt
@@ -1384,6 +1393,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	if run == nil {
 		return nil, fmt.Errorf("agent run not found")
 	}
+	model.NormalizeAgentRunPauseState(run)
 
 	agent, err := a.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
 	if err != nil {
@@ -3478,6 +3488,7 @@ func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context,
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {
 	now := time.Now()
 	state.run.Status = "failed"
+	state.run.PauseReason = model.AgentRunPauseReasonNone
 	state.run.CompletedAt = &now
 	state.run.ErrorMessage = &errMsg
 	state.run.ExecutionStage = strPtr("failed")
@@ -3516,6 +3527,7 @@ func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, e
 
 	now := time.Now()
 	run.Status = model.AgentRunStatusFailed
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ErrorMessage = strPtr(strings.TrimSpace(errMsg))
 	run.ExecutionStage = strPtr("failed")
@@ -3540,7 +3552,7 @@ func ensureRunNotTerminal(run *model.AgentRun) error {
 		return nil
 	}
 	switch run.Status {
-	case "failed", "completed", "cancelled", "awaiting_approval":
+	case "failed", "completed", "cancelled", "paused":
 		return temporal.NewNonRetryableApplicationError(
 			fmt.Sprintf("agent run %s is already in terminal state %q", run.ID, run.Status),
 			"AgentRunTerminalState",

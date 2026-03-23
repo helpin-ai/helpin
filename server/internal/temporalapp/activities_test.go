@@ -257,14 +257,14 @@ func TestFinalRoundToolMessages(t *testing.T) {
 	messages := []workerpkg.ExecutionMessage{
 		{Role: "user", Content: "Initial prompt"},
 		{Role: "assistant", Content: "Need clarification", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolCall, ToolCallID: "tool-1", ToolName: workerpkg.ToolRequestHumanInput}}},
-		{Role: "tool", Content: `{"status":"awaiting_input"}`, Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolResult, ToolCallID: "tool-1", ToolName: workerpkg.ToolRequestHumanInput, Output: `{"status":"awaiting_input"}`}}},
+		{Role: "tool", Content: `{"status":"paused","pause_reason":"human_input"}`, Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolResult, ToolCallID: "tool-1", ToolName: workerpkg.ToolRequestHumanInput, Output: `{"status":"paused","pause_reason":"human_input"}`}}},
 	}
 
 	results := finalRoundToolMessages(messages)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 trailing tool message, got %#v", results)
 	}
-	if results[0].Role != "tool" || results[0].Content != `{"status":"awaiting_input"}` {
+	if results[0].Role != "tool" || results[0].Content != `{"status":"paused","pause_reason":"human_input"}` {
 		t.Fatalf("unexpected tool message %#v", results[0])
 	}
 }

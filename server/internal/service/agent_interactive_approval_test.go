@@ -42,7 +42,8 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingInput,
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -151,7 +152,8 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingInput,
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -233,7 +235,8 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingInput,
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -326,7 +329,8 @@ func TestSendRunMessageAllowsAwaitingApprovalRuns(t *testing.T) {
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "pending",
-		Status:         model.AgentRunStatusAwaitingApproval,
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -365,6 +369,117 @@ func TestSendRunMessageAllowsAwaitingApprovalRuns(t *testing.T) {
 	}
 }
 
+func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-paused-approval",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	updated, err := svc.ResumeRun(context.Background(), "ws-1", run.ID, "user-1", model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentRequestChanges,
+		Content: "Please tighten the requirements section.",
+	})
+	if err != nil {
+		t.Fatalf("ResumeRun returned error: %v", err)
+	}
+	if updated.Status != model.AgentRunStatusRunning {
+		t.Fatalf("expected run status running, got %q", updated.Status)
+	}
+	if updated.PauseReason != model.AgentRunPauseReasonNone {
+		t.Fatalf("expected pause_reason none after resume, got %q", updated.PauseReason)
+	}
+	if updated.ApprovalState != "rejected" {
+		t.Fatalf("expected approval_state rejected, got %q", updated.ApprovalState)
+	}
+}
+
+func TestGetAgentRunPreservesPausedApprovalState(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-paused-approval-read",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo: agentRepo,
+		runRepo:   runRepo,
+	}
+
+	loaded, err := svc.GetAgentRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("GetAgentRun returned error: %v", err)
+	}
+	if loaded.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected paused status, got %q", loaded.Status)
+	}
+	if loaded.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected human_approval pause_reason, got %q", loaded.PauseReason)
+	}
+}
+
 func TestResumeRunApproveCreatesApprovalMessageAndApprovesRun(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -390,7 +505,8 @@ func TestResumeRunApproveCreatesApprovalMessageAndApprovesRun(t *testing.T) {
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "pending",
-		Status:         model.AgentRunStatusAwaitingApproval,
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -458,7 +574,8 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingInput,
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -578,7 +695,8 @@ func TestApproveRunRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) 
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingApproval,
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -633,7 +751,8 @@ func TestRequestRunChangesRecoversAwaitingApprovalWithStaleApprovalState(t *test
 		RuntimeKind:    "native_sdk",
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
-		Status:         model.AgentRunStatusAwaitingApproval,
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
 		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -719,6 +838,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			parent_run_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL,
+			pause_reason TEXT NOT NULL DEFAULT 'none',
 			triggered_by_user_id TEXT,
 			status TEXT NOT NULL,
 			workflow_id TEXT,

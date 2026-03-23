@@ -668,7 +668,7 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.reconcileStuckRuns(ctx, runs), total, nil
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
 }
 
 // ListWorkspaceRuns returns runs across the entire workspace.
@@ -680,7 +680,7 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.reconcileStuckRuns(ctx, runs), total, nil
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -695,6 +695,7 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	if updated := s.reconcileStuckRun(ctx, run); updated != nil {
 		run = updated
 	}
+	model.NormalizeAgentRunPauseState(run)
 	return run, nil
 }
 
@@ -736,7 +737,7 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if err != nil {
 		return nil, err
 	}
-	return s.reconcileStuckRuns(ctx, runs), nil
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), nil
 }
 
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
@@ -952,14 +953,13 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
-		if run.Status != "awaiting_input" {
-			return nil, fmt.Errorf("only queued, running, paused, or approval-pending runs can be cancelled")
-		}
+	if !model.IsAgentRunActiveStatus(run.Status) {
+		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
 
 	now := time.Now()
 	run.Status = "cancelled"
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ExecutionStage = strPtr("cancelled")
 	if err := s.runRepo.Update(ctx, run); err != nil {
@@ -1020,12 +1020,13 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if err != nil {
 		return nil, nil, err
 	}
-	if run.Status == model.AgentRunStatusAwaitingApproval && run.ApprovalState != "pending" {
+	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonHumanApproval && run.ApprovalState != "pending" {
 		run.ApprovalState = "pending"
 	}
-	if run.Status != model.AgentRunStatusAwaitingInput && run.Status != model.AgentRunStatusAwaitingApproval {
+	if !model.IsAgentRunPausedStatus(run.Status) {
 		return nil, nil, fmt.Errorf("run is not paused for human input")
 	}
+	model.NormalizeAgentRunPauseState(run)
 
 	var (
 		message     *model.AgentRunMessage
@@ -1052,7 +1053,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 			return nil, nil, err
 		}
 		signalIntent := model.AgentRunResumeIntentReply
-		if run.Status == model.AgentRunStatusAwaitingApproval {
+		if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
 			if isExplicitInteractiveApprovalReply(replyText) {
 				run.ApprovalState = "approved"
 				approvalSet = true
@@ -1101,7 +1102,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		if replyText == "" {
 			return nil, nil, fmt.Errorf("content is required")
 		}
-		if run.Status != model.AgentRunStatusAwaitingApproval || run.ApprovalState != "pending" {
+		if run.PauseReason != model.AgentRunPauseReasonHumanApproval || run.ApprovalState != "pending" {
 			return nil, nil, fmt.Errorf("run is not awaiting approval")
 		}
 		message, err = s.createRunMessage(ctx, run, "user", "request_changes", replyText)
@@ -1119,6 +1120,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 
 	now := time.Now()
 	run.Status = model.AgentRunStatusRunning
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.ExecutionStage = strPtr(stage)
 	run.LastHeartbeatAt = &now
 	run.CompletedAt = nil
@@ -1398,8 +1400,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			activeRun = updated
 		}
 	}
-	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running" || activeRun.Status == "awaiting_input" || activeRun.Status == "awaiting_approval") {
+	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if activeRun.AgentID == params.agent.ID {
+			model.NormalizeAgentRunPauseState(activeRun)
 			return activeRun, nil
 		}
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
@@ -1419,6 +1422,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		RuntimeKind:       params.agent.RuntimeKind,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
+		PauseReason:       model.AgentRunPauseReasonNone,
 		TriggeredByUserID: params.actorID,
 		Status:            "queued",
 		TaskQueue:         &taskQueue,
@@ -1450,6 +1454,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		errMsg := err.Error()
 		now := time.Now()
 		run.Status = "failed"
+		run.PauseReason = model.AgentRunPauseReasonNone
 		run.CompletedAt = &now
 		run.ErrorMessage = &errMsg
 		run.ExecutionStage = strPtr("failed_to_start")
@@ -1515,7 +1520,11 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 	if s.wsPublisher == nil {
 		return
 	}
-	data, _ := json.Marshal(map[string]string{"status": run.Status})
+	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
+	data, _ := json.Marshal(map[string]string{
+		"status":       status,
+		"pause_reason": pauseReason,
+	})
 	event := websocket.Event{
 		Action:      "updated",
 		Entity:      "agent_run",
@@ -1654,6 +1663,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 		return health
 	}
 	activeRuns = s.reconcileStuckRuns(ctx, activeRuns)
+	activeRuns = s.normalizeRunCollection(activeRuns)
 
 	queueIndex := make(map[string]int, len(health.Queues))
 	for idx, queue := range health.Queues {
@@ -1662,7 +1672,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 
 	now := time.Now()
 	for _, run := range activeRuns {
-		if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
+		if !model.IsAgentRunActiveStatus(run.Status) {
 			continue
 		}
 		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
@@ -1680,8 +1690,10 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 			queue.QueuedRuns++
 		case "running":
 			queue.RunningRuns++
-		case "awaiting_approval":
-			queue.AwaitingApprovalRuns++
+		case model.AgentRunStatusPaused:
+			if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
+				queue.AwaitingApprovalRuns++
+			}
 		}
 		if run.LastHeartbeatAt != nil && (queue.LatestHeartbeatAt == nil || run.LastHeartbeatAt.After(*queue.LatestHeartbeatAt)) {
 			queue.LatestHeartbeatAt = run.LastHeartbeatAt
@@ -1772,6 +1784,7 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	now := time.Now()
 	errMsg := "run was marked failed after OpenCode finished but finalization did not reach a terminal state"
 	run.Status = "failed"
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed")
@@ -1781,6 +1794,7 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	}
 	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
 	s.runRepo.Notify(ctx, run)
+	model.NormalizeAgentRunPauseState(run)
 	return run
 }
 
@@ -1822,6 +1836,7 @@ func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, no
 		return run
 	}
 	run.Status = "failed"
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed_to_start")
@@ -1862,6 +1877,13 @@ func isStuckPostRunStage(stage *string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.AgentRun {
+	for idx := range runs {
+		model.NormalizeAgentRunPauseState(&runs[idx])
+	}
+	return runs
 }
 
 func validateRuntimeKind(runtimeKind string) error {
