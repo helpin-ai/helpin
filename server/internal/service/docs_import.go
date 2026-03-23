@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/helpin-ai/helpin/server/internal/docsimport"
 	"github.com/helpin-ai/helpin/server/internal/helpscout"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -326,10 +327,17 @@ func (s *DocsImportService) importArticle(
 		}
 	}
 
-	// Convert HTML to Markdown.
-	markdown, err := helpscout.ConvertHTML(html)
+	// Convert HTML to canonical Tiptap JSON.
+	convResult, err := docsimport.ConvertHTML(html)
 	if err != nil {
 		return fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
+	}
+	for _, w := range convResult.Warnings {
+		s.logger.Warn("import conversion warning",
+			"article_id", ref.ID,
+			"warning_type", w.Type,
+			"warning", w.Message,
+		)
 	}
 
 	// Determine collection ID and slug from first category.
@@ -354,9 +362,8 @@ func (s *DocsImportService) importArticle(
 		return fmt.Errorf("create document for article %s: %w", ref.ID, err)
 	}
 
-	// Save content as markdown envelope.
-	envelope := map[string]string{"_markdown_source": markdown}
-	contentJSON, err := json.Marshal(envelope)
+	// Save content as canonical Tiptap JSON.
+	contentJSON, err := json.Marshal(convResult.Doc)
 	if err != nil {
 		return fmt.Errorf("marshal content for article %s: %w", ref.ID, err)
 	}

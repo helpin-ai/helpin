@@ -99,6 +99,20 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 		}
 	}
 
+	// Extract text from htmlBlock attrs.html (strip tags, keep text).
+	if attrsRaw, ok := node["attrs"]; ok {
+		var attrs map[string]json.RawMessage
+		if err := json.Unmarshal(attrsRaw, &attrs); err == nil {
+			if htmlRaw, ok := attrs["html"]; ok {
+				var htmlStr string
+				if err := json.Unmarshal(htmlRaw, &htmlStr); err == nil && htmlStr != "" {
+					sb.WriteString(stripHTMLTags(htmlStr))
+					sb.WriteString(" ")
+				}
+			}
+		}
+	}
+
 	// Recurse into "content" array.
 	if contentRaw, ok := node["content"]; ok {
 		var children []map[string]json.RawMessage
@@ -109,7 +123,7 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 				if nodeType, ok := child["type"]; ok {
 					var t string
 					if err := json.Unmarshal(nodeType, &t); err == nil {
-						if t == "paragraph" || t == "heading" || t == "bulletList" || t == "orderedList" || t == "blockquote" || t == "codeBlock" || t == "listItem" {
+						if t == "paragraph" || t == "heading" || t == "bulletList" || t == "orderedList" || t == "blockquote" || t == "codeBlock" || t == "listItem" || t == "callout" || t == "htmlBlock" {
 							sb.WriteString(" ")
 						}
 					}
@@ -117,6 +131,27 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 			}
 		}
 	}
+}
+
+// stripHTMLTags removes HTML tags and returns plain text content.
+func stripHTMLTags(s string) string {
+	var sb strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			sb.WriteByte(' ')
+			continue
+		}
+		if !inTag {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 func countWords(text string) int {
