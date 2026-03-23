@@ -39,6 +39,10 @@ import { ResizableImageExtension } from '@/components/ui/resizable-image-extensi
 import { SlashMenuExtension } from './SlashMenuExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
+import { VideoEmbedExtension } from './VideoEmbedExtension'
+import { HtmlBlockExtension } from './HtmlBlockExtension'
+import { EmojiPickerPopover } from './EmojiPickerPopover'
+import { InsertVideoDialog } from './InsertVideoDialog'
 import { TableControls } from './TableControls'
 import { BlockGapInserter } from './BlockGapInserter'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
@@ -176,6 +180,14 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
 
     const updatePosition = () => {
       const { from, to, empty } = editor.state.selection
+
+      // Don't show toolbar when an atom node is selected (htmlBlock, videoEmbed, image)
+      // Also hide when cursor is inside a non-text block
+      const nodeAtSel = editor.state.doc.nodeAt(from)
+      if (nodeAtSel?.type.spec.atom || editor.isActive('htmlBlock') || editor.isActive('videoEmbed')) {
+        setPos(null)
+        return
+      }
 
       // Cursor on a link (no selection) — show link-only popover
       // Only trigger when cursor is truly inside the link, not at the boundary
@@ -645,6 +657,10 @@ export function DocsEditor({
   const [sourceMarkdown, setSourceMarkdown] = useState('')
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importText, setImportText] = useState('')
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false)
+  const videoInsertPosRef = useRef<number>(0)
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const emojiInsertPosRef = useRef<number>(0)
 
   const doSave = useCallback(
     async (json: JSONContent) => {
@@ -774,6 +790,8 @@ export function DocsEditor({
       TableCell,
       SlashMenuExtension,
       CalloutExtension,
+      VideoEmbedExtension,
+      HtmlBlockExtension,
       UnderlineExtension,
       Subscript,
       Superscript,
@@ -1134,6 +1152,20 @@ img { max-width: 100%; }
                     };
                     input.click();
                   }}
+                  onVideoInsert={() => {
+                    videoInsertPosRef.current = editor.state.selection.from;
+                    setVideoDialogOpen(true);
+                  }}
+                  onEmojiInsert={() => {
+                    emojiInsertPosRef.current = editor.state.selection.from;
+                    setEmojiPickerOpen(true);
+                  }}
+                />
+                <EmojiPickerPopover
+                  editor={editor}
+                  open={emojiPickerOpen}
+                  onClose={() => setEmojiPickerOpen(false)}
+                  insertPos={emojiInsertPosRef.current}
                 />
                 <TableControls editor={editor} />
                 <BlockGapInserter editor={editor} />
@@ -1143,6 +1175,22 @@ img { max-width: 100%; }
           </div>
         )}
       </div>
+
+      {/* Insert Video dialog */}
+      {editor && (
+        <InsertVideoDialog
+          open={videoDialogOpen}
+          onOpenChange={setVideoDialogOpen}
+          onInsert={(info) => {
+            editor.chain()
+              .focus()
+              .setTextSelection(videoInsertPosRef.current)
+              .setVideoEmbed({ provider: info.provider, sourceUrl: info.sourceUrl, embedUrl: info.embedUrl })
+              .run();
+            scheduleSave(editor.getJSON());
+          }}
+        />
+      )}
 
       {/* Import Markdown dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>

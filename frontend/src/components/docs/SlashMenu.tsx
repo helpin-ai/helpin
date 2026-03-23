@@ -7,11 +7,13 @@ import { slashCommands, type SlashCommand } from './slash-commands';
 interface SlashMenuProps {
   editor: Editor;
   onImageInsert?: () => void;
+  onVideoInsert?: () => void;
+  onEmojiInsert?: () => void;
 }
 
 const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0 };
 
-export function SlashMenu({ editor, onImageInsert }: SlashMenuProps) {
+export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert }: SlashMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<SlashMenuState>({ ...CLOSED });
   const [submenu, setSubmenu] = useState<SlashCommand[] | null>(null);
@@ -83,7 +85,11 @@ export function SlashMenu({ editor, onImageInsert }: SlashMenuProps) {
       // Delete the "/" + query text, then execute the command
       editor.chain().deleteRange({ from: deleteFrom, to: deleteTo }).run();
 
-      if (cmd.title === 'Image' && onImageInsert) {
+      if (cmd.title === 'Emoji' && onEmojiInsert) {
+        onEmojiInsert();
+      } else if (cmd.title === 'Video' && onVideoInsert) {
+        onVideoInsert();
+      } else if (cmd.title === 'Image' && onImageInsert) {
         onImageInsert();
       } else {
         cmd.action(editor);

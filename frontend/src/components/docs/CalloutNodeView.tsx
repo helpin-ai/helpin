@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import type { CalloutVariant } from './CalloutExtension';
 
@@ -23,26 +23,40 @@ export function CalloutNodeView({ node, updateAttributes, editor, getPos }: Node
   const styles = VARIANT_STYLES[variant];
   const editable = editor.isEditable;
   const [focused, setFocused] = useState(false);
+  const nodeViewRef = useRef<HTMLElement>(null);
 
   // Track whether cursor is inside THIS specific callout
   useEffect(() => {
     const update = () => {
-      const pos = getPos();
-      if (pos === undefined) { setFocused(false); return; }
+      const pos = typeof getPos === 'function' ? getPos() : undefined;
+      if (pos === undefined || pos === null) { setFocused(false); return; }
+      try {
       const { from } = editor.state.selection;
       const nodeEnd = pos + node.nodeSize;
       const isFocused = from > pos && from < nodeEnd;
       setFocused(prev => prev === isFocused ? prev : isFocused);
+      } catch { setFocused(false); }
     };
     editor.on('selectionUpdate', update);
-    return () => {
-      editor.off('selectionUpdate', update);
-    };
+    return () => { editor.off('selectionUpdate', update); };
   }, [editor, node.nodeSize, getPos]);
+
+  // Click outside — unfocus (handles clicks in margins outside editor DOM)
+  useEffect(() => {
+    if (!focused) return;
+    const handleClick = (e: MouseEvent) => {
+      if (nodeViewRef.current && !nodeViewRef.current.contains(e.target as Node)) {
+        setFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [focused]);
 
   return (
     <NodeViewWrapper>
       <aside
+        ref={nodeViewRef}
         className={`relative my-3 rounded-md border-l-4 px-4 py-3 transition-shadow ${styles.bg} ${styles.border} ${
           focused ? 'ring-2 ring-primary/40' : ''
         }`}
