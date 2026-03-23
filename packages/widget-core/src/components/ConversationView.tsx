@@ -78,25 +78,27 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     return null;
   }, [messages]);
 
+  const aiEnabled = config.features?.aiEnabled;
+  const introRole = aiEnabled ? 'ai' as const : 'agent' as const;
+  const introName = aiEnabled ? 'Helpin AI' : workspaceName;
+  const introAvatar = aiEnabled ? undefined : (logoUrl || undefined);
+
+  const introMessage: Message = {
+    id: '__intro__',
+    conversationId: '__intro__',
+    role: introRole,
+    content: welcomeMessage,
+    senderName: introName,
+    senderAvatar: introAvatar,
+    isInternal: false,
+    createdAt: introCreatedAt,
+  };
+
   const displayMessages = hasTeamReply || messages.length === 0
     ? messages.length === 0
-      ? [{
-          id: '__intro__',
-          conversationId: '__intro__',
-          role: 'agent' as const,
-          content: welcomeMessage,
-          isInternal: false,
-          createdAt: introCreatedAt,
-        }]
+      ? [introMessage]
       : messages
-    : [{
-        id: '__intro__',
-        conversationId: '__intro__',
-        role: 'agent' as const,
-        content: welcomeMessage,
-        isInternal: false,
-        createdAt: introCreatedAt,
-      }, ...messages];
+    : [introMessage, ...messages];
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     if (!onUploadAttachment) return;

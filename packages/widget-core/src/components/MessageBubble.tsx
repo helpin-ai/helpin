@@ -20,12 +20,9 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AttachmentsBlock({ attachments, onImageClick }: { attachments: Attachment[]; onImageClick?: (src: string, alt: string) => void }) {
+function ImageAttachments({ attachments, onImageClick }: { attachments: Attachment[]; onImageClick?: (src: string, alt: string) => void }) {
   const images = attachments.filter(a => a.url && isImageType(a.fileType));
-  const files = attachments.filter(a => a.url && !isImageType(a.fileType));
-
-  if (images.length === 0 && files.length === 0) return null;
-
+  if (images.length === 0) return null;
   return (
     <div className="helpin-message-attachments">
       {images.map((att, i) => (
@@ -38,6 +35,15 @@ function AttachmentsBlock({ attachments, onImageClick }: { attachments: Attachme
           <img src={att.url} alt={att.fileName} loading="lazy" />
         </button>
       ))}
+    </div>
+  );
+}
+
+function FileAttachments({ attachments }: { attachments: Attachment[] }) {
+  const files = attachments.filter(a => a.url && !isImageType(a.fileType));
+  if (files.length === 0) return null;
+  return (
+    <div className="helpin-message-attachments">
       {files.map((att, i) => (
         <a
           key={att.id || i}
@@ -91,6 +97,11 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     .filter(Boolean)
     .join(' ');
 
+  const hasTextContent = message.content.trim().length > 0;
+  const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
+  const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
+  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || (message.sources && message.sources.length > 0) || message.aiConfidence !== undefined;
+
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
   const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
@@ -122,53 +133,64 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
           {/* Bubble — indented to align with name, timestamp on hover */}
           <div className="helpin-message-agent-bubble-wrap">
+            {showBubble && (
+              <div className={bubbleClass} data-tooltip={tooltipText}>
+                <div
+                  className="helpin-message-content"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+                />
+
+                {message.viaChannel === 'email' && (
+                  <div className="helpin-message-channel">Via email</div>
+                )}
+
+                {message.sources && message.sources.length > 0 && (
+                  <div className="helpin-message-sources">
+                    {message.sources.map((source, idx) => (
+                      <div key={idx} className="helpin-source-item">
+                        {source.title}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {message.aiConfidence !== undefined && (
+                  <div className="helpin-message-confidence">
+                    Confidence: {Math.round(message.aiConfidence * 100)}%
+                  </div>
+                )}
+
+                {message.attachments && message.attachments.length > 0 && (
+                  <FileAttachments attachments={message.attachments} />
+                )}
+              </div>
+            )}
+            {hasImages && message.attachments && (
+              <ImageAttachments attachments={message.attachments} onImageClick={onImageClick} />
+            )}
+          </div>
+        </>
+      ) : (
+        /* Customer bubble — right-aligned, no avatar */
+        <>
+          {showBubble && (
             <div className={bubbleClass} data-tooltip={tooltipText}>
               <div
                 className="helpin-message-content"
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
               />
-
               {message.viaChannel === 'email' && (
                 <div className="helpin-message-channel">Via email</div>
               )}
-
-              {message.sources && message.sources.length > 0 && (
-                <div className="helpin-message-sources">
-                  {message.sources.map((source, idx) => (
-                    <div key={idx} className="helpin-source-item">
-                      {source.title}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* TODO: Replace with source-based display ("Based on N help articles") */}
-              {message.aiConfidence !== undefined && (
-                <div className="helpin-message-confidence">
-                  Confidence: {Math.round(message.aiConfidence * 100)}%
-                </div>
-              )}
-
               {message.attachments && message.attachments.length > 0 && (
-                <AttachmentsBlock attachments={message.attachments} onImageClick={onImageClick} />
+                <FileAttachments attachments={message.attachments} />
               )}
             </div>
-          </div>
+          )}
+          {hasImages && message.attachments && (
+            <ImageAttachments attachments={message.attachments} onImageClick={onImageClick} />
+          )}
         </>
-      ) : (
-        /* Customer bubble — right-aligned, no avatar */
-        <div className={bubbleClass} data-tooltip={tooltipText}>
-          <div
-            className="helpin-message-content"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-          />
-          {message.viaChannel === 'email' && (
-            <div className="helpin-message-channel">Via email</div>
-          )}
-          {message.attachments && message.attachments.length > 0 && (
-            <AttachmentsBlock attachments={message.attachments} onImageClick={onImageClick} />
-          )}
-        </div>
       )}
     </div>
   );

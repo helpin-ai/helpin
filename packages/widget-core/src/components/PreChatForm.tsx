@@ -17,8 +17,6 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   const [step, setStep] = useState<'email' | 'phone' | 'done'>('email');
   const formRef = useRef<HTMLDivElement>(null);
   const brandColor = config.branding?.primaryColor || '#6366f1';
-  const workspaceName = config.workspaceName || 'Support';
-  const logoUrl = config.branding?.logoUrl;
 
   useEffect(() => {
     if (typeof formRef.current?.scrollIntoView === 'function') {
@@ -50,16 +48,6 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   return (
     <div className="helpin-inline-prechat" ref={formRef}>
       <div className="helpin-message-row helpin-message-row--agent">
-        <div className="helpin-message-agent-header">
-          {logoUrl ? (
-            <img src={logoUrl} alt={workspaceName} className="helpin-message-avatar" />
-          ) : (
-            <span className="helpin-message-avatar-placeholder">
-              {workspaceName.charAt(0).toUpperCase()}
-            </span>
-          )}
-          <span className="helpin-message-agent-name">{workspaceName}</span>
-        </div>
         <div className="helpin-message-agent-bubble-wrap">
           <div className="helpin-message-bubble helpin-message--agent">
             {step === 'email' && (

@@ -1234,9 +1234,9 @@
 
 /* Message Bubble */
 .helpin-message-bubble {
+  padding: 10px 14px;
   border-radius: 18px;
   overflow-wrap: anywhere;
-  overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
   width: fit-content;
@@ -1262,21 +1262,8 @@
 }
 
 .helpin-message-content {
-  padding: 10px 14px;
   word-wrap: break-word;
   overflow-wrap: break-word;
-}
-
-/* Remove bottom padding when attachments follow content */
-.helpin-message-content:has(+ .helpin-message-channel),
-.helpin-message-content:has(+ .helpin-message-sources),
-.helpin-message-content:has(+ .helpin-message-attachments) {
-  padding-bottom: 4px;
-}
-
-/* When bubble has no text content, hide the empty content div */
-.helpin-message-content:empty {
-  display: none;
 }
 
 /* Markdown styles for chat messages */
@@ -1393,7 +1380,7 @@
 
 .helpin-message-sources {
   margin-top: 8px;
-  padding: 8px 14px 0;
+  padding-top: 8px;
   border-top: 1px solid rgba(0, 0, 0, 0.1);
   font-size: 12px;
 }
@@ -1407,13 +1394,12 @@
   font-size: 11px;
   opacity: 0.7;
   margin-top: 4px;
-  padding: 0 14px 6px;
 }
 
 .helpin-message-channel {
   display: inline-flex;
   align-items: center;
-  margin: 8px 14px 0;
+  margin-top: 8px;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(37, 99, 235, 0.12);
@@ -1701,6 +1687,13 @@
   border: 1px solid var(--helpin-border);
   border-radius: 10px;
   background: var(--helpin-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.helpin-inline-prechat-form:focus-within {
+  border-color: var(--helpin-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0 0 2px color-mix(in srgb, var(--helpin-primary) 20%, transparent);
 }
 
 .helpin-inline-prechat-input-wrap {
@@ -1744,7 +1737,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.helpin-inline-prechat-btn:not(:disabled):active {
+  transform: scale(0.95);
 }
 
 .helpin-inline-prechat-btn:disabled {
@@ -2332,29 +2330,32 @@
 
 /* ── File Attachment: Message Rendering ─────────────────────────────── */
 
-/* Attachments container: edge-to-edge inside the bubble (Crisp-style) */
+/* Attachments container: rendered outside the bubble */
 .helpin-message-attachments {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .helpin-attachment-image {
   display: block;
-  width: 100%;
-  cursor: pointer;
+  max-width: 240px;
+  cursor: zoom-in;
   border: none;
   padding: 0;
   background: none;
-  border-radius: 0;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .helpin-attachment-image img {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 300px;
+  max-height: 240px;
   object-fit: cover;
+  border-radius: 12px;
   transition: opacity 0.2s;
 }
 
@@ -2362,12 +2363,12 @@
   opacity: 0.85;
 }
 
-/* File attachments get side padding to stay within the bubble visually */
 .helpin-attachment-file {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.04);
   text-decoration: none;
   color: inherit;
