@@ -38,7 +38,6 @@ type AutomationRuleEngine struct {
 	deliveryRepo    *repository.StoryDeliveryTargetRepository
 	agentService    *AgentService
 	storyService    *PMStoryService
-	flowService     *FlowService
 	gitService      *GitService
 	commandService  *InternalCommandService
 	notificationSvc *NotificationService
@@ -93,12 +92,6 @@ func (e *AutomationRuleEngine) SetHealthObserver(obs AutomationHealthObserver) *
 // SetCommandService sets the internal command service for run_command actions.
 func (e *AutomationRuleEngine) SetCommandService(svc *InternalCommandService) *AutomationRuleEngine {
 	e.commandService = svc
-	return e
-}
-
-// SetFlowService sets the flow service for start_flow actions.
-func (e *AutomationRuleEngine) SetFlowService(svc *FlowService) *AutomationRuleEngine {
-	e.flowService = svc
 	return e
 }
 
@@ -269,7 +262,14 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *mo
 func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, execCtx *model.RuleExecutionContext) error {
 	switch rule.ActionType {
 	case model.ActionRunAgent:
-		return fmt.Errorf("run_agent action is deprecated — convert to start_flow with template pm.agent_story_run")
+		return fmt.Errorf("run_agent is no longer supported")
+
+	case model.ActionStartAgentRun:
+		var cfg model.ActionConfigRunAgent
+		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+			return fmt.Errorf("parse start_agent_run config: %w", err)
+		}
+		return e.executeStartAgentRun(ctx, rule, event, story, cfg)
 
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
@@ -293,19 +293,66 @@ func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.Au
 		return e.executeRunCommand(ctx, rule, event, story, cfg)
 
 	case model.ActionStartFlow:
-		var cfg model.ActionConfigStartFlow
-		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
-			return fmt.Errorf("parse start_flow config: %w", err)
-		}
-		return e.executeStartFlow(ctx, rule, event, story, cfg)
+		return fmt.Errorf("start_flow is no longer supported")
 
 	default:
 		return fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
 }
 
-// executeRunAgent was removed — all run_agent rules were migrated to start_flow
-// in migration 059. Any remaining run_agent rules will error at runtime.
+func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
+	if e.agentService == nil {
+		return fmt.Errorf("agent service not configured")
+	}
+
+	targetType := event.TargetType
+	targetID := event.TargetID
+	if targetType == "" && story != nil {
+		targetType = "story"
+		targetID = story.ID
+	}
+	if targetType != "story" || targetID == "" {
+		return fmt.Errorf("start_agent_run currently requires a story target")
+	}
+	if story == nil {
+		var err error
+		story, err = e.storyRepo.GetRawByID(ctx, targetID)
+		if err != nil {
+			return fmt.Errorf("load story for start_agent_run: %w", err)
+		}
+		if story == nil {
+			return fmt.Errorf("story %s not found", targetID)
+		}
+	}
+
+	if cfg.AgentID != "" && (story.AssignedAgentID == nil || *story.AssignedAgentID != cfg.AgentID) {
+		story.AssignedAgentID = &cfg.AgentID
+		if err := e.storyRepo.Update(ctx, story); err != nil {
+			return fmt.Errorf("assign agent to story: %w", err)
+		}
+	}
+
+	if _, err := e.agentService.RunAgent(ctx, event.WorkspaceID, story.ID, "system"); err != nil {
+		return fmt.Errorf("start agent run: %w", err)
+	}
+
+	if e.activitySvc != nil {
+		_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", story.ID, nil,
+			fmt.Sprintf("automation rule '%s' started an agent run", rule.Name),
+			nil, nil, nil, nil)
+	}
+
+	if e.wsPublisher != nil {
+		e.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "story",
+			EntityID:    story.ID,
+			WorkspaceID: event.WorkspaceID,
+		})
+	}
+
+	return nil
+}
 
 func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
 	if e.storyService == nil {
@@ -468,99 +515,6 @@ func (e *AutomationRuleEngine) mergeEpicIDIntoInput(input json.RawMessage, epicI
 		return input
 	}
 	return merged
-}
-
-func (e *AutomationRuleEngine) executeStartFlow(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigStartFlow) error {
-	if e.flowService == nil {
-		return fmt.Errorf("flow service not configured")
-	}
-	if cfg.TemplateID == "" {
-		return fmt.Errorf("template_id is required in start_flow config")
-	}
-
-	// Resolve target type and ID from the event or story context.
-	targetType := event.TargetType
-	targetID := event.TargetID
-	if targetType == "" && story != nil {
-		targetType = "story"
-		targetID = story.ID
-	}
-	if targetType == "" || targetID == "" {
-		return fmt.Errorf("start_flow requires a target (story or event with target_type/target_id)")
-	}
-
-	// Build flow input from the event context.
-	flowInput := map[string]any{}
-	if cfg.AgentID != "" {
-		flowInput["agent_id"] = cfg.AgentID
-	}
-	if story != nil && story.AssignedAgentID != nil && *story.AssignedAgentID != "" {
-		// Use story's assigned agent if no explicit agent in config.
-		if _, ok := flowInput["agent_id"]; !ok {
-			flowInput["agent_id"] = *story.AssignedAgentID
-		}
-	}
-	if cfg.FlowInput != nil {
-		// Merge additional input from config.
-		var extra map[string]any
-		if err := json.Unmarshal(cfg.FlowInput, &extra); err == nil {
-			for k, v := range extra {
-				flowInput[k] = v
-			}
-		}
-	}
-
-	// Assign agent to story if an agent_id was resolved (matches run_agent behavior).
-	if story != nil {
-		if agentID, ok := flowInput["agent_id"].(string); ok && agentID != "" {
-			story.AssignedAgentID = &agentID
-			if err := e.storyRepo.Update(ctx, story); err != nil {
-				return fmt.Errorf("assign agent to story: %w", err)
-			}
-		}
-
-		// Ensure delivery target exists so the flow's agent_task can run
-		// (matches run_agent behavior).
-		if e.gitService != nil {
-			if _, err := e.gitService.GetStoryDeliveryTarget(ctx, event.WorkspaceID, event.StoryID); err != nil {
-				e.logger.WarnContext(ctx, "failed to resolve delivery target for start_flow",
-					"error", err,
-					"rule_id", rule.ID,
-					"story_id", event.StoryID,
-				)
-			}
-		}
-	}
-
-	inputJSON, _ := json.Marshal(flowInput)
-
-	req := model.StartFlowRunRequest{
-		TemplateID:  cfg.TemplateID,
-		TargetType:  targetType,
-		TargetID:    targetID,
-		Input:       inputJSON,
-		TriggerType: event.TriggerType,
-	}
-
-	_, err := e.flowService.StartRun(ctx, event.WorkspaceID, "system", req)
-	if err != nil {
-		return fmt.Errorf("start flow %q: %w", cfg.TemplateID, err)
-	}
-
-	if story != nil {
-		_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", event.StoryID, nil,
-			fmt.Sprintf("automation rule '%s' started flow '%s'", rule.Name, cfg.TemplateID),
-			nil, nil, nil, nil)
-	}
-
-	e.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "story",
-		EntityID:    targetID,
-		WorkspaceID: event.WorkspaceID,
-	})
-
-	return nil
 }
 
 // EvaluateCronRules loads and evaluates all enabled cron rules across workspaces.
@@ -760,7 +714,15 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 
 	switch actionType {
 	case model.ActionRunAgent:
-		return fmt.Errorf("run_agent is deprecated — use start_flow with template pm.agent_story_run instead")
+		return fmt.Errorf("action_type %s is no longer supported", actionType)
+	case model.ActionStartAgentRun:
+		var cfg model.ActionConfigRunAgent
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if strings.TrimSpace(cfg.AgentID) == "" {
+			return fmt.Errorf("agent_id is required in action_config for %s", actionType)
+		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
 		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
@@ -786,13 +748,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 			return fmt.Errorf("command_name is required in action_config for %s", actionType)
 		}
 	case model.ActionStartFlow:
-		var cfg model.ActionConfigStartFlow
-		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
-			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
-		}
-		if cfg.TemplateID == "" {
-			return fmt.Errorf("template_id is required in action_config for %s", actionType)
-		}
+		return fmt.Errorf("action_type %s is no longer supported", actionType)
 	default:
 		return fmt.Errorf("unsupported action_type: %s", actionType)
 	}

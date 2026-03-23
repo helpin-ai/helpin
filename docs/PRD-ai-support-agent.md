@@ -5,6 +5,12 @@
 **Author:** TeamPulse
 **Feature:** AI-powered autonomous support agent with knowledge base RAG, NATS event streaming, and human handoff
 
+Implementation note as of March 23, 2026:
+
+- support agents are now modeled as preset-backed agents, typically `support_agent`
+- execution mode and runtime matter more than any old agent taxonomy
+- any historical references below to a dedicated "support class" should be read as "a support-capable agent targeting `support_conversation`"
+
 ---
 
 ## 1. Problem Statement
@@ -25,7 +31,7 @@ These answers were resolved during design review and are canonical for implement
 | What is a "human handoff"? | Assign conversation to a human user (via `OpenedByUserID`), following the configured `handoff_behavior`: leave unassigned, assign to a team queue, or round-robin to online agents. |
 | Should AI answer outside business hours? | Yes — AI responds regardless of business hours schedule. The offline message still shows, but AI answers alongside it. |
 | Which docs are eligible for RAG? | Only **published** documents (`status = 'published'`). Draft and archived docs are excluded. |
-| Which sender_type for AI messages? | **Normalize to `"agent"`** (not `"ai"`). The existing codebase uses `sender_type: "agent"` with `sender_agent_id` set. Adding a separate `"ai"` type would fork rendering paths in widget, SDK, and dashboard. AI messages are distinguished by having a non-nil `sender_agent_id` pointing to an Agent with `agent_class: "support"`. |
+| Which sender_type for AI messages? | **Normalize to `"agent"`** (not `"ai"`). The existing codebase uses `sender_type: "agent"` with `sender_agent_id` set. Adding a separate `"ai"` type would fork rendering paths in widget, SDK, and dashboard. AI messages are distinguished by having a non-nil `sender_agent_id` pointing to a support-capable agent record. |
 | Response mode options in v1? | **`ai_first` and `off` only**. `ai_assist` is deferred to Phase 3 — not exposed in UI to avoid dead config. |
 
 ---
@@ -287,7 +293,7 @@ AI messages use `sender_type: "agent"` (same as existing agent messages) with `s
 
 | Model | Why |
 |-------|-----|
-| `Agent` (agent_class: "support") | Already has the support class constant |
+| `Agent` (support-capable preset/targeting) | Already provides the support executor identity |
 | `SupportConversation` | `OpenedByUserID` tracks human assignment; `AssignedAgentID` is the AI agent |
 | `SupportMessage` | `sender_type: "agent"`, `sender_agent_id`, `metadata` JSONB all exist |
 | `AgentHandoff` | Tracks AI→human escalations with context |
@@ -334,7 +340,7 @@ PUT  /support/settings
      Body: { ..., "ai_agent_id": "uuid", "ai_response_mode": "ai_first", "ai_max_followups": 3 }
      → Extended with new AI settings fields
      → Validates ai_response_mode is "ai_first" or "off" (not "ai_assist" in v1)
-     → Validates ai_agent_id references an agent with agent_class: "support" in the workspace
+     → Validates ai_agent_id references a support-capable agent in the workspace
 ```
 
 ---
@@ -686,7 +692,7 @@ Add to the "AI Auto-Reply" card:
 
 | Control | Type | Description |
 |---------|------|-------------|
-| AI Agent | Select dropdown | Choose from agents with `agent_class: "support"` |
+| AI Agent | Select dropdown | Choose from agents that can target `support_conversation` |
 | Response Mode | Radio group | "AI First" / "Off" (no "AI Assist" in v1) |
 | Max Follow-ups | Number input (1–10) | Default 3 |
 | Knowledge Sources | Read-only display | Shows spaces linked to selected agent, "Edit" link opens agent config |
@@ -697,7 +703,7 @@ Knowledge sources are managed on the agent, not duplicated in settings. The Chat
 
 **File:** Agent edit modal (agents page)
 
-When editing an agent with `agent_class: "support"`:
+When editing a support-capable agent:
 - "Knowledge Sources" section appears
 - Multi-select from available docs spaces (internal + external)
 - Each space shows: name, type badge (Internal/Public), published doc count
@@ -866,7 +872,7 @@ useUpdateAgentKnowledgeSources()
 |-----------|------|-------|
 | Full-text search | `repository/docs_search.go` | `Search()` with space ID filtering for RAG |
 | LLM provider | `internal/llm/provider.go` | `ChatCompletion()` via `ClaudeProvider` |
-| Agent model | `model/agent.go` | `AgentClassSupport` constant already defined |
+| Agent model | `model/agent.go` | preset-backed `support_agent` configuration |
 | Message sender_type | `model/support_inbox.go:65` | Use `"agent"` (not `"ai"`) with `sender_agent_id` |
 | Metadata JSONB | `model/support_inbox.go:73` | Stores AI sources + confidence |
 | WebSocket publisher | `internal/websocket/publisher.go` | Broadcast AI responses |

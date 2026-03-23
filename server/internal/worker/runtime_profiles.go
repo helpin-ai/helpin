@@ -9,7 +9,7 @@ import (
 
 var runtimeProfiles = []model.RuntimeProfile{
 	{
-		Name:               model.AgentClassEngineer,
+		Name:               model.AgentPresetCodeBuilder,
 		RuntimeKind:        "opencode",
 		Description:        "Story-only code implementation with repository, git, and validation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "write_file", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
@@ -19,17 +19,17 @@ var runtimeProfiles = []model.RuntimeProfile{
 		RequiresRepo:       true,
 	},
 	{
-		Name:               model.AgentClassProductPlanner,
+		Name:               model.AgentPresetEpicPlanner,
 		RuntimeKind:        "native_sdk",
-		Description:        "Cross-module product planning and review with repository-aware read access, docs/CRM read tools, optional web research, and no default mutation tools.",
-		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist", "list_documents", "read_document", "search_documents", "list_deals", "list_contacts", "list_buyer_signals"},
+		Description:        "Cross-module product planning and review with repository-aware read access, docs tooling, explicit PM planner mutations, and optional web research.",
+		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist", "list_workspace_teams", "list_documents", "read_document", "search_documents", "ensure_epic_spec_doc", "write_document_content", "link_document_to_object", "approve_epic_spec", "create_story_batch", "assign_story_agent", "set_story_dependencies", "list_deals", "list_contacts", "list_buyer_signals"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
 		AllowedTargetTypes: []string{"epic", "story", "crm_deal"},
-		ApprovalRequired:   true,
+		ApprovalRequired:   false,
 		RequiresRepo:       false,
 	},
 	{
-		Name:               model.AgentClassReviewer,
+		Name:               model.AgentPresetReviewAgent,
 		RuntimeKind:        "opencode",
 		Description:        "Story-only validation and test execution with no repository mutation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "add_story_comment", "list_story_checklist"},
@@ -39,7 +39,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		RequiresRepo:       true,
 	},
 	{
-		Name:               model.AgentClassSupport,
+		Name:               model.AgentPresetSupportAgent,
 		RuntimeKind:        "native_sdk",
 		Description:        "Support conversation triage and draft replies with human approval before customer-visible sends.",
 		AllowedTools:       []string{"list_conversation_messages", "draft_support_reply", "update_conversation_status"},
@@ -57,9 +57,9 @@ func ListRuntimeProfiles() []model.RuntimeProfile {
 	return out
 }
 
-// GetRuntimeProfile returns the named runtime profile, defaulting to engineer.
+// GetRuntimeProfile returns the named runtime profile, defaulting to code_builder.
 func GetRuntimeProfile(name string) model.RuntimeProfile {
-	name = NormalizeCapabilityProfile(name)
+	name = normalizeRuntimeProfileName(name)
 	for _, profile := range runtimeProfiles {
 		if profile.Name == name {
 			return profile
@@ -68,37 +68,37 @@ func GetRuntimeProfile(name string) model.RuntimeProfile {
 	return runtimeProfiles[0]
 }
 
-func NormalizeCapabilityProfile(name string) string {
+func normalizeRuntimeProfileName(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "", "engineer":
-		return model.AgentClassEngineer
-	case "planner", "orchestrator", model.AgentClassProductPlanner:
-		return model.AgentClassProductPlanner
-	case "reviewer", "reviewer_tester":
-		return model.AgentClassReviewer
-	case "support":
-		return model.AgentClassSupport
+	case "", "engineer", "coder", model.AgentPresetCodeBuilder:
+		return model.AgentPresetCodeBuilder
+	case "planner", "orchestrator", "product_planner", model.AgentPresetEpicPlanner, model.AgentPresetStoryPlanner, model.AgentPresetCRMOperator:
+		return model.AgentPresetEpicPlanner
+	case "reviewer", "reviewer_tester", model.AgentPresetReviewAgent:
+		return model.AgentPresetReviewAgent
+	case "support", model.AgentPresetSupportAgent:
+		return model.AgentPresetSupportAgent
 	default:
 		return strings.TrimSpace(name)
 	}
 }
 
-func allowedToolSet(profile model.RuntimeProfile) map[string]bool {
-	set := make(map[string]bool, len(profile.AllowedTools))
-	for _, toolName := range profile.AllowedTools {
+func allowedToolSet(resolved ResolvedProfile) map[string]bool {
+	set := make(map[string]bool, len(resolved.Tools))
+	for _, toolName := range resolved.Tools {
 		set[toolName] = true
 	}
 	return set
 }
 
-func allowedCommandsFor(profile model.RuntimeProfile, config *WorkflowConfig) []string {
+func allowedCommandsFor(resolved ResolvedProfile, config *WorkflowConfig) []string {
 	if config == nil || len(config.AllowedCommands) == 0 {
-		return slices.Clone(profile.AllowedCommands)
+		return slices.Clone(resolved.Commands)
 	}
 
 	allowed := make([]string, 0, len(config.AllowedCommands))
 	for _, command := range config.AllowedCommands {
-		if slices.Contains(profile.AllowedCommands, command) {
+		if slices.Contains(resolved.Commands, command) {
 			allowed = append(allowed, command)
 		}
 	}

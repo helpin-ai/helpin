@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 
@@ -53,6 +54,13 @@ type RunnerHealth struct {
 	GeneratedAt        time.Time           `json:"generated_at"`
 	Queues             []RunnerQueueHealth `json:"queues"`
 	ActiveRuns         []RunnerActiveRun   `json:"active_runs"`
+}
+
+// WorkflowExecutionState summarizes a Temporal workflow execution.
+type WorkflowExecutionState struct {
+	Exists bool
+	Open   bool
+	Status enumspb.WorkflowExecutionStatus
 }
 
 // NewRunEngine creates a Temporal-backed run engine.
@@ -106,6 +114,45 @@ func (e *RunEngine) SignalHandoff(ctx context.Context, workflowID, workflowRunID
 	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalHandoff, payload)
 }
 
+// SignalMessage resumes an awaiting-input workflow with a new user message.
+func (e *RunEngine) SignalMessage(ctx context.Context, workflowID, workflowRunID, content string) error {
+	if e == nil || e.client == nil || workflowID == "" {
+		return nil
+	}
+	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalMessage, RunMessageSignal{
+		Content: content,
+	})
+}
+
+// DescribeRun returns the Temporal execution state for a workflow-backed run.
+func (e *RunEngine) DescribeRun(ctx context.Context, workflowID, workflowRunID string) (WorkflowExecutionState, error) {
+	if e == nil || e.client == nil || workflowID == "" {
+		return WorkflowExecutionState{}, nil
+	}
+	resp, err := e.client.DescribeWorkflowExecution(ctx, workflowID, workflowRunID)
+	if err != nil {
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			return WorkflowExecutionState{}, nil
+		}
+		return WorkflowExecutionState{}, err
+	}
+
+	status := enumspb.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED
+	if resp != nil && resp.WorkflowExecutionInfo != nil {
+		status = resp.WorkflowExecutionInfo.Status
+	}
+	if status == enumspb.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED {
+		status = enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING
+	}
+
+	return WorkflowExecutionState{
+		Exists: true,
+		Open:   status == enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
+		Status: status,
+	}, nil
+}
+
 // Health returns the configured shared-runner metadata.
 func (e *RunEngine) Health() RunnerHealth {
 	queues := SharedQueues()
@@ -155,88 +202,6 @@ func (e *RunEngine) StopSchedule(ctx context.Context, agentID string) error {
 	workflowID := WorkflowIDForSchedule(agentID)
 	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "schedule removed")
 	return nil
-}
-
-// StartPlanningSession starts a Temporal workflow for an interactive planning session.
-func (e *RunEngine) StartPlanningSession(ctx context.Context, sessionID string) error {
-	if e == nil || e.client == nil {
-		return fmt.Errorf("temporal run engine is not configured")
-	}
-	workflowID := WorkflowIDForPlanningSession(sessionID)
-	options := tclient.StartWorkflowOptions{
-		ID:        workflowID,
-		TaskQueue: QueuePlanningInteractive,
-	}
-	_, err := e.client.ExecuteWorkflow(ctx, options, PlanningSessionWorkflow, PlanningSessionWorkflowInput{
-		SessionID: sessionID,
-	})
-	if err != nil {
-		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-		if errors.As(err, &alreadyStarted) {
-			return nil
-		}
-		return fmt.Errorf("start planning session workflow: %w", err)
-	}
-	return nil
-}
-
-// SignalPlanningSession sends a signal (message, finalize, abandon) to a running planning session workflow.
-func (e *RunEngine) SignalPlanningSession(ctx context.Context, sessionID string, signal PlanningSessionSignal) error {
-	if e == nil || e.client == nil {
-		return fmt.Errorf("temporal run engine is not configured")
-	}
-	workflowID := WorkflowIDForPlanningSession(sessionID)
-	return e.client.SignalWorkflow(ctx, workflowID, "", WorkflowSignalPlanningSession, signal)
-}
-
-// CancelPlanningSession cancels a planning session workflow.
-func (e *RunEngine) CancelPlanningSession(ctx context.Context, sessionID string) error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	workflowID := WorkflowIDForPlanningSession(sessionID)
-	return e.client.CancelWorkflow(ctx, workflowID, "")
-}
-
-// StartFlowRun starts the Temporal workflow for a durable flow run.
-func (e *RunEngine) StartFlowRun(ctx context.Context, flowRunID, actorID string) error {
-	if e == nil || e.client == nil {
-		return fmt.Errorf("temporal run engine is not configured")
-	}
-	options := tclient.StartWorkflowOptions{
-		ID:                       WorkflowIDForFlowRun(flowRunID),
-		TaskQueue:                QueueFlowOrchestrator,
-		WorkflowExecutionTimeout: FlowMaxLifetime,
-	}
-	_, err := e.client.ExecuteWorkflow(ctx, options, FlowRunWorkflow, FlowRunWorkflowInput{
-		FlowRunID: flowRunID,
-		ActorID:   actorID,
-	})
-	if err != nil {
-		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-		if errors.As(err, &alreadyStarted) {
-			return nil
-		}
-		return fmt.Errorf("start flow workflow: %w", err)
-	}
-	return nil
-}
-
-// TerminateFlowRun forcefully terminates a flow run workflow.
-func (e *RunEngine) TerminateFlowRun(ctx context.Context, flowRunID, reason string) error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	workflowID := WorkflowIDForFlowRun(flowRunID)
-	return e.client.TerminateWorkflow(ctx, workflowID, "", reason)
-}
-
-// SignalFlowRun notifies an in-flight flow workflow of a user action.
-func (e *RunEngine) SignalFlowRun(ctx context.Context, flowRunID string, signal FlowRunSignal) error {
-	if e == nil || e.client == nil {
-		return fmt.Errorf("temporal run engine is not configured")
-	}
-	return e.client.SignalWorkflow(ctx, WorkflowIDForFlowRun(flowRunID), "", WorkflowSignalFlowRun, signal)
 }
 
 // WorkflowIDForRun returns the temporal workflow ID for a run.

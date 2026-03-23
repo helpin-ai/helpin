@@ -10,57 +10,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
-func normalizeAgentClass(agentClass, capabilityProfile, role string) string {
-	raw := strings.TrimSpace(agentClass)
-	if raw == "" {
-		raw = strings.TrimSpace(capabilityProfile)
-	}
-	if raw == "" {
-		raw = defaultCapabilityProfileForRole(role)
-	}
-	raw = worker.NormalizeCapabilityProfile(raw)
-
-	switch raw {
-	case model.AgentClassProductPlanner,
-		model.AgentClassEngineer,
-		model.AgentClassReviewer,
-		model.AgentClassSupport:
-		return raw
-	default:
-		return raw
-	}
-}
-
-func capabilityProfileForAgentClass(agentClass string) string {
-	switch normalizeAgentClass(agentClass, "", "") {
-	case model.AgentClassProductPlanner:
-		return model.AgentClassProductPlanner
-	case model.AgentClassReviewer:
-		return model.AgentClassReviewer
-	case model.AgentClassSupport:
-		return model.AgentClassSupport
-	default:
-		return model.AgentClassEngineer
-	}
-}
-
-func defaultRoleForAgentClass(agentClass string) string {
-	switch normalizeAgentClass(agentClass, "", "") {
-	case model.AgentClassProductPlanner:
-		return "Product Planner"
-	case model.AgentClassReviewer:
-		return "Reviewer"
-	case model.AgentClassSupport:
-		return "Support"
-	default:
-		return "Engineer"
-	}
-}
-
-func defaultRuntimeKindForAgentClass(agentClass string) string {
-	return worker.GetRuntimeProfile(capabilityProfileForAgentClass(agentClass)).RuntimeKind
-}
-
 func normalizeModelProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "":
@@ -76,16 +25,15 @@ func normalizeModelProvider(provider string) string {
 	}
 }
 
-func validateAgentClass(agentClass string) error {
-	switch normalizeAgentClass(agentClass, "", "") {
-	case model.AgentClassProductPlanner,
-		model.AgentClassEngineer,
-		model.AgentClassReviewer,
-		model.AgentClassSupport:
+func validateAgentPresetKey(presetKey string) error {
+	normalized := normalizePresetKey(presetKey)
+	if normalized == "" {
 		return nil
-	default:
-		return fmt.Errorf("agent_class must be one of product_planner, engineer, reviewer, support")
 	}
+	if _, ok := agentPresetDefinition(normalized); ok {
+		return nil
+	}
+	return fmt.Errorf("preset_key %q is not supported", normalized)
 }
 
 // normalizeJSONSlice returns the input if non-nil, or an empty JSON array.
@@ -94,6 +42,14 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage("[]")
 	}
 	return raw
+}
+
+func jsonSliceIsEmpty(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed == "" || trimmed == "null" || trimmed == "[]"
 }
 
 func normalizeTokenBudget(value *int) *int {
@@ -106,31 +62,23 @@ func normalizeTokenBudget(value *int) *int {
 	return value
 }
 
-func defaultTriggerModeForAgentClass(agentClass string) string {
-	modes := allowedTriggerModesForAgentClass(agentClass)
-	if len(modes) == 0 {
-		return "manual"
-	}
-	return modes[0]
-}
-
-func allowedTriggerModesForAgentClass(agentClass string) []string {
-	switch normalizeAgentClass(agentClass, "", "") {
-	case model.AgentClassEngineer, model.AgentClassReviewer:
-		return []string{"manual", "auto_on_assignment", "auto_on_event"}
-	case model.AgentClassProductPlanner, model.AgentClassSupport:
-		return []string{"manual"}
-	default:
-		return []string{"manual"}
-	}
-}
-
-func validateTriggerModeForAgentClass(triggerMode, agentClass string) error {
+func validateTriggerModeForAgent(triggerMode string, agent *model.Agent) error {
 	if err := validateTriggerMode(triggerMode); err != nil {
 		return err
 	}
-	if !slices.Contains(allowedTriggerModesForAgentClass(agentClass), triggerMode) {
-		return fmt.Errorf("trigger_mode %q is not allowed for agent_class %q", triggerMode, normalizeAgentClass(agentClass, "", ""))
+	presetKey := ""
+	if agent != nil {
+		presetKey = agent.PresetKey
+	}
+	allowed := allowedTriggerModesForPresetKey(presetKey)
+	if len(allowed) == 0 {
+		allowed = []string{"manual"}
+	}
+	if !slices.Contains(allowed, triggerMode) {
+		if presetKey := normalizePresetKey(presetKey); presetKey != "" {
+			return fmt.Errorf("trigger_mode %q is not allowed for preset %q", triggerMode, presetKey)
+		}
+		return fmt.Errorf("trigger_mode %q is not allowed", triggerMode)
 	}
 	return nil
 }
@@ -140,19 +88,40 @@ func normalizeAgentRecord(agent *model.Agent) {
 		return
 	}
 
-	agent.AgentClass = normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role)
-	if strings.TrimSpace(agent.Role) == "" {
-		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
+	presetKey := normalizePresetKey(agent.PresetKey)
+	if presetKey == "" {
+		presetKey = defaultPresetKeyForAgent(agent.IsSystem)
 	}
-	switch normalizedProfile := worker.NormalizeCapabilityProfile(strings.TrimSpace(agent.CapabilityProfile)); {
-	case strings.TrimSpace(agent.CapabilityProfile) == "":
-		agent.CapabilityProfile = capabilityProfileForAgentClass(agent.AgentClass)
-	case normalizedProfile != strings.TrimSpace(agent.CapabilityProfile):
-		// Preserve explicit custom profiles, but normalize known legacy aliases like "orchestrator".
-		agent.CapabilityProfile = normalizedProfile
+	agent.PresetKey = presetKey
+
+	preset, hasPreset := agentPresetDefinition(presetKey)
+	if hasPreset {
+		if jsonSliceIsEmpty(agent.AllowedTools) {
+			agent.AllowedTools = mustJSONStringSlice(preset.AllowedTools)
+		}
+		if jsonSliceIsEmpty(agent.AllowedCommands) {
+			agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
+		}
+		if jsonSliceIsEmpty(agent.AllowedTargets) {
+			agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
+		}
+		if strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default" {
+			agent.ApprovalMode = preset.ApprovalMode
+		}
+	}
+	if strings.TrimSpace(agent.Role) == "" {
+		if hasPreset && preset.DefaultRole != "" {
+			agent.Role = preset.DefaultRole
+		} else {
+			agent.Role = "Agent"
+		}
 	}
 	if strings.TrimSpace(agent.RuntimeKind) == "" {
-		agent.RuntimeKind = defaultRuntimeKindForAgentClass(agent.AgentClass)
+		if hasPreset && preset.RuntimeKind != "" {
+			agent.RuntimeKind = preset.RuntimeKind
+		} else {
+			agent.RuntimeKind = "opencode"
+		}
 	}
 	if agent.Skills == nil {
 		agent.Skills = json.RawMessage("[]")
@@ -168,35 +137,54 @@ func normalizeAgentRecord(agent *model.Agent) {
 		legacyProvider := model.AgentModelProviderAnthropic
 		agent.Provider = &legacyProvider
 	}
-	if strings.TrimSpace(agent.TriggerMode) == "" || !slices.Contains(allowedTriggerModesForAgentClass(agent.AgentClass), agent.TriggerMode) {
-		agent.TriggerMode = defaultTriggerModeForAgentClass(agent.AgentClass)
+	if strings.TrimSpace(agent.TriggerMode) == "" || validateTriggerModeForAgent(agent.TriggerMode, agent) != nil {
+		if hasPreset && preset.DefaultTriggerMode != "" {
+			agent.TriggerMode = preset.DefaultTriggerMode
+		} else {
+			agent.TriggerMode = "manual"
+		}
 	}
-	if agent.AgentClass != model.AgentClassProductPlanner {
+	if normalizePresetKey(agent.PresetKey) != model.AgentPresetEpicPlanner {
 		agent.PlanningNotes = nil
 	}
 	agent.SupportedModes = supportedModesForAgent(agent)
+	agent.DefaultInvocationMode = normalizeDefaultInvocationMode(agent.DefaultInvocationMode, agent)
+}
+
+func normalizeDefaultInvocationMode(value string, agent *model.Agent) string {
+	presetKey := ""
+	if agent != nil {
+		presetKey = normalizePresetKey(agent.PresetKey)
+	}
+	switch strings.TrimSpace(value) {
+	case model.InvocationModeInteractive:
+		if agentSupportsMode(agent, model.InvocationModeInteractive) {
+			return model.InvocationModeInteractive
+		}
+	case model.InvocationModeAutonomous:
+		if agentSupportsMode(agent, model.InvocationModeAutonomous) {
+			return model.InvocationModeAutonomous
+		}
+	}
+
+	if preset, ok := agentPresetDefinition(presetKey); ok {
+		if slices.Contains(supportedModesForAgent(agent), preset.DefaultInvocationMode) {
+			return preset.DefaultInvocationMode
+		}
+	}
+
+	return model.InvocationModeAutonomous
 }
 
 func supportedModesForAgent(agent *model.Agent) []string {
 	if agent == nil {
 		return []string{}
 	}
-	switch normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role) {
-	case model.AgentClassProductPlanner:
-		modes := []string{model.InvocationModeAutonomous}
-		if agentSupportsInteractive(agent) {
-			modes = append(modes, model.InvocationModeInteractive)
-		}
-		return modes
-	case model.AgentClassSupport:
-		modes := []string{model.InvocationModeAutonomous}
-		if agentSupportsInteractive(agent) {
-			modes = append(modes, model.InvocationModeInteractive)
-		}
-		return modes
-	default:
-		return []string{model.InvocationModeAutonomous}
+	modes := []string{model.InvocationModeAutonomous}
+	if agentSupportsInteractive(agent) {
+		modes = append(modes, model.InvocationModeInteractive)
 	}
+	return modes
 }
 
 func agentSupportsMode(agent *model.Agent, mode string) bool {
@@ -233,15 +221,15 @@ func validateModelProvider(provider string) error {
 
 func validateAgentTarget(agent *model.Agent, targetType string) error {
 	normalizeAgentRecord(agent)
-	if err := validateAgentClass(agent.AgentClass); err != nil {
+	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
 		return err
 	}
-	resolved := worker.ResolveAgentProfile(agent)
+	resolved := worker.ResolveAgentProfile(agent, agent.DefaultInvocationMode)
 	if len(resolved.TargetTypes) == 0 {
-		return fmt.Errorf("%s agents are not runnable", agent.AgentClass)
+		return fmt.Errorf("agent is not runnable")
 	}
 	if !slices.Contains(resolved.TargetTypes, targetType) {
-		return fmt.Errorf("%s agents can only be assigned to %s", agent.AgentClass, strings.Join(resolved.TargetTypes, ", "))
+		return fmt.Errorf("agent can only be assigned to %s", strings.Join(resolved.TargetTypes, ", "))
 	}
 	return nil
 }

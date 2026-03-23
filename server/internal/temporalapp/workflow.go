@@ -15,18 +15,29 @@ type AgentRunWorkflowInput struct {
 // ExecuteRunResult summarizes the execution activity outcome.
 type ExecuteRunResult struct {
 	WaitForApproval bool
+	AwaitingInput   bool
+	ContinueExecution bool
+}
+
+// RunMessageSignal resumes an interactive run with a new user message.
+type RunMessageSignal struct {
+	Content string `json:"content"`
 }
 
 // AgentRunWorkflow is the Temporal workflow for a single agent run.
 func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 	currentStage := "queued"
 	waitingApproval := false
+	waitingInput := false
 
 	_ = workflow.SetQueryHandler(ctx, "current_step", func() (string, error) {
 		return currentStage, nil
 	})
 	_ = workflow.SetQueryHandler(ctx, "approval_wait_state", func() (bool, error) {
 		return waitingApproval, nil
+	})
+	_ = workflow.SetQueryHandler(ctx, "input_wait_state", func() (bool, error) {
+		return waitingInput, nil
 	})
 
 	prepareAO := workflow.ActivityOptions{
@@ -43,42 +54,105 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 	executeAO.RetryPolicy = &temporal.RetryPolicy{
 		MaximumAttempts: 1,
 	}
+	failAO := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 1,
+		},
+	}
 
 	currentStage = "preparing"
 	prepareCtx := workflow.WithActivityOptions(ctx, prepareAO)
 	if err := workflow.ExecuteActivity(prepareCtx, "AgentRunActivities.PrepareRunActivity", input.RunID).Get(ctx, nil); err != nil {
+		markRunFailed(workflow.WithActivityOptions(ctx, failAO), input.RunID, err)
 		return err
 	}
 
-	currentStage = "executing"
-	var result ExecuteRunResult
+	approveCh := workflow.GetSignalChannel(ctx, WorkflowSignalApprove)
+	handoffCh := workflow.GetSignalChannel(ctx, WorkflowSignalHandoff)
+	messageCh := workflow.GetSignalChannel(ctx, WorkflowSignalMessage)
 	executeCtx := workflow.WithActivityOptions(ctx, executeAO)
-	if err := workflow.ExecuteActivity(executeCtx, "AgentRunActivities.ExecuteRunActivity", input.RunID).Get(ctx, &result); err != nil {
-		return err
-	}
 
-	if result.WaitForApproval {
-		waitingApproval = true
-		currentStage = "awaiting_approval"
-		approveCh := workflow.GetSignalChannel(ctx, WorkflowSignalApprove)
-		handoffCh := workflow.GetSignalChannel(ctx, WorkflowSignalHandoff)
-		for waitingApproval {
-			selector := workflow.NewSelector(ctx)
-			selector.AddReceive(approveCh, func(c workflow.ReceiveChannel, more bool) {
-				var ignored struct{}
-				c.Receive(ctx, &ignored)
-				waitingApproval = false
-				currentStage = "approved"
-			})
-			selector.AddReceive(handoffCh, func(c workflow.ReceiveChannel, more bool) {
-				var ignored any
-				c.Receive(ctx, &ignored)
-				currentStage = "handoff_recorded"
-			})
-			selector.Select(ctx)
+	for {
+		currentStage = "executing"
+		var result ExecuteRunResult
+		if err := workflow.ExecuteActivity(executeCtx, "AgentRunActivities.ExecuteRunActivity", input.RunID).Get(ctx, &result); err != nil {
+			markRunFailed(workflow.WithActivityOptions(ctx, failAO), input.RunID, err)
+			return err
 		}
+
+		if result.WaitForApproval {
+			waitingApproval = true
+			currentStage = "awaiting_approval"
+			for waitingApproval {
+				selector := workflow.NewSelector(ctx)
+				selector.AddReceive(approveCh, func(c workflow.ReceiveChannel, more bool) {
+					var ignored struct{}
+					c.Receive(ctx, &ignored)
+					waitingApproval = false
+					currentStage = "approval_received"
+				})
+				selector.AddReceive(messageCh, func(c workflow.ReceiveChannel, more bool) {
+					var msg RunMessageSignal
+					c.Receive(ctx, &msg)
+					waitingApproval = false
+					currentStage = "feedback_received"
+				})
+				selector.AddReceive(handoffCh, func(c workflow.ReceiveChannel, more bool) {
+					var ignored any
+					c.Receive(ctx, &ignored)
+					currentStage = "handoff_recorded"
+				})
+				selector.Select(ctx)
+			}
+			continue
+		}
+
+		if result.AwaitingInput {
+			waitingInput = true
+			currentStage = "awaiting_input"
+			for waitingInput {
+				selector := workflow.NewSelector(ctx)
+				selector.AddReceive(messageCh, func(c workflow.ReceiveChannel, more bool) {
+					var msg RunMessageSignal
+					c.Receive(ctx, &msg)
+					waitingInput = false
+					currentStage = "input_received"
+				})
+				selector.AddReceive(approveCh, func(c workflow.ReceiveChannel, more bool) {
+					var ignored struct{}
+					c.Receive(ctx, &ignored)
+					waitingInput = false
+					currentStage = "approval_received"
+				})
+				selector.AddReceive(handoffCh, func(c workflow.ReceiveChannel, more bool) {
+					var ignored any
+					c.Receive(ctx, &ignored)
+					currentStage = "handoff_recorded"
+				})
+				selector.Select(ctx)
+			}
+			if currentStage == "approval_received" {
+				break
+			}
+			continue
+		}
+
+		if result.ContinueExecution {
+			currentStage = "continuing"
+			continue
+		}
+
+		break
 	}
 
 	currentStage = "completed"
 	return nil
+}
+
+func markRunFailed(ctx workflow.Context, runID string, err error) {
+	if err == nil {
+		return
+	}
+	_ = workflow.ExecuteActivity(ctx, "AgentRunActivities.MarkRunFailedActivity", runID, err.Error()).Get(ctx, nil)
 }

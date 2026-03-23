@@ -23,8 +23,10 @@ import { agentService } from '@/lib/services/agentService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import type {
   Agent,
-  AgentClass,
+  AgentPresetDefinition,
+  AgentPresetKey,
   AgentApprovalMode,
+  AgentInvocationMode,
   AgentModelProvider,
   AgentModelProviderOption,
   AgentRun,
@@ -57,6 +59,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -77,29 +80,68 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_sdk'];
-const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
-  product_planner: 'native_sdk',
-  engineer: 'opencode',
-  reviewer: 'opencode',
-  support: 'native_sdk',
+const DEFAULT_PRESET_KEY: AgentPresetKey = 'code_builder';
+const PRESET_ORDER: AgentPresetKey[] = [
+  'epic_planner',
+  'story_planner',
+  'crm_operator',
+  'support_agent',
+  'code_builder',
+  'review_agent',
+];
+
+const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: string; runtime_kind: AgentRuntimeKind; default_invocation_mode: AgentInvocationMode; supported_modes: AgentInvocationMode[] }> = {
+  epic_planner: {
+    label: 'Epic Planner',
+    description: 'Interactive product planning for epics, PRDs, docs, and stories.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  story_planner: {
+    label: 'Story Planner',
+    description: 'Interactive decomposition and refinement for stories and execution plans.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  crm_operator: {
+    label: 'CRM Operator',
+    description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  support_agent: {
+    label: 'Support Agent',
+    description: 'Handles support conversations and drafts replies with review controls.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  code_builder: {
+    label: 'Code Builder',
+    description: 'Writes code, implements features, and fixes bugs in the repo.',
+    runtime_kind: 'opencode',
+    default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous'],
+  },
+  review_agent: {
+    label: 'Review Agent',
+    description: 'Reviews work, runs tests, and checks quality without repo mutation.',
+    runtime_kind: 'opencode',
+    default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous'],
+  },
 };
 
-const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
-  product_planner: 'Planner',
-  engineer: 'Coder',
-  reviewer: 'Reviewer',
-  support: 'Support',
-};
-
-const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
-  product_planner: 'Plans features, writes specs, and breaks work into stories.',
-  engineer: 'Writes code, implements features, and fixes bugs.',
-  reviewer: 'Reviews work, runs tests, and checks quality.',
-  support: 'Handles support conversations and drafts replies.',
+const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
+  autonomous: 'Autonomous',
+  interactive: 'Interactive',
 };
 
 const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'class_default', label: 'Default', description: 'Uses the standard setting for this agent role' },
+  { value: 'preset_default', label: 'Preset Default', description: 'Uses the standard setting for this agent preset' },
   { value: 'never', label: 'No — run immediately', description: 'Agent starts working right away without waiting' },
   { value: 'always', label: 'Yes — always review first', description: 'A team member must approve before the agent runs' },
 ];
@@ -128,15 +170,17 @@ const EMPTY_STATE_CARDS = [
 
 interface AgentFormData {
   name: string;
-  agent_class: AgentClass;
+  preset_key: AgentPresetKey;
   runtime_kind: AgentRuntimeKind;
   provider: AgentModelProvider;
   model: string;
+  system_prompt: string;
   monthly_token_budget: string;
   team_id: string;
   schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
+  default_invocation_mode: AgentInvocationMode;
 }
 
 const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
@@ -145,41 +189,106 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   { value: 'openrouter', label: 'OpenRouter', model_placeholder: 'openai/gpt-5-mini' },
 ];
 
-function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
+function fallbackPresetKey(agent?: Pick<Agent, 'preset_key' | 'is_system'> | null): AgentPresetKey {
+  if (agent?.preset_key) return agent.preset_key;
+  if (agent?.is_system) return 'epic_planner';
+  return DEFAULT_PRESET_KEY;
+}
+
+function presetMetaForKey(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentPresetDefinition | null {
+  return presets.find((preset) => preset.key === presetKey) ?? null;
+}
+
+function presetLabel(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string {
+  return presetMetaForKey(presetKey, presets)?.label ?? PRESET_FALLBACKS[presetKey].label;
+}
+
+function presetDescription(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string {
+  return presetMetaForKey(presetKey, presets)?.description ?? PRESET_FALLBACKS[presetKey].description;
+}
+
+function presetRuntimeKind(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentRuntimeKind {
+  return presetMetaForKey(presetKey, presets)?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
+}
+
+function presetDefaultInvocationMode(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentInvocationMode {
+  return presetMetaForKey(presetKey, presets)?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
+}
+
+function presetSupportedModes(presetKey: AgentPresetKey, runtimeKind: AgentRuntimeKind, presets: AgentPresetDefinition[]): AgentInvocationMode[] {
+  const preset = presetMetaForKey(presetKey, presets);
+  if (preset && preset.runtime_kind === runtimeKind && preset.supported_modes.length > 0) {
+    return preset.supported_modes;
+  }
+  return supportedModesForForm(runtimeKind);
+}
+
+function createEmptyForm(presetKey: AgentPresetKey = DEFAULT_PRESET_KEY, preset?: AgentPresetDefinition | null): AgentFormData {
+  const runtimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
+  const defaultInvocationMode = preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
   return {
     name: '',
-    agent_class: agentClass,
-    runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
+    preset_key: presetKey,
+    runtime_kind: runtimeKind,
     provider: 'anthropic',
     model: '',
+    system_prompt: preset?.system_prompt ?? '',
     monthly_token_budget: '',
     team_id: '',
     schedule: '',
-    approval_mode: 'class_default',
+    approval_mode: preset?.approval_mode ?? 'preset_default',
     max_concurrent_runs: '1',
+    default_invocation_mode: normalizeDefaultInvocationMode(defaultInvocationMode, runtimeKind),
   };
 }
 
-function hasConfiguredAdvancedFields(agent: Agent | null): boolean {
+function supportedModesForForm(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
+  if (runtimeKind === 'native_sdk') {
+    return ['autonomous', 'interactive'];
+  }
+  return ['autonomous'];
+}
+
+function normalizeDefaultInvocationMode(
+  value: AgentInvocationMode | undefined,
+  runtimeKind: AgentRuntimeKind,
+  preferredMode: AgentInvocationMode = 'autonomous',
+): AgentInvocationMode {
+  const supportedModes = supportedModesForForm(runtimeKind);
+  if (value && supportedModes.includes(value)) {
+    return value;
+  }
+  if (supportedModes.includes(preferredMode)) {
+    return preferredMode;
+  }
+  return 'autonomous';
+}
+
+function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
+  const presetKey = fallbackPresetKey(agent);
   return (
-    agent.runtime_kind !== ADVANCED_DEFAULT_RUNTIME[agent.agent_class] ||
+    agent.runtime_kind !== presetRuntimeKind(presetKey, presets) ||
     Boolean(agent.monthly_token_budget)
   );
 }
 
-function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
+function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): CreateAgentRequest {
+  const preset = presetMetaForKey(form.preset_key, presets);
+  const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
-    agent_class: form.agent_class,
+    preset_key: form.preset_key,
     provider: form.provider,
     model: form.model.trim() || undefined,
+    system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_id: form.team_id,
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
+    default_invocation_mode: form.default_invocation_mode,
     ...(advancedOpen
       ? {
           runtime_kind: form.runtime_kind,
@@ -187,21 +296,27 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
             ? Number.parseInt(form.monthly_token_budget, 10)
             : 0,
         }
-      : {}),
+      : form.runtime_kind !== defaultRuntimeKind
+        ? { runtime_kind: form.runtime_kind }
+        : {}),
   };
 }
 
-function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateAgentRequest {
+function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): UpdateAgentRequest {
+  const preset = presetMetaForKey(form.preset_key, presets);
+  const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
   return {
     name: form.name.trim(),
-    agent_class: form.agent_class,
+    preset_key: form.preset_key,
     trigger_mode: 'manual',
     provider: form.provider || undefined,
     model: form.model.trim() || undefined,
+    system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
+    default_invocation_mode: form.default_invocation_mode,
     ...(advancedOpen
       ? {
           runtime_kind: form.runtime_kind,
@@ -209,7 +324,9 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
             ? Number.parseInt(form.monthly_token_budget, 10)
             : 0,
         }
-      : {}),
+      : form.runtime_kind !== defaultRuntimeKind
+        ? { runtime_kind: form.runtime_kind }
+        : {}),
   };
 }
 
@@ -267,12 +384,14 @@ function lastRunStatusColor(run?: AgentRun): string {
 
 function AgentCard({
   agent,
+  presetLabel,
   teamName,
   stats,
   onEdit,
   canEdit,
 }: {
   agent: Agent;
+  presetLabel: string;
   teamName?: string;
   stats?: AgentRunStats;
   onEdit: (agent: Agent) => void;
@@ -314,8 +433,13 @@ function AgentCard({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-[11px]">
-            {AGENT_CLASS_LABELS[agent.agent_class] ?? agent.agent_class}
+            {presetLabel}
           </Badge>
+          {agent.is_system && (
+            <Badge variant="outline" className="text-[11px]">
+              System
+            </Badge>
+          )}
           {teamName && (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <Users className="h-3 w-3" />
@@ -331,6 +455,10 @@ function AgentCard({
           </p>
         )}
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Bot className="h-3 w-3" />
+            {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
+          </span>
           {agent.schedule && (
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
@@ -373,12 +501,14 @@ function AgentCard({
 
 function AgentRow({
   agent,
+  presetLabel,
   teamName,
   stats,
   onEdit,
   canEdit,
 }: {
   agent: Agent;
+  presetLabel: string;
   teamName?: string;
   stats?: AgentRunStats;
   onEdit: (agent: Agent) => void;
@@ -393,12 +523,19 @@ function AgentRow({
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
         />
-        <span className="text-sm font-medium truncate">{agent.name}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-sm font-medium truncate">{agent.name}</span>
+          {agent.is_system && (
+            <Badge variant="outline" className="text-[10px]">
+              System
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Class */}
       <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">
-        {AGENT_CLASS_LABELS[agent.agent_class] ?? agent.agent_class}
+        {presetLabel}
       </span>
 
       {/* Team */}
@@ -409,6 +546,11 @@ function AgentRow({
       {/* Provider / Model */}
       <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden lg:block">
         {[agent.provider, agent.model].filter(Boolean).join(' / ') || '—'}
+      </span>
+
+      {/* Default mode */}
+      <span className="text-xs text-muted-foreground w-24 shrink-0 truncate hidden lg:block">
+        {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
       </span>
 
       {/* Runs */}
@@ -463,6 +605,7 @@ export function AgentsPage() {
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
+  const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -502,10 +645,19 @@ export function AgentsPage() {
     }
   }, [workspaceId]);
 
+  const loadPresets = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await agentService.listPresets(workspaceId);
+    if (!res.error && res.data) {
+      setPresets(res.data);
+    }
+  }, [workspaceId]);
+
   useEffect(() => {
     loadAgents();
     loadProviderOptions();
-  }, [loadAgents, loadProviderOptions]);
+    loadPresets();
+  }, [loadAgents, loadProviderOptions, loadPresets]);
 
   // Fetch run stats for all agents
   useEffect(() => {
@@ -536,25 +688,34 @@ export function AgentsPage() {
     setEditingAgent(null);
     setAdvancedOpen(false);
     setAutomationOpen(false);
-    setForm(createEmptyForm());
+    setForm(createEmptyForm(DEFAULT_PRESET_KEY, presetMetaForKey(DEFAULT_PRESET_KEY, presets)));
     setDialogOpen(true);
   };
 
   const openEditDialog = (agent: Agent) => {
     setEditingAgent(agent);
-    setAdvancedOpen(hasConfiguredAdvancedFields(agent));
-    setAutomationOpen(Boolean(agent.schedule || agent.approval_mode !== 'class_default'));
+    const presetKey = fallbackPresetKey(agent);
+    const preset = presetMetaForKey(presetKey, presets);
+    setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
+    setAutomationOpen(Boolean(agent.schedule || agent.approval_mode !== 'preset_default'));
+    const runtimeKind = agent.runtime_kind;
     setForm({
       name: agent.name,
-      agent_class: agent.agent_class,
-      runtime_kind: agent.runtime_kind,
+      preset_key: presetKey,
+      runtime_kind: runtimeKind,
       provider: agent.provider ?? 'anthropic',
       model: agent.model ?? '',
+      system_prompt: agent.system_prompt ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
       schedule: agent.schedule ?? '',
-      approval_mode: agent.approval_mode ?? 'class_default',
+      approval_mode: agent.approval_mode ?? 'preset_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
+      default_invocation_mode: normalizeDefaultInvocationMode(
+        agent.default_invocation_mode,
+        runtimeKind,
+        preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode,
+      ),
     });
     setDialogOpen(true);
   };
@@ -564,14 +725,14 @@ export function AgentsPage() {
     setSaving(true);
 
     if (editingAgent) {
-      const payload = buildUpdatePayload(form, advancedOpen);
+      const payload = buildUpdatePayload(form, advancedOpen, presets);
       const res = await agentService.update(workspaceId, editingAgent.id, payload);
       if (!res.error) {
         setDialogOpen(false);
         await loadAgents();
       }
     } else {
-      const payload = buildCreatePayload(workspaceId, form, advancedOpen);
+      const payload = buildCreatePayload(workspaceId, form, advancedOpen, presets);
       const res = await agentService.create(workspaceId, payload);
       if (!res.error) {
         setDialogOpen(false);
@@ -596,7 +757,19 @@ export function AgentsPage() {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
-  const advancedConfigured = hasConfiguredAdvancedFields(editingAgent);
+  const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
+  const editingSystemAgent = Boolean(editingAgent?.is_system);
+  const selectedPreset =
+    presetMetaForKey(form.preset_key, presets);
+  const effectiveTools =
+    editingAgent && fallbackPresetKey(editingAgent) === form.preset_key && editingAgent.allowed_tools.length > 0
+      ? editingAgent.allowed_tools
+      : (selectedPreset?.allowed_tools ?? []);
+  const effectiveTargets =
+    editingAgent && fallbackPresetKey(editingAgent) === form.preset_key && editingAgent.allowed_targets.length > 0
+      ? editingAgent.allowed_targets
+      : (selectedPreset?.allowed_target_types ?? []);
+  const supportedModes = presetSupportedModes(form.preset_key, form.runtime_kind, presets);
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
@@ -667,9 +840,10 @@ export function AgentsPage() {
           {/* List header */}
           <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
             <div className="flex-1 min-w-[120px]">Name</div>
-            <div className="w-20 shrink-0">Role</div>
+            <div className="w-20 shrink-0">Preset</div>
             <div className="w-28 shrink-0 hidden md:block">Team</div>
             <div className="w-28 shrink-0 hidden lg:block">Provider</div>
+            <div className="w-24 shrink-0 hidden lg:block">Mode</div>
             <div className="w-12 shrink-0 hidden sm:block">Runs</div>
             <div className="w-28 shrink-0 hidden sm:block">Last run</div>
             <div className="w-8 shrink-0" />
@@ -678,6 +852,7 @@ export function AgentsPage() {
             <AgentRow
               key={agent.id}
               agent={agent}
+              presetLabel={presetLabel(fallbackPresetKey(agent), presets)}
               teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
               stats={runStats[agent.id]}
               onEdit={openEditDialog}
@@ -693,6 +868,7 @@ export function AgentsPage() {
             <AgentCard
               key={agent.id}
               agent={agent}
+              presetLabel={presetLabel(fallbackPresetKey(agent), presets)}
               teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
               stats={runStats[agent.id]}
               onEdit={openEditDialog}
@@ -710,6 +886,15 @@ export function AgentsPage() {
           </DialogHeader>
 
           <div className="space-y-4">
+            {editingSystemAgent && (
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="text-sm font-medium">System agent</p>
+                <p className="text-xs text-muted-foreground">
+                  This is a built-in workspace agent. You can tune its prompt, model, and default run mode, but its preset stays fixed.
+                </p>
+              </div>
+            )}
+
             {/* ---- Basics ---- */}
             <div className="space-y-2">
               <FieldLabel htmlFor="agent-name">Name</FieldLabel>
@@ -722,34 +907,68 @@ export function AgentsPage() {
             </div>
 
             <div className="space-y-2">
-              <FieldLabel tooltip="Each role comes with sensible defaults for permissions and behavior.">
-                What does this agent do?
+              <FieldLabel tooltip="Presets provide sensible defaults for prompt, tools, targets, runtime, and default run mode.">
+                Preset
               </FieldLabel>
               <Select
-                value={form.agent_class}
+                value={form.preset_key}
+                disabled={editingSystemAgent}
                 onValueChange={(value) => {
-                  const nextClass = value as AgentClass;
-                  setForm((current) => ({
-                    ...current,
-                    agent_class: nextClass,
-                    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-                  }));
+                  const nextPresetKey = value as AgentPresetKey;
+                  const nextPreset = presetMetaForKey(nextPresetKey, presets);
+                  setForm((current) => {
+                    const currentDefaultRuntime = presetRuntimeKind(current.preset_key, presets);
+                    const currentPresetPrompt = presetMetaForKey(current.preset_key, presets)?.system_prompt ?? '';
+                    const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime
+                      ? (nextPreset?.runtime_kind ?? PRESET_FALLBACKS[nextPresetKey].runtime_kind)
+                      : current.runtime_kind;
+                    const shouldReplacePrompt =
+                      current.system_prompt.trim().length === 0 || current.system_prompt === currentPresetPrompt;
+                    return {
+                      ...current,
+                      preset_key: nextPresetKey,
+                      runtime_kind: nextRuntimeKind,
+                      system_prompt: shouldReplacePrompt ? (nextPreset?.system_prompt ?? '') : current.system_prompt,
+                      approval_mode: nextPreset?.approval_mode ?? current.approval_mode,
+                      default_invocation_mode: normalizeDefaultInvocationMode(
+                        current.default_invocation_mode,
+                        nextRuntimeKind,
+                        nextPreset?.default_invocation_mode ?? PRESET_FALLBACKS[nextPresetKey].default_invocation_mode,
+                      ),
+                    };
+                  });
                 }}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(AGENT_CLASS_LABELS) as AgentClass[]).map((agentClass) => (
-                    <SelectItem key={agentClass} value={agentClass}>
+                  {PRESET_ORDER.map((presetKey) => (
+                    <SelectItem key={presetKey} value={presetKey}>
                       <span className="flex flex-col">
-                        <span>{AGENT_CLASS_LABELS[agentClass]}</span>
+                        <span>{presetLabel(presetKey, presets)}</span>
                       </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{AGENT_CLASS_DESCRIPTIONS[form.agent_class]}</p>
+              <p className="text-xs text-muted-foreground">{presetDescription(form.preset_key, presets)}</p>
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel
+                htmlFor="agent-system-prompt"
+                tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
+              >
+                System instructions
+              </FieldLabel>
+              <Textarea
+                id="agent-system-prompt"
+                value={form.system_prompt}
+                onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+                placeholder="Agent instructions"
+                rows={4}
+              />
             </div>
 
             {/* Team selector */}
@@ -759,6 +978,7 @@ export function AgentsPage() {
                   Team
                 </FieldLabel>
                 <Select
+                  disabled={editingSystemAgent}
                   value={form.team_id || '_none'}
                   onValueChange={(value) => setForm((current) => ({ ...current, team_id: value === '_none' ? '' : value }))}
                 >
@@ -778,6 +998,36 @@ export function AgentsPage() {
             )}
 
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <FieldLabel tooltip="This agent owns its default run mode. Launchers should not decide whether it is interactive or autonomous.">
+                  Default run mode
+                </FieldLabel>
+                <Select
+                  value={form.default_invocation_mode}
+                  onValueChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      default_invocation_mode: value as AgentInvocationMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supportedModes.map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {INVOCATION_MODE_LABELS[mode]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  {form.default_invocation_mode === 'interactive'
+                    ? 'New runs open as a live chat and can ask follow-up questions before acting.'
+                    : 'New runs execute autonomously unless you open the run drawer to inspect them.'}
+                </p>
+              </div>
               <div className="space-y-2">
                 <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
                 <Select
@@ -809,6 +1059,61 @@ export function AgentsPage() {
                   onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
                   placeholder={providerOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
                 />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Effective capabilities</p>
+                <p className="text-[11px] text-muted-foreground">
+                  These are the effective defaults produced by the preset, runtime, mode, and policy on this agent.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</p>
+                  <p className="text-sm">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Default mode</p>
+                  <p className="text-sm">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Targets</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
+                      <Badge key={target} variant="outline" className="text-[11px]">
+                        {target}
+                      </Badge>
+                    )) : (
+                      <span className="text-sm text-muted-foreground">No targets</span>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1 md:col-span-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Supported modes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {supportedModes.map((mode) => (
+                      <Badge key={mode} variant="outline" className="text-[11px]">
+                        {INVOCATION_MODE_LABELS[mode]}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Available tools</p>
+                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/70 p-2">
+                  {effectiveTools.length > 0 ? effectiveTools.map((tool) => (
+                    <Badge key={tool} variant="secondary" className="font-mono text-[11px]">
+                      {tool}
+                    </Badge>
+                  )) : (
+                    <span className="text-sm text-muted-foreground">No tools configured</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -910,7 +1215,21 @@ export function AgentsPage() {
                   </FieldLabel>
                   <Select
                     value={form.runtime_kind}
-                    onValueChange={(value) => setForm((current) => ({ ...current, runtime_kind: value as AgentRuntimeKind }))}
+                    disabled={editingSystemAgent}
+                    onValueChange={(value) =>
+                      setForm((current) => {
+                        const runtimeKind = value as AgentRuntimeKind;
+                        return {
+                          ...current,
+                          runtime_kind: runtimeKind,
+                          default_invocation_mode: normalizeDefaultInvocationMode(
+                            current.default_invocation_mode,
+                            runtimeKind,
+                            presetDefaultInvocationMode(current.preset_key, presets),
+                          ),
+                        };
+                      })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -951,7 +1270,7 @@ export function AgentsPage() {
                 <Button
                   variant="destructive"
                   size="sm"
-                  disabled={saving}
+                  disabled={saving || editingSystemAgent}
                   onClick={() => setDeleteConfirmOpen(true)}
                 >
                   Delete

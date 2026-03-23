@@ -14,11 +14,12 @@ const (
 
 // Action type constants.
 const (
-	ActionRunAgent    = "run_agent"
-	ActionMoveToState = "move_to_state"
-	ActionMergeBranch = "merge_branch"
-	ActionRunCommand  = "run_command"
-	ActionStartFlow   = "start_flow"
+	ActionRunAgent      = "run_agent"
+	ActionStartAgentRun = "start_agent_run"
+	ActionMoveToState   = "move_to_state"
+	ActionMergeBranch   = "merge_branch"
+	ActionRunCommand    = "run_command"
+	ActionStartFlow     = "start_flow"
 )
 
 // AutomationRule represents a user-configured trigger → action mapping.

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Bot, Clock, Loader2, CheckCircle2, XCircle, ShieldCheck, StopCircle } from 'lucide-react';
+import { Bot, Clock, Loader2, CheckCircle2, MessageSquareMore, XCircle, ShieldCheck, StopCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,11 +15,13 @@ interface Props {
   actingOnRun: string | null;
   onCancel: (runId: string) => void;
   onApprove: (runId: string) => void;
+  showArtifacts?: boolean;
 }
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   queued: <Clock className="h-3 w-3" />,
   running: <Loader2 className="h-3 w-3 animate-spin" />,
+  awaiting_input: <MessageSquareMore className="h-3 w-3" />,
   awaiting_approval: <ShieldCheck className="h-3 w-3" />,
   completed: <CheckCircle2 className="h-3 w-3" />,
   failed: <XCircle className="h-3 w-3" />,
@@ -47,11 +49,16 @@ function MetadataItem({ label, value }: { label: string; value?: string | null }
   );
 }
 
-export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprove }: Props) {
+export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprove, showArtifacts = true }: Props) {
   const meta = STATUS_META[run.status] ?? STATUS_META.queued;
   const duration = formatDuration(run.started_at, run.completed_at);
-  const isActive = run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_approval';
+  const isActive = run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_input' || run.status === 'awaiting_approval';
   const acting = actingOnRun === run.id;
+  const queueName = run.runner_pool || run.task_queue || 'automation-default';
+  const queuedForSeconds = run.status === 'queued'
+    ? differenceInSeconds(new Date(), parseISO(run.created_at))
+    : 0;
+  const showQueuedWarning = run.status === 'queued' && queuedForSeconds >= 10;
 
   const outputArtifacts = useMemo(
     () => artifacts.filter((a) => a.artifact_type === 'opencode_stdout' || a.artifact_type === 'opencode_stderr'),
@@ -100,6 +107,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
       <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">
         <MetadataItem label="Runtime" value={AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind} />
         <MetadataItem label="Pool" value={run.runner_pool} />
+        <MetadataItem label="Workflow" value={run.workflow_id} />
         <MetadataItem label="Stage" value={run.execution_stage} />
         <MetadataItem label="Approval" value={run.approval_state} />
         <MetadataItem label="Repo" value={run.repo_full_name} />
@@ -116,8 +124,25 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
         </div>
       )}
 
+      {showQueuedWarning && (
+        <div className="rounded border border-amber-300/50 bg-amber-50/70 p-2 text-xs text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-200">
+          This run is still queued on <span className="font-mono">{queueName}</span>.
+          {run.workflow_id ? (
+            <>
+              {' '}A Temporal workflow was created, but it has not started executing yet. If the worker is already running, compare the API startup log
+              {' '}<span className="font-mono">Temporal configured</span> address and namespace with the worker startup log, because a mismatch will leave runs queued forever.
+            </>
+          ) : (
+            <>
+              {' '}No Temporal workflow ID is recorded for this run yet. Refresh once, then start the planner again so the backend can replace a stale queued run.
+            </>
+          )}
+          {' '}If this is local development, make sure the Temporal worker is running with <span className="font-mono">go run ./cmd/temporal-worker</span>.
+        </div>
+      )}
+
       {/* Tabbed artifacts */}
-      {(outputArtifacts.length > 0 || otherArtifacts.length > 0) && (
+      {showArtifacts && (outputArtifacts.length > 0 || otherArtifacts.length > 0) && (
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="h-8">
             {outputArtifacts.length > 0 && (
@@ -148,7 +173,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
         </Tabs>
       )}
 
-      {artifacts.length === 0 && !run.error_message && (
+      {showArtifacts && artifacts.length === 0 && !run.error_message && (
         <p className="py-2 text-xs text-muted-foreground">No artifacts yet.</p>
       )}
     </div>

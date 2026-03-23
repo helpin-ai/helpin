@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { agentService } from '@/lib/services/agentService';
-import { flowService } from '@/lib/services/flowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { WorkspaceTeam } from '@/lib/types';
-import type { Agent, AutomationRule, FlowSpec, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +33,7 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
 // ── Pipeline Rules Section (state edit dialog) ──
 
 const ACTION_LABELS: Record<string, string> = {
-  start_flow: 'Start flow',
+  start_agent_run: 'Run agent',
   move_to_state: 'Move to state',
   merge_branch: 'Merge branch',
 };
@@ -52,7 +51,6 @@ function PipelineRulesSection({
   rules,
   agents,
   states,
-  flowTemplates,
   onChanged,
 }: {
   workspaceId: string;
@@ -62,13 +60,12 @@ function PipelineRulesSection({
   rules: AutomationRule[];
   agents: Agent[];
   states: WorkflowState[];
-  flowTemplates: FlowSpec[];
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTrigger, setNewTrigger] = useState<string>('story.state_entered');
-  const [newAction, setNewAction] = useState<string>('start_flow');
-  const [newTemplateId, setNewTemplateId] = useState<string>('');
+  const [newAction, setNewAction] = useState<string>('start_agent_run');
+  const [newAgentId, setNewAgentId] = useState<string>('');
   const [newTargetStateId, setNewTargetStateId] = useState<string>('');
   const [newTargetBranch, setNewTargetBranch] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -78,9 +75,9 @@ function PipelineRulesSection({
     setSaving(true);
 
     let actionConfig: Record<string, unknown> = {};
-    if (newAction === 'start_flow') {
-      if (!newTemplateId) { toast.error('Select a flow template'); setSaving(false); return; }
-      actionConfig = { template_id: newTemplateId };
+    if (newAction === 'start_agent_run') {
+      if (!newAgentId) { toast.error('Select an agent'); setSaving(false); return; }
+      actionConfig = { agent_id: newAgentId };
     } else if (newAction === 'move_to_state') {
       if (!newTargetStateId) { toast.error('Select a target state'); setSaving(false); return; }
       actionConfig = { target_state_id: newTargetStateId };
@@ -103,7 +100,7 @@ function PipelineRulesSection({
     if (res.error) { toast.error(res.error); return; }
     toast.success('Automation rule added');
     setAdding(false);
-    setNewTemplateId('');
+    setNewAgentId('');
     setNewTargetStateId('');
     setNewTargetBranch('');
     onChanged();
@@ -127,13 +124,7 @@ function PipelineRulesSection({
 
   const ruleDescription = (rule: AutomationRule) => {
     const trigger = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
-    if (rule.action_type === 'run_agent') return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}`;
-    if (rule.action_type === 'start_flow') {
-      if (rule.action_config?.template_id === 'pm.agent_story_run') {
-        return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}`;
-      }
-      return `${trigger} → Start flow ${(rule.action_config?.template_id as string) || 'unknown'}`;
-    }
+    if (rule.action_type === 'start_agent_run') return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}`;
     if (rule.action_type === 'move_to_state') return `${trigger} → Move to ${stateFn(rule.action_config?.target_state_id as string)}`;
     if (rule.action_type === 'merge_branch') return `${trigger} → Merge to ${rule.action_config?.target_branch as string}`;
     return `${trigger} → ${rule.action_type}`;
@@ -178,26 +169,26 @@ function PipelineRulesSection({
                 <SelectItem value="agent_run.approved">On run approved</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={newAction} onValueChange={setNewAction}>
-              <SelectTrigger className="h-7 flex-1 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="start_flow">Start flow</SelectItem>
+              <Select value={newAction} onValueChange={setNewAction}>
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                <SelectItem value="start_agent_run">Run agent</SelectItem>
                 <SelectItem value="move_to_state">Move to state</SelectItem>
                 <SelectItem value="merge_branch">Merge branch</SelectItem>
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
           </div>
 
-          {newAction === 'start_flow' && (
-            <Select value={newTemplateId} onValueChange={setNewTemplateId}>
+          {newAction === 'start_agent_run' && (
+            <Select value={newAgentId} onValueChange={setNewAgentId}>
               <SelectTrigger className="h-7 text-xs">
-                <SelectValue placeholder="Select flow template..." />
+                <SelectValue placeholder="Select agent..." />
               </SelectTrigger>
               <SelectContent>
-                {flowTemplates.map((ft) => (
-                  <SelectItem key={ft.template_id} value={ft.template_id}>{ft.name || ft.template_id}</SelectItem>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -285,7 +276,6 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   // Automation rules state
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [flowTemplates, setFlowTemplates] = useState<FlowSpec[]>([]);
 
   // --- Data loading ---
 
@@ -324,10 +314,6 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   useEffect(() => { loadAutomationRules(); }, [loadAutomationRules]);
   useEffect(() => {
     agentService.list(workspaceId).then((res) => { if (res.data) setAgents(res.data); });
-    flowService.listTemplates(workspaceId).then((res) => {
-      if (res.data) setFlowTemplates(res.data);
-      else if (res.error) console.error('Failed to load flow templates:', res.error);
-    });
   }, [workspaceId]);
 
   const llmAgents = useMemo(() => agents, [agents]);
@@ -693,7 +679,6 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               states={sortedStates}
               agents={llmAgents}
               rules={automationRules}
-              flowTemplates={flowTemplates}
               editable={editable}
               onChanged={loadAutomationRules}
             />
@@ -924,7 +909,6 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                   rules={rulesByStateId.get(editState.id) ?? []}
                   agents={llmAgents}
                   states={sortedStates}
-                  flowTemplates={flowTemplates}
                   onChanged={loadAutomationRules}
                 />
               )}

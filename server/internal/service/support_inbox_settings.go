@@ -172,11 +172,8 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 		if agent == nil {
 			return fmt.Errorf("selected support ai agent was not found")
 		}
-		if agent.AgentClass != model.AgentClassSupport {
-			return fmt.Errorf("selected ai agent must be a support agent")
-		}
 		if err := validateAgentTarget(agent, "support_conversation"); err != nil {
-			return err
+			return fmt.Errorf("selected ai agent must support support conversations: %w", err)
 		}
 	}
 	return nil

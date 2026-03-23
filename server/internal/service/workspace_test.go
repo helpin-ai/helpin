@@ -72,15 +72,56 @@ func newWorkspaceTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService) {
 func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService, *repository.PMAutomationRepository, *repository.PMWorkflowRepository) {
 	t.Helper()
 	db := newTestDB(t)
+	for _, stmt := range []string{
+		`CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			preset_key TEXT,
+			role TEXT,
+			status TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			skills TEXT NOT NULL DEFAULT '[]',
+			trigger_mode TEXT NOT NULL,
+			provider TEXT,
+			model TEXT,
+			system_prompt TEXT,
+			planning_notes TEXT,
+			monthly_token_budget INTEGER,
+			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
+			active_story_id TEXT,
+			team_id TEXT,
+			allowed_tools TEXT NOT NULL DEFAULT '[]',
+			allowed_commands TEXT NOT NULL DEFAULT '[]',
+			allowed_targets TEXT NOT NULL DEFAULT '[]',
+			schedule TEXT,
+			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
+			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create agents table: %v", err)
+		}
+	}
 	wsRepo := repository.NewWorkspaceRepository(db)
 	attachRepo := repository.NewPMAttachmentRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	automationRepo := repository.NewPMAutomationRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
 
 	pmWorkflowService := NewPMWorkflowService(workflowRepo, nil, labelRepo)
 	pmAutomationService := NewPMAutomationService(automationRepo, nil, nil, nil, workflowRepo, nil, nil)
-	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService)
+	agentService := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),
+		wsPublisher: nil,
+	}
+	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, agentService)
 	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
 
 	seedUser(t, db, "owner-1", "owner@test.com", "Test Owner", "hashed")
@@ -181,6 +222,48 @@ func TestWorkspaceService_Create_SeedsDefaultEpicAutomations(t *testing.T) {
 	}
 	if autoComplete.ConfigStateID == nil || *autoComplete.ConfigStateID != stateByType[model.PMStateTypeDone] {
 		t.Fatalf("epic_auto_complete config_state_id = %v, want %q", autoComplete.ConfigStateID, stateByType[model.PMStateTypeDone])
+	}
+}
+
+func TestWorkspaceService_Create_SeedsSystemPlannerAgent(t *testing.T) {
+	db, svc, _, _ := newWorkspaceDefaultsTestHarness(t)
+	ctx := context.Background()
+
+	ws, err := svc.Create(ctx, model.CreateWorkspaceRequest{
+		Name: "Planner Defaults",
+		Slug: "planner-defaults",
+	}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	agentRepo := repository.NewAgentRepository(db)
+	agents, err := agentRepo.List(ctx, ws.ID)
+	if err != nil {
+		t.Fatalf("List agents: %v", err)
+	}
+	if len(agents) == 0 {
+		t.Fatal("expected at least one seeded agent")
+	}
+
+	planner := agents[0]
+	if !planner.IsSystem {
+		t.Fatal("expected seeded planner to be marked as system")
+	}
+	if planner.PresetKey != model.AgentPresetEpicPlanner {
+		t.Fatalf("preset_key = %q, want %q", planner.PresetKey, model.AgentPresetEpicPlanner)
+	}
+	if planner.PresetKey != model.AgentPresetEpicPlanner {
+		t.Fatalf("preset_key = %q, want %q", planner.PresetKey, model.AgentPresetEpicPlanner)
+	}
+	if planner.Name != defaultSystemProductPlannerName {
+		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemProductPlannerName)
+	}
+	if planner.SystemPrompt == nil || *planner.SystemPrompt == "" {
+		t.Fatal("expected seeded planner to persist a system prompt")
+	}
+	if planner.DefaultInvocationMode != model.InvocationModeInteractive {
+		t.Fatalf("default_invocation_mode = %q, want %q", planner.DefaultInvocationMode, model.InvocationModeInteractive)
 	}
 }
 

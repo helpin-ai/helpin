@@ -52,14 +52,19 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, agent)
 }
 
-// ListRuntimeProfiles handles GET /api/pm/runtime-profiles.
-func (h *AgentHandler) ListRuntimeProfiles(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListRuntimeProfiles())
+// ListAgentPresets handles GET /api/pm/agent-presets.
+func (h *AgentHandler) ListAgentPresets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.agentService.ListAgentPresets())
 }
 
 // ListModelProviders handles GET /api/pm/agent-model-providers.
 func (h *AgentHandler) ListModelProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.agentService.ListModelProviders())
+}
+
+// ListToolCatalog handles GET /api/pm/tool-catalog.
+func (h *AgentHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
 }
 
 // GetRunnerHealth handles GET /api/pm/runner-health.
@@ -140,6 +145,46 @@ func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
+// RunStoryAgent handles POST /api/pm/stories/{id}/run-agent.
+func (h *AgentHandler) RunStoryAgent(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	storyID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.StartAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, "story", storyID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
+// RunEpicAgent handles POST /api/pm/epics/{id}/run-agent.
+func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.StartAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
 // CancelRun handles POST /api/pm/agent-runs/{id}/cancel.
 func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -167,6 +212,26 @@ func (h *AgentHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := h.agentService.ApproveRun(r.Context(), workspaceID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+// RequestRunChanges handles POST /api/pm/agent-runs/{id}/request-changes.
+func (h *AgentHandler) RequestRunChanges(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.SendAgentRunRequestChangesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.RequestRunChanges(r.Context(), workspaceID, runID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -222,6 +287,50 @@ func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListWorkspaceRuns handles GET /api/pm/agent-runs/workspace.
+func (h *AgentHandler) ListWorkspaceRuns(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	pagination := queryPagination(r)
+
+	runs, total, err := h.agentService.ListWorkspaceRuns(r.Context(), workspaceID, pagination)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []model.AgentRun{}
+	}
+
+	totalPages := 0
+	if pagination.PerPage > 0 {
+		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
+	}
+	writeJSON(w, http.StatusOK, model.PaginatedResponse{
+		Data:       runs,
+		Total:      int(total),
+		Page:       pagination.Page,
+		PerPage:    pagination.PerPage,
+		TotalPages: totalPages,
+	})
+}
+
+// ListTargetRuns handles GET /api/pm/agent-runs?target_type=...&target_id=....
+func (h *AgentHandler) ListTargetRuns(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	targetType := r.URL.Query().Get("target_type")
+	targetID := r.URL.Query().Get("target_id")
+
+	runs, err := h.agentService.ListTargetRuns(r.Context(), workspaceID, targetType, targetID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []model.AgentRun{}
+	}
+	writeJSON(w, http.StatusOK, runs)
+}
+
 // GetAgentRun handles GET /api/pm/agent-runs/{id}.
 func (h *AgentHandler) GetAgentRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -233,6 +342,42 @@ func (h *AgentHandler) GetAgentRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+// ListRunMessages handles GET /api/pm/agent-runs/{id}/messages.
+func (h *AgentHandler) ListRunMessages(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+
+	messages, err := h.agentService.ListRunMessages(r.Context(), workspaceID, runID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if messages == nil {
+		messages = []model.AgentRunMessage{}
+	}
+	writeJSON(w, http.StatusOK, messages)
+}
+
+// SendRunMessage handles POST /api/pm/agent-runs/{id}/messages.
+func (h *AgentHandler) SendRunMessage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.SendAgentRunMessageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	message, err := h.agentService.SendRunMessage(r.Context(), workspaceID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, message)
 }
 
 // ListRunArtifacts handles GET /api/pm/agent-runs/{id}/artifacts.

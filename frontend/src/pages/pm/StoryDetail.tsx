@@ -1108,7 +1108,6 @@ export function StoryDetailPage() {
                 storyId={storyDetail.story.id}
                 workspaceId={workspaceId!}
                 assignedAgentId={storyDetail.story.assigned_agent_id}
-                slug={slug}
               />
             </>
           )}

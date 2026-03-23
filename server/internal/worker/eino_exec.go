@@ -194,11 +194,6 @@ func ExecuteWithEino(
 		return nil, err
 	}
 
-	toolDefsByName := make(map[string]ToolDefinition, len(tools))
-	for _, def := range tools {
-		toolDefsByName[def.Name] = def
-	}
-
 	messages, err := toSchemaMessages(systemPrompt, history)
 	if err != nil {
 		return nil, err
@@ -231,9 +226,6 @@ func ExecuteWithEino(
 		for _, toolCall := range assistantMsg.ToolCalls {
 			argsJSON := normalizeToolArguments(toolCall.Function.Arguments)
 			toolName := toolCall.Function.Name
-			if _, ok := toolDefsByName[toolName]; !ok {
-				return nil, fmt.Errorf("model requested unknown tool %q", toolName)
-			}
 
 			if onEvent != nil {
 				onEvent(ExecutionEvent{

@@ -48,11 +48,11 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		config = DefaultWorkflowConfig()
 	}
 
-	if execCtx.RuntimeProfile.Name == "" {
-		execCtx.RuntimeProfile = GetRuntimeProfile(execCtx.Agent.CapabilityProfile)
+	if len(execCtx.ResolvedProfile.Tools) == 0 {
+		execCtx.ResolvedProfile = ResolveAgentProfile(execCtx.Agent)
 	}
 	if len(execCtx.AllowedTools) == 0 {
-		execCtx.AllowedTools = allowedToolSet(execCtx.RuntimeProfile)
+		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
@@ -86,18 +86,24 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.InitialInstructions,
 	)
 
+	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
+	if len(history) == 0 {
+		history = []ExecutionMessage{{
+			Role:    "user",
+			Content: userPrompt,
+		}}
+	}
+
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
 	defer cancel()
 
-	history := []ExecutionMessage{{
-		Role:    "user",
-		Content: userPrompt,
-	}}
-
 	runCtx := *execCtx
 	runCtx.Context = ctx
 	result, execErr := ExecuteWithEino(ctx, e.modelFactory, execCtx.Agent, systemPrompt, history, e.tools.DefinitionsFor(execCtx.AllowedTools), &runCtx, e.tools, config.MaxIterations, func(event ExecutionEvent) {
+		if execCtx.OnExecutionEvent != nil {
+			execCtx.OnExecutionEvent(event)
+		}
 		if execCtx.Heartbeat == nil {
 			return
 		}
@@ -113,6 +119,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 
 	totalTokens := result.Usage.InputTokens + result.Usage.OutputTokens
+	execCtx.LastExecutionResult = result
 	if execCtx.Agent.MonthlyTokenBudget != nil {
 		budget := *execCtx.Agent.MonthlyTokenBudget
 		if execCtx.Agent.TokensUsedThisMonth+totalTokens > budget {
@@ -218,6 +225,8 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			e.saveArtifact(ctx, run, "story_plan_proposal", "json", string(payload), seqNo)
 			seqNo++
 			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
+		case "":
+			// Direct epic planner runs manage phase state in the Temporal activity layer.
 		default:
 			proposal, err := extractPlanningProposalFromResponseText(result.AssistantText, execCtx.Epic.ID, "", totalTokens)
 			if err != nil {

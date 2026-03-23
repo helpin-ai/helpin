@@ -64,8 +64,6 @@ type Handlers struct {
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
-	Flow               *handler.FlowHandler
-	FlowTemplate       *handler.FlowTemplateHandler
 	SDKAssets          *handler.SDKAssetsHandler
 }
 
@@ -444,31 +442,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-runs", h.Flow.ListRuns)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-templates", h.Flow.ListTemplates)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-db-templates", h.FlowTemplate.ListTemplates)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-templates", h.FlowTemplate.CreateTemplate)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-templates/duplicate-from-slug", h.FlowTemplate.DuplicateFromSlug)
-				r.Route("/flow-templates/{templateId}", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.FlowTemplate.GetTemplate)
-					r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.FlowTemplate.UpdateTemplate)
-					r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.FlowTemplate.DeleteTemplate)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes", h.FlowTemplate.CreateNode)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/duplicate", h.FlowTemplate.DuplicateTemplate)
-					r.With(requirePerm(authorization.PermPMEdit)).Put("/nodes/{nodeId}", h.FlowTemplate.UpdateNode)
-					r.With(requirePerm(authorization.PermPMEdit)).Delete("/nodes/{nodeId}", h.FlowTemplate.DeleteNode)
-				})
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs", h.Flow.StartRun)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs/cancel-by-target", h.Flow.CancelActiveRunByTarget)
-				r.Route("/flow-runs/{flowRunId}", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Flow.GetRun)
-					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes", h.Flow.ListNodeRuns)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/cancel", h.Flow.CancelRun)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/actions", h.Flow.SendNodeAction)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/retry", h.Flow.RetryNode)
-					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes/{nodeRunId}/messages", h.Flow.ListInteractiveMessages)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/messages", h.Flow.SendInteractiveMessage)
-				})
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
@@ -570,18 +543,26 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Agents — pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/runtime-profiles", h.Agent.ListRuntimeProfiles)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-presets", h.Agent.ListAgentPresets)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunStoryAgent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/request-changes", h.Agent.RequestRunChanges)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
 			})
 

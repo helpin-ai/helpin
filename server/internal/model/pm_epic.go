@@ -34,7 +34,6 @@ type PMEpic struct {
 	Health                  string          `json:"health" gorm:"not null;default:'no_health'"`
 	HealthComment           *string         `json:"health_comment"`
 	Archived                bool            `json:"archived" gorm:"not null;default:false"`
-	OrchestratorAgentID     *string         `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
 	SpecDocumentID          *string         `json:"spec_document_id" gorm:"type:uuid;index"`
 	PlanningRepositoryID    *string         `json:"planning_repository_id" gorm:"type:uuid;index"`
 	PlanningState           string          `json:"planning_state" gorm:"not null;default:'not_started'"`
@@ -42,8 +41,6 @@ type PMEpic struct {
 	SpecClarifiedAt         *time.Time      `json:"spec_clarified_at"`
 	SpecClarifiedBy         *string         `json:"spec_clarified_by" gorm:"type:uuid"`
 	ApprovedSpecVersionID   *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
-	ActivePlanningSessionID *string         `json:"active_planning_session_id,omitempty" gorm:"type:uuid;index"`
-	ActiveFlowRunID         *string         `json:"active_flow_run_id,omitempty" gorm:"type:uuid;index"`
 	LastPlanningRunID       *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
 	CreatedBy               *string         `json:"created_by" gorm:"type:uuid"`
 	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`

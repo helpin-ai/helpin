@@ -131,9 +131,6 @@ func (r *ToolRegistry) toolWebSearch(ctx *ExecutionContext, input json.RawMessag
 	if ctx == nil {
 		return "", fmt.Errorf("execution context is required")
 	}
-	if ctx.PlanningStage != model.PlanningStageDraftSpec {
-		return "", fmt.Errorf("web search is only available during the draft_spec stage")
-	}
 	if !ctx.PlanningWebSearchEnabled {
 		return "", fmt.Errorf("web search is not enabled for this workspace")
 	}

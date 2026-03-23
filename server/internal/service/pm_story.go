@@ -214,7 +214,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 	if requesterMember == nil && actorID != "" {
 		requesterMember, err = resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, nil, &actorID)
-		if err != nil {
+		if err != nil && !isIgnorableAutoRequesterResolutionError(err) {
 			return nil, err
 		}
 	}
@@ -1144,6 +1144,18 @@ func isValidStoryPriority(value string) bool {
 func isValidStorySeverity(value string) bool {
 	switch value {
 	case model.PMStorySeverityNone, model.PMStorySeverityMinor, model.PMStorySeverityMajor, model.PMStorySeverityCritical:
+		return true
+	default:
+		return false
+	}
+}
+
+func isIgnorableAutoRequesterResolutionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch strings.TrimSpace(err.Error()) {
+	case "workspace member not found", "workspace member is revoked":
 		return true
 	default:
 		return false

@@ -35,14 +35,14 @@ import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authenticated/w/$slug/crm/index'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
+import { Route as AuthenticatedWSlugPmToolCatalogRouteImport } from './routes/_authenticated/w/$slug/pm/tool-catalog'
 import { Route as AuthenticatedWSlugPmSupportRouteImport } from './routes/_authenticated/w/$slug/pm/support'
 import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authenticated/w/$slug/pm/roadmap'
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
 import { Route as AuthenticatedWSlugPmMyWorkRouteImport } from './routes/_authenticated/w/$slug/pm/my-work'
 import { Route as AuthenticatedWSlugPmLabelsRouteImport } from './routes/_authenticated/w/$slug/pm/labels'
-import { Route as AuthenticatedWSlugPmFlowsRouteImport } from './routes/_authenticated/w/$slug/pm/flows'
-import { Route as AuthenticatedWSlugPmFlowTemplatesRouteImport } from './routes/_authenticated/w/$slug/pm/flow-templates'
 import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
+import { Route as AuthenticatedWSlugPmAgentRunsRouteImport } from './routes/_authenticated/w/$slug/pm/agent-runs'
 import { Route as AuthenticatedWSlugDocsRecentRouteImport } from './routes/_authenticated/w/$slug/docs/recent'
 import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
 import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
@@ -208,6 +208,12 @@ const AuthenticatedWSlugSettingsSectionRoute =
     path: '/settings/$section',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmToolCatalogRoute =
+  AuthenticatedWSlugPmToolCatalogRouteImport.update({
+    id: '/pm/tool-catalog',
+    path: '/pm/tool-catalog',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmSupportRoute =
   AuthenticatedWSlugPmSupportRouteImport.update({
     id: '/pm/support',
@@ -238,22 +244,16 @@ const AuthenticatedWSlugPmLabelsRoute =
     path: '/pm/labels',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugPmFlowsRoute =
-  AuthenticatedWSlugPmFlowsRouteImport.update({
-    id: '/pm/flows',
-    path: '/pm/flows',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugPmFlowTemplatesRoute =
-  AuthenticatedWSlugPmFlowTemplatesRouteImport.update({
-    id: '/pm/flow-templates',
-    path: '/pm/flow-templates',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
 const AuthenticatedWSlugPmAgentsRoute =
   AuthenticatedWSlugPmAgentsRouteImport.update({
     id: '/pm/agents',
     path: '/pm/agents',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugPmAgentRunsRoute =
+  AuthenticatedWSlugPmAgentRunsRouteImport.update({
+    id: '/pm/agent-runs',
+    path: '/pm/agent-runs',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugDocsRecentRoute =
@@ -425,14 +425,14 @@ export interface FileRoutesByFullPath {
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
+  '/w/$slug/pm/agent-runs': typeof AuthenticatedWSlugPmAgentRunsRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
-  '/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
-  '/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
+  '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -482,14 +482,14 @@ export interface FileRoutesByTo {
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
+  '/w/$slug/pm/agent-runs': typeof AuthenticatedWSlugPmAgentRunsRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
-  '/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
-  '/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
+  '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmIndexRoute
@@ -543,14 +543,14 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/_authenticated/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
+  '/_authenticated/w/$slug/pm/agent-runs': typeof AuthenticatedWSlugPmAgentRunsRoute
   '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
-  '/_authenticated/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
-  '/_authenticated/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/_authenticated/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/_authenticated/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
   '/_authenticated/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/_authenticated/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/_authenticated/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
+  '/_authenticated/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
@@ -604,14 +604,14 @@ export interface FileRouteTypes {
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
+    | '/w/$slug/pm/agent-runs'
     | '/w/$slug/pm/agents'
-    | '/w/$slug/pm/flow-templates'
-    | '/w/$slug/pm/flows'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/my-work'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
     | '/w/$slug/pm/support'
+    | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/crm/'
@@ -661,14 +661,14 @@ export interface FileRouteTypes {
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
+    | '/w/$slug/pm/agent-runs'
     | '/w/$slug/pm/agents'
-    | '/w/$slug/pm/flow-templates'
-    | '/w/$slug/pm/flows'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/my-work'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
     | '/w/$slug/pm/support'
+    | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/crm'
@@ -721,14 +721,14 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/docs/drafts'
     | '/_authenticated/w/$slug/docs/my'
     | '/_authenticated/w/$slug/docs/recent'
+    | '/_authenticated/w/$slug/pm/agent-runs'
     | '/_authenticated/w/$slug/pm/agents'
-    | '/_authenticated/w/$slug/pm/flow-templates'
-    | '/_authenticated/w/$slug/pm/flows'
     | '/_authenticated/w/$slug/pm/labels'
     | '/_authenticated/w/$slug/pm/my-work'
     | '/_authenticated/w/$slug/pm/reports'
     | '/_authenticated/w/$slug/pm/roadmap'
     | '/_authenticated/w/$slug/pm/support'
+    | '/_authenticated/w/$slug/pm/tool-catalog'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/crm/'
@@ -953,6 +953,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSectionRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/tool-catalog': {
+      id: '/_authenticated/w/$slug/pm/tool-catalog'
+      path: '/pm/tool-catalog'
+      fullPath: '/w/$slug/pm/tool-catalog'
+      preLoaderRoute: typeof AuthenticatedWSlugPmToolCatalogRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/support': {
       id: '/_authenticated/w/$slug/pm/support'
       path: '/pm/support'
@@ -988,25 +995,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmLabelsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/pm/flows': {
-      id: '/_authenticated/w/$slug/pm/flows'
-      path: '/pm/flows'
-      fullPath: '/w/$slug/pm/flows'
-      preLoaderRoute: typeof AuthenticatedWSlugPmFlowsRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/pm/flow-templates': {
-      id: '/_authenticated/w/$slug/pm/flow-templates'
-      path: '/pm/flow-templates'
-      fullPath: '/w/$slug/pm/flow-templates'
-      preLoaderRoute: typeof AuthenticatedWSlugPmFlowTemplatesRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
     '/_authenticated/w/$slug/pm/agents': {
       id: '/_authenticated/w/$slug/pm/agents'
       path: '/pm/agents'
       fullPath: '/w/$slug/pm/agents'
       preLoaderRoute: typeof AuthenticatedWSlugPmAgentsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/pm/agent-runs': {
+      id: '/_authenticated/w/$slug/pm/agent-runs'
+      path: '/pm/agent-runs'
+      fullPath: '/w/$slug/pm/agent-runs'
+      preLoaderRoute: typeof AuthenticatedWSlugPmAgentRunsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/docs/recent': {
@@ -1216,14 +1216,14 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugIndexRoute: typeof AuthenticatedWSlugIndexRoute
   AuthenticatedWSlugCrmInsightsRoute: typeof AuthenticatedWSlugCrmInsightsRoute
   AuthenticatedWSlugCrmReviewRoute: typeof AuthenticatedWSlugCrmReviewRoute
+  AuthenticatedWSlugPmAgentRunsRoute: typeof AuthenticatedWSlugPmAgentRunsRoute
   AuthenticatedWSlugPmAgentsRoute: typeof AuthenticatedWSlugPmAgentsRoute
-  AuthenticatedWSlugPmFlowTemplatesRoute: typeof AuthenticatedWSlugPmFlowTemplatesRoute
-  AuthenticatedWSlugPmFlowsRoute: typeof AuthenticatedWSlugPmFlowsRoute
   AuthenticatedWSlugPmLabelsRoute: typeof AuthenticatedWSlugPmLabelsRoute
   AuthenticatedWSlugPmMyWorkRoute: typeof AuthenticatedWSlugPmMyWorkRoute
   AuthenticatedWSlugPmReportsRoute: typeof AuthenticatedWSlugPmReportsRoute
   AuthenticatedWSlugPmRoadmapRoute: typeof AuthenticatedWSlugPmRoadmapRoute
   AuthenticatedWSlugPmSupportRoute: typeof AuthenticatedWSlugPmSupportRoute
+  AuthenticatedWSlugPmToolCatalogRoute: typeof AuthenticatedWSlugPmToolCatalogRoute
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSprintsSprintIdRoute: typeof AuthenticatedWSlugSprintsSprintIdRoute
   AuthenticatedWSlugCrmIndexRoute: typeof AuthenticatedWSlugCrmIndexRoute
@@ -1259,15 +1259,14 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugIndexRoute: AuthenticatedWSlugIndexRoute,
   AuthenticatedWSlugCrmInsightsRoute: AuthenticatedWSlugCrmInsightsRoute,
   AuthenticatedWSlugCrmReviewRoute: AuthenticatedWSlugCrmReviewRoute,
+  AuthenticatedWSlugPmAgentRunsRoute: AuthenticatedWSlugPmAgentRunsRoute,
   AuthenticatedWSlugPmAgentsRoute: AuthenticatedWSlugPmAgentsRoute,
-  AuthenticatedWSlugPmFlowTemplatesRoute:
-    AuthenticatedWSlugPmFlowTemplatesRoute,
-  AuthenticatedWSlugPmFlowsRoute: AuthenticatedWSlugPmFlowsRoute,
   AuthenticatedWSlugPmLabelsRoute: AuthenticatedWSlugPmLabelsRoute,
   AuthenticatedWSlugPmMyWorkRoute: AuthenticatedWSlugPmMyWorkRoute,
   AuthenticatedWSlugPmReportsRoute: AuthenticatedWSlugPmReportsRoute,
   AuthenticatedWSlugPmRoadmapRoute: AuthenticatedWSlugPmRoadmapRoute,
   AuthenticatedWSlugPmSupportRoute: AuthenticatedWSlugPmSupportRoute,
+  AuthenticatedWSlugPmToolCatalogRoute: AuthenticatedWSlugPmToolCatalogRoute,
   AuthenticatedWSlugSettingsSectionRoute:
     AuthenticatedWSlugSettingsSectionRoute,
   AuthenticatedWSlugSprintsSprintIdRoute:

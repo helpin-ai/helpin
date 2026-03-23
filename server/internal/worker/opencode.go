@@ -531,7 +531,7 @@ func normalizeOpenCodePostRunError(ctx context.Context, err error) error {
 }
 
 func isEngineerStoryRun(execCtx *ExecutionContext) bool {
-	return execCtx != nil && execCtx.Agent != nil && execCtx.Agent.AgentClass == model.AgentClassEngineer && execCtx.Story != nil
+	return execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
 }
 
 func resolveWorkingBranch(execCtx *ExecutionContext) (string, error) {

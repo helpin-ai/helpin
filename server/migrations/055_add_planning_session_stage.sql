@@ -1,2 +1,0 @@
-ALTER TABLE planning_sessions ADD COLUMN IF NOT EXISTS stage VARCHAR(50) NOT NULL DEFAULT 'draft_spec';
-ALTER TABLE planning_sessions ADD COLUMN IF NOT EXISTS plan_draft TEXT NOT NULL DEFAULT '';

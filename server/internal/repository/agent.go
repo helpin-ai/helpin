@@ -23,7 +23,7 @@ func NewAgentRepository(db *gorm.DB) *AgentRepository {
 // List returns all agents in a workspace.
 func (r *AgentRepository) List(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	var agents []model.Agent
-	if err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("created_at DESC").Find(&agents).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("is_system DESC, created_at DESC").Find(&agents).Error; err != nil {
 		return nil, fmt.Errorf("list agents: %w", err)
 	}
 	return agents, nil
@@ -37,6 +37,21 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get agent: %w", err)
+	}
+	return &agent, nil
+}
+
+// GetSystemByPreset returns the first system agent for a preset within a workspace.
+func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, presetKey string) (*model.Agent, error) {
+	var agent model.Agent
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND is_system = ? AND preset_key = ?", workspaceID, true, presetKey).
+		Order("created_at ASC").
+		First(&agent).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get system agent by preset: %w", err)
 	}
 	return &agent, nil
 }
@@ -118,6 +133,32 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 	return runs, total, nil
 }
 
+// ListByWorkspace returns runs in a workspace with pagination.
+func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID string, pagination model.PMPagination) ([]model.AgentRun, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("workspace_id = ?", workspaceID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count workspace agent runs: %w", err)
+	}
+
+	page := pagination.Page
+	perPage := pagination.PerPage
+	if page <= 0 {
+		page = 1
+	}
+	if perPage <= 0 {
+		perPage = 50
+	}
+	offset := (page - 1) * perPage
+
+	var runs []model.AgentRun
+	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&runs).Error; err != nil {
+		return nil, 0, fmt.Errorf("list workspace agent runs: %w", err)
+	}
+	return runs, total, nil
+}
+
 // ListByStory returns runs for a story.
 func (r *AgentRunRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
@@ -143,7 +184,7 @@ func (r *AgentRunRepository) ListByTarget(ctx context.Context, workspaceID, targ
 func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running", "awaiting_approval"}).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running", "awaiting_input", "awaiting_approval"}).
 		Order("created_at DESC").
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -157,7 +198,7 @@ func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID
 // ListActive returns queued, running, or approval-pending runs in a workspace.
 func (r *AgentRunRepository) ListActive(ctx context.Context, workspaceID string, limit int) ([]model.AgentRun, error) {
 	query := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND status IN ?", workspaceID, []string{"queued", "running", "awaiting_approval"}).
+		Where("workspace_id = ? AND status IN ?", workspaceID, []string{"queued", "running", "awaiting_input", "awaiting_approval"}).
 		Order("created_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -168,6 +209,48 @@ func (r *AgentRunRepository) ListActive(ctx context.Context, workspaceID string,
 		return nil, fmt.Errorf("list active agent runs: %w", err)
 	}
 	return runs, nil
+}
+
+// AgentRunMessageRepository handles persisted run conversation history.
+type AgentRunMessageRepository struct {
+	db *gorm.DB
+}
+
+func NewAgentRunMessageRepository(db *gorm.DB) *AgentRunMessageRepository {
+	return &AgentRunMessageRepository{db: db}
+}
+
+func (r *AgentRunMessageRepository) ListByRun(ctx context.Context, workspaceID, runID string) ([]model.AgentRunMessage, error) {
+	var messages []model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND run_id = ?", workspaceID, runID).
+		Order("sequence_no ASC, created_at ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list agent run messages: %w", err)
+	}
+	return messages, nil
+}
+
+func (r *AgentRunMessageRepository) NextSequence(ctx context.Context, workspaceID, runID string) (int, error) {
+	type result struct {
+		Max int
+	}
+	var row result
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Select("COALESCE(MAX(sequence_no), 0) AS max").
+		Where("workspace_id = ? AND run_id = ?", workspaceID, runID).
+		Scan(&row).Error; err != nil {
+		return 0, fmt.Errorf("next agent run message sequence: %w", err)
+	}
+	return row.Max + 1, nil
+}
+
+func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.AgentRunMessage) error {
+	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
+		return fmt.Errorf("create agent run message: %w", err)
+	}
+	return nil
 }
 
 // GetByID returns a single run.

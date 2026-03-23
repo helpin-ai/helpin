@@ -12,13 +12,14 @@ export interface StatusConfig {
 export const STATUS_META: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   queued: { label: 'Queued', variant: 'secondary' },
   running: { label: 'Running', variant: 'default' },
+  awaiting_input: { label: 'Awaiting input', variant: 'secondary' },
   awaiting_approval: { label: 'Awaiting approval', variant: 'secondary' },
   completed: { label: 'Completed', variant: 'outline' },
   failed: { label: 'Failed', variant: 'destructive' },
   cancelled: { label: 'Cancelled', variant: 'secondary' },
 };
 
-export const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'awaiting_approval']);
+export const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'awaiting_input', 'awaiting_approval']);
 
 export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   conversation_log: 'Conversation Log',

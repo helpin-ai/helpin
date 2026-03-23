@@ -16,12 +16,12 @@ import (
 func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
 	var parts []string
 
-	// Epic planning uses a workspace-selected methodology pack; agent notes are additive only.
-	if epic != nil {
+	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
+		parts = append(parts, strings.TrimSpace(*agent.SystemPrompt))
+	} else if epic != nil && strings.TrimSpace(planningStage) != "" {
+		// Legacy staged planning compatibility. Direct planner runs should keep instructions on the agent itself.
 		parts = append(parts, planningIdentity(agent, planningStage, planningMethodology))
 		parts = append(parts, planningPackSections(agent, planningStage, planningMethodology)...)
-	} else if agent.SystemPrompt != nil && *agent.SystemPrompt != "" {
-		parts = append(parts, *agent.SystemPrompt)
 	} else {
 		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
 	}
@@ -40,13 +40,11 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		if epic.Description != nil && *epic.Description != "" {
 			parts = append(parts, fmt.Sprintf("**Description**: %s", *epic.Description))
 		}
-		switch planningStage {
+		switch strings.TrimSpace(planningStage) {
 		case model.PlanningStageDraftSpec:
 			parts = append(parts, `Respond with valid JSON in this shape: {"title":"...","summary":"...","spec_markdown":"# ...","risks":["..."],"assumptions":["..."],"open_questions":["..."],"sources":[{"title":"...","url":"https://...","note":"why this matters","published_at":"optional"}]}.`)
 		case model.PlanningStagePlanStories:
 			parts = append(parts, `Respond with valid JSON in this shape: {"summary":"...","spec_version_id":"optional","proposed_stories":[{"ref":"story_1","name":"...","description":"...","story_type":"feature|bug|chore","estimate":1,"priority":"none|low|medium|high|urgent","acceptance_criteria":["..."],"dependency_refs":["story_0"],"source_refs":[{"type":"spec_section","title":"..."}],"assign_agent_id":"optional-agent-id","slice_type":"vertical|enabler|spike","implementation_brief":{"approach":"...","files_to_modify":[{"path":"server/internal/model/foo.go","action":"create|modify|delete","description":"..."}],"test_strategy":"...","vertical_layers":["model","repository","service"],"depends_on_files":["server/internal/model/bar.go"]}}],"vertical_coverage":[{"behavior":"...","story_refs":["story_1"],"full_slice":true}],"open_questions":["..."],"risks":["..."]}.`)
-		default:
-			parts = append(parts, `Respond with valid JSON in this shape: {"summary":"...","proposed_stories":[{"name":"...","description":"...","story_type":"feature|bug|chore","estimate":1,"assign_agent_id":"optional-agent-id"}]}.`)
 		}
 	}
 	if ticket != nil {
@@ -80,7 +78,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		parts = append(parts, "- Commit and push your changes when the task is complete.")
 	}
 	if epic != nil {
-		switch planningStage {
+		switch strings.TrimSpace(planningStage) {
 		case model.PlanningStageDraftSpec:
 			parts = append(parts, "- Produce a structured product spec draft, not implementation tasks.")
 			parts = append(parts, "- The spec markdown must be well organized with headings and scenario-style acceptance language.")
@@ -95,10 +93,6 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 			parts = append(parts, "- Keep story names flat and outcome-oriented. Do not use phase prefixes or sequencing labels in titles.")
 			parts = append(parts, "- Align stories with the existing module boundaries, naming patterns, and architecture when the code context is clear.")
 			parts = append(parts, "- If the approved spec conflicts with the current implementation or the code context is ambiguous, surface that as risks or open questions.")
-			parts = append(parts, "- Avoid duplicating or overlapping existing stories.")
-			parts = append(parts, "- Return JSON only, with no markdown fences.")
-		default:
-			parts = append(parts, "- Propose implementation-ready stories, not vague project phases.")
 			parts = append(parts, "- Avoid duplicating or overlapping existing stories.")
 			parts = append(parts, "- Return JSON only, with no markdown fences.")
 		}
@@ -131,13 +125,13 @@ func BuildUserPrompt(
 		}
 	}
 	if epic != nil {
-		switch planningStage {
+		switch strings.TrimSpace(planningStage) {
 		case model.PlanningStageDraftSpec:
 			parts = append(parts, fmt.Sprintf("Please draft or refresh the canonical product spec for epic: **%s**", epic.Name))
 		case model.PlanningStagePlanStories:
 			parts = append(parts, fmt.Sprintf("Please create a dependency-aware story plan for epic: **%s**", epic.Name))
 		default:
-			parts = append(parts, fmt.Sprintf("Please decompose epic: **%s**", epic.Name))
+			parts = append(parts, fmt.Sprintf("Please work on epic: **%s**", epic.Name))
 		}
 		if epic.Description != nil && *epic.Description != "" {
 			parts = append(parts, "\nDescription:\n"+*epic.Description)
@@ -188,13 +182,11 @@ func BuildUserPrompt(
 	if ticket != nil {
 		parts = append(parts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
 	} else if epic != nil {
-		switch planningStage {
+		switch strings.TrimSpace(planningStage) {
 		case model.PlanningStageDraftSpec:
 			parts = append(parts, "\nCreate a structured product spec draft that a human can edit and approve in Docs. Separate assumptions from open questions so the human owner can clarify the draft before approval.")
 		case model.PlanningStagePlanStories:
 			parts = append(parts, "\nUse the approved spec and the current codebase context to produce a reviewable story plan with acceptance criteria, dependencies, risks, and open questions.")
-		default:
-			parts = append(parts, "\nPropose a concise epic summary and a set of concrete, implementation-ready stories.")
 		}
 	} else {
 		parts = append(parts, "\nPlease complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.")

@@ -139,18 +139,14 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
 
   const loadAgentRuns = useCallback(async () => {
-    if (!conversationId || !conversation?.assigned_agent_id) {
+    if (!conversationId) {
       setAgentRuns([]);
       return;
     }
-    const res = await agentService.listRuns(workspaceId, conversation.assigned_agent_id);
+    const res = await agentService.listTargetRuns(workspaceId, 'support_conversation', conversationId);
     if (res.error) return;
-    setAgentRuns(
-      (res.data?.data ?? []).filter(
-        (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
-      )
-    );
-  }, [workspaceId, conversationId, conversation?.assigned_agent_id]);
+    setAgentRuns(res.data ?? []);
+  }, [workspaceId, conversationId]);
 
   useEffect(() => {
     loadAgentRuns();

@@ -81,18 +81,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
     } else if (event.entity === 'agent_run') {
-      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
       queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
       if (event.parent_type === 'story' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
       }
-    } else if (event.entity === 'planning_session_message') {
-      if (event.parent_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.pm.planningMessages(workspaceId, event.parent_id) })
-      }
-    } else if (event.entity === 'planning_session') {
-      queryClient.invalidateQueries({ queryKey: queryKeys.pm.planningSession(workspaceId, event.entity_id) })
-      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
         if (!event.entity_id) return

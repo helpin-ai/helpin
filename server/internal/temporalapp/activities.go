@@ -75,6 +75,7 @@ type InternalCommandExecutor interface {
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo          *repository.AgentRunRepository
+	runMessageRepo   *repository.AgentRunMessageRepository
 	agentRepo        *repository.AgentRepository
 	artifactRepo     *repository.AgentRunArtifactRepository
 	storyRepo        *repository.PMStoryRepository
@@ -109,6 +110,7 @@ type AgentRunActivities struct {
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
 func NewAgentRunActivities(
 	runRepo *repository.AgentRunRepository,
+	runMessageRepo *repository.AgentRunMessageRepository,
 	agentRepo *repository.AgentRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	storyRepo *repository.PMStoryRepository,
@@ -141,6 +143,7 @@ func NewAgentRunActivities(
 ) *AgentRunActivities {
 	return &AgentRunActivities{
 		runRepo:          runRepo,
+		runMessageRepo:   runMessageRepo,
 		agentRepo:        agentRepo,
 		artifactRepo:     artifactRepo,
 		storyRepo:        storyRepo,
@@ -180,7 +183,6 @@ type resolvedRunState struct {
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
 	conversation   *model.SupportConversation
-	profile        model.RuntimeProfile      // class-level profile (kept for RuntimeProfile passthrough)
 	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
@@ -200,6 +202,10 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 	}
 
 	now := time.Now()
+	state.run.Status = model.AgentRunStatusRunning
+	if state.run.StartedAt == nil {
+		state.run.StartedAt = &now
+	}
 	state.run.ExecutionStage = strPtr("preparing")
 	state.run.LastHeartbeatAt = &now
 
@@ -213,6 +219,7 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 	if err := a.runRepo.Update(ctx, state.run); err != nil {
 		return err
 	}
+	a.runRepo.Notify(ctx, state.run)
 
 	activity.RecordHeartbeat(ctx, "prepared")
 	return nil
@@ -232,6 +239,27 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	if state.run.TargetType == "support_conversation" && state.run.ApprovalState == "approved" {
+		if err := a.finalizeSupportConversationRun(ctx, state); err != nil {
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+
+		completedAt := time.Now()
+		state.run.Status = model.AgentRunStatusCompleted
+		state.run.CompletedAt = &completedAt
+		state.run.ExecutionStage = strPtr("completed")
+		state.run.LastHeartbeatAt = &completedAt
+		if err := a.runRepo.Update(ctx, state.run); err != nil {
+			return ExecuteRunResult{}, err
+		}
+		a.runRepo.Notify(ctx, state.run)
+		if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
+			return ExecuteRunResult{}, err
+		}
+		return ExecuteRunResult{}, nil
+	}
+
 	if err := a.preparePlanningRepository(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -274,8 +302,14 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if len(planningInput.AllowedTools) > 0 {
 		allowedTools = stringSliceToSet(planningInput.AllowedTools)
 	}
-	if input := planningInput; input.Stage != model.PlanningStageDraftSpec || !input.PlanningWebSearchEnabled {
+	if input := planningInput; (!input.PlanningWebSearchEnabled) || (input.Stage != "" && input.Stage != model.PlanningStageDraftSpec) {
 		delete(allowedTools, "web_search")
+	}
+
+	history, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
+	if err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	bridge := a.serviceBridge()
@@ -305,9 +339,10 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		PlanningWebSearchEnabled:  planningInput.PlanningWebSearchEnabled,
 		PlanningWebSearchProvider: planningInput.PlanningWebSearchProvider,
 		Config:                    config,
-		RuntimeProfile:            state.profile,
+		ResolvedProfile:           state.resolved,
 		AllowedTools:              allowedTools,
 		Services:                  bridge,
+		ConversationHistory:       history,
 		Heartbeat: func(stage string) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -321,6 +356,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			}
 			a.runRepo.Notify(ctx, state.run)
 			return nil
+		},
+		OnExecutionEvent: func(event workerpkg.ExecutionEvent) {
+			a.publishRunStreamEvent(state.run, event)
 		},
 		OnGitPush: func(branch, sha string) error {
 			return a.recordPush(ctx, state, branch, sha)
@@ -357,7 +395,16 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	if err := a.persistAssistantRunMessage(ctx, state, execCtx); err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
+	if err := a.captureTranscriptPlanningArtifacts(ctx, state, execCtx, planningInput); err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
 
+	approvalRequest := latestExecutionApprovalRequest(execCtx)
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -374,15 +421,35 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
+	waitForInput := state.run.InvocationMode == model.InvocationModeInteractive && state.run.TargetType != "support_conversation"
 	waitForApproval := state.run.ApprovalState == "pending"
+	continueExecution := false
+	if state.run.InvocationMode == model.InvocationModeInteractive && state.run.TargetType != "support_conversation" && approvalRequest != nil {
+		state.run.ApprovalState = "not_required"
+		waitForApproval = false
+		waitForInput = true
+	}
 	completedAt := time.Now()
 	if waitForApproval {
 		state.run.Status = "awaiting_approval"
+		state.run.CompletedAt = nil
+		if approvalRequest != nil && strings.TrimSpace(approvalRequest.Phase) != "" {
+			state.run.ExecutionStage = strPtr(strings.TrimSpace(approvalRequest.Phase))
+		} else {
+			state.run.ExecutionStage = strPtr("awaiting_approval")
+		}
+	} else if waitForInput {
+		state.run.Status = "awaiting_input"
+		state.run.CompletedAt = nil
+		state.run.ExecutionStage = strPtr("awaiting_input")
+	} else if continueExecution {
+		state.run.Status = model.AgentRunStatusRunning
+		state.run.CompletedAt = nil
 	} else {
 		state.run.Status = "completed"
 		state.run.CompletedAt = &completedAt
+		state.run.ExecutionStage = strPtr("completed")
 	}
-	state.run.ExecutionStage = strPtr("completed")
 	state.run.LastHeartbeatAt = &completedAt
 	if isEmptySummary(state.run.OutputSummary) {
 		state.run.OutputSummary = json.RawMessage(`{"status":"success"}`)
@@ -391,13 +458,22 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
-	a.signalParentFlow(ctx, state.run, state.run.Status)
 
-	if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
-		return ExecuteRunResult{}, err
+	if waitForApproval || waitForInput {
+		if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
+			return ExecuteRunResult{}, err
+		}
+	} else if !continueExecution {
+		if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
+			return ExecuteRunResult{}, err
+		}
 	}
 
-	return ExecuteRunResult{WaitForApproval: waitForApproval}, nil
+	return ExecuteRunResult{
+		WaitForApproval:   waitForApproval,
+		AwaitingInput:     waitForInput && !waitForApproval,
+		ContinueExecution: continueExecution && !waitForApproval && !waitForInput,
+	}, nil
 }
 
 func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
@@ -467,6 +543,238 @@ func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context,
 	return nil
 }
 
+func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, error) {
+	if a.runMessageRepo == nil {
+		return nil, nil
+	}
+
+	messages, err := a.runMessageRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		prompt, err := a.buildInitialRunUserPrompt(ctx, state, planningInput, initialInstructions)
+		if err != nil {
+			return nil, err
+		}
+		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, *created)
+	}
+
+	history := make([]workerpkg.ExecutionMessage, 0, len(messages))
+	for _, message := range messages {
+		history = append(history, runMessageToExecutionMessage(message))
+	}
+	return history, nil
+}
+
+func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, planningInput planningRunInput, initialInstructions string) (string, error) {
+	var checklist []model.PMChecklistItem
+	if state.story != nil {
+		items, err := a.checklistRepo.List(ctx, state.story.ID)
+		if err != nil {
+			return "", err
+		}
+		checklist = items
+	}
+
+	var ticketMessages []model.SupportMessage
+	if state.conversation != nil {
+		messages, err := a.messageRepo.ListByConversation(ctx, state.run.WorkspaceID, state.conversation.ID, true)
+		if err != nil {
+			return "", err
+		}
+		ticketMessages = messages
+	}
+
+	return workerpkg.BuildUserPrompt(
+		state.story,
+		state.epic,
+		state.epicStories,
+		state.conversation,
+		ticketMessages,
+		checklist,
+		planningInput.Stage,
+		initialInstructions,
+	), nil
+}
+
+func runMessageToExecutionMessage(message model.AgentRunMessage) workerpkg.ExecutionMessage {
+	execMessage := workerpkg.ExecutionMessage{
+		Role:    message.Role,
+		Content: message.Content,
+	}
+	if len(message.ContentBlocks) > 0 && string(message.ContentBlocks) != "null" {
+		var blocks []workerpkg.ExecutionBlock
+		if err := json.Unmarshal(message.ContentBlocks, &blocks); err == nil {
+			execMessage.Blocks = blocks
+		}
+	}
+	return execMessage
+}
+
+func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext) error {
+	if a.runMessageRepo == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	result := execCtx.LastExecutionResult
+	if strings.TrimSpace(result.AssistantText) == "" && len(result.AssistantBlocks) == 0 {
+		return nil
+	}
+
+	var blocks json.RawMessage
+	if len(result.AssistantBlocks) > 0 {
+		payload, err := json.Marshal(result.AssistantBlocks)
+		if err != nil {
+			return fmt.Errorf("marshal assistant blocks: %w", err)
+		}
+		blocks = payload
+	}
+	var invocations json.RawMessage
+	if len(result.ToolInvocations) > 0 {
+		payload, err := json.Marshal(result.ToolInvocations)
+		if err != nil {
+			return fmt.Errorf("marshal tool invocations: %w", err)
+		}
+		invocations = payload
+	}
+	usagePayload, err := json.Marshal(map[string]int{
+		"input_tokens":  result.Usage.InputTokens,
+		"output_tokens": result.Usage.OutputTokens,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal usage: %w", err)
+	}
+
+	_, err = a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", strings.TrimSpace(result.AssistantText), blocks, invocations, usagePayload)
+	return err
+}
+
+func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string, blocks, toolInvocations, tokenUsage json.RawMessage) (*model.AgentRunMessage, error) {
+	if a.runMessageRepo == nil {
+		return nil, nil
+	}
+	sequenceNo, err := a.runMessageRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	message := &model.AgentRunMessage{
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		Role:            role,
+		Content:         content,
+		MessageType:     messageType,
+		ContentBlocks:   blocks,
+		ToolInvocations: toolInvocations,
+		TokenUsage:      tokenUsage,
+		SequenceNo:      sequenceNo,
+	}
+	if err := a.runMessageRepo.Create(ctx, message); err != nil {
+		return nil, err
+	}
+	a.publishRunMessageEvent(run, message)
+	return message, nil
+}
+
+func (a *AgentRunActivities) publishRunMessageEvent(run *model.AgentRun, message *model.AgentRunMessage) {
+	if a.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	data, _ := json.Marshal(message)
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "agent_run_message",
+		EntityID:    message.ID,
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  "agent_run",
+		ParentID:    run.ID,
+		Data:        data,
+	})
+}
+
+func (a *AgentRunActivities) publishRunStreamEvent(run *model.AgentRun, event workerpkg.ExecutionEvent) {
+	if a.wsPublisher == nil || run == nil {
+		return
+	}
+
+	payload, err := json.Marshal(model.AgentRunStreamEvent{
+		SentAt:        time.Now().UTC(),
+		Type:          event.Type,
+		RunID:         run.ID,
+		Text:          event.Text,
+		ToolCallID:    event.ToolCallID,
+		ToolName:      event.ToolName,
+		ToolInput:     event.ToolInput,
+		OutputSummary: event.OutputSummary,
+		DurationMs:    event.DurationMs,
+		Error:         event.Error,
+	})
+	if err != nil {
+		return
+	}
+
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "agent_run_stream",
+		EntityID:    run.ID,
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  "agent_run",
+		ParentID:    run.ID,
+		Data:        payload,
+	})
+}
+
+func latestExecutionApprovalRequest(execCtx *workerpkg.ExecutionContext) *model.ApprovalRequest {
+	if execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	return model.ExtractLatestApprovalRequest(execCtx.LastExecutionResult.AssistantText)
+}
+
+func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, input planningRunInput) error {
+	if state == nil || state.run == nil || state.epic == nil || state.run.TargetType != "epic" || execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+
+	assistantText := strings.TrimSpace(execCtx.LastExecutionResult.AssistantText)
+	if assistantText == "" {
+		return nil
+	}
+
+	if draft := model.ExtractLatestSpecDraft(assistantText); draft != "" {
+		if err := a.createRunArtifact(ctx, state.run, "product_spec_draft", "json", map[string]any{
+			"spec_markdown": draft,
+		}, 999995); err != nil {
+			return err
+		}
+	}
+
+	if rawPlan := model.ExtractLatestStoryPlan(assistantText); rawPlan != "" {
+		if proposal, err := parseStoryPlanProposal(rawPlan, state.epic.ID, input.SpecVersionID); err == nil {
+			if err := a.createRunArtifact(ctx, state.run, "story_plan_proposal", "json", proposal, 999996); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func parseStoryPlanProposal(raw, epicID, specVersionID string) (*model.OrchestrationProposal, error) {
+	var proposal model.OrchestrationProposal
+	if err := json.Unmarshal([]byte(raw), &proposal); err != nil {
+		return nil, err
+	}
+	proposal.EpicID = epicID
+	if proposal.SpecVersionID == "" {
+		proposal.SpecVersionID = specVersionID
+	}
+	return &proposal, nil
+}
+
 func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*resolvedRunState, error) {
 	run, err := a.runRepo.GetByIDAny(ctx, runID)
 	if err != nil {
@@ -484,11 +792,10 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		return nil, fmt.Errorf("agent not found")
 	}
 
-	resolved := workerpkg.ResolveAgentProfile(agent)
+	resolved := workerpkg.ResolveAgentProfile(agent, run.InvocationMode)
 	state := &resolvedRunState{
 		run:      run,
 		agent:    agent,
-		profile:  workerpkg.GetRuntimeProfile(agent.CapabilityProfile),
 		resolved: resolved,
 	}
 
@@ -658,7 +965,7 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 		return fmt.Errorf("repository access token is not available")
 	}
 
-	if state.profile.RequiresRepo && target.WorkingBranch != nil && *target.WorkingBranch != "" {
+	if state.resolved.RequiresRepo && target.WorkingBranch != nil && *target.WorkingBranch != "" {
 		if err := a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, *target.BaseBranch, *target.WorkingBranch); err != nil {
 			return err
 		}
@@ -857,9 +1164,6 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 		return input, nil
 	}
 
-	if input.Stage == "" {
-		input.Stage = model.PlanningStageDraftSpec
-	}
 	if input.SpecDocumentID == "" && state.epic.SpecDocumentID != nil {
 		input.SpecDocumentID = strings.TrimSpace(*state.epic.SpecDocumentID)
 	}
@@ -909,6 +1213,9 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return runInputAdditionalContext(state.run.Input), nil
+	}
+	if input.Stage == "" {
+		return a.buildAgenticEpicPlannerInstructions(ctx, state, input)
 	}
 
 	switch input.Stage {
@@ -1124,14 +1431,89 @@ func (a *AgentRunActivities) buildStoryPlanInstructions(ctx context.Context, sta
 	return strings.Join(sections, "\n\n"), nil
 }
 
+func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	var sections []string
+
+	sections = append(sections, fmt.Sprintf("Run mode: %s", state.run.InvocationMode))
+	if state.run.InvocationMode == model.InvocationModeInteractive {
+		sections = append(sections, "The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.")
+		sections = append(sections, "Treat this as one transcript-driven planning run. There is no hidden planner phase machine controlling the next step for you.")
+		sections = append(sections, "Humans approve and request changes with normal chat replies in this same transcript. Do not tell them to use a separate approval workflow, button, or UI gate.")
+	}
+	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing stories, and tool results.")
+	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD in <spec_draft>, wait for inline PRD approval, persist the approved PRD to the canonical epic doc, propose the implementation story plan in <story_plan>, wait for inline story approval, then create stories.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, emit <approval_request phase=\"prd\"> or <approval_request phase=\"stories\"> in the same transcript and stop after the request.")
+	sections = append(sections, "Before PRD approval, keep the draft in chat only. After PRD approval, use ensure_epic_spec_doc, write_document_content, and approve_epic_spec to persist and record the approved PRD. After story approval, use create_story_batch and only use assign_story_agent or set_story_dependencies as follow-up correction tools.")
+
+	if input.SpecDocumentID != "" {
+		sections = append(sections, fmt.Sprintf("Existing canonical spec document ID: %s", input.SpecDocumentID))
+	}
+	if input.SpecVersionID != "" {
+		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
+		sections = append(sections, "A previously approved spec already exists. Use it as the source of truth for story planning unless the human explicitly asks to revise the PRD first.")
+	}
+	if state.epic != nil && state.epic.TeamID != nil && strings.TrimSpace(*state.epic.TeamID) != "" {
+		sections = append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*state.epic.TeamID)))
+	} else {
+		sections = append(sections, "This epic does not currently have a team. Before creating stories, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
+	}
+	if input.AdditionalContext != "" {
+		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
+	}
+
+	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
+	if err != nil {
+		return "", err
+	}
+	if linkedDocs != "" {
+		sections = append(sections, "Other docs linked to this epic:\n"+linkedDocs)
+	}
+
+	linkedTickets, err := a.renderLinkedTicketsContext(ctx, state)
+	if err != nil {
+		return "", err
+	}
+	if linkedTickets != "" {
+		sections = append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
+	}
+
+	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
+		state.epic.Name,
+		derefString(state.epic.Description),
+		linkedDocs,
+		linkedTickets,
+		input.AdditionalContext,
+	}, "\n\n"))
+	if err != nil {
+		return "", err
+	}
+	if repoContext != "" {
+		sections = append(sections, "Current implementation context from the planning repository:\n"+repoContext)
+	}
+
+	if len(state.epicStories) > 0 {
+		lines := make([]string, 0, len(state.epicStories))
+		for _, story := range state.epicStories {
+			lines = append(lines, fmt.Sprintf("- %s [%s]", story.Name, story.ID))
+		}
+		sections = append(sections, "Stories already exist under this epic. Avoid creating duplicates; extend or correct the plan only when the human explicitly asks for changes.")
+		sections = append(sections, "Stories already linked to this epic:\n"+strings.Join(lines, "\n"))
+	}
+
+	return strings.Join(sections, "\n\n"), nil
+}
+
 func (a *AgentRunActivities) preparePlanningRepository(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return nil
 	}
-	if input.Stage != model.PlanningStageDraftSpec && input.Stage != model.PlanningStagePlanStories {
+	if input.Stage != "" && input.Stage != model.PlanningStageDraftSpec && input.Stage != model.PlanningStagePlanStories {
 		return nil
 	}
 	if state.epic.PlanningRepositoryID == nil || strings.TrimSpace(*state.epic.PlanningRepositoryID) == "" {
+		if input.Stage == "" {
+			return nil
+		}
 		if input.Stage == model.PlanningStageDraftSpec {
 			return fmt.Errorf("drafting a product spec requires an epic planning repository")
 		}
@@ -1188,9 +1570,19 @@ func (a *AgentRunActivities) finalizePlanningRun(ctx context.Context, state *res
 		return a.finalizeDraftSpecRun(ctx, state, input)
 	case model.PlanningStagePlanStories:
 		return a.finalizePlanStoriesRun(ctx, state, input)
+	case "":
+		return a.finalizeAgenticEpicPlannerRun(ctx, state)
 	default:
 		return nil
 	}
+}
+
+func (a *AgentRunActivities) finalizeAgenticEpicPlannerRun(ctx context.Context, state *resolvedRunState) error {
+	if state.epic == nil {
+		return nil
+	}
+	state.epic.LastPlanningRunID = &state.run.ID
+	return a.epicRepo.Update(ctx, state.epic)
 }
 
 func (a *AgentRunActivities) finalizeFlowOutputRun(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
@@ -2233,6 +2625,98 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		ListChecklist: func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error) {
 			return a.checklistRepo.List(ctx, storyID)
 		},
+		CreateStoryBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (workerpkg.CreateStoryBatchResult, error) {
+			if a.commandExecutor != nil {
+				output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+					WorkspaceID: workspaceID,
+					ActorID:     actorID,
+					TargetType:  "epic",
+					TargetID:    epicID,
+				}, "pm.create_story_batch", mustJSON(map[string]any{
+					"stories": stories,
+				}))
+				if err != nil {
+					return workerpkg.CreateStoryBatchResult{}, err
+				}
+				var result workerpkg.CreateStoryBatchResult
+				if err := json.Unmarshal(output, &result); err != nil {
+					return workerpkg.CreateStoryBatchResult{}, err
+				}
+				return result, nil
+			}
+			return workerpkg.CreateStoryBatchResult{}, fmt.Errorf("planner commands are not available")
+		},
+		AssignStoryAgent: func(ctx context.Context, workspaceID, actorID, storyID, agentID string) error {
+			if a.commandExecutor == nil {
+				return fmt.Errorf("planner commands are not available")
+			}
+			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  "story",
+				TargetID:    storyID,
+			}, "pm.assign_story_agent", mustJSON(map[string]any{
+				"story_id": storyID,
+				"agent_id": agentID,
+			}))
+			return err
+		},
+		SetStoryDependencies: func(ctx context.Context, workspaceID, actorID string, dependencies []workerpkg.StoryDependencyLink) error {
+			if a.commandExecutor == nil {
+				return fmt.Errorf("planner commands are not available")
+			}
+			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  "epic",
+			}, "pm.set_story_dependencies", mustJSON(map[string]any{
+				"dependencies": dependencies,
+			}))
+			return err
+		},
+		ListWorkspaceTeams: func(ctx context.Context, workspaceID string) ([]workerpkg.WorkspaceTeamSummary, error) {
+			if a.settingsRepo == nil {
+				return nil, fmt.Errorf("workspace settings are not available")
+			}
+			teams, err := a.settingsRepo.ListTeams(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]workerpkg.WorkspaceTeamSummary, 0, len(teams))
+			for _, team := range teams {
+				result = append(result, workerpkg.WorkspaceTeamSummary{
+					ID:               team.ID,
+					Name:             team.Name,
+					Handle:           team.Handle,
+					TeamType:         team.TeamType,
+					DefaultStoryType: team.DefaultStoryType,
+				})
+			}
+			return result, nil
+		},
+		ApproveEpicSpec: func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error) {
+			if a.commandExecutor == nil {
+				return nil, fmt.Errorf("planner commands are not available")
+			}
+			input := mustJSON(map[string]any{})
+			if versionID != nil && strings.TrimSpace(*versionID) != "" {
+				input = mustJSON(map[string]any{"version_id": strings.TrimSpace(*versionID)})
+			}
+			output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  "epic",
+				TargetID:    epicID,
+			}, "pm.approve_epic_spec", input)
+			if err != nil {
+				return nil, err
+			}
+			var summary model.ApprovedSpecSummary
+			if err := json.Unmarshal(output, &summary); err != nil {
+				return nil, err
+			}
+			return &summary, nil
+		},
 		ListConversationMessages: func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error) {
 			return a.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
 		},
@@ -2345,13 +2829,37 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return hits, nil
 		},
+		EnsureEpicSpecDoc: func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error) {
+			if a.commandExecutor == nil {
+				return nil, fmt.Errorf("document commands are not available")
+			}
+			output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  "epic",
+				TargetID:    epicID,
+			}, "docs.ensure_spec_doc", json.RawMessage(`{}`))
+			if err != nil {
+				return nil, err
+			}
+			var response struct {
+				DocumentID string `json:"document_id"`
+			}
+			if err := json.Unmarshal(output, &response); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(response.DocumentID) == "" {
+				return nil, fmt.Errorf("ensure spec doc returned no document_id")
+			}
+			return a.docsDocRepo.GetByID(ctx, response.DocumentID)
+		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {
 				return fmt.Errorf("document commands are not available")
 			}
 			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 				WorkspaceID: workspaceID,
-				TargetType:  "story",
+				TargetType:  "document",
 				TargetID:    documentID,
 			}, "docs.write_document_content", mustJSON(map[string]any{
 				"document_id": documentID,
@@ -2414,7 +2922,6 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		return err
 	}
 	a.runRepo.Notify(ctx, state.run)
-	a.signalParentFlow(ctx, state.run, state.run.Status)
 	if state.deliveryTarget != nil {
 		state.deliveryTarget.DeliveryState = "failed"
 		state.deliveryTarget.LastRunID = &state.run.ID
@@ -2429,20 +2936,39 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 	return nil
 }
 
-func (a *AgentRunActivities) signalParentFlow(ctx context.Context, run *model.AgentRun, status string) {
-	if a == nil || a.runEngine == nil || run == nil || run.FlowRunID == nil || run.FlowNodeRunID == nil {
-		return
+func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, errMsg string) error {
+	if a == nil || a.runRepo == nil {
+		return nil
 	}
-	if status == "" {
-		status = run.Status
+
+	run, err := a.runRepo.GetByIDAny(ctx, runID)
+	if err != nil || run == nil {
+		return err
 	}
-	_ = a.runEngine.SignalFlowRun(ctx, *run.FlowRunID, FlowRunSignal{
-		Type:        FlowSignalTypeChildState,
-		NodeRunID:   *run.FlowNodeRunID,
-		ChildType:   FlowChildTypeAgentRun,
-		ChildID:     run.ID,
-		ChildStatus: status,
-	})
+	switch run.Status {
+	case model.AgentRunStatusCompleted, model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+		return nil
+	}
+
+	now := time.Now()
+	run.Status = model.AgentRunStatusFailed
+	run.CompletedAt = &now
+	run.ErrorMessage = strPtr(strings.TrimSpace(errMsg))
+	run.ExecutionStage = strPtr("failed")
+	run.LastHeartbeatAt = &now
+	if err := a.runRepo.Update(ctx, run); err != nil {
+		return err
+	}
+	a.runRepo.Notify(ctx, run)
+
+	if a.agentRepo != nil {
+		if agent, err := a.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil {
+			agent.Status = "error"
+			agent.ActiveStoryID = nil
+			_ = a.agentRepo.Update(ctx, agent)
+		}
+	}
+	return nil
 }
 
 func ensureRunNotTerminal(run *model.AgentRun) error {
@@ -2587,14 +3113,6 @@ func defaultString(value, fallback string) string {
 
 func strPtr(value string) *string {
 	return &value
-}
-
-func workerAllowedToolSet(profile model.RuntimeProfile) map[string]bool {
-	set := make(map[string]bool, len(profile.AllowedTools))
-	for _, toolName := range profile.AllowedTools {
-		set[toolName] = true
-	}
-	return set
 }
 
 func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool {

@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 const (
@@ -181,6 +180,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	teamID, err := plannerStoryTeamID(epic)
+	if err != nil {
+		return nil, err
+	}
 
 	var proposal model.OrchestrationProposal
 	if existingSummary.Proposal != nil {
@@ -276,6 +279,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				Description: strPtr(desc),
 				StoryType:   storyType,
 				EpicID:      &epicID,
+				TeamID:      teamID,
 				Estimate:    ps.Estimate,
 				Priority:    ps.Priority,
 				ExternalID:  strPtr(externalID),
@@ -440,6 +444,10 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	teamID, err := plannerStoryTeamID(epic)
+	if err != nil {
+		return nil, err
+	}
 
 	// Use a stable key for external IDs in the interactive path.
 	syntheticRunID := "interactive-" + epicID
@@ -484,6 +492,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 				Description: strPtr(desc),
 				StoryType:   storyType,
 				EpicID:      &epicID,
+				TeamID:      teamID,
 				Estimate:    ps.Estimate,
 				Priority:    ps.Priority,
 				ExternalID:  strPtr(externalID),
@@ -559,75 +568,17 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	return created, nil
 }
 
+// CreateEpicStoryBatch creates stories directly from planner tool input.
+func (s *AgentService) CreateEpicStoryBatch(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
+	return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, proposedStories)
+}
+
 func planningStoryExternalID(runID string, index int, ref string) string {
 	ref = strings.TrimSpace(ref)
 	if ref != "" {
 		return fmt.Sprintf("planning:%s:%s", runID, ref)
 	}
 	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
-}
-
-func (s *AgentService) StartEpicStoryPlanningForFlow(ctx context.Context, workspaceID, epicID, actorID, agentID, additionalContext, flowRunID, flowNodeRunID string) (*model.AgentRun, error) {
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
-		return nil, fmt.Errorf("epic does not have a product spec document yet")
-	}
-	if epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*epic.ApprovedSpecVersionID) == "" {
-		return nil, fmt.Errorf("planning requires an approved spec version")
-	}
-	if epic.PlanningRepositoryID == nil || strings.TrimSpace(*epic.PlanningRepositoryID) == "" {
-		return nil, fmt.Errorf("planning requires an epic planning repository")
-	}
-	return s.startEpicPlanningRun(ctx, workspaceID, epic, actorID, agentID, planningRunInput{
-		Stage:             model.PlanningStagePlanStories,
-		AdditionalContext: strings.TrimSpace(additionalContext),
-		SpecDocumentID:    *epic.SpecDocumentID,
-		SpecVersionID:     *epic.ApprovedSpecVersionID,
-	}, &flowRunID, &flowNodeRunID)
-}
-
-func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID string, epic *model.PMEpic, actorID, agentID string, input planningRunInput, flowRunID, flowNodeRunID *string) (*model.AgentRun, error) {
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
-	if err != nil {
-		return nil, err
-	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-	settings := s.resolvePlanningWorkspaceAISettings(ctx, workspaceID)
-	if strings.TrimSpace(input.PlanningMethodology) != "" {
-		input.PlanningMethodology = normalizePlanningMethodology(input.PlanningMethodology)
-	} else {
-		input.PlanningMethodology = settings.methodology
-	}
-	input.PlanningWebSearchEnabled = input.PlanningWebSearchEnabled || settings.webSearchEnabled
-	if strings.TrimSpace(input.PlanningWebSearchProvider) != "" {
-		input.PlanningWebSearchProvider = model.NormalizePlanningWebSearchProvider(input.PlanningWebSearchProvider)
-	} else {
-		input.PlanningWebSearchProvider = settings.webSearchProvider
-	}
-
-	payload, _ := json.Marshal(input)
-	run, err := s.createRun(ctx, createRunParams{
-		workspaceID:   workspaceID,
-		agent:         agent,
-		profile:       profile,
-		targetType:    "epic",
-		targetID:      epic.ID,
-		flowRunID:     flowRunID,
-		flowNodeRunID: flowNodeRunID,
-		actorID:       &actorID,
-		input:         payload,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return run, nil
 }
 
 type planningWorkspaceAISettings struct {
@@ -805,8 +756,29 @@ func validatePlanningStories(stories []model.ProposedStory) error {
 		if stories[idx].Name == "" {
 			return fmt.Errorf("proposed story %d is missing a name", idx+1)
 		}
+		stories[idx].StoryType = normalizePlannedStoryType(stories[idx].StoryType)
+		if stories[idx].Priority != nil {
+			normalizedPriority := normalizePlannedStoryPriority(*stories[idx].Priority)
+			stories[idx].Priority = &normalizedPriority
+		}
 		if strings.TrimSpace(stories[idx].Ref) == "" {
 			stories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+		}
+		if brief := stories[idx].ImplementationBrief; brief != nil {
+			brief.Approach = strings.TrimSpace(brief.Approach)
+			brief.TestStrategy = strings.TrimSpace(brief.TestStrategy)
+			brief.VerticalLayers = filterNonEmptyStrings(brief.VerticalLayers)
+			brief.DependsOnFiles = filterNonEmptyStrings(brief.DependsOnFiles)
+			files := make([]model.FileChange, 0, len(brief.FilesToModify))
+			for _, change := range brief.FilesToModify {
+				change.Path = strings.TrimSpace(change.Path)
+				if change.Path == "" {
+					continue
+				}
+				change.Description = strings.TrimSpace(change.Description)
+				files = append(files, change)
+			}
+			brief.FilesToModify = files
 		}
 		if prev, exists := refToIdx[stories[idx].Ref]; exists {
 			return fmt.Errorf("story refs must be unique; stories %d and %d both use %q", prev+1, idx+1, stories[idx].Ref)
@@ -861,6 +833,64 @@ func validatePlanningStories(stories []model.ProposedStory) error {
 		}
 	}
 	return nil
+}
+
+func plannerStoryTeamID(epic *model.PMEpic) (*string, error) {
+	if epic == nil {
+		return nil, fmt.Errorf("epic is required")
+	}
+	if epic.TeamID == nil || strings.TrimSpace(*epic.TeamID) == "" {
+		return nil, fmt.Errorf("epic %q must have a team before creating stories", strings.TrimSpace(epic.Name))
+	}
+	teamID := strings.TrimSpace(*epic.TeamID)
+	return &teamID, nil
+}
+
+func normalizePlannedStoryType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "feature", "feat", "user_story", "story":
+		return model.PMStoryTypeFeature
+	case "bug", "fix", "defect":
+		return model.PMStoryTypeBug
+	case "chore", "task", "maintenance", "infra", "infrastructure", "ops":
+		return model.PMStoryTypeChore
+	default:
+		return model.PMStoryTypeFeature
+	}
+}
+
+func normalizePlannedStoryPriority(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "none", "no priority", "n/a", "na", "unset":
+		return model.PMStoryPriorityNone
+	case "low", "p3", "minor":
+		return model.PMStoryPriorityLow
+	case "medium", "med", "normal", "default", "p2":
+		return model.PMStoryPriorityMedium
+	case "high", "important", "p1":
+		return model.PMStoryPriorityHigh
+	case "urgent", "critical", "blocker", "highest", "p0":
+		return model.PMStoryPriorityUrgent
+	default:
+		return model.PMStoryPriorityNone
+	}
+}
+
+func filterNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			filtered = append(filtered, value)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 func renderPlannedStoryDescription(story model.ProposedStory) string {

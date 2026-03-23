@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -182,63 +183,63 @@ func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt
 }
 
 func openCodeAgentDescription(execCtx *ExecutionContext) string {
-	if execCtx == nil || execCtx.Agent == nil {
+	resolved := resolvedProfileFor(execCtx)
+	if execCtx == nil {
 		return "Teampulse runtime agent"
 	}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassProductPlanner:
-		return "Teampulse planner agent for OpenSpec-style product planning."
-	case model.AgentClassEngineer:
-		return "Teampulse engineer agent for story implementation runs."
-	case model.AgentClassReviewer:
-		return "Teampulse reviewer agent for code review and validation."
-	case model.AgentClassSupport:
+	switch {
+	case slices.Contains(resolved.TargetTypes, "support_conversation"):
 		return "Teampulse support agent for structured support triage."
+	case slices.Contains(resolved.TargetTypes, "crm_deal"):
+		return "Teampulse operator agent for cross-app planning and CRM execution."
+	case slices.Contains(resolved.TargetTypes, "epic"):
+		return "Teampulse planning agent for interactive product planning."
+	case hasRepoMutationTools(resolved.Tools):
+		return "Teampulse build agent for story implementation runs."
+	case slices.Contains(resolved.TargetTypes, "story"):
+		return "Teampulse review agent for story validation and quality checks."
 	default:
 		return "Teampulse runtime agent"
 	}
 }
 
 func buildOpenCodePermissions(execCtx *ExecutionContext) map[string]any {
-	if execCtx == nil || execCtx.Agent == nil {
+	resolved := resolvedProfileFor(execCtx)
+	if execCtx == nil {
 		return nil
 	}
 
 	permissions := map[string]any{}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassEngineer:
+	if hasRepoMutationTools(resolved.Tools) {
 		permissions["edit"] = "allow"
-	case model.AgentClassProductPlanner, model.AgentClassReviewer, model.AgentClassSupport:
+	} else {
 		permissions["edit"] = "deny"
 	}
 
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassSupport:
+	if len(resolved.Commands) == 0 {
 		permissions["bash"] = "deny"
-	default:
-		if bashRules := buildOpenCodeBashPermissions(execCtx, runtimeProfileFor(execCtx), execCtx.Config); len(bashRules) > 0 {
-			permissions["bash"] = bashRules
-		}
+	} else if bashRules := buildOpenCodeBashPermissions(execCtx, resolved, execCtx.Config); len(bashRules) > 0 {
+		permissions["bash"] = bashRules
 	}
 
 	return permissions
 }
 
-func runtimeProfileFor(execCtx *ExecutionContext) model.RuntimeProfile {
+func resolvedProfileFor(execCtx *ExecutionContext) ResolvedProfile {
 	if execCtx == nil {
-		return GetRuntimeProfile("")
+		return ResolveAgentProfile(nil)
 	}
-	if execCtx.RuntimeProfile.Name != "" {
-		return execCtx.RuntimeProfile
+	if len(execCtx.ResolvedProfile.Tools) > 0 || len(execCtx.ResolvedProfile.Commands) > 0 || len(execCtx.ResolvedProfile.TargetTypes) > 0 {
+		return execCtx.ResolvedProfile
 	}
 	if execCtx.Agent != nil {
-		return GetRuntimeProfile(execCtx.Agent.CapabilityProfile)
+		return ResolveAgentProfile(execCtx.Agent)
 	}
-	return GetRuntimeProfile("")
+	return ResolveAgentProfile(nil)
 }
 
-func buildOpenCodeBashPermissions(execCtx *ExecutionContext, profile model.RuntimeProfile, config *WorkflowConfig) map[string]string {
-	allowed := allowedCommandsFor(profile, config)
+func buildOpenCodeBashPermissions(execCtx *ExecutionContext, resolved ResolvedProfile, config *WorkflowConfig) map[string]string {
+	allowed := allowedCommandsFor(resolved, config)
 	rules := map[string]string{"*": "deny"}
 	for _, command := range allowed {
 		command = strings.TrimSpace(command)
@@ -249,16 +250,23 @@ func buildOpenCodeBashPermissions(execCtx *ExecutionContext, profile model.Runti
 		rules[command+" *"] = "allow"
 	}
 
-	if execCtx != nil && execCtx.Agent != nil {
-		switch execCtx.Agent.AgentClass {
-		case model.AgentClassEngineer, model.AgentClassProductPlanner, model.AgentClassReviewer:
-			for _, pattern := range readOnlyGitPermissionPatterns() {
-				rules[pattern] = "allow"
-			}
+	if slices.Contains(resolved.Commands, "git") {
+		for _, pattern := range readOnlyGitPermissionPatterns() {
+			rules[pattern] = "allow"
 		}
 	}
 
 	return rules
+}
+
+func hasRepoMutationTools(tools []string) bool {
+	for _, tool := range tools {
+		switch tool {
+		case "write_file", "create_branch", "commit_and_push", "open_pr":
+			return true
+		}
+	}
+	return false
 }
 
 func readOnlyGitPermissionPatterns() []string {
@@ -276,25 +284,26 @@ func readOnlyGitPermissionPatterns() []string {
 
 func buildOpenCodeUserPrompt(execCtx *ExecutionContext, userPrompt string) string {
 	parts := []string{strings.TrimSpace(userPrompt)}
-	if execCtx != nil && execCtx.Agent != nil && execCtx.Agent.AgentClass == model.AgentClassEngineer && execCtx.Story != nil {
+	if execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools) {
 		parts = append(parts, "This is an implementation run, not an analysis-only pass. Make the code changes in the repository, run relevant validation when practical, and finish with a concise summary of the concrete files changed.")
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
 func openCodeAgentName(execCtx *ExecutionContext) string {
-	if execCtx == nil || execCtx.Agent == nil {
+	resolved := resolvedProfileFor(execCtx)
+	if execCtx == nil {
 		return "teampulse"
 	}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassProductPlanner:
-		return "teampulse-planner"
-	case model.AgentClassEngineer:
-		return "teampulse-engineer"
-	case model.AgentClassReviewer:
-		return "teampulse-reviewer"
-	case model.AgentClassSupport:
+	switch {
+	case slices.Contains(resolved.TargetTypes, "support_conversation"):
 		return "teampulse-support"
+	case slices.Contains(resolved.TargetTypes, "crm_deal"), slices.Contains(resolved.TargetTypes, "epic"):
+		return "teampulse-operator"
+	case hasRepoMutationTools(resolved.Tools):
+		return "teampulse-engineer"
+	case slices.Contains(resolved.TargetTypes, "story"):
+		return "teampulse-reviewer"
 	default:
 		return "teampulse"
 	}

@@ -71,6 +71,27 @@ type FileChange struct {
 	Description string `json:"description"`
 }
 
+func (f *FileChange) UnmarshalJSON(data []byte) error {
+	var path string
+	if err := json.Unmarshal(data, &path); err == nil {
+		f.Path = strings.TrimSpace(path)
+		f.Action = normalizeFileChangeAction("")
+		f.Description = ""
+		return nil
+	}
+
+	type alias FileChange
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	f.Path = strings.TrimSpace(raw.Path)
+	f.Action = normalizeFileChangeAction(raw.Action)
+	f.Description = strings.TrimSpace(raw.Description)
+	return nil
+}
+
 type PlanningSourceRef struct {
 	Type  string `json:"type"`
 	ID    string `json:"id,omitempty"`
@@ -205,4 +226,15 @@ func MarshalSpecClarifications(items []SpecClarificationItem) json.RawMessage {
 		return json.RawMessage("[]")
 	}
 	return payload
+}
+
+func normalizeFileChangeAction(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "create":
+		return "create"
+	case "delete":
+		return "delete"
+	default:
+		return "modify"
+	}
 }
