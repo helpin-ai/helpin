@@ -21,7 +21,7 @@ type WidgetService interface {
 	GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error)
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
 	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
-	WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error)
+	WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error)
 	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
@@ -386,11 +386,11 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				continue
 			}
 			content := typed.Content
-			if strings.TrimSpace(content) == "" {
+			if strings.TrimSpace(content) == "" && len(typed.AttachmentIDs) == 0 {
 				continue
 			}
 			previousConversationID := derefStr(client.ConversationID)
-			result, err := h.service.WidgetCreateMessage(ctx, session.SessionToken, content)
+			result, err := h.service.WidgetCreateMessage(ctx, session.SessionToken, content, typed.AttachmentIDs)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "send_failed", "message": err.Error()})
 				continue
@@ -415,6 +415,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				SenderName:     result.SenderDisplayName,
 				SenderAvatar:   result.SenderAvatarURL,
 				ViaChannel:     derefStr(result.ViaChannel),
+				Attachments:    result.Attachments,
 				CreatedAt:      result.CreatedAt.Format(time.RFC3339),
 			})
 

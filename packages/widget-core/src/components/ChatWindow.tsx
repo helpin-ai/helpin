@@ -19,8 +19,9 @@ interface ChatWindowProps {
   messages: Message[];
   isOpen: boolean;
   onClose: () => void;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, attachmentIds?: string[]) => void;
   onSendMessageFromHome?: (content: string) => void;
+  onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
   onQuickReply: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm: boolean;
@@ -44,6 +45,7 @@ interface ChatWindowProps {
     key: number;
     articleSlug: string;
   };
+  onImageClick?: (src: string, alt: string) => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -53,6 +55,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onClose,
   onSendMessage,
   onSendMessageFromHome,
+  onUploadAttachment,
   onQuickReply,
   onTyping,
   showPreChatForm,
@@ -73,6 +76,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   widgetKey,
   host,
   openArticleRequest,
+  onImageClick,
 }) => {
   const initialPreviousView: WidgetBaseView =
     initialView === 'messages' || initialView === 'help' || initialView === 'home'
@@ -239,6 +243,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             config={config}
             messages={messages}
             onSendMessage={onSendMessage}
+            onUploadAttachment={onUploadAttachment}
             onTyping={onTyping}
             isTyping={isTyping}
             isAIThinking={isAIThinking}
@@ -249,6 +254,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onClose={onClose}
             showPreChatForm={showPreChatForm}
             onPreChatSubmit={onPreChatSubmit}
+            onImageClick={onImageClick}
           />
         )}
         {activeView === 'messages' && (

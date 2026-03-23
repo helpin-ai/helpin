@@ -318,7 +318,7 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 		return nil, fmt.Errorf("update invitation status: %w", err)
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email)
+	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}

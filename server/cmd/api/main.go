@@ -192,6 +192,7 @@ func main() {
 		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
+		&model.SupportAttachment{},
 		&model.GitIntegration{},
 		&model.GitRepository{},
 		&model.PMTeamRepoDefault{},
@@ -353,6 +354,9 @@ func main() {
 	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
 	if s3Client != nil {
 		slog.Info("S3 storage configured")
+		if err := s3Client.EnsureCORS(context.Background()); err != nil {
+			slog.Warn("failed to set S3 bucket CORS policy — widget file uploads from customer domains may fail", "error", err)
+		}
 	} else {
 		slog.Info("S3 storage not configured — attachments disabled")
 	}
@@ -463,6 +467,7 @@ func main() {
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
+	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	storyDeliveryTargetRepo := repository.NewStoryDeliveryTargetRepository(db)
@@ -560,6 +565,8 @@ func main() {
 		cfg.AppBaseURL,
 		podID,
 	)
+	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
+	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 
 	// AI Support Agent — new repositories and service
@@ -889,6 +896,7 @@ func main() {
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
 		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
+		SupportAttachment:  handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:    handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
 		Git:                handler.NewGitHandler(gitService),
 		Notification:       handler.NewNotificationHandler(notificationService, followerService),

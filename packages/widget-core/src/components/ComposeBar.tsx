@@ -1,25 +1,46 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { PaperclipIcon, SendIcon } from './icons';
+import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
+import type { PendingAttachment } from '../types';
 
 interface ComposeBarProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
+  onFilesSelected?: (files: File[]) => void;
   disabled?: boolean;
   placeholder?: string;
   showBranding?: boolean;
+  pendingAttachments?: PendingAttachment[];
+  onRemoveAttachment?: (id: string) => void;
+  fileUploadsEnabled?: boolean;
+}
+
+function isImageType(type: string): boolean {
+  return type.startsWith('image/') && type !== 'image/svg+xml';
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   onSend,
   onTyping,
+  onFilesSelected,
   disabled = false,
   placeholder = 'Ask a question...',
   showBranding = true,
+  pendingAttachments = [],
+  onRemoveAttachment,
+  fileUploadsEnabled = true,
 }) => {
   const [message, setMessage] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -28,12 +49,17 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
     }
   }, [message]);
 
+  const uploadedAttachmentIds = pendingAttachments
+    .filter(a => a.status === 'uploaded' && a.attachmentId)
+    .map(a => a.attachmentId!);
+
+  const canSend = (message.trim().length > 0 || uploadedAttachmentIds.length > 0) && !disabled;
+
   const handleSubmit = (e?: Event) => {
     e?.preventDefault();
-    if (message.trim() && !disabled) {
-      onSend(message.trim());
-      setMessage('');
-    }
+    if (!canSend) return;
+    onSend(message.trim(), uploadedAttachmentIds.length > 0 ? uploadedAttachmentIds : undefined);
+    setMessage('');
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -59,17 +85,102 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
     }
   };
 
-  const canSend = message.trim().length > 0 && !disabled;
+  const handleFileSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      onFilesSelected?.(Array.from(input.files));
+      input.value = '';
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items || !onFilesSelected || !fileUploadsEnabled) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        const file = items[i].getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      onFilesSelected(files);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    if (!fileUploadsEnabled) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!onFilesSelected || !fileUploadsEnabled) return;
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      onFilesSelected(Array.from(files));
+    }
+  };
 
   return (
     <div className="helpin-compose-wrapper">
-      <form className="helpin-compose-bar" onSubmit={handleSubmit}>
+      <form
+        className={`helpin-compose-bar ${isDragOver ? 'helpin-compose-bar--dragover' : ''}`}
+        onSubmit={handleSubmit}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {pendingAttachments.length > 0 && (
+          <div className="helpin-compose-attachments">
+            {pendingAttachments.map(att => (
+              <div key={att.id} className={`helpin-compose-attachment-item ${att.status === 'error' ? 'helpin-compose-attachment-item--error' : ''}`}>
+                {att.previewUrl && isImageType(att.fileType) ? (
+                  <img src={att.previewUrl} alt={att.fileName} />
+                ) : (
+                  <div className="helpin-compose-attachment-file">
+                    <span className="helpin-compose-attachment-filename">{att.fileName}</span>
+                    <span className="helpin-compose-attachment-filesize">{formatFileSize(att.fileSize)}</span>
+                  </div>
+                )}
+                {att.status === 'uploading' && (
+                  <div className="helpin-compose-attachment-progress">
+                    {att.progress}%
+                  </div>
+                )}
+                {onRemoveAttachment && (
+                  <button
+                    type="button"
+                    className="helpin-compose-attachment-remove"
+                    onClick={() => onRemoveAttachment(att.id)}
+                    aria-label={`Remove ${att.fileName}`}
+                  >
+                    <XIcon size={10} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           className="helpin-compose-input"
           value={message}
           onInput={(e) => { const val = (e.target as HTMLTextAreaElement).value; setMessage(val); onTyping?.(val); }}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
@@ -77,14 +188,17 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         />
         <div className="helpin-compose-actions">
           <div className="helpin-compose-tools">
-            <button
-              type="button"
-              className="helpin-compose-tool-btn"
-              aria-label="Attach file"
-              tabIndex={0}
-            >
-              <PaperclipIcon size={20} />
-            </button>
+            {fileUploadsEnabled && (
+              <button
+                type="button"
+                className="helpin-compose-tool-btn"
+                aria-label="Attach file"
+                tabIndex={0}
+                onClick={handleFileSelect}
+              >
+                <PaperclipIcon size={20} />
+              </button>
+            )}
             <EmojiPicker onEmojiSelect={handleEmojiSelect} />
           </div>
           <button
@@ -96,6 +210,16 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             <SendIcon size={16} />
           </button>
         </div>
+        {fileUploadsEnabled && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
+            style={{ display: 'none' }}
+            onChange={handleFileInputChange}
+          />
+        )}
       </form>
       {showBranding && (
         <div className="helpin-compose-footer">

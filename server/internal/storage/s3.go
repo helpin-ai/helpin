@@ -52,6 +52,30 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL strin
 	}
 }
 
+// EnsureCORS sets a permissive CORS policy on the bucket so that browsers
+// on any origin can upload files via presigned PUT URLs.
+// Safe to call on every startup — it overwrites the existing CORS config.
+func (s *S3Client) EnsureCORS(ctx context.Context) error {
+	_, err := s.client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket: aws.String(s.bucket),
+		CORSConfiguration: &s3types.CORSConfiguration{
+			CORSRules: []s3types.CORSRule{
+				{
+					AllowedOrigins: []string{"*"},
+					AllowedMethods: []string{"GET", "PUT", "HEAD"},
+					AllowedHeaders: []string{"*"},
+					ExposeHeaders:  []string{"ETag"},
+					MaxAgeSeconds:  aws.Int32(3600),
+				},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("put bucket CORS: %w", err)
+	}
+	return nil
+}
+
 // PublicURL constructs a direct public URL for the given storage key.
 func (s *S3Client) PublicURL(key string) string {
 	if s.endpointURL == "" {

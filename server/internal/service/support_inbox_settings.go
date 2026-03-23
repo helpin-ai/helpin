@@ -125,6 +125,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.CSATEnabled != nil {
 		current.CSATEnabled = *patch.CSATEnabled
 	}
+	if patch.FileUploadsEnabled != nil {
+		current.FileUploadsEnabled = *patch.FileUploadsEnabled
+	}
 	return current
 }
 

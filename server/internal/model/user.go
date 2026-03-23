@@ -25,8 +25,9 @@ type SignupRequest struct {
 
 // SigninRequest is the payload for POST /api/auth/signin.
 type SigninRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 // AuthResponse is returned after successful authentication.

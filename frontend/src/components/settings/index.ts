@@ -12,4 +12,5 @@ export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';
 export { AIAutomationsTab } from './AIAutomationsTab';
 export { ChatGeneralTab } from './ChatGeneralTab';
 export { ChatAITab } from './ChatAITab';
+export { ChatPlaygroundTab } from './ChatPlaygroundTab';
 export { RedirectsTab } from './RedirectsTab';

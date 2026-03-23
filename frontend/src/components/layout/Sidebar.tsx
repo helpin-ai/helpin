@@ -16,6 +16,7 @@ import {
   FileText,
   FolderKanban,
   FolderOpen,
+  FlaskConical,
   GanttChart,
   Globe,
   EllipsisVertical,
@@ -627,7 +628,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
           { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
-          { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
+          { link: `/w/${wsSlug}/settings/chat-playground`, label: 'Chat Playground', icon: FlaskConical },
         ],
       },
       {

@@ -113,7 +113,7 @@ export const slashCommands: SlashCommand[] = [
     description: 'Insert a table',
     icon: Table,
     action: (editor) =>
-      editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(),
+      (editor.chain().focus() as any).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(),
   },
   {
     title: 'Image',

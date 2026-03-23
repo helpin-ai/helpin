@@ -125,7 +125,7 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	msg, err := h.supportService.WidgetCreateMessage(r.Context(), req.SessionToken, req.Content)
+	msg, err := h.supportService.WidgetCreateMessage(r.Context(), req.SessionToken, req.Content, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

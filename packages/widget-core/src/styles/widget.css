@@ -1234,9 +1234,9 @@
 
 /* Message Bubble */
 .helpin-message-bubble {
-  padding: 10px 14px;
   border-radius: 18px;
   overflow-wrap: anywhere;
+  overflow: hidden;
   font-size: 14px;
   line-height: 1.5;
   width: fit-content;
@@ -1262,8 +1262,21 @@
 }
 
 .helpin-message-content {
+  padding: 10px 14px;
   word-wrap: break-word;
   overflow-wrap: break-word;
+}
+
+/* Remove bottom padding when attachments follow content */
+.helpin-message-content:has(+ .helpin-message-channel),
+.helpin-message-content:has(+ .helpin-message-sources),
+.helpin-message-content:has(+ .helpin-message-attachments) {
+  padding-bottom: 4px;
+}
+
+/* When bubble has no text content, hide the empty content div */
+.helpin-message-content:empty {
+  display: none;
 }
 
 /* Markdown styles for chat messages */
@@ -1319,10 +1332,42 @@
   color: var(--helpin-fg-secondary);
   margin: 0.3em 0;
 }
+.helpin-message-content .helpin-table-wrap {
+  margin: 0.45em 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.helpin-message-content table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.helpin-message-content th,
+.helpin-message-content td {
+  padding: 0.5em 0.65em;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  text-align: left;
+  vertical-align: top;
+}
+.helpin-message-content th {
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.05);
+}
+.helpin-message--customer .helpin-message-content th,
+.helpin-message--customer .helpin-message-content td {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.helpin-message--customer .helpin-message-content th {
+  background: rgba(255, 255, 255, 0.12);
+}
 .helpin-message-content a {
   color: var(--helpin-primary);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+.helpin-message--customer .helpin-message-content a {
+  color: inherit;
 }
 .helpin-message-content h3,
 .helpin-message-content h4,
@@ -1348,7 +1393,7 @@
 
 .helpin-message-sources {
   margin-top: 8px;
-  padding-top: 8px;
+  padding: 8px 14px 0;
   border-top: 1px solid rgba(0, 0, 0, 0.1);
   font-size: 12px;
 }
@@ -1362,12 +1407,13 @@
   font-size: 11px;
   opacity: 0.7;
   margin-top: 4px;
+  padding: 0 14px 6px;
 }
 
 .helpin-message-channel {
   display: inline-flex;
   align-items: center;
-  margin-top: 8px;
+  margin: 8px 14px 0;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(37, 99, 235, 0.12);
@@ -1629,6 +1675,9 @@
   display: block;
   font-size: 12px;
   color: var(--helpin-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .helpin-conversation-thread {
@@ -2184,4 +2233,214 @@
 
 .helpin-emoji-retry:hover {
   background: var(--helpin-bg-muted);
+}
+
+/* ── File Attachment: Compose Preview Strip ─────────────────────────── */
+
+.helpin-compose-attachments {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.helpin-compose-attachment-item {
+  position: relative;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--helpin-border);
+  background: var(--helpin-bg-muted);
+}
+
+.helpin-compose-attachment-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.helpin-compose-attachment-item--error {
+  border-color: #ef4444;
+}
+
+.helpin-compose-attachment-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.helpin-compose-attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.helpin-compose-attachment-progress {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--helpin-fg);
+}
+
+.helpin-compose-attachment-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 2px;
+  padding: 4px;
+}
+
+.helpin-compose-attachment-filename {
+  font-size: 9px;
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--helpin-fg);
+}
+
+.helpin-compose-attachment-filesize {
+  font-size: 8px;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-compose-bar--dragover {
+  border-color: var(--helpin-primary) !important;
+  background: rgba(99, 102, 241, 0.04);
+}
+
+/* ── File Attachment: Message Rendering ─────────────────────────────── */
+
+/* Attachments container: edge-to-edge inside the bubble (Crisp-style) */
+.helpin-message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.helpin-attachment-image {
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+
+.helpin-attachment-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+  object-fit: cover;
+  transition: opacity 0.2s;
+}
+
+.helpin-attachment-image:hover img {
+  opacity: 0.85;
+}
+
+/* File attachments get side padding to stay within the bubble visually */
+.helpin-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.04);
+  text-decoration: none;
+  color: inherit;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.helpin-attachment-file:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.helpin-attachment-filename {
+  font-weight: 500;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.helpin-attachment-size {
+  color: var(--helpin-fg-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* ── Lightbox Overlay ───────────────────────────────────────────────── */
+
+.helpin-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.helpin-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.helpin-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.helpin-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Inline images from markdown ────────────────────────────────────── */
+
+.helpin-message-content .helpin-inline-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 4px 0;
+  display: block;
 }

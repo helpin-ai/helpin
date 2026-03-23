@@ -37,6 +37,7 @@ type SupportInboxService struct {
 	emailFallbackService    *EmailFallbackService
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
+	attachmentService       *SupportAttachmentService
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -112,6 +113,15 @@ func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr
 	}
 	s.notificationService = ns
 	s.workspaceRepo = wr
+	return s
+}
+
+// SetAttachmentService injects the support attachment service for file upload support.
+func (s *SupportInboxService) SetAttachmentService(attachmentService *SupportAttachmentService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.attachmentService = attachmentService
 	return s
 }
 
@@ -501,12 +511,23 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.messageRepo.ListByConversation(ctx, workspaceID, ticketID, includeInternal)
+	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, ticketID, includeInternal)
+	if err != nil {
+		return nil, err
+	}
+
+	// Hydrate file attachments onto messages.
+	if s.attachmentService != nil && len(messages) > 0 {
+		if err := s.attachmentService.HydrateMessages(ctx, messages); err != nil {
+			slog.ErrorContext(ctx, "hydrate support message attachments", "error", err, "conversation_id", ticketID)
+		}
+	}
+	return messages, nil
 }
 
 // CreateConversationMessage creates a message on a conversation.
 func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
-	if strings.TrimSpace(req.Content) == "" {
+	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
 
@@ -557,6 +578,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
+	}
+
+	// Link pre-uploaded attachments to this message.
+	if s.attachmentService != nil && len(req.AttachmentIDs) > 0 {
+		if err := s.attachmentService.LinkToMessage(ctx, req.AttachmentIDs, msg.ID); err != nil {
+			slog.ErrorContext(ctx, "link attachments to support message", "error", err, "message_id", msg.ID)
+		}
+		// Hydrate for WS broadcast.
+		msgs := []model.SupportMessage{*msg}
+		if err := s.attachmentService.HydrateMessages(ctx, msgs); err == nil {
+			msg.Attachments = msgs[0].Attachments
+		}
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))

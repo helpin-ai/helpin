@@ -129,9 +129,11 @@ func crawlWithColly(
 
 		// Extract with trafilatura.
 		result, err := trafilatura.Extract(bytes.NewReader(r.Body), trafilatura.Options{
-			OriginalURL:    parsedURL,
+			OriginalURL:        parsedURL,
+			EnableFallback:     true,
 			FallbackCandidates: &trafilatura.FallbackCandidates{},
-			Focus:          trafilatura.FavorRecall,
+			Focus:              trafilatura.FavorRecall,
+			ExcludeTables:      false,
 		})
 		if err != nil || result == nil {
 			logger.Debug("trafilatura extraction failed", "url", pageURL.String(), "error", err)

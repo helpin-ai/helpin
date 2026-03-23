@@ -131,6 +131,26 @@ func (s *SupportContentSourceService) ListPages(ctx context.Context, workspaceID
 	return s.pageRepo.ListByContentSourceID(ctx, contentSourceID)
 }
 
+// GetPage returns a single crawled page (including content) after verifying
+// that its parent content source belongs to the workspace.
+func (s *SupportContentSourceService) GetPage(ctx context.Context, workspaceID, contentSourceID, pageID string) (*model.SupportContentPage, error) {
+	source, err := s.repo.GetByID(ctx, contentSourceID)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	page, err := s.pageRepo.GetByIDWithContent(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	if page == nil || page.ContentSourceID != contentSourceID {
+		return nil, fmt.Errorf("page not found in content source")
+	}
+	return page, nil
+}
+
 // AgentContentSourceService manages per-agent content source selection.
 type AgentContentSourceService struct {
 	repo        *repository.AgentContentSourceRepository

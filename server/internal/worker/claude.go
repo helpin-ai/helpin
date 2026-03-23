@@ -58,14 +58,21 @@ type ToolDefinition struct {
 	InputSchema interface{} `json:"input_schema"`
 }
 
+// ToolChoice forces the model to call a specific tool when tool use is enabled.
+type ToolChoice struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
+}
+
 // CreateMessageRequest is the request body for the Messages API.
 type CreateMessageRequest struct {
-	Model     string           `json:"model"`
-	MaxTokens int              `json:"max_tokens"`
-	System    string           `json:"system,omitempty"`
-	Messages  []Message        `json:"messages"`
-	Tools     []ToolDefinition `json:"tools,omitempty"`
-	Stream    bool             `json:"stream,omitempty"`
+	Model      string           `json:"model"`
+	MaxTokens  int              `json:"max_tokens"`
+	System     string           `json:"system,omitempty"`
+	Messages   []Message        `json:"messages"`
+	Tools      []ToolDefinition `json:"tools,omitempty"`
+	ToolChoice *ToolChoice      `json:"tool_choice,omitempty"`
+	Stream     bool             `json:"stream,omitempty"`
 }
 
 // CreateMessageResponse is the response from the Messages API.
@@ -132,21 +139,21 @@ func (c *ClaudeClient) CreateMessage(ctx context.Context, req CreateMessageReque
 
 // StreamEvent represents a single SSE event from the Claude streaming API.
 type StreamEvent struct {
-	Type         string        `json:"type"`
-	Index        int           `json:"index,omitempty"`
-	ContentBlock *ContentBlock `json:"content_block,omitempty"`
-	Delta        *StreamDelta  `json:"delta,omitempty"`
+	Type         string                 `json:"type"`
+	Index        int                    `json:"index,omitempty"`
+	ContentBlock *ContentBlock          `json:"content_block,omitempty"`
+	Delta        *StreamDelta           `json:"delta,omitempty"`
 	Message      *CreateMessageResponse `json:"message,omitempty"`
-	Usage        *Usage        `json:"usage,omitempty"`
-	Error        *StreamError  `json:"error,omitempty"`
+	Usage        *Usage                 `json:"usage,omitempty"`
+	Error        *StreamError           `json:"error,omitempty"`
 }
 
 // StreamDelta carries incremental content changes.
 type StreamDelta struct {
-	Type         string          `json:"type,omitempty"`
-	Text         string          `json:"text,omitempty"`
-	PartialJSON  string          `json:"partial_json,omitempty"`
-	StopReason   string          `json:"stop_reason,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
 }
 
 // StreamError carries API error information.

@@ -77,13 +77,25 @@ func (r *SupportContentPageRepository) DeleteByContentSourceID(ctx context.Conte
 func (r *SupportContentPageRepository) ListByContentSourceID(ctx context.Context, contentSourceID string) ([]model.SupportContentPage, error) {
 	var pages []model.SupportContentPage
 	if err := r.db.WithContext(ctx).
-		Select("id", "workspace_id", "content_source_id", "url", "title", "http_status", "content_format", "content_hash", "last_crawled_at", "created_at", "updated_at").
+		Select("id", "workspace_id", "content_source_id", "url", "title", "http_status", "content_format", "content_hash", "LENGTH(content_text) AS content_length", "last_crawled_at", "created_at", "updated_at").
 		Where("content_source_id = ?", contentSourceID).
 		Order("last_crawled_at DESC").
 		Find(&pages).Error; err != nil {
 		return nil, fmt.Errorf("list content pages by source: %w", err)
 	}
 	return pages, nil
+}
+
+// GetByIDWithContent returns a single page including its content_text.
+func (r *SupportContentPageRepository) GetByIDWithContent(ctx context.Context, id string) (*model.SupportContentPage, error) {
+	var page model.SupportContentPage
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&page).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get content page with content: %w", err)
+	}
+	return &page, nil
 }
 
 func (r *SupportContentPageRepository) DeleteByContentSourceExceptURLs(ctx context.Context, workspaceID, contentSourceID string, keepURLs []string) error {

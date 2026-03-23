@@ -4,6 +4,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ export default function Login() {
   useTitle('Sign In');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuthStore();
   const navigate = useNavigate();
@@ -20,7 +22,7 @@ export default function Login() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email, password, rememberMe);
     if (error) {
       setLoading(false);
       toast.error(error);
@@ -68,6 +70,10 @@ export default function Login() {
                 <Link to="/forgot-password" className="text-sm text-primary hover:underline">Forgot password?</Link>
               </div>
               <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
+              <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">Remember me</Label>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 mt-4">

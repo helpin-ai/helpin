@@ -23,8 +23,21 @@ export interface AiSource {
 }
 
 export interface Attachment {
+  id?: string;
   fileKey: string;
   fileName: string;
   fileType: string;
   fileSize: number;
+  url?: string;
+}
+
+export interface PendingAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  progress: number;
+  status: 'uploading' | 'uploaded' | 'error';
+  previewUrl?: string;
+  attachmentId?: string;
 }

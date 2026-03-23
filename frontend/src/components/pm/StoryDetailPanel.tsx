@@ -19,18 +19,15 @@ import {
   Loader2,
   Maximize2,
   MoreVertical,
-  Pause,
   Paperclip,
   Play,
   RefreshCw,
   ShieldAlert,
-  StepForward,
   Tag,
   Target,
   User,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   PRIORITY_CONFIG,
@@ -65,7 +62,7 @@ import {
 import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { useStoryDelivery } from '@/components/pm/StoryDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
-import { getInitials } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -90,7 +87,6 @@ import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
 import { Badge } from '@/components/ui/badge';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
-import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
@@ -366,35 +362,6 @@ function StoryDetailPanelBody({
     }
     setRecurringDialogOpen(true);
   }, [workspaceId, recurringSummary?.template_id]);
-
-  const runRecurringAction = useCallback(
-    async (
-      action: () => Promise<{ data: RecurringTemplateDetail | null; error: string | null }>,
-      successMessage: string,
-    ) => {
-      setRecurringSaving(true);
-      const { data, error } = await action();
-      setRecurringSaving(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      // Update local state from returned data to avoid full reload cycle.
-      if (data) {
-        setRecurringDetail(data);
-        setRecurringSummary((prev) => prev ? {
-          ...prev,
-          status: data.template.status,
-          next_run_at: data.template.next_run_at,
-          generated_count: data.template.generated_count,
-          last_error: data.template.last_error,
-          rule_summary: data.rule_summary,
-        } : prev);
-      }
-      toast.success(successMessage);
-    },
-    [],
-  );
 
   const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
     setRecurringSaving(true);

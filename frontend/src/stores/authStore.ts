@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
 import { authService } from '@/lib/services/authService';
+import { stopTokenRefreshTimer } from '@/lib/api';
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   serverUnreachable: boolean;
   initialize: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
   updateUser: (data: { full_name?: string }) => Promise<void>;
@@ -46,11 +47,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signIn: async (email: string, password: string) => {
-    const { data, error } = await authService.signin(email, password);
+  signIn: async (email: string, password: string, rememberMe = false) => {
+    const { data, error } = await authService.signin(email, password, rememberMe);
     if (error || !data) return { error: error || 'Sign in failed' };
     localStorage.setItem('access_token', data.access_token);
     localStorage.setItem('refresh_token', data.refresh_token);
+    localStorage.setItem('remember_me', rememberMe ? '1' : '0');
     set({ user: data.user, serverUnreachable: false });
     return { error: null };
   },
@@ -67,6 +69,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('remember_me');
+    stopTokenRefreshTimer();
     set({ user: null });
     window.location.href = '/login';
   },
