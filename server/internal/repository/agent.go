@@ -363,6 +363,22 @@ func (r *AgentRunArtifactRepository) ListByRun(ctx context.Context, workspaceID,
 	return artifacts, nil
 }
 
+// NextSequence returns the next sequence number for a run artifact.
+func (r *AgentRunArtifactRepository) NextSequence(ctx context.Context, workspaceID, runID string) (int, error) {
+	type result struct {
+		Max int
+	}
+	var row result
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunArtifact{}).
+		Select("COALESCE(MAX(sequence_no), 0) AS max").
+		Where("workspace_id = ? AND run_id = ?", workspaceID, runID).
+		Scan(&row).Error; err != nil {
+		return 0, fmt.Errorf("next agent run artifact sequence: %w", err)
+	}
+	return row.Max + 1, nil
+}
+
 // Create creates a new artifact.
 func (r *AgentRunArtifactRepository) Create(ctx context.Context, artifact *model.AgentRunArtifact) error {
 	if err := r.db.WithContext(ctx).Create(artifact).Error; err != nil {

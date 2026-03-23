@@ -79,8 +79,8 @@ func validateHumanInputRequest(req *HumanInputRequest) error {
 	if len(req.Questions) == 0 {
 		return fmt.Errorf("questions are required")
 	}
-	if len(req.Questions) > 4 {
-		return fmt.Errorf("questions cannot exceed 4 per request")
+	if len(req.Questions) > 10 {
+		return fmt.Errorf("questions cannot exceed 10 per request")
 	}
 
 	for i := range req.Questions {

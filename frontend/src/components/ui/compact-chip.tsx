@@ -10,14 +10,19 @@ interface CompactChipProps {
 export function CompactChip({ title, displayId, onClick, onRemove }: CompactChipProps) {
   return (
     <div className="flex items-center justify-between gap-1.5 rounded-md border px-2 py-1.5 text-xs">
-      <button
-        type="button"
-        className="min-w-0 flex-1 text-left"
-        onClick={onClick}
-        disabled={!onClick}
-      >
-        <span className="font-medium truncate block">{title}</span>
-      </button>
+      {onClick ? (
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left cursor-pointer hover:underline"
+          onClick={onClick}
+        >
+          <span className="font-medium truncate block">{title}</span>
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1">
+          <span className="font-medium truncate block">{title}</span>
+        </div>
+      )}
       {displayId && (
         <span className="shrink-0 text-[10px] text-muted-foreground">{displayId}</span>
       )}

@@ -29,6 +29,12 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"Call `approve_epic_spec`",
 		"Call `create_story_batch` to create the stories.",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
+		"### Vertical Slicing (Critical)",
+		"### Blocker & Enabler Consolidation",
+		"### Story Separation & Scoping",
+		"### Implementation Briefs (Required)",
+		"### Acceptance Criteria (Required)",
+		"GIVEN/WHEN/THEN",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(*prompt, snippet) {

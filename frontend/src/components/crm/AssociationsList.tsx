@@ -86,6 +86,8 @@ export function AssociationsList({
       company: { to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } },
       deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } },
       epic: { to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: id } },
+      story: { to: '/w/$slug/pm/stories/$storyId', params: { slug, storyId: id } },
+      support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } },
     };
     const route = routes[type];
     if (route) navigate(route as any);

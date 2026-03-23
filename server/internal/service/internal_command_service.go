@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 type InternalCommandDefinition struct {
@@ -357,7 +358,25 @@ func (s *InternalCommandService) registerDefaults() {
 			if strings.TrimSpace(req.DocumentID) == "" {
 				return nil, fmt.Errorf("document_id is required")
 			}
-			content, err := s.docsContentService.Save(ctx, req.DocumentID, req.Content)
+			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
+				return nil, fmt.Errorf("content is required")
+			}
+			// Auto-convert markdown to TipTap JSON when the agent sends a
+			// plain string instead of a structured document object.
+			docContent := req.Content
+			if len(docContent) > 0 && docContent[0] == '"' {
+				var markdown string
+				if err := json.Unmarshal(docContent, &markdown); err == nil {
+					if strings.TrimSpace(markdown) == "" {
+						return nil, fmt.Errorf("content must not be empty")
+					}
+					docContent = tiptap.MarkdownToJSON(markdown)
+				}
+			}
+			if documentContentIsEffectivelyEmpty(docContent) {
+				return nil, fmt.Errorf("content must not be empty")
+			}
+			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent)
 			if err != nil {
 				return nil, err
 			}
@@ -643,6 +662,48 @@ func stringPtrOrNil(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func documentContentIsEffectivelyEmpty(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return true
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return true
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case map[string]any:
+		return !documentNodeHasText(typed)
+	default:
+		return false
+	}
+}
+
+func documentNodeHasText(node map[string]any) bool {
+	if text, ok := node["text"].(string); ok && strings.TrimSpace(text) != "" {
+		return true
+	}
+
+	content, ok := node["content"].([]any)
+	if !ok {
+		return false
+	}
+	for _, child := range content {
+		childNode, ok := child.(map[string]any)
+		if !ok {
+			continue
+		}
+		if documentNodeHasText(childNode) {
+			return true
+		}
+	}
+	return false
 }
 
 func mustJSON(value any) json.RawMessage {

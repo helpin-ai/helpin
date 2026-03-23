@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
@@ -19,6 +21,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 
 	now := time.Now().UTC()
 	mustExec(t, db, `INSERT INTO agents (
@@ -53,7 +56,17 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		Role:        "assistant",
 		Content:     "Please review the latest PRD draft in the preview pane.",
 		MessageType: "assistant_turn",
-		SequenceNo:  1,
+		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
+			{
+				ToolName: worker.ToolPublishPreview,
+				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
+			},
+			{
+				ToolName: worker.ToolRequestHumanApproval,
+				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
+			},
+		}),
+		SequenceNo: 1,
 	}); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
@@ -62,6 +75,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		agentRepo:      agentRepo,
 		runRepo:        runRepo,
 		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
 		runEngine:      &temporalapp.RunEngine{},
 	}
 
@@ -91,6 +105,24 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	if string(updated.OutputSummary) != `{"status":"waiting"}` {
 		t.Fatalf("expected output_summary to remain unchanged, got %s", string(updated.OutputSummary))
 	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("expected 1 approved preview artifact, got %d", len(artifacts))
+	}
+	if artifacts[0].ArtifactType != model.AgentRunArtifactTypeApprovedPreview {
+		t.Fatalf("expected approved preview artifact, got %q", artifacts[0].ArtifactType)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview artifact: %v", err)
+	}
+	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
+		t.Fatalf("unexpected approved preview payload: %#v", approved)
+	}
 }
 
 func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
@@ -98,6 +130,7 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 
 	now := time.Now().UTC()
 	mustExec(t, db, `INSERT INTO agents (
@@ -126,11 +159,32 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		WorkspaceID: "ws-1",
+		RunID:       run.ID,
+		Role:        "assistant",
+		Content:     "Please review the latest PRD draft in the preview pane.",
+		MessageType: "assistant_turn",
+		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
+			{
+				ToolName: worker.ToolPublishPreview,
+				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
+			},
+			{
+				ToolName: worker.ToolRequestHumanApproval,
+				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
+			},
+		}),
+		SequenceNo: 1,
+	}); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
 
 	svc := &AgentService{
 		agentRepo:      agentRepo,
 		runRepo:        runRepo,
 		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
 		runEngine:      &temporalapp.RunEngine{},
 	}
 
@@ -143,6 +197,14 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	if message.MessageType != "user_reply" {
 		t.Fatalf("expected user_reply message type, got %q", message.MessageType)
 	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("expected 1 approved preview artifact, got %d", len(artifacts))
+	}
 }
 
 func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
@@ -150,6 +212,7 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 
 	now := time.Now().UTC()
 	mustExec(t, db, `INSERT INTO agents (
@@ -178,11 +241,32 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		WorkspaceID: "ws-1",
+		RunID:       run.ID,
+		Role:        "assistant",
+		Content:     "Please review the latest PRD draft in the preview pane.",
+		MessageType: "assistant_turn",
+		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
+			{
+				ToolName: worker.ToolPublishPreview,
+				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
+			},
+			{
+				ToolName: worker.ToolRequestHumanApproval,
+				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
+			},
+		}),
+		SequenceNo: 1,
+	}); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
 
 	svc := &AgentService{
 		agentRepo:      agentRepo,
 		runRepo:        runRepo,
 		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
 		runEngine:      &temporalapp.RunEngine{},
 	}
 
@@ -205,6 +289,14 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	}
 	if string(updated.OutputSummary) != `{"status":"waiting"}` {
 		t.Fatalf("expected output_summary to remain unchanged, got %s", string(updated.OutputSummary))
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("expected no approved preview artifacts for feedback, got %d", len(artifacts))
 	}
 }
 
@@ -299,6 +391,19 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			sequence_no INTEGER NOT NULL,
 			created_at DATETIME
 		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
 	}
 
 	for _, stmt := range statements {
@@ -308,4 +413,13 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 	}
 
 	return db
+}
+
+func mustMarshalTestJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	payload, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json: %v", err)
+	}
+	return payload
 }

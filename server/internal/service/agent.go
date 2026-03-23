@@ -995,6 +995,9 @@ func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, a
 	if err != nil {
 		return nil, err
 	}
+	if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, content); err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	run.Status = model.AgentRunStatusRunning
@@ -1010,6 +1013,121 @@ func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, a
 	_ = s.runEngine.SignalMessage(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), content)
 	s.publishRunEvent(run, actorID)
 	return message, nil
+}
+
+func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Context, run *model.AgentRun, actorID, reply string) error {
+	if s.runMessageRepo == nil || s.artifactRepo == nil || run == nil {
+		return nil
+	}
+	if run.InvocationMode != model.InvocationModeInteractive {
+		return nil
+	}
+	if !isExplicitInteractiveApprovalReply(reply) {
+		return nil
+	}
+
+	messages, err := s.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages)
+	if err != nil {
+		return err
+	}
+	if sourceMessage == nil || approval == nil || preview == nil {
+		return nil
+	}
+	existingArtifacts, err := s.artifactRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	for _, artifact := range existingArtifacts {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
+			continue
+		}
+		var existing model.ApprovedRunPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &existing); err != nil {
+			continue
+		}
+		if strings.TrimSpace(existing.SourceMessageID) == sourceMessage.ID {
+			return nil
+		}
+	}
+
+	payload := model.ApprovedRunPreview{
+		Phase:           strings.TrimSpace(approval.Phase),
+		ApprovalTitle:   strings.TrimSpace(approval.Title),
+		ApprovalSummary: strings.TrimSpace(approval.Summary),
+		PanelKey:        strings.TrimSpace(preview.PanelKey),
+		PreviewTitle:    strings.TrimSpace(preview.Title),
+		Format:          strings.TrimSpace(preview.Format),
+		Content:         append(json.RawMessage(nil), preview.Content...),
+		SourceMessageID: sourceMessage.ID,
+		ApprovedBy:      strings.TrimSpace(actorID),
+		ApprovedAt:      time.Now().UTC(),
+	}
+	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
+}
+
+func latestApprovalCheckpoint(messages []model.AgentRunMessage) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "assistant" || len(message.ToolInvocations) == 0 || string(message.ToolInvocations) == "null" {
+			continue
+		}
+		var invocations []model.ToolInvocation
+		if err := json.Unmarshal(message.ToolInvocations, &invocations); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse assistant tool invocations: %w", err)
+		}
+		approvalIndex := -1
+		for idx := len(invocations) - 1; idx >= 0; idx-- {
+			if strings.TrimSpace(invocations[idx].ToolName) == worker.ToolRequestHumanApproval {
+				approvalIndex = idx
+				break
+			}
+		}
+		if approvalIndex == -1 {
+			continue
+		}
+		approval := worker.ExtractLatestHumanApprovalRequest(invocations[:approvalIndex+1])
+		if approval == nil {
+			continue
+		}
+		preview := worker.ExtractLatestPublishedPreview(invocations[:approvalIndex], "")
+		if preview == nil {
+			continue
+		}
+		return &message, approval, preview, nil
+	}
+	return nil, nil, nil, nil
+}
+
+func isExplicitInteractiveApprovalReply(reply string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reply))
+	if normalized == "" || strings.Contains(normalized, "?") {
+		return false
+	}
+
+	for _, marker := range []string{
+		"change", "changes", "revise", "revision", "update", "updates", "edit",
+		"fix", "before approval", "before you", "before we", "add ", "but ",
+		"however", "except", "can you", "could you", "would you", "question",
+		"concern", "clarify", "clarification", "one more", "edge case",
+	} {
+		if strings.Contains(normalized, marker) {
+			return false
+		}
+	}
+
+	for _, marker := range []string{
+		"approve", "approved", "approval", "looks good", "lgtm", "ship it",
+		"good to go", "works for me", "sounds good", "go ahead",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ApproveRun approves a pending outcome, publishing support drafts when requested.
@@ -1157,16 +1275,16 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
-	workspaceID        string
-	agent              *model.Agent
-	targetType         string
-	targetID           string
-	storyID            *string
-	conversationID     *string
-	actorID            *string
-	input              []byte
-	delivery           *model.StoryDeliveryTarget
-	invocationMode     string
+	workspaceID    string
+	agent          *model.Agent
+	targetType     string
+	targetID       string
+	storyID        *string
+	conversationID *string
+	actorID        *string
+	input          []byte
+	delivery       *model.StoryDeliveryTarget
+	invocationMode string
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -1366,6 +1484,31 @@ func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 		Format:        format,
 		StorageMode:   "inline",
 		InlineContent: &content,
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    seqNo,
+	}
+	return s.artifactRepo.Create(ctx, artifact)
+}
+
+func (s *AgentService) saveJSONArtifact(ctx context.Context, run *model.AgentRun, artifactType, format string, payload any) error {
+	if s.artifactRepo == nil || run == nil {
+		return nil
+	}
+	content, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal artifact %s: %w", artifactType, err)
+	}
+	seqNo, err := s.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	artifact := &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  artifactType,
+		Format:        format,
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(content)),
 		Metadata:      json.RawMessage("{}"),
 		SequenceNo:    seqNo,
 	}

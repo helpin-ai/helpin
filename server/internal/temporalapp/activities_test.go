@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
@@ -101,7 +102,7 @@ func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
 }
 
 func TestMarkdownToDocsJSONPreservesHeadingsAndBullets(t *testing.T) {
-	raw := markdownToDocsJSON("# Problem\n\n- first item\n- second item\n\nPlain paragraph")
+	raw := tiptap.MarkdownToJSON("# Problem\n\n- first item\n- second item\n\nPlain paragraph")
 
 	var doc struct {
 		Type    string                   `json:"type"`
@@ -124,6 +125,21 @@ func TestMarkdownToDocsJSONPreservesHeadingsAndBullets(t *testing.T) {
 	}
 	if doc.Content[2]["type"] != "paragraph" {
 		t.Fatalf("expected third node to be paragraph, got %#v", doc.Content[2]["type"])
+	}
+}
+
+func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.T) {
+	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
+
+	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	if err != nil {
+		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+	}
+	if proposal.Summary != "Breakdown" {
+		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
+	}
+	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Ref != "story_1" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
 	}
 }
 
@@ -185,8 +201,8 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		Phase: "prd",
 		Title: "Approve PRD",
 	})
-	if waitForApproval || !waitForInput {
-		t.Fatalf("expected inline approval tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	if !waitForApproval || waitForInput {
+		t.Fatalf("expected inline approval tool to pause for approval, got approval=%v input=%v", waitForApproval, waitForInput)
 	}
 
 	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{

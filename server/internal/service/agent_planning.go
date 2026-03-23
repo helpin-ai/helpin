@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -1015,7 +1016,7 @@ func (s *AgentService) syncClarificationsIntoSpecDoc(ctx context.Context, docume
 	}
 
 	updatedMarkdown := upsertSpecClarificationsSection(content.ContentText, clarifications)
-	savedContent, err := s.docsContentRepo.Upsert(ctx, documentID, serviceMarkdownToDocsJSON(updatedMarkdown))
+	savedContent, err := s.docsContentRepo.Upsert(ctx, documentID, tiptap.MarkdownToJSON(updatedMarkdown))
 	if err != nil {
 		return err
 	}
@@ -1075,123 +1076,6 @@ func renderSpecClarificationsSection(clarifications []model.SpecClarificationIte
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-func serviceMarkdownToDocsJSON(markdown string) json.RawMessage {
-	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
-	nodes := make([]map[string]interface{}, 0, len(lines))
-	paragraphLines := make([]string, 0)
-	bulletLines := make([]string, 0)
-
-	flushParagraph := func() {
-		if len(paragraphLines) == 0 {
-			return
-		}
-		text := strings.TrimSpace(strings.Join(paragraphLines, " "))
-		paragraphLines = paragraphLines[:0]
-		if text == "" {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type": "paragraph",
-			"content": []map[string]interface{}{
-				{"type": "text", "text": text},
-			},
-		})
-	}
-
-	flushBullets := func() {
-		if len(bulletLines) == 0 {
-			return
-		}
-		items := make([]map[string]interface{}, 0, len(bulletLines))
-		for _, item := range bulletLines {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "listItem",
-				"content": []map[string]interface{}{
-					{
-						"type": "paragraph",
-						"content": []map[string]interface{}{
-							{"type": "text", "text": item},
-						},
-					},
-				},
-			})
-		}
-		bulletLines = bulletLines[:0]
-		if len(items) == 0 {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type":    "bulletList",
-			"content": items,
-		})
-	}
-
-	for _, rawLine := range lines {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			flushParagraph()
-			flushBullets()
-			continue
-		}
-		if level, headingText, ok := parseServiceMarkdownHeading(line); ok {
-			flushParagraph()
-			flushBullets()
-			nodes = append(nodes, map[string]interface{}{
-				"type": "heading",
-				"attrs": map[string]interface{}{
-					"level": level,
-				},
-				"content": []map[string]interface{}{
-					{"type": "text", "text": headingText},
-				},
-			})
-			continue
-		}
-		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-			flushParagraph()
-			bulletLines = append(bulletLines, strings.TrimSpace(line[2:]))
-			continue
-		}
-		flushBullets()
-		paragraphLines = append(paragraphLines, line)
-	}
-
-	flushParagraph()
-	flushBullets()
-
-	if len(nodes) == 0 {
-		nodes = append(nodes, map[string]interface{}{"type": "paragraph"})
-	}
-
-	payload, _ := json.Marshal(map[string]interface{}{
-		"type":    "doc",
-		"content": nodes,
-	})
-	return payload
-}
-
-func parseServiceMarkdownHeading(line string) (int, string, bool) {
-	if !strings.HasPrefix(line, "#") {
-		return 0, "", false
-	}
-	level := 0
-	for level < len(line) && line[level] == '#' && level < 6 {
-		level++
-	}
-	if level == 0 || level >= len(line) || line[level] != ' ' {
-		return 0, "", false
-	}
-	text := strings.TrimSpace(line[level+1:])
-	if text == "" {
-		return 0, "", false
-	}
-	return level, text, true
 }
 
 func truncateString(value string, limit int) string {

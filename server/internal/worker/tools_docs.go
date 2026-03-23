@@ -60,12 +60,20 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 	}
 
 	type docDetail struct {
-		ID     string  `json:"id"`
-		Title  string  `json:"title"`
-		Status string  `json:"status"`
-		TeamID *string `json:"team_id,omitempty"`
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Status      string  `json:"status"`
+		TeamID      *string `json:"team_id,omitempty"`
+		ContentText string  `json:"content_text,omitempty"`
 	}
 	detail := docDetail{ID: doc.ID, Title: doc.Title, Status: doc.Status, TeamID: doc.TeamID}
+
+	if ctx.Services.GetDocumentContent != nil {
+		if text, err := ctx.Services.GetDocumentContent(ctx.Context, params.DocumentID); err == nil {
+			detail.ContentText = text
+		}
+	}
+
 	result, _ := json.MarshalIndent(detail, "", "  ")
 	return string(result), nil
 }
@@ -113,6 +121,9 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 	}
 	if strings.TrimSpace(params.DocumentID) == "" {
 		return "", fmt.Errorf("document_id is required")
+	}
+	if len(params.Content) == 0 || strings.TrimSpace(string(params.Content)) == "" || strings.TrimSpace(string(params.Content)) == "null" {
+		return "", fmt.Errorf("content is required")
 	}
 	if err := ctx.Services.WriteDocumentContent(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.Content); err != nil {
 		return "", fmt.Errorf("write document content: %w", err)

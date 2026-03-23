@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   FileText,
   GitBranch,
@@ -28,6 +29,7 @@ import {
 } from '@/hooks/queries';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { GroupedAssociations, CreateStoryRequest } from '@/lib/pmTypes';
 
 interface SidebarAssociationsProps {
@@ -38,6 +40,9 @@ interface SidebarAssociationsProps {
 type SectionKey = 'stories' | 'docs';
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
+  const navigate = useNavigate();
+  const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
 
@@ -45,6 +50,14 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const deleteAssociation = useDeletePMAssociation(workspaceId);
   const createDocAssociation = useCreateDocAssociation(workspaceId, 'support_conversation', conversationId);
   const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'support_conversation', conversationId);
+
+  const handleNavigateStory = (storyId: string) => {
+    navigate({ to: '/w/$slug/pm/stories/$storyId', params: { slug, storyId } } as any);
+  };
+
+  const handleNavigateDoc = (docId: string) => {
+    navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId } } as any);
+  };
 
   const [pickerSection, setPickerSection] = useState<SectionKey | null>(null);
   const [query, setQuery] = useState('');
@@ -144,6 +157,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
+              onClick={() => handleNavigateStory(item.object_id)}
               onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
             />
           ))
@@ -165,6 +179,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
+              onClick={() => handleNavigateDoc(item.object_id)}
               onRemove={item.association_id ? () => deleteDocAssociation.mutate(item.association_id!) : undefined}
             />
           ))

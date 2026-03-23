@@ -77,7 +77,7 @@ This is a PRODUCT SPECIFICATION (PRD) and story-planning loop, not a technical d
 
 ## Resumption Rules
 
-Before starting the planning loop, call ` + "`ensure_epic_spec_doc`" + ` to learn the current planning state. Then branch based on the ` + "`planning_hint`" + ` in the response:
+The context instructions include a "Planning state:" line that tells you the current state of the epic. Use it to branch. Do NOT call ` + "`ensure_epic_spec_doc`" + ` just to check the state — that tool creates a document as a side effect. Only call it after PRD approval when you are ready to persist content.
 
 ### Branch A: PRD approved + stories exist
 The spec is locked and stories are live. Do NOT redraft the PRD or recreate stories.
@@ -94,6 +94,15 @@ The spec is locked. Skip PRD drafting entirely.
 
 ### Branch C: No approved PRD
 Follow the full Planning Loop from step 1.
+
+### Branch D: PRD draft exists but not approved
+A previous run wrote a spec document but it was never formally approved. Resume from the approval checkpoint.
+- Read the existing draft using ` + "`read_document`" + ` with the spec document ID.
+- Present it to the human with ` + "`publish_preview`" + ` using ` + "`panel_key=\"prd_draft\"`" + `.
+- Call ` + "`request_human_approval`" + ` with ` + "`phase=\"prd\"`" + ` to ask the human to approve or request changes.
+- If approved: call ` + "`approve_epic_spec`" + ` to lock the spec, then proceed to story planning.
+- If changes requested: revise the draft, re-publish, and request approval again.
+- Do NOT proceed to story planning or call ` + "`create_story_batch`" + ` until the spec is approved.
 
 ## PRD Work
 
@@ -143,7 +152,7 @@ DO NOT include:
     ]
   }
   ` + "```" + `
-- Limit questions to 2-4 per turn.
+- Limit questions to a maximum of 10 per request.
 - Include a final freetext option for every question.
 - Each question must be single-select. Do not ask "select all that apply"; split that into separate questions instead.
 - If context is ambiguous, ask 2-3 scope-gating questions before exploring the codebase.
@@ -168,14 +177,57 @@ Work like a technical product planner interactively decomposing the approved spe
 
 - Read the approved spec from linked documents and use tools to understand the current codebase.
 - Discuss decomposition with the human when priorities, constraints, or slicing preferences are unclear.
-- Prefer independently testable, deployable vertical slices delivering user-visible value.
-- Include enabler stories only when necessary.
-- Define clear acceptance criteria.
-- Specify dependency refs explicitly.
-- Include implementation briefs with approach, affected files, and test strategy.
-- ` + "`files_to_modify`" + ` must be an array of objects with ` + "`path`" + `, ` + "`action`" + `, and ` + "`description`" + `. Never emit plain strings in ` + "`files_to_modify`" + `.
-- Order stories by dependency graph, with independent stories first.
 - Stories must not be created without a team. If the epic has no team, call ` + "`list_workspace_teams`" + ` and ask the human to choose the team inline before story creation.
+
+### Vertical Slicing (Critical)
+
+Every story MUST be a vertical slice — cutting through the full stack (backend, frontend, tests) to deliver one independently shippable unit of user-visible value. Do not create horizontal stories like "build all API endpoints" or "create all UI components".
+
+Correct vertical slice: "Users can create a new contact with name and email" — touches the model, repository, service, handler, API route, frontend form, list view update, and tests for that one flow.
+
+Wrong horizontal split: "Create contact model + repository" / "Create contact API handlers" / "Create contact frontend" — these are layers, not slices.
+
+### Blocker & Enabler Consolidation
+
+When multiple stories share a common blocker (e.g., a new DB table, a shared service, an auth scope, a config change), consolidate ALL shared setup into a single enabler story rather than scattering setup across stories or creating multiple small enablers.
+
+- Create at most ONE enabler/infrastructure story per distinct blocker.
+- The enabler story must be minimal — only the shared foundation that unblocks other stories, nothing more.
+- All other stories depend on the enabler and assume its setup is complete.
+- If there is no shared blocker, do not create an enabler story at all.
+
+### Story Separation & Scoping
+
+Each story must have a clearly bounded scope with zero overlap with other stories:
+
+- No two stories should modify the same file for the same purpose. If they must touch the same file, the boundary must be explicit (e.g., "Story A adds the ` + "`CreateContact`" + ` endpoint, Story B adds the ` + "`UpdateContact`" + ` endpoint — both in ` + "`handler/contact.go`" + ` but non-overlapping functions").
+- Each story owns its own test coverage — do not defer testing to a later story.
+- A story is done when its slice works end-to-end, not when "its layer" is complete.
+- If a requirement cannot be cleanly isolated into a single story, discuss with the human before splitting.
+
+### Implementation Briefs (Required)
+
+Every story MUST include a detailed implementation brief with:
+
+1. **Approach**: A concrete description of HOW to implement the story — not just what it does, but the technical approach (e.g., "Add a ` + "`ContactService.Create`" + ` method that validates email uniqueness via the repository, persists the contact, and emits a WebSocket event").
+2. **Affected files**: ` + "`files_to_modify`" + ` must be an array of objects with ` + "`path`" + `, ` + "`action`" + ` (create/modify/delete), and ` + "`description`" + ` explaining the specific change. Never emit plain strings in ` + "`files_to_modify`" + `. Be specific — "add CreateContact handler method" not just "modify handler".
+3. **Key implementation details**: Mention specific function signatures, struct fields, validation rules, error cases, and edge cases relevant to this story. Name the types, functions, and constants that will be created or changed.
+4. **Test strategy**: What tests are needed — unit tests for service logic, repository tests for queries, handler tests for HTTP behavior. Name the test scenarios.
+5. **Dependencies**: Which other stories must be completed first, and specifically what they provide that this story needs.
+
+### Acceptance Criteria (Required)
+
+Every story MUST include concrete acceptance criteria using GIVEN/WHEN/THEN format:
+
+- Cover the happy path AND key error/edge cases.
+- Criteria must be verifiable — no vague statements like "works correctly" or "handles errors properly".
+- Include boundary conditions where relevant (empty inputs, max lengths, permission checks).
+
+### Story Ordering
+
+- Order stories by dependency graph: enablers first, then independent stories, then dependent stories.
+- Independent stories (no dependencies on each other) should be grouped so they can be worked in parallel.
+- Mark parallelizable stories explicitly in the plan summary.
 
 When you have enough information, call ` + "`publish_preview`" + ` with the FULL current plan using ` + "`panel_key=\"story_plan\"`" + ` and ` + "`format=\"json\"`" + `.
 Each ` + "`publish_preview`" + ` call for ` + "`panel_key=\"story_plan\"`" + ` replaces the previous one.
@@ -233,6 +285,13 @@ func productPlannerPromptNeedsRefresh(prompt *string) bool {
 		"Call `approve_epic_spec`",
 		"### Branch A: PRD approved + stories exist",
 		"### Branch C: No approved PRD",
+		"### Branch D: PRD draft exists but not approved",
+		"### Vertical Slicing (Critical)",
+		"### Blocker & Enabler Consolidation",
+		"### Story Separation & Scoping",
+		"### Implementation Briefs (Required)",
+		"### Acceptance Criteria (Required)",
+		"GIVEN/WHEN/THEN",
 	} {
 		if !strings.Contains(normalized, marker) {
 			return true

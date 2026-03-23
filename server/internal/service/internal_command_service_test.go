@@ -1,6 +1,12 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
 
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
@@ -17,4 +23,25 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	}
 
 	t.Fatalf("expected docs.write_document_content to support target type document, got %#v", def.SupportedTargetTypes)
+}
+
+func TestWriteDocumentContentCommandRejectsEmptyContent(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.write_document_content")
+	if !ok {
+		t.Fatal("expected docs.write_document_content definition")
+	}
+
+	_, err := def.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		TargetType:  "document",
+		TargetID:    "doc-1",
+	}, []byte(`{"document_id":"doc-1","content":{"type":"doc","content":[]}}`))
+	if err == nil {
+		t.Fatal("expected empty document content to be rejected")
+	}
+	if !strings.Contains(err.Error(), "content must not be empty") {
+		t.Fatalf("expected empty content error, got %v", err)
+	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -257,6 +258,14 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 		return ExecuteRunResult{}, nil
 	}
+	completedFromApprovedPreview, err := a.applyApprovedInteractivePreview(ctx, state, &planningInput)
+	if err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
+	if completedFromApprovedPreview {
+		return ExecuteRunResult{}, nil
+	}
 
 	if err := a.preparePlanningRepository(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
@@ -417,9 +426,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	waitForApproval, waitForInput := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest)
 	continueExecution := false
-	if state.run.InvocationMode == model.InvocationModeInteractive && approvalRequest != nil {
-		state.run.ApprovalState = "not_required"
-	} else if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
+	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
 	completedAt := time.Now()
 	if waitForApproval {
@@ -478,7 +485,7 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 		return waitForApproval, false
 	}
 	if approvalRequest != nil {
-		return false, true
+		return true, false
 	}
 	if humanInputRequest != nil {
 		return false, true
@@ -809,6 +816,266 @@ func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Cont
 	}
 
 	return nil
+}
+
+func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context, state *resolvedRunState, input *planningRunInput) (bool, error) {
+	if state == nil || state.run == nil || state.epic == nil || input == nil {
+		return false, nil
+	}
+	if state.run.TargetType != "epic" || state.run.InvocationMode != model.InvocationModeInteractive || strings.TrimSpace(input.Stage) != "" {
+		return false, nil
+	}
+	if a.artifactRepo == nil {
+		return false, nil
+	}
+
+	artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return false, err
+	}
+	approvedArtifact, approvedPreview, err := nextUnappliedApprovedPreview(artifacts)
+	if err != nil || approvedArtifact == nil || approvedPreview == nil {
+		return false, err
+	}
+
+	var appliedAction string
+	switch strings.ToLower(strings.TrimSpace(approvedPreview.Phase)) {
+	case "prd":
+		if err := a.applyApprovedPRDPreview(ctx, state, input, approvedPreview); err != nil {
+			return false, err
+		}
+		appliedAction = "persist_prd"
+	case "stories":
+		if err := a.applyApprovedStoryPlanPreview(ctx, state, input, approvedPreview); err != nil {
+			return false, err
+		}
+		appliedAction = "create_stories"
+	default:
+		return false, fmt.Errorf("unsupported approved preview phase %q", approvedPreview.Phase)
+	}
+
+	if _, err := a.appendRunArtifact(ctx, state.run, model.AgentRunArtifactTypeApprovedPreviewApplied, "json", model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: approvedArtifact.ID,
+		Phase:              strings.TrimSpace(approvedPreview.Phase),
+		Action:             appliedAction,
+		AppliedAt:          time.Now().UTC(),
+	}); err != nil {
+		return false, err
+	}
+
+	return appliedAction == "create_stories", nil
+}
+
+func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.AgentRunArtifact, *model.ApprovedRunPreview, error) {
+	applied := make(map[string]bool)
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreviewApplied || artifact.InlineContent == nil {
+			continue
+		}
+		var marker model.AppliedApprovedRunPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &marker); err != nil {
+			return nil, nil, fmt.Errorf("parse applied approved preview artifact: %w", err)
+		}
+		if strings.TrimSpace(marker.ApprovedArtifactID) != "" {
+			applied[strings.TrimSpace(marker.ApprovedArtifactID)] = true
+		}
+	}
+
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
+			continue
+		}
+		if applied[artifact.ID] {
+			continue
+		}
+		var preview model.ApprovedRunPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
+			return nil, nil, fmt.Errorf("parse approved preview artifact: %w", err)
+		}
+		return &artifact, &preview, nil
+	}
+	return nil, nil, nil
+}
+
+func decodeApprovedStoryPlanPreviewContent(raw json.RawMessage) (model.OrchestrationProposal, error) {
+	var proposal model.OrchestrationProposal
+	if err := json.Unmarshal(raw, &proposal); err == nil {
+		return proposal, nil
+	}
+
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return proposal, err
+	}
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return proposal, fmt.Errorf("story plan preview content is empty")
+	}
+	if err := json.Unmarshal([]byte(encoded), &proposal); err != nil {
+		return proposal, err
+	}
+	return proposal, nil
+}
+
+func (a *AgentRunActivities) applyApprovedPRDPreview(ctx context.Context, state *resolvedRunState, input *planningRunInput, preview *model.ApprovedRunPreview) error {
+	if preview == nil {
+		return fmt.Errorf("approved preview is required")
+	}
+	if strings.TrimSpace(preview.Format) != workerpkg.PreviewFormatMarkdown {
+		return fmt.Errorf("approved PRD preview must use markdown format")
+	}
+
+	var markdown string
+	if err := json.Unmarshal(preview.Content, &markdown); err != nil {
+		return fmt.Errorf("parse approved PRD preview content: %w", err)
+	}
+	markdown = strings.TrimSpace(markdown)
+	if markdown == "" {
+		return fmt.Errorf("approved PRD preview content is empty")
+	}
+
+	doc, err := a.ensureEpicSpecDocument(ctx, state, runActorID(state.run))
+	if err != nil {
+		return err
+	}
+	if a.commandExecutor != nil {
+		if _, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+			WorkspaceID: state.run.WorkspaceID,
+			TargetType:  "document",
+			TargetID:    doc.ID,
+		}, "docs.write_document_content", mustJSON(map[string]any{
+			"document_id": doc.ID,
+			"content":     markdown,
+		})); err != nil {
+			return err
+		}
+		if _, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+			WorkspaceID: state.run.WorkspaceID,
+			ActorID:     runActorID(state.run),
+			TargetType:  "epic",
+			TargetID:    state.epic.ID,
+		}, "pm.approve_epic_spec", json.RawMessage(`{}`)); err != nil {
+			return err
+		}
+	} else {
+		savedContent, err := a.docsContentRepo.Upsert(ctx, doc.ID, tiptap.MarkdownToJSON(markdown))
+		if err != nil {
+			return err
+		}
+		label := "Approved Spec"
+		version, err := a.docsVersionRepo.Create(ctx, doc.ID, runActorID(state.run), savedContent.Content, savedContent.ContentText, &label, "manual", len(strings.Fields(savedContent.ContentText)))
+		if err != nil {
+			return err
+		}
+		state.epic.SpecDocumentID = &doc.ID
+		state.epic.ApprovedSpecVersionID = &version.ID
+		state.epic.PlanningState = model.EpicPlanningStateReadyForStoryPlanning
+		if err := a.epicRepo.Update(ctx, state.epic); err != nil {
+			return err
+		}
+	}
+
+	epicWithStats, err := a.epicRepo.GetByID(ctx, state.epic.ID)
+	if err != nil {
+		return err
+	}
+	if epicWithStats == nil {
+		return fmt.Errorf("epic not found after applying approved PRD preview")
+	}
+	state.epic = &epicWithStats.Epic
+	input.SpecDocumentID = strings.TrimSpace(derefString(state.epic.SpecDocumentID))
+	input.SpecVersionID = strings.TrimSpace(derefString(state.epic.ApprovedSpecVersionID))
+	return nil
+}
+
+func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, state *resolvedRunState, input *planningRunInput, preview *model.ApprovedRunPreview) error {
+	if preview == nil {
+		return fmt.Errorf("approved preview is required")
+	}
+	if strings.TrimSpace(preview.Format) != workerpkg.PreviewFormatJSON {
+		return fmt.Errorf("approved story plan preview must use json format")
+	}
+	if a.commandExecutor == nil {
+		return fmt.Errorf("planner commands are not available")
+	}
+
+	proposal, err := decodeApprovedStoryPlanPreviewContent(preview.Content)
+	if err != nil {
+		return fmt.Errorf("parse approved story plan preview content: %w", err)
+	}
+	if proposal.EpicID == "" {
+		proposal.EpicID = state.epic.ID
+	}
+	if proposal.SpecVersionID == "" {
+		proposal.SpecVersionID = strings.TrimSpace(firstNonEmptyString(input.SpecVersionID, derefString(state.epic.ApprovedSpecVersionID)))
+	}
+	if err := validatePlanningProposalStories(proposal.ProposedStories); err != nil {
+		return err
+	}
+
+	output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+		WorkspaceID: state.run.WorkspaceID,
+		ActorID:     runActorID(state.run),
+		TargetType:  "epic",
+		TargetID:    state.epic.ID,
+	}, "pm.create_story_batch", mustJSON(map[string]any{
+		"stories": proposal.ProposedStories,
+	}))
+	if err != nil {
+		return err
+	}
+
+	var result workerpkg.CreateStoryBatchResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return fmt.Errorf("parse created story batch: %w", err)
+	}
+
+	stories, err := a.epicRepo.ListStories(ctx, state.epic.ID)
+	if err != nil {
+		return err
+	}
+	state.epicStories = stories
+
+	epicWithStats, err := a.epicRepo.GetByID(ctx, state.epic.ID)
+	if err != nil {
+		return err
+	}
+	if epicWithStats == nil {
+		return fmt.Errorf("epic not found after applying approved story plan")
+	}
+	state.epic = &epicWithStats.Epic
+	state.epic.LastPlanningRunID = &state.run.ID
+	if err := a.epicRepo.Update(ctx, state.epic); err != nil {
+		return err
+	}
+
+	state.run.OutputSummary, _ = json.Marshal(planningRunSummary{
+		Stage:               model.PlanningStagePlanStories,
+		SpecDocumentID:      strings.TrimSpace(firstNonEmptyString(input.SpecDocumentID, derefString(state.epic.SpecDocumentID))),
+		SpecVersionID:       proposal.SpecVersionID,
+		PlanningMethodology: input.PlanningMethodology,
+		Summary:             strings.TrimSpace(proposal.Summary),
+		Risks:               append([]string(nil), proposal.Risks...),
+		OpenQuestions:       append([]string(nil), proposal.OpenQuestions...),
+		Proposal:            &proposal,
+	})
+
+	createdCount := len(result.Stories)
+	summaryText := fmt.Sprintf("Applied the approved story plan and created %d stories.", createdCount)
+	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil); err != nil {
+		return err
+	}
+
+	completedAt := time.Now()
+	state.run.Status = model.AgentRunStatusCompleted
+	state.run.CompletedAt = &completedAt
+	state.run.ExecutionStage = strPtr("completed")
+	state.run.LastHeartbeatAt = &completedAt
+	if err := a.runRepo.Update(ctx, state.run); err != nil {
+		return err
+	}
+	a.runRepo.Notify(ctx, state.run)
+	return a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
 }
 
 func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*resolvedRunState, error) {
@@ -1462,8 +1729,18 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, "Use publish_preview for reviewable right-pane content. For PRDs, publish markdown. For story plans, publish JSON.")
 	sections = append(sections, "Before PRD approval, keep the draft in chat only. After PRD approval, use ensure_epic_spec_doc, write_document_content, and approve_epic_spec to persist and record the approved PRD. After story approval, use create_story_batch and only use assign_story_agent or set_story_dependencies as follow-up correction tools.")
 
+	var hasSpecContent bool
 	if input.SpecDocumentID != "" {
 		sections = append(sections, fmt.Sprintf("Existing canonical spec document ID: %s", input.SpecDocumentID))
+
+		// Inject draft content when doc exists but is not approved (Branch D).
+		if input.SpecVersionID == "" {
+			if content, err := a.docsContentRepo.GetByDocumentID(ctx, input.SpecDocumentID); err == nil && content != nil && strings.TrimSpace(content.ContentText) != "" {
+				hasSpecContent = true
+				sections = append(sections, "IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the approval checkpoint (Branch D). Present the draft and ask the human to approve or revise it.")
+				sections = append(sections, "Current spec draft:\n"+truncatePlanningText(content.ContentText, 12000))
+			}
+		}
 	}
 	if input.SpecVersionID != "" {
 		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
@@ -1517,14 +1794,17 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		sections = append(sections, "Stories already linked to this epic:\n"+strings.Join(lines, "\n"))
 	}
 
-	// Explicit three-way branch signal for the agent.
+	// Explicit branch signal for the agent.
 	hasApprovedSpec := input.SpecVersionID != ""
+	hasSpecDoc := input.SpecDocumentID != ""
 	hasStories := len(state.epicStories) > 0
 	switch {
 	case hasApprovedSpec && hasStories:
 		sections = append(sections, "Planning state: PRD approved, stories exist. Enter clarification mode (Branch A). Ask the human what they need.")
 	case hasApprovedSpec && !hasStories:
 		sections = append(sections, "Planning state: PRD approved, no stories yet. Skip PRD drafting and proceed to story planning (Branch B).")
+	case hasSpecDoc && hasSpecContent:
+		sections = append(sections, "Planning state: PRD draft exists but is not approved. Resume from the approval checkpoint (Branch D). Present the draft and ask to approve or revise.")
 	default:
 		sections = append(sections, "Planning state: No approved PRD. Follow the full planning loop (Branch C).")
 	}
@@ -1654,7 +1934,7 @@ func (a *AgentRunActivities) finalizeDraftSpecRun(ctx context.Context, state *re
 	}
 
 	renderedMarkdown := renderProductSpecMarkdown(draft.SpecMarkdown, draft.Sources)
-	content := markdownToDocsJSON(renderedMarkdown)
+	content := tiptap.MarkdownToJSON(renderedMarkdown)
 	savedContent, err := a.docsContentRepo.Upsert(ctx, doc.ID, content)
 	if err != nil {
 		return err
@@ -2296,6 +2576,15 @@ func truncatePlanningText(value string, limit int) string {
 	return value[:limit] + "\n... (truncated)"
 }
 
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func validatePlanningProposalStories(stories []model.ProposedStory) error {
 	refToIdx := make(map[string]int, len(stories))
 	for idx := range stories {
@@ -2410,111 +2699,6 @@ func renderSpecClarificationsContext(items []model.SpecClarificationItem) string
 	return strings.Join(lines, "\n")
 }
 
-func markdownToDocsJSON(markdown string) json.RawMessage {
-	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
-	nodes := make([]map[string]interface{}, 0, len(lines))
-	paragraphLines := make([]string, 0)
-	bulletLines := make([]string, 0)
-
-	flushParagraph := func() {
-		if len(paragraphLines) == 0 {
-			return
-		}
-		text := strings.TrimSpace(strings.Join(paragraphLines, " "))
-		paragraphLines = paragraphLines[:0]
-		if text == "" {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type": "paragraph",
-			"content": []map[string]interface{}{
-				{"type": "text", "text": text},
-			},
-		})
-	}
-
-	flushBullets := func() {
-		if len(bulletLines) == 0 {
-			return
-		}
-		items := make([]map[string]interface{}, 0, len(bulletLines))
-		for _, item := range bulletLines {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "listItem",
-				"content": []map[string]interface{}{
-					{
-						"type": "paragraph",
-						"content": []map[string]interface{}{
-							{"type": "text", "text": item},
-						},
-					},
-				},
-			})
-		}
-		bulletLines = bulletLines[:0]
-		if len(items) == 0 {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type":    "bulletList",
-			"content": items,
-		})
-	}
-
-	for _, rawLine := range lines {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			flushParagraph()
-			flushBullets()
-			continue
-		}
-
-		level, headingText, ok := parseMarkdownHeading(line)
-		if ok {
-			flushParagraph()
-			flushBullets()
-			nodes = append(nodes, map[string]interface{}{
-				"type": "heading",
-				"attrs": map[string]interface{}{
-					"level": level,
-				},
-				"content": []map[string]interface{}{
-					{"type": "text", "text": headingText},
-				},
-			})
-			continue
-		}
-
-		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-			flushParagraph()
-			bulletLines = append(bulletLines, strings.TrimSpace(line[2:]))
-			continue
-		}
-
-		flushBullets()
-		paragraphLines = append(paragraphLines, line)
-	}
-
-	flushParagraph()
-	flushBullets()
-
-	if len(nodes) == 0 {
-		nodes = append(nodes, map[string]interface{}{
-			"type": "paragraph",
-		})
-	}
-
-	payload, _ := json.Marshal(map[string]interface{}{
-		"type":    "doc",
-		"content": nodes,
-	})
-	return payload
-}
-
 func renderProductSpecMarkdown(specMarkdown string, sources []model.PlanningResearchSource) string {
 	specMarkdown = strings.TrimSpace(specMarkdown)
 	sources = normalizePlanningResearchSources(sources)
@@ -2563,26 +2747,6 @@ func normalizePlanningResearchSources(sources []model.PlanningResearchSource) []
 	return normalized
 }
 
-func parseMarkdownHeading(line string) (int, string, bool) {
-	if !strings.HasPrefix(line, "#") {
-		return 0, "", false
-	}
-
-	level := 0
-	for level < len(line) && line[level] == '#' && level < 6 {
-		level++
-	}
-	if level == 0 || level >= len(line) || line[level] != ' ' {
-		return 0, "", false
-	}
-
-	text := strings.TrimSpace(line[level+1:])
-	if text == "" {
-		return 0, "", false
-	}
-	return level, text, true
-}
-
 func (a *AgentRunActivities) createRunArtifact(ctx context.Context, run *model.AgentRun, artifactType, format string, payload any, sequenceNo int) error {
 	content, err := json.Marshal(payload)
 	if err != nil {
@@ -2599,6 +2763,31 @@ func (a *AgentRunActivities) createRunArtifact(ctx context.Context, run *model.A
 		SequenceNo:    sequenceNo,
 	}
 	return a.artifactRepo.Create(ctx, artifact)
+}
+
+func (a *AgentRunActivities) appendRunArtifact(ctx context.Context, run *model.AgentRun, artifactType, format string, payload any) (*model.AgentRunArtifact, error) {
+	content, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal artifact %s: %w", artifactType, err)
+	}
+	sequenceNo, err := a.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	artifact := &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  artifactType,
+		Format:        format,
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(content)),
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    sequenceNo,
+	}
+	if err := a.artifactRepo.Create(ctx, artifact); err != nil {
+		return nil, err
+	}
+	return artifact, nil
 }
 
 func (a *AgentRunActivities) mintAccessToken(ctx context.Context, integration *model.GitIntegration) (string, error) {
@@ -2909,6 +3098,16 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return nil, fmt.Errorf("ensure spec doc returned no document_id")
 			}
 			return a.docsDocRepo.GetByID(ctx, response.DocumentID)
+		},
+		GetDocumentContent: func(ctx context.Context, documentID string) (string, error) {
+			content, err := a.docsContentRepo.GetByDocumentID(ctx, documentID)
+			if err != nil {
+				return "", err
+			}
+			if content == nil {
+				return "", nil
+			}
+			return content.ContentText, nil
 		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {

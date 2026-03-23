@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   Building2,
   FileText,
@@ -19,8 +20,10 @@ import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { supportService } from '@/lib/services/supportService';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSearchResult, CRMObjectType } from '@/lib/crmTypes';
 import type {
+  AssociationObjectSummary,
   GroupedAssociations,
   SupportConversation,
 } from '@/lib/pmTypes';
@@ -52,6 +55,25 @@ export function AssociationsPanel({
   objectId,
   className,
 }: AssociationsPanelProps) {
+  const navigate = useNavigate();
+  const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+
+  const handleNavigate = (item: AssociationObjectSummary) => {
+    const type = item.object_type;
+    const id = item.object_id;
+    if (type === 'support_conversation') {
+      navigate({ to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } } as any);
+    } else if (type === 'contact') {
+      navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: id } } as any);
+    } else if (type === 'company') {
+      navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } } as any);
+    } else if (type === 'deal') {
+      navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } } as any);
+    } else if (type === 'document') {
+      navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId: id } } as any);
+    }
+  };
+
   const [pickerSection, setPickerSection] = useState<SectionKey | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -193,6 +215,7 @@ export function AssociationsPanel({
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
+              onClick={() => handleNavigate(item)}
               onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
             />
           ))
@@ -214,6 +237,7 @@ export function AssociationsPanel({
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
+              onClick={() => handleNavigate(item)}
               onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
             />
           ))
@@ -235,6 +259,7 @@ export function AssociationsPanel({
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
+              onClick={() => handleNavigate(item)}
               onRemove={item.association_id ? () => deleteDocAssociation.mutate(item.association_id!) : undefined}
             />
           ))

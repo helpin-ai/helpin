@@ -144,6 +144,7 @@ func main() {
 	runtimes := workerpkg.NewDefaultRuntimeRegistry(
 		cfg.OpenCodePath,
 		cfg.AnthropicAPIKey,
+		cfg.AnthropicBaseURL,
 		cfg.OpenAIAPIKey,
 		cfg.OpenAIBaseURL,
 		cfg.OpenRouterAPIKey,

@@ -150,7 +150,7 @@ func lookupInt(values map[string]any, key string) int {
 	return 0
 }
 
-func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt string) (string, error) {
+func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt string, providerConfig map[string]any) (string, error) {
 	agentName := openCodeAgentName(execCtx)
 	agentConfig := map[string]any{
 		"description": openCodeAgentDescription(execCtx),
@@ -175,11 +175,55 @@ func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt
 		config["small_model"] = modelID
 	}
 
+	if len(providerConfig) > 0 {
+		config["provider"] = providerConfig
+	}
+
 	payload, err := json.Marshal(config)
 	if err != nil {
 		return "", err
 	}
 	return string(payload), nil
+}
+
+func buildOpenCodeProviderConfig(agent *model.Agent, anthropicBaseURL, openRouterBaseURL string) map[string]any {
+	provider := model.AgentModelProviderAnthropic
+	modelName := ""
+	if agent != nil {
+		if configuredProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); configuredProvider != "" {
+			provider = configuredProvider
+		}
+		modelName = normalizeOpenCodeConfiguredModelName(provider, strings.TrimSpace(derefOpenCodeString(agent.Model)))
+	}
+
+	options := map[string]any{}
+	switch provider {
+	case model.AgentModelProviderAnthropic:
+		if strings.TrimSpace(anthropicBaseURL) != "" {
+			options["baseURL"] = strings.TrimSpace(anthropicBaseURL)
+		}
+	case model.AgentModelProviderOpenRouter:
+		if strings.TrimSpace(openRouterBaseURL) != "" {
+			options["baseURL"] = strings.TrimSpace(openRouterBaseURL)
+		}
+	}
+
+	providerEntry := map[string]any{}
+	if len(options) > 0 {
+		providerEntry["options"] = options
+	}
+	if modelName != "" {
+		providerEntry["models"] = map[string]any{
+			modelName: map[string]any{},
+		}
+	}
+	if len(providerEntry) == 0 {
+		return nil
+	}
+
+	return map[string]any{
+		provider: providerEntry,
+	}
 }
 
 func openCodeAgentDescription(execCtx *ExecutionContext) string {
@@ -310,7 +354,7 @@ func openCodeAgentName(execCtx *ExecutionContext) string {
 }
 
 func defaultOpenCodeModelForProvider(provider string) string {
-	switch strings.TrimSpace(provider) {
+	switch normalizeOpenCodeProvider(strings.TrimSpace(provider)) {
 	case model.AgentModelProviderOpenAI:
 		return "gpt-5-mini"
 	case model.AgentModelProviderOpenRouter:
@@ -342,6 +386,32 @@ func derefOpenCodeString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func normalizeOpenCodeProvider(provider string) string {
+	switch strings.TrimSpace(provider) {
+	case "", model.AgentModelProviderAnthropic:
+		return model.AgentModelProviderAnthropic
+	case model.AgentModelProviderOpenAI:
+		return model.AgentModelProviderOpenAI
+	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
+		return model.AgentModelProviderOpenRouter
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
+func normalizeOpenCodeConfiguredModelName(provider, modelName string) string {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return ""
+	}
+	provider = normalizeOpenCodeProvider(provider)
+	prefix := provider + "/"
+	if strings.HasPrefix(modelName, prefix) {
+		return strings.TrimPrefix(modelName, prefix)
+	}
+	return modelName
 }
 
 func appendIfMissingEnv(env []string, key, value string) []string {

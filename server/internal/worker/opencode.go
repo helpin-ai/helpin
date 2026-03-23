@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	openCodeChunkFlushInterval     = 2 * time.Second
-	openCodeChunkFlushBytes        = 4 * 1024
-	openCodePostRunTimeout         = 2 * time.Minute
-	openCodeScannerBufferSize      = 1024 * 1024
-	openCodeGracefulShutdownDelay  = 10 * time.Second
+	openCodeChunkFlushInterval    = 2 * time.Second
+	openCodeChunkFlushBytes       = 4 * 1024
+	openCodePostRunTimeout        = 2 * time.Minute
+	openCodeScannerBufferSize     = 1024 * 1024
+	openCodeGracefulShutdownDelay = 10 * time.Second
 )
 
 // OpenCodeExecutor shells out to the opencode CLI for each agent run.
@@ -30,6 +30,7 @@ type OpenCodeExecutor struct {
 	kind              string
 	commandPath       string
 	anthropicAPIKey   string
+	anthropicBaseURL  string
 	openAIAPIKey      string
 	openAIBaseURL     string
 	openRouterAPIKey  string
@@ -43,6 +44,7 @@ func NewOpenCodeExecutor(
 	kind string,
 	commandPath string,
 	anthropicAPIKey string,
+	anthropicBaseURL string,
 	openAIAPIKey string,
 	openAIBaseURL string,
 	openRouterAPIKey string,
@@ -57,6 +59,7 @@ func NewOpenCodeExecutor(
 		kind:              kind,
 		commandPath:       commandPath,
 		anthropicAPIKey:   strings.TrimSpace(anthropicAPIKey),
+		anthropicBaseURL:  strings.TrimSpace(anthropicBaseURL),
 		openAIAPIKey:      strings.TrimSpace(openAIAPIKey),
 		openAIBaseURL:     strings.TrimSpace(openAIBaseURL),
 		openRouterAPIKey:  strings.TrimSpace(openRouterAPIKey),
@@ -117,7 +120,8 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 
 	userPrompt = buildOpenCodeUserPrompt(execCtx, userPrompt)
 	modelID := e.resolveModelID(execCtx.Agent)
-	configContent, err := buildOpenCodeConfigContent(execCtx, modelID, systemPrompt)
+	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, e.anthropicBaseURL, e.openRouterBaseURL)
+	configContent, err := buildOpenCodeConfigContent(execCtx, modelID, systemPrompt, providerConfig)
 	if err != nil {
 		return fmt.Errorf("build opencode config: %w", err)
 	}
@@ -325,7 +329,7 @@ func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []
 	env := os.Environ()
 	provider := model.AgentModelProviderAnthropic
 	if agent != nil {
-		if resolvedProvider := strings.TrimSpace(derefOpenCodeString(agent.Provider)); resolvedProvider != "" {
+		if resolvedProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); resolvedProvider != "" {
 			provider = resolvedProvider
 		}
 	}
@@ -335,9 +339,8 @@ func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []
 	case model.AgentModelProviderOpenAI:
 		env = appendIfMissingEnv(env, "OPENAI_API_KEY", e.openAIAPIKey)
 		env = appendIfMissingEnv(env, "OPENAI_BASE_URL", e.openAIBaseURL)
-	case model.AgentModelProviderOpenRouter:
+	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 		env = appendIfMissingEnv(env, "OPENROUTER_API_KEY", e.openRouterAPIKey)
-		env = appendIfMissingEnv(env, "OPENROUTER_BASE_URL", e.openRouterBaseURL)
 	}
 	env = upsertEnv(env, "NO_COLOR", "1")
 	env = upsertEnv(env, "OPENCODE_CONFIG_CONTENT", configContent)
@@ -348,10 +351,10 @@ func (e *OpenCodeExecutor) resolveModelID(agent *model.Agent) string {
 	provider := model.AgentModelProviderAnthropic
 	modelName := ""
 	if agent != nil {
-		if resolvedProvider := strings.TrimSpace(derefOpenCodeString(agent.Provider)); resolvedProvider != "" {
+		if resolvedProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); resolvedProvider != "" {
 			provider = resolvedProvider
 		}
-		modelName = strings.TrimSpace(derefOpenCodeString(agent.Model))
+		modelName = normalizeOpenCodeConfiguredModelName(provider, strings.TrimSpace(derefOpenCodeString(agent.Model)))
 	}
 	if provider == "" {
 		provider = model.AgentModelProviderAnthropic

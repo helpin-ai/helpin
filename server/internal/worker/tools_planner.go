@@ -3,7 +3,6 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -28,23 +27,34 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 	hasApprovedSpec := ctx.Epic != nil && ctx.Epic.ApprovedSpecVersionID != nil && strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) != ""
 	storyCount := len(ctx.EpicStories)
 
+	// Check if spec doc has draft content (written but not approved).
+	hasDraftContent := false
+	if !hasApprovedSpec && ctx.Services != nil && ctx.Services.GetDocumentContent != nil {
+		if contentText, err := ctx.Services.GetDocumentContent(ctx.Context, doc.ID); err == nil && strings.TrimSpace(contentText) != "" {
+			hasDraftContent = true
+		}
+	}
+
 	var planningHint string
 	switch {
 	case hasApprovedSpec && storyCount > 0:
 		planningHint = "prd_approved_stories_exist"
 	case hasApprovedSpec:
 		planningHint = "prd_approved_no_stories"
+	case hasDraftContent:
+		planningHint = "prd_draft_exists"
 	default:
-		planningHint = "no_approved_prd"
+		planningHint = "no_prd"
 	}
 
 	result := map[string]any{
-		"document_id":    doc.ID,
-		"title":          doc.Title,
-		"status":         doc.Status,
-		"has_approved_spec": hasApprovedSpec,
-		"story_count":    storyCount,
-		"planning_hint":  planningHint,
+		"document_id":       doc.ID,
+		"title":             doc.Title,
+		"status":            doc.Status,
+		"has_approved_spec":  hasApprovedSpec,
+		"has_draft_content":  hasDraftContent,
+		"story_count":       storyCount,
+		"planning_hint":     planningHint,
 	}
 	if hasApprovedSpec {
 		result["approved_spec_version_id"] = strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID)
@@ -97,11 +107,9 @@ func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string,
 		return "", fmt.Errorf("stories is required")
 	}
 
-	if len(ctx.EpicStories) > 0 {
-		slog.InfoContext(ctx.Context, "create_story_batch called with existing stories",
-			"epic_id", ctx.TargetID,
-			"existing_count", len(ctx.EpicStories),
-			"new_count", len(params.Stories))
+	// Hard guard: stories require an approved spec.
+	if ctx.Epic == nil || ctx.Epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) == "" {
+		return "", fmt.Errorf("cannot create stories: the product spec must be approved first (call approve_epic_spec)")
 	}
 
 	result, err := ctx.Services.CreateStoryBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
