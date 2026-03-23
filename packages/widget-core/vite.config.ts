@@ -3,6 +3,11 @@ import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
 export default defineConfig({
+  resolve: {
+    alias: [
+      { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
+    ],
+  },
   plugins: [dts({ rollupTypes: true })],
   build: {
     lib: {

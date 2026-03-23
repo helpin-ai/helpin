@@ -18,6 +18,8 @@ type storyTestEnv struct {
 	userID string
 	wfID   string
 	stTodo string // default "unstarted" state
+	stInProgress string
+	stDone string
 }
 
 // newStoryTestEnv creates a fresh test environment for PMStoryService tests:
@@ -78,6 +80,8 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 		userID: userID,
 		wfID:   wfID,
 		stTodo: stTodo,
+		stInProgress: stInProgress,
+		stDone: stDone,
 	}
 }
 

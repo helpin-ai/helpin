@@ -57,6 +57,10 @@ export const queryKeys = {
 
     templates: (wsId: string) => ['pm', wsId, 'templates'] as const,
     template: (wsId: string, id: string) => ['pm', wsId, 'templates', id] as const,
+    recurringTemplates: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'recurringTemplates', filters] as const) : (['pm', wsId, 'recurringTemplates'] as const),
+    recurringTemplate: (wsId: string, id: string) => ['pm', wsId, 'recurringTemplates', id] as const,
+    storyRecurringTemplate: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'recurringTemplate'] as const,
 
     automations: (wsId: string) => ['pm', wsId, 'automations'] as const,
 
@@ -85,6 +89,10 @@ export const queryKeys = {
     all: (wsId: string) => ['agents', wsId] as const,
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
+    knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
+    contentSources: (wsId: string) => ['agents', wsId, 'content-sources'] as const,
+    contentSourcePages: (wsId: string, contentSourceId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages'] as const,
+    selectedContentSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'content-source-selections'] as const,
   },
 
   git: {
@@ -100,6 +108,7 @@ export const queryKeys = {
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
+    visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
 
   docs: {

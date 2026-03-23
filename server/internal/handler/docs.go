@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,6 +27,7 @@ type DocsHandler struct {
 	helpcenterSvc *service.DocsHelpcenterService
 	searchSvc     *service.DocsSearchService
 	importService *service.DocsImportService
+	embeddingSvc  *service.DocsEmbeddingService
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -38,6 +41,7 @@ func NewDocsHandler(
 	helpcenterSvc *service.DocsHelpcenterService,
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
+	embeddingSvc *service.DocsEmbeddingService,
 ) *DocsHandler {
 	return &DocsHandler{
 		spaceSvc:      spaceSvc,
@@ -49,6 +53,7 @@ func NewDocsHandler(
 		helpcenterSvc: helpcenterSvc,
 		searchSvc:     searchSvc,
 		importService: importService,
+		embeddingSvc:  embeddingSvc,
 	}
 }
 
@@ -269,23 +274,30 @@ func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
 	var req model.UpdateDocsDocumentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	doc, err := h.documentSvc.Update(r.Context(), chi.URLParam(r, "docId"), req)
+	doc, err := h.documentSvc.Update(r.Context(), docID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
 func (h *DocsHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	if err := h.documentSvc.Delete(r.Context(), chi.URLParam(r, "docId")); err != nil {
+	docID := chi.URLParam(r, "docId")
+	doc, _ := h.documentSvc.Get(r.Context(), docID)
+	if err := h.documentSvc.Delete(r.Context(), docID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if doc != nil && h.embeddingSvc != nil {
+		_ = h.embeddingSvc.QueueSpaceSync(r.Context(), doc.WorkspaceID, doc.SpaceID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -313,6 +325,7 @@ func (h *DocsHandler) UnpublishDocument(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -330,6 +343,7 @@ func (h *DocsHandler) ArchiveDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -361,6 +375,7 @@ func (h *DocsHandler) MoveDocument(w http.ResponseWriter, r *http.Request) {
 	if space != nil && space.Type != model.SpaceTypeExternalCapable {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -408,6 +423,7 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check for periodic auto-snapshot (non-blocking).
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, content)
 }
@@ -450,6 +466,7 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 	}
 
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, content)
 }
@@ -549,6 +566,7 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
 		}
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	// Re-fetch to include updated helpcenter article data.
 	doc, _ = h.documentSvc.Get(r.Context(), docID)
@@ -571,15 +589,27 @@ func (h *DocsHandler) PublishExternally(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 
 func (h *DocsHandler) UnpublishExternally(w http.ResponseWriter, r *http.Request) {
-	if err := h.helpcenterSvc.UnpublishExternally(r.Context(), chi.URLParam(r, "docId")); err != nil {
+	docID := chi.URLParam(r, "docId")
+	if err := h.helpcenterSvc.UnpublishExternally(r.Context(), docID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unpublished"})
+}
+
+func (h *DocsHandler) queueEmbeddingSync(ctx context.Context, docID string) {
+	if h == nil || h.embeddingSvc == nil || strings.TrimSpace(docID) == "" {
+		return
+	}
+	if err := h.embeddingSvc.QueueDocumentSync(ctx, docID); err != nil {
+		slog.Warn("queue docs embedding sync failed", "doc_id", docID, "error", err)
+	}
 }
 
 // ─── Links ──────────────────────────────────────────────────────────────────
@@ -745,6 +775,67 @@ func (h *DocsHandler) SubmitArticleFeedback(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// ─── Redirect Management ────────────────────────────────────────────────────
+
+// ListRedirects handles GET /api/docs/redirects.
+func (h *DocsHandler) ListRedirects(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	filter := model.DocsRedirectFilter{
+		Search: r.URL.Query().Get("search"),
+		Type:   r.URL.Query().Get("type"),
+	}
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			filter.Page = v
+		}
+	}
+	if pp := r.URL.Query().Get("per_page"); pp != "" {
+		if v, err := strconv.Atoi(pp); err == nil {
+			filter.PerPage = v
+		}
+	}
+	items, total, err := h.helpcenterSvc.ListRedirects(r.Context(), workspaceID, filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.DocsRedirectListResponse{Items: items, Total: total})
+}
+
+// CreateRedirect handles POST /api/docs/redirects.
+func (h *DocsHandler) CreateRedirect(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	var req model.CreateDocsRedirectRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	redirect, err := h.helpcenterSvc.CreateRedirect(r.Context(), workspaceID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, redirect)
+}
+
+// DeleteRedirect handles DELETE /api/docs/redirects/{id}.
+func (h *DocsHandler) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.helpcenterSvc.DeleteRedirect(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "redirect deleted"})
+}
+
 // ─── Public Help Center routes ──────────────────────────────────────────────
 
 // resolveSubdomain resolves a subdomain to its help center config.
@@ -833,6 +924,80 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, article)
+}
+
+// PublicGetCollectionPage returns a collection and its published articles for the public help center.
+func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	collectionSlug := chi.URLParam(r, "collectionSlug")
+	coll, articles, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if coll == nil {
+		writeError(w, http.StatusNotFound, "collection not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"collection": coll,
+		"articles":   articles,
+	})
+}
+
+// PublicGetCanonicalArticle returns a public article by canonical collection/article slug path.
+func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	collectionSlug := chi.URLParam(r, "collectionSlug")
+	articleSlug := chi.URLParam(r, "articleSlug")
+	article, err := h.helpcenterSvc.GetPublicArticleByCanonicalPath(r.Context(), cfg.WorkspaceID, collectionSlug, articleSlug)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if article == nil {
+		writeError(w, http.StatusNotFound, "article not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, article)
+}
+
+// PublicResolvePath resolves a legacy or imported URL path to a redirect target.
+func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	// Extract the catch-all path after /resolve/.
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, http.StatusNotFound, "path required")
+		return
+	}
+	redirect, err := h.helpcenterSvc.ResolvePublicPath(r.Context(), cfg.WorkspaceID, path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if redirect == nil {
+		writeError(w, http.StatusNotFound, "no redirect found")
+		return
+	}
+	target := "/" + redirect.TargetCollectionSlug
+	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" {
+		target += "/" + *redirect.TargetArticleSlug
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"redirect": true,
+		"target":   target,
+		"status":   301,
+	})
 }
 
 func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Request) {

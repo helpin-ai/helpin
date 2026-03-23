@@ -51,8 +51,13 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		maxTokens = 4096
 	}
 
+	modelName := p.model
+	if req.Model != "" {
+		modelName = req.Model
+	}
+
 	body := map[string]interface{}{
-		"model":       p.model,
+		"model":       modelName,
 		"messages":    messages,
 		"max_tokens":  maxTokens,
 		"temperature": req.Temperature,
@@ -115,4 +120,63 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 			OutputTokens: result.Usage.CompletionTokens,
 		},
 	}, nil
+}
+
+func (p *OpenAIProvider) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
+	if len(req.Inputs) == 0 {
+		return &EmbeddingResponse{Vectors: [][]float32{}}, nil
+	}
+
+	modelName := req.Model
+	if modelName == "" {
+		modelName = "text-embedding-3-small"
+	}
+
+	body := map[string]interface{}{
+		"model": modelName,
+		"input": req.Inputs,
+	}
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal embeddings request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/embeddings", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("create embeddings request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("openai embeddings request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read embeddings response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openai embeddings API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("parse embeddings response: %w", err)
+	}
+
+	vectors := make([][]float32, 0, len(result.Data))
+	for _, item := range result.Data {
+		vectors = append(vectors, item.Embedding)
+	}
+
+	return &EmbeddingResponse{Vectors: vectors}, nil
 }

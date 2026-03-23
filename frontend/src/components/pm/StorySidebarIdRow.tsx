@@ -1,13 +1,31 @@
-import { Hash } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 
-export function StorySidebarIdRow({ displayId }: { displayId: string | number }) {
+import { Button } from '@/components/ui/button';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { cn } from '@/lib/utils';
+
+interface StorySidebarIdRowProps {
+  displayId: string | number;
+  className?: string;
+}
+
+export function StorySidebarIdRow({ displayId, className }: StorySidebarIdRowProps) {
+  const { copied, copy } = useCopyToClipboard();
+
   return (
-    <div className="mb-3 grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
-      <Hash className="h-4 w-4 text-muted-foreground" />
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        ID
-      </span>
-      <span className="font-mono text-sm text-foreground">{displayId}</span>
+    <div className={cn('mb-4 flex min-w-0 items-center gap-2', className)}>
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">Story ID:</span>
+      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{displayId}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0"
+        aria-label={`Copy story ID ${displayId}`}
+        onClick={() => copy(String(displayId))}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </Button>
     </div>
   );
 }

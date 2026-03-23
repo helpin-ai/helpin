@@ -35,6 +35,7 @@ type Handlers struct {
 	PMView             *handler.PMViewHandler
 	PMAutomation       *handler.PMAutomationHandler
 	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search             *handler.SearchHandler
 	Agent              *handler.AgentHandler
 	SupportInbox       *handler.SupportInboxHandler
@@ -65,6 +66,8 @@ type Handlers struct {
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
 	SDKAssets          *handler.SDKAssetsHandler
+	SupportAI          *handler.SupportAIHandler
+	PostmarkInbound    *handler.PostmarkInboundHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -137,6 +140,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.PostmarkInbound != nil {
+			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
+		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
@@ -152,6 +158,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
+
+			// Canonical collection + article routes
+			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
+
+			// Legacy/redirect resolver
+			r.Get("/resolve/*", h.Docs.PublicResolvePath)
 		})
 
 		// ---- Public shared document route (no JWT) ----
@@ -175,6 +188,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
 			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
+			if h.SupportAI != nil {
+				r.Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+			}
 		})
 
 		// ---- Public widget config by installation ID (no JWT, open CORS) ----
@@ -206,6 +222,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
 		})
 
 		// ---- Internal service-to-service routes (bearer token auth) ----
@@ -371,6 +388,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}", h.SupportInbox.DeleteConversation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/visitor-context", h.SupportInbox.GetVisitorContext)
 
 				// Installation settings
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/installations", h.SupportInbox.GetInstallation)
@@ -430,6 +451,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/story-templates/{id}", h.PMStoryTemplate.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
 
+				// Recurring Templates — pm.read / pm.edit
+				r.With(requirePerm(authorization.PermPMRead)).Get("/recurring-templates", h.PMRecurringTemplate.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/recurring-templates/{id}", h.PMRecurringTemplate.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates", h.PMRecurringTemplate.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/recurring-templates/{id}", h.PMRecurringTemplate.Update)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/pause", h.PMRecurringTemplate.Pause)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/resume", h.PMRecurringTemplate.Resume)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/stop", h.PMRecurringTemplate.Stop)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/skip-next", h.PMRecurringTemplate.SkipNext)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/generate-now", h.PMRecurringTemplate.GenerateNow)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/duplicate", h.PMRecurringTemplate.Duplicate)
+
 				// Roadmap — pm.read
 				r.With(requirePerm(authorization.PermPMRead)).Get("/roadmap", h.PMRoadmap.Get)
 
@@ -470,6 +503,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/labels", h.PMStory.AddLabel)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{storyId}/recurring-template", h.PMRecurringTemplate.GetByStory)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.Associations.ListStoryAssociations)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/relationships", h.Associations.CreateStoryRelationship)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-relationships/{id}", h.Associations.DeleteStoryRelationship)
@@ -551,6 +585,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources", h.SupportAI.CreateContentSource)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/content-sources/{contentSourceId}", h.SupportAI.UpdateContentSource)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/content-sources/{contentSourceId}", h.SupportAI.DeleteContentSource)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages", h.SupportAI.ListContentSourcePages)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
+				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunStoryAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
@@ -664,6 +710,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/config", h.Docs.UpdateHelpcenterConfig)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/upload", h.Docs.UploadHelpcenterAsset)
+
+				// Redirect management
+				r.With(requirePerm(authorization.PermDocsAdmin)).Get("/redirects", h.Docs.ListRedirects)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/redirects", h.Docs.CreateRedirect)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/redirects/{id}", h.Docs.DeleteRedirect)
 
 				// Feedback
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/articles/{docId}/feedback", h.Docs.SubmitArticleFeedback)

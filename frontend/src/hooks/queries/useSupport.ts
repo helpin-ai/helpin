@@ -4,7 +4,8 @@ import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
-import type { SupportInboxSettings, ConversationStatus, ConversationListResponse } from '@/lib/pmTypes';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import type { AgentKnowledgeSource, SupportContentSource, SupportContentPage, CreateSupportContentSourceRequest, UpdateSupportContentSourceRequest, SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -46,7 +47,7 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string }) {
+export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string }) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {
@@ -93,6 +94,15 @@ export function useConversationMessages(workspaceId: string, conversationId: str
   });
 }
 
+export function useVisitorContext(workspaceId: string, conversationId: string | null) {
+  return useQuery<VisitorContextResponse>({
+    queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrap(await supportService.getVisitorContext(workspaceId, conversationId!)),
+    enabled: !!workspaceId && !!conversationId,
+    staleTime: 60_000,
+  });
+}
+
 // ── Mutations ───────────────────────────────────────────────────────
 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
@@ -118,8 +128,26 @@ export function useUpdateConversationStatus(workspaceId: string) {
     mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
       supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrap),
     onSuccess: (_data, variables) => {
+      const { conversationId, status } = variables;
+
+      // Auto-advance: when resolving/spamming, select the next conversation in the list
+      if (status === 'resolved' || status === 'spam' || status === 'closed') {
+        const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
+        if (selectedConversationId === conversationId) {
+          // Find the next conversation from the cached list (before invalidation)
+          const cached = queryClient.getQueriesData<ConversationListResponse>({
+            queryKey: queryKeys.support.conversations(workspaceId),
+          });
+          const conversations: SupportConversation[] = cached.flatMap(([, data]) => data?.data ?? []);
+          const currentIdx = conversations.findIndex((c) => c.id === conversationId);
+          // Pick the next one below, or the one above, or clear selection
+          const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
+          selectConversation(next?.id ?? null);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });
@@ -179,5 +207,197 @@ export function useSupportAgents(workspaceId: string) {
     },
     enabled: !!workspaceId,
     staleTime: 60_000,
+  });
+}
+
+export function useMarkConversationUnread(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.markConversationUnread(workspaceId, conversationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to mark as unread', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationSubject(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, subject }: { conversationId: string; subject: string }) =>
+      supportService.updateConversationSubject(workspaceId, conversationId, subject).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update subject', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteConversation(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.deleteConversation(workspaceId, conversationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete conversation', { description: error.message });
+    },
+  });
+}
+
+export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.knowledgeSources(workspaceId, agentId ?? ''),
+    queryFn: async (): Promise<AgentKnowledgeSource[]> => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+    refetchInterval: (query) => {
+      const sources = query.state.data as AgentKnowledgeSource[] | undefined;
+      return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
+        ? 2_000
+        : false;
+    },
+  });
+}
+
+export function useUpdateAgentKnowledgeSources(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, spaceIds }: { agentId: string; spaceIds: string[] }) =>
+      agentService.updateKnowledgeSources(workspaceId, agentId, spaceIds).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update knowledge sources', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+  });
+}
+
+export function useSupportContentSources(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.contentSources(workspaceId),
+    queryFn: async (): Promise<SupportContentSource[]> => unwrap(await agentService.listContentSources(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 60_000,
+    refetchInterval: (query) => {
+      const sources = query.state.data as SupportContentSource[] | undefined;
+      return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
+        ? 2_000
+        : false;
+    },
+  });
+}
+
+export function useSupportContentSourcePages(workspaceId: string, contentSourceId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.contentSourcePages(workspaceId, contentSourceId ?? ''),
+    queryFn: async (): Promise<SupportContentPage[]> => unwrap(await agentService.listContentSourcePages(workspaceId, contentSourceId!)),
+    enabled: !!workspaceId && !!contentSourceId,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportContentSourceRequest) =>
+      agentService.createContentSource(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create content source', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contentSourceId, payload }: { contentSourceId: string; payload: UpdateSupportContentSourceRequest }) =>
+      agentService.updateContentSource(workspaceId, contentSourceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update content source', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSourceId: string) =>
+      agentService.deleteContentSource(workspaceId, contentSourceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete content source', { description: error.message });
+    },
+  });
+}
+
+export function useReindexSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSourceId: string) =>
+      agentService.reindexContentSource(workspaceId, contentSourceId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to reindex content source', { description: error.message });
+    },
+  });
+}
+
+export function useAgentContentSources(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.selectedContentSources(workspaceId, agentId ?? ''),
+    queryFn: async (): Promise<string[]> => unwrap(await agentService.listAgentContentSources(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateAgentContentSources(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, contentSourceIds }: { agentId: string; contentSourceIds: string[] }) =>
+      agentService.updateAgentContentSources(workspaceId, agentId, contentSourceIds).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.selectedContentSources(workspaceId, variables.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update content sources', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.selectedContentSources(workspaceId, variables.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
   });
 }

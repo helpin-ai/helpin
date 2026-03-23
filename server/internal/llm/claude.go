@@ -37,6 +37,7 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	apiReq := workerpkg.CreateMessageRequest{
+		Model:     req.Model,
 		System:    req.SystemPrompt,
 		Messages:  messages,
 		MaxTokens: maxTokens,

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo, memo } from 'react';
+import { toast } from 'sonner';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -14,14 +15,17 @@ import {
   useConversationMessages,
   useUpdateConversationStatus,
   useRunConversationAgent,
+  useMarkConversationUnread,
+  useUpdateConversationSubject,
+  useDeleteConversation,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
-import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
-import { getDayLabel, isSameDay, getInitial } from './helpers';
+import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
 import { AgentRunsCard } from './AgentRunsCard';
@@ -37,10 +41,10 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
   );
   if (typingState === false || typingState === undefined) return null;
   return (
-    <div className="flex justify-start mt-2 animate-in fade-in duration-200">
+    <div className="flex justify-start mt-2 animate-in fade-in slide-in-from-left-2 duration-200">
       {/* Avatar placeholder matching customer bubble layout */}
       <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30 shadow-sm">
           <span className="flex gap-0.5 text-sm leading-none text-blue-400">
             <span className="animate-bounce [animation-delay:0ms]">·</span>
             <span className="animate-bounce [animation-delay:150ms]">·</span>
@@ -76,7 +80,7 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
         const member = members.find((m) => m.user_id === actorId);
         const name = member?.full_name || member?.email || 'Agent';
         return (
-          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
+          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="max-w-[70%]">
               <div className="mb-1 pr-1 text-right">
                 <span className="text-[11px] font-medium text-blue-600/70 dark:text-blue-400/70">
@@ -105,9 +109,9 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
               {member?.avatar_url ? (
-                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover" />
+                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
               ) : (
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white" title={name}>
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm" title={name}>
                   {getInitial(name)}
                 </div>
               )}
@@ -119,52 +123,126 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
   );
 }
 
-function DaySeparator({ label }: { label: string }) {
+function DaySeparator({
+  label,
+  isSticky,
+  separatorRef,
+}: {
+  label: string;
+  isSticky: boolean;
+  separatorRef?: (node: HTMLDivElement | null) => void;
+}) {
   return (
-    <div className="flex items-center gap-3 py-4">
-      <div className="h-px flex-1 bg-border" />
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
-      <div className="h-px flex-1 bg-border" />
+    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
+      <span
+        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+          isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
+        }`}
+        style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
+      >
+        {label}
+      </span>
     </div>
   );
 }
 
+/** Skeleton message bubbles shown while loading */
+const MessageSkeleton = memo(function MessageSkeleton() {
+  return (
+    <div className="space-y-6 py-8">
+      {/* Customer message group */}
+      <div className="flex items-end gap-2" style={{ width: '55%' }}>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          <div className="h-10 animate-pulse rounded-2xl rounded-bl-sm bg-muted" />
+          <div className="h-6 w-3/4 animate-pulse rounded-2xl bg-muted" />
+        </div>
+      </div>
+      {/* Agent message group */}
+      <div className="flex items-end gap-2 self-end ml-auto" style={{ width: '60%' }}>
+        <div className="flex flex-1 flex-col items-end gap-1.5">
+          <div className="h-14 w-full animate-pulse rounded-2xl rounded-br-sm bg-blue-100 dark:bg-blue-900/20" />
+          <div className="h-8 w-4/5 animate-pulse rounded-2xl bg-blue-100 dark:bg-blue-900/20" />
+        </div>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-blue-100 dark:bg-blue-900/20" />
+      </div>
+      {/* Another customer message */}
+      <div className="flex items-end gap-2" style={{ width: '45%' }}>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          <div className="h-8 animate-pulse rounded-2xl rounded-bl-sm bg-muted" />
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
+  const markUnread = useMarkConversationUnread(workspaceId);
+  const updateSubject = useUpdateConversationSubject(workspaceId);
+  const deleteConversation = useDeleteConversation(workspaceId);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
-
-  const loadAgentRuns = useCallback(async () => {
-    if (!conversationId) {
-      setAgentRuns([]);
-      return;
-    }
-    const res = await agentService.listTargetRuns(workspaceId, 'support_conversation', conversationId);
-    if (res.error) return;
-    setAgentRuns(res.data ?? []);
-  }, [workspaceId, conversationId]);
+  const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
+  const assignedAgentId = conversation?.assigned_agent_id ?? null;
 
   useEffect(() => {
-    loadAgentRuns();
-  }, [loadAgentRuns]);
+    let cancelled = false;
+
+    if (!conversationId || !assignedAgentId) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setAgentRuns([]);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const res = await agentService.listRuns(workspaceId, assignedAgentId);
+      if (cancelled || res.error) return;
+      setAgentRuns(
+        (res.data?.data ?? []).filter(
+          (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+        )
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, conversationId, assignedAgentId]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
       const detail = (event as CustomEvent<{ parent_type?: string; parent_id?: string }>).detail;
-      if (detail?.parent_type === 'support_conversation' && detail.parent_id === conversationId) {
-        void loadAgentRuns();
-      }
+      if (detail?.parent_type !== 'support_conversation' || detail.parent_id !== conversationId || !assignedAgentId) return;
+
+      void (async () => {
+        const res = await agentService.listRuns(workspaceId, assignedAgentId);
+        if (res.error) return;
+        setAgentRuns(
+          (res.data?.data ?? []).filter(
+            (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+          )
+        );
+      })();
     };
 
     window.addEventListener('agent_run-updated', handleAgentRunEvent);
     return () => {
       window.removeEventListener('agent_run-updated', handleAgentRunEvent);
     };
-  }, [conversationId, loadAgentRuns]);
+  }, [workspaceId, conversationId, assignedAgentId]);
 
   // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
@@ -183,10 +261,43 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
-    await loadAgentRuns();
+    if (!conversationId || !assignedAgentId) {
+      setAgentRuns([]);
+      return;
+    }
+
+    const res = await agentService.listRuns(workspaceId, assignedAgentId);
+    if (res.error) return;
+    setAgentRuns(
+      (res.data?.data ?? []).filter(
+        (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+      )
+    );
   };
 
   // Group messages with day separators and consecutive sender detection
+  // Find the last outbound reply message (for read receipt display)
+  const receiptMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.is_internal && msg.sender_type !== 'customer' && (!msg.message_type || msg.message_type === 'reply')) {
+        return msg.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  // Derive delivered/read status from conversation's contact_last_seen_at cursor
+  const receiptStatus = useMemo<'delivered' | 'read' | null>(() => {
+    if (!receiptMessageId || !conversation) return null;
+    if (conversation.source !== 'widget') return null;
+    const msg = messages.find((m) => m.id === receiptMessageId);
+    if (!msg) return null;
+    const seen = conversation.contact_last_seen_at;
+    if (seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
+    return 'delivered';
+  }, [receiptMessageId, conversation, messages]);
+
   const groupedMessages = useMemo(() => {
     const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
     let lastDate: string | null = null;
@@ -200,16 +311,19 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
       // Check if consecutive (same sender within 2 minutes, same type)
       const prev = idx > 0 ? messages[idx - 1] : null;
+      const currentSenderType = getEffectiveSenderType(msg);
+      const prevSenderType = prev ? getEffectiveSenderType(prev) : null;
       const isConsecutive = prev !== null
-        && prev.sender_type === msg.sender_type
+        && prevSenderType === currentSenderType
         && prev.is_internal === msg.is_internal
         && isSameDay(prev.created_at, msg.created_at)
         && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
 
       // Check if this is the last message in a consecutive group
       const next = idx < messages.length - 1 ? messages[idx + 1] : null;
+      const nextSenderType = next ? getEffectiveSenderType(next) : null;
       const isLastInGroup = next === null
-        || next.sender_type !== msg.sender_type
+        || nextSenderType !== currentSenderType
         || next.is_internal !== msg.is_internal
         || !isSameDay(msg.created_at, next.created_at)
         || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;
@@ -220,9 +334,46 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     return items;
   }, [messages]);
 
+  useEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (!viewport) return;
+
+    let frame = 0;
+    const updateActiveStickySeparator = () => {
+      frame = 0;
+      const scrollTop = viewport.scrollTop;
+      let nextActive: number | null = null;
+
+      for (const [index, node] of separatorRefs.current.entries()) {
+        if (node.offsetTop < scrollTop) {
+          if (nextActive === null || index > nextActive) {
+            nextActive = index;
+          }
+        }
+      }
+
+      setActiveStickySeparator((current) => (current === nextActive ? current : nextActive));
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateActiveStickySeparator);
+    };
+
+    updateActiveStickySeparator();
+    viewport.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener('scroll', onScroll);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [groupedMessages]);
+
   if (!conversationId) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
         <MessageSquare className="h-12 w-12 opacity-20" />
         <p className="text-sm">Select a conversation to view</p>
       </div>
@@ -231,40 +382,23 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   return (
     <div className="flex flex-1 flex-col min-w-0 min-h-0">
-      {/* Action header bar */}
+      {/* Topbar with subtle bottom shadow (Crisp-style) */}
       {conversation && (
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Customer avatar */}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-              {getInitial(conversation.customer_name)}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-sm font-semibold">{conversation.subject}</h2>
-                <span className="shrink-0 text-[10px] text-muted-foreground">#{conversation.display_id}</span>
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {conversation.customer_name || 'Anonymous'}
-                {conversation.customer_email && ` · ${conversation.customer_email}`}
-              </p>
-            </div>
+        <div className="relative z-10 flex items-center justify-between border-b px-4 py-2.5 bg-background">
+          {/* Gradient shadow below topbar */}
+          <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
+
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <Badge variant="secondary" className={`text-[10px] ${STATUS_COLORS[conversation.status]}`}>
-              {STATUS_LABELS[conversation.status]}
-            </Badge>
-            <Badge variant="secondary" className={`text-[10px] ${PRIORITY_COLORS[conversation.priority]}`}>
-              {PRIORITY_LABELS[conversation.priority]}
-            </Badge>
-
-            {/* Quick actions */}
+            {/* Run Agent */}
             {conversation.assigned_agent_id && (
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1 text-xs ml-1"
+                className="h-7 gap-1 text-xs"
                 disabled={runAgent.isPending}
                 onClick={() => runAgent.mutate(conversation.id)}
               >
@@ -273,6 +407,30 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               </Button>
             )}
 
+            {/* Resolve / Unresolve */}
+            {conversation.status === 'resolved' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 text-xs"
+                onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'open' as ConversationStatus })}
+              >
+                <CircleX className="h-3.5 w-3.5" />
+                Unresolve
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 gap-1 text-xs"
+                onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Resolve
+              </Button>
+            )}
+
+            {/* More actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -280,17 +438,55 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Resolve
+                <DropdownMenuItem onClick={() => {
+                  markUnread.mutate(conversation.id);
+                  toast.success('Marked as unread');
+                }}>
+                  <MailOpen className="h-4 w-4" />
+                  Mark as unread
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'waiting' as ConversationStatus })}>
-                  <Clock className="h-4 w-4" />
-                  Set Waiting
+                <DropdownMenuItem onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  toast.success('Link copied to clipboard');
+                }}>
+                  <Link2 className="h-4 w-4" />
+                  Copy link
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'closed' as ConversationStatus })}>
-                  <XCircle className="h-4 w-4" />
-                  Close
+                <DropdownMenuItem onClick={() => {
+                  const newSubject = window.prompt('Conversation subject:', conversation.subject);
+                  if (newSubject !== null && newSubject.trim()) {
+                    updateSubject.mutate({ conversationId: conversation.id, subject: newSubject.trim() });
+                  }
+                }}>
+                  <Pencil className="h-4 w-4" />
+                  Set conversation subject
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    updateStatus.mutate({ conversationId: conversation.id, status: 'spam' as ConversationStatus });
+                    toast.success('Conversation marked as spam');
+                  }}
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Mark as spam
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to permanently delete this conversation?')) {
+                      deleteConversation.mutate(conversation.id, {
+                        onSuccess: () => {
+                          useSupportInboxStore.getState().selectConversation(null);
+                          toast.success('Conversation deleted');
+                        },
+                      });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete conversation
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -298,8 +494,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       )}
 
-      {/* Agent runs (if any) */}
-      {agentRuns.length > 0 && (
+      {/* Agent runs — hidden for AI-first conversations (ai_state is set) */}
+      {agentRuns.length > 0 && !conversation?.ai_state && (
         <div className="border-b px-4 py-2">
           <AgentRunsCard
             workspaceId={workspaceId}
@@ -309,14 +505,10 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       )}
 
-      {/* Messages with day separators */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-4 pb-4">
-          {isLoading && (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
+      {/* Messages area with light background (Crisp-style) */}
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
+        <div className="px-4 pb-4 pt-2">
+          {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
               <MessageSquare className="h-8 w-8 opacity-30" />
@@ -325,7 +517,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           )}
           {groupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
-              return <DaySeparator key={`sep-${idx}`} label={item.label} />;
+              return (
+                <DaySeparator
+                  key={`sep-${idx}`}
+                  label={item.label}
+                  isSticky={activeStickySeparator === idx}
+                  separatorRef={(node) => {
+                    if (node) {
+                      separatorRefs.current.set(idx, node);
+                    } else {
+                      separatorRefs.current.delete(idx);
+                    }
+                  }}
+                />
+              );
             }
             return (
               <MessageBubble
@@ -334,6 +539,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isConsecutive={item.isConsecutive}
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
+                receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
               />
             );
           })}

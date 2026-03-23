@@ -8,16 +8,19 @@ const GATED_MODULES: Record<string, string[]> = {
     'waqar@contentstudio.io',
     'azhar@contentstudio.io',
     'amad@usermaven.com',
+    'waqar.azeem1986@gmail.com',
   ],
   support: [
     'waqar@contentstudio.io',
     'azhar@contentstudio.io',
     'amad@usermaven.com',
+    'waqar.azeem1986@gmail.com',
   ],
   agents: [
     'waqar@contentstudio.io',
     'azhar@contentstudio.io',
     'amad@usermaven.com',
+    'waqar.azeem1986@gmail.com',
   ],
 };
 

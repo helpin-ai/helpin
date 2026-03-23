@@ -29,11 +29,24 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
+
+	// Mentions filter: return conversations where the user was @mentioned.
+	if r.URL.Query().Get("filter") == "mentions" {
+		resp, err := h.supportService.ListConversationsWithMentions(r.Context(), workspaceID, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
+	aiState := r.URL.Query().Get("ai_state")
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, aiState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -175,6 +188,54 @@ func (h *SupportInboxHandler) MarkConversationRead(w http.ResponseWriter, r *htt
 	userID := middleware.GetUserID(r.Context())
 
 	if err := h.supportService.MarkConversationRead(r.Context(), workspaceID, conversationID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MarkConversationUnread handles POST /api/support/inbox/conversations/{id}/unread.
+func (h *SupportInboxHandler) MarkConversationUnread(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	if err := h.supportService.MarkConversationUnread(r.Context(), workspaceID, conversationID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateConversationSubject handles PUT /api/support/inbox/conversations/{id}/subject.
+func (h *SupportInboxHandler) UpdateConversationSubject(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req struct {
+		Subject string `json:"subject"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	conv, err := h.supportService.UpdateConversationSubject(r.Context(), workspaceID, conversationID, req.Subject, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conv)
+}
+
+// DeleteConversation handles DELETE /api/support/inbox/conversations/{id}.
+func (h *SupportInboxHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	if err := h.supportService.DeleteConversation(r.Context(), workspaceID, conversationID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -417,6 +478,23 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
+}
+
+// GetVisitorContext handles GET /api/support/inbox/conversations/{id}/visitor-context.
+func (h *SupportInboxHandler) GetVisitorContext(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	conversationID := chi.URLParam(r, "id")
+
+	resp, err := h.supportService.GetVisitorContext(r.Context(), workspaceID, conversationID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // TypingIndicator handles POST /api/support/inbox/conversations/{id}/typing.

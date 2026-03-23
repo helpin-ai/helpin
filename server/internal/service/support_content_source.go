@@ -1,0 +1,483 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+)
+
+// SupportContentSourceService manages workspace content sources and sync queueing.
+type SupportContentSourceService struct {
+	repo        *repository.SupportContentSourceRepository
+	agentRepo   *repository.AgentRepository
+	linkRepo    *repository.AgentContentSourceRepository
+	pageRepo    *repository.SupportContentPageRepository
+	chunkRepo   *repository.SupportContentChunkRepository
+	syncService *SupportContentSyncService
+}
+
+func NewSupportContentSourceService(
+	repo *repository.SupportContentSourceRepository,
+	agentRepo *repository.AgentRepository,
+	linkRepo *repository.AgentContentSourceRepository,
+	pageRepo *repository.SupportContentPageRepository,
+	chunkRepo *repository.SupportContentChunkRepository,
+	syncService *SupportContentSyncService,
+) *SupportContentSourceService {
+	return &SupportContentSourceService{
+		repo:        repo,
+		agentRepo:   agentRepo,
+		linkRepo:    linkRepo,
+		pageRepo:    pageRepo,
+		chunkRepo:   chunkRepo,
+		syncService: syncService,
+	}
+}
+
+func (s *SupportContentSourceService) List(ctx context.Context, workspaceID string) ([]model.SupportContentSource, error) {
+	return s.repo.ListByWorkspace(ctx, workspaceID)
+}
+
+func (s *SupportContentSourceService) Create(ctx context.Context, workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error) {
+	source, err := normalizeSupportContentSourceCreate(workspaceID, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Create(ctx, source); err != nil {
+		return nil, err
+	}
+	if s.syncService != nil {
+		if err := s.syncService.QueueSourceSync(ctx, workspaceID, source.ID); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.GetByID(ctx, source.ID)
+}
+
+func (s *SupportContentSourceService) Update(ctx context.Context, workspaceID, id string, req model.UpdateSupportContentSourceRequest) (*model.SupportContentSource, error) {
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil || existing.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("content source not found in workspace")
+	}
+
+	updates, err := normalizeSupportContentSourceUpdate(*existing, req)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.Update(ctx, id, updates)
+	if err != nil {
+		return nil, err
+	}
+	if s.syncService != nil {
+		if err := s.syncService.QueueSourceSync(ctx, workspaceID, id); err != nil {
+			return nil, err
+		}
+	}
+	return updated, nil
+}
+
+func (s *SupportContentSourceService) Delete(ctx context.Context, workspaceID, id string) error {
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing == nil || existing.WorkspaceID != workspaceID {
+		return fmt.Errorf("content source not found in workspace")
+	}
+	if err := s.linkRepo.DeleteByContentSourceID(ctx, id); err != nil {
+		return err
+	}
+	if err := s.chunkRepo.DeleteByContentSourceID(ctx, id); err != nil {
+		return err
+	}
+	if err := s.pageRepo.DeleteByContentSourceID(ctx, id); err != nil {
+		return err
+	}
+	return s.repo.Delete(ctx, id)
+}
+
+func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, id string) error {
+	if s.syncService == nil {
+		return nil
+	}
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing == nil || existing.WorkspaceID != workspaceID {
+		return fmt.Errorf("content source not found in workspace")
+	}
+	return s.syncService.QueueSourceSync(ctx, workspaceID, id)
+}
+
+// ListPages returns all crawled pages for a content source after verifying
+// that the source belongs to the workspace.
+func (s *SupportContentSourceService) ListPages(ctx context.Context, workspaceID, contentSourceID string) ([]model.SupportContentPage, error) {
+	source, err := s.repo.GetByID(ctx, contentSourceID)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	return s.pageRepo.ListByContentSourceID(ctx, contentSourceID)
+}
+
+// AgentContentSourceService manages per-agent content source selection.
+type AgentContentSourceService struct {
+	repo        *repository.AgentContentSourceRepository
+	agentRepo   *repository.AgentRepository
+	sourceRepo  *repository.SupportContentSourceRepository
+	syncService *SupportContentSyncService
+}
+
+func NewAgentContentSourceService(
+	repo *repository.AgentContentSourceRepository,
+	agentRepo *repository.AgentRepository,
+	sourceRepo *repository.SupportContentSourceRepository,
+	syncService *SupportContentSyncService,
+) *AgentContentSourceService {
+	return &AgentContentSourceService{
+		repo:        repo,
+		agentRepo:   agentRepo,
+		sourceRepo:  sourceRepo,
+		syncService: syncService,
+	}
+}
+
+func (s *AgentContentSourceService) ListSelectedIDs(ctx context.Context, workspaceID, agentID string) ([]string, error) {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found in workspace")
+	}
+	return s.repo.ListContentSourceIDs(ctx, agentID)
+}
+
+func (s *AgentContentSourceService) Set(ctx context.Context, workspaceID, agentID string, contentSourceIDs []string) error {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil {
+		return fmt.Errorf("agent not found in workspace")
+	}
+
+	existing, err := s.repo.ListByAgentID(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	existingByID := make(map[string]model.AgentContentSource, len(existing))
+	for _, row := range existing {
+		existingByID[row.ContentSourceID] = row
+	}
+
+	nextIDs := make([]string, 0, len(contentSourceIDs))
+	seen := map[string]struct{}{}
+	for _, raw := range contentSourceIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		source, err := s.sourceRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if source == nil || source.WorkspaceID != workspaceID {
+			return fmt.Errorf("one or more content_source_ids do not belong to this workspace")
+		}
+		seen[id] = struct{}{}
+		nextIDs = append(nextIDs, id)
+	}
+
+	for contentSourceID := range existingByID {
+		if _, keep := seen[contentSourceID]; keep {
+			continue
+		}
+		if err := s.repo.DeleteByAgentAndSource(ctx, agentID, contentSourceID); err != nil {
+			return err
+		}
+	}
+
+	for _, contentSourceID := range nextIDs {
+		if _, ok := existingByID[contentSourceID]; ok {
+			continue
+		}
+		if err := s.repo.Create(ctx, &model.AgentContentSource{
+			AgentID:         agentID,
+			ContentSourceID: contentSourceID,
+			WorkspaceID:     workspaceID,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if s.syncService != nil {
+		for _, contentSourceID := range nextIDs {
+			if err := s.syncService.QueueSourceSync(ctx, workspaceID, contentSourceID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func normalizeSupportContentSourceCreate(workspaceID string, req model.CreateSupportContentSourceRequest) (*model.SupportContentSource, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	startURL, err := normalizeContentSourceURL(req.StartURL)
+	if err != nil {
+		return nil, err
+	}
+	formats := normalizeContentSourceFormats(req.Formats)
+	purposes := normalizeContentSourcePurposes(req.CrawlPurposes)
+
+	source := &model.SupportContentSource{
+		WorkspaceID:          workspaceID,
+		Name:                 name,
+		StartURL:             startURL,
+		CrawlLimit:           defaultIfZero(req.CrawlLimit, 100),
+		CrawlDepth:           defaultIfZero(req.CrawlDepth, 2),
+		CrawlSource:          normalizeContentDiscoverySource(req.CrawlSource),
+		Formats:              model.DocsStringArray(formats),
+		Render:               derefBool(req.Render, true),
+		IncludeExternalLinks: derefBool(req.IncludeExternalLinks, false),
+		IncludeSubdomains:    derefBool(req.IncludeSubdomains, false),
+		IncludePatterns:      model.DocsStringArray(normalizeStringList(req.IncludePatterns)),
+		ExcludePatterns:      model.DocsStringArray(normalizeStringList(req.ExcludePatterns)),
+		CrawlPurposes:        model.DocsStringArray(purposes),
+		MaxAgeSeconds:        normalizeMaxAge(req.MaxAgeSeconds),
+		ModifiedSince:        req.ModifiedSince,
+		JSONPrompt:           trimOptionalString(req.JSONPrompt),
+		JSONResponseFormat:   normalizeJSONRaw(req.JSONResponseFormat),
+		SyncStatus:           model.KnowledgeSourceSyncQueued,
+	}
+	if containsContentString(formats, model.ContentSourceFormatJSON) && strings.TrimSpace(derefContentString(source.JSONPrompt)) == "" {
+		return nil, fmt.Errorf("json_prompt is required when JSON format is enabled")
+	}
+	return source, nil
+}
+
+func normalizeSupportContentSourceUpdate(existing model.SupportContentSource, req model.UpdateSupportContentSourceRequest) (map[string]any, error) {
+	updates := map[string]any{}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, fmt.Errorf("name cannot be empty")
+		}
+		updates["name"] = name
+	}
+	if req.StartURL != nil {
+		startURL, err := normalizeContentSourceURL(*req.StartURL)
+		if err != nil {
+			return nil, err
+		}
+		updates["start_url"] = startURL
+	}
+	if req.CrawlLimit != nil {
+		updates["crawl_limit"] = defaultIfZero(*req.CrawlLimit, 100)
+	}
+	if req.CrawlDepth != nil {
+		updates["crawl_depth"] = defaultIfZero(*req.CrawlDepth, 2)
+	}
+	if req.CrawlSource != nil {
+		updates["crawl_source"] = normalizeContentDiscoverySource(*req.CrawlSource)
+	}
+	if req.Formats != nil {
+		formats := normalizeContentSourceFormats(req.Formats)
+		updates["formats"] = model.DocsStringArray(formats)
+		if containsContentString(formats, model.ContentSourceFormatJSON) && strings.TrimSpace(derefContentString(req.JSONPrompt)) == "" && strings.TrimSpace(derefContentString(existing.JSONPrompt)) == "" {
+			return nil, fmt.Errorf("json_prompt is required when JSON format is enabled")
+		}
+	}
+	if req.Render != nil {
+		updates["render"] = *req.Render
+	}
+	if req.IncludeExternalLinks != nil {
+		updates["include_external_links"] = *req.IncludeExternalLinks
+	}
+	if req.IncludeSubdomains != nil {
+		updates["include_subdomains"] = *req.IncludeSubdomains
+	}
+	if req.IncludePatterns != nil {
+		updates["include_patterns"] = model.DocsStringArray(normalizeStringList(req.IncludePatterns))
+	}
+	if req.ExcludePatterns != nil {
+		updates["exclude_patterns"] = model.DocsStringArray(normalizeStringList(req.ExcludePatterns))
+	}
+	if req.CrawlPurposes != nil {
+		updates["crawl_purposes"] = model.DocsStringArray(normalizeContentSourcePurposes(req.CrawlPurposes))
+	}
+	if req.MaxAgeSeconds != nil {
+		updates["max_age_seconds"] = normalizeMaxAge(*req.MaxAgeSeconds)
+	}
+	if req.ModifiedSince != nil {
+		updates["modified_since"] = req.ModifiedSince
+	}
+	if req.JSONPrompt != nil {
+		updates["json_prompt"] = trimOptionalString(req.JSONPrompt)
+	}
+	if req.JSONResponseFormat != nil {
+		updates["json_response_format"] = normalizeJSONRaw(req.JSONResponseFormat)
+	}
+	updates["sync_status"] = model.KnowledgeSourceSyncQueued
+	updates["sync_progress"] = 0
+	updates["last_sync_error"] = nil
+	return updates, nil
+}
+
+func normalizeContentSourceURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("start_url is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("start_url must be a valid absolute URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("start_url must use http or https")
+	}
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func normalizeContentSourceFormats(input []string) []string {
+	valid := map[string]struct{}{
+		model.ContentSourceFormatHTML:     {},
+		model.ContentSourceFormatMarkdown: {},
+		model.ContentSourceFormatJSON:     {},
+	}
+	formats := normalizeStringList(input)
+	result := make([]string, 0, len(formats))
+	for _, format := range formats {
+		if _, ok := valid[format]; ok {
+			result = append(result, format)
+		}
+	}
+	if len(result) == 0 {
+		return []string{model.ContentSourceFormatMarkdown}
+	}
+	return result
+}
+
+func normalizeContentSourcePurposes(input []string) []string {
+	valid := map[string]struct{}{
+		model.ContentSourcePurposeSearch:  {},
+		model.ContentSourcePurposeAIInput: {},
+		model.ContentSourcePurposeAITrain: {},
+	}
+	purposes := normalizeStringList(input)
+	result := make([]string, 0, len(purposes))
+	for _, purpose := range purposes {
+		if _, ok := valid[purpose]; ok {
+			result = append(result, purpose)
+		}
+	}
+	if len(result) == 0 {
+		return []string{model.ContentSourcePurposeSearch, model.ContentSourcePurposeAIInput}
+	}
+	return result
+}
+
+func normalizeContentDiscoverySource(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case model.ContentSourceDiscoverySitemaps, model.ContentSourceDiscoveryLinks:
+		return strings.TrimSpace(raw)
+	default:
+		return model.ContentSourceDiscoveryAll
+	}
+}
+
+func normalizeStringList(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func normalizeMaxAge(value int) int {
+	if value <= 0 {
+		return 86400
+	}
+	if value > 604800 {
+		return 604800
+	}
+	return value
+}
+
+func normalizeJSONRaw(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	if !json.Valid(raw) {
+		return nil
+	}
+	return raw
+}
+
+func defaultIfZero(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func derefBool(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func trimOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func derefContentString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func containsContentString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}

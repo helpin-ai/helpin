@@ -8,13 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // CreateWidgetSession creates a new session for external widget chat.
 // Always creates a new session — multiple concurrent sessions per visitor are allowed.
-func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL *string) (*model.SupportWidgetSession, error) {
+func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error) {
 	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 	if err != nil {
 		return nil, err
@@ -39,6 +41,8 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 		CustomerEmail: customerEmail,
 		UserAgent:     userAgent,
 		LastPageURL:   pageURL,
+		Timezone:      timezone,
+		Locale:        locale,
 		ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
 	}
 
@@ -73,43 +77,141 @@ func (s *SupportInboxService) GetVisitorConversations(ctx context.Context, works
 }
 
 // UpgradeWidgetSession upgrades an anonymous session with email and name.
-func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionToken, email, name string) error {
+// It creates/promotes a CRM contact, backfills all conversations and sessions
+// for the same anonymous_id, and broadcasts real-time updates.
+// The source parameter controls lifecycle promotion: "identify" promotes lead→customer.
+func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error {
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return err
 	}
 
-	session.CustomerEmail = &email
-	session.CustomerName = &name
-	session.IsAnonymous = false
+	// Run all state changes in a single transaction
+	var contactID *string
+	var updatedConvIDs []string
 
-	if err := s.sessionRepo.Update(ctx, session); err != nil {
+	db := s.conversationRepo.DB()
+	txErr := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		convRepoTx := s.conversationRepo.WithTx(tx)
+		sessionRepoTx := s.sessionRepo.WithTx(tx)
+		contactRepoTx := s.contactRepo.WithTx(tx)
+
+		// 1. Update current session
+		session.CustomerEmail = &email
+		session.CustomerName = &name
+		session.IsAnonymous = false
+		if err := sessionRepoTx.Update(ctx, session); err != nil {
+			return err
+		}
+
+		// 2. Create or match CRM contact — always as lead with source=live_chat
+		contactID = s.matchOrCreateCRMContactTx(ctx, contactRepoTx, session.WorkspaceID, &email, &name, source)
+
+		// 3. Backfill ALL conversations for this anonymous_id
+		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, email, name, contactID)
+		if err != nil {
+			return err
+		}
+		updatedConvIDs = ids
+
+		// 4. Backfill ALL sessions for this anonymous_id (multi-tab)
+		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, email, name); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		return txErr
+	}
+
+	// Broadcast WebSocket events AFTER commit for each affected conversation
+	for _, convID := range updatedConvIDs {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    convID,
+			WorkspaceID: session.WorkspaceID,
+		})
+	}
+
+	slog.InfoContext(ctx, "widget session upgraded",
+		"session_id", session.ID,
+		"email", email,
+		"source", source,
+		"conversations_backfilled", len(updatedConvIDs),
+	)
+	return nil
+}
+
+// IdentifyByAnonymousID is the HTTP-based identity path for headless SDK usage.
+// It looks up sessions by anonymous_id + widget key, then performs the same
+// CRM contact creation, lifecycle promotion, and conversation backfill as UpgradeWidgetSession.
+func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetKey, anonymousID, email, name, source string) error {
+	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
+	if err != nil {
 		return err
 	}
-
-	// Update conversation contact info if conversation exists
-	if session.ConversationID != nil {
-		conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID)
-		if err == nil && conv != nil {
-			conv.CustomerEmail = &email
-			conv.CustomerName = &name
-			_ = s.conversationRepo.Update(ctx, conv)
-		}
+	if inst == nil {
+		return fmt.Errorf("invalid widget key")
 	}
 
-	// Auto-match or create CRM contact by email
-	if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, &email, &name); contactID != nil {
-		if session.ConversationID != nil {
-			conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID)
-			if err == nil && conv != nil {
-				conv.CRMContactID = contactID
-				_ = s.conversationRepo.Update(ctx, conv)
-			}
+	workspaceID := inst.WorkspaceID
+
+	var contactID *string
+	var updatedConvIDs []string
+
+	db := s.conversationRepo.DB()
+	txErr := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		convRepoTx := s.conversationRepo.WithTx(tx)
+		sessionRepoTx := s.sessionRepo.WithTx(tx)
+		contactRepoTx := s.contactRepo.WithTx(tx)
+
+		// 1. Create or match CRM contact
+		contactID = s.matchOrCreateCRMContactTx(ctx, contactRepoTx, workspaceID, &email, &name, source)
+
+		// 2. Backfill ALL conversations for this anonymous_id
+		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, workspaceID, anonymousID, email, name, contactID)
+		if err != nil {
+			return err
 		}
+		updatedConvIDs = ids
+
+		// 3. Backfill ALL sessions for this anonymous_id
+		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, workspaceID, anonymousID, email, name); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		return txErr
 	}
 
-	slog.InfoContext(ctx, "widget session upgraded", "session_id", session.ID, "email", email)
+	// Broadcast after commit
+	for _, convID := range updatedConvIDs {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    convID,
+			WorkspaceID: workspaceID,
+		})
+	}
+
+	slog.InfoContext(ctx, "widget identify via HTTP",
+		"anonymous_id", anonymousID,
+		"email", email,
+		"source", source,
+		"conversations_backfilled", len(updatedConvIDs),
+	)
 	return nil
+}
+
+// UpdateSessionPageURL updates the last_page_url on a session using a targeted query.
+func (s *SupportInboxService) UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error {
+	return s.sessionRepo.UpdatePageURL(ctx, sessionToken, url)
 }
 
 // RevokeWidgetSession marks a session as revoked.
@@ -270,6 +372,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		Content:           strings.TrimSpace(content),
 		IsInternal:        false,
 		MessageType:       "reply",
+		ViaChannel:        strPtr("widget"),
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
@@ -278,7 +381,36 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
-	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+	// Branch on ai_response_mode: AI-first publishes to JetStream, manual-assist runs existing path.
+	inst, instErr := s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)
+	settings := model.DefaultSupportInboxSettings()
+	if instErr == nil && inst != nil {
+		settings = parseSettings(inst.Settings)
+	}
+
+	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+		// AI-first path: publish to JetStream for worker consumer
+		if pubErr := s.supportAIService.PublishAIRequest(ctx, session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content); pubErr != nil {
+			slog.ErrorContext(ctx, "failed to publish AI request event",
+				"workspace_id", session.WorkspaceID,
+				"conversation_id", *session.ConversationID,
+				"error", pubErr,
+			)
+			// Fallback to manual-assist path on publish failure
+			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+		}
+
+		// Set AI state to pending and assign AI agent
+		agentID := strings.TrimSpace(*settings.AIAgentID)
+		pending := "pending"
+		_ = s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
+			"ai_state":          &pending,
+			"assigned_agent_id": &agentID,
+		})
+	} else {
+		// Manual-assist path: existing agent run (unchanged)
+		go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+	}
 
 	return msg, nil
 }
@@ -415,11 +547,12 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			ButtonIconColor: settings.ButtonIconColor,
 		},
 		Features: model.WidgetConfigFeatures{
-			AIEnabled:   settings.AIEnabled,
-			FileUploads: false,
-			PreChatForm: settings.RequireEmailBeforeChat,
-			RequireName: settings.RequireNameAfterEmail,
-			CSATRating:  settings.CSATEnabled,
+			AIEnabled:       settings.AIEnabled,
+			ShowTalkToHuman: settings.ShowTalkToHuman,
+			FileUploads:     false,
+			PreChatForm:     settings.RequireEmailBeforeChat,
+			RequirePhone:    settings.RequirePhoneAfterEmail,
+			CSATRating:      settings.CSATEnabled,
 		},
 		HelpSpaces: helpSpaces,
 	}, nil

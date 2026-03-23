@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type NavFilter = 'my_inbox' | 'all' | 'unassigned';
+export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_all' | 'ai_resolved' | 'ai_escalated' | 'ai_pending';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
 
@@ -112,7 +112,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
   return {
     navFilter: 'all',
     navCollapsed: persisted.navCollapsed,
-    statusFilter: 'open',
+    statusFilter: 'all',
     searchQuery: '',
     selectedConversationId: null,
     replyMode: 'reply',
@@ -121,7 +121,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     activePanel: 'list',
     drafts: persistedDrafts,
 
-    setNavFilter: (filter) => set({ navFilter: filter }),
+    setNavFilter: (filter) => set({ navFilter: filter, statusFilter: 'all' }),
     toggleNavCollapsed: () => {
       const next = !get().navCollapsed;
       set({ navCollapsed: next });

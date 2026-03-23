@@ -33,6 +33,10 @@ type SupportInboxService struct {
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
+	supportAIService        *SupportAIService
+	emailFallbackService    *EmailFallbackService
+	notificationService     *NotificationService
+	workspaceRepo           *repository.WorkspaceRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -83,6 +87,34 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 	return &rendered
 }
 
+// SetSupportAIService injects the AI-first auto-reply service.
+func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.supportAIService = aiService
+	return s
+}
+
+// SetEmailFallbackService injects the email fallback service used for offline visitor replies.
+func (s *SupportInboxService) SetEmailFallbackService(emailFallbackService *EmailFallbackService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailFallbackService = emailFallbackService
+	return s
+}
+
+// SetNotificationService injects the notification service and workspace repo for @mention support.
+func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr *repository.WorkspaceRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.notificationService = ns
+	s.workspaceRepo = wr
+	return s
+}
+
 // SetConversationAgentRunner injects the agent-run startup hook used for widget auto-replies.
 func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)) *SupportInboxService {
 	if s == nil {
@@ -101,11 +133,11 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, aiState...)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +227,24 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 
 	// Push authoritative conversations:listed refresh to all visitor widget sessions
 	s.pushVisitorConversationsRefresh(ctx, workspaceID, anonymousID)
+
+	// Broadcast to agent dashboard so read receipts update in real-time
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+	})
+
 	return nil
+}
+
+// EscalateConversation delegates to the AI service to escalate a conversation to a human agent.
+func (s *SupportInboxService) EscalateConversation(ctx context.Context, workspaceID, conversationID, reason string) error {
+	if s.supportAIService == nil {
+		return fmt.Errorf("ai service not configured")
+	}
+	return s.supportAIService.EscalateToHuman(ctx, workspaceID, conversationID, reason)
 }
 
 // pushVisitorConversationsRefresh sends an updated conversation list to all widget sessions for a visitor.
@@ -216,6 +265,86 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 		WorkspaceID: workspaceID,
 		Data:        listJSON,
 	})
+}
+
+// MarkConversationUnread resets the team read cursor so the conversation appears unread.
+func (s *SupportInboxService) MarkConversationUnread(ctx context.Context, workspaceID, conversationID, userID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.MarkUnread(ctx, conversationID); err != nil {
+		return err
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     userID,
+	})
+	return nil
+}
+
+// UpdateConversationSubject changes the conversation subject.
+func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, workspaceID, conversationID, subject, actorID string) (*model.SupportConversation, error) {
+	if strings.TrimSpace(subject) == "" {
+		return nil, fmt.Errorf("subject is required")
+	}
+
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.UpdateSubject(ctx, conversationID, strings.TrimSpace(subject)); err != nil {
+		return nil, err
+	}
+	conv.Subject = strings.TrimSpace(subject)
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+	})
+
+	return conv, nil
+}
+
+// DeleteConversation permanently deletes a conversation and its messages.
+func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.Delete(ctx, workspaceID, conversationID); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "conversation deleted", "conversation_id", conversationID, "workspace_id", workspaceID, "actor_id", actorID)
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "deleted",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+	})
+	return nil
 }
 
 // GetConversation returns a single conversation.
@@ -317,6 +446,45 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 
+	// Insert a system message for status transitions visible in the thread.
+	if oldStatus != status && (status == "resolved" || status == "closed" || (oldStatus == "resolved" && status == "open")) {
+		label := "Resolved conversation"
+		if status == "closed" {
+			label = "Closed conversation"
+		} else if status == "open" && oldStatus == "resolved" {
+			label = "Reopened conversation"
+		}
+
+		// Resolve actor display name and avatar.
+		var senderDisplayName *string
+		var senderAvatarURL *string
+		if actorID != "" && s.userRepo != nil {
+			user, _ := s.userRepo.GetByID(ctx, actorID)
+			if user != nil {
+				senderDisplayName = &user.FullName
+				senderAvatarURL = user.AvatarURL
+			}
+		}
+		senderUserID := &actorID
+
+		sysMsg := &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    ticketID,
+			SenderType:        "user",
+			SenderUserID:      senderUserID,
+			SenderDisplayName: senderDisplayName,
+			SenderAvatarURL:   senderAvatarURL,
+			Content:           label,
+			MessageType:       "system",
+			IsInternal:        false,
+		}
+		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
+			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
+		} else {
+			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, sysMsg, actorID))
+		}
+	}
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_conversation",
@@ -359,6 +527,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Pre-resolve @mentions for internal notes.
+	var mentionedUserIDs []string
+	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
+		if err != nil {
+			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
+		}
+		mentionedUserIDs = ids
+	}
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
@@ -372,17 +550,41 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		MessageType:       messageType,
 	}
 
+	if len(mentionedUserIDs) > 0 {
+		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
+		msg.Metadata = string(metaJSON)
+	}
+
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
 
+	// Emit mention notifications after message creation.
+	if len(mentionedUserIDs) > 0 {
+		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+		subject := "Support conversation"
+		if conv != nil {
+			subject = conv.Subject
+		}
+		ProcessSupportMentions(ctx, s.notificationService, workspaceID, ticketID, subject, msg.Content, derefString(senderUserID), mentionedUserIDs)
+	}
+
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
 		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-		if conv != nil && conv.AnonymousID != nil && *conv.AnonymousID != "" {
-			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		if conv != nil {
+			if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+				s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+			}
+			if s.emailFallbackService != nil {
+				go func(convSnapshot *model.SupportConversation) {
+					if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
+						slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
+					}
+				}(conv)
+			}
 		}
 	}
 
@@ -438,49 +640,102 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 	return s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 }
 
-// matchOrCreateCRMContact looks up a CRM contact by email; if not found and
-// we have a name, it auto-creates one with lifecycle_stage=subscriber, source=support.
+// matchOrCreateCRMContact looks up a CRM contact by email; if not found,
+// creates one as lead with source=live_chat. Always promotes subscriber→lead.
 func (s *SupportInboxService) matchOrCreateCRMContact(ctx context.Context, workspaceID string, email, name *string) *string {
+	return s.matchOrCreateCRMContactTx(ctx, s.contactRepo, workspaceID, email, name, "widget_prechat")
+}
+
+// matchOrCreateCRMContactTx is the transactional version of matchOrCreateCRMContact.
+// It uses the provided contactRepo (which may be wrapped in a transaction).
+// The source param controls lifecycle promotion: "identify" promotes lead→customer.
+func (s *SupportInboxService) matchOrCreateCRMContactTx(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID string, email, name *string, source string) *string {
 	if email == nil || *email == "" {
 		return nil
 	}
 
-	search := strings.TrimSpace(*email)
-	contacts, _, err := s.contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{
-		Search: &search,
-	}, model.PMPagination{Page: 1, PerPage: 1})
-	if err == nil && len(contacts) > 0 {
-		if contacts[0].Email != nil && strings.EqualFold(*contacts[0].Email, search) {
-			return &contacts[0].ID
-		}
+	trimmedEmail := strings.TrimSpace(*email)
+
+	// Look up existing contact by exact email match
+	existing, err := contactRepo.GetByEmail(ctx, workspaceID, trimmedEmail)
+	if err != nil {
+		slog.ErrorContext(ctx, "CRM contact lookup failed", "error", err, "workspace_id", workspaceID)
+		return nil
 	}
 
-	// Auto-create contact if we have name + email.
+	if existing != nil {
+		// Promote lifecycle stage if appropriate (never downgrade)
+		promoted := s.promoteContactLifecycle(ctx, contactRepo, existing, source)
+		if promoted {
+			slog.InfoContext(ctx, "promoted CRM contact lifecycle",
+				"contact_id", existing.ID, "stage", existing.LifecycleStage, "source", source)
+		}
+		return &existing.ID
+	}
+
+	// Auto-create new contact as lead with source=live_chat
 	firstName := "Unknown"
 	if name != nil && *name != "" {
 		firstName = *name
 	}
-	source := "support"
+	contactSource := "live_chat"
 	contact := &model.CRMContact{
 		WorkspaceID:    workspaceID,
 		FirstName:      firstName,
-		Email:          email,
-		LifecycleStage: model.CRMLifecycleSubscriber,
+		Email:          &trimmedEmail,
+		LifecycleStage: model.CRMLifecycleLead,
 		LeadStatus:     model.CRMLeadStatusNew,
-		Source:         &source,
+		Source:         &contactSource,
 	}
-	displayID, err := s.contactRepo.GetNextDisplayID(ctx, workspaceID)
+	displayID, err := contactRepo.GetNextDisplayID(ctx, workspaceID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get next display ID for CRM contact", "error", err, "workspace_id", workspaceID)
+		slog.ErrorContext(ctx, "get next display ID for CRM contact", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
 	contact.DisplayID = displayID
-	if err := s.contactRepo.Create(ctx, contact); err != nil {
-		slog.ErrorContext(ctx, "failed to auto-create CRM contact from support", "error", err, "workspace_id", workspaceID)
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		slog.ErrorContext(ctx, "auto-create CRM contact from widget", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
-	slog.InfoContext(ctx, "auto-created CRM contact from support conversation", "contact_id", contact.ID, "workspace_id", workspaceID)
+
+	// If source is "identify", promote new lead → customer
+	if source == "sdk_identify" {
+		s.promoteContactLifecycle(ctx, contactRepo, contact, source)
+	}
+
+	slog.InfoContext(ctx, "auto-created CRM lead from widget",
+		"contact_id", contact.ID, "workspace_id", workspaceID, "source", contactSource)
 	return &contact.ID
+}
+
+// promoteContactLifecycle promotes a CRM contact's lifecycle stage based on the event source.
+// subscriber → lead (always), lead → customer (only on "identify" source).
+// Never downgrades.
+func (s *SupportInboxService) promoteContactLifecycle(ctx context.Context, contactRepo *repository.CRMContactRepository, contact *model.CRMContact, source string) bool {
+	var targetStage string
+
+	switch {
+	case contact.LifecycleStage == model.CRMLifecycleSubscriber:
+		// Always promote subscriber → lead
+		targetStage = model.CRMLifecycleLead
+	case contact.LifecycleStage == model.CRMLifecycleLead && source == "sdk_identify":
+		// SDK identify() promotes lead → customer
+		targetStage = model.CRMLifecycleCustomer
+	default:
+		return false
+	}
+
+	// Guard: never downgrade
+	if model.CRMLifecycleIsHigherOrEqual(contact.LifecycleStage, targetStage) {
+		return false
+	}
+
+	contact.LifecycleStage = targetStage
+	if err := contactRepo.Update(ctx, contact); err != nil {
+		slog.ErrorContext(ctx, "promote CRM contact lifecycle", "error", err, "contact_id", contact.ID)
+		return false
+	}
+	return true
 }
 
 func generateSecureToken(bytes int) (string, error) {
@@ -497,6 +752,37 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+// ListConversationsWithMentions returns conversations where the given user was mentioned.
+func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID string) (*model.ConversationListResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	ids, err := s.conversationRepo.ListConversationIDsWithMentions(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return &model.ConversationListResponse{
+			Data: []model.SupportConversation{},
+		}, nil
+	}
+	conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	return &model.ConversationListResponse{
+		Data:       conversations,
+		Total:      len(conversations),
+		Page:       1,
+		PerPage:    len(conversations),
+		TotalPages: 1,
+		Meta:       model.ConversationListMeta{},
+	}, nil
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {

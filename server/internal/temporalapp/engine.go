@@ -204,6 +204,65 @@ func (e *RunEngine) StopSchedule(ctx context.Context, agentID string) error {
 	return nil
 }
 
+// QueueDocsEmbeddingSync enqueues or signals a durable help-center embedding sync for one space.
+func (e *RunEngine) QueueDocsEmbeddingSync(ctx context.Context, workspaceID, spaceID string) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+
+	request := DocsEmbeddingSyncInput{
+		WorkspaceID: workspaceID,
+		SpaceID:     spaceID,
+	}
+	options := tclient.StartWorkflowOptions{
+		ID:                       WorkflowIDForDocsEmbeddingSpace(workspaceID, spaceID),
+		TaskQueue:                QueueAutomation,
+		WorkflowExecutionTimeout: 2 * time.Hour,
+	}
+	_, err := e.client.SignalWithStartWorkflow(
+		ctx,
+		options.ID,
+		WorkflowSignalDocsEmbeddingSync,
+		request,
+		options,
+		DocsEmbeddingSyncWorkflow,
+		DocsEmbeddingSyncInput{},
+	)
+	if err != nil {
+		return fmt.Errorf("queue docs embedding sync: %w", err)
+	}
+	return nil
+}
+
+// QueueContentSourceSync enqueues or signals a durable content crawl+embedding sync for one source.
+func (e *RunEngine) QueueContentSourceSync(ctx context.Context, workspaceID, contentSourceID string) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+
+	request := ContentSourceSyncInput{
+		WorkspaceID:     workspaceID,
+		ContentSourceID: contentSourceID,
+	}
+	options := tclient.StartWorkflowOptions{
+		ID:                       WorkflowIDForContentSource(workspaceID, contentSourceID),
+		TaskQueue:                QueueAutomation,
+		WorkflowExecutionTimeout: 2 * time.Hour,
+	}
+	_, err := e.client.SignalWithStartWorkflow(
+		ctx,
+		options.ID,
+		WorkflowSignalContentSourceSync,
+		request,
+		options,
+		ContentSourceSyncWorkflow,
+		ContentSourceSyncInput{},
+	)
+	if err != nil {
+		return fmt.Errorf("queue content source sync: %w", err)
+	}
+	return nil
+}
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID

@@ -1,0 +1,224 @@
+import { Link } from '@tanstack/react-router';
+import {
+  Chrome,
+  Globe,
+  Laptop,
+  Mail,
+  MessageSquare,
+  Monitor,
+  Smartphone,
+  Tablet,
+  User,
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { CollapsibleSection } from './CollapsibleSection';
+import { STATUS_COLORS, STATUS_LABELS } from './constants';
+import { useVisitorContext } from '@/hooks/queries/useSupport';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type { ConversationStatus } from '@/lib/pmTypes';
+
+interface SidebarVisitorContextProps {
+  workspaceId: string;
+  conversationId: string;
+}
+
+function InfoRow({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | null | undefined;
+  icon?: React.ElementType;
+}) {
+  if (!value) return null;
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted-foreground shrink-0 flex items-center gap-1.5">
+        {Icon && <Icon className="h-3 w-3" />}
+        {label}
+      </span>
+      <span className="truncate text-right" title={value}>{value}</span>
+    </div>
+  );
+}
+
+function DeviceIcon({ type }: { type: string }) {
+  switch (type) {
+    case 'mobile': return <Smartphone className="h-3 w-3" />;
+    case 'tablet': return <Tablet className="h-3 w-3" />;
+    default: return <Laptop className="h-3 w-3" />;
+  }
+}
+
+function BrowserIcon({ browser }: { browser: string }) {
+  // Chrome icon exists in lucide; for others fall back to Globe
+  switch (browser.toLowerCase()) {
+    case 'chrome': return <Chrome className="h-3 w-3" />;
+    default: return <Globe className="h-3 w-3" />;
+  }
+}
+
+function OSIcon({ os }: { os: string }) {
+  // Use Monitor for all OS — lucide doesn't have Apple/Windows/Linux icons
+  switch (os.toLowerCase()) {
+    case 'macos': return <Monitor className="h-3 w-3" />;
+    case 'windows': return <Monitor className="h-3 w-3" />;
+    case 'linux': return <Monitor className="h-3 w-3" />;
+    case 'ios': return <Smartphone className="h-3 w-3" />;
+    case 'android': return <Smartphone className="h-3 w-3" />;
+    default: return <Monitor className="h-3 w-3" />;
+  }
+}
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  subscriber: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  lead: 'bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400',
+  opportunity: 'bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400',
+  customer: 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400',
+  evangelist: 'bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400',
+  other: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+
+const SOURCE_ICONS: Record<string, React.ElementType> = {
+  live_chat: MessageSquare,
+  support: MessageSquare,
+  email: Mail,
+  widget: MessageSquare,
+  api: Globe,
+  manual: User,
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  live_chat: 'Live Chat',
+  support: 'Support',
+  email: 'Email',
+  widget: 'Widget',
+  api: 'API',
+  manual: 'Manual',
+};
+
+export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
+  const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+
+  if (isLoading || !data) return null;
+
+  const { device, location, contact, other_conversations, total_conversations } = data;
+
+  const hasDevice = device && device.browser !== 'Unknown';
+  const hasLocation = location && (location.timezone || location.locale || location.last_page_url);
+  const hasContact = !!contact;
+  const hasOtherConvos = other_conversations.length > 0;
+
+  if (!hasDevice && !hasLocation && !hasContact && !hasOtherConvos) return null;
+
+  return (
+    <div>
+      {/* Device */}
+      {hasDevice && (
+        <CollapsibleSection title="Device" icon={Monitor} count={0}>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs">
+              <BrowserIcon browser={device.browser} />
+              <span>{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <OSIcon os={device.os} />
+              <span>{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <DeviceIcon type={device.device_type} />
+              <span className="capitalize">{device.device_type}</span>
+            </div>
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Location */}
+      {hasLocation && (
+        <CollapsibleSection title="Location" icon={Globe} count={0}>
+          <div className="space-y-1.5">
+            <InfoRow label="Timezone" value={location.timezone} icon={Globe} />
+            <InfoRow label="Locale" value={location.locale} />
+            {location.last_page_url && (
+              <div className="text-xs">
+                <span className="text-muted-foreground block mb-0.5">Current page</span>
+                <a
+                  href={location.last_page_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                  title={location.last_page_url}
+                >
+                  {location.last_page_url.replace(/^https?:\/\//, '')}
+                </a>
+              </div>
+            )}
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Contact Details */}
+      {hasContact && (
+        <CollapsibleSection title="Contact Details" icon={User} count={0}>
+          <div className="space-y-2">
+            {contact.job_title && (
+              <InfoRow label="Job title" value={contact.job_title} />
+            )}
+            {contact.lifecycle_stage && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground shrink-0">Lifecycle</span>
+                <Badge variant="secondary" className={`h-4 px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                  {contact.lifecycle_stage}
+                </Badge>
+              </div>
+            )}
+            {contact.source && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground shrink-0">Source</span>
+                <span className="flex items-center gap-1 truncate text-right capitalize">
+                  {(() => {
+                    const SourceIcon = SOURCE_ICONS[contact.source] ?? Globe;
+                    return <SourceIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
+                  })()}
+                  {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
+            {contact.custom_properties && Object.keys(contact.custom_properties).length > 0 && (
+              <>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider pt-1">Custom data</div>
+                {Object.entries(contact.custom_properties).map(([key, value]) => (
+                  <InfoRow key={key} label={key} value={value} />
+                ))}
+              </>
+            )}
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Other Conversations */}
+      {hasOtherConvos && (
+        <CollapsibleSection title="Other Conversations" icon={MessageSquare} count={total_conversations - 1}>
+          <div className="space-y-1.5">
+            {other_conversations.map((conv) => (
+              <Link
+                key={conv.id}
+                to="/w/$slug/support/$conversationId"
+                params={{ slug: workspace?.slug ?? '', conversationId: conv.id }}
+                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+              >
+                <span className="text-muted-foreground shrink-0">#{conv.display_id}</span>
+                <span className="truncate flex-1 font-medium">{conv.subject}</span>
+                <Badge variant="secondary" className={`h-4 px-1 text-[9px] shrink-0 ${STATUS_COLORS[conv.status as ConversationStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {STATUS_LABELS[conv.status as ConversationStatus] ?? conv.status}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
+    </div>
+  );
+}

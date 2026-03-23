@@ -10,6 +10,18 @@ import { queryKeys } from '@/lib/queryKeys'
 const BOARD_ENTITIES = new Set(['story'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
 
+let notificationAudio: HTMLAudioElement | null = null
+function playNotificationSound() {
+  try {
+    if (!notificationAudio) {
+      notificationAudio = new Audio('/sounds/ping.mp3')
+      notificationAudio.volume = 0.5
+    }
+    notificationAudio.currentTime = 0
+    notificationAudio.play().catch(() => {/* autoplay blocked */})
+  } catch { /* audio not supported */ }
+}
+
 /** Debounce window (ms) for batching rapid websocket events into a single board refresh. */
 const DEBOUNCE_MS = 200
 /** Auto-clear typing indicator after this many ms without a refresh. */
@@ -172,6 +184,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         } else if (event.actor_id) {
           s.clearOneAgentTyping(event.parent_id, event.actor_id)
         }
+
+        // Play notification sound for messages from others
+        if (event.actor_id !== selfIdRef.current) {
+          playNotificationSound()
+        }
+
         // Batch-invalidate all support conversation queries in a single call:
         // matches conversations list, conversation detail, and messages
         const parentId = event.parent_id

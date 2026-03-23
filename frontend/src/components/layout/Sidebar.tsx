@@ -21,6 +21,7 @@ import {
   EllipsisVertical,
   Import,
   Layers,
+  ArrowUpRight,
   Lightbulb,
   LogOut,
   Mail,
@@ -28,9 +29,7 @@ import {
   Inbox,
   LayoutList,
   UserX,
-  Circle,
   CheckCircle2,
-  Pause,
   Moon,
   Play,
   Plus,
@@ -438,7 +437,7 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
-  const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
+  const { navFilter, setNavFilter } = useSupportInboxStore();
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '');
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
@@ -572,9 +571,7 @@ export function Sidebar() {
     support: [
       {
         label: '',
-        items: [
-          { link: `/w/${wsSlug}/support`, label: 'Inbox', icon: Inbox },
-        ],
+        items: [],
       },
     ],
     agents: [
@@ -619,6 +616,7 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
+          { link: `/w/${wsSlug}/settings/recurring-tasks`, label: 'Recurring Tasks', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
           { link: `/w/${wsSlug}/settings/ai`, label: 'AI', icon: Bot },
@@ -628,6 +626,7 @@ export function Sidebar() {
         label: 'Support & Docs',
         items: [
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
+          { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
           { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
         ],
@@ -898,51 +897,46 @@ export function Sidebar() {
             {/* ── Support inbox filters (support rail only) ── */}
             {activeRail === 'support' && (
               <>
+                <SidebarMenu className="p-0 pb-3">
+                  {([
+                    { key: 'my_inbox' as const, label: 'My Inbox', icon: User, badge: unreadStats?.my_inbox },
+                    { key: 'all' as const, label: 'All', icon: Mail, badge: unreadStats?.total },
+                    { key: 'unassigned' as const, label: 'Unassigned', icon: UserX, badge: unreadStats?.unassigned },
+                    { key: 'mentions' as const, label: 'Mentions', icon: MessageSquare, badge: undefined as number | undefined },
+                  ]).map((item) => (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton
+                        isActive={navFilter === item.key}
+                        className="h-8 rounded-md px-2 text-[13px]"
+                        onClick={() => setNavFilter(item.key)}
+                      >
+                        <item.icon />
+                        <span className="flex-1">{item.label}</span>
+                        {item.badge != null && item.badge > 0 && (
+                          <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                            {item.badge > 99 ? '99+' : item.badge}
+                          </span>
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
                 <SidebarGroup className="p-0 pb-3">
                   <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    Views
+                    Helpin AI Agent
                   </SidebarGroupLabel>
                   <SidebarMenu>
                     {([
-                      { key: 'my_inbox' as const, label: 'My Inbox', icon: User, badge: unreadStats?.my_inbox },
-                      { key: 'all' as const, label: 'All Conversations', icon: Mail, badge: unreadStats?.total },
-                      { key: 'unassigned' as const, label: 'Unassigned', icon: UserX, badge: unreadStats?.unassigned },
+                      { key: 'ai_all' as const, label: 'All AI', icon: Bot },
+                      { key: 'ai_pending' as const, label: 'Pending', icon: Clock },
+                      { key: 'ai_resolved' as const, label: 'Resolved', icon: CheckCircle2 },
+                      { key: 'ai_escalated' as const, label: 'Escalated', icon: ArrowUpRight },
                     ] as const).map((item) => (
                       <SidebarMenuItem key={item.key}>
                         <SidebarMenuButton
                           isActive={navFilter === item.key}
                           className="h-8 rounded-md px-2 text-[13px]"
                           onClick={() => setNavFilter(item.key)}
-                        >
-                          <item.icon />
-                          <span className="flex-1">{item.label}</span>
-                          {item.badge != null && item.badge > 0 && (
-                            <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
-                              {item.badge > 99 ? '99+' : item.badge}
-                            </span>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroup>
-                <SidebarGroup className="p-0 pb-3">
-                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    Status
-                  </SidebarGroupLabel>
-                  <SidebarMenu>
-                    {([
-                      { key: 'open', label: 'Open', icon: Circle },
-                      { key: 'in_progress', label: 'In Progress', icon: Clock },
-                      { key: 'waiting', label: 'Waiting', icon: Pause },
-                      { key: 'resolved', label: 'Resolved', icon: CheckCircle2 },
-                      { key: 'all', label: 'All', icon: LayoutList },
-                    ] as const).map((item) => (
-                      <SidebarMenuItem key={item.key}>
-                        <SidebarMenuButton
-                          isActive={statusFilter === item.key}
-                          className="h-8 rounded-md px-2 text-[13px]"
-                          onClick={() => setStatusFilter(item.key)}
                         >
                           <item.icon />
                           <span>{item.label}</span>

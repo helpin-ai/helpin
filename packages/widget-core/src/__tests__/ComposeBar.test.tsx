@@ -119,4 +119,16 @@ describe('ComposeBar', () => {
     expect(input.disabled).toBe(true);
     expect(sendButton.disabled).toBe(true);
   });
+
+  it('inserts an emoji selected from the picker into the textarea', async () => {
+    const { container, getByLabelText, findByPlaceholderText } = render(<ComposeBar onSend={() => {}} />);
+
+    fireEvent.click(getByLabelText('Open emoji picker'));
+    const searchInput = await findByPlaceholderText('Search emojis...');
+    fireEvent.input(searchInput, { target: { value: 'heart' } });
+    fireEvent.click(getByLabelText('Insert ❤️'));
+
+    const input = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
+    expect(input.value).toBe('❤️');
+  });
 });

@@ -39,10 +39,13 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       src: { default: null },
       alt: { default: null },
       title: { default: null },
-      width: { default: '35%' },
+      width: { default: '100%' },
       height: { default: 'auto' },
       aspectRatio: { default: null },
       attachmentId: { default: null },
+      alignment: { default: 'center' },
+      linkUrl: { default: null },
+      linkNewTab: { default: true },
     };
   },
 
@@ -60,16 +63,21 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
             ? Number(dom.getAttribute('data-aspect-ratio'))
             : null,
           attachmentId: dom.getAttribute('data-attachment-id'),
+          alignment: dom.getAttribute('data-alignment') || 'center',
+          linkUrl: dom.getAttribute('data-link-url') || null,
+          linkNewTab: dom.getAttribute('data-link-new-tab') !== 'false',
         };
       }},
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    const { aspectRatio, attachmentId, ...rest } = HTMLAttributes;
+    const { aspectRatio, attachmentId, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
+      ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
+      ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),
     })];
   },
 

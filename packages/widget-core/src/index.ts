@@ -36,6 +36,8 @@ export { HelpCollectionView } from './components/HelpCollectionView';
 export { HelpArticleView } from './components/HelpArticleView';
 export { ConversationView } from './components/ConversationView';
 export { ConversationListView } from './components/ConversationListView';
+export { loadEmojiCatalog } from './components/emoji-loader';
+export type { EmojiCatalog } from './components/emoji-catalog';
 
 // ─── Mount API ───────────────────────────────────────────────
 // Consumers call mountWidget() instead of importing preact directly.
@@ -51,8 +53,10 @@ export interface MountWidgetOptions {
   onQuickReply?: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
-  onPreChatSubmit?: (data: { name: string; email: string }) => void;
+  onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
+  isAIThinking?: boolean;
+  onEscalateToHuman?: () => void;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   quickReplies?: string[];
@@ -86,6 +90,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showPreChatForm = false,
     onPreChatSubmit = () => {},
     isTyping = false,
+    isAIThinking = false,
+    onEscalateToHuman,
     typingAgentName,
     typingAgentAvatar,
     quickReplies = [],
@@ -117,6 +123,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       showPreChatForm,
       onPreChatSubmit,
       isTyping,
+      isAIThinking,
+      onEscalateToHuman,
       typingAgentName,
       typingAgentAvatar,
       quickReplies,

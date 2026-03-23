@@ -6,6 +6,7 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import type { WorkspaceSettings } from '@/lib/types';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
+import { RecurringTemplatesSettings } from '@/components/pm/RecurringTemplatesSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,9 +25,10 @@ import {
   AIAutomationsTab,
   ChatGeneralTab,
   ChatAITab,
+  RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -65,6 +67,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Project Settings',
   },
   {
+    id: 'recurring-tasks',
+    label: 'Recurring Tasks',
+    description: 'Manage recurring work templates, schedules, failures, and generated stories.',
+    icon: RefreshCw,
+    group: 'Project Settings',
+  },
+  {
     id: 'automations',
     label: 'Automations',
     description: '',
@@ -100,6 +109,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Support & Docs',
   },
   {
+    id: 'redirects',
+    label: 'Redirects',
+    description: 'Manage URL redirects for the public help center.',
+    icon: RefreshCw,
+    group: 'Support & Docs',
+  },
+  {
     id: 'crm-pipelines',
     label: 'Pipelines',
     description: 'Configure deal pipelines and stages.',
@@ -129,16 +145,9 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   },
   {
     id: 'chat-general',
-    label: 'Chat Widget',
-    description: 'Widget installation, identity capture, and CRM integration.',
+    label: 'Chat',
+    description: 'Widget installation, identity capture, AI auto-reply, and routing.',
     icon: MessageSquare,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'chat-ai',
-    label: 'AI & Routing',
-    description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
-    icon: Bot,
     group: 'Support & Docs',
   },
 ];
@@ -151,7 +160,7 @@ export default function Settings({ section, initialTeamId }: { section: Settings
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canEdit, canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -276,12 +285,16 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canAdminLabels} />;
       case 'story-templates':
         return <StoryTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
+      case 'recurring-tasks':
+        return <RecurringTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canEdit} />;
       case 'automations':
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       case 'helpcenter':
         return <HelpcenterTab workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? ''} />;
+      case 'redirects':
+        return <RedirectsTab workspaceId={workspaceId} editable={canManageSettings} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
       case 'crm-email':
@@ -301,6 +314,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'chat-ai':
         return <ChatAITab workspaceId={workspaceId} />;
+      case 'redirects':
+        return <RedirectsTab workspaceId={workspaceId} editable={canManageSettings} />;
       default:
         return null;
     }

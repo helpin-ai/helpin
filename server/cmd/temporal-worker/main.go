@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/hex"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"go.temporal.io/sdk/activity"
 	tclient "go.temporal.io/sdk/client"
 	tworker "go.temporal.io/sdk/worker"
@@ -16,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
@@ -52,6 +55,9 @@ func main() {
 	if err := sqlDB.Ping(); err != nil {
 		log.Fatalf("failed to ping database: %v", err)
 	}
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
+		log.Fatalf("failed to enable vector extension: %v", err)
+	}
 
 	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
 	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-temporal-worker-"+realtimeInstanceID)
@@ -84,6 +90,8 @@ func main() {
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
 	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	recurringRepo := repository.NewPMRecurringTemplateRepository(db)
+	sprintRepo := repository.NewPMSprintRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
@@ -97,7 +105,16 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	docsChunkRepo := repository.NewDocsChunkRepository(db)
+	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
+	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
+	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
+	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
+	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
+	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
+	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -110,7 +127,6 @@ func main() {
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
-	sprintRepo := repository.NewPMSprintRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -153,11 +169,57 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
+	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenAIBaseURL,
+		cfg.OpenRouterAPIKey,
+		cfg.OpenRouterBaseURL,
+	)
+	var redisClient *redis.Client
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			log.Fatalf("invalid REDIS_URL: %v", err)
+		}
+		redisClient = redis.NewClient(redisOpts)
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			log.Fatalf("redis unreachable: %v", err)
+		}
+		defer redisClient.Close()
+	}
+	// AI Support Agent consumer — runs alongside Temporal workers.
+	supportAIService := service.NewSupportAIService(
+		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
+		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
+		conversationRepo, supportMessageRepo,
+		agentRepo, handoffRepo, supportInstallRepo,
+		wsPublisher, jetstream, redisClient, db,
+		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
+	)
+	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
+	go func() {
+		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {
+			log.Printf("support AI consumer stopped: %v", err)
+		}
+	}()
+	_ = aiConsumerCancel // used at shutdown
+
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
+		recurringRepo,
+		storyRepo,
+		workflowRepo,
+		sprintRepo,
+		workspaceRepo,
+		checklistRepo,
+		externalLinkRepo,
+		pmActivityService,
+	)
 	pmAutomationService := service.NewPMAutomationService(
 		pmAutomationRepo,
 		epicRepo,
@@ -181,6 +243,8 @@ func main() {
 		nil,
 		nil,
 	)
+	pmStoryService.SetRecurringService(pmRecurringTemplateService)
+	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -221,6 +285,34 @@ func main() {
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
+	contentCrawler := crawler.NewSmartCrawler(
+		cfg.CrawlerMode,
+		cfg.CloudflareAccountID,
+		cfg.CloudflareAPIToken,
+		cfg.CloudflareAPIBaseURL,
+		cfg.CrawlerProxyURLs,
+		slog.Default(),
+	)
+	docsEmbeddingService := service.NewDocsEmbeddingService(
+		docsChunkRepo,
+		agentKnowledgeSourceRepo,
+		docsContentRepo,
+		docsSpaceRepo,
+		docsHelpcenterRepo,
+		docsDocumentRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		nil,
+	)
+	supportContentSyncService := service.NewSupportContentSyncService(
+		supportContentSourceRepo,
+		supportContentPageRepo,
+		supportContentChunkRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		contentCrawler,
+		nil,
+	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	commandService := service.NewInternalCommandService(
@@ -279,14 +371,17 @@ func main() {
 	_ = crmCompanyRepo // available for future enrichment activities
 
 	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
+	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
+	docsEmbeddingActivities := temporalapp.NewDocsEmbeddingActivities(docsEmbeddingService)
+	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, sprintAutomationActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -301,6 +396,7 @@ func main() {
 	<-stopCh
 
 	log.Println("shutting down temporal workers")
+	aiConsumerCancel() // stop AI support consumer
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
 	}
@@ -310,7 +406,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, sprintActivities *temporalapp.SprintAutomationActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -376,11 +472,35 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
+	// Register recurring template scheduler workflow and activities.
+	w.RegisterWorkflow(temporalapp.PMRecurringTemplateSchedulerWorkflow)
+	if recurringActivities != nil {
+		w.RegisterActivityWithOptions(recurringActivities.ProcessDueTemplatesActivity, activity.RegisterOptions{
+			Name: "PMRecurringTemplateActivities.ProcessDueTemplatesActivity",
+		})
+	}
+
 	// Register sprint automation cron workflow and activities.
 	w.RegisterWorkflow(temporalapp.SprintAutomationCronWorkflow)
 	if sprintActivities != nil {
 		w.RegisterActivityWithOptions(sprintActivities.RunSprintAutomationsActivity, activity.RegisterOptions{
 			Name: "SprintAutomationActivities.RunSprintAutomationsActivity",
+		})
+	}
+
+	// Register docs embedding workflow and activities.
+	w.RegisterWorkflow(temporalapp.DocsEmbeddingSyncWorkflow)
+	if docsEmbeddingActivities != nil {
+		w.RegisterActivityWithOptions(docsEmbeddingActivities.SyncSpaceActivity, activity.RegisterOptions{
+			Name: "DocsEmbeddingActivities.SyncSpaceActivity",
+		})
+	}
+
+	// Register content source sync workflow and activities.
+	w.RegisterWorkflow(temporalapp.ContentSourceSyncWorkflow)
+	if contentSourceSyncActivities != nil {
+		w.RegisterActivityWithOptions(contentSourceSyncActivities.SyncContentSourceActivity, activity.RegisterOptions{
+			Name: "ContentSourceSyncActivities.SyncContentSourceActivity",
 		})
 	}
 

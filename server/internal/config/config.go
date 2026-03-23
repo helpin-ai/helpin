@@ -27,13 +27,21 @@ type Config struct {
 	AWSEndpointURL     string // For MinIO / local dev
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey   string
-	OpenAIAPIKey      string
-	OpenAIBaseURL     string
-	OpenRouterAPIKey  string
-	OpenRouterBaseURL string
-	OpenCodePath      string
-	BraveSearchAPIKey string
+	AnthropicAPIKey      string
+	OpenAIAPIKey         string
+	OpenAIBaseURL        string
+	OpenAIEmbeddingModel string
+	OpenRouterAPIKey     string
+	OpenRouterBaseURL    string
+	OpenCodePath         string
+	BraveSearchAPIKey    string
+	CloudflareAccountID  string
+	CloudflareAPIToken   string
+	CloudflareAPIBaseURL string
+
+	// Website content crawler (optional — controls crawl engine and proxy)
+	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
+	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler (e.g. Decodo/Smartproxy)
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -42,9 +50,11 @@ type Config struct {
 	GitHubAppPrivateKey string
 
 	// Postmark email (optional — email sending disabled if not set)
-	PostmarkServerToken string
-	PostmarkFromEmail   string
-	AppBaseURL          string
+	PostmarkServerToken          string
+	PostmarkFromEmail            string
+	PostmarkInboundWebhookSecret string
+	SupportEmailReplyDomain      string
+	AppBaseURL                   string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	CRMEncryptionKey      string
@@ -57,6 +67,10 @@ type Config struct {
 	CRMLLMAPIKey   string
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
+
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.4-mini)
+	QueryExpansionModel    string
+	QueryExpansionProvider string
 
 	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
 	RedisURL string
@@ -105,43 +119,53 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:           dbURL,
-		JWTSecret:             jwtSecret,
-		Port:                  port,
-		CORSOrigins:           corsOrigins,
-		TemporalAddress:       temporalAddress,
-		TemporalNamespace:     temporalNamespace,
-		TemporalAPIKey:        temporalAPIKey,
-		TemporalTLSEnabled:    temporalTLSEnabled,
-		TemporalTLSServerName: strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
-		NatsURL:               strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
-		AWSAccessKeyID:        os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey:    os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBucket:             os.Getenv("AWS_S3_BUCKET_NAME"),
-		AWSRegion:             os.Getenv("AWS_REGION"),
-		AWSEndpointURL:        os.Getenv("AWS_S3_ENDPOINT_URL"),
-		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
-		OpenAIAPIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-		OpenAIBaseURL:         strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
-		OpenRouterAPIKey:      strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
-		OpenRouterBaseURL:     strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
-		OpenCodePath:          strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
-		BraveSearchAPIKey:     strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
-		GitHubAppID:           os.Getenv("GITHUB_APP_ID"),
-		GitHubAppSlug:         os.Getenv("GITHUB_APP_SLUG"),
-		GitHubAppPrivateKey:   os.Getenv("GITHUB_APP_PRIVATE_KEY"),
-		PostmarkServerToken:   os.Getenv("POSTMARK_SERVER_TOKEN"),
-		PostmarkFromEmail:     os.Getenv("POSTMARK_FROM_EMAIL"),
-		AppBaseURL:            appBaseURL,
-		CRMEncryptionKey:      os.Getenv("CRM_ENCRYPTION_KEY"),
-		GmailClientID:         os.Getenv("GMAIL_CLIENT_ID"),
-		GmailClientSecret:     os.Getenv("GMAIL_CLIENT_SECRET"),
-		GmailOAuthRedirectURL: os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
-		CRMLLMProvider:        os.Getenv("CRM_LLM_PROVIDER"),
-		CRMLLMAPIKey:          os.Getenv("CRM_LLM_API_KEY"),
-		CRMLLMBaseURL:         os.Getenv("CRM_LLM_BASE_URL"),
-		CRMLLMModel:           os.Getenv("CRM_LLM_MODEL"),
-		RedisURL:              os.Getenv("REDIS_URL"),
+		DatabaseURL:                  dbURL,
+		JWTSecret:                    jwtSecret,
+		Port:                         port,
+		CORSOrigins:                  corsOrigins,
+		TemporalAddress:              temporalAddress,
+		TemporalNamespace:            temporalNamespace,
+		TemporalAPIKey:               temporalAPIKey,
+		TemporalTLSEnabled:           temporalTLSEnabled,
+		TemporalTLSServerName:        strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		NatsURL:                      strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
+		AWSAccessKeyID:               os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey:           os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSBucket:                    os.Getenv("AWS_S3_BUCKET_NAME"),
+		AWSRegion:                    os.Getenv("AWS_REGION"),
+		AWSEndpointURL:               os.Getenv("AWS_S3_ENDPOINT_URL"),
+		AnthropicAPIKey:              os.Getenv("ANTHROPIC_API_KEY"),
+		OpenAIAPIKey:                 strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIBaseURL:                strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		OpenAIEmbeddingModel:         strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		OpenRouterAPIKey:             strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
+		OpenRouterBaseURL:            strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
+		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
+		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
+		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
+		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
+		CloudflareAPIBaseURL:         strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
+		CrawlerMode:                  strings.TrimSpace(firstNonEmpty(os.Getenv("CRAWLER_MODE"), "cloudflare_with_fallback")),
+		CrawlerProxyURLs:             strings.TrimSpace(os.Getenv("CRAWLER_PROXY_URLS")),
+		GitHubAppID:                  os.Getenv("GITHUB_APP_ID"),
+		GitHubAppSlug:                os.Getenv("GITHUB_APP_SLUG"),
+		GitHubAppPrivateKey:          os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		PostmarkServerToken:          os.Getenv("POSTMARK_SERVER_TOKEN"),
+		PostmarkFromEmail:            os.Getenv("POSTMARK_FROM_EMAIL"),
+		PostmarkInboundWebhookSecret: strings.TrimSpace(os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET")),
+		SupportEmailReplyDomain:      strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.ai")),
+		AppBaseURL:                   appBaseURL,
+		CRMEncryptionKey:             os.Getenv("CRM_ENCRYPTION_KEY"),
+		GmailClientID:                os.Getenv("GMAIL_CLIENT_ID"),
+		GmailClientSecret:            os.Getenv("GMAIL_CLIENT_SECRET"),
+		GmailOAuthRedirectURL:        os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		CRMLLMProvider:               os.Getenv("CRM_LLM_PROVIDER"),
+		CRMLLMAPIKey:                 os.Getenv("CRM_LLM_API_KEY"),
+		CRMLLMBaseURL:                os.Getenv("CRM_LLM_BASE_URL"),
+		CRMLLMModel:                  os.Getenv("CRM_LLM_MODEL"),
+		QueryExpansionModel:          strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionProvider:       strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		RedisURL:                     os.Getenv("REDIS_URL"),
 	}, nil
 }
 

@@ -6,6 +6,14 @@ export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
 export type EpicHealth = 'no_health' | 'on_track' | 'at_risk' | 'off_track';
 export type SprintStatus = 'unstarted' | 'started' | 'done';
+export type RecurringTemplateStatus = 'active' | 'paused' | 'stopped' | 'failed';
+export type RecurringScheduleType = 'time' | 'completion';
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type RecurringCompletionEvent = 'completed' | 'done_state';
+export type RecurringDueDateMode = 'none' | 'scheduled_date' | 'offset_days';
+export type RecurringSprintAssignmentMode = 'none' | 'current_sprint' | 'by_due_date';
+export type RecurringRunStatus = 'succeeded' | 'failed' | 'skipped';
+export type RecurringRunTrigger = 'manual_seed' | 'schedule' | 'completion' | 'generate_now';
 
 export interface Workflow {
   id: string;
@@ -194,6 +202,9 @@ export interface Story {
   archived: boolean;
   assigned_agent_id?: string;
   template_id?: string;
+  recurring_template_id?: string;
+  recurring_run_id?: string;
+  recurring_occurrence_number?: number;
   external_id?: string;
   slice_type?: string;
   implementation_brief?: StoryImplementationBrief;
@@ -498,6 +509,123 @@ export interface StoryTemplate {
   archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface RecurringTemplateConfig {
+  schedule_type: RecurringScheduleType;
+  frequency?: RecurringFrequency;
+  interval?: number;
+  weekdays?: number[];
+  day_of_month?: number;
+  completion_event?: RecurringCompletionEvent;
+  completion_state_ids?: string[];
+  due_date_mode?: RecurringDueDateMode;
+  due_offset_days?: number;
+  starts_on?: string;
+  ends_on?: string;
+  ends_after_occurrences?: number;
+  sprint_assignment_mode?: RecurringSprintAssignmentMode;
+}
+
+export interface RecurringStorySeed {
+  name: string;
+  description?: string;
+  story_type?: StoryType;
+  workflow_id: string;
+  workflow_state_id: string;
+  epic_id?: string;
+  team_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
+  estimate?: number;
+  priority?: Priority;
+  severity?: Severity;
+  owner_ids?: string[];
+  follower_ids?: string[];
+  label_ids?: string[];
+  checklist_items?: CreateChecklistItemRequest[];
+  external_links?: CreateExternalLinkRequest[];
+}
+
+export interface RecurringTemplate {
+  id: string;
+  workspace_id: string;
+  team_id?: string;
+  title: string;
+  description?: string;
+  status: RecurringTemplateStatus;
+  owner_member_id?: string;
+  created_from_story_id?: string;
+  seed_payload: string;
+  config: string;
+  start_date?: string;
+  end_date?: string;
+  ends_after_occurrences?: number;
+  next_run_at?: string;
+  last_run_at?: string;
+  last_generated_story_id?: string;
+  last_error?: string;
+  failure_count: number;
+  generated_count: number;
+  skip_next_run: boolean;
+  created_by_id?: string;
+  updated_by_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecurringRun {
+  id: string;
+  workspace_id: string;
+  template_id: string;
+  occurrence_number: number;
+  trigger_type: RecurringRunTrigger;
+  scheduled_for?: string;
+  started_at?: string;
+  finished_at?: string;
+  status: RecurringRunStatus;
+  generated_story_id?: string;
+  dedupe_key: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecurringTemplateDetail {
+  template: RecurringTemplate;
+  config: RecurringTemplateConfig;
+  seed: RecurringStorySeed;
+  rule_summary: string;
+  last_generated_story?: Story;
+  runs?: RecurringRun[];
+}
+
+export interface StoryRecurringSummary {
+  template_id: string;
+  template_title: string;
+  status: RecurringTemplateStatus;
+  occurrence_number: number;
+  generated_count: number;
+  rule_summary: string;
+  next_run_at?: string;
+  last_error?: string;
+  last_generated_story?: Story;
+  config: RecurringTemplateConfig;
+}
+
+export interface CreateRecurringTemplateRequest {
+  workspace_id: string;
+  title: string;
+  description?: string;
+  story_id: string;
+  config: RecurringTemplateConfig;
+}
+
+export interface UpdateRecurringTemplateRequest {
+  title?: string;
+  description?: string;
+  story_id?: string;
+  config?: RecurringTemplateConfig;
 }
 
 export interface CreateStoryTemplateRequest {
@@ -1327,7 +1455,7 @@ export interface RunnerActiveRun {
 
 // ── Support ─────────────────────────────────────────────────────────
 
-export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
@@ -1347,6 +1475,12 @@ export interface SupportConversation {
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  ai_state?: 'pending' | 'resolved' | 'escalated' | null;
+  ai_resolved_at?: string;
+  ai_escalated_at?: string;
+  ai_resolution_type?: 'confirmed' | 'assumed' | null;
+  ai_turn_count?: number;
+  customer_requested_human_at?: string;
   last_message?: string;
   unread_count?: number;
   team_last_seen_at?: string;
@@ -1384,9 +1518,128 @@ export interface SupportMessage {
   sender_display_name?: string;
   sender_avatar_url?: string;
   content: string;
+  message_type?: string;
   is_internal: boolean;
+  metadata?: string;
+  via_channel?: 'email' | 'widget' | null;
+  email_notified_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIMessageMetadata {
+  ai_auto_reply: boolean;
+  ai_sources: Array<{
+    docId: string;
+    title: string;
+    snippet: string;
+    confidence: number;
+  }>;
+  ai_confidence: number;
+  ai_model: string;
+  ai_tokens_used: number;
+  ai_agent_id: string;
+}
+
+export interface AgentKnowledgeSource {
+  id: string;
+  agent_id: string;
+  space_id: string;
+  workspace_id: string;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_documents: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
+  space_name?: string;
+  space_type?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportContentSource {
+  id: string;
+  workspace_id: string;
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_pages: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_crawl_job_id?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportContentPage {
+  id: string;
+  workspace_id: string;
+  content_source_id: string;
+  url: string;
+  title: string;
+  http_status: number;
+  content_format: string;
+  content_hash: string;
+  last_crawled_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportContentSourceRequest {
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+}
+
+export interface UpdateSupportContentSourceRequest {
+  name?: string;
+  start_url?: string;
+  crawl_limit?: number;
+  crawl_depth?: number;
+  crawl_source?: 'all' | 'sitemaps' | 'links';
+  formats?: string[];
+  render?: boolean;
+  include_external_links?: boolean;
+  include_subdomains?: boolean;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  crawl_purposes?: string[];
+  max_age_seconds?: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
 }
 
 export interface CreateConversationRequest {
@@ -1420,14 +1673,14 @@ export interface BusinessHoursDay {
 
 export interface SupportInboxSettings {
   require_email_before_chat: boolean;
-  require_name_after_email: boolean;
+  require_phone_after_email: boolean;
   welcome_message: string;
-  auto_create_crm_contact: boolean;
-  default_lifecycle_stage: string;
-  auto_promote_to_lead: boolean;
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
+  ai_response_mode: string;
+  ai_max_followups: number;
+  ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   handoff_behavior: string;
   handoff_team_id: string | null;
@@ -1435,6 +1688,9 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  email_fallback_enabled: boolean;
+  email_fallback_delay_secs: number;
+  email_fallback_from_name: string;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;
@@ -1619,4 +1875,49 @@ export interface ToolCatalogEntry {
 export interface ToolCatalogResponse {
   tools: ToolCatalogEntry[];
   categories: string[];
+}
+
+// ── Visitor Context ─────────────────────────────────────────────────
+
+export interface VisitorDeviceInfo {
+  browser: string;
+  browser_version: string;
+  os: string;
+  os_version: string;
+  device_type: string;
+}
+
+export interface VisitorLocation {
+  timezone: string | null;
+  locale: string | null;
+  last_page_url: string | null;
+}
+
+export interface VisitorContactData {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  job_title: string | null;
+  lifecycle_stage: string;
+  lead_status: string;
+  source: string;
+  custom_properties?: Record<string, string>;
+}
+
+export interface VisitorOtherConversation {
+  id: string;
+  display_id: number;
+  subject: string;
+  status: ConversationStatus;
+  created_at: string;
+}
+
+export interface VisitorContextResponse {
+  device: VisitorDeviceInfo | null;
+  location: VisitorLocation | null;
+  contact: VisitorContactData | null;
+  other_conversations: VisitorOtherConversation[];
+  total_conversations: number;
+  session_created_at: string | null;
 }
