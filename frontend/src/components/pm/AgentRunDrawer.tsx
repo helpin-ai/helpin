@@ -213,6 +213,79 @@ function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifa
   return displayArtifacts;
 }
 
+/** Isolated reply form — local state prevents parent re-renders on every keystroke. */
+function ReplyForm({ onSubmit }: { onSubmit: (content: string) => void }) {
+  const [value, setValue] = useState('');
+  const [sending, setSending] = useState(false);
+  const handleSubmit = async () => {
+    if (!value.trim() || sending) return;
+    setSending(true);
+    try {
+      onSubmit(value.trim());
+      setValue('');
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-border/60 bg-background/80 p-3">
+      <Label className="text-xs">Reply To Agent</Label>
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Clarify scope, answer a question, or request changes."
+        rows={3}
+      />
+      <Button onClick={() => void handleSubmit()} disabled={!value.trim() || sending} className="gap-1.5">
+        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        Send Reply
+      </Button>
+    </div>
+  );
+}
+
+/** Isolated approval actions — local textarea state prevents parent re-renders. */
+function ApprovalActions({
+  acting,
+  onApprove,
+  onRequestChanges,
+}: {
+  acting: boolean;
+  onApprove: () => void;
+  onRequestChanges: (comment: string) => void;
+}) {
+  const [comment, setComment] = useState('');
+  return (
+    <div className="mt-3 space-y-2">
+      <Textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Explain what needs to change before approval."
+        rows={3}
+      />
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          onClick={onApprove}
+          disabled={acting}
+          className="gap-1.5"
+        >
+          {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { if (comment.trim()) onRequestChanges(comment.trim()); setComment(''); }}
+          disabled={acting || !comment.trim()}
+        >
+          Request changes
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AgentRunDrawer({
   workspaceId,
   runId,
@@ -226,9 +299,6 @@ export function AgentRunDrawer({
   const [messages, setMessages] = useState<AgentRunMessage[]>([]);
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [loading, setLoading] = useState(false);
-  const [sendingReply, setSendingReply] = useState(false);
-  const [reply, setReply] = useState('');
-  const [requestChangesComment, setRequestChangesComment] = useState('');
   const [actingOnRun, setActingOnRun] = useState<string | null>(null);
   const streamRouterRef = useRef(new StreamingTagRouter());
   const [liveSegments, setLiveSegments] = useState<StreamSegments>(INITIAL_SEGMENTS);
@@ -462,14 +532,10 @@ export function AgentRunDrawer({
 
   const sendReplyContent = useCallback(async (content: string) => {
     if (!run || !content.trim()) return;
-    setSendingReply(true);
     try {
       await agentService.sendRunMessage(workspaceId, run.id, { content: content.trim() });
-      setReply('');
       await loadRun(run.id);
-    } finally {
-      setSendingReply(false);
-    }
+    } catch { /* handled by caller */ }
   }, [loadRun, run, workspaceId]);
 
   const handleApprove = async (currentRunId: string) => {
@@ -486,8 +552,7 @@ export function AgentRunDrawer({
     }
   };
 
-  const handleRequestChanges = async (currentRunId: string) => {
-    const content = requestChangesComment.trim();
+  const handleRequestChanges = async (currentRunId: string, content: string) => {
     if (!content) return;
     setActingOnRun(currentRunId);
     try {
@@ -496,7 +561,6 @@ export function AgentRunDrawer({
       } else {
         await agentService.requestRunChanges(workspaceId, currentRunId, { content });
       }
-      setRequestChangesComment('');
       await loadRun(currentRunId);
     } finally {
       setActingOnRun(null);
