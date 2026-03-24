@@ -1,5 +1,7 @@
 # CRM Entity Summaries
 
+Taxonomy note: the canonical platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`. This file remains the implementation detail reference for CRM summary generation.
+
 This document explains the Phase 1b CRM summary pipeline as implemented today. It covers how contact and deal summaries are stored, what triggers refreshes, how generation runs, what data is included, and where the results appear in the product.
 
 The scope of this document is intentionally narrow:

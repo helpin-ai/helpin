@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -16,12 +17,26 @@ import (
 	"time"
 )
 
+const (
+	defaultReadFileLimitLines = 200
+	maxReadFileLimitLines     = 400
+)
+
 func toolReadFile(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
-		Path string `json:"path"`
+		Path       string `json:"path"`
+		OffsetLine int    `json:"offset_line"`
+		LimitLines int    `json:"limit_lines"`
+		Offset     int    `json:"offset"`
+		Limit      int    `json:"limit"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
+	}
+
+	startLine, limitLines, err := normalizeReadFileWindow(params.OffsetLine, params.LimitLines, params.Offset, params.Limit)
+	if err != nil {
+		return "", err
 	}
 
 	absPath, err := safePath(ctx.WorkDir, params.Path)
@@ -29,21 +44,88 @@ func toolReadFile(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 		return "", err
 	}
 
-	data, err := os.ReadFile(absPath)
+	f, err := os.Open(absPath)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	preview := make([]byte, 512)
+	n, readErr := f.Read(preview)
+	if readErr != nil && readErr != io.EOF {
+		return "", fmt.Errorf("read file preview: %w", readErr)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return "", fmt.Errorf("reset file cursor: %w", err)
 	}
 
-	if isBinaryContent(data) {
+	if isBinaryContent(preview[:n]) {
 		return "", fmt.Errorf("file appears to be binary, cannot read: %s", params.Path)
 	}
 
-	// Truncate very large files.
-	content := string(data)
-	if len(content) > 100_000 {
-		content = content[:100_000] + "\n... (truncated)"
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+
+	currentLine := 0
+	collected := make([]string, 0, limitLines)
+	for currentLine < startLine-1 && scanner.Scan() {
+		currentLine++
 	}
-	return content, nil
+
+	for scanner.Scan() && len(collected) < limitLines {
+		currentLine++
+		collected = append(collected, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		recordToolFileRead(ctx, absPath, info.ModTime(), "read_file")
+	}
+
+	if len(collected) == 0 {
+		return fmt.Sprintf("No lines available starting at line %d in %s", startLine, params.Path), nil
+	}
+
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("<file path=\"%s\" start_line=\"%d\" returned_lines=\"%d\">\n", params.Path, startLine, len(collected)))
+	out.WriteString(strings.Join(collected, "\n"))
+	out.WriteString("\n</file>")
+	if scanner.Scan() {
+		nextLine := startLine + len(collected)
+		out.WriteString(fmt.Sprintf("\n\nFile has more lines. Use read_file with {\"path\":\"%s\",\"offset_line\":%d} to continue, or use read_file_range for a specific span.", params.Path, nextLine))
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+
+	return out.String(), nil
+}
+
+func normalizeReadFileWindow(offsetLine, limitLines, offset, limit int) (int, int, error) {
+	startLine := 1
+	if offsetLine > 0 {
+		startLine = offsetLine
+	} else if offset > 0 {
+		startLine = offset + 1
+	} else if offset < 0 {
+		return 0, 0, fmt.Errorf("offset must be >= 0")
+	}
+	if startLine < 1 {
+		return 0, 0, fmt.Errorf("offset_line must be >= 1")
+	}
+
+	if limitLines <= 0 {
+		limitLines = limit
+	}
+	if limitLines <= 0 {
+		limitLines = defaultReadFileLimitLines
+	}
+	if limitLines > maxReadFileLimitLines {
+		return 0, 0, fmt.Errorf("limit_lines too large: max %d lines per call (requested %d)", maxReadFileLimitLines, limitLines)
+	}
+	return startLine, limitLines, nil
 }
 
 func toolWriteFile(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -64,11 +146,95 @@ func toolWriteFile(ctx *ExecutionContext, input json.RawMessage) (string, error)
 		return "", fmt.Errorf("create directories: %w", err)
 	}
 
-	if err := os.WriteFile(absPath, []byte(params.Content), 0644); err != nil {
+	var mode os.FileMode = 0644
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		if info.IsDir() {
+			return "", fmt.Errorf("path is a directory, not a file: %s", params.Path)
+		}
+		if err := validateToolFileMutation(ctx, absPath); err != nil {
+			return "", err
+		}
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(statErr) {
+		return "", fmt.Errorf("stat file before write: %w", statErr)
+	}
+
+	if err := os.WriteFile(absPath, []byte(params.Content), mode); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
 
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		recordToolFileWrite(ctx, absPath, info.ModTime())
+	}
+
 	return fmt.Sprintf("Wrote %d bytes to %s", len(params.Content), params.Path), nil
+}
+
+func toolEditFile(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		Path      string `json:"path"`
+		OldString string `json:"old_string"`
+		NewString string `json:"new_string"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if strings.TrimSpace(params.Path) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if params.OldString == "" {
+		return "", fmt.Errorf("old_string is required and must not be empty")
+	}
+
+	absPath, err := safePath(ctx.WorkDir, params.Path)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("file does not exist: %s", params.Path)
+		}
+		return "", fmt.Errorf("stat file before edit: %w", err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("path is a directory, not a file: %s", params.Path)
+	}
+	if err := validateToolFileMutation(ctx, absPath); err != nil {
+		return "", err
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", fmt.Errorf("read file for edit: %w", err)
+	}
+	if isBinaryContent(data) {
+		return "", fmt.Errorf("file appears to be binary, cannot edit: %s", params.Path)
+	}
+
+	content := string(data)
+	matchCount := strings.Count(content, params.OldString)
+	switch {
+	case matchCount == 0:
+		return "", fmt.Errorf("old_string did not match any content in %s; re-read the file and include more exact surrounding context", params.Path)
+	case matchCount > 1:
+		return "", fmt.Errorf("old_string matched %d locations in %s; include more surrounding context so the match is unique", matchCount, params.Path)
+	}
+
+	updated := strings.Replace(content, params.OldString, params.NewString, 1)
+	if updated == content {
+		return fmt.Sprintf("No changes made to %s.", params.Path), nil
+	}
+
+	if err := os.WriteFile(absPath, []byte(updated), info.Mode().Perm()); err != nil {
+		return "", fmt.Errorf("write edited file: %w", err)
+	}
+	if updatedInfo, statErr := os.Stat(absPath); statErr == nil {
+		recordToolFileWrite(ctx, absPath, updatedInfo.ModTime())
+	}
+
+	return fmt.Sprintf("Edited %s by replacing 1 occurrence.", params.Path), nil
 }
 
 func toolListDirectory(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -235,6 +401,9 @@ func toolReadFileRange(ctx *ExecutionContext, input json.RawMessage) (string, er
 	}
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("read file: %w", err)
+	}
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		recordToolFileRead(ctx, absPath, info.ModTime(), "read_file_range")
 	}
 
 	if len(lines) == 0 {

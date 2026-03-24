@@ -146,9 +146,10 @@ func structuredPlanningStageGuidance(planningStage string) []string {
 			"- Avoid stories that duplicate existing epic work.",
 
 			"\n## Slicing Rules",
-			"- DEFAULT to vertical slices. Every story should deliver a complete user-visible behavior from database through API to UI. The coding agent must be able to demo the result.",
+			"- DEFAULT to vertical slices for user-visible work. Each vertical story should deliver a complete behavior the coding agent can demo end-to-end.",
 			"- COMBINE horizontal layers into a single enabler. If multiple stories would each be a single horizontal layer (e.g., \"Create DB migration\", \"Add CRUD repository\", \"Add CRUD handler\"), combine them into ONE enabler story that all vertical stories depend_on via dependency_refs. Example: \"Enabler: Pipeline entity foundation (migration + model + CRUD)\" with dependent vertical stories like \"User can create a pipeline from the UI\".",
 			"- Never create more than 2 enablers per epic. If you need more, fold enabler work into the first vertical story that needs it.",
+			"- If several stories all need the same new primitive, helper, schema, metric recorder, auth scope, or base route handling, do NOT pretend they are independent vertical slices. Create an enabler and make the dependent stories reference it via dependency_refs.",
 			"- No overlapping file changes across stories. Two stories must not modify the same file unless one depends on the other. If they would, merge them or restructure the dependency.",
 			"- Mark each story with slice_type: \"vertical\" (default, strongly preferred), \"enabler\" (shared infrastructure needed by multiple verticals), or \"spike\" (timeboxed investigation).",
 

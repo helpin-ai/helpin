@@ -53,6 +53,7 @@ type PMStory struct {
 	Blocker                   *string                `json:"blocker"`
 	Archived                  bool                   `json:"archived" gorm:"not null;default:false"`
 	AssignedAgentID           *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	PlanDocumentID            *string                `json:"plan_document_id" gorm:"type:uuid;index"`
 	TemplateID                *string                `json:"template_id"`
 	RecurringTemplateID       *string                `json:"recurring_template_id" gorm:"type:uuid;index"`
 	RecurringRunID            *string                `json:"recurring_run_id" gorm:"type:uuid;index"`

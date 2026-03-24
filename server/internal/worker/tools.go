@@ -23,18 +23,26 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}
 
 	// Filesystem tools
-	r.register("read_file", "Read the contents of a file at the given path (relative to the workspace root).", map[string]interface{}{
+	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Returns the first chunk by default; use offset_line and limit_lines to continue without dumping the whole file.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
 				"type":        "string",
 				"description": "File path relative to the workspace root",
 			},
+			"offset_line": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional 1-based line number to start reading from. Defaults to 1.",
+			},
+			"limit_lines": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional maximum number of lines to return. Defaults to 200, max 400.",
+			},
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
 
-	r.register("write_file", "Write content to a file at the given path (relative to the workspace root). Creates directories as needed.", map[string]interface{}{
+	r.register("write_file", "Write content to a file at the given path (relative to the workspace root). Use this for new files or full rewrites after reading the current file first. Creates directories as needed.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -48,6 +56,36 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required": []string{"path", "content"},
 	}, toolWriteFile)
+
+	r.register("edit_file", "Edit an existing text file by replacing exactly one matching string. Read the file first and include enough surrounding context in old_string so the match is unique.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "File path relative to the workspace root",
+			},
+			"old_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Exact text to replace. Must match exactly once in the file, including whitespace.",
+			},
+			"new_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement text. Use an empty string to delete the matched content.",
+			},
+		},
+		"required": []string{"path", "old_string", "new_string"},
+	}, toolEditFile)
+
+	r.register("apply_patch", "Apply coordinated multi-file edits using the structured *** Begin Patch format. Read each existing file first, and use exact context lines so each hunk matches uniquely.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"patch": map[string]interface{}{
+				"type":        "string",
+				"description": "Patch text in the *** Begin Patch / *** End Patch format.",
+			},
+		},
+		"required": []string{"patch"},
+	}, toolApplyPatch)
 
 	r.register("list_directory", "List files and directories at the given path.", map[string]interface{}{
 		"type": "object",
@@ -304,6 +342,85 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolRequestHumanApproval)
 
+	r.register("preview_md", "Publish a markdown preview into a named review slot in the interactive run drawer right pane.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"slot":    map[string]interface{}{"type": "string"},
+			"title":   map[string]interface{}{"type": "string"},
+			"content": map[string]interface{}{"type": "string"},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"slot", "content"},
+		"additionalProperties": false,
+	}, toolPreviewMarkdown)
+
+	r.register("preview_json", "Publish a JSON preview into a named review slot in the interactive run drawer right pane.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"slot": map[string]interface{}{
+				"type": "string",
+			},
+			"title": map[string]interface{}{"type": "string"},
+			"content": map[string]interface{}{
+				"description": "Structured JSON content for the preview slot.",
+				"oneOf": []map[string]interface{}{
+					{"type": "object"},
+					{"type": "array"},
+					{"type": "number"},
+					{"type": "boolean"},
+					{"type": "null"},
+					{"type": "string"},
+				},
+			},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"slot", "content"},
+		"additionalProperties": false,
+	}, toolPreviewJSON)
+
+	r.register("publish_prd_draft", "Publish the current PRD markdown draft for epic planner review.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"title":   map[string]interface{}{"type": "string"},
+			"content": map[string]interface{}{"type": "string"},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
+	}, toolPublishPRDDraft)
+
+	r.register("publish_story_plan", "Publish the current epic story plan JSON for review.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"title": map[string]interface{}{"type": "string"},
+			"content": map[string]interface{}{
+				"description": "Story plan JSON content, typically including summary and proposed_stories.",
+				"oneOf": []map[string]interface{}{
+					{"type": "object"},
+					{"type": "array"},
+					{"type": "number"},
+					{"type": "boolean"},
+					{"type": "null"},
+					{"type": "string"},
+				},
+			},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
+	}, toolPublishStoryPlan)
+
+	r.register("publish_story_plan_doc", "Publish the current story planning document markdown for review.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"title":   map[string]interface{}{"type": "string"},
+			"content": map[string]interface{}{"type": "string"},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
+	}, toolPublishStoryPlanDoc)
+
 	r.register("publish_preview", "Publish a structured preview panel in the interactive run drawer right pane. Use this for markdown drafts and JSON plans that should be reviewed separately from the main chat.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -496,7 +613,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
-	r.register("write_document_content", "Write structured JSON content to a document in Helpin Docs.", map[string]interface{}{
+	r.register("write_document_content", "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -504,8 +621,11 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 				"description": "The document ID to update",
 			},
 			"content": map[string]interface{}{
-				"type":        "object",
-				"description": "The structured document content JSON to save",
+				"description": "The document content to save. Use either a structured document JSON object or a markdown string.",
+				"oneOf": []map[string]interface{}{
+					{"type": "object"},
+					{"type": "string"},
+				},
 			},
 		},
 		"required": []string{"document_id", "content"},
@@ -539,6 +659,11 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"properties": map[string]interface{}{},
 	}, toolEnsureEpicSpecDoc)
 
+	r.register("ensure_story_plan_doc", "Create or load the canonical planning document for the current story. Returns document metadata and whether a draft already exists.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolEnsureStoryPlanDoc)
+
 	r.register("approve_epic_spec", "Mark the current epic spec document as approved and record the approved spec version on the epic.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -567,7 +692,15 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 				"type":  "array",
 				"items": fileChangeSchema,
 			},
-			"test_strategy": map[string]interface{}{"type": "string"},
+			"test_strategy": map[string]interface{}{
+				"anyOf": []map[string]interface{}{
+					{"type": "string"},
+					{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
 			"vertical_layers": map[string]interface{}{
 				"type":  "array",
 				"items": map[string]interface{}{"type": "string"},
@@ -585,7 +718,39 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"stories": map[string]interface{}{
-				"type": "array",
+				"description": "Preferred field. The list of stories to create.",
+				"type":        "array",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"ref":         map[string]interface{}{"type": "string"},
+						"name":        map[string]interface{}{"type": "string"},
+						"description": map[string]interface{}{"type": "string"},
+						"story_type":  map[string]interface{}{"type": "string"},
+						"estimate":    map[string]interface{}{"type": "integer"},
+						"priority":    map[string]interface{}{"type": "string"},
+						"acceptance_criteria": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "string"},
+						},
+						"dependency_refs": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "string"},
+						},
+						"source_refs": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "object"},
+						},
+						"assign_agent_id":      map[string]interface{}{"type": "string"},
+						"slice_type":           map[string]interface{}{"type": "string"},
+						"implementation_brief": implementationBriefSchema,
+					},
+					"required": []string{"name", "description", "story_type"},
+				},
+			},
+			"proposed_stories": map[string]interface{}{
+				"description": "Compatibility alias for story-plan payloads. If present, it is treated the same as stories.",
+				"type":        "array",
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -615,7 +780,6 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 				},
 			},
 		},
-		"required": []string{"stories"},
 	}, toolCreateStoryBatch)
 
 	r.register("assign_story_agent", "Assign or reassign an agent to an existing story.", map[string]interface{}{

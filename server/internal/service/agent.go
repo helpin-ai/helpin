@@ -169,6 +169,21 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.PresetKey = presetKey
 			changed = true
 		}
+		expectedAllowedTools := mustJSONStringSlice(preset.AllowedTools)
+		expectedAllowedCommands := mustJSONStringSlice(preset.AllowedCommands)
+		expectedAllowedTargets := mustJSONStringSlice(preset.AllowedTargetTypes)
+		if string(existing.AllowedTools) != string(expectedAllowedTools) {
+			existing.AllowedTools = expectedAllowedTools
+			changed = true
+		}
+		if string(existing.AllowedCommands) != string(expectedAllowedCommands) {
+			existing.AllowedCommands = expectedAllowedCommands
+			changed = true
+		}
+		if string(existing.AllowedTargets) != string(expectedAllowedTargets) {
+			existing.AllowedTargets = expectedAllowedTargets
+			changed = true
+		}
 		if strings.TrimSpace(existing.RuntimeKind) == "" {
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
@@ -1166,16 +1181,16 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages)
+	existingArtifacts, err := s.artifactRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages, existingArtifacts)
 	if err != nil {
 		return err
 	}
 	if sourceMessage == nil || approval == nil {
 		return nil
-	}
-	existingArtifacts, err := s.artifactRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
-	if err != nil {
-		return err
 	}
 	for _, artifact := range existingArtifacts {
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
@@ -1214,32 +1229,45 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
 }
 
-func latestApprovalCheckpoint(messages []model.AgentRunMessage) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
-	for i := len(messages) - 1; i >= 0; i-- {
-		message := messages[i]
-		if message.Role != "assistant" || len(message.ToolInvocations) == 0 || string(message.ToolInvocations) == "null" {
+func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+	return latestApprovalCheckpointFromArtifacts(messages, artifacts)
+}
+
+func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeHumanApprovalRequest || artifact.InlineContent == nil {
 			continue
 		}
-		var invocations []model.ToolInvocation
-		if err := json.Unmarshal(message.ToolInvocations, &invocations); err != nil {
-			return nil, nil, nil, fmt.Errorf("parse assistant tool invocations: %w", err)
+
+		var approval model.ApprovalRequest
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &approval); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
 		}
-		approvalIndex := -1
-		for idx := len(invocations) - 1; idx >= 0; idx-- {
-			if strings.TrimSpace(invocations[idx].ToolName) == worker.ToolRequestHumanApproval {
-				approvalIndex = idx
-				break
+		if strings.TrimSpace(approval.Title) == "" {
+			continue
+		}
+
+		assistantSequenceNo := artifactAssistantMessageSequenceNo(artifact)
+		if assistantSequenceNo <= 0 {
+			continue
+		}
+		sourceMessage := findAssistantMessageBySequence(messages, assistantSequenceNo)
+		if sourceMessage == nil {
+			continue
+		}
+
+		preview, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, previewPanelKeyForApprovalPhase(approval.Phase))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if preview == nil {
+			preview, err = latestRunPreviewArtifact(artifacts, previewPanelKeyForApprovalPhase(approval.Phase))
+			if err != nil {
+				return nil, nil, nil, err
 			}
 		}
-		if approvalIndex == -1 {
-			continue
-		}
-		approval := worker.ExtractLatestHumanApprovalRequest(invocations[:approvalIndex+1])
-		if approval == nil {
-			continue
-		}
-		preview := worker.ExtractLatestPublishedPreview(invocations[:approvalIndex], "")
-		return &message, approval, preview, nil
+		return sourceMessage, &approval, preview, nil
 	}
 	return nil, nil, nil, nil
 }
@@ -1248,6 +1276,8 @@ func previewPanelKeyForApprovalPhase(phase string) string {
 	switch strings.ToLower(strings.TrimSpace(phase)) {
 	case "prd":
 		return "prd_draft"
+	case "story_doc":
+		return "story_plan_doc"
 	case "stories":
 		return "story_plan"
 	default:
@@ -1273,6 +1303,56 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 		return &payload, nil
 	}
 	return nil, nil
+}
+
+func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, error) {
+	if assistantSequenceNo <= 0 {
+		return nil, nil
+	}
+	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+			continue
+		}
+		if artifactAssistantMessageSequenceNo(artifact) != assistantSequenceNo {
+			continue
+		}
+		var payload worker.PublishedPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			return nil, fmt.Errorf("parse run preview artifact: %w", err)
+		}
+		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+			continue
+		}
+		return &payload, nil
+	}
+	return nil, nil
+}
+
+func artifactAssistantMessageSequenceNo(artifact model.AgentRunArtifact) int {
+	if len(artifact.Metadata) == 0 || string(artifact.Metadata) == "null" {
+		return 0
+	}
+	var metadata struct {
+		AssistantMessageSequenceNo int `json:"assistant_message_sequence_no"`
+	}
+	if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+		return 0
+	}
+	return metadata.AssistantMessageSequenceNo
+}
+
+func findAssistantMessageBySequence(messages []model.AgentRunMessage, sequenceNo int) *model.AgentRunMessage {
+	if sequenceNo <= 0 {
+		return nil
+	}
+	for i := range messages {
+		if messages[i].SequenceNo == sequenceNo && strings.TrimSpace(messages[i].Role) == "assistant" {
+			return &messages[i]
+		}
+	}
+	return nil
 }
 
 func isExplicitInteractiveApprovalReply(reply string) bool {

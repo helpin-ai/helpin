@@ -10,46 +10,50 @@ import (
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context                   context.Context
-	WorkDir                   string // path to cloned repo on disk
-	WorkspaceID               string
-	AgentID                   string
-	RunID                     string
-	TargetType                string
-	TargetID                  string
-	StoryID                   string
-	ConversationID            string
-	Agent                     *model.Agent
-	Story                     *model.PMStory
-	Epic                      *model.PMEpic
-	EpicStories               []model.PMStory
-	Conversation              *model.SupportConversation
-	GitIntegration            *model.GitIntegration
-	GitAccessToken            string
-	Repo                      string // e.g. "owner/repo"
-	BaseBranch                string
-	WorkingBranch             string
-	InitialInstructions       string
-	PlanningStage             string
-	PlanningMethodology       string
-	PlanningSpecDocumentID    string
-	PlanningSpecVersionID     string
-	Config                    *WorkflowConfig
-	ResolvedProfile           ResolvedProfile
-	AllowedTools              map[string]bool
-	Services                  *ServiceBridge
-	PendingSupportDraft       *SupportDraftReply
-	LatestPRMetadata          *PRMetadata
-	Heartbeat                 func(stage string) error
-	OnExecutionEvent          func(event ExecutionEvent)
-	OnGitPush                 func(branch, sha string) error
-	OnPROpen                  func(metadata PRMetadata, title string) error
-	PlanningTurnKind          string
-	PlanningTurnAttempt       int
-	ArtifactContext           *ArtifactContext
-	ProviderContinuation      *ProviderContinuation
-	ConversationHistory       []ExecutionMessage
-	LastExecutionResult       *ExecutionResult
+	Context                context.Context
+	WorkDir                string // path to cloned repo on disk
+	WorkspaceID            string
+	AgentID                string
+	RunID                  string
+	TargetType             string
+	TargetID               string
+	StoryID                string
+	ConversationID         string
+	Agent                  *model.Agent
+	Story                  *model.PMStory
+	Epic                   *model.PMEpic
+	EpicStories            []model.PMStory
+	Conversation           *model.SupportConversation
+	GitIntegration         *model.GitIntegration
+	GitAccessToken         string
+	Repo                   string // e.g. "owner/repo"
+	BaseBranch             string
+	WorkingBranch          string
+	InitialInstructions    string
+	PlanningStage          string
+	PlanningMethodology    string
+	PlanningSpecDocumentID string
+	PlanningSpecVersionID  string
+	Config                 *WorkflowConfig
+	ResolvedProfile        ResolvedProfile
+	AllowedTools           map[string]bool
+	Services               *ServiceBridge
+	PendingSupportDraft    *SupportDraftReply
+	LatestPRMetadata       *PRMetadata
+	Heartbeat              func(stage string) error
+	OnExecutionEvent       func(event ExecutionEvent)
+	OnGitPush              func(branch, sha string) error
+	OnPROpen               func(metadata PRMetadata, title string) error
+	PlanningTurnKind       string
+	PlanningTurnAttempt    int
+	RunFacts               map[string]string
+	ArtifactContext        *ArtifactContext
+	ProviderContinuation   *ProviderContinuation
+	ConversationHistory    []ExecutionMessage
+	LastExecutionResult    *ExecutionResult
+	ToolFileState          *ToolFileState
+	PublishedPreviews      map[string]PublishedPreview
+	CurrentAssistantText   string
 }
 
 type ArtifactContext struct {
@@ -62,13 +66,15 @@ type ArtifactContextEntry struct {
 	Status  string
 	Format  string
 	Content string
+	// PreserveFull marks canonical artifacts that should not be trimmed from prompt context.
+	PreserveFull bool
 }
 
 type ProviderContinuation struct {
-	Provider       string
-	ResponseID     string
+	Provider           string
+	ResponseID         string
 	PreviousResponseID string
-	AfterSequenceNo int
+	AfterSequenceNo    int
 }
 
 const (
@@ -125,6 +131,7 @@ type ServiceBridge struct {
 	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
 	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
+	EnsureStoryPlanDoc   func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error)
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error

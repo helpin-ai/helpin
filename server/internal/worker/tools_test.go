@@ -41,3 +41,35 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 		}
 	}
 }
+
+func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
+	registry := NewToolRegistry(nil)
+
+	var schema map[string]interface{}
+	for _, def := range registry.Definitions() {
+		if def.Name == "create_story_batch" {
+			var ok bool
+			schema, ok = def.InputSchema.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected object schema, got %#v", def.InputSchema)
+			}
+			break
+		}
+	}
+	if schema == nil {
+		t.Fatal("expected create_story_batch tool definition")
+	}
+
+	properties := schema["properties"].(map[string]interface{})
+	stories := properties["stories"].(map[string]interface{})
+	storyItems := stories["items"].(map[string]interface{})
+	storyProperties := storyItems["properties"].(map[string]interface{})
+	brief := storyProperties["implementation_brief"].(map[string]interface{})
+	briefProperties := brief["properties"].(map[string]interface{})
+	testStrategy := briefProperties["test_strategy"].(map[string]interface{})
+	anyOf := testStrategy["anyOf"].([]map[string]interface{})
+
+	if len(anyOf) != 2 {
+		t.Fatalf("expected test_strategy anyOf schema, got %#v", testStrategy)
+	}
+}

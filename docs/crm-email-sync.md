@@ -18,9 +18,9 @@ The CRM UI reads from those CRM tables. It does not read directly from Gmail.
 
 `crm_email_accounts.sync_state` is now also the persisted operational diagnostics record for sync runtime state. It stores the current phase, last attempt/success/failure timestamps, consecutive failure count, last error, last cycle summary, and the most recently persisted Gmail history checkpoint.
 
-Buyer-signal ingestion from CRM email is documented separately in `docs/crm-buyer-signal-ingestion.md`.
-Contact and deal summaries built on top of CRM email plus buyer signals are documented in `docs/crm-entity-summaries.md`.
-This document focuses on mailbox lifecycle, contact creation, message association, and inbox freshness.
+The canonical taxonomy and platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`.
+
+This document focuses only on mailbox lifecycle, contact creation, message association, and inbox freshness.
 
 ## Main subsystems
 

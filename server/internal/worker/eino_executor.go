@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -63,7 +63,12 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		var err error
 		checklist, err = execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.StoryID)
 		if err != nil {
-			log.Printf("warning: failed to list checklist: %v", err)
+			slog.WarnContext(execCtx.Context, "native runtime checklist preload failed",
+				"workspace_id", execCtx.WorkspaceID,
+				"run_id", execCtx.RunID,
+				"story_id", execCtx.StoryID,
+				"error", err,
+			)
 		}
 	}
 
@@ -72,7 +77,12 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		var err error
 		ticketMessages, err = execCtx.Services.ListConversationMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.ConversationID)
 		if err != nil {
-			log.Printf("warning: failed to list ticket messages: %v", err)
+			slog.WarnContext(execCtx.Context, "native runtime conversation preload failed",
+				"workspace_id", execCtx.WorkspaceID,
+				"run_id", execCtx.RunID,
+				"conversation_id", execCtx.ConversationID,
+				"error", err,
+			)
 		}
 	}
 
@@ -89,7 +99,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	if len(history) == 0 {
@@ -98,6 +108,20 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			Content: userPrompt,
 		}}
 	}
+	provider, modelName := resolveProviderAndModel(execCtx.Agent)
+	toolDefs := e.tools.DefinitionsFor(execCtx.AllowedTools)
+	slog.InfoContext(execCtx.Context, "native runtime execution starting",
+		"workspace_id", execCtx.WorkspaceID,
+		"run_id", execCtx.RunID,
+		"agent_id", execCtx.AgentID,
+		"provider", provider,
+		"model", modelName,
+		"runtime_kind", e.kind,
+		"history_messages", len(history),
+		"artifact_entries", lenArtifactEntries(execCtx.ArtifactContext),
+		"tool_count", len(toolDefs),
+		"continuation_present", execCtx.ProviderContinuation != nil && strings.TrimSpace(execCtx.ProviderContinuation.ResponseID) != "",
+	)
 
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
@@ -132,7 +156,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			}
 		}()
 	}
-	result, execErr := ExecuteWithEino(ctx, e.modelFactory, execCtx.Agent, systemPrompt, history, e.tools.DefinitionsFor(execCtx.AllowedTools), &runCtx, e.tools, config.MaxIterations, func(event ExecutionEvent) {
+	result, execErr := ExecuteWithEino(ctx, e.modelFactory, execCtx.Agent, systemPrompt, history, toolDefs, &runCtx, e.tools, config.MaxIterations, func(event ExecutionEvent) {
 		if execCtx.OnExecutionEvent != nil {
 			execCtx.OnExecutionEvent(event)
 		}
@@ -148,11 +172,32 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	})
 	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
+		slog.ErrorContext(execCtx.Context, "native runtime execution failed",
+			"workspace_id", execCtx.WorkspaceID,
+			"run_id", execCtx.RunID,
+			"agent_id", execCtx.AgentID,
+			"provider", provider,
+			"model", modelName,
+			"error", execErr,
+		)
 		return fmt.Errorf("eino execution: %w", execErr)
 	}
 
 	totalTokens := result.Usage.InputTokens + result.Usage.OutputTokens
 	execCtx.LastExecutionResult = result
+	slog.InfoContext(execCtx.Context, "native runtime execution completed",
+		"workspace_id", execCtx.WorkspaceID,
+		"run_id", execCtx.RunID,
+		"agent_id", execCtx.AgentID,
+		"provider", provider,
+		"model", modelName,
+		"tool_round_results", len(result.ToolInvocations),
+		"assistant_blocks", len(result.AssistantBlocks),
+		"input_tokens", result.Usage.InputTokens,
+		"output_tokens", result.Usage.OutputTokens,
+		"max_steps_reached", result.MaxStepsReached,
+		"continuation_present", result.ProviderContinuation != nil && strings.TrimSpace(result.ProviderContinuation.ResponseID) != "",
+	)
 	if execCtx.Agent.MonthlyTokenBudget != nil {
 		budget := *execCtx.Agent.MonthlyTokenBudget
 		if execCtx.Agent.TokensUsedThisMonth+totalTokens > budget {
@@ -315,6 +360,19 @@ func (e *EinoExecutor) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 		SequenceNo:    seqNo,
 	}
 	if err := e.artifactRepo.Create(ctx, artifact); err != nil {
-		log.Printf("warning: failed to save artifact: %v", err)
+		slog.WarnContext(ctx, "native runtime artifact save failed",
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"artifact_type", artifactType,
+			"sequence_no", seqNo,
+			"error", err,
+		)
 	}
+}
+
+func lenArtifactEntries(ctx *ArtifactContext) int {
+	if ctx == nil {
+		return 0
+	}
+	return len(ctx.Entries)
 }

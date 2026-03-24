@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink, GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
 import type { StoryGitLink } from '@/lib/pmTypes';
 
@@ -40,30 +40,19 @@ export function StoryGitPanel({
     );
   }
 
+  if (links.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="mt-6 rounded-lg border border-border/70 bg-card">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3">
-        <GitBranch className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Development History</h3>
-        {links.length > 0 && (
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {links.length}
-          </span>
-        )}
-      </div>
-
-      <Separator />
-
-      {links.length === 0 ? (
-        <div className="px-4 py-6 text-center">
-          <GitBranch className="mx-auto h-8 w-8 text-muted-foreground/30" />
-          <p className="mt-2 text-xs text-muted-foreground">
-            No branch, commit, or PR activity has been recorded yet.
-          </p>
-        </div>
-      ) : (
-        <div className="divide-y divide-border/40">
+    <div className="mt-6">
+      <CollapsibleSection
+        title="Development History"
+        icon={GitBranch}
+        count={links.length}
+        defaultOpen
+      >
+        <div className="overflow-hidden rounded-md border border-border/60 bg-card divide-y divide-border/40">
           {links.map((link) => (
             <div key={link.id} className="space-y-1.5 px-4 py-3 text-xs">
               <div className="font-medium">{link.repo}</div>
@@ -104,7 +93,7 @@ export function StoryGitPanel({
             </div>
           ))}
         </div>
-      )}
+      </CollapsibleSection>
     </div>
   );
 }

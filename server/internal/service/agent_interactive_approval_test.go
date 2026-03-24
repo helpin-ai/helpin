@@ -16,6 +16,42 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
+func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifactRepository, workspaceID, runID string, assistantSequenceNo int, now time.Time, previewContent string) {
+	t.Helper()
+
+	runPreviewContent := fmt.Sprintf(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":%q,"replace":true}`, previewContent)
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            fmt.Sprintf("artifact-run-preview-%s-%d", runID, assistantSequenceNo),
+		WorkspaceID:   workspaceID,
+		RunID:         runID,
+		ArtifactType:  worker.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &runPreviewContent,
+		Metadata:      json.RawMessage(fmt.Sprintf(`{"assistant_message_sequence_no":%d}`, assistantSequenceNo)),
+		SequenceNo:    assistantSequenceNo*2 - 1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create run preview artifact: %v", err)
+	}
+
+	approvalContent := `{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            fmt.Sprintf("artifact-approval-%s-%d", runID, assistantSequenceNo),
+		WorkspaceID:   workspaceID,
+		RunID:         runID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(fmt.Sprintf(`{"assistant_message_sequence_no":%d}`, assistantSequenceNo)),
+		SequenceNo:    assistantSequenceNo * 2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
+	}
+}
+
 func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -71,6 +107,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
+	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
 		agentRepo:      agentRepo,
@@ -111,14 +148,18 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list artifacts: %v", err)
 	}
-	if len(artifacts) != 1 {
-		t.Fatalf("expected 1 approved preview artifact, got %d", len(artifacts))
+	var approvedArtifact *model.AgentRunArtifact
+	for i := range artifacts {
+		if artifacts[i].ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			approvedArtifact = &artifacts[i]
+			break
+		}
 	}
-	if artifacts[0].ArtifactType != model.AgentRunArtifactTypeApprovedPreview {
-		t.Fatalf("expected approved preview artifact, got %q", artifacts[0].ArtifactType)
+	if approvedArtifact == nil {
+		t.Fatalf("expected approved preview artifact, got %#v", artifacts)
 	}
 	var approved model.ApprovedRunPreview
-	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &approved); err != nil {
+	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview artifact: %v", err)
 	}
 	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
@@ -181,6 +222,7 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
+	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
 		agentRepo:      agentRepo,
@@ -204,8 +246,251 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list artifacts: %v", err)
 	}
-	if len(artifacts) != 1 {
-		t.Fatalf("expected 1 approved preview artifact, got %d", len(artifacts))
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected approved preview artifact, got %#v", artifacts)
+	}
+}
+
+func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-artifact-preferred",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		WorkspaceID: "ws-1",
+		RunID:       run.ID,
+		Role:        "assistant",
+		Content:     "Please approve the latest PRD draft.",
+		MessageType: "assistant_turn",
+		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
+			{
+				ToolName: worker.ToolPublishPreview,
+				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nStale invocation draft"}`),
+			},
+			{
+				ToolName: worker.ToolRequestHumanApproval,
+				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
+			},
+		}),
+		SequenceNo: 3,
+	}); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	runPreviewContent := `{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nArtifact-backed draft","replace":true}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview-linked",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  worker.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &runPreviewContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":3}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create run preview artifact: %v", err)
+	}
+	approvalContent := `{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-approval-linked-preferred",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":3}`),
+		SequenceNo:    2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
+		Content: "approve",
+	}); err != nil {
+		t.Fatalf("SendRunMessage returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	var approvedArtifact *model.AgentRunArtifact
+	for i := range artifacts {
+		if artifacts[i].ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			approvedArtifact = &artifacts[i]
+			break
+		}
+	}
+	if approvedArtifact == nil {
+		t.Fatalf("expected approved preview artifact, got %#v", artifacts)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview: %v", err)
+	}
+	var approvedContent string
+	if err := json.Unmarshal(approved.Content, &approvedContent); err != nil {
+		t.Fatalf("unmarshal approved preview content: %v", err)
+	}
+	if approvedContent != "# Problem\n\nArtifact-backed draft" {
+		t.Fatalf("expected approved preview to use linked artifact content, got %q", approvedContent)
+	}
+}
+
+func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-approval-artifact-only",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		WorkspaceID: "ws-1",
+		RunID:       run.ID,
+		Role:        "assistant",
+		Content:     "Please approve the latest PRD draft.",
+		MessageType: "assistant_turn",
+		SequenceNo:  5,
+	}); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	runPreviewContent := `{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nArtifact-backed draft","replace":true}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview-linked-2",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  worker.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &runPreviewContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":5}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create run preview artifact: %v", err)
+	}
+
+	approvalContent := `{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-approval-linked",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":5}`),
+		SequenceNo:    2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
+		Content: "approve",
+	}); err != nil {
+		t.Fatalf("SendRunMessage returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	var approvedArtifact *model.AgentRunArtifact
+	for i := range artifacts {
+		if artifacts[i].ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			approvedArtifact = &artifacts[i]
+			break
+		}
+	}
+	if approvedArtifact == nil {
+		t.Fatalf("expected approved preview artifact, got %#v", artifacts)
 	}
 }
 
@@ -264,6 +549,7 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create message: %v", err)
 	}
+	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
 		agentRepo:      agentRepo,
@@ -298,8 +584,10 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list artifacts: %v", err)
 	}
-	if len(artifacts) != 0 {
-		t.Fatalf("expected no approved preview artifacts for feedback, got %d", len(artifacts))
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			t.Fatalf("expected no approved preview artifacts for feedback, got %#v", artifacts)
+		}
 	}
 }
 
@@ -632,6 +920,21 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		CreatedAt:     now,
 	}); err != nil {
 		t.Fatalf("create run preview artifact: %v", err)
+	}
+	approvalContent := `{"phase":"prd","title":"Approve PRD","summary":"Review draft"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-approval-split-tools",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":2}`),
+		SequenceNo:    2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
 	}
 
 	svc := &AgentService{

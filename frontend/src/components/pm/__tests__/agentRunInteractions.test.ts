@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { parseMessageApprovalRequest, parseMessageStructuredQuestions } from '../agentRunInteractions';
 
 describe('agentRunInteractions', () => {
-  it('parses structured questions from request_human_input tool invocations', () => {
-    const parsed = parseMessageStructuredQuestions({
-      content: 'I need one last decision before I continue.',
-      tool_invocations: [
+  it('parses structured questions from human_input_request artifacts', () => {
+    const parsed = parseMessageStructuredQuestions(
+      {
+        content: 'I need one last decision before I continue.',
+        sequence_no: 7,
+      } as never,
+      [
         {
-          tool_name: 'request_human_input',
-          input: {
+          artifact_type: 'human_input_request',
+          inline_content: JSON.stringify({
             questions: [
               {
                 id: 'q1',
@@ -21,10 +24,13 @@ describe('agentRunInteractions', () => {
                 ],
               },
             ],
+          }),
+          metadata: {
+            assistant_message_sequence_no: 7,
           },
         },
-      ],
-    } as never);
+      ] as never,
+    );
 
     expect(parsed).toEqual({
       questions: [
@@ -42,20 +48,26 @@ describe('agentRunInteractions', () => {
     });
   });
 
-  it('parses approval requests from request_human_approval tool invocations', () => {
-    const parsed = parseMessageApprovalRequest({
-      content: 'Review the proposed CRM action.',
-      tool_invocations: [
+  it('parses approval requests from human_approval_request artifacts', () => {
+    const parsed = parseMessageApprovalRequest(
+      {
+        content: 'Review the proposed CRM action.',
+        sequence_no: 4,
+      } as never,
+      [
         {
-          tool_name: 'request_human_approval',
-          input: {
+          artifact_type: 'human_approval_request',
+          inline_content: JSON.stringify({
             phase: 'crm_review',
             title: 'Approve the stage change',
             summary: 'Move ACME to verbal commit.',
+          }),
+          metadata: {
+            assistant_message_sequence_no: 4,
           },
         },
-      ],
-    } as never);
+      ] as never,
+    );
 
     expect(parsed).toEqual({
       phase: 'crm_review',
@@ -63,5 +75,29 @@ describe('agentRunInteractions', () => {
       summary: 'Move ACME to verbal commit.',
       surroundingText: 'Review the proposed CRM action.',
     });
+  });
+
+  it('returns null when no matching human_input_request artifact exists', () => {
+    const parsed = parseMessageStructuredQuestions(
+      {
+        content: 'I need one last decision before I continue.',
+        sequence_no: 7,
+      } as never,
+      [] as never,
+    );
+
+    expect(parsed).toBeNull();
+  });
+
+  it('returns null when no matching human_approval_request artifact exists', () => {
+    const parsed = parseMessageApprovalRequest(
+      {
+        content: 'Review the proposed CRM action.',
+        sequence_no: 9,
+      } as never,
+      [] as never,
+    );
+
+    expect(parsed).toBeNull();
   });
 });

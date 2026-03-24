@@ -917,6 +917,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			blocker TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			assigned_agent_id TEXT,
+			plan_document_id TEXT,
 			template_id TEXT,
 			recurring_template_id TEXT,
 			recurring_run_id TEXT,
