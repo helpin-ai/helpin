@@ -1,5 +1,7 @@
 # CRM Buyer Signal Ingestion
 
+Taxonomy note: the canonical platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`. This file remains the implementation detail reference for the buyer-signal ingestion pipeline itself.
+
 This document explains the Phase 1a buyer-signal ingestion pipeline as it is implemented today. It is an internal engineering reference for understanding how synced CRM email becomes stored buyer signals, where idempotency is enforced, what gets skipped, and which parts of the product surface those signals.
 
 ## Purpose

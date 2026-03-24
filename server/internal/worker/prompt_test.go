@@ -191,3 +191,59 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 		t.Fatalf("expected non-epic prompt to preserve custom system prompt\n%s", prompt)
 	}
 }
+
+func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *testing.T) {
+	systemPrompt := "You are a careful engineer."
+
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Engineer",
+			PresetKey:    model.AgentPresetCodeBuilder,
+			SystemPrompt: &systemPrompt,
+		},
+		&model.PMStory{Name: "Implement feature flag"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	for _, expected := range []string{
+		"Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.",
+		"read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.",
+		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
+		"Use write_file for new files or full rewrites only after you have read the current file state.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildSystemPromptSupportRunOmitsRepoEditingGuidance(t *testing.T) {
+	systemPrompt := "You are a support agent."
+
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Support",
+			PresetKey:    model.AgentPresetSupportAgent,
+			SystemPrompt: &systemPrompt,
+		},
+		nil,
+		nil,
+		&model.SupportConversation{Subject: "Login issue"},
+		"",
+		"",
+		nil,
+	)
+
+	for _, unexpected := range []string{
+		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
+		"Use write_file for new files or full rewrites only after you have read the current file state.",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect support prompt to contain %q\n%s", unexpected, prompt)
+		}
+	}
+}

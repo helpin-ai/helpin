@@ -269,6 +269,142 @@ func TestFinalRoundToolMessages(t *testing.T) {
 	}
 }
 
+func TestFinalRoundToolMessagesUsesLastAssistantBoundary(t *testing.T) {
+	messages := []workerpkg.ExecutionMessage{
+		{Role: "user", Content: "Initial prompt"},
+		{Role: "assistant", Content: "First round", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolCall, ToolCallID: "tool-1", ToolName: "read_file"}}},
+		{Role: "tool", Content: "first result", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolResult, ToolCallID: "tool-1", ToolName: "read_file", Output: "first result"}}},
+		{Role: "assistant", Content: "Second round", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolCall, ToolCallID: "tool-2", ToolName: workerpkg.ToolRequestHumanInput}}},
+		{Role: "tool", Content: "second result", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolResult, ToolCallID: "tool-2", ToolName: workerpkg.ToolRequestHumanInput, Output: "second result"}}},
+	}
+
+	results := finalRoundToolMessages(messages)
+	if len(results) != 1 {
+		t.Fatalf("expected only final round tool results, got %#v", results)
+	}
+	if results[0].Content != "second result" {
+		t.Fatalf("expected trailing tool result only, got %#v", results[0])
+	}
+}
+
+func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
+	dbName := fmt.Sprintf("file:provider-checkpoint-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create artifact table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run: run,
+		agent: &model.Agent{
+			Provider: strPtr(model.AgentModelProviderOpenAI),
+		},
+	}
+	assistantMessage := &model.AgentRunMessage{SequenceNo: 7}
+	result := &workerpkg.ExecutionResult{
+		ProviderContinuation: &workerpkg.ProviderContinuation{
+			Provider:           model.AgentModelProviderOpenAI,
+			ResponseID:         "resp_123",
+			PreviousResponseID: "resp_122",
+		},
+	}
+
+	if err := activities.persistProviderResponseCheckpoint(context.Background(), state, result, assistantMessage); err != nil {
+		t.Fatalf("persistProviderResponseCheckpoint returned error: %v", err)
+	}
+
+	loaded, err := activities.loadProviderContinuation(context.Background(), state)
+	if err != nil {
+		t.Fatalf("loadProviderContinuation returned error: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected loaded continuation")
+	}
+	if loaded.Provider != model.AgentModelProviderOpenAI || loaded.ResponseID != "resp_123" || loaded.PreviousResponseID != "resp_122" || loaded.AfterSequenceNo != 7 {
+		t.Fatalf("unexpected loaded continuation %#v", loaded)
+	}
+}
+
+func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-conversation-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create message table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{run: run}
+
+	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "status", "Preparing workspace and loading run context.", nil, nil, nil); err != nil {
+		t.Fatalf("create status message: %v", err)
+	}
+
+	history, _, _, err := activities.ensureRunConversation(context.Background(), state, "Operator notes:\nFocus on setup.", planningRunInput{})
+	if err != nil {
+		t.Fatalf("ensureRunConversation returned error: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected only prompt history entry, got %#v", history)
+	}
+	if history[0].Role != "user" || !strings.Contains(history[0].Content, "Operator notes:") {
+		t.Fatalf("unexpected execution history %#v", history[0])
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected status + prompt messages, got %#v", messages)
+	}
+	if messages[0].MessageType != "status" || messages[1].MessageType != "prompt" {
+		t.Fatalf("unexpected message types %#v", messages)
+	}
+}
+
 func TestFormatInteractivePlanningFacts(t *testing.T) {
 	facts := formatInteractivePlanningFacts(planningRunInput{
 		SpecDocumentID: "doc-1",

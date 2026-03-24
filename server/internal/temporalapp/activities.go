@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -301,19 +302,55 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if err := a.runRepo.Update(ctx, state.run); err != nil {
 		return ExecuteRunResult{}, err
 	}
+	if err := a.ensureRunBootstrapStatusMessage(ctx, state.run, "Preparing workspace and loading run context."); err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
 
+	slog.InfoContext(ctx, "agent run ensuring initial conversation",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"target_type", state.run.TargetType,
+		"runtime_kind", state.run.RuntimeKind,
+	)
+	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
+	if err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
+
+	slog.InfoContext(ctx, "agent run preparing workspace",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"repo", repoFullName(state),
+	)
 	workDir, err := workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
 	if err != nil {
 		_ = a.failRun(ctx, state, fmt.Sprintf("prepare workspace: %v", err))
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	defer os.RemoveAll(workDir)
+	slog.InfoContext(ctx, "agent run workspace ready",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"repo", repoFullName(state),
+	)
 
 	if state.repository != nil {
+		slog.InfoContext(ctx, "agent run checking out run ref",
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"repo", state.repository.FullName,
+		)
 		if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
+		slog.InfoContext(ctx, "agent run checked out run ref",
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"repo", state.repository.FullName,
+		)
 	}
 
 	config := workerpkg.ParseWorkflowConfig(workDir)
@@ -324,12 +361,6 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	allowedTools := resolvedAllowedToolSet(state.resolved)
 	if len(planningInput.AllowedTools) > 0 {
 		allowedTools = stringSliceToSet(planningInput.AllowedTools)
-	}
-
-	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
-	if err != nil {
-		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	bridge := a.serviceBridge()
@@ -613,7 +644,7 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(messages) == 0 {
+	if !hasExecutionHistoryMessages(messages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
 		if err != nil {
 			return nil, nil, nil, err
@@ -627,6 +658,9 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 
 	history := make([]workerpkg.ExecutionMessage, 0, len(messages))
 	for _, message := range messages {
+		if !shouldIncludeRunMessageInExecutionHistory(message) {
+			continue
+		}
 		history = append(history, runMessageToExecutionMessage(message))
 	}
 	return history, artifactContext, providerContinuation, nil
@@ -668,7 +702,8 @@ func (a *AgentRunActivities) loadProviderContinuation(ctx context.Context, state
 	if state == nil || state.run == nil || state.agent == nil || a.artifactRepo == nil {
 		return nil, nil
 	}
-	if !workerpkg.ProviderSupportsResponseContinuation(strings.TrimSpace(derefString(state.agent.Provider))) {
+	provider := strings.TrimSpace(derefString(state.agent.Provider))
+	if !workerpkg.ProviderSupportsResponseContinuation(provider) {
 		return nil, nil
 	}
 
@@ -688,12 +723,20 @@ func (a *AgentRunActivities) loadProviderContinuation(ctx context.Context, state
 		if strings.TrimSpace(checkpoint.ResponseID) == "" {
 			continue
 		}
-		return &workerpkg.ProviderContinuation{
+		continuation := &workerpkg.ProviderContinuation{
 			Provider:           strings.TrimSpace(checkpoint.Provider),
 			ResponseID:         strings.TrimSpace(checkpoint.ResponseID),
 			PreviousResponseID: strings.TrimSpace(checkpoint.PreviousResponseID),
 			AfterSequenceNo:    checkpoint.AssistantMessageSeqNo,
-		}, nil
+		}
+		slog.InfoContext(ctx, "loaded provider continuation checkpoint",
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"provider", provider,
+			"response_id", continuation.ResponseID,
+			"after_sequence_no", continuation.AfterSequenceNo,
+		)
+		return continuation, nil
 	}
 	return nil, nil
 }
@@ -913,6 +956,34 @@ func runMessageToExecutionMessage(message model.AgentRunMessage) workerpkg.Execu
 	return execMessage
 }
 
+func shouldIncludeRunMessageInExecutionHistory(message model.AgentRunMessage) bool {
+	return strings.TrimSpace(message.MessageType) != "status"
+}
+
+func hasExecutionHistoryMessages(messages []model.AgentRunMessage) bool {
+	for _, message := range messages {
+		if shouldIncludeRunMessageInExecutionHistory(message) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *AgentRunActivities) ensureRunBootstrapStatusMessage(ctx context.Context, run *model.AgentRun, content string) error {
+	if a.runMessageRepo == nil || run == nil || strings.TrimSpace(content) == "" {
+		return nil
+	}
+	messages, err := a.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	if len(messages) > 0 {
+		return nil
+	}
+	_, err = a.createRunMessage(ctx, run, "assistant", "status", strings.TrimSpace(content), nil, nil, nil)
+	return err
+}
+
 func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext) error {
 	if a.runMessageRepo == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
@@ -1013,6 +1084,15 @@ func (a *AgentRunActivities) persistProviderResponseCheckpoint(ctx context.Conte
 		AssistantMessageSeqNo: assistantMessage.SequenceNo,
 		RecordedAt:            time.Now().UTC(),
 	})
+	if err == nil {
+		slog.InfoContext(ctx, "saved provider continuation checkpoint",
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"provider", provider,
+			"response_id", strings.TrimSpace(result.ProviderContinuation.ResponseID),
+			"assistant_sequence_no", assistantMessage.SequenceNo,
+		)
+	}
 	return err
 }
 

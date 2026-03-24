@@ -73,6 +73,13 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 	parts = append(parts, "\n## Rules")
 	parts = append(parts, "- Work within the cloned repository only.")
 	parts = append(parts, "- Use the provided tools to read, write, and search files.")
+	if story != nil || epic != nil {
+		parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
+		parts = append(parts, "- read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
+		parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
+		parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
+		parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+	}
 	if story != nil {
 		parts = append(parts, "- Run tests after making changes when possible.")
 		parts = append(parts, "- Commit and push your changes when the task is complete.")

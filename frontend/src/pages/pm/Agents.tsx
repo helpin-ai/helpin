@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   Users,
+  X,
   Zap,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -32,6 +33,7 @@ import type {
   AgentRun,
   AgentRuntimeKind,
   CreateAgentRequest,
+  ToolCatalogResponse,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
 import { Button } from '@/components/ui/button';
@@ -60,6 +62,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -177,6 +192,7 @@ interface AgentFormData {
   system_prompt: string;
   monthly_token_budget: string;
   team_id: string;
+  allowed_tools: string[];
   schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
@@ -215,12 +231,38 @@ function presetDefaultInvocationMode(presetKey: AgentPresetKey, presets: AgentPr
   return presetMetaForKey(presetKey, presets)?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
 }
 
+function presetAllowedTools(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string[] {
+  return normalizeToolList(presetMetaForKey(presetKey, presets)?.allowed_tools ?? []);
+}
+
 function presetSupportedModes(presetKey: AgentPresetKey, runtimeKind: AgentRuntimeKind, presets: AgentPresetDefinition[]): AgentInvocationMode[] {
   const preset = presetMetaForKey(presetKey, presets);
   if (preset && preset.runtime_kind === runtimeKind && preset.supported_modes.length > 0) {
     return preset.supported_modes;
   }
   return supportedModesForForm(runtimeKind);
+}
+
+function normalizeToolList(tools: string[]): string[] {
+  const seen = new Set<string>();
+  return tools.reduce<string[]>((result, tool) => {
+    const normalized = tool.trim();
+    if (!normalized || seen.has(normalized)) {
+      return result;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+    return result;
+  }, []);
+}
+
+function toolListsEqual(left: string[], right: string[]): boolean {
+  const normalizedLeft = normalizeToolList(left);
+  const normalizedRight = normalizeToolList(right);
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+  return normalizedLeft.every((tool, index) => tool === normalizedRight[index]);
 }
 
 function createEmptyForm(presetKey: AgentPresetKey = DEFAULT_PRESET_KEY, preset?: AgentPresetDefinition | null): AgentFormData {
@@ -235,6 +277,7 @@ function createEmptyForm(presetKey: AgentPresetKey = DEFAULT_PRESET_KEY, preset?
     system_prompt: preset?.system_prompt ?? '',
     monthly_token_budget: '',
     team_id: '',
+    allowed_tools: normalizeToolList(preset?.allowed_tools ?? []),
     schedule: '',
     approval_mode: preset?.approval_mode ?? 'preset_default',
     max_concurrent_runs: '1',
@@ -285,6 +328,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_id: form.team_id,
+    allowed_tools: normalizeToolList(form.allowed_tools),
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -313,6 +357,7 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean, presets:
     model: form.model.trim() || undefined,
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
+    allowed_tools: normalizeToolList(form.allowed_tools),
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -606,6 +651,7 @@ export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
+  const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -621,6 +667,7 @@ export function AgentsPage() {
   const [form, setForm] = useState<AgentFormData>(createEmptyForm());
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -653,11 +700,20 @@ export function AgentsPage() {
     }
   }, [workspaceId]);
 
+  const loadToolCatalog = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await agentService.listToolCatalog(workspaceId);
+    if (!res.error && res.data) {
+      setToolCatalog(res.data);
+    }
+  }, [workspaceId]);
+
   useEffect(() => {
     loadAgents();
     loadProviderOptions();
     loadPresets();
-  }, [loadAgents, loadProviderOptions, loadPresets]);
+    loadToolCatalog();
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog]);
 
   // Fetch run stats for all agents
   useEffect(() => {
@@ -688,6 +744,7 @@ export function AgentsPage() {
     setEditingAgent(null);
     setAdvancedOpen(false);
     setAutomationOpen(false);
+    setToolPickerOpen(false);
     setForm(createEmptyForm(DEFAULT_PRESET_KEY, presetMetaForKey(DEFAULT_PRESET_KEY, presets)));
     setDialogOpen(true);
   };
@@ -698,6 +755,7 @@ export function AgentsPage() {
     const preset = presetMetaForKey(presetKey, presets);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
     setAutomationOpen(Boolean(agent.schedule || agent.approval_mode !== 'preset_default'));
+    setToolPickerOpen(false);
     const runtimeKind = agent.runtime_kind;
     setForm({
       name: agent.name,
@@ -708,6 +766,7 @@ export function AgentsPage() {
       system_prompt: agent.system_prompt ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
+      allowed_tools: normalizeToolList(agent.allowed_tools.length > 0 ? agent.allowed_tools : (preset?.allowed_tools ?? [])),
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'preset_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
@@ -759,17 +818,27 @@ export function AgentsPage() {
 
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
-  const selectedPreset =
-    presetMetaForKey(form.preset_key, presets);
-  const effectiveTools =
-    editingAgent && fallbackPresetKey(editingAgent) === form.preset_key && editingAgent.allowed_tools.length > 0
-      ? editingAgent.allowed_tools
-      : (selectedPreset?.allowed_tools ?? []);
+  const selectedPreset = presetMetaForKey(form.preset_key, presets);
   const effectiveTargets =
     editingAgent && fallbackPresetKey(editingAgent) === form.preset_key && editingAgent.allowed_targets.length > 0
       ? editingAgent.allowed_targets
       : (selectedPreset?.allowed_target_types ?? []);
   const supportedModes = presetSupportedModes(form.preset_key, form.runtime_kind, presets);
+  const toolCatalogEntries = toolCatalog?.tools ?? [];
+  const availableToolEntries = toolCatalogEntries.filter((tool) => !form.allowed_tools.includes(tool.name));
+  const addTool = (toolName: string) => {
+    setForm((current) => ({
+      ...current,
+      allowed_tools: normalizeToolList([...current.allowed_tools, toolName]),
+    }));
+    setToolPickerOpen(false);
+  };
+  const removeTool = (toolName: string) => {
+    setForm((current) => ({
+      ...current,
+      allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
+    }));
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
@@ -879,8 +948,16 @@ export function AgentsPage() {
       )}
 
       {/* ---- Create / Edit dialog ---- */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setToolPickerOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingAgent ? 'Edit Agent' : 'New Agent'}</DialogTitle>
           </DialogHeader>
@@ -919,16 +996,19 @@ export function AgentsPage() {
                   setForm((current) => {
                     const currentDefaultRuntime = presetRuntimeKind(current.preset_key, presets);
                     const currentPresetPrompt = presetMetaForKey(current.preset_key, presets)?.system_prompt ?? '';
+                    const currentPresetTools = presetAllowedTools(current.preset_key, presets);
                     const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime
                       ? (nextPreset?.runtime_kind ?? PRESET_FALLBACKS[nextPresetKey].runtime_kind)
                       : current.runtime_kind;
                     const shouldReplacePrompt =
                       current.system_prompt.trim().length === 0 || current.system_prompt === currentPresetPrompt;
+                    const shouldReplaceTools = toolListsEqual(current.allowed_tools, currentPresetTools);
                     return {
                       ...current,
                       preset_key: nextPresetKey,
                       runtime_kind: nextRuntimeKind,
                       system_prompt: shouldReplacePrompt ? (nextPreset?.system_prompt ?? '') : current.system_prompt,
+                      allowed_tools: shouldReplaceTools ? presetAllowedTools(nextPresetKey, presets) : current.allowed_tools,
                       approval_mode: nextPreset?.approval_mode ?? current.approval_mode,
                       default_invocation_mode: normalizeDefaultInvocationMode(
                         current.default_invocation_mode,
@@ -1104,11 +1184,70 @@ export function AgentsPage() {
               </div>
 
               <div className="space-y-1">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Available tools</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Available tools</p>
+                  <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-2 text-[11px]"
+                        disabled={toolCatalogEntries.length === 0 || editingSystemAgent}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add tool
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[28rem] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search tools..." />
+                        <CommandList className="max-h-72">
+                          <CommandEmpty>
+                            {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
+                          </CommandEmpty>
+                          <CommandGroup heading={`${availableToolEntries.length} available`}>
+                            {availableToolEntries.map((tool) => (
+                              <CommandItem
+                                key={tool.name}
+                                value={`${tool.name} ${tool.category} ${tool.description}`}
+                                onSelect={() => addTool(tool.name)}
+                                className="cursor-pointer items-start py-2"
+                              >
+                                <div className="min-w-0 flex-1 space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-foreground">{tool.name}</span>
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {tool.category}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.
+                </p>
                 <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/70 p-2">
-                  {effectiveTools.length > 0 ? effectiveTools.map((tool) => (
-                    <Badge key={tool} variant="secondary" className="font-mono text-[11px]">
-                      {tool}
+                  {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
+                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                      <span>{tool}</span>
+                      {!editingSystemAgent && (
+                        <button
+                          type="button"
+                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                          onClick={() => removeTool(tool)}
+                          aria-label={`Remove ${tool}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
                     </Badge>
                   )) : (
                     <span className="text-sm text-muted-foreground">No tools configured</span>

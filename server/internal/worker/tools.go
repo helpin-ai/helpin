@@ -23,18 +23,26 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}
 
 	// Filesystem tools
-	r.register("read_file", "Read the contents of a file at the given path (relative to the workspace root).", map[string]interface{}{
+	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Returns the first chunk by default; use offset_line and limit_lines to continue without dumping the whole file.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
 				"type":        "string",
 				"description": "File path relative to the workspace root",
 			},
+			"offset_line": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional 1-based line number to start reading from. Defaults to 1.",
+			},
+			"limit_lines": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional maximum number of lines to return. Defaults to 200, max 400.",
+			},
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
 
-	r.register("write_file", "Write content to a file at the given path (relative to the workspace root). Creates directories as needed.", map[string]interface{}{
+	r.register("write_file", "Write content to a file at the given path (relative to the workspace root). Use this for new files or full rewrites after reading the current file first. Creates directories as needed.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -48,6 +56,36 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required": []string{"path", "content"},
 	}, toolWriteFile)
+
+	r.register("edit_file", "Edit an existing text file by replacing exactly one matching string. Read the file first and include enough surrounding context in old_string so the match is unique.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "File path relative to the workspace root",
+			},
+			"old_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Exact text to replace. Must match exactly once in the file, including whitespace.",
+			},
+			"new_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement text. Use an empty string to delete the matched content.",
+			},
+		},
+		"required": []string{"path", "old_string", "new_string"},
+	}, toolEditFile)
+
+	r.register("apply_patch", "Apply coordinated multi-file edits using the structured *** Begin Patch format. Read each existing file first, and use exact context lines so each hunk matches uniquely.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"patch": map[string]interface{}{
+				"type":        "string",
+				"description": "Patch text in the *** Begin Patch / *** End Patch format.",
+			},
+		},
+		"required": []string{"patch"},
+	}, toolApplyPatch)
 
 	r.register("list_directory", "List files and directories at the given path.", map[string]interface{}{
 		"type": "object",

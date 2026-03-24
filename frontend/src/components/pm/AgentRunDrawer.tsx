@@ -659,8 +659,10 @@ export function AgentRunDrawer({
     };
   }, [open, runId, upsertLivePreview, upsertLiveTool]);
 
+  const hasLiveContent = liveSegments.chatText.trim();
+
   // Only poll while queued (waiting for worker pickup). During streaming,
-  // WebSocket events provide real-time updates — no polling needed.
+  // websocket events provide real-time UI updates.
   useEffect(() => {
     if (!open || !run || run.status !== 'queued') return;
     const intervalId = window.setInterval(() => void loadRun(run.id), 3_000);
@@ -682,8 +684,6 @@ export function AgentRunDrawer({
       return;
     }
   }, [run]);
-
-  const hasLiveContent = liveSegments.chatText.trim();
 
   useEffect(() => {
     const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant');

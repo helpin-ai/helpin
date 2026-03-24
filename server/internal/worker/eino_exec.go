@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -239,6 +240,12 @@ func ExecuteWithEino(
 	}
 
 	provider, _ := resolveProviderAndModel(agent)
+	slog.InfoContext(ctx, "native runtime provider route selected",
+		"provider", provider,
+		"agentic_responses", providerUsesAgenticResponses(provider),
+		"history_messages", len(history),
+		"tool_count", len(tools),
+	)
 	if providerUsesAgenticResponses(provider) {
 		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent)
 	}
@@ -369,6 +376,12 @@ func executeWithEinoAgentic(
 		agenticOpts = append(agenticOpts, agenticopenai.WithExtraFields(map[string]any{
 			"previous_response_id": strings.TrimSpace(continuation.ResponseID),
 		}))
+		slog.InfoContext(ctx, "native runtime using provider continuation",
+			"provider", provider,
+			"response_id", strings.TrimSpace(continuation.ResponseID),
+			"after_sequence_no", continuation.AfterSequenceNo,
+			"effective_history_messages", len(effectiveHistory),
+		)
 	}
 
 	messages, err := toAgenticMessages(effectiveSystemPrompt, effectiveHistory)
