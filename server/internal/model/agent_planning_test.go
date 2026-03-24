@@ -53,3 +53,58 @@ func TestFileChangeUnmarshalDefaultsInvalidActionToModify(t *testing.T) {
 		t.Fatalf("expected invalid action to default to modify, got %#v", change)
 	}
 }
+
+func TestStoryImplementationBriefUnmarshalAllowsArrayTestStrategy(t *testing.T) {
+	var brief StoryImplementationBrief
+	err := json.Unmarshal([]byte(`{
+		"approach": "Follow the approved proposal",
+		"files_to_modify": [
+			{"path":"server/internal/worker/tools.go","action":"modify","description":"widen schema"}
+		],
+		"test_strategy": ["Add decoder regression coverage", "Verify story creation still works"]
+	}`), &brief)
+	if err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	expected := "Add decoder regression coverage\nVerify story creation still works"
+	if brief.TestStrategy != expected {
+		t.Fatalf("expected joined test strategy %q, got %q", expected, brief.TestStrategy)
+	}
+}
+
+func TestProposedStoryUnmarshalAllowsTitleAndTypeAliases(t *testing.T) {
+	var story ProposedStory
+	err := json.Unmarshal([]byte(`{
+		"ref": "story_1",
+		"title": "Add 4xx error metrics tracking infrastructure",
+		"description": "Add the foundational metrics tracking function.",
+		"type": "feature",
+		"acceptance_criteria": ["works"]
+	}`), &story)
+	if err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+
+	if story.Name != "Add 4xx error metrics tracking infrastructure" {
+		t.Fatalf("expected title alias to populate Name, got %#v", story)
+	}
+	if story.StoryType != "feature" {
+		t.Fatalf("expected type alias to populate StoryType, got %#v", story)
+	}
+}
+
+func TestStoryImplementationBriefUnmarshalReturnsRepairOrientedTestStrategyError(t *testing.T) {
+	var brief StoryImplementationBrief
+	err := json.Unmarshal([]byte(`{
+		"approach": "Follow the approved proposal",
+		"files_to_modify": [],
+		"test_strategy": 123
+	}`), &brief)
+	if err == nil {
+		t.Fatal("expected test_strategy validation error")
+	}
+	if err.Error() != "implementation_brief.test_strategy must be a string or array of strings" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, Loader2, Play } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { agentService } from '@/lib/services/agentService';
-import type { AgentRun } from '@/lib/pmTypes';
+import type { Agent, AgentRun } from '@/lib/pmTypes';
 
 interface Props {
   storyId: string;
@@ -15,11 +24,28 @@ interface Props {
 }
 
 export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) {
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
+
+  const fetchAgents = useCallback(async () => {
+    setLoadingAgents(true);
+    try {
+      const res = await agentService.list(workspaceId);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      setAgents((res.data ?? []).filter(isStoryRunnableAgent));
+    } finally {
+      setLoadingAgents(false);
+    }
+  }, [workspaceId]);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -32,8 +58,35 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   }, [assignedAgentId, storyId, workspaceId]);
 
   useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
+
+  useEffect(() => {
     void fetchRuns();
   }, [fetchRuns]);
+
+  const storyRunnableAgents = useMemo(() => agents.filter(isStoryRunnableAgent), [agents]);
+  const preferredAgent = useMemo(() => {
+    if (assignedAgentId) {
+      return storyRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
+    }
+    return storyRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
+      ?? storyRunnableAgents.find((agent) => agent.is_system)
+      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'epic_planner')
+      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'code_builder')
+      ?? storyRunnableAgents[0]
+      ?? null;
+  }, [assignedAgentId, storyRunnableAgents]);
+
+  useEffect(() => {
+    if (!selectedAgentId && preferredAgent) {
+      setSelectedAgentId(preferredAgent.id);
+      return;
+    }
+    if (selectedAgentId && !storyRunnableAgents.some((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId(preferredAgent?.id ?? '');
+    }
+  }, [preferredAgent, selectedAgentId, storyRunnableAgents]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -51,10 +104,14 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   }, [fetchRuns, storyId]);
 
   const handleRunAgent = async () => {
-    if (!assignedAgentId) return;
+    if (!selectedAgentId) return;
     setTriggering(true);
     try {
-      const res = await agentService.runStory(workspaceId, storyId);
+      const res = await agentService.runStory(workspaceId, storyId, { agent_id: selectedAgentId });
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
       await fetchRuns();
       if (res.data?.id) {
         setSelectedRunId(res.data.id);
@@ -65,25 +122,44 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     }
   };
 
-  if (!assignedAgentId && runs.length === 0 && !loading) return null;
+  if (storyRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
 
   return (
     <div className="mt-6">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 space-y-3">
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Agent Runs</h3>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleRunAgent}
-          disabled={triggering || !assignedAgentId}
-          className="gap-1.5"
-        >
-          {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          Run Agent
-        </Button>
+
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Start with</Label>
+            <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
+              <SelectTrigger>
+                <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select a planner or coder'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No agent selected</SelectItem>
+                {storyRunnableAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.is_system ? `${agent.name} (System)` : agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRunAgent}
+            disabled={triggering || loadingAgents || !selectedAgentId}
+            className="gap-1.5 md:min-w-40"
+          >
+            {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            Start Run
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-md border border-border/60">
@@ -110,4 +186,14 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       <Separator className="mt-4" />
     </div>
   );
+}
+
+function isStoryRunnableAgent(agent: Agent) {
+  if (agent.allowed_targets?.includes('story')) {
+    return true;
+  }
+  return agent.preset_key === 'story_planner' ||
+    agent.preset_key === 'epic_planner' ||
+    agent.preset_key === 'code_builder' ||
+    agent.preset_key === 'review_agent';
 }

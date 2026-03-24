@@ -788,7 +788,7 @@ export function StoryDetailPage() {
               content={form.description}
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
-              className="border-transparent shadow-none"
+              className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
               uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
               onUploadStateChange={setDescriptionPendingUploads}
               teams={mentionTeams}

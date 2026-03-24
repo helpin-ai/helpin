@@ -39,31 +39,6 @@ func TestBuildSystemPromptDirectEpicRunUsesAgentSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptLegacyPlanningStageKeepsMethodologyPack(t *testing.T) {
-	prompt := BuildSystemPrompt(
-		&model.Agent{
-			Name:      "Planner",
-			PresetKey: model.AgentPresetEpicPlanner,
-		},
-		nil,
-		&model.PMEpic{Name: "Billing refresh"},
-		nil,
-		model.PlanningStagePlanStories,
-		model.PlanningMethodologyBasicV1,
-		nil,
-	)
-
-	if !strings.Contains(prompt, "Planning methodology: basic_v1") {
-		t.Fatalf("expected methodology marker in prompt\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "Turn the approved spec into concrete stories.") {
-		t.Fatalf("expected basic story guidance in prompt\n%s", prompt)
-	}
-	if strings.Contains(prompt, "Think like an architect first") {
-		t.Fatalf("did not expect structured planning stance in basic methodology\n%s", prompt)
-	}
-}
-
 func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
@@ -127,9 +102,40 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
+	prompt := BuildUserPrompt(
+		&model.PMStory{Name: "Inbox triage automation"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		model.PlanningStageStoryPlanDoc,
+		"Operator notes:\nFocus on approval UX.",
+	)
+
+	for _, marker := range []string{
+		"Please draft or refine the canonical story planning document for story: **Inbox triage automation**",
+		"Operator notes:",
+		"Create a reviewable story planning document",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Fatalf("expected prompt to contain %q\n%s", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.") {
+		t.Fatalf("did not expect implementation-oriented story prompt\n%s", prompt)
+	}
+}
+
 func TestBuildExecutionSupplementPromptIncludesResumeGuidanceAndArtifacts(t *testing.T) {
 	supplement := BuildExecutionSupplementPrompt(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		map[string]string{
+			"target_id":      "deal-123",
+			"crm_contact_id": "contact-456",
+		},
 		&ArtifactContext{
 			Entries: []ArtifactContextEntry{
 				{
@@ -146,6 +152,10 @@ func TestBuildExecutionSupplementPromptIncludesResumeGuidanceAndArtifacts(t *tes
 	for _, marker := range []string{
 		"This is an interactive transcript that may resume after a human reply.",
 		"Do not treat a human reply as the end of the run by default.",
+		"Treat the durable run facts below as the authoritative identifiers",
+		"Durable run facts:",
+		"- crm_contact_id=contact-456",
+		"- target_id=deal-123",
 		"Use the latest persisted artifacts below as the current source of truth",
 		"Latest draft body",
 	} {
@@ -189,5 +199,61 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 
 	if !strings.Contains(prompt, systemPrompt) {
 		t.Fatalf("expected non-epic prompt to preserve custom system prompt\n%s", prompt)
+	}
+}
+
+func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *testing.T) {
+	systemPrompt := "You are a careful engineer."
+
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Engineer",
+			PresetKey:    model.AgentPresetCodeBuilder,
+			SystemPrompt: &systemPrompt,
+		},
+		&model.PMStory{Name: "Implement feature flag"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	for _, expected := range []string{
+		"Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.",
+		"read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.",
+		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
+		"Use write_file for new files or full rewrites only after you have read the current file state.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildSystemPromptSupportRunOmitsRepoEditingGuidance(t *testing.T) {
+	systemPrompt := "You are a support agent."
+
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Support",
+			PresetKey:    model.AgentPresetSupportAgent,
+			SystemPrompt: &systemPrompt,
+		},
+		nil,
+		nil,
+		&model.SupportConversation{Subject: "Login issue"},
+		"",
+		"",
+		nil,
+	)
+
+	for _, unexpected := range []string{
+		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
+		"Use write_file for new files or full rewrites only after you have read the current file state.",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect support prompt to contain %q\n%s", unexpected, prompt)
+		}
 	}
 }

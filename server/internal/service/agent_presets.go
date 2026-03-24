@@ -110,6 +110,17 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
+		worker.ToolPublishPRDDraft,
+		worker.ToolPublishStoryPlan,
+		worker.ToolRequestHumanInput,
+		worker.ToolRequestHumanApproval,
+	)
+	storyPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
+		worker.ToolPublishStoryPlanDoc,
+		worker.ToolRequestHumanInput,
+		worker.ToolRequestHumanApproval,
+	)
 
 	return []model.AgentPresetDefinition{
 		{
@@ -120,7 +131,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          slices.Clone(productPlannerProfile.AllowedTools),
+			AllowedTools:          epicPlannerTools,
 			AllowedCommands:       slices.Clone(productPlannerProfile.AllowedCommands),
 			AllowedTargetTypes:    slices.Clone(productPlannerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
@@ -136,7 +147,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          slices.Clone(productPlannerProfile.AllowedTools),
+			AllowedTools:          storyPlannerTools,
 			AllowedCommands:       slices.Clone(productPlannerProfile.AllowedCommands),
 			AllowedTargetTypes:    []string{"story", "epic"},
 			ApprovalMode:          "never",
@@ -209,4 +220,27 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          reviewPrompt,
 		},
 	}
+}
+
+func filterPresetTools(base []string, required ...string) []string {
+	requiredSet := make(map[string]bool, len(required))
+	for _, toolName := range required {
+		requiredSet[toolName] = true
+	}
+	filtered := make([]string, 0, len(base))
+	for _, toolName := range base {
+		switch toolName {
+		case worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPreview, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan, worker.ToolPublishStoryPlanDoc:
+			if !requiredSet[toolName] {
+				continue
+			}
+		}
+		filtered = append(filtered, toolName)
+	}
+	for _, toolName := range required {
+		if !slices.Contains(filtered, toolName) {
+			filtered = append(filtered, toolName)
+		}
+	}
+	return filtered
 }

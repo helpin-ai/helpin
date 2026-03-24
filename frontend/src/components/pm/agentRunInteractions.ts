@@ -1,4 +1,4 @@
-import type { AgentRunMessage, StructuredQuestion } from '@/lib/pmTypes';
+import type { AgentRunArtifact, AgentRunMessage, StructuredQuestion } from '@/lib/pmTypes';
 export interface ParsedQuestions {
   questions: StructuredQuestion[];
   surroundingText: string;
@@ -20,19 +20,38 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function parseStructuredQuestionsFromToolInvocation(message: Pick<AgentRunMessage, 'content' | 'tool_invocations'>): ParsedQuestions | null {
-  const invocations = Array.isArray(message.tool_invocations) ? message.tool_invocations : [];
-  for (let index = invocations.length - 1; index >= 0; index -= 1) {
-    const invocation = asRecord(invocations[index]);
-    if (!invocation || invocation.tool_name !== 'request_human_input') continue;
+function parseArtifactAssistantMessageSequenceNo(
+  artifact: Pick<AgentRunArtifact, 'metadata'> | null | undefined,
+): number | null {
+  if (!artifact?.metadata || typeof artifact.metadata !== 'object' || Array.isArray(artifact.metadata)) {
+    return null;
+  }
+  const value = artifact.metadata.assistant_message_sequence_no;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
 
-    const input = asRecord(invocation.input);
-    const rawQuestions = input?.questions;
-    if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) continue;
+function parseStructuredQuestionsFromArtifact(
+  message: Pick<AgentRunMessage, 'content' | 'sequence_no'>,
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>>,
+): ParsedQuestions | null {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (artifact.artifact_type !== 'human_input_request') continue;
+    if (parseArtifactAssistantMessageSequenceNo(artifact) !== message.sequence_no) continue;
+    if (!artifact.inline_content) continue;
 
+    let payload: unknown;
+    try {
+      payload = JSON.parse(artifact.inline_content);
+    } catch {
+      continue;
+    }
+
+    const record = asRecord(payload);
+    const rawQuestions = Array.isArray(record?.questions) ? record.questions : [];
     const questions: StructuredQuestion[] = rawQuestions.map((rawQuestion) => {
       const question = asRecord(rawQuestion);
-      const rawOptions = Array.isArray(question?.options) ? question?.options : [];
+      const rawOptions = Array.isArray(question?.options) ? question.options : [];
       return {
         id: asString(question?.id) ?? '',
         type: 'single_select' as const,
@@ -58,16 +77,25 @@ function parseStructuredQuestionsFromToolInvocation(message: Pick<AgentRunMessag
   return null;
 }
 
-function parseApprovalRequestFromToolInvocation(message: Pick<AgentRunMessage, 'content' | 'tool_invocations'>): ParsedApprovalRequest | null {
-  const invocations = Array.isArray(message.tool_invocations) ? message.tool_invocations : [];
-  for (let index = invocations.length - 1; index >= 0; index -= 1) {
-    const invocation = asRecord(invocations[index]);
-    if (!invocation || invocation.tool_name !== 'request_human_approval') continue;
+function parseApprovalRequestFromArtifact(
+  message: Pick<AgentRunMessage, 'content' | 'sequence_no'>,
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>>,
+): ParsedApprovalRequest | null {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (artifact.artifact_type !== 'human_approval_request') continue;
+    if (parseArtifactAssistantMessageSequenceNo(artifact) !== message.sequence_no) continue;
+    if (!artifact.inline_content) continue;
 
-    const input = asRecord(invocation.input);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(artifact.inline_content);
+    } catch {
+      continue;
+    }
+    const input = asRecord(payload);
     const title = asString(input?.title);
     if (!title) continue;
-
     return {
       phase: asString(input?.phase)?.toLowerCase() ?? 'review',
       title,
@@ -79,10 +107,16 @@ function parseApprovalRequestFromToolInvocation(message: Pick<AgentRunMessage, '
   return null;
 }
 
-export function parseMessageStructuredQuestions(message: Pick<AgentRunMessage, 'content' | 'tool_invocations'>): ParsedQuestions | null {
-  return parseStructuredQuestionsFromToolInvocation(message);
+export function parseMessageStructuredQuestions(
+  message: Pick<AgentRunMessage, 'content' | 'sequence_no'>,
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>> = [],
+): ParsedQuestions | null {
+  return parseStructuredQuestionsFromArtifact(message, artifacts);
 }
 
-export function parseMessageApprovalRequest(message: Pick<AgentRunMessage, 'content' | 'tool_invocations'>): ParsedApprovalRequest | null {
-  return parseApprovalRequestFromToolInvocation(message);
+export function parseMessageApprovalRequest(
+  message: Pick<AgentRunMessage, 'content' | 'sequence_no'>,
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>> = [],
+): ParsedApprovalRequest | null {
+  return parseApprovalRequestFromArtifact(message, artifacts);
 }
