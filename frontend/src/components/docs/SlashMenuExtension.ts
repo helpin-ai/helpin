@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 export interface SlashMenuState {
   open: boolean;
@@ -29,17 +30,27 @@ export const SlashMenuExtension = Extension.create({
             const meta = tr.getMeta(slashMenuPluginKey);
             if (meta !== undefined) return { ...prev, ...meta };
             if (!prev.open) return prev;
-            // If the selection moved away from the slash position, close
             const { from } = tr.selection;
             if (from < prev.from) return CLOSED;
-            // Update query from text between slash and cursor
             const text = tr.doc.textBetween(prev.from, from, '\0', '\0');
-            // Only reset selectedIndex when the query actually changed
             const idx = text !== prev.query ? 0 : prev.selectedIndex;
             return { ...prev, query: text, selectedIndex: idx };
           },
         },
         props: {
+          decorations(state) {
+            const pluginState = slashMenuPluginKey.getState(state) as SlashMenuState | undefined;
+            if (!pluginState?.open || !pluginState.from) return DecorationSet.empty;
+
+            const from = pluginState.from - 1;
+            const to = state.selection.from;
+            if (to <= from || to - from > 30) return DecorationSet.empty;
+
+            return DecorationSet.create(state.doc, [
+              Decoration.inline(from, to, { class: 'slash-command-chip' }),
+            ]);
+          },
+
           handleKeyDown(view, event) {
             const state = slashMenuPluginKey.getState(view.state) as SlashMenuState;
             if (!state?.open) return false;
@@ -65,13 +76,12 @@ export const SlashMenuExtension = Extension.create({
             }
             return false;
           },
+
           handleTextInput(view, from, _to, text) {
             if (text !== '/') return false;
-            // Only trigger at start of empty text block or after whitespace
             const { $from } = view.state.selection;
             const textBefore = $from.parent.textBetween(0, $from.parentOffset, '\0', '\0');
             if (textBefore.length === 0 || textBefore.endsWith(' ')) {
-              // Schedule opening after the character is inserted
               setTimeout(() => {
                 const { from: currentFrom } = view.state.selection;
                 const tr = view.state.tr.setMeta(slashMenuPluginKey, {

@@ -47,8 +47,10 @@ const DEADLINE_TOOLTIP: Record<DeadlineStatus, string> = {
 
 export function MyWorkPage() {
   useTitle('My Work');
+  const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
+  const wsSlug = workspace?.slug ?? '';
   const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   const { data: access } = useWorkspaceAccess(workspaceId);
@@ -83,13 +85,24 @@ export function MyWorkPage() {
   // Refresh list when a story is updated or archived via the global panel
   useEffect(() => {
     const refresh = () => setRefreshKey((k) => k + 1);
+    const handleStoryCreated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // Navigate to the team's stories board so the user sees their new story
+      if (detail?.teamId && wsSlug) {
+        navigate({ to: '/w/$slug/pm/stories', params: { slug: wsSlug }, search: { team: detail.teamId } });
+        return;
+      }
+      setRefreshKey((k) => k + 1);
+    };
     window.addEventListener('story-panel-updated', refresh);
     window.addEventListener('story-panel-archived', refresh);
+    window.addEventListener('story-created', handleStoryCreated);
     return () => {
       window.removeEventListener('story-panel-updated', refresh);
       window.removeEventListener('story-panel-archived', refresh);
+      window.removeEventListener('story-created', handleStoryCreated);
     };
-  }, []);
+  }, [memberId]);
 
   // ── Derived data ──────────────────────────────────────────────────
 
@@ -256,16 +269,6 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data: access } = useWorkspaceAccess(workspace?.id ?? '');
-  const { canEdit } = usePermissions(access);
-  const openCreate = useGlobalCreateStore((s) => s.openCreate);
-
-  const exploreLinks = [
-    { icon: SquareKanban, label: 'Stories', path: `/w/${workspaceSlug}/pm/stories` },
-    { icon: Timer, label: 'Sprints', path: `/w/${workspaceSlug}/pm/sprints` },
-    { icon: Layers, label: 'Epics', path: `/w/${workspaceSlug}/pm/epics` },
-    { icon: Target, label: 'Objectives', path: `/w/${workspaceSlug}/pm/objectives` },
-  ];
-
   return (
     <div className="flex flex-col items-center py-16 px-4">
       {/* Hero */}
@@ -281,29 +284,6 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
           : 'Stories you create or request will appear here so you can track their progress.'}
       </p>
 
-      {/* Quick actions */}
-      <div className="flex items-center gap-3 mt-6">
-        {canEdit && (
-          <Button size="sm" onClick={() => openCreate('story')}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Create a Story
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaceSlug } })}
-        >
-          <SquareKanban className="h-4 w-4 mr-1.5" />
-          View Stories
-        </Button>
-      </div>
-      {!canEdit && (
-        <p className="text-xs text-muted-foreground mt-2">
-          Ask a teammate to assign stories to you to get started.
-        </p>
-      )}
-
       <div className="w-full max-w-4xl mt-10">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {WORKFLOW_STEPS.map(({ icon: Icon, title, description }) => (
@@ -316,25 +296,6 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
         </div>
       </div>
 
-      {/* Explore */}
-      <div className="w-full max-w-lg mt-8">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3 text-center">
-          Explore
-        </h4>
-        <div className="flex items-center justify-center gap-2">
-          {exploreLinks.map(({ icon: Icon, label, path }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => navigate({ to: path })}
-              className="flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

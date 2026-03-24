@@ -77,7 +77,7 @@ export function CalloutNodeView({ node, updateAttributes, editor, getPos }: Node
             ))}
           </div>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 [&>*:last-child]:mb-0">
           <NodeViewContent />
         </div>
       </aside>

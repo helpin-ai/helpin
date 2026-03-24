@@ -77,7 +77,7 @@ function StoryCardComponent({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? undefined : 'transform 200ms ease',
   };
 
   const [priorityOpen, setPriorityOpen] = useState(false);
@@ -222,7 +222,7 @@ function StoryCardComponent({
         }
       }}
       className={cn(
-        'group cursor-pointer rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
+        'group/card relative shrink-0 cursor-pointer rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
@@ -519,7 +519,13 @@ function StoryCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+                {currentOwnerName ? (
+                  <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+                ) : (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
+                    <UserPlus className="h-2.5 w-2.5" />
+                  </span>
+                )}
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{currentOwnerName || 'Unassigned'}</TooltipContent>

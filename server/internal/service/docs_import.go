@@ -367,9 +367,14 @@ func (s *DocsImportService) importArticle(
 	if err != nil {
 		return fmt.Errorf("marshal content for article %s: %w", ref.ID, err)
 	}
-	if _, err := s.contentSvc.Save(ctx, doc.ID, json.RawMessage(contentJSON)); err != nil {
+	savedContent, err := s.contentSvc.Save(ctx, doc.ID, json.RawMessage(contentJSON))
+	if err != nil {
 		return fmt.Errorf("save content for article %s: %w", ref.ID, err)
 	}
+
+	// Store import provenance — post-image-rewrite, pre-conversion HTML snapshot.
+	sourceSystem := "helpscout"
+	s.contentSvc.SetImportProvenance(ctx, savedContent.ID, html, sourceSystem, ref.ID)
 
 	// Create helpcenter article record with slug from HelpScout.
 	hcArticle := &model.DocsHelpcenterArticle{
@@ -419,7 +424,71 @@ func (s *DocsImportService) importArticle(
 	return nil
 }
 
+// ReconvertResult holds the outcome of a reconversion run.
+type ReconvertResult struct {
+	Total     int `json:"total"`
+	Converted int `json:"converted"`
+	Failed    int `json:"failed"`
+}
+
+// Reconvert re-runs the HTML-to-Tiptap converter on all documents from a previous import job,
+// using the stored import_source_html. This overwrites existing content.
+func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*ReconvertResult, error) {
+	job, err := s.importRepo.GetByID(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("get import job: %w", err)
+	}
+	if job == nil {
+		return nil, fmt.Errorf("import job not found")
+	}
+
+	if job.SpaceID == nil || *job.SpaceID == "" {
+		return nil, fmt.Errorf("import job has no space ID")
+	}
+	contents, err := s.contentSvc.ListBySpaceWithImportHTML(ctx, *job.SpaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list reconvertible docs: %w", err)
+	}
+
+	result := &ReconvertResult{Total: len(contents)}
+
+	for _, c := range contents {
+		if c.ImportSourceHTML == nil || *c.ImportSourceHTML == "" {
+			continue
+		}
+
+		convResult, err := docsimport.ConvertHTML(*c.ImportSourceHTML)
+		if err != nil {
+			s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
+			result.Failed++
+			continue
+		}
+
+		contentJSON, err := json.Marshal(convResult.Doc)
+		if err != nil {
+			s.logger.Error("reconvert marshal failed", "content_id", c.ID, "error", err)
+			result.Failed++
+			continue
+		}
+
+		if _, err := s.contentSvc.Save(ctx, c.DocumentID, json.RawMessage(contentJSON)); err != nil {
+			s.logger.Error("reconvert save failed", "content_id", c.ID, "error", err)
+			result.Failed++
+			continue
+		}
+
+		result.Converted++
+	}
+
+	return result, nil
+}
+
 // GetStatus returns the current state of an import job.
+// ListJobs returns all import jobs for a workspace.
+func (s *DocsImportService) ListJobs(ctx context.Context, workspaceID string) ([]model.DocsImportJob, error) {
+	return s.importRepo.ListByWorkspace(ctx, workspaceID)
+}
+
 func (s *DocsImportService) GetStatus(ctx context.Context, jobID string) (*model.DocsImportJob, error) {
 	return s.importRepo.GetByID(ctx, jobID)
 }

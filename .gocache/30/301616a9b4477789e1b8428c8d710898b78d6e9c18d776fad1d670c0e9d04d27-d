@@ -1,0 +1,4 @@
+./claude.go
+./jsonparse.go
+./openai.go
+./provider.go

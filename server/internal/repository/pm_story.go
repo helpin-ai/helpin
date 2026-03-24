@@ -33,6 +33,10 @@ func boardStoryOrderClause(stateType string) string {
 	return "position ASC, updated_at DESC"
 }
 
+func memberBoardStoryOrderClause() string {
+	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_stories.position ASC, pm_stories.updated_at DESC"
+}
+
 func boardStoryGroupDate(story model.PMStory) time.Time {
 	if story.CompletedAt != nil {
 		return story.CompletedAt.UTC()
@@ -281,32 +285,91 @@ func (r *PMStoryRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// MoveToState moves a story to a new state and position.
+// MoveToState moves a story to a new state at the given position,
+// renumbering siblings in both the source and target columns transactionally.
 func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID string, position int) error {
-	now := time.Now().UTC()
-	updates := map[string]interface{}{
-		"workflow_state_id": stateID,
-		"position":          position,
-		"moved_at":          now,
-	}
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMStory{}).
-		Where("id = ?", storyID).
-		Updates(updates).Error; err != nil {
-		return fmt.Errorf("move story: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Fetch the story to get its current state and position.
+		var story model.PMStory
+		if err := tx.Select("id, workflow_state_id, position, workspace_id").
+			Where("id = ?", storyID).First(&story).Error; err != nil {
+			return fmt.Errorf("move story fetch: %w", err)
+		}
+
+		oldStateID := story.WorkflowStateID
+
+		// Close the gap in the source column: shift siblings above the old position down by 1.
+		if err := tx.Model(&model.PMStory{}).
+			Where("workspace_id = ? AND workflow_state_id = ? AND position > ? AND id != ? AND archived = false",
+				story.WorkspaceID, oldStateID, story.Position, storyID).
+			UpdateColumn("position", gorm.Expr("position - 1")).Error; err != nil {
+			return fmt.Errorf("move story close source gap: %w", err)
+		}
+
+		// Open a gap in the target column: shift siblings at or above the target position up by 1.
+		if err := tx.Model(&model.PMStory{}).
+			Where("workspace_id = ? AND workflow_state_id = ? AND position >= ? AND id != ? AND archived = false",
+				story.WorkspaceID, stateID, position, storyID).
+			UpdateColumn("position", gorm.Expr("position + 1")).Error; err != nil {
+			return fmt.Errorf("move story open target gap: %w", err)
+		}
+
+		// Update the story itself.
+		now := time.Now().UTC()
+		if err := tx.Model(&model.PMStory{}).Where("id = ?", storyID).
+			Updates(map[string]interface{}{
+				"workflow_state_id": stateID,
+				"position":          position,
+				"moved_at":          now,
+			}).Error; err != nil {
+			return fmt.Errorf("move story update: %w", err)
+		}
+
+		return nil
+	})
 }
 
-// Reorder updates story position in current column.
+// Reorder moves a story to a new position within its current column,
+// renumbering siblings transactionally to keep positions contiguous.
 func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, position int) error {
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMStory{}).
-		Where("id = ?", storyID).
-		Update("position", position).Error; err != nil {
-		return fmt.Errorf("reorder story: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var story model.PMStory
+		if err := tx.Select("id, workflow_state_id, position, workspace_id").
+			Where("id = ?", storyID).First(&story).Error; err != nil {
+			return fmt.Errorf("reorder story fetch: %w", err)
+		}
+
+		oldPos := story.Position
+		if oldPos == position {
+			return nil
+		}
+
+		if position < oldPos {
+			// Moving up: shift stories in [newPos, oldPos) down by 1
+			if err := tx.Model(&model.PMStory{}).
+				Where("workspace_id = ? AND workflow_state_id = ? AND position >= ? AND position < ? AND id != ? AND archived = false",
+					story.WorkspaceID, story.WorkflowStateID, position, oldPos, storyID).
+				UpdateColumn("position", gorm.Expr("position + 1")).Error; err != nil {
+				return fmt.Errorf("reorder shift up: %w", err)
+			}
+		} else {
+			// Moving down: shift stories in (oldPos, newPos] up by 1
+			if err := tx.Model(&model.PMStory{}).
+				Where("workspace_id = ? AND workflow_state_id = ? AND position > ? AND position <= ? AND id != ? AND archived = false",
+					story.WorkspaceID, story.WorkflowStateID, oldPos, position, storyID).
+				UpdateColumn("position", gorm.Expr("position - 1")).Error; err != nil {
+				return fmt.Errorf("reorder shift down: %w", err)
+			}
+		}
+
+		// Set the story's new position.
+		if err := tx.Model(&model.PMStory{}).Where("id = ?", storyID).
+			Update("position", position).Error; err != nil {
+			return fmt.Errorf("reorder update: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // AddOwner links an owner to a story.
@@ -912,6 +975,7 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 
 	for _, key := range memberKeys {
 		query := r.db.WithContext(ctx).
+			Model(&model.PMStory{}).
 			Where("workflow_state_id IN ? AND archived = false", stateIDs)
 		query = r.applyBoardFilters(query, filters)
 		if key == "" {
@@ -919,7 +983,8 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 		} else {
 			query = query.Where("owner_member_id = ?", key)
 		}
-		query = query.Order("position ASC, updated_at DESC")
+		query = query.Joins("JOIN pm_workflow_states ws ON ws.id = pm_stories.workflow_state_id").
+			Order(memberBoardStoryOrderClause())
 		if perMemberLimit > 0 {
 			query = query.Limit(perMemberLimit)
 		}
@@ -1092,6 +1157,7 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 	}
 
 	storyQuery := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
 		Where("workflow_state_id IN ? AND archived = false", stateIDs)
 	storyQuery = r.applyBoardFilters(storyQuery, filters)
 
@@ -1108,7 +1174,8 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 
 	var stories []model.PMStory
 	if err := storyQuery.
-		Order("position ASC, updated_at DESC").
+		Joins("JOIN pm_workflow_states ws ON ws.id = pm_stories.workflow_state_id").
+		Order(memberBoardStoryOrderClause()).
 		Offset(offset).Limit(limit).
 		Find(&stories).Error; err != nil {
 		return nil, 0, fmt.Errorf("list member column stories: %w", err)

@@ -199,8 +199,16 @@ type DocsContent struct {
 	Content     json.RawMessage `json:"content" gorm:"type:jsonb"`
 	ContentText string          `json:"content_text" gorm:"type:text"`
 	WordCount   int             `json:"word_count" gorm:"not null;default:0"`
-	CreatedAt   time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// Import provenance — snapshot for reconversion/debugging, not the live source of truth.
+	// Stored as post-image-rewrite, pre-conversion HTML so reconversion works even if
+	// the original external asset URLs die.
+	ImportSourceHTML     *string `json:"-" gorm:"type:text"`
+	ImportSourceSystem   *string `json:"-" gorm:"type:text"`
+	ImportSourceObjectID *string `json:"-" gorm:"type:text"`
+
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (DocsContent) TableName() string { return "docs_contents" }

@@ -1,0 +1,7 @@
+./auth.go
+./context.go
+./logging.go
+./workspace.go
+./auth_test.go
+./context_test.go
+./logging_test.go

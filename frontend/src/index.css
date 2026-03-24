@@ -141,8 +141,9 @@
 .tiptap {
   outline: none;
 }
-.tiptap p.is-editor-empty:first-child::before,
-.tiptap .is-empty::before {
+.tiptap > p.is-editor-empty:first-child::before,
+.tiptap > p.is-empty::before,
+.tiptap > .is-empty::before {
   content: attr(data-placeholder);
   float: left;
   color: var(--muted-foreground);
@@ -220,7 +221,7 @@
 }
 .tiptap th,
 .tiptap td {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
   padding: 0.5rem 0.75rem;
   min-width: 80px;
   vertical-align: top;
@@ -263,6 +264,14 @@
   to { visibility: hidden; }
 }
 
+.tiptap .slash-command-chip {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-radius: 4px;
+  padding: 1px 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+}
 .tiptap .docs-callout {
   margin: 0.75rem 0;
 }

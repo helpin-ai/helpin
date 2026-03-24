@@ -1,0 +1,13 @@
+./all.go
+./autoescape.go
+./block.go
+./extends.go
+./filter.go
+./for.go
+./if.go
+./import.go
+./include.go
+./macro.go
+./raw.go
+./set.go
+./with.go

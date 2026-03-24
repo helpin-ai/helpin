@@ -80,7 +80,7 @@ func (c *converter) convertElement(n *html.Node) []Node {
 	switch n.DataAtom {
 	// Block elements
 	case atom.P:
-		return []Node{Paragraph(c.convertInline(n)...)}
+		return c.convertParagraph(n)
 
 	case atom.H1:
 		return []Node{Heading(1, c.convertInline(n)...)}
@@ -139,6 +139,9 @@ func (c *converter) convertElement(n *html.Node) []Node {
 
 	case atom.Img:
 		src := getAttr(n, "src")
+		if src == "" {
+			src = getAttr(n, "data-src")
+		}
 		alt := getAttr(n, "alt")
 		if src != "" {
 			return []Node{Image(src, alt)}
@@ -158,8 +161,14 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		return c.convertFigure(n)
 
 	case atom.Div, atom.Section, atom.Article, atom.Aside, atom.Header, atom.Footer, atom.Nav, atom.Main:
-		// If the container has meaningful classes/attributes, preserve as htmlBlock
-		// to avoid losing structure. Otherwise unwrap into children.
+		// Always try to extract native content from containers first.
+		// Only fall back to htmlBlock if the container has classes AND
+		// contains no native-convertible children.
+		children := c.convertChildren(n)
+		if len(children) > 0 {
+			return children
+		}
+		// Empty container with classes — preserve as htmlBlock
 		classes := getAttr(n, "class")
 		if classes != "" {
 			rendered := renderNode(n)
@@ -169,7 +178,7 @@ func (c *converter) convertElement(n *html.Node) []Node {
 				return []Node{HTMLBlock(sanitized)}
 			}
 		}
-		return c.convertChildren(n)
+		return nil
 
 	default:
 		// Unknown element — preserve as htmlBlock if it has meaningful content
@@ -183,6 +192,50 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		}
 		return nil
 	}
+}
+
+// convertParagraph handles <p> elements. If the paragraph contains block-level
+// elements like <img> (which is atom/block in Tiptap), they are extracted as
+// separate block nodes. Text content is grouped into paragraphs.
+func (c *converter) convertParagraph(n *html.Node) []Node {
+	var result []Node
+	var inlineBuffer []Node
+
+	flushInline := func() {
+		if len(inlineBuffer) > 0 {
+			result = append(result, Paragraph(inlineBuffer...))
+			inlineBuffer = nil
+		}
+	}
+
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && child.DataAtom == atom.Img {
+			flushInline()
+			src := getAttr(child, "src")
+			if src == "" {
+				src = getAttr(child, "data-src")
+			}
+			alt := getAttr(child, "alt")
+			if src != "" {
+				result = append(result, Image(src, alt))
+			}
+		} else if child.Type == html.ElementNode && child.DataAtom == atom.Br {
+			inlineBuffer = append(inlineBuffer, HardBreak())
+		} else if child.Type == html.TextNode {
+			text := child.Data
+			if text != "" {
+				inlineBuffer = append(inlineBuffer, Text(text))
+			}
+		} else if child.Type == html.ElementNode {
+			inlineBuffer = append(inlineBuffer, c.convertInlineElement(child, nil)...)
+		}
+	}
+	flushInline()
+
+	if len(result) == 0 {
+		return []Node{Paragraph()}
+	}
+	return result
 }
 
 // convertInline walks children of an inline container and returns text nodes with marks.
@@ -245,6 +298,9 @@ func (c *converter) convertInlineElement(n *html.Node, parentMarks []Mark) []Nod
 		return []Node{HardBreak()}
 	case atom.Img:
 		src := getAttr(n, "src")
+		if src == "" {
+			src = getAttr(n, "data-src")
+		}
 		alt := getAttr(n, "alt")
 		if src != "" {
 			return []Node{Image(src, alt)}

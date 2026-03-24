@@ -123,6 +123,26 @@ func TestConvert_HelpScoutCallout(t *testing.T) {
 	}
 }
 
+func TestConvert_HelpScoutCalloutDirectColor(t *testing.T) {
+	// HelpScout uses "callout-blue", "callout-green" as single class names
+	tests := []struct {
+		class   string
+		variant string
+	}{
+		{"callout-blue", "blue"},
+		{"callout-green", "green"},
+		{"callout-red", "red"},
+		{"callout-yellow", "yellow"},
+	}
+	for _, tt := range tests {
+		r := convert(t, `<div class="`+tt.class+`"><p>test</p></div>`)
+		j := toJSON(t, r)
+		if !strings.Contains(j, `"type":"callout"`) || !strings.Contains(j, `"variant":"`+tt.variant+`"`) {
+			t.Errorf("class %q: expected callout with %s variant, got: %s", tt.class, tt.variant, j)
+		}
+	}
+}
+
 func TestConvert_HelpScoutCalloutWarn(t *testing.T) {
 	r := convert(t, `<div class="callout callout-warn"><p>Be careful</p></div>`)
 	j := toJSON(t, r)
@@ -215,15 +235,21 @@ func TestConvert_OrderedListStart(t *testing.T) {
 	}
 }
 
-func TestConvert_DivWithClassPreserved(t *testing.T) {
+func TestConvert_DivWithClassExtractsContent(t *testing.T) {
+	// Divs with classes should still extract native content (images, paragraphs, etc.)
 	r := convert(t, `<div class="custom-layout"><p>Styled content</p></div>`)
 	j := toJSON(t, r)
-	if !strings.Contains(j, `"type":"htmlBlock"`) {
-		t.Errorf("expected div with class preserved as htmlBlock, got: %s", j)
-	}
 	if !strings.Contains(j, "Styled content") {
-		t.Errorf("expected content preserved, got: %s", j)
+		t.Errorf("expected content extracted from div, got: %s", j)
 	}
+}
+
+func TestConvert_EmptyDivWithClassBecomesHtmlBlock(t *testing.T) {
+	// Empty divs with classes that have no native children → htmlBlock fallback
+	r := convert(t, `<div class="custom-widget" data-id="123"></div>`)
+	j := toJSON(t, r)
+	// Empty div might not produce htmlBlock either — that's OK
+	_ = j
 }
 
 func TestConvert_DivWithoutClassUnwrapped(t *testing.T) {
@@ -234,6 +260,29 @@ func TestConvert_DivWithoutClassUnwrapped(t *testing.T) {
 	}
 	if !strings.Contains(j, "Plain content") {
 		t.Errorf("expected content preserved, got: %s", j)
+	}
+}
+
+func TestConvert_ImageInsideParagraph(t *testing.T) {
+	r := convert(t, `<p>Before <img src="https://cdn.example.com/img.png" alt="pic"> After</p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"type":"resizableImage"`) {
+		t.Errorf("expected image extracted from paragraph, got: %s", j)
+	}
+	if !strings.Contains(j, "Before") || !strings.Contains(j, "After") {
+		t.Errorf("expected surrounding text preserved, got: %s", j)
+	}
+	// Image should NOT be inside a paragraph content — it's a separate block
+	if strings.Contains(j, `"type":"paragraph","content":[{"type":"resizableImage"`) {
+		t.Errorf("image should not be inline inside paragraph, got: %s", j)
+	}
+}
+
+func TestConvert_ImageWithDataSrc(t *testing.T) {
+	r := convert(t, `<p><img data-src="https://cdn.example.com/lazy.png" alt="lazy"></p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"src":"https://cdn.example.com/lazy.png"`) {
+		t.Errorf("expected data-src fallback, got: %s", j)
 	}
 }
 

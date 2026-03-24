@@ -1,0 +1,5 @@
+./helpscout_normalize.go
+./html_to_tiptap.go
+./node_builders.go
+./warnings.go
+./html_to_tiptap_test.go

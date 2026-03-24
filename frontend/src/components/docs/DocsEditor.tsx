@@ -36,7 +36,7 @@ import { TableRow } from '@tiptap/extension-table-row'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
-import { SlashMenuExtension } from './SlashMenuExtension'
+import { SlashMenuExtension, slashMenuPluginKey } from './SlashMenuExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
@@ -835,6 +835,9 @@ export function DocsEditor({
         skipNextSaveRef.current = false
         return
       }
+      // Don't auto-save while slash menu is open — the /command text is transient
+      const slashState = slashMenuPluginKey.getState(e.state) as any
+      if (slashState?.open) return
       if (!readOnly) {
         scheduleSave(e.getJSON())
       }

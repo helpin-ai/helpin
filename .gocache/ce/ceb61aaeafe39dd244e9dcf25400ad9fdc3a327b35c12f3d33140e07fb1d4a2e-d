@@ -1,0 +1,3 @@
+./html.go
+./sanitize.go
+./html_test.go

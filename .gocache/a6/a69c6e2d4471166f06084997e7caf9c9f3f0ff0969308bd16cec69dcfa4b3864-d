@@ -1,0 +1,3 @@
+./base64x.go
+./base64x_subr_amd64.go
+./faststr.go

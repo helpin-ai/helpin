@@ -1,0 +1,11 @@
+./arch.go
+./eface.go
+./encodings.go
+./instructions.go
+./instructions_table.go
+./operands.go
+./pools.go
+./program.go
+./registers.go
+./utils.go
+./asm.s

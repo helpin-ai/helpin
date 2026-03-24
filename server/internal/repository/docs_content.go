@@ -75,6 +75,27 @@ func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, c
 	return r.GetByDocumentID(ctx, documentID)
 }
 
+// ListBySpaceWithImportHTML returns all content records that have stored import HTML for a given space.
+func (r *DocsContentRepository) ListBySpaceWithImportHTML(ctx context.Context, spaceID string) ([]model.DocsContent, error) {
+	var contents []model.DocsContent
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN docs_documents dd ON dd.id = docs_contents.document_id").
+		Where("dd.space_id = ? AND docs_contents.import_source_html IS NOT NULL AND docs_contents.import_source_html != ''", spaceID).
+		Find(&contents).Error; err != nil {
+		return nil, fmt.Errorf("list reconvertible docs: %w", err)
+	}
+	return contents, nil
+}
+
+// UpdateImportProvenance sets the import source fields on a content record.
+func (r *DocsContentRepository) UpdateImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) {
+	r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", contentID).Updates(map[string]interface{}{
+		"import_source_html":      sourceHTML,
+		"import_source_system":    sourceSystem,
+		"import_source_object_id": sourceObjectID,
+	})
+}
+
 // extractPlainText extracts plain text from TipTap/ProseMirror JSON content.
 // Walks the node tree and concatenates all text node values.
 func extractPlainText(raw json.RawMessage) string {

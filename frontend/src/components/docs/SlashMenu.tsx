@@ -24,9 +24,19 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
   const pluginState = (slashMenuPluginKey.getState(editor.state) as SlashMenuState) ?? CLOSED;
   stateRef.current = pluginState;
 
-  // Reset submenu when menu closes
+  const wasOpenRef = useRef(false);
+  const commandExecutedRef = useRef(false);
+
+  // When menu closes, clean up — delete slash text if no command was executed
   useEffect(() => {
-    if (!pluginState.open) {
+    if (pluginState.open) {
+      wasOpenRef.current = true;
+      commandExecutedRef.current = false;
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      if (!commandExecutedRef.current) {
+        deleteSlashText();
+      }
       setSubmenu(null);
       setSubmenuTitle('');
       setSubmenuIndex(0);
@@ -77,13 +87,29 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
         return;
       }
 
-      // Calculate delete range from plugin state — stable regardless of extra dispatches
-      const { from: menuFrom, query } = stateRef.current;
-      const deleteFrom = menuFrom - 1; // position of the "/"
-      const deleteTo = menuFrom + query.length; // end of typed query
+      // Mark that a command was executed — prevents double-delete on close
+      commandExecutedRef.current = true;
 
-      // Delete the "/" + query text, then execute the command
-      editor.chain().deleteRange({ from: deleteFrom, to: deleteTo }).run();
+      // Calculate delete range from plugin state
+      const { from: menuFrom } = stateRef.current;
+      const deleteFrom = menuFrom - 1; // position of the "/"
+
+      // Safety: find the actual end of the slash command text by scanning forward
+      // from the "/" position. Never delete more than 30 chars (no command is longer).
+      const docSize = editor.state.doc.content.size;
+      let deleteTo = deleteFrom;
+      const maxScan = Math.min(deleteFrom + 30, docSize);
+      const textAfterSlash = editor.state.doc.textBetween(deleteFrom, maxScan, '\0', '\0');
+      // Find the end of the slash text: starts with "/" followed by word chars
+      const slashMatch = textAfterSlash.match(/^\/\w*/);
+      if (slashMatch) {
+        deleteTo = deleteFrom + slashMatch[0].length;
+      }
+
+      // Delete only the slash command text
+      if (deleteTo > deleteFrom) {
+        editor.chain().focus().deleteRange({ from: deleteFrom, to: deleteTo }).run();
+      }
 
       if (cmd.title === 'Emoji' && onEmojiInsert) {
         onEmojiInsert();
@@ -191,17 +217,34 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
     menuRef.current.style.left = `${coords.left - editorRect.left}px`;
   }, [pluginState, editor]);
 
-  // Close on click outside
+  // Delete the "/" + query text from the document
+  const deleteSlashText = useCallback(() => {
+    const { from: menuFrom } = stateRef.current;
+    if (!menuFrom) return;
+    const deleteFrom = menuFrom - 1;
+    const docSize = editor.state.doc.content.size;
+    const maxScan = Math.min(deleteFrom + 30, docSize);
+    try {
+      const text = editor.state.doc.textBetween(deleteFrom, maxScan, '\0', '\0');
+      const match = text.match(/^\/\w*/);
+      if (match) {
+        editor.chain().focus().deleteRange({ from: deleteFrom, to: deleteFrom + match[0].length }).run();
+      }
+    } catch { /* ignore */ }
+  }, [editor]);
+
+  // Close on click outside — also delete slash text
   useEffect(() => {
     if (!pluginState.open) return;
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        deleteSlashText();
         editor.view.dispatch(editor.state.tr.setMeta(slashMenuPluginKey, CLOSED));
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [pluginState.open, editor]);
+  }, [pluginState.open, editor, deleteSlashText]);
 
   if (!pluginState.open || activeCommands.length === 0) return null;
 

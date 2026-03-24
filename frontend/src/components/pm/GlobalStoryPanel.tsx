@@ -4,7 +4,8 @@ import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import type { StoryDetail, WorkflowState } from '@/lib/pmTypes';
+import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
+import type { StoryDetail, StoryRecurringSummary, WorkflowState } from '@/lib/pmTypes';
 
 interface GlobalStoryPanelProps {
   workspaceId: string;
@@ -20,8 +21,9 @@ export function GlobalStoryPanel({ workspaceId }: GlobalStoryPanelProps) {
   const setStoryDetail = useStoryPanelStore((s) => s.setStoryDetail);
 
   const [states, setStates] = useState<WorkflowState[]>([]);
+  const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(null);
 
-  // Fetch story detail + workflow states, then reveal panel
+  // Fetch story detail + workflow states + recurring summary, then reveal panel
   useEffect(() => {
     if (!storyId || !workspaceId) return;
 
@@ -44,6 +46,16 @@ export function GlobalStoryPanel({ workspaceId }: GlobalStoryPanelProps) {
           (w) => w.workflow.id === storyRes.data!.story.workflow_id
         );
         setStates(wf?.states ?? []);
+
+        // Load recurring summary if applicable (before revealing to avoid re-render flicker)
+        let recurring: StoryRecurringSummary | null = null;
+        if (storyRes.data.story.recurring_template_id) {
+          const { data } = await pmRecurringTemplateService.getByStory(workspaceId, storyId);
+          if (!cancelled) recurring = data ?? null;
+        }
+        if (cancelled) return;
+        setRecurringSummary(recurring);
+
         reveal(storyRes.data);
       } catch {
         if (!cancelled) {
@@ -86,6 +98,7 @@ export function GlobalStoryPanel({ workspaceId }: GlobalStoryPanelProps) {
       open={open}
       storyDetail={storyDetail}
       states={states}
+      initialRecurringSummary={recurringSummary}
       onOpenChange={(isOpen) => {
         if (!isOpen) close();
       }}
