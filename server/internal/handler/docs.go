@@ -894,6 +894,22 @@ func (h *DocsHandler) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteRedirect handles DELETE /api/docs/redirects/{id}.
+// UpdateRedirect updates a redirect's fields.
+func (h *DocsHandler) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.UpdateDocsRedirectRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	redirect, err := h.helpcenterSvc.UpdateRedirect(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, redirect)
+}
+
 func (h *DocsHandler) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.helpcenterSvc.DeleteRedirect(r.Context(), id); err != nil {

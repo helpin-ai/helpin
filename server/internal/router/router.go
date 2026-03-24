@@ -752,6 +752,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Redirect management
 				r.With(requirePerm(authorization.PermDocsAdmin)).Get("/redirects", h.Docs.ListRedirects)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/redirects", h.Docs.CreateRedirect)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Patch("/redirects/{id}", h.Docs.UpdateRedirect)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/redirects/{id}", h.Docs.DeleteRedirect)
 
 				// Feedback

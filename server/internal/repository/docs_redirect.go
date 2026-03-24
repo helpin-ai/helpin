@@ -94,6 +94,18 @@ func (r *DocsRedirectRepository) List(ctx context.Context, workspaceID string, f
 	return items, total, nil
 }
 
+// Update updates the target fields of a redirect by ID.
+func (r *DocsRedirectRepository) Update(ctx context.Context, id string, updates map[string]interface{}) (*model.DocsRedirect, error) {
+	if err := r.db.WithContext(ctx).Model(&model.DocsRedirect{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update docs redirect: %w", err)
+	}
+	var redirect model.DocsRedirect
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&redirect).Error; err != nil {
+		return nil, fmt.Errorf("get updated redirect: %w", err)
+	}
+	return &redirect, nil
+}
+
 // Delete removes a redirect by ID.
 func (r *DocsRedirectRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.DocsRedirect{}, "id = ?", id).Error; err != nil {

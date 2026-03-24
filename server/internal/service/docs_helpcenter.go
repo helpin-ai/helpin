@@ -590,6 +590,34 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 }
 
 // DeleteRedirect removes a redirect by ID.
+// UpdateRedirect updates a redirect's target fields.
+func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, req model.UpdateDocsRedirectRequest) (*model.DocsRedirect, error) {
+	updates := map[string]interface{}{}
+	if req.SourcePath != nil {
+		if *req.SourcePath == "" || (*req.SourcePath)[0] != '/' {
+			return nil, fmt.Errorf("source_path must start with /")
+		}
+		updates["source_path"] = *req.SourcePath
+	}
+	if req.TargetCollectionSlug != nil {
+		if *req.TargetCollectionSlug == "" {
+			return nil, fmt.Errorf("target_collection_slug is required")
+		}
+		updates["target_collection_slug"] = *req.TargetCollectionSlug
+	}
+	if req.TargetArticleSlug != nil {
+		if *req.TargetArticleSlug == "" {
+			updates["target_article_slug"] = nil
+		} else {
+			updates["target_article_slug"] = *req.TargetArticleSlug
+		}
+	}
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+	return s.redirectRepo.Update(ctx, id, updates)
+}
+
 func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) error {
 	return s.redirectRepo.Delete(ctx, id)
 }

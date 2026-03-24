@@ -645,7 +645,7 @@ export function CreateStoryModal({
                   onChange={(html) =>
                     setForm((prev) => ({ ...prev, description: html }))
                   }
-                  placeholder="Press '/' for commands"
+                  placeholder="Add a description..."
                   className="min-h-0 flex-1 flex flex-col"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
