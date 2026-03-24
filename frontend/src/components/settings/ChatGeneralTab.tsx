@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,18 +7,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, Globe, ChevronDown, Star, Mail, Paperclip } from 'lucide-react';
+import { Check, Copy, Code, Loader2, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, ChevronDown, Star } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
-import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
+import { useSupportAgents } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
-import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
-import { SupportContentSourcesField } from './SupportContentSourcesField';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
+import type { WidgetConfig } from '@helpin/widget-core';
 
 const ICON_OPTIONS = [
   { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
@@ -62,6 +61,77 @@ const COMMON_TIMEZONES = [
 ];
 
 const NO_AGENT_VALUE = '__none__';
+const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
+
+function parseTimeToMinutes(value: string): number {
+  const [hours = '0', minutes = '0'] = value.split(':');
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function weekdayKey(date: Date, timezone: string): string {
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(date).toLowerCase();
+  return day.slice(0, 3);
+}
+
+function zonedMinutes(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  return (hour * 60) + minute;
+}
+
+function buildPreviewAvailability(
+  businessHoursEnabled: boolean,
+  timezone: string,
+  schedule: Record<string, BusinessHoursDay>,
+  outsideMessage: string,
+): WidgetConfig['availability'] {
+  const fallbackMessage = outsideMessage || "We're currently offline. Leave a message and we'll get back to you!";
+  if (!businessHoursEnabled) {
+    return {
+      isOnline: true,
+      statusText: 'Online now',
+      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+    };
+  }
+
+  try {
+    const now = new Date();
+    const day = schedule[weekdayKey(now, timezone)];
+    const nowMinutes = zonedMinutes(now, timezone);
+    const withinHours = Boolean(
+      day?.enabled
+      && nowMinutes >= parseTimeToMinutes(day.start)
+      && nowMinutes < parseTimeToMinutes(day.end),
+    );
+
+    if (withinHours) {
+      return {
+        isOnline: true,
+        statusText: 'Online now',
+        replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+      };
+    }
+
+    return {
+      isOnline: false,
+      statusText: 'Offline now',
+      replyTimeText: fallbackMessage,
+      outsideHoursMessage: fallbackMessage,
+    };
+  } catch {
+    return {
+      isOnline: true,
+      statusText: 'Online now',
+      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+    };
+  }
+}
 
 /* ── Two-column layout shell ─────────────────────────────────────────── */
 
@@ -138,10 +208,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['widget-settings']));
 
-  const activeAgentIdValue = aiAgentId !== NO_AGENT_VALUE ? aiAgentId : undefined;
-  const { data: knowledgeSources = [] } = useAgentKnowledgeSources(workspaceId, activeAgentIdValue);
-  const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
-
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -185,7 +251,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     }
   }, [data]);
 
-  const handleSave = () => {
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const initializedRef = useRef(false);
+
+  const doSave = useCallback(() => {
+    setSaveStatus('saving');
     updateMutation.mutate({
       require_email_before_chat: requireEmail,
       require_phone_after_email: requirePhone,
@@ -221,25 +293,35 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       file_uploads_enabled: fileUploadsEnabled,
       force_visitor_identity: forceVisitorIdentity,
     }, {
-      onSuccess: () => toast.success('Settings saved'),
-      onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
+      onSuccess: () => {
+        setSaveStatus('saved');
+        clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      },
+      onError: (err: unknown) => {
+        setSaveStatus('idle');
+        toast.error(err instanceof Error ? err.message : 'Failed to save');
+      },
     });
-  };
+  }, [requireEmail, requirePhone, welcomeMessage, widgetName, widgetAvatarUrl, widgetHelpSpaceIds, brandColor, showBranding, launcherPosition, launcherIcon, colorScheme, buttonColor, buttonIconColor, logoUrl, aiEnabled, aiAgentId, confidenceThreshold, aiResponseMode, aiMaxFollowups, showTalkToHuman, escalationMessage, handoffBehavior, handoffTeamId, businessHoursEnabled, timezone, schedule, outsideMessage, emailFallbackEnabled, emailFallbackDelaySecs, emailFallbackFromName, csatEnabled, fileUploadsEnabled, forceVisitorIdentity, updateMutation]);
+
+  // Auto-save with debounce when any setting changes
+  useEffect(() => {
+    // Skip the initial render + the first hydration from server data
+    if (!initializedRef.current) {
+      if (data?.settings) initializedRef.current = true;
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(doSave, 800);
+    return () => clearTimeout(debounceRef.current);
+  }, [doSave]);
 
   const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
     setSchedule(prev => ({
       ...prev,
       [dayKey]: { ...prev[dayKey], ...patch },
     }));
-  };
-
-  const toggleSpace = (spaceId: string) => {
-    if (!activeAgentIdValue) return;
-    const current = externalKnowledgeSources.map((ks) => ks.space_id);
-    const next = current.includes(spaceId)
-      ? current.filter((id) => id !== spaceId)
-      : [...current, spaceId];
-    updateKnowledgeSources.mutate({ agentId: activeAgentIdValue, spaceIds: next });
   };
 
   const toggleSection = (key: string) => {
@@ -257,8 +339,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const isExpanded = (key: string) => expandedSections.has(key);
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
-  const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
-  const externalKnowledgeSources = knowledgeSources.filter((source) => externalDocsSpaceIds.has(source.space_id));
 
   const toggleHelpSpace = (spaceId: string, enabled: boolean) => {
     setWidgetHelpSpaceIds((current) => (
@@ -358,6 +438,14 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   })();
 </script>`;
 
+  // Derive help spaces for the widget preview
+  const previewHelpSpaces = docsSpaces
+    .filter(space => widgetHelpSpaceIds.includes(space.id))
+    .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
+
+  const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+  const previewAvailability = buildPreviewAvailability(businessHoursEnabled, timezone, schedule, outsideMessage);
+
   // Shared preview element used by both views
   const previewElement = (
     <WidgetPreview
@@ -372,6 +460,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       buttonColor={buttonColor}
       buttonIconColor={buttonIconColor}
       logoUrl={logoUrl}
+      helpSpaces={previewHelpSpaces}
+      availability={previewAvailability}
+      widgetKey={widgetKey}
+      host={previewHost}
     />
   );
 
@@ -381,6 +473,23 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     <PreviewLayout preview={previewElement}>
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
+        {/* Auto-save indicator */}
+        {saveStatus !== 'idle' && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
+            {saveStatus === 'saving' && (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                <span className="text-muted-foreground">Saving...</span>
+              </>
+            )}
+            {saveStatus === 'saved' && (
+              <>
+                <Check className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-muted-foreground">Saved</span>
+              </>
+            )}
+          </div>
+        )}
         {/* Widget Installation */}
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           <button
@@ -397,7 +506,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </div>
             <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
           </button>
-          {isExpanded('widget-installation') && (
+          <div className="accordion-animate" data-open={isExpanded('widget-installation')}>
+            <div>
             <div className="border-t border-border p-4 space-y-4">
               {!widgetKey ? (
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -473,7 +583,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 </>
               )}
             </div>
-          )}
+            </div>
+          </div>
         </div>
 
         {/* Identity Capture */}
@@ -492,7 +603,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </div>
             <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
-          {isExpanded('identity-capture') && (
+          <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
+            <div>
             <div className="border-t border-border p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -528,7 +640,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 />
               </div>
             </div>
-          )}
+            </div>
+          </div>
         </div>
 
         {/* Appearance */}
@@ -547,7 +660,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </div>
             <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('appearance') && 'rotate-180')} />
           </button>
-          {isExpanded('appearance') && (
+          <div className="accordion-animate" data-open={isExpanded('appearance')}>
+            <div>
             <div className="border-t border-border p-4 space-y-6">
               {/* Widget Identity */}
               <div className="space-y-3">
@@ -681,92 +795,85 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 />
               </div>
 
-              {/* Primary Color */}
-              <div className="space-y-2">
-                <div>
+              {/* Colors — 2-col */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
                   <Label className="text-sm font-medium">Primary color</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    The main color used for links and accents in your widget.
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Links and accents in the widget.</p>
+                  <BrandColorPicker value={brandColor} onChange={setBrandColor} />
                 </div>
-                <BrandColorPicker value={brandColor} onChange={setBrandColor} />
-              </div>
-
-              {/* Color Scheme */}
-              <div className="space-y-2">
-                <div>
+                <div className="space-y-2">
                   <Label className="text-sm font-medium">Color Scheme</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Choose the default color scheme for your widget.</p>
-                </div>
-                <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
-                  {COLOR_SCHEME_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setColorScheme(opt.value)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
-                        colorScheme === opt.value
-                          ? 'bg-background shadow-sm font-medium text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      <opt.icon className="h-3.5 w-3.5" />
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Button Color */}
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-sm font-medium">Button color</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Background color of the floating widget button.</p>
-                </div>
-                <BrandColorPicker value={buttonColor} onChange={setButtonColor} />
-              </div>
-
-              {/* Button Icon Color */}
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-sm font-medium">Button icon color</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Icon color of the floating widget button.</p>
-                </div>
-                <BrandColorPicker value={buttonIconColor} onChange={setButtonIconColor} />
-              </div>
-
-              {/* Launcher Position */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Launcher Position</Label>
-                <Select value={launcherPosition} onValueChange={setLauncherPosition}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bottom_right">Bottom Right</SelectItem>
-                    <SelectItem value="bottom_left">Bottom Left</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Launcher Icon */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Launcher Icon</Label>
-                <Select value={launcherIcon} onValueChange={setLauncherIcon}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ICON_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        <span className="flex items-center gap-2">
-                          <opt.icon className="h-4 w-4" />
-                          {opt.label}
-                        </span>
-                      </SelectItem>
+                  <p className="text-xs text-muted-foreground mt-0.5">Default theme for the widget.</p>
+                  <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
+                    {COLOR_SCHEME_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setColorScheme(opt.value)}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
+                          colorScheme === opt.value
+                            ? 'bg-background shadow-sm font-medium text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <opt.icon className="h-3.5 w-3.5" />
+                        {opt.label}
+                      </button>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Button colors — 2-col */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Button color</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Floating button background.</p>
+                  <BrandColorPicker value={buttonColor} onChange={setButtonColor} />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Button icon color</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Floating button icon.</p>
+                  <BrandColorPicker value={buttonIconColor} onChange={setButtonIconColor} />
+                </div>
+              </div>
+
+              {/* Launcher — 2-col */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Launcher Position</Label>
+                  <Select value={launcherPosition} onValueChange={setLauncherPosition}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bottom_right">Bottom Right</SelectItem>
+                      <SelectItem value="bottom_left">Bottom Left</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Launcher Icon</Label>
+                  <div className="flex gap-1.5">
+                    {ICON_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        title={opt.label}
+                        onClick={() => setLauncherIcon(opt.value)}
+                        className={cn(
+                          'flex items-center justify-center rounded-md border p-2 transition-colors',
+                          launcherIcon === opt.value
+                            ? 'border-primary bg-primary/5 text-primary'
+                            : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                        )}
+                      >
+                        <opt.icon className="h-4.5 w-4.5" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Show Powered By */}
@@ -778,7 +885,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 <Switch checked={showBranding} onCheckedChange={setShowBranding} />
               </div>
             </div>
-          )}
+            </div>
+          </div>
         </div>
 
         {/* Help Center */}
@@ -797,7 +905,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </div>
             <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('help-center') && 'rotate-180')} />
           </button>
-          {isExpanded('help-center') && (
+          <div className="accordion-animate" data-open={isExpanded('help-center')}>
+            <div>
             <div className="border-t border-border p-4 space-y-4">
               {docsSpacesLoading && (
                 <p className="text-sm text-muted-foreground">Loading available spaces...</p>
@@ -831,7 +940,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 </div>
               )}
             </div>
-          )}
+            </div>
+          </div>
         </div>
           {/* AI Auto-Reply */}
           <div className="overflow-hidden rounded-lg border border-border bg-background">
@@ -849,7 +959,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </div>
               <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
             </button>
-            {isExpanded('ai-auto-reply') && (
+            <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
+              <div>
               <div className="border-t border-border p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -876,76 +987,46 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                     Chat auto-replies will run this support agent on new visitor messages.
                   </p>
                 </div>
-
-                {activeAgentIdValue && (
-                  <div className="space-y-2">
-                    <Label className="text-sm">Knowledge Sources</Label>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Support AI searches both help center docs and synced website content. Keep both sources current so replies stay grounded.
-                    </p>
-                    <div className="space-y-3">
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Help Center Docs</p>
-                        <SupportKnowledgeSourcesField
-                          spaces={externalDocsSpaces}
-                          knowledgeSources={externalKnowledgeSources}
-                          onToggle={toggleSpace}
-                          disabled={updateKnowledgeSources.isPending}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Website Content</p>
-                        <SupportContentSourcesField
-                          workspaceId={workspaceId}
-                          agentId={activeAgentIdValue}
-                          disabled={updateKnowledgeSources.isPending}
-                        />
-                      </div>
-                    </div>
+                {/* AI settings — 2-col grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Response Mode</Label>
+                    <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off (manual only)</SelectItem>
+                        <SelectItem value="ai_first">AI First (auto-reply)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label className="text-sm">Confidence Threshold</Label>
-                  <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
-                        <SelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">AI will only respond when confidence is at or above this level.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm">Response Mode</Label>
-                  <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
-                    <SelectTrigger className="w-56">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="off">Off (manual only)</SelectItem>
-                      <SelectItem value="ai_first">AI First (auto-reply)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm">Max AI Follow-ups</Label>
-                  <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
-                        <SelectItem key={v} value={String(v)}>{v}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Confidence Threshold</Label>
+                    <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
+                          <SelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Max Follow-ups</Label>
+                    <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+                          <SelectItem key={v} value={String(v)}>{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -967,62 +1048,50 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   />
                   <p className="text-xs text-muted-foreground">Message shown to the visitor when AI hands off to a human agent.</p>
                 </div>
-              </div>
-            )}
-          </div>
 
-          {/* Handoff Routing */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
-            <button
-              type="button"
-              onClick={() => toggleSection('handoff-routing')}
-              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Globe className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Handoff Routing</p>
-                <p className="text-sm text-muted-foreground">How conversations are assigned when human help is needed</p>
-              </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('handoff-routing') && 'rotate-180')} />
-            </button>
-            {isExpanded('handoff-routing') && (
-              <div className="border-t border-border p-4 space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">Handoff Behavior</Label>
-                  <Select value={handoffBehavior} onValueChange={setHandoffBehavior}>
-                    <SelectTrigger className="w-56">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unassigned">Leave unassigned</SelectItem>
-                      <SelectItem value="assign_to_team">Assign to team</SelectItem>
-                      <SelectItem value="round_robin">Round robin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {handoffBehavior === 'assign_to_team' && (
-                  <div className="space-y-2">
-                    <Label className="text-sm">Team</Label>
-                    <Select value={handoffTeamId ?? ''} onValueChange={setHandoffTeamId}>
-                      <SelectTrigger className="w-56">
-                        <SelectValue placeholder="Select a team..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {teams.map(team => (
-                          <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                {/* Handoff Routing — merged sub-section */}
+                <div className="border-t border-border pt-4 space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium">Handoff Routing</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">How conversations are assigned when human help is needed.</p>
                   </div>
-                )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Behavior</Label>
+                      <Select value={handoffBehavior} onValueChange={setHandoffBehavior}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Leave unassigned</SelectItem>
+                          <SelectItem value="assign_to_team">Assign to team</SelectItem>
+                          <SelectItem value="round_robin">Round robin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {handoffBehavior === 'assign_to_team' && (
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Team</Label>
+                        <Select value={handoffTeamId ?? ''} onValueChange={setHandoffTeamId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a team..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams.map(team => (
+                              <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
+              </div>
+            </div>
           </div>
 
-          {/* Business Hours */}
+          {/* Availability */}
           <div className="overflow-hidden rounded-lg border border-border bg-background">
             <button
               type="button"
@@ -1033,17 +1102,18 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 <MessageSquare className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Business Hours</p>
-                <p className="text-sm text-muted-foreground">Set when your team is available for chat</p>
+                <p className="text-sm font-medium">Availability</p>
+                <p className="text-sm text-muted-foreground">Set when your team appears online and what visitors should expect</p>
               </div>
               <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('business-hours') && 'rotate-180')} />
             </button>
-            {isExpanded('business-hours') && (
+            <div className="accordion-animate" data-open={isExpanded('business-hours')}>
+              <div>
               <div className="border-t border-border p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Enable business hours</Label>
-                    <p className="text-xs text-muted-foreground">Widget shows online/offline status based on schedule.</p>
+                    <Label className="text-sm">Enable availability schedule</Label>
+                    <p className="text-xs text-muted-foreground">Widget availability and reply expectations follow this schedule.</p>
                   </div>
                   <Switch checked={businessHoursEnabled} onCheckedChange={setBusinessHoursEnabled} />
                 </div>
@@ -1112,172 +1182,73 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   </>
                 )}
               </div>
-            )}
+              </div>
+            </div>
           </div>
 
-          {/* Customer Satisfaction */}
+          {/* Chat Features — merged CSAT, File Uploads, Email */}
           <div className="overflow-hidden rounded-lg border border-border bg-background">
             <button
               type="button"
-              onClick={() => toggleSection('csat')}
+              onClick={() => toggleSection('chat-features')}
               className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <Star className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Customer Satisfaction</p>
-                <p className="text-sm text-muted-foreground">Collect feedback after conversations are resolved</p>
+                <p className="text-sm font-medium">Chat Features</p>
+                <p className="text-sm text-muted-foreground">File uploads, satisfaction surveys, and email notifications</p>
               </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('csat') && 'rotate-180')} />
+              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-features') && 'rotate-180')} />
             </button>
-            {isExpanded('csat') && (
-              <div className="border-t border-border p-4">
+            <div className="accordion-animate" data-open={isExpanded('chat-features')}>
+              <div>
+              <div className="border-t border-border p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Enable CSAT surveys</Label>
-                    <p className="text-xs text-muted-foreground">Send a satisfaction survey after conversation resolution.</p>
-                  </div>
-                  <Switch checked={csatEnabled} onCheckedChange={setCsatEnabled} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
-            <button
-              type="button"
-              onClick={() => toggleSection('file-uploads')}
-              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Paperclip className="h-4 w-4" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">File Uploads</p>
-                <p className="text-sm text-muted-foreground">Allow visitors to attach files in chat</p>
-              </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('file-uploads') && 'rotate-180')} />
-            </button>
-            {isExpanded('file-uploads') && (
-              <div className="border-t border-border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-sm">Enable file uploads</Label>
+                    <Label className="text-sm">File uploads</Label>
                     <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 10 MB).</p>
                   </div>
                   <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
                 </div>
-              </div>
-            )}
-          </div>
 
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
-            <button
-              type="button"
-              onClick={() => toggleSection('email-notifications')}
-              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Mail className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Email Notifications</p>
-                <p className="text-sm text-muted-foreground">Send delayed email replies to offline visitors</p>
-              </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('email-notifications') && 'rotate-180')} />
-            </button>
-            {isExpanded('email-notifications') && (
-              <div className="border-t border-border p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Send email when visitor is offline</Label>
-                    <p className="text-xs text-muted-foreground">Queue a fallback email if the visitor disconnects before your team replies.</p>
+                    <Label className="text-sm">CSAT surveys</Label>
+                    <p className="text-xs text-muted-foreground">Send a satisfaction survey after conversation resolution.</p>
                   </div>
-                  <Switch checked={emailFallbackEnabled} onCheckedChange={setEmailFallbackEnabled} />
+                  <Switch checked={csatEnabled} onCheckedChange={setCsatEnabled} />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email-fallback-delay" className="text-sm">Delay before sending (seconds)</Label>
-                  <Input
-                    id="email-fallback-delay"
-                    type="number"
-                    min={30}
-                    max={600}
-                    value={emailFallbackDelaySecs}
-                    onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value || 120))}
-                    className="w-40"
-                  />
-                </div>
+                <div className="border-t border-border pt-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Email notifications</Label>
+                      <p className="text-xs text-muted-foreground">Queue a fallback email if the visitor disconnects before your team replies.</p>
+                    </div>
+                    <Switch checked={emailFallbackEnabled} onCheckedChange={setEmailFallbackEnabled} />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email-fallback-from-name" className="text-sm">From name</Label>
-                  <Input
-                    id="email-fallback-from-name"
-                    value={emailFallbackFromName}
-                    onChange={(e) => setEmailFallbackFromName(e.target.value)}
-                    placeholder={workspace?.name || 'Workspace name'}
-                    className="max-w-md"
-                  />
+                  {emailFallbackEnabled && (
+                    <div className="space-y-2">
+                      <Label htmlFor="email-fallback-from-name" className="text-sm">From name</Label>
+                      <Input
+                        id="email-fallback-from-name"
+                        value={emailFallbackFromName}
+                        onChange={(e) => setEmailFallbackFromName(e.target.value)}
+                        placeholder={workspace?.name || 'Workspace name'}
+                        className="max-w-md"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Sticky Footer */}
-        <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="flex h-14 items-center justify-end gap-3 px-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (data?.settings) {
-                  const s = data.settings;
-                  setRequireEmail(s.require_email_before_chat);
-                  setRequirePhone(s.require_phone_after_email);
-                  setWelcomeMessage(s.welcome_message);
-                  setBrandColor(s.brand_color);
-                  setShowBranding(s.show_branding);
-                  setLauncherPosition(s.launcher_position);
-                  setLauncherIcon(s.launcher_icon);
-                  setColorScheme(s.color_scheme || 'light');
-                  setButtonColor(s.button_color || '#000000');
-                  setButtonIconColor(s.button_icon_color || '#FFFFFF');
-                  setLogoUrl(s.logo_url || '');
-                  setWidgetName(s.widget_name || '');
-                  setWidgetAvatarUrl(s.widget_avatar_url || '');
-                  setWidgetHelpSpaceIds(s.widget_help_space_ids || []);
-                  setAiEnabled(s.ai_enabled);
-                  setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
-                  setConfidenceThreshold(String(s.ai_confidence_threshold));
-                  setAiResponseMode(s.ai_response_mode ?? 'off');
-                  setAiMaxFollowups(s.ai_max_followups ?? 3);
-                  setShowTalkToHuman(s.show_talk_to_human);
-                  setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
-                  setHandoffBehavior(s.handoff_behavior);
-                  setHandoffTeamId(s.handoff_team_id);
-                  setBusinessHoursEnabled(s.business_hours_enabled);
-                  setTimezone(s.business_hours_timezone);
-                  setSchedule(s.business_hours_schedule);
-                  setOutsideMessage(s.outside_hours_message);
-                  setEmailFallbackEnabled(s.email_fallback_enabled);
-                  setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
-                  setEmailFallbackFromName(s.email_fallback_from_name ?? '');
-                  setCsatEnabled(s.csat_enabled);
-                  setFileUploadsEnabled(s.file_uploads_enabled ?? true);
-                  setForceVisitorIdentity(s.force_visitor_identity ?? false);
-                  toast.success('Changes discarded');
-                }
-              }}
-            >
-              Discard
-            </Button>
-            <Button onClick={handleSave} disabled={updateMutation.isPending} size="sm">
-              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        </div>
       </div>
     </PreviewLayout>
   );

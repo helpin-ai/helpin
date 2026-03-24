@@ -204,6 +204,17 @@ func (s *SupportInboxService) MarkConversationRead(ctx context.Context, workspac
 	if err := s.conversationRepo.MarkInternalRead(ctx, conversationID); err != nil {
 		return err
 	}
+	if s.notificationService != nil {
+		recipients := []string{userID}
+		if conv.OpenedByUserID != nil && strings.TrimSpace(*conv.OpenedByUserID) != "" && *conv.OpenedByUserID != userID {
+			recipients = append(recipients, *conv.OpenedByUserID)
+		}
+		for _, recipientID := range recipients {
+			if err := s.notificationService.MarkEntityCategoryAsRead(ctx, recipientID, workspaceID, "support_conversation", conversationID, model.NotifCategorySupportReplies); err != nil {
+				slog.ErrorContext(ctx, "mark support reply notifications read", "error", err, "conversation_id", conversationID, "user_id", recipientID)
+			}
+		}
+	}
 
 	// Broadcast read event so other tabs/users can invalidate
 	reasonJSON, _ := json.Marshal(map[string]string{"reason": "read"})
@@ -594,30 +605,52 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
 
+	var conv *model.SupportConversation
+	if len(mentionedUserIDs) > 0 || (!msg.IsInternal && msg.MessageType == "reply") {
+		conv, _ = s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+	}
+
 	// Emit mention notifications after message creation.
 	if len(mentionedUserIDs) > 0 {
-		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-		subject := "Support conversation"
-		if conv != nil {
-			subject = conv.Subject
+		ProcessSupportMentions(ctx, s.notificationService, conv, msg.Content, derefString(senderUserID), mentionedUserIDs)
+	}
+
+	previousOwnerID := ""
+	if conv != nil && conv.OpenedByUserID != nil {
+		previousOwnerID = strings.TrimSpace(*conv.OpenedByUserID)
+	}
+
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
+		senderName := derefString(msg.SenderDisplayName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
+	}
+
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
+		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
+			conv.OpenedByUserID = senderUserID
+			if err := s.conversationRepo.Update(ctx, conv); err != nil {
+				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
+			}
 		}
-		ProcessSupportMentions(ctx, s.notificationService, workspaceID, ticketID, subject, msg.Content, derefString(senderUserID), mentionedUserIDs)
+	}
+
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && previousOwnerID != "" && s.notificationService != nil {
+		if err := s.notificationService.MarkEntityCategoryAsRead(ctx, previousOwnerID, workspaceID, "support_conversation", ticketID, model.NotifCategorySupportReplies); err != nil {
+			slog.ErrorContext(ctx, "mark support reply notifications handled after teammate reply", "error", err, "conversation_id", ticketID, "recipient_id", previousOwnerID)
+		}
 	}
 
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
-	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
-		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-		if conv != nil {
-			if conv.AnonymousID != nil && *conv.AnonymousID != "" {
-				s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
-			}
-			if s.emailFallbackService != nil {
-				go func(convSnapshot *model.SupportConversation) {
-					if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
-						slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
-					}
-				}(conv)
-			}
+	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" && conv != nil {
+		if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		}
+		if s.emailFallbackService != nil {
+			go func(convSnapshot *model.SupportConversation) {
+				if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
+					slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
+				}
+			}(conv)
 		}
 	}
 

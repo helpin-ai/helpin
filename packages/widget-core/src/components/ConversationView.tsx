@@ -53,6 +53,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const workspaceName = config.workspaceName || 'Support';
   const logoUrl = config.branding?.logoUrl;
   const welcomeMessage = config.branding?.welcomeMessage || 'Hi there. How can we help?';
+  const availability = config.availability;
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
@@ -208,9 +209,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             ) : (
               <>
                 <span className="helpin-conversation-title">{config.features?.aiEnabled ? 'Helpin AI' : workspaceName}</span>
-                {config.features?.aiEnabled && (
-                  <span className="helpin-conversation-subtitle">Our bot will reply to your questions</span>
-                )}
+                <span className="helpin-conversation-subtitle">
+                  {config.features?.aiEnabled
+                    ? 'Our bot will reply to your questions'
+                    : availability?.statusText || 'Online now'}
+                </span>
               </>
             )}
           </div>

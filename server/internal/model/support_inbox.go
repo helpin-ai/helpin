@@ -84,6 +84,7 @@ type SupportMessage struct {
 	Metadata          string     `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
 	ViaChannel        *string    `json:"via_channel,omitempty" gorm:"size:20"`
 	EmailNotifiedAt   *time.Time `json:"email_notified_at,omitempty"`
+	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
@@ -424,7 +425,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LauncherIcon:           "chat_bubble",
 		CSATEnabled:            false,
 		FileUploadsEnabled:     true,
-		ForceVisitorIdentity: false,
+		ForceVisitorIdentity:   false,
 	}
 }
 
@@ -466,7 +467,7 @@ type UpdateInstallationSettingsRequest struct {
 	LauncherIcon           *string                     `json:"launcher_icon,omitempty"`
 	CSATEnabled            *bool                       `json:"csat_enabled,omitempty"`
 	FileUploadsEnabled     *bool                       `json:"file_uploads_enabled,omitempty"`
-	ForceVisitorIdentity *bool                       `json:"force_visitor_identity,omitempty"`
+	ForceVisitorIdentity   *bool                       `json:"force_visitor_identity,omitempty"`
 }
 
 // SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.
@@ -572,7 +573,16 @@ type WidgetConfigFeatures struct {
 	PreChatForm     bool `json:"preChatForm"`
 	RequirePhone    bool `json:"requirePhone"`
 	CSATRating      bool `json:"csatRating"`
-	ForceIdentify bool `json:"forceIdentify"`
+	ForceIdentify   bool `json:"forceIdentify"`
+}
+
+// WidgetConfigAvailability matches the widget-core WidgetConfig.availability shape.
+type WidgetConfigAvailability struct {
+	IsOnline            bool    `json:"isOnline"`
+	StatusText          string  `json:"statusText"`
+	ReplyTimeText       string  `json:"replyTimeText"`
+	OutsideHoursMessage *string `json:"outsideHoursMessage,omitempty"`
+	NextOnlineAt        *string `json:"nextOnlineAt,omitempty"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.
@@ -614,11 +624,12 @@ type WidgetHelpArticle struct {
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WorkspaceID   string               `json:"workspaceId"`
-	WorkspaceName string               `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding `json:"branding"`
-	Features      WidgetConfigFeatures `json:"features"`
-	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
+	WorkspaceID   string                   `json:"workspaceId"`
+	WorkspaceName string                   `json:"workspaceName,omitempty"`
+	Branding      WidgetConfigBranding     `json:"branding"`
+	Features      WidgetConfigFeatures     `json:"features"`
+	Availability  WidgetConfigAvailability `json:"availability"`
+	HelpSpaces    []WidgetHelpSpace        `json:"helpSpaces"`
 }
 
 // ── Visitor Context DTOs ─────────────────────────────────────────────

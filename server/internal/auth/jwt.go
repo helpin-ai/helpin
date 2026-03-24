@@ -87,3 +87,43 @@ func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 
 	return claims, nil
 }
+
+// PreviewClaims contains claims for a document preview token.
+type PreviewClaims struct {
+	DocID       string `json:"doc_id"`
+	WorkspaceID string `json:"workspace_id"`
+	jwt.RegisteredClaims
+}
+
+// GeneratePreviewToken creates a short-lived JWT (15 min) for document preview.
+func (m *JWTManager) GeneratePreviewToken(docID, workspaceID string) (string, error) {
+	claims := PreviewClaims{
+		DocID:       docID,
+		WorkspaceID: workspaceID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   "preview:" + docID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(m.secret)
+}
+
+// ValidatePreviewToken validates a preview JWT and returns its claims.
+func (m *JWTManager) ValidatePreviewToken(tokenString string) (*PreviewClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &PreviewClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.secret, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid preview token: %w", err)
+	}
+	claims, ok := token.Claims.(*PreviewClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid preview token claims")
+	}
+	return claims, nil
+}

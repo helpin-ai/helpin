@@ -327,6 +327,26 @@ export function useUpdateAgentKnowledgeSources(workspaceId: string) {
   });
 }
 
+export function useReindexAgentKnowledgeSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, spaceId }: { agentId: string; spaceId: string }) =>
+      agentService.reindexKnowledgeSource(workspaceId, agentId, spaceId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to reindex help center docs', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+  });
+}
+
 export function useSupportContentSources(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.agents.contentSources(workspaceId),

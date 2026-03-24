@@ -63,7 +63,10 @@ export const HtmlBlockExtension = Node.create({
           const raw = node.attrs.html || '';
           if (raw) {
             const safe = sanitizeHtml(raw);
-            if (safe) state.write(safe + '\n\n');
+            if (safe) {
+              state.write(`<div data-html-block>${safe}</div>`);
+              state.closeBlock(node);
+            }
           }
         },
         parse: {},

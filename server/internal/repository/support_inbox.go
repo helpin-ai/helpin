@@ -91,6 +91,20 @@ func (r *SupportMessageRepository) UpdateEmailNotifiedAt(ctx context.Context, id
 	return nil
 }
 
+// UpdateEmailReadAt stamps email_read_at for the provided message IDs.
+func (r *SupportMessageRepository) UpdateEmailReadAt(ctx context.Context, ids []string, readAt time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportMessage{}).
+		Where("id IN ?", ids).
+		Update("email_read_at", readAt).Error; err != nil {
+		return fmt.Errorf("update email_read_at: %w", err)
+	}
+	return nil
+}
+
 // DB returns the underlying *gorm.DB for transaction support.
 func (r *SupportMessageRepository) DB() *gorm.DB {
 	return r.db

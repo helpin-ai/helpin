@@ -151,3 +151,42 @@ func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 		t.Fatal("expected planner error to be populated")
 	}
 }
+
+func TestGenerateResponseRejectsTemplatePlaceholder(t *testing.T) {
+	svc := &SupportAIService{
+		llmProvider: &scriptedSupportPreviewLLM{
+			responses: []llm.ChatResponse{
+				{
+					Content:    `{"content":"Your answer in markdown","can_answer":true,"source_doc_ids":[],"confidence":0.85}`,
+					TokensUsed: llm.TokenUsage{InputTokens: 11, OutputTokens: 7},
+				},
+			},
+		},
+	}
+
+	resp, tokensUsed, err := svc.generateResponse(
+		context.Background(),
+		&model.Agent{Name: "Support"},
+		nil,
+		nil,
+		"",
+		"Does it have AI features?",
+		model.AgentModelProviderAnthropic,
+		"claude-sonnet-4-6",
+	)
+	if err != nil {
+		t.Fatalf("generateResponse() error = %v", err)
+	}
+	if resp.CanAnswer {
+		t.Fatal("expected template placeholder response to be rejected")
+	}
+	if resp.Content != "" {
+		t.Fatalf("content = %q, want empty", resp.Content)
+	}
+	if resp.Confidence != 0 {
+		t.Fatalf("confidence = %v, want 0", resp.Confidence)
+	}
+	if tokensUsed != 18 {
+		t.Fatalf("tokensUsed = %d, want 18", tokensUsed)
+	}
+}

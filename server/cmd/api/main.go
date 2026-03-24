@@ -185,6 +185,7 @@ func main() {
 		&model.SupportConversation{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
+		&model.SupportEmailWebhookEvent{},
 		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
@@ -456,6 +457,7 @@ func main() {
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
+	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
@@ -549,6 +551,7 @@ func main() {
 		supportMessageRepo,
 		supportConversationRepo,
 		supportEmailLogRepo,
+		supportEmailWebhookEventRepo,
 		supportInstallRepo,
 		supportSessionRepo,
 		workspaceRepo,
@@ -628,6 +631,7 @@ func main() {
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
+	emailFallbackService.SetNotificationService(notificationService)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(
@@ -663,7 +667,7 @@ func main() {
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	contentCrawler := crawler.NewSmartCrawler(
@@ -822,58 +826,60 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:             handler.NewHealthHandler(s3Client),
-		Auth:               handler.NewAuthHandler(authService),
-		Organization:       handler.NewOrganizationHandler(orgService),
-		Workspace:          handler.NewWorkspaceHandler(workspaceService),
-		Settings:           handler.NewSettingsHandler(settingsService, automationInventoryService),
-		Invite:             handler.NewInviteHandler(inviteService),
-		PMWorkflow:         handler.NewPMWorkflowHandler(pmWorkflowService),
-		PMImport:           handler.NewPMImportHandler(pmImportService),
-		PMLabel:            handler.NewPMLabelHandler(pmLabelService),
-		PMEpic:             handler.NewPMEpicHandler(pmEpicService),
-		PMRoadmap:          handler.NewPMRoadmapHandler(pmRoadmapService),
-		PMSprint:           handler.NewPMSprintHandler(pmSprintService),
-		PMStory:            handler.NewPMStoryHandler(pmStoryService),
-		PMComment:          handler.NewPMCommentHandler(pmCommentService),
-		PMAttachment:       handler.NewPMAttachmentHandler(pmAttachmentService),
-		PMObjective:        handler.NewPMObjectiveHandler(pmObjectiveService),
-		PMChecklistItem:    handler.NewPMChecklistItemHandler(pmChecklistItemService),
-		PMExternalLink:     handler.NewPMExternalLinkHandler(pmExternalLinkService),
-		PMView:             handler.NewPMViewHandler(pmViewService),
-		Search:             handler.NewSearchHandler(searchService),
-		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
-		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
-		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
+		Health:              handler.NewHealthHandler(s3Client),
+		Auth:                handler.NewAuthHandler(authService),
+		Organization:        handler.NewOrganizationHandler(orgService),
+		Workspace:           handler.NewWorkspaceHandler(workspaceService),
+		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
+		Invite:              handler.NewInviteHandler(inviteService),
+		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMImport:            handler.NewPMImportHandler(pmImportService),
+		PMLabel:             handler.NewPMLabelHandler(pmLabelService),
+		PMEpic:              handler.NewPMEpicHandler(pmEpicService),
+		PMRoadmap:           handler.NewPMRoadmapHandler(pmRoadmapService),
+		PMSprint:            handler.NewPMSprintHandler(pmSprintService),
+		PMStory:             handler.NewPMStoryHandler(pmStoryService),
+		PMComment:           handler.NewPMCommentHandler(pmCommentService),
+		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
+		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMChecklistItem:     handler.NewPMChecklistItemHandler(pmChecklistItemService),
+		PMExternalLink:      handler.NewPMExternalLinkHandler(pmExternalLinkService),
+		PMView:              handler.NewPMViewHandler(pmViewService),
+		Search:              handler.NewSearchHandler(searchService),
+		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
+		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
+		PMStoryTemplate:     handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
-		Agent:              handler.NewAgentHandler(agentService),
-		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
-		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
-		SupportAttachment:  handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
-		PostmarkInbound:    handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
-		Git:                handler.NewGitHandler(gitService),
-		Notification:       handler.NewNotificationHandler(notificationService, followerService),
-		UserNotifSettings:  handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
-		CRMContact:         handler.NewCRMContactHandler(crmContactService),
-		CRMCompany:         handler.NewCRMCompanyHandler(crmCompanyService),
-		CRMDeal:            handler.NewCRMDealHandler(crmDealService),
-		CRMAssociation:     handler.NewCRMAssociationHandler(crmAssociationService),
-		Associations:       handler.NewAssociationsHandler(associationsService),
-		CRMActivity:        handler.NewCRMActivityHandler(crmActivityService),
-		CRMProperty:        handler.NewCRMPropertyHandler(crmPropertyService),
-		CRMList:            handler.NewCRMListHandler(crmListService),
-		CRMImport:          handler.NewCRMImportHandler(crmImportService),
-		CRMEmail:           handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
-		CRMCalendar:        handler.NewCRMCalendarHandler(crmCalendarService),
-		CRMEnrichment:      handler.NewCRMEnrichmentHandler(crmEnrichmentService),
-		CRMSignal:          handler.NewCRMSignalHandler(crmSignalService),
-		CRMSummary:         handler.NewCRMSummaryHandler(crmSummaryService),
-		CRMSuggestion:      handler.NewCRMSuggestionHandler(crmSuggestionService),
-		CRMSequence:        handler.NewCRMSequenceHandler(crmSequenceService),
-		CRMWritingProfile:  handler.NewCRMWritingProfileHandler(crmWritingProfileService),
-		CRMSearch:          handler.NewCRMSearchHandler(crmSearchService),
-		CRMDealAutomation:  handler.NewCRMDealAutomationHandler(dealAutomationService),
+		Agent:               handler.NewAgentHandler(agentService),
+		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService),
+		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
+		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
+		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
+		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
+		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
+		Git:                 handler.NewGitHandler(gitService),
+		Notification:        handler.NewNotificationHandler(notificationService, followerService),
+		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
+		CRMContact:          handler.NewCRMContactHandler(crmContactService),
+		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
+		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
+		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
+		Associations:        handler.NewAssociationsHandler(associationsService),
+		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
+		CRMProperty:         handler.NewCRMPropertyHandler(crmPropertyService),
+		CRMList:             handler.NewCRMListHandler(crmListService),
+		CRMImport:           handler.NewCRMImportHandler(crmImportService),
+		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
+		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
+		CRMEnrichment:       handler.NewCRMEnrichmentHandler(crmEnrichmentService),
+		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),
+		CRMSummary:          handler.NewCRMSummaryHandler(crmSummaryService),
+		CRMSuggestion:       handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSequence:         handler.NewCRMSequenceHandler(crmSequenceService),
+		CRMWritingProfile:   handler.NewCRMWritingProfileHandler(crmWritingProfileService),
+		CRMSearch:           handler.NewCRMSearchHandler(crmSearchService),
+		CRMDealAutomation:   handler.NewCRMDealAutomationHandler(dealAutomationService),
 		SDKAssets: func() *handler.SDKAssetsHandler {
 			sdkDist := os.Getenv("SDK_DIST_DIR")
 			if sdkDist == "" {
@@ -893,6 +899,7 @@ func main() {
 			docsImportService,
 			docsEmbeddingService,
 			agentService,
+			jwtManager,
 		),
 	}
 
@@ -937,6 +944,29 @@ func main() {
 			case <-ticker.C:
 				runDigestSweep()
 			case <-digestDone:
+				return
+			}
+		}
+	}()
+
+	// Start background ticker for delayed support reply fallback emails.
+	supportReplyEmailDone := make(chan struct{})
+	go func() {
+		runSupportReplySweep := func() {
+			if err := notificationService.ProcessPendingSupportReplyEmails(context.Background(), time.Now()); err != nil {
+				slog.Error("support reply email sweep failed", "error", err)
+			}
+		}
+
+		runSupportReplySweep()
+
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runSupportReplySweep()
+			case <-supportReplyEmailDone:
 				return
 			}
 		}
@@ -1024,6 +1054,7 @@ func main() {
 		emailFallbackCancel()
 	}
 	close(digestDone)
+	close(supportReplyEmailDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

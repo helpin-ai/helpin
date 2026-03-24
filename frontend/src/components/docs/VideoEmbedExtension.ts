@@ -109,14 +109,24 @@ export const VideoEmbedExtension = Node.create({
     return ReactNodeViewRenderer(VideoEmbedNodeView);
   },
 
-  // Markdown serialization — tiptap-markdown uses this for Copy as Markdown / .md export
+  // Markdown serialization — serialize as HTML div so it round-trips via parseHTML.
+  // Falls back to a markdown link when html mode is off.
   addStorage() {
     return {
       markdown: {
         serialize(state: any, node: any) {
           const url = node.attrs.sourceUrl || node.attrs.embedUrl || '';
           const provider = node.attrs.provider || 'video';
-          state.write(`[Video (${provider})](${url})\n\n`);
+          const embedUrl = node.attrs.embedUrl || '';
+          if (this.editor?.storage?.markdown?.options?.html) {
+            state.write(
+              `<div data-video-embed="${embedUrl}" data-video-provider="${provider}" data-video-source="${url}">` +
+              `<a href="${url}" target="_blank" rel="noopener noreferrer">Video (${provider})</a></div>`
+            );
+            state.closeBlock(node);
+          } else {
+            state.write(`[Video (${provider})](${url})\n\n`);
+          }
         },
         parse: {},
       },

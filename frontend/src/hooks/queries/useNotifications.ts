@@ -21,6 +21,7 @@ export function useUpdateUserNotificationSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.userNotificationSettings.all() })
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['support'] })
     },
   })
 }
@@ -141,6 +142,7 @@ export function useUpdateNotificationPreferences(wsId: string) {
       unwrap(await notificationsService.updatePreferences(wsId, data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.preferences(wsId) })
     },
   })
 }

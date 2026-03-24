@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { mountWidget, unmountWidget } from '@helpin/widget-core';
+import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin/widget-core';
 
 // Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
 import '@helpin/widget-core/styles';
@@ -16,6 +16,10 @@ interface WidgetPreviewProps {
   buttonColor?: string;
   buttonIconColor?: string;
   logoUrl?: string;
+  helpSpaces?: Array<{ id: string; name: string; slug: string }>;
+  availability?: WidgetConfig['availability'];
+  widgetKey?: string;
+  host?: string;
 }
 
 /**
@@ -35,6 +39,10 @@ export function WidgetPreview({
   buttonColor,
   buttonIconColor,
   logoUrl,
+  helpSpaces,
+  availability,
+  widgetKey,
+  host,
 }: WidgetPreviewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(true);
@@ -70,13 +78,21 @@ export function WidgetPreview({
           csatRating: false,
           forceIdentify: false,
         },
+        availability: availability ?? {
+          isOnline: true,
+          statusText: 'Online now',
+          replyTimeText: 'We typically reply in a few minutes',
+        },
+        helpSpaces,
       },
       isOpen,
       onClose: () => setIsOpen(false),
       onLauncherClick: () => setIsOpen((open) => !open),
       initialView: 'home',
+      widgetKey,
+      host,
     });
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen]);
+  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, widgetKey, host]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {

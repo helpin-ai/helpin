@@ -1,0 +1,147 @@
+import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { common } from 'lowlight'
+
+const LANGUAGES = Object.keys(common).sort()
+
+const DISPLAY_NAMES: Record<string, string> = {
+  bash: 'Bash',
+  c: 'C',
+  cpp: 'C++',
+  csharp: 'C#',
+  css: 'CSS',
+  diff: 'Diff',
+  go: 'Go',
+  graphql: 'GraphQL',
+  html: 'HTML',
+  ini: 'INI',
+  java: 'Java',
+  javascript: 'JavaScript',
+  json: 'JSON',
+  kotlin: 'Kotlin',
+  lua: 'Lua',
+  makefile: 'Makefile',
+  markdown: 'Markdown',
+  objectivec: 'Objective-C',
+  php: 'PHP',
+  plaintext: 'Plain text',
+  python: 'Python',
+  r: 'R',
+  ruby: 'Ruby',
+  rust: 'Rust',
+  scss: 'SCSS',
+  shell: 'Shell',
+  sql: 'SQL',
+  swift: 'Swift',
+  typescript: 'TypeScript',
+  xml: 'XML',
+  yaml: 'YAML',
+}
+
+function displayName(lang: string): string {
+  return DISPLAY_NAMES[lang] || lang
+}
+
+export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeViewProps) {
+  const language = (node.attrs.language as string) || extension.options.defaultLanguage || 'plaintext'
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtered = useMemo(() => {
+    if (!search) return LANGUAGES
+    const q = search.toLowerCase()
+    return LANGUAGES.filter(
+      (l) => l.includes(q) || displayName(l).toLowerCase().includes(q),
+    )
+  }, [search])
+
+  useEffect(() => {
+    if (open) {
+      setSearch('')
+      // Focus the search input after opening
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+  }, [open])
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <NodeViewWrapper className="relative my-3">
+      <div className="relative rounded-md border border-border bg-muted/50">
+        <div className="flex items-center justify-end px-3 py-1.5 border-b border-border/50" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+            contentEditable={false}
+          >
+            {displayName(language)}
+            <ChevronDown className="h-3 w-3" />
+          </button>
+
+          {open && (
+            <div
+              className="absolute top-full right-0 mt-1 z-50 w-48 rounded-md border border-border bg-popover shadow-md"
+              contentEditable={false}
+            >
+              <div className="p-1.5">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setOpen(false)
+                    if (e.key === 'Enter' && filtered.length > 0) {
+                      updateAttributes({ language: filtered[0] })
+                      setOpen(false)
+                    }
+                  }}
+                  placeholder="Search..."
+                  className="w-full rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto py-1">
+                {filtered.map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => {
+                      updateAttributes({ language: lang })
+                      setOpen(false)
+                    }}
+                    className={`w-full text-left px-3 py-1 text-xs hover:bg-accent transition-colors ${
+                      lang === language ? 'text-foreground font-medium' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {displayName(lang)}
+                  </button>
+                ))}
+                {filtered.length === 0 && (
+                  <p className="px-3 py-1 text-xs text-muted-foreground">No languages found</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <pre className="!m-0 !rounded-t-none !border-0" spellCheck={false}>
+          <NodeViewContent as="code" />
+        </pre>
+      </div>
+    </NodeViewWrapper>
+  )
+}

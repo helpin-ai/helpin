@@ -69,6 +69,8 @@ type Handlers struct {
 	SupportAI           *handler.SupportAIHandler
 	SupportAttachment   *handler.SupportAttachmentHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
+	AdminWebhookEvent   *handler.AdminWebhookEventHandler
+	AdminEmailQueue     *handler.AdminEmailQueueHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -155,6 +157,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/git/webhook", h.Git.Webhook)
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
+			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
 		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
@@ -175,6 +178,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
+
+			// Document preview (token-authenticated)
+			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
 
 			// Legacy/redirect resolver
 			r.Get("/resolve/*", h.Docs.PublicResolvePath)
@@ -262,6 +268,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
 			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
+
+			// Admin endpoints (JWT-protected, no workspace scope)
+			r.Route("/admin", func(r chi.Router) {
+				r.Get("/webhook-events", h.AdminWebhookEvent.List)
+				r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
+				r.Get("/email-queue", h.AdminEmailQueue.List)
+			})
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
@@ -613,6 +626,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/knowledge-sources/{spaceId}/reindex", h.SupportAI.ReindexKnowledgeSource)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)
@@ -709,6 +723,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
 
+				// Preview token — docs.read
+				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)
+
 				// Versions — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/versions", h.Docs.CreateVersion)
@@ -741,6 +758,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Redirect management
 				r.With(requirePerm(authorization.PermDocsAdmin)).Get("/redirects", h.Docs.ListRedirects)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/redirects", h.Docs.CreateRedirect)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Patch("/redirects/{id}", h.Docs.UpdateRedirect)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/redirects/{id}", h.Docs.DeleteRedirect)
 
 				// Feedback

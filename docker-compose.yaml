@@ -17,6 +17,55 @@ services:
       timeout: 3s
       retries: 5
 
+  temporal-postgres:
+    image: postgres:16-alpine
+    container_name: helpin-temporal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - temporal_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: helpin-temporal
+    restart: unless-stopped
+    ports:
+      - "7233:7233"
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: temporal-postgres
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    volumes:
+      - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: helpin-temporal-ui
+    restart: unless-stopped
+    ports:
+      - "8233:8080"
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8233
+    depends_on:
+      temporal:
+        condition: service_started
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: helpin-pgadmin
@@ -61,38 +110,19 @@ services:
       timeout: 3s
       retries: 5
 
-  server:
-    build: ./server
-    container_name: helpin-server
-    ports:
-      - "8080:8080"
-    environment:
-      - DATABASE_URL=postgres://helpin:helpin@postgres:5432/helpin?sslmode=disable
-      - JWT_SECRET=dev-secret-change-in-prod
-      - CORS_ORIGINS=http://localhost:5173
-      - PORT=8080
-      - NATS_URL=nats://nats:4222
-      - REDIS_URL=redis://redis:6379/0
-      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-host.docker.internal:7233}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_started
-      redis:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   temporal-worker:
     build: ./server
     command: ["./temporal-worker"]
+    restart: unless-stopped
     environment:
       - DATABASE_URL=postgres://helpin:helpin@postgres:5432/helpin?sslmode=disable
       - JWT_SECRET=dev-secret-change-in-prod
       - NATS_URL=nats://nats:4222
       - REDIS_URL=redis://redis:6379/0
-      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-host.docker.internal:7233}
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+      - TEMPORAL_TLS_ENABLED=false
+      - TEMPORAL_API_KEY=
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,21 +130,52 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      temporal:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: http://localhost:8080/api
-    ports:
-      - "5173:80"
-    depends_on:
-      - server
+  # server:
+  #   build: ./server
+  #   container_name: helpin-server
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - DATABASE_URL=postgres://helpin:helpin@postgres:5432/helpin?sslmode=disable
+  #     - JWT_SECRET=dev-secret-change-in-prod
+  #     - CORS_ORIGINS=http://localhost:5173
+  #     - PORT=8080
+  #     - NATS_URL=nats://nats:4222
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - TEMPORAL_ADDRESS=temporal:7233
+  #     - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
+  #     - TEMPORAL_TLS_ENABLED=false
+  #     - TEMPORAL_API_KEY=
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     nats:
+  #       condition: service_started
+  #     redis:
+  #       condition: service_healthy
+  #     temporal:
+  #       condition: service_started
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     args:
+  #       VITE_API_URL: http://localhost:8080/api
+  #   ports:
+  #     - "5173:80"
+  #   depends_on:
+  #     - server
 
 volumes:
   postgres_data:
+  temporal_postgres_data:
   pgadmin_data:
   nats_data:
   redis_data:

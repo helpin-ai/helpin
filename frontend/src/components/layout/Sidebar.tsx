@@ -5,6 +5,7 @@ import { ICON_MAP } from '@/components/ui/icon-picker';
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bot,
   Briefcase,
   Building2,
@@ -16,7 +17,6 @@ import {
   FileText,
   FolderKanban,
   FolderOpen,
-  FlaskConical,
   GanttChart,
   Globe,
   EllipsisVertical,
@@ -610,6 +610,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/general`, label: 'General', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
+          { link: `/w/${wsSlug}/settings/knowledge`, label: 'Knowledge', icon: BookOpen },
         ],
       },
       {
@@ -628,7 +629,6 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
           { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
-          { link: `/w/${wsSlug}/settings/chat-playground`, label: 'Chat Playground', icon: FlaskConical },
         ],
       },
       {

@@ -85,6 +85,8 @@ type digestNotificationItem struct {
 	LatestAt       time.Time
 }
 
+const supportReplyEmailDelay = 3 * time.Minute
+
 // Emit creates notifications for all recipients of an event.
 func (s *NotificationService) Emit(ctx context.Context, event model.NotificationEventInput) error {
 	s.logger.InfoContext(ctx, "emitting notification",
@@ -367,8 +369,7 @@ func (s *NotificationService) buildDeliveryPlans(
 		return plans, err
 	}
 
-	emailChannel := selectEmailDeliveryChannel(priority, userSettings.EmailDigestFrequency)
-	if emailChannel == "" {
+	if event.SkipEmailDelivery {
 		return plans, nil
 	}
 
@@ -377,12 +378,29 @@ func (s *NotificationService) buildDeliveryPlans(
 		return plans, err
 	}
 	if !shouldEmail {
+		channel := "email"
+		if strings.TrimSpace(event.DelayedEmailChannel) != "" {
+			channel = strings.TrimSpace(event.DelayedEmailChannel)
+		}
 		reason := "email delivery disabled by notification preferences"
 		plans = append(plans, notificationDeliveryPlan{
-			Channel: emailChannel,
+			Channel: channel,
 			Status:  "skipped",
 			Error:   &reason,
 		})
+		return plans, nil
+	}
+
+	if delayedChannel := strings.TrimSpace(event.DelayedEmailChannel); delayedChannel != "" {
+		plans = append(plans, notificationDeliveryPlan{
+			Channel: delayedChannel,
+			Status:  "pending",
+		})
+		return plans, nil
+	}
+
+	emailChannel := selectEmailDeliveryChannel(priority, userSettings.EmailDigestFrequency)
+	if emailChannel == "" {
 		return plans, nil
 	}
 
@@ -645,6 +663,135 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	)
 
 	return subject, htmlBody, textBody
+}
+
+// ProcessPendingSupportReplyEmails sends delayed fallback emails for unread customer replies.
+func (s *NotificationService) ProcessPendingSupportReplyEmails(ctx context.Context, now time.Time) error {
+	pendingDeliveries, err := s.notifRepo.ListPendingSupportReplyEmailDeliveries(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pendingDeliveries) == 0 {
+		return nil
+	}
+
+	grouped := make(map[string][]repository.PendingDigestDelivery)
+	for _, delivery := range pendingDeliveries {
+		grouped[delivery.NotificationID] = append(grouped[delivery.NotificationID], delivery)
+	}
+
+	cutoff := now.Add(-supportReplyEmailDelay)
+	var firstErr error
+	for notificationID, deliveries := range grouped {
+		if err := s.processPendingSupportReplyEmailGroup(ctx, notificationID, deliveries, cutoff, now); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			s.logger.ErrorContext(ctx, "failed to process support reply email deliveries", "notification_id", notificationID, "error", err)
+		}
+	}
+
+	return firstErr
+}
+
+func (s *NotificationService) processPendingSupportReplyEmailGroup(
+	ctx context.Context,
+	notificationID string,
+	deliveries []repository.PendingDigestDelivery,
+	cutoff, now time.Time,
+) error {
+	if len(deliveries) == 0 {
+		return nil
+	}
+
+	sort.Slice(deliveries, func(i, j int) bool {
+		return deliveries[i].CreatedAt.Before(deliveries[j].CreatedAt)
+	})
+
+	latest := deliveries[len(deliveries)-1]
+	if latest.CreatedAt.After(cutoff) {
+		return nil
+	}
+
+	supersededIDs := make([]string, 0, len(deliveries)-1)
+	for _, delivery := range deliveries[:len(deliveries)-1] {
+		supersededIDs = append(supersededIDs, delivery.DeliveryID)
+	}
+	if len(supersededIDs) > 0 {
+		reason := "superseded by a newer customer reply before delay elapsed"
+		if err := s.notifRepo.UpdateDeliveryStatus(ctx, supersededIDs, "skipped", nil, &reason); err != nil {
+			return err
+		}
+	}
+
+	notification, err := s.notifRepo.GetByID(ctx, notificationID)
+	if err != nil {
+		return err
+	}
+	if notification == nil {
+		reason := "notification missing"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &reason)
+	}
+
+	if notification.Status != "unread" {
+		reason := "support reply already handled before delay elapsed"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
+	}
+	if notification.SnoozedUntil != nil && notification.SnoozedUntil.After(now) {
+		reason := "notification snoozed"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
+	}
+
+	if s.emailClient == nil {
+		reason := "email client not configured"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
+	}
+	if s.userRepo == nil {
+		reason := "user repository not configured"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &reason)
+	}
+
+	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, notification.EventType, "email", "")
+	if err != nil {
+		return err
+	}
+	if !shouldEmail {
+		reason := "email delivery disabled by current notification preferences"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
+	}
+
+	recipient, err := s.userRepo.GetByID(ctx, notification.RecipientID)
+	if err != nil {
+		msg := fmt.Sprintf("resolve recipient email: %v", err)
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &msg)
+	}
+	if recipient == nil || strings.TrimSpace(recipient.Email) == "" {
+		msg := "recipient email unavailable"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &msg)
+	}
+
+	event := model.NotificationEventInput{
+		WorkspaceID:          notification.WorkspaceID,
+		ActorID:              derefString(notification.ActorID),
+		EventType:            notification.EventType,
+		EntityType:           notification.EntityType,
+		EntityID:             notification.EntityID,
+		Title:                notification.Title,
+		Body:                 derefString(notification.Body),
+		Category:             notification.LatestEventCategory,
+		Priority:             notification.Priority,
+		ActorSnapshot:        notification.ActorSnapshot,
+		EntitySnapshot:       notification.EntitySnapshot,
+		ParentEntitySnapshot: notification.ParentEntitySnapshot,
+		Metadata:             notification.Metadata,
+	}
+	subject, htmlBody, textBody := s.renderImmediateEmail(ctx, event)
+	if err := s.emailClient.SendEmail(recipient.Email, subject, htmlBody, textBody); err != nil {
+		msg := err.Error()
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &msg)
+	}
+
+	return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "delivered", &now, nil)
 }
 
 // ProcessPendingDigests sends due digest emails and updates delivery state.
@@ -1241,6 +1388,11 @@ func (s *NotificationService) ArchiveAllRead(ctx context.Context, recipientID, w
 // Delete deletes a notification.
 func (s *NotificationService) Delete(ctx context.Context, id, recipientID string) error {
 	return s.notifRepo.Delete(ctx, id, recipientID)
+}
+
+// MarkEntityCategoryAsRead marks unread notifications as read for a specific entity/category pair.
+func (s *NotificationService) MarkEntityCategoryAsRead(ctx context.Context, recipientID, workspaceID, entityType, entityID, category string) error {
+	return s.notifRepo.MarkEntityCategoryAsRead(ctx, recipientID, workspaceID, entityType, entityID, category)
 }
 
 // GetPreferences returns a user's notification preferences.

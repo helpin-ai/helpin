@@ -1,3 +1,5 @@
+import { RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -15,14 +17,20 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
 };
 
 export function SupportKnowledgeSourcesField({
+  agentId,
   spaces,
   knowledgeSources,
   onToggle,
+  onReindex,
+  reindexingSpaceId,
   disabled = false,
 }: {
+  agentId: string;
   spaces: DocsSpace[];
   knowledgeSources: AgentKnowledgeSource[];
   onToggle: (spaceId: string) => void;
+  onReindex: (spaceId: string) => void;
+  reindexingSpaceId?: string;
   disabled?: boolean;
 }) {
   if (spaces.length === 0) {
@@ -68,6 +76,23 @@ export function SupportKnowledgeSourcesField({
                       {statusMeta.label}
                     </Badge>
                   )}
+                  {selected && agentId && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={disabled}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onReindex(space.id);
+                      }}
+                      title="Reindex help center docs"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', reindexingSpaceId === space.id && 'animate-spin')} />
+                    </Button>
+                  )}
                 </div>
 
                 <p className="text-xs text-muted-foreground">
@@ -104,6 +129,9 @@ function indexedSummary(source?: AgentKnowledgeSource) {
     return '';
   }
 
+  if (source.sync_status === 'queued' && (source.indexed_documents ?? 0) > 0) {
+    return `Re-index queued. Current index includes ${source.indexed_documents ?? 0} published docs across ${source.indexed_chunks ?? 0} chunks.`;
+  }
   if (source.sync_status === 'ready') {
     return `${source.indexed_documents ?? 0} published docs indexed across ${source.indexed_chunks ?? 0} chunks.`;
   }

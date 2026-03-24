@@ -18,6 +18,7 @@ type SupportEmailLog struct {
 	RawBody           string          `json:"-" gorm:"type:text"`
 	StrippedText      string          `json:"stripped_text,omitempty" gorm:"type:text"`
 	Status            string          `json:"status" gorm:"size:20;not null;default:'sent'"`
+	OpenedAt          *time.Time      `json:"opened_at,omitempty"`
 	ErrorMessage      string          `json:"error_message,omitempty" gorm:"type:text"`
 	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
 }

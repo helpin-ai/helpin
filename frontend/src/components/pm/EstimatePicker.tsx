@@ -17,6 +17,7 @@ interface EstimatePickerProps {
 export function EstimatePicker({ value, teamId, onChange, className }: EstimatePickerProps) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
   const config = useTeamEstimateSettingsForTeam(wsId, teamId);
+  const [open, setOpen] = useState(false);
 
   // If team has estimate settings enabled, use scale-aware picker
   if (config?.enabled) {
@@ -25,7 +26,7 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
     const displayLabel = formatEstimateValue(numValue, config.scale);
 
     return (
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -45,7 +46,10 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
                 'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
                 value === '' && 'bg-accent font-medium',
               )}
-              onClick={() => onChange('', undefined)}
+              onClick={() => {
+                onChange('', undefined);
+                setOpen(false);
+              }}
             >
               None
             </button>
@@ -57,7 +61,10 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
                   'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
                   numValue === opt.value && 'bg-accent font-medium',
                 )}
-                onClick={() => onChange(String(opt.value), opt.value)}
+                onClick={() => {
+                  onChange(String(opt.value), opt.value);
+                  setOpen(false);
+                }}
               >
                 {opt.label}
               </button>
@@ -69,9 +76,8 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
   }
 
   // Fallback: free-form number input (no team config or disabled)
-  const [freeformOpen, setFreeformOpen] = useState(false);
   return (
-    <Popover open={freeformOpen} onOpenChange={setFreeformOpen}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -97,7 +103,7 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              setFreeformOpen(false);
+              setOpen(false);
             }
           }}
         />

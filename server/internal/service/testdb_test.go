@@ -649,6 +649,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			metadata TEXT DEFAULT '{}',
 			via_channel TEXT,
 			email_notified_at DATETIME,
+			email_read_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -687,7 +688,21 @@ func newTestDB(t *testing.T) *gorm.DB {
 			raw_body TEXT,
 			stripped_text TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			opened_at DATETIME,
 			error_message TEXT,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE support_email_webhook_events (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT,
+			conversation_id TEXT,
+			email_log_id TEXT,
+			provider TEXT NOT NULL DEFAULT 'postmark',
+			event_type TEXT NOT NULL,
+			postmark_message_id TEXT,
+			message_stream TEXT,
+			raw_payload TEXT NOT NULL,
+			received_at DATETIME,
 			created_at DATETIME
 		)`,
 		`CREATE TABLE support_widget_sessions (
@@ -771,4 +786,11 @@ func mustExec(t *testing.T, db *gorm.DB, query string, args ...any) {
 }
 
 // seedTemporaryAttachment inserts a temporary (unconfirmed) attachment into the test DB.
+func seedTemporaryAttachment(t *testing.T, db *gorm.DB, id, workspaceID, entityID, uploadedByID string) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, workspaceID, "temporary", entityID, "test-file.png", 1024, "image/png", "uploads/"+id+".png", true, uploadedByID, now)
+}
+
 // min is provided by the builtin (Go 1.21+) or pm_import.go

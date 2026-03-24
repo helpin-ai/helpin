@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -29,6 +30,7 @@ type DocsHandler struct {
 	importService *service.DocsImportService
 	embeddingSvc  *service.DocsEmbeddingService
 	agentService  *service.AgentService
+	jwtManager    *auth.JWTManager
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -44,6 +46,7 @@ func NewDocsHandler(
 	importService *service.DocsImportService,
 	embeddingSvc *service.DocsEmbeddingService,
 	agentService *service.AgentService,
+	jwtManager *auth.JWTManager,
 ) *DocsHandler {
 	return &DocsHandler{
 		spaceSvc:      spaceSvc,
@@ -57,6 +60,7 @@ func NewDocsHandler(
 		importService: importService,
 		embeddingSvc:  embeddingSvc,
 		agentService:  agentService,
+		jwtManager:    jwtManager,
 	}
 }
 
@@ -399,6 +403,69 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, content)
+}
+
+// GeneratePreviewToken creates a short-lived JWT for previewing a document in the help center app.
+func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	docID := chi.URLParam(r, "docId")
+
+	doc, err := h.documentSvc.Get(r.Context(), docID)
+	if err != nil || doc == nil || doc.WorkspaceID != wsID {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+
+	cfg, err := h.helpcenterSvc.GetConfig(r.Context(), wsID)
+	if err != nil || cfg == nil {
+		writeError(w, http.StatusNotFound, "help center not configured")
+		return
+	}
+
+	token, err := h.jwtManager.GeneratePreviewToken(docID, wsID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate preview token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"token":     token,
+		"subdomain": cfg.Subdomain,
+	})
+}
+
+// PublicPreviewArticle returns a preview of a document for the help center app.
+// Requires a valid preview JWT token as query parameter.
+func (h *DocsHandler) PublicPreviewArticle(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+
+	docID := chi.URLParam(r, "docId")
+	tokenStr := r.URL.Query().Get("token")
+	if tokenStr == "" {
+		writeError(w, http.StatusUnauthorized, "preview token required")
+		return
+	}
+
+	claims, err := h.jwtManager.ValidatePreviewToken(tokenStr)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid or expired preview token")
+		return
+	}
+
+	if claims.DocID != docID || claims.WorkspaceID != cfg.WorkspaceID {
+		writeError(w, http.StatusForbidden, "token does not match document")
+		return
+	}
+
+	resp, err := h.helpcenterSvc.PreviewArticleHTML(r.Context(), cfg.WorkspaceID, docID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
@@ -833,6 +900,22 @@ func (h *DocsHandler) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteRedirect handles DELETE /api/docs/redirects/{id}.
+// UpdateRedirect updates a redirect's fields.
+func (h *DocsHandler) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.UpdateDocsRedirectRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	redirect, err := h.helpcenterSvc.UpdateRedirect(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, redirect)
+}
+
 func (h *DocsHandler) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.helpcenterSvc.DeleteRedirect(r.Context(), id); err != nil {

@@ -27,6 +27,7 @@ type DocsImportJob struct {
 	Failures    json.RawMessage `json:"failures" gorm:"type:jsonb;not null;default:'[]'"`
 	Config      json.RawMessage `json:"config" gorm:"type:jsonb;not null;default:'{}'"`
 	RedirectMap json.RawMessage `json:"redirect_map" gorm:"type:jsonb"`
+	Summary     json.RawMessage `json:"summary" gorm:"type:jsonb"`
 	Error       *string         `json:"error"`
 	StartedBy   string          `json:"started_by" gorm:"type:uuid;not null"`
 	StartedAt   *time.Time      `json:"started_at"`
@@ -43,6 +44,14 @@ type ImportFailure struct {
 	ArticleID string `json:"article_id"`
 	Title     string `json:"title"`
 	Error     string `json:"error"`
+}
+
+// ImportSummary holds high-level stats shown to the user when an import completes.
+type ImportSummary struct {
+	CollectionsCreated int `json:"collections_created"`
+	ArticlesPublished  int `json:"articles_published"`
+	ArticlesDrafted    int `json:"articles_drafted"`
+	RedirectsCreated   int `json:"redirects_created"`
 }
 
 // DocsImportPreviewRequest is the payload for previewing available collections from an external source.

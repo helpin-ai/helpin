@@ -1,6 +1,7 @@
 export { GeneralTab } from './GeneralTab';
 export { MembersTab } from './MembersTab';
 export { TeamsTab } from './TeamsTab';
+export { KnowledgeTab } from './KnowledgeTab';
 export { ProjectDeliveryTab } from './ProjectDeliveryTab';
 export { WorkflowManager } from './WorkflowManager';
 export { AutomationsTab } from './AutomationsTab';
@@ -10,5 +11,4 @@ export { CRMEmailSettingsTab } from './CRMEmailSettingsTab';
 export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';
 export { AIAutomationsTab } from './AIAutomationsTab';
 export { ChatGeneralTab } from './ChatGeneralTab';
-export { ChatPlaygroundTab } from './ChatPlaygroundTab';
 export { RedirectsTab } from './RedirectsTab';

@@ -31,6 +31,8 @@ export const docsRedirectService = {
   },
   create: (wsId: string, data: { source_path: string; target_collection_slug: string; target_article_slug?: string }) =>
     api.post<DocsRedirect>(`/docs/redirects${qs(wsId)}`, data),
+  update: (wsId: string, id: string, data: { source_path?: string; target_collection_slug?: string; target_article_slug?: string }) =>
+    api.patch<DocsRedirect>(`/docs/redirects/${id}${qs(wsId)}`, data),
   delete: (wsId: string, id: string) =>
     api.del(`/docs/redirects/${id}${qs(wsId)}`),
 };

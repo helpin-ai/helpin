@@ -1,7 +1,8 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
-import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import remarkGfm from 'remark-gfm';
+import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, MailOpen, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -89,7 +90,7 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
-  receiptStatus?: 'delivered' | 'read' | null;
+  receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null;
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
@@ -222,7 +223,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   {mentionParts ? (
                     <p className="whitespace-pre-wrap">{mentionParts}</p>
                   ) : (
-                    <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
                   )}
                 </div>
               </div>
@@ -301,7 +302,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 >
                   {displayContent && (
                     <div className="prose-chat">
-                      <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                      <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
                     </div>
                   )}
                   {fileAttachments.length > 0 && (
@@ -389,9 +390,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-300">
-                Via email
-              </span>
+              <span className="text-[11px] text-muted-foreground">Sent via email</span>
             </div>
           )}
 
@@ -402,6 +401,16 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 <>
                   <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
                   <span className="text-[11px] text-muted-foreground">Read in chat</span>
+                </>
+              ) : receiptStatus === 'read_email' ? (
+                <>
+                  <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <span className="text-[11px] text-muted-foreground">Read via email</span>
+                </>
+              ) : receiptStatus === 'delivered_email' ? (
+                <>
+                  <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Delivered via email</span>
                 </>
               ) : (
                 <>

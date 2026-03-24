@@ -79,6 +79,8 @@ export const agentService = {
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
   updateKnowledgeSources: (workspaceId: string, agentId: string, spaceIds: string[]) =>
     api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
+  reindexKnowledgeSource: (workspaceId: string, agentId: string, spaceId: string) =>
+    api.post<{ status: string }>(`/pm/agents/${agentId}/knowledge-sources/${spaceId}/reindex${qs(workspaceId)}`, {}),
   listContentSources: (workspaceId: string) =>
     api.get<import('../pmTypes').SupportContentSource[]>(`/pm/content-sources${qs(workspaceId)}`),
   createContentSource: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceRequest) =>
@@ -97,6 +99,4 @@ export const agentService = {
     api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
   updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
     api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
-  previewSupportReply: (workspaceId: string, agentId: string, payload: import('../pmTypes').SupportAIPreviewRequest) =>
-    api.post<import('../pmTypes').SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
 };

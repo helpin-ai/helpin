@@ -28,6 +28,14 @@ import {
 type WizardStep = 0 | 1 | 2;
 const STEP_LABELS = ['Connect', 'Configure', 'Import'];
 
+function formatDuration(startISO: string, endISO: string): string {
+  const seconds = Math.round((new Date(endISO).getTime() - new Date(startISO).getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
 export function HelpCenterImportSection({
   workspaceId,
   editable,
@@ -353,6 +361,23 @@ export function HelpCenterImportSection({
           {isFinished && jobStatus && (
             <Card>
               <CardContent className="pt-4 space-y-3">
+                {jobStatus.summary && (
+                  <p className="text-sm text-muted-foreground">
+                    Created {jobStatus.summary.collections_created}{' '}
+                    {jobStatus.summary.collections_created === 1 ? 'collection' : 'collections'} and{' '}
+                    {jobStatus.completed}{' '}
+                    {jobStatus.completed === 1 ? 'article' : 'articles'}
+                    {(jobStatus.summary.articles_published > 0 || jobStatus.summary.articles_drafted > 0) && (
+                      <> ({jobStatus.summary.articles_published} published, {jobStatus.summary.articles_drafted} draft)</>
+                    )}
+                    . {jobStatus.summary.redirects_created} URL{' '}
+                    {jobStatus.summary.redirects_created === 1 ? 'redirect' : 'redirects'} set up
+                    {jobStatus.started_at && jobStatus.completed_at && (
+                      <>. Completed in {formatDuration(jobStatus.started_at, jobStatus.completed_at)}</>
+                    )}
+                    .
+                  </p>
+                )}
                 <p className="text-sm">
                   {jobStatus.completed} succeeded, {jobStatus.failed} failed
                 </p>

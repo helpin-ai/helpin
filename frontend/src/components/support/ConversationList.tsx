@@ -61,19 +61,18 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   }, [conversations, navFilter, userId, searchQuery]);
 
   return (
-    <div className="flex h-full w-[300px] flex-col border-r">
+    <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
       {/* Frosted glass search header */}
       <div
-        className="relative z-10 px-3 py-2 border-b border-border/60"
+        className="relative z-10 border-b border-border/60 bg-background/85 px-3 py-2 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
         style={{
-          backgroundColor: 'oklch(1 0 0 / 0.82)',
           backdropFilter: 'blur(8px) saturate(160%)',
         }}
       >
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="h-8 pl-8 text-sm bg-transparent"
+            className="h-8 border-border/60 bg-background/80 pl-8 text-sm shadow-none dark:border-sidebar-border dark:bg-sidebar-accent/60 dark:text-sidebar-foreground dark:placeholder:text-sidebar-foreground/60"
             placeholder="Search conversations..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

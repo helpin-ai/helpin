@@ -109,6 +109,19 @@ export interface ArticleDetail extends Article {
   content_html?: string
 }
 
+export interface PreviewArticleDetail {
+  id: string
+  title: string
+  excerpt?: string
+  icon?: string
+  status: string
+  collection_id?: string
+  collection_name?: string
+  space_name: string
+  space_slug: string
+  content_html: string
+}
+
 // ─── Navigation ─────────────────────────────────────────────────────────────
 
 export interface NavItem {

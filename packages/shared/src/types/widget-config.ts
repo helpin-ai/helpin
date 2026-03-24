@@ -28,5 +28,12 @@ export interface WidgetConfig {
     csatRating: boolean;
     forceIdentify: boolean;
   };
+  availability: {
+    isOnline: boolean;
+    statusText: string;
+    replyTimeText: string;
+    outsideHoursMessage?: string;
+    nextOnlineAt?: string;
+  };
   helpSpaces?: HelpSpace[];
 }

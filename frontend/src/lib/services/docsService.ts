@@ -169,6 +169,10 @@ export const docsService = {
   getSharedDoc: (shareToken: string) =>
     api.get<PublicDocResponse>(`/docs/shared/${shareToken}`),
 
+  // ── Preview ────────────────────────────────────────────────────────────
+  getPreviewToken: (wsId: string, docId: string) =>
+    api.post<{ token: string; subdomain: string }>(`/docs/documents/${docId}/preview-token${qs(wsId)}`),
+
   // ── Help Center Article ─────────────────────────────────────────────────
   submitArticleFeedback: (wsId: string, docId: string, payload: DocsArticleFeedbackRequest) =>
     api.post(`/docs/articles/${docId}/feedback${qs(wsId)}`, payload),

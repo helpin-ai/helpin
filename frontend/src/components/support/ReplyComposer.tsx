@@ -2,9 +2,21 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2 } from 'lucide-react';
+import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2, Mail } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
@@ -15,14 +27,38 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 
+const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
+
 interface ReplyComposerProps {
   workspaceId: string;
   conversationId: string;
+  emailFallbackHint?: {
+    email: string;
+  } | null;
+}
+
+function loadSkipOfflineEmailConfirm(storageKey: string): boolean {
+  try {
+    return localStorage.getItem(storageKey) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveSkipOfflineEmailConfirm(storageKey: string, skip: boolean) {
+  try {
+    if (skip) {
+      localStorage.setItem(storageKey, '1');
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  } catch {}
 }
 
 function detectMentions(
@@ -56,9 +92,10 @@ function detectMentions(
   };
 }
 
-export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProps) {
+export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
 
   const { data: members = [] } = useQuery({
     queryKey: [...queryKeys.workspaces.members(workspaceId), 'assignable'],
@@ -77,6 +114,19 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const lastTypingSentRef = useRef(0);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
+  const offlineEmailConfirmStorageKey = useMemo(
+    () => `${OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX}:${workspaceId}:${userId ?? 'anonymous'}`,
+    [workspaceId, userId],
+  );
+  const [skipOfflineEmailConfirm, setSkipOfflineEmailConfirm] = useState(() =>
+    loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey),
+  );
+  const [offlineEmailConfirmOpen, setOfflineEmailConfirmOpen] = useState(false);
+  const [doNotAskAgain, setDoNotAskAgain] = useState(false);
+
+  useEffect(() => {
+    setSkipOfflineEmailConfirm(loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey));
+  }, [offlineEmailConfirmStorageKey]);
 
   // File attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,7 +367,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
     }
   }, [editor, isNote]);
 
-  const handleSend = useCallback(async () => {
+  const sendReply = useCallback(async () => {
     if (!editor) return;
     const text = editor.getText().trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
@@ -343,6 +393,30 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
     editor.commands.focus();
   }, [editor, sendMutation, sendTyping, clearDraft, conversationId, pendingAttachments]);
 
+  const handleSend = useCallback(async () => {
+    if (!editor) return;
+    const text = editor.getText().trim();
+    const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
+    if ((!text && !hasUploadedAttachments) || sendMutation.isPending) return;
+
+    if (!isNote && emailFallbackHint && !skipOfflineEmailConfirm) {
+      setDoNotAskAgain(false);
+      setOfflineEmailConfirmOpen(true);
+      return;
+    }
+
+    await sendReply();
+  }, [editor, emailFallbackHint, isNote, pendingAttachments, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
+
+  const handleConfirmOfflineEmailSend = useCallback(async () => {
+    if (doNotAskAgain) {
+      saveSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey, true);
+      setSkipOfflineEmailConfirm(true);
+    }
+    setOfflineEmailConfirmOpen(false);
+    await sendReply();
+  }, [doNotAskAgain, offlineEmailConfirmStorageKey, sendReply]);
+
   handleSendRef.current = handleSend;
 
   if (!editor) return null;
@@ -356,6 +430,16 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
         isNote && 'border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
+      {emailFallbackHint && !isNote && (
+        <div className="flex items-start gap-2 border-b border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
+          <p>
+            User is offline. Replies sent here will also be queued as an email to{' '}
+            <span className="font-medium text-foreground">{emailFallbackHint.email}</span>.
+          </p>
+        </div>
+      )}
+
       {/* Mention suggestions popover — floats above the composer */}
       {mentionState && mentionState.items.length > 0 && (
         <div className="absolute bottom-full left-0 right-0 z-50 mb-1 px-3">
@@ -486,7 +570,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
 
         <div className="flex items-center gap-2">
           <kbd className="hidden text-[10px] text-muted-foreground/50 sm:inline">
-            {navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}+\u21B5
+            {navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}{'+\u21B5'}
           </kbd>
           <Button
             size="sm"
@@ -502,6 +586,43 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={offlineEmailConfirmOpen} onOpenChange={setOfflineEmailConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send this reply by email too?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This visitor is currently offline. If you send this reply, Helpin will queue an email to{' '}
+              <span className="font-medium text-foreground">{emailFallbackHint?.email}</span> and skip the email if the visitor comes back online before it sends.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="offline-email-dont-ask"
+              checked={doNotAskAgain}
+              onCheckedChange={(checked) => setDoNotAskAgain(!!checked)}
+            />
+            <Label htmlFor="offline-email-dont-ask" className="text-sm font-normal">
+              Do not ask me again
+            </Label>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="default"
+              disabled={sendMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmOfflineEmailSend();
+              }}
+            >
+              {sendMutation.isPending ? 'Sending...' : 'Send Reply'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

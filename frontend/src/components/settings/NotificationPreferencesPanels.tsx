@@ -9,7 +9,9 @@ import {
   useUpdateUserNotificationSettings,
 } from '@/hooks/queries';
 import {
-  NOTIFICATION_CATEGORIES,
+  SUPPORT_NOTIFICATION_CATEGORIES,
+  WORKSPACE_NOTIFICATION_CATEGORIES,
+  type NotificationCategory,
   type NotificationPreferences,
   type UpdateUserNotificationSettingsRequest,
 } from '@/lib/notificationTypes';
@@ -377,10 +379,24 @@ const isChannelEnabled = (
   channel: 'in_app' | 'email',
 ) => prefs?.channel_preferences?.[categoryKey]?.[channel] ?? true;
 
-export function WorkspaceNotificationCategoriesCard({
+function NotificationCategoriesCard({
   workspaceId,
   cardClassName,
-}: CardClassNameProps & { workspaceId: string }) {
+  title,
+  description,
+  categories,
+  mutedWorkspaceMessage,
+  emailDisabledMessage,
+  extraNote,
+}: CardClassNameProps & {
+  workspaceId: string;
+  title: string;
+  description: string;
+  categories: NotificationCategory[];
+  mutedWorkspaceMessage: string;
+  emailDisabledMessage: string;
+  extraNote?: string;
+}) {
   const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
   const { data: accountSettings } = useUserNotificationSettings();
   const updatePrefs = useUpdateNotificationPreferences(workspaceId);
@@ -410,22 +426,26 @@ export function WorkspaceNotificationCategoriesCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-4 w-4" />
-          Notification Types
+          {title}
         </CardTitle>
-        <CardDescription>
-          Choose which activity from this workspace appears in-app and which activity may also send email when your account email settings allow it.
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {prefs?.mute_workspace ? (
           <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            This workspace is muted, so the notification types below are saved as preferences but won&apos;t deliver until workspace mute is turned off.
+            {mutedWorkspaceMessage}
           </div>
         ) : null}
 
         {accountSettings && !accountSettings.email_enabled ? (
           <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Account email notifications are off. The email column below sets your workspace preferences, but no emails will send until email is re-enabled in account Notifications.
+            {emailDisabledMessage}
+          </div>
+        ) : null}
+
+        {extraNote ? (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            {extraNote}
           </div>
         ) : null}
 
@@ -434,7 +454,7 @@ export function WorkspaceNotificationCategoriesCard({
           <span className="text-center">In-app</span>
           <span className="text-center">Email</span>
         </div>
-        {NOTIFICATION_CATEGORIES.map((category, index) => (
+        {categories.map((category, index) => (
           <div key={category.key}>
             {index > 0 ? <Separator className="mb-4" /> : null}
             <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-4">
@@ -450,16 +470,55 @@ export function WorkspaceNotificationCategoriesCard({
                 />
               </div>
               <div className="flex justify-center">
-                <Switch
-                  checked={isChannelEnabled(prefs, category.key, 'email')}
-                  disabled={updatePrefs.isPending}
-                  onCheckedChange={(value) => handleToggle(category.key, 'email', value)}
-                />
+                {category.supportsEmail === false ? (
+                  <span className="text-xs text-muted-foreground">Later</span>
+                ) : (
+                  <Switch
+                    checked={isChannelEnabled(prefs, category.key, 'email')}
+                    disabled={updatePrefs.isPending}
+                    onCheckedChange={(value) => handleToggle(category.key, 'email', value)}
+                  />
+                )}
               </div>
             </div>
           </div>
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+export function WorkspaceNotificationCategoriesCard({
+  workspaceId,
+  cardClassName,
+}: CardClassNameProps & { workspaceId: string }) {
+  return (
+    <NotificationCategoriesCard
+      workspaceId={workspaceId}
+      cardClassName={cardClassName}
+      title="Workspace Activity"
+      description="Choose which general workspace activity appears in-app and which activity may also send email when your account email settings allow it."
+      categories={WORKSPACE_NOTIFICATION_CATEGORIES}
+      mutedWorkspaceMessage="This workspace is muted, so the notification types below are saved as preferences but won't deliver until workspace mute is turned off."
+      emailDisabledMessage="Account email notifications are off. The email column below sets your workspace preferences, but no emails will send until email is re-enabled in account Notifications."
+    />
+  );
+}
+
+export function SupportNotificationCategoriesCard({
+  workspaceId,
+  cardClassName,
+}: CardClassNameProps & { workspaceId: string }) {
+  return (
+    <NotificationCategoriesCard
+      workspaceId={workspaceId}
+      cardClassName={cardClassName}
+      title="Support Notifications"
+      description="Control how support inbox activity reaches you for this workspace."
+      categories={SUPPORT_NOTIFICATION_CATEGORIES}
+      mutedWorkspaceMessage="This workspace is muted, so support inbox alerts below are saved as preferences but won't deliver until workspace mute is turned off."
+      emailDisabledMessage="Account email notifications are off. Support email preferences are saved here, but no emails will send until email is re-enabled in account Notifications."
+      extraNote="Customer reply emails are delayed fallback alerts. They only send if the conversation is still unread and unanswered after 3 minutes."
+    />
   );
 }

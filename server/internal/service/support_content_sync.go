@@ -68,15 +68,23 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
+	slog.InfoContext(ctx, "queueing support content source sync",
+		"workspace_id", workspaceID,
+		"content_source_id", source.ID,
+		"start_url", source.StartURL,
+		"crawl_limit", source.CrawlLimit,
+		"crawl_depth", source.CrawlDepth,
+		"crawl_source", source.CrawlSource,
+	)
 
 	if s.embedder == nil {
 		msg := "OpenAI-compatible embedding provider is not configured"
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
 	if s.crawler == nil {
 		msg := "content crawler is not configured"
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
 	if err := s.sourceRepo.MarkSyncQueued(ctx, source.ID); err != nil {
@@ -84,11 +92,11 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 	}
 	if s.starter == nil {
 		err = fmt.Errorf("Temporal content sync pipeline is not configured")
-		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		_ = s.markSourceFailed(ctx, source.ID, err, nil, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 	if err := s.starter.QueueContentSourceSync(ctx, workspaceID, contentSourceID); err != nil {
-		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		_ = s.markSourceFailed(ctx, source.ID, err, nil, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 	return nil
@@ -108,25 +116,35 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 	if source == nil || source.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
+	slog.InfoContext(ctx, "starting support content source sync",
+		"workspace_id", workspaceID,
+		"content_source_id", source.ID,
+		"start_url", source.StartURL,
+		"crawl_limit", source.CrawlLimit,
+		"crawl_depth", source.CrawlDepth,
+		"crawl_source", source.CrawlSource,
+		"include_subdomains", source.IncludeSubdomains,
+		"include_external_links", source.IncludeExternalLinks,
+	)
 	if s.embedder == nil {
 		msg := "OpenAI-compatible embedding provider is not configured"
-		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 	if s.crawler == nil {
 		msg := "content crawler is not configured"
-		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 
 	startedAt := time.Now()
-	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, 0, 0, nil, nil, &startedAt, nil); err != nil {
+	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil); err != nil {
 		return err
 	}
 
 	// Mutable state shared with the onPage callback.
 	var (
-		keepPageIDs  []string
-		keepURLs     []string
-		indexedPages int
+		keepPageIDs   []string
+		keepURLs      []string
+		indexedPages  int
 		indexedChunks int
 	)
 
@@ -222,29 +240,36 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		if pct > 99 {
 			pct = 99 // Reserve 100 for final completion.
 		}
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
 		return nil
 	}
 
 	_, err = s.crawler.Crawl(ctx, *source, onPage)
 	if err != nil {
-		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 
 	// Clean up stale pages that were not seen in this crawl (full crawl only).
 	if source.ModifiedSince == nil {
 		if err := s.chunkRepo.DeleteByContentSourceExceptPages(ctx, source.WorkspaceID, source.ID, keepPageIDs); err != nil {
-			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
+			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
 			return err
 		}
 		if err := s.pageRepo.DeleteByContentSourceExceptURLs(ctx, source.WorkspaceID, source.ID, keepURLs); err != nil {
-			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
+			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
 			return err
 		}
 	}
 
 	completedAt := time.Now()
+	slog.InfoContext(ctx, "completed support content source sync",
+		"workspace_id", workspaceID,
+		"content_source_id", source.ID,
+		"crawl_limit", source.CrawlLimit,
+		"indexed_pages", indexedPages,
+		"indexed_chunks", indexedChunks,
+	)
 	return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, indexedPages, indexedChunks, nil, nil, &startedAt, &completedAt)
 }
 
@@ -263,7 +288,7 @@ func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, work
 	}
 	if s.embedder == nil {
 		msg := "OpenAI-compatible embedding provider is not configured"
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
 	if err := s.sourceRepo.MarkSyncQueued(ctx, source.ID); err != nil {
@@ -271,11 +296,11 @@ func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, work
 	}
 	if s.starter == nil {
 		err = fmt.Errorf("Temporal content sync pipeline is not configured")
-		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		_ = s.markSourceFailed(ctx, source.ID, err, nil, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 	if err := s.starter.QueueContentSourceReindex(ctx, workspaceID, contentSourceID); err != nil {
-		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		_ = s.markSourceFailed(ctx, source.ID, err, nil, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 	return nil
@@ -297,17 +322,17 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 	}
 	if s.embedder == nil {
 		msg := "OpenAI-compatible embedding provider is not configured"
-		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 	}
 
 	startedAt := time.Now()
-	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, 0, 0, nil, nil, &startedAt, nil); err != nil {
+	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil); err != nil {
 		return err
 	}
 
 	pages, err := s.pageRepo.ListByContentSourceIDWithContent(ctx, contentSourceID)
 	if err != nil {
-		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
 
@@ -383,17 +408,17 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		if pct > 99 {
 			pct = 99
 		}
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
 	}
 
 	completedAt := time.Now()
 	return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, indexedPages, indexedChunks, nil, nil, &startedAt, &completedAt)
 }
 
-func (s *SupportContentSyncService) markSourceFailed(ctx context.Context, sourceID string, err error, startedAt *time.Time) error {
+func (s *SupportContentSyncService) markSourceFailed(ctx context.Context, sourceID string, err error, startedAt *time.Time, indexedPages, indexedChunks int) error {
 	errMsg := err.Error()
 	completedAt := time.Now()
-	return s.sourceRepo.UpdateSyncState(ctx, sourceID, model.KnowledgeSourceSyncFailed, 0, 0, 0, &errMsg, nil, startedAt, &completedAt)
+	return s.sourceRepo.UpdateSyncState(ctx, sourceID, model.KnowledgeSourceSyncFailed, 0, indexedPages, indexedChunks, &errMsg, nil, startedAt, &completedAt)
 }
 
 // crawlRecordText extracts the best available text from a CrawlRecord.

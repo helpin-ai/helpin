@@ -1,6 +1,5 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
   Bot,
@@ -19,6 +18,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
+import { getSortableStoryCardStyle } from './StoryCard.sortable';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
@@ -71,13 +71,15 @@ function StoryCardComponent({
     listeners,
     setNodeRef,
     transform,
+    transition,
     isDragging,
   } = useSortable({ id: story.id });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : 'transform 200ms ease',
-  };
+  const style = getSortableStoryCardStyle({
+    transform,
+    transition,
+    isDragging,
+  });
 
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
