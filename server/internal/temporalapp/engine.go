@@ -289,6 +289,38 @@ func (e *RunEngine) QueueContentSourceSync(ctx context.Context, workspaceID, con
 	return nil
 }
 
+// QueueContentSourceReindex enqueues a reindex job that re-chunks and
+// re-embeds existing pages without re-crawling the website.
+func (e *RunEngine) QueueContentSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+
+	request := ContentSourceSyncInput{
+		WorkspaceID:     workspaceID,
+		ContentSourceID: contentSourceID,
+		Reindex:         true,
+	}
+	options := tclient.StartWorkflowOptions{
+		ID:                       WorkflowIDForContentSource(workspaceID, contentSourceID),
+		TaskQueue:                QueueAutomation,
+		WorkflowExecutionTimeout: 2 * time.Hour,
+	}
+	_, err := e.client.SignalWithStartWorkflow(
+		ctx,
+		options.ID,
+		WorkflowSignalContentSourceSync,
+		request,
+		options,
+		ContentSourceSyncWorkflow,
+		ContentSourceSyncInput{},
+	)
+	if err != nil {
+		return fmt.Errorf("queue content source reindex: %w", err)
+	}
+	return nil
+}
+
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID

@@ -20,20 +20,20 @@ type SmartCrawler struct {
 
 // NewSmartCrawler creates a SmartCrawler that routes crawl requests to the
 // appropriate backend based on mode. Supported modes:
-//   - "local": always use the local Colly + Trafilatura crawler
+//   - "local" (default): always use the local Colly + Trafilatura crawler
 //   - "cloudflare": always use the Cloudflare Browser Rendering API
-//   - "cloudflare_with_fallback" (default): try Cloudflare first, fall back to
-//     local on rate-limit errors (429 / "rate limit")
+//   - "cloudflare_with_fallback": try Cloudflare first, fall back to local on
+//     rate-limit errors (429 / "rate limit")
 func NewSmartCrawler(mode, cfAccountID, cfAPIToken, cfBaseURL, proxyURLs string, logger *slog.Logger) *SmartCrawler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	normalizedMode := strings.TrimSpace(strings.ToLower(mode))
 	switch normalizedMode {
-	case "local", "cloudflare":
+	case "cloudflare", "cloudflare_with_fallback":
 		// valid
 	default:
-		normalizedMode = "cloudflare_with_fallback"
+		normalizedMode = "local"
 	}
 
 	return &SmartCrawler{
@@ -49,14 +49,14 @@ func NewSmartCrawler(mode, cfAccountID, cfAPIToken, cfBaseURL, proxyURLs string,
 // processed and any terminal error.
 func (s *SmartCrawler) Crawl(ctx context.Context, source model.SupportContentSource, onPage func(CrawlRecord) error) (int, error) {
 	switch s.mode {
-	case "local":
-		return s.crawlLocal(ctx, source, onPage)
-
 	case "cloudflare":
 		return s.crawlCloudflare(ctx, source, onPage)
 
-	default: // "cloudflare_with_fallback"
+	case "cloudflare_with_fallback":
 		return s.crawlWithFallback(ctx, source, onPage)
+
+	default: // "local"
+		return s.crawlLocal(ctx, source, onPage)
 	}
 }
 

@@ -464,24 +464,25 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed session:upgrade payload"})
 				continue
 			}
-			if typed.Email == "" {
-				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": "email is required"})
-				continue
-			}
 			email := typed.Email
 			name := typed.Name
 			source := typed.Source
 			if source == "" {
 				source = "widget_prechat"
 			}
-			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name, source)
-			if err != nil {
-				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
-				continue
+			// Allow skipping email (empty) — visitor stays anonymous but pre-chat is considered done.
+			if email != "" {
+				err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name, source)
+				if err != nil {
+					SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
+					continue
+				}
+				session.CustomerEmail = &email
+				session.IsAnonymous = false
 			}
-			session.CustomerEmail = &email
-			session.CustomerName = &name
-			session.IsAnonymous = false
+			if name != "" {
+				session.CustomerName = &name
+			}
 			SendToClient(conn, "session:upgraded", nil)
 
 		case "session:revoke":

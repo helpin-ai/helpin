@@ -147,6 +147,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
+		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
 		r.Post("/invitations/accept-with-signup", h.Invite.AcceptWithSignup)
 

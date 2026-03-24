@@ -115,7 +115,7 @@ func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, 
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	return s.syncService.QueueSourceSync(ctx, workspaceID, id)
+	return s.syncService.QueueSourceReindex(ctx, workspaceID, id)
 }
 
 // ListPages returns all crawled pages for a content source after verifying

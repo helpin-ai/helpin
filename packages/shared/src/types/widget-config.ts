@@ -26,6 +26,7 @@ export interface WidgetConfig {
     preChatForm: boolean;
     requirePhone: boolean;
     csatRating: boolean;
+    forceIdentify: boolean;
   };
   helpSpaces?: HelpSpace[];
 }

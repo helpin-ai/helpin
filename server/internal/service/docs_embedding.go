@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -293,9 +294,16 @@ func chunkDocumentText(text string) []string {
 			break
 		}
 
-		split := strings.LastIndexAny(normalized[start+chunkSizeChars/2:end], ".!?\n ")
+		// Avoid splitting multi-byte UTF-8 characters at slice boundaries.
+		end = alignRuneBoundary(normalized, end)
+
+		midpoint := alignRuneBoundary(normalized, start+chunkSizeChars/2)
+		if midpoint >= end {
+			midpoint = start
+		}
+		split := strings.LastIndexAny(normalized[midpoint:end], ".!?\n ")
 		if split > 0 {
-			end = start + chunkSizeChars/2 + split + 1
+			end = midpoint + split + 1
 		}
 
 		chunk := strings.TrimSpace(normalized[start:end])
@@ -307,9 +315,23 @@ func chunkDocumentText(text string) []string {
 		if nextStart <= start {
 			nextStart = end
 		}
+		nextStart = alignRuneBoundary(normalized, nextStart)
 		start = nextStart
 	}
 	return chunks
+}
+
+// alignRuneBoundary advances pos to the next UTF-8 rune start if it currently
+// falls inside a multi-byte sequence. This prevents slicing a string in the
+// middle of a character, which would produce invalid UTF-8.
+func alignRuneBoundary(s string, pos int) int {
+	if pos >= len(s) {
+		return len(s)
+	}
+	for pos < len(s) && !utf8.RuneStart(s[pos]) {
+		pos++
+	}
+	return pos
 }
 
 func hashChunk(title, content string) string {

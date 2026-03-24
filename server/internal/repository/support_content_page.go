@@ -86,6 +86,20 @@ func (r *SupportContentPageRepository) ListByContentSourceID(ctx context.Context
 	return pages, nil
 }
 
+// ListByContentSourceIDWithContent returns all pages for a content source
+// including the content_text column. Use this for reindex operations that need
+// to re-chunk and re-embed existing content without re-crawling.
+func (r *SupportContentPageRepository) ListByContentSourceIDWithContent(ctx context.Context, contentSourceID string) ([]model.SupportContentPage, error) {
+	var pages []model.SupportContentPage
+	if err := r.db.WithContext(ctx).
+		Where("content_source_id = ?", contentSourceID).
+		Order("last_crawled_at DESC").
+		Find(&pages).Error; err != nil {
+		return nil, fmt.Errorf("list content pages with content: %w", err)
+	}
+	return pages, nil
+}
+
 // GetByIDWithContent returns a single page including its content_text.
 func (r *SupportContentPageRepository) GetByIDWithContent(ctx context.Context, id string) (*model.SupportContentPage, error) {
 	var page model.SupportContentPage

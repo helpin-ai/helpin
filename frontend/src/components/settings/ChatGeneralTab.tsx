@@ -132,6 +132,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
   const [fileUploadsEnabled, setFileUploadsEnabled] = useState(true);
+  const [forceVisitorIdentity, setForceVisitorIdentity] = useState(false);
 
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['widget-settings']));
@@ -178,6 +179,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setCsatEnabled(s.csat_enabled);
       setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+      setForceVisitorIdentity(s.force_visitor_identity ?? false);
     }
   }, [data]);
 
@@ -214,6 +216,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       email_fallback_from_name: emailFallbackFromName,
       csat_enabled: csatEnabled,
       file_uploads_enabled: fileUploadsEnabled,
+      force_visitor_identity: forceVisitorIdentity,
     }, {
       onSuccess: () => toast.success('Settings saved'),
       onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
@@ -502,6 +505,14 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   <p className="text-xs text-muted-foreground">Also ask for the visitor's phone number.</p>
                 </div>
                 <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Force visitors to identify themselves</Label>
+                  <p className="text-xs text-muted-foreground">Visitors must provide their email (or phone) before chatting. When disabled, they can skip the identity step.</p>
+                </div>
+                <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>
 
               <div className="space-y-2">
@@ -1239,6 +1250,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   setEmailFallbackFromName(s.email_fallback_from_name ?? '');
                   setCsatEnabled(s.csat_enabled);
                   setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+                  setForceVisitorIdentity(s.force_visitor_identity ?? false);
                   toast.success('Changes discarded');
                 }
               }}

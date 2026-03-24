@@ -354,9 +354,6 @@ func main() {
 	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
 	if s3Client != nil {
 		slog.Info("S3 storage configured")
-		if err := s3Client.EnsureCORS(context.Background()); err != nil {
-			slog.Warn("failed to set S3 bucket CORS policy — widget file uploads from customer domains may fail", "error", err)
-		}
 	} else {
 		slog.Info("S3 storage not configured — attachments disabled")
 	}
@@ -867,7 +864,7 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:             handler.NewHealthHandler(),
+		Health:             handler.NewHealthHandler(s3Client),
 		Auth:               handler.NewAuthHandler(authService),
 		Organization:       handler.NewOrganizationHandler(orgService),
 		Workspace:          handler.NewWorkspaceHandler(workspaceService),

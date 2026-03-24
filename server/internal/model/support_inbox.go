@@ -369,6 +369,9 @@ type SupportInboxSettings struct {
 
 	// File Uploads
 	FileUploadsEnabled bool `json:"file_uploads_enabled"`
+
+	// Email Transcript
+	ForceVisitorIdentity bool `json:"force_visitor_identity"`
 }
 
 // DefaultSupportInboxSettings returns settings with sensible defaults.
@@ -417,6 +420,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LauncherIcon:           "chat_bubble",
 		CSATEnabled:            false,
 		FileUploadsEnabled:     true,
+		ForceVisitorIdentity: false,
 	}
 }
 
@@ -457,6 +461,7 @@ type UpdateInstallationSettingsRequest struct {
 	LauncherIcon           *string                     `json:"launcher_icon,omitempty"`
 	CSATEnabled            *bool                       `json:"csat_enabled,omitempty"`
 	FileUploadsEnabled     *bool                       `json:"file_uploads_enabled,omitempty"`
+	ForceVisitorIdentity *bool                       `json:"force_visitor_identity,omitempty"`
 }
 
 // SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.
@@ -562,6 +567,7 @@ type WidgetConfigFeatures struct {
 	PreChatForm     bool `json:"preChatForm"`
 	RequirePhone    bool `json:"requirePhone"`
 	CSATRating      bool `json:"csatRating"`
+	ForceIdentify bool `json:"forceIdentify"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.

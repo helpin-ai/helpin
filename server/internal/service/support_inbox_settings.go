@@ -128,6 +128,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.FileUploadsEnabled != nil {
 		current.FileUploadsEnabled = *patch.FileUploadsEnabled
 	}
+	if patch.ForceVisitorIdentity != nil {
+		current.ForceVisitorIdentity = *patch.ForceVisitorIdentity
+	}
 	return current
 }
 

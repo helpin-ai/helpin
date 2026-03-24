@@ -68,6 +68,7 @@ export function WidgetPreview({
           preChatForm: false,
           requirePhone: false,
           csatRating: false,
+          forceIdentify: false,
         },
       },
       isOpen,

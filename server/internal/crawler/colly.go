@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
 
 // crawlWithColly performs a BFS crawl using Colly for link traversal and
 // go-trafilatura for content extraction.
@@ -126,36 +128,74 @@ func crawlWithColly(
 
 		pageURL := r.Request.URL
 		parsedURL, _ := url.Parse(pageURL.String())
+		rawHTML := string(r.Body)
 
-		// Extract with trafilatura.
-		result, err := trafilatura.Extract(bytes.NewReader(r.Body), trafilatura.Options{
+		var contentText, title string
+		var metadata map[string]any
+
+		trafOpts := trafilatura.Options{
 			OriginalURL:        parsedURL,
 			EnableFallback:     true,
 			FallbackCandidates: &trafilatura.FallbackCandidates{},
 			Focus:              trafilatura.FavorRecall,
 			ExcludeTables:      false,
-		})
-		if err != nil || result == nil {
-			logger.Debug("trafilatura extraction failed", "url", pageURL.String(), "error", err)
-			return
+			IncludeLinks:       true,
 		}
 
-		if result.ContentText == "" {
+		// Article/docs pages → trafilatura primary (best at extracting
+		// main body and stripping boilerplate).
+		// All other pages → HTML-to-markdown primary (preserves structured
+		// content like pricing tables, feature lists, FAQs).
+		if isArticlePath(pageURL.String()) {
+			result, err := trafilatura.Extract(bytes.NewReader(r.Body), trafOpts)
+			if err == nil && result != nil && strings.TrimSpace(result.ContentText) != "" {
+				contentText = result.ContentText
+				title = result.Metadata.Title
+				metadata = map[string]any{
+					"title":       result.Metadata.Title,
+					"author":      result.Metadata.Author,
+					"description": result.Metadata.Description,
+					"language":    result.Metadata.Language,
+				}
+			} else {
+				// Trafilatura failed on an article page — fall back.
+				contentText = HTMLToMarkdown(rawHTML, parsedURL)
+				title = ExtractTitle(rawHTML)
+				metadata = map[string]any{"title": title}
+			}
+		} else {
+			contentText = HTMLToMarkdown(rawHTML, parsedURL)
+			title = ExtractTitle(rawHTML)
+			metadata = map[string]any{"title": title}
+
+			// If trafilatura extracts more for this page, prefer it.
+			result, err := trafilatura.Extract(bytes.NewReader(r.Body), trafOpts)
+			if err == nil && result != nil {
+				trafText := strings.TrimSpace(result.ContentText)
+				if len(trafText) > len(strings.TrimSpace(contentText)) {
+					contentText = trafText
+					title = result.Metadata.Title
+					metadata = map[string]any{
+						"title":       result.Metadata.Title,
+						"author":      result.Metadata.Author,
+						"description": result.Metadata.Description,
+						"language":    result.Metadata.Language,
+					}
+				}
+			}
+		}
+
+		if strings.TrimSpace(contentText) == "" {
 			return
 		}
 
 		record := CrawlRecord{
 			URL:        pageURL.String(),
-			Title:      result.Metadata.Title,
+			Title:      title,
 			HTTPStatus: r.StatusCode,
-			Markdown:   result.ContentText,
-			HTML:       string(r.Body),
-			Metadata: map[string]any{
-				"title":       result.Metadata.Title,
-				"author":      result.Metadata.Author,
-				"description": result.Metadata.Description,
-				"language":    result.Metadata.Language,
-			},
+			Markdown:   contentText,
+			HTML:       rawHTML,
+			Metadata:   metadata,
 		}
 
 		mu.Lock()
@@ -213,3 +253,36 @@ func crawlWithColly(
 	)
 	return int(pageCount.Load()), nil
 }
+
+// articlePathSegments are URL path segments that indicate an article/docs page
+// where trafilatura's article extraction produces better results than generic
+// HTML-to-markdown conversion.
+var articlePathSegments = []string{
+	"/blog/", "/blog",
+	"/docs/", "/docs",
+	"/article/", "/articles/",
+	"/post/", "/posts/",
+	"/guide/", "/guides/",
+	"/tutorial/", "/tutorials/",
+	"/help/", "/knowledge-base/",
+	"/changelog/", "/changelog",
+	"/news/", "/news",
+	"/wiki/", "/wiki",
+}
+
+// isArticlePath returns true if the URL path suggests article/blog/docs content
+// where trafilatura excels at extracting the main body.
+func isArticlePath(rawURL string) bool {
+	parsed, err := url.Parse(strings.ToLower(rawURL))
+	if err != nil {
+		return false
+	}
+	path := parsed.Path
+	for _, seg := range articlePathSegments {
+		if strings.Contains(path, seg) {
+			return true
+		}
+	}
+	return false
+}
+

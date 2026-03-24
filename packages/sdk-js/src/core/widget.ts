@@ -74,6 +74,7 @@ export class WidgetManager {
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
+  private preChatDone = false;
   private notificationAudio: HTMLAudioElement | null = null;
   private notificationAudioUnlocked = false;
   private audioUnlockListener: (() => void) | null = null;
@@ -99,6 +100,11 @@ export class WidgetManager {
     this.isShutdown = false;
     this.config = settings;
     this.widgetKey = settings.key;
+
+    // Restore pre-chat done state from localStorage.
+    if (this.widgetKey) {
+      try { this.preChatDone = localStorage.getItem(`helpin_prechat_${this.widgetKey}`) === '1'; } catch { /* ignore */ }
+    }
 
     if (settings.host) {
       this.host = settings.host.replace(/^https?:\/\//, '');
@@ -149,7 +155,9 @@ export class WidgetManager {
     if (this.widgetKey) {
       clearSession(this.widgetKey);
       clearConfigCache(this.widgetKey);
+      try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
     }
+    this.preChatDone = false;
 
     // 3. Reset in-memory state + unmount widget
     this.cleanup();
@@ -352,9 +360,11 @@ export class WidgetManager {
 }`;
     }
 
-    // Show pre-chat form only when: feature is enabled AND session is anonymous (no email yet)
+    // Show pre-chat form only when: feature is enabled AND session is anonymous (no email yet) AND not already completed/skipped.
+    // When forceIdentify is on, ignore the skip flag — email is mandatory.
     const alreadyIdentified = !!this.currentEmail || !!this.config?.user?.email;
-    const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified;
+    const forceIdentify = !!this.widgetConfig.features?.forceIdentify;
+    const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified && (forceIdentify || !this.preChatDone);
 
     const mountOptions: Parameters<typeof mountWidget>[1] & {
       openArticleRequest?: {
@@ -666,18 +676,28 @@ export class WidgetManager {
   }
 
   private handlePreChatSubmit(data: { phone: string; email: string }): void {
-    this.triggerCallback('onUserEmailSupplied', data.email);
-    this.currentEmail = data.email;
+    if (data.email) {
+      this.triggerCallback('onUserEmailSupplied', data.email);
+      this.currentEmail = data.email;
+    }
 
-    // Upgrade session via WS with source=prechat
+    // Mark pre-chat as done so it doesn't reappear on reload.
+    this.preChatDone = true;
+    if (this.widgetKey) {
+      try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* ignore */ }
+    }
+
+    // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('session:upgrade', { email: data.email, phone: data.phone, source: 'widget_prechat' });
+      this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
     }
 
     // Fire lead tracking event to events pipeline (ClickHouse)
-    if ((globalThis as any).helpin?.track) {
+    if (data.email && (globalThis as any).helpin?.track) {
       (globalThis as any).helpin.track('lead', { email: data.email });
     }
+
+    this.render();
   }
 
   // ─── Image Lightbox (rendered in parent document, outside shadow DOM) ───

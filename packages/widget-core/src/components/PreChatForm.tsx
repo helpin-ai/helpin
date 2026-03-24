@@ -25,6 +25,7 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   }, [step]);
 
   const requirePhone = config.features?.requirePhone !== false;
+  const emailRequired = config.features?.forceIdentify === true;
 
   const handleEmailSubmit = (e: Event) => {
     e.preventDefault();
@@ -33,6 +34,15 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
       setStep('phone');
     } else {
       onSubmit({ phone: '', email: email.trim() });
+      setStep('done');
+    }
+  };
+
+  const handleSkipEmail = () => {
+    if (requirePhone) {
+      setStep('phone');
+    } else {
+      onSubmit({ phone: '', email: '' });
       setStep('done');
     }
   };
@@ -53,7 +63,9 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
             {step === 'email' && (
               <>
                 <div className="helpin-message-content">
-                  Please enter your email address so we can get back to you by email if needed.
+                  {emailRequired
+                    ? 'Please enter your email address to continue.'
+                    : 'Please enter your email address so we can get back to you by email if needed.'}
                 </div>
                 <form onSubmit={handleEmailSubmit} className="helpin-inline-prechat-form">
                   <label className="helpin-sr-only" htmlFor="helpin-prechat-email">Email address</label>
@@ -80,6 +92,15 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
                     <ChevronRightIcon size={16} color="white" />
                   </button>
                 </form>
+                {!emailRequired && (
+                  <button
+                    type="button"
+                    className="helpin-inline-prechat-skip"
+                    onClick={handleSkipEmail}
+                  >
+                    Skip
+                  </button>
+                )}
               </>
             )}
             {step === 'phone' && (

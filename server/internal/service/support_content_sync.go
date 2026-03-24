@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 // SupportContentSyncWorkflowStarter queues durable crawl+embedding work.
 type SupportContentSyncWorkflowStarter interface {
 	QueueContentSourceSync(ctx context.Context, workspaceID, contentSourceID string) error
+	QueueContentSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error
 }
 
 // SupportContentSyncService keeps crawled web content indexed in pgvector.
@@ -135,16 +137,17 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		}
 
 		title := crawlRecordTitle(record)
+		pageURL := strings.ToValidUTF8(strings.TrimSpace(record.URL), "")
 		page := &model.SupportContentPage{
 			WorkspaceID:     source.WorkspaceID,
 			ContentSourceID: source.ID,
-			URL:             strings.TrimSpace(record.URL),
+			URL:             pageURL,
 			Title:           title,
 			HTTPStatus:      record.HTTPStatus,
 			ContentFormat:   format,
 			ContentText:     contentText,
-			ContentHash:     hashChunk(title+"\n"+strings.TrimSpace(record.URL), contentText),
-			Metadata:        mustMarshalJSON(record.Metadata),
+			ContentHash:     hashChunk(title+"\n"+pageURL, contentText),
+			Metadata:        sanitizeJSONUTF8(mustMarshalJSON(record.Metadata)),
 			LastCrawledAt:   time.Now(),
 		}
 		savedPage, err := s.pageRepo.Upsert(ctx, page)
@@ -163,27 +166,44 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			Inputs:   chunks,
 		})
 		if err != nil {
-			return err
+			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", savedPage.ID, "url", savedPage.URL, "error", err)
+			keepPageIDs = append(keepPageIDs, savedPage.ID)
+			keepURLs = append(keepURLs, savedPage.URL)
+			return nil
 		}
 		if len(resp.Vectors) != len(chunks) {
-			return fmt.Errorf("embedding count mismatch for content page %s", savedPage.ID)
+			slog.WarnContext(ctx, "skipping page: embedding count mismatch", "page_id", savedPage.ID, "got", len(resp.Vectors), "want", len(chunks))
+			keepPageIDs = append(keepPageIDs, savedPage.ID)
+			keepURLs = append(keepURLs, savedPage.URL)
+			return nil
 		}
 		rows := make([]model.SupportContentChunk, 0, len(chunks))
+		validEmbeddings := true
 		for chunkIndex, chunk := range chunks {
 			if len(resp.Vectors[chunkIndex]) != docsEmbeddingDimensions {
-				return fmt.Errorf("embedding dimension mismatch for content page %s: got %d want %d", savedPage.ID, len(resp.Vectors[chunkIndex]), docsEmbeddingDimensions)
+				slog.WarnContext(ctx, "skipping page: embedding dimension mismatch", "page_id", savedPage.ID, "got", len(resp.Vectors[chunkIndex]), "want", docsEmbeddingDimensions)
+				validEmbeddings = false
+				break
 			}
+			safeTitle := strings.ToValidUTF8(savedPage.Title, "")
+			safeURL := strings.ToValidUTF8(savedPage.URL, "")
+			safeChunk := strings.ToValidUTF8(chunk, "")
 			rows = append(rows, model.SupportContentChunk{
 				WorkspaceID:     source.WorkspaceID,
 				ContentSourceID: source.ID,
 				PageID:          savedPage.ID,
 				ChunkIndex:      chunkIndex,
-				Title:           savedPage.Title,
-				URL:             savedPage.URL,
-				Content:         chunk,
-				ContentHash:     hashChunk(savedPage.Title, chunk),
+				Title:           safeTitle,
+				URL:             safeURL,
+				Content:         safeChunk,
+				ContentHash:     hashChunk(safeTitle, safeChunk),
 				Embedding:       formatVector(resp.Vectors[chunkIndex]),
 			})
+		}
+		if !validEmbeddings {
+			keepPageIDs = append(keepPageIDs, savedPage.ID)
+			keepURLs = append(keepURLs, savedPage.URL)
+			return nil
 		}
 		if err := s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, rows); err != nil {
 			return err
@@ -222,6 +242,148 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
 			return err
 		}
+	}
+
+	completedAt := time.Now()
+	return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, indexedPages, indexedChunks, nil, nil, &startedAt, &completedAt)
+}
+
+// QueueSourceReindex queues a re-embedding job that reads existing pages from
+// the database instead of re-crawling the website.
+func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error {
+	if s == nil || s.sourceRepo == nil {
+		return nil
+	}
+	source, err := s.sourceRepo.GetByID(ctx, contentSourceID)
+	if err != nil {
+		return err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return fmt.Errorf("content source not found in workspace")
+	}
+	if s.embedder == nil {
+		msg := "OpenAI-compatible embedding provider is not configured"
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+		return nil
+	}
+	if err := s.sourceRepo.MarkSyncQueued(ctx, source.ID); err != nil {
+		return err
+	}
+	if s.starter == nil {
+		err = fmt.Errorf("Temporal content sync pipeline is not configured")
+		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		return err
+	}
+	if err := s.starter.QueueContentSourceReindex(ctx, workspaceID, contentSourceID); err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, nil)
+		return err
+	}
+	return nil
+}
+
+// RunSourceReindex re-chunks and re-embeds existing pages stored in the
+// database without re-crawling the website. This is faster and avoids
+// crawler-related issues (rate limits, encoding errors from remote content).
+func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error {
+	if s == nil {
+		return nil
+	}
+	source, err := s.sourceRepo.GetByID(ctx, contentSourceID)
+	if err != nil {
+		return err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return fmt.Errorf("content source not found in workspace")
+	}
+	if s.embedder == nil {
+		msg := "OpenAI-compatible embedding provider is not configured"
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil, nil)
+	}
+
+	startedAt := time.Now()
+	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, 0, 0, nil, nil, &startedAt, nil); err != nil {
+		return err
+	}
+
+	pages, err := s.pageRepo.ListByContentSourceIDWithContent(ctx, contentSourceID)
+	if err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt)
+		return err
+	}
+
+	var (
+		indexedPages  int
+		indexedChunks int
+	)
+
+	for _, page := range pages {
+		if strings.TrimSpace(page.ContentText) == "" {
+			_ = s.chunkRepo.ReplacePageChunks(ctx, page.ID, nil)
+			continue
+		}
+
+		chunks := chunkDocumentText(page.ContentText)
+		if len(chunks) == 0 {
+			_ = s.chunkRepo.ReplacePageChunks(ctx, page.ID, nil)
+			continue
+		}
+
+		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+			Provider: "openai",
+			Model:    s.embeddingModel,
+			Inputs:   chunks,
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", page.ID, "url", page.URL, "error", err)
+			continue
+		}
+		if len(resp.Vectors) != len(chunks) {
+			slog.WarnContext(ctx, "skipping page: embedding count mismatch", "page_id", page.ID, "got", len(resp.Vectors), "want", len(chunks))
+			continue
+		}
+
+		rows := make([]model.SupportContentChunk, 0, len(chunks))
+		validEmbeddings := true
+		for chunkIndex, chunk := range chunks {
+			if len(resp.Vectors[chunkIndex]) != docsEmbeddingDimensions {
+				slog.WarnContext(ctx, "skipping page: embedding dimension mismatch", "page_id", page.ID, "got", len(resp.Vectors[chunkIndex]), "want", docsEmbeddingDimensions)
+				validEmbeddings = false
+				break
+			}
+			safeTitle := strings.ToValidUTF8(page.Title, "")
+			safeURL := strings.ToValidUTF8(page.URL, "")
+			safeChunk := strings.ToValidUTF8(chunk, "")
+			rows = append(rows, model.SupportContentChunk{
+				WorkspaceID:     source.WorkspaceID,
+				ContentSourceID: source.ID,
+				PageID:          page.ID,
+				ChunkIndex:      chunkIndex,
+				Title:           safeTitle,
+				URL:             safeURL,
+				Content:         safeChunk,
+				ContentHash:     hashChunk(safeTitle, safeChunk),
+				Embedding:       formatVector(resp.Vectors[chunkIndex]),
+			})
+		}
+		if !validEmbeddings {
+			continue
+		}
+		if err := s.chunkRepo.ReplacePageChunks(ctx, page.ID, rows); err != nil {
+			slog.WarnContext(ctx, "skipping page: chunk upsert failed", "page_id", page.ID, "error", err)
+			continue
+		}
+
+		indexedPages++
+		indexedChunks += len(rows)
+
+		pct := 0
+		if len(pages) > 0 {
+			pct = (indexedPages * 100) / len(pages)
+		}
+		if pct > 99 {
+			pct = 99
+		}
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 	}
 
 	completedAt := time.Now()
@@ -268,7 +430,17 @@ func mustMarshalJSON(value any) json.RawMessage {
 	return payload
 }
 
-var htmlTagPattern = regexp.MustCompile(`<[^>]+>`)
+var (
+	htmlTagPattern = regexp.MustCompile(`<[^>]+>`)
+	// Markdown images: ![alt text](url) → keep alt text only.
+	mdImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\([^)]+\)`)
+	// HTML <img> tags (self-closing or not).
+	htmlImgPattern = regexp.MustCompile(`(?i)<img[^>]*>`)
+	// Inline SVG blocks.
+	svgPattern = regexp.MustCompile(`(?is)<svg[^>]*>.*?</svg>`)
+	// Markdown image-only links: [![alt](img-url)](link-url) → keep alt text.
+	mdImageLinkPattern = regexp.MustCompile(`\[!\[([^\]]*)\]\([^)]+\)\]\([^)]+\)`)
+)
 
 func stripHTML(raw string) string {
 	replaced := htmlTagPattern.ReplaceAllString(raw, " ")
@@ -280,5 +452,24 @@ func normalizeContentText(value string) string {
 	// Strip invalid UTF-8 bytes — crawlers sometimes return Windows-1252
 	// encoded characters that PostgreSQL rejects.
 	cleaned := strings.ToValidUTF8(value, "")
+
+	// Remove images and SVGs — they are noise for text embeddings.
+	cleaned = svgPattern.ReplaceAllString(cleaned, " ")
+	cleaned = htmlImgPattern.ReplaceAllString(cleaned, " ")
+	cleaned = mdImageLinkPattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdImagePattern.ReplaceAllString(cleaned, "$1")
+
 	return strings.Join(strings.Fields(strings.TrimSpace(cleaned)), " ")
+}
+
+// sanitizeJSONUTF8 strips invalid UTF-8 byte sequences from a JSON payload.
+// Cloudflare and other crawlers may return metadata with Windows-1252 or other
+// non-UTF-8 characters that PostgreSQL jsonb columns reject.
+func sanitizeJSONUTF8(raw json.RawMessage) json.RawMessage {
+	s := string(raw)
+	cleaned := strings.ToValidUTF8(s, "")
+	if len(cleaned) == len(s) {
+		return raw // already valid
+	}
+	return json.RawMessage(cleaned)
 }

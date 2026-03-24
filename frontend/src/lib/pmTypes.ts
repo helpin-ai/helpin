@@ -1730,6 +1730,7 @@ export interface SupportInboxSettings {
   widget_help_space_ids: string[];
   csat_enabled: boolean;
   file_uploads_enabled: boolean;
+  force_visitor_identity: boolean;
 }
 
 export interface SupportInstallationResponse {

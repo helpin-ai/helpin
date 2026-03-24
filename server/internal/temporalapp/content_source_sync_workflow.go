@@ -13,8 +13,9 @@ import (
 const WorkflowSignalContentSourceSync = "ContentSourceSync"
 
 type ContentSourceSyncInput struct {
-	WorkspaceID      string `json:"workspace_id"`
-	ContentSourceID  string `json:"content_source_id"`
+	WorkspaceID     string `json:"workspace_id"`
+	ContentSourceID string `json:"content_source_id"`
+	Reindex         bool   `json:"reindex,omitempty"`
 }
 
 func WorkflowIDForContentSource(workspaceID, contentSourceID string) string {
@@ -61,6 +62,7 @@ func ContentSourceSyncWorkflow(ctx workflow.Context, input ContentSourceSyncInpu
 
 type contentSourceSyncRunner interface {
 	RunSourceSync(ctx context.Context, workspaceID, contentSourceID string) error
+	RunSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error
 }
 
 type ContentSourceSyncActivities struct {
@@ -80,6 +82,9 @@ func (a *ContentSourceSyncActivities) SyncContentSourceActivity(ctx context.Cont
 	}
 	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ContentSourceID) == "" {
 		return fmt.Errorf("workspace_id and content_source_id are required")
+	}
+	if input.Reindex {
+		return a.runner.RunSourceReindex(ctx, input.WorkspaceID, input.ContentSourceID)
 	}
 	return a.runner.RunSourceSync(ctx, input.WorkspaceID, input.ContentSourceID)
 }
