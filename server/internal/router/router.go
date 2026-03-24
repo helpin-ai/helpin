@@ -155,6 +155,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/git/webhook", h.Git.Webhook)
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
+			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
 		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----

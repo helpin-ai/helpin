@@ -25,13 +25,14 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 type capturedPostmarkRequest struct {
-	From     string `json:"From"`
-	To       string `json:"To"`
-	Subject  string `json:"Subject"`
-	HtmlBody string `json:"HtmlBody"`
-	TextBody string `json:"TextBody"`
-	ReplyTo  string `json:"ReplyTo"`
-	Headers  []struct {
+	From       string `json:"From"`
+	To         string `json:"To"`
+	Subject    string `json:"Subject"`
+	HtmlBody   string `json:"HtmlBody"`
+	TextBody   string `json:"TextBody"`
+	ReplyTo    string `json:"ReplyTo"`
+	TrackOpens bool   `json:"TrackOpens"`
+	Headers    []struct {
 		Name  string `json:"Name"`
 		Value string `json:"Value"`
 	} `json:"Headers"`
@@ -294,6 +295,9 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if !strings.Contains(captured.TextBody, "annual billing") {
 		t.Fatalf("expected text body to include batched content, got %q", captured.TextBody)
 	}
+	if !captured.TrackOpens {
+		t.Fatal("expected support fallback emails to enable TrackOpens")
+	}
 
 	headerMap := make(map[string]string, len(captured.Headers))
 	for _, header := range captured.Headers {
@@ -344,6 +348,69 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 		t.Fatalf("check redis cleanup: %v", err)
 	} else if exists != 0 {
 		t.Fatalf("expected redis cleanup, found %d keys", exists)
+	}
+}
+
+func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999999"
+	readAt := time.Date(2026, 3, 20, 13, 5, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return readAt }
+
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Following up via email.",
+		MessageType:    "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create msg: %v", err)
+	}
+
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:                "aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		Direction:         "outbound",
+		MessageIDs:        model.DocsStringArray{msg.ID},
+		PostmarkMessageID: strPtr("pm-open-1"),
+		Status:            "sent",
+	}); err != nil {
+		t.Fatalf("seed email log: %v", err)
+	}
+
+	if err := env.service.ProcessOpenEvent(ctx, model.PostmarkOpenPayload{
+		RecordType: "Open",
+		MessageID:  "pm-open-1",
+		FirstOpen:  true,
+		ReceivedAt: "2026-03-20T13:05:00Z",
+	}); err != nil {
+		t.Fatalf("process open event: %v", err)
+	}
+
+	savedMsg, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if savedMsg == nil || savedMsg.EmailReadAt == nil || !savedMsg.EmailReadAt.Equal(readAt) {
+		t.Fatalf("expected email_read_at=%v, got %#v", readAt, savedMsg)
+	}
+
+	logRow, err := env.emailLogRepo.GetByPostmarkMessageID(ctx, "pm-open-1")
+	if err != nil {
+		t.Fatalf("reload email log: %v", err)
+	}
+	if logRow == nil || logRow.Status != "opened" {
+		t.Fatalf("expected opened email log, got %#v", logRow)
+	}
+	if logRow.OpenedAt == nil || !logRow.OpenedAt.Equal(readAt) {
+		t.Fatalf("expected opened_at=%v, got %#v", readAt, logRow.OpenedAt)
 	}
 }
 
@@ -409,5 +476,38 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	}
 	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-in-1" {
 		t.Fatalf("unexpected inbound postmark message id: %#v", logs[0].PostmarkMessageID)
+	}
+}
+
+func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
+	svc := &EmailFallbackService{}
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks for reaching out."}},
+		"Alex Agent",
+		"Acme Support",
+		"https://example.com/#helpin-conv=conv-1",
+		"unsubscribe-conv-1@replies.helpin.ai",
+	)
+
+	if !strings.Contains(htmlBody, "mailto:unsubscribe-conv-1@replies.helpin.ai") {
+		t.Fatalf("expected html unsubscribe mailto link, got %q", htmlBody)
+	}
+	if strings.Contains(htmlBody, "max-width:600px") {
+		t.Fatalf("expected plain html email body without template wrapper, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, "Unsubscribe: mailto:unsubscribe-conv-1@replies.helpin.ai") {
+		t.Fatalf("expected text unsubscribe mailto link, got %q", textBody)
+	}
+}
+
+func TestIsEmailFallbackTerminalStatus(t *testing.T) {
+	if !isEmailFallbackTerminalStatus("closed") {
+		t.Fatal("closed should be terminal")
+	}
+	if !isEmailFallbackTerminalStatus("spam") {
+		t.Fatal("spam should be terminal")
+	}
+	if isEmailFallbackTerminalStatus("resolved") {
+		t.Fatal("resolved should not be terminal")
 	}
 }

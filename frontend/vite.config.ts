@@ -7,7 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [TanStackRouterVite({ autoCodeSplitting: true }), react(), tailwindcss()],
   server: {
-    allowedHosts: ["helpin-dev-fe.tryunhide.com"],
+    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
   },
   resolve: {
     alias: {

@@ -47,6 +47,28 @@ func (h *PostmarkInboundHandler) PostmarkInbound(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 }
 
+// PostmarkOpen handles POST /api/webhooks/postmark/open.
+func (h *PostmarkInboundHandler) PostmarkOpen(w http.ResponseWriter, r *http.Request) {
+	if h == nil || !h.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var payload model.PostmarkOpenPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if h.emailFallbackService != nil {
+		if err := h.emailFallbackService.ProcessOpenEvent(r.Context(), payload); err != nil {
+			slog.Warn("postmark open processing failed", "error", err, "message_id", payload.MessageID)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *PostmarkInboundHandler) authorized(r *http.Request) bool {
 	if h == nil || h.webhookSecret == "" {
 		return false

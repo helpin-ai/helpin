@@ -649,6 +649,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			metadata TEXT DEFAULT '{}',
 			via_channel TEXT,
 			email_notified_at DATETIME,
+			email_read_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -687,6 +688,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			raw_body TEXT,
 			stripped_text TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			opened_at DATETIME,
 			error_message TEXT,
 			created_at DATETIME
 		)`,

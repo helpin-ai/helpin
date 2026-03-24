@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -75,6 +76,14 @@ func (s *SupportContentSourceService) Update(ctx context.Context, workspaceID, i
 	updated, err := s.repo.Update(ctx, id, updates)
 	if err != nil {
 		return nil, err
+	}
+	if crawlLimit, ok := updates["crawl_limit"]; ok {
+		slog.InfoContext(ctx, "support content source crawl limit updated",
+			"workspace_id", workspaceID,
+			"content_source_id", id,
+			"old_crawl_limit", existing.CrawlLimit,
+			"new_crawl_limit", crawlLimit,
+		)
 	}
 	if s.syncService != nil {
 		if err := s.syncService.QueueSourceSync(ctx, workspaceID, id); err != nil {
@@ -242,14 +251,6 @@ func (s *AgentContentSourceService) Set(ctx context.Context, workspaceID, agentI
 			WorkspaceID:     workspaceID,
 		}); err != nil {
 			return err
-		}
-	}
-
-	if s.syncService != nil {
-		for _, contentSourceID := range nextIDs {
-			if err := s.syncService.QueueSourceSync(ctx, workspaceID, contentSourceID); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

@@ -396,13 +396,14 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return err
 	}
 	replyTo := fmt.Sprintf("conv-%s@%s", conversationID, s.replyDomain)
+	unsubscribeEmail := s.unsubscribeAddress(conversationID)
 
 	subject, err := s.buildSubject(ctx, conv, pending)
 	if err != nil {
 		return err
 	}
 	chatLink, _ := s.buildChatLink(ctx, conv)
-	htmlBody, textBody := s.renderBodies(pending, agentName, workspaceName, chatLink)
+	htmlBody, textBody := s.renderBodies(pending, agentName, workspaceName, chatLink, unsubscribeEmail)
 
 	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(
 		from,
@@ -449,7 +450,50 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return txErr
 	}
 
+	s.publishMessageUpdated(conv.WorkspaceID, conversationID, lastString(messageIDValues), "postmark:sent")
+
 	return s.cleanup(ctx, conversationID)
+}
+
+// ProcessOpenEvent records an outbound email open and mirrors it onto the related support messages.
+func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload model.PostmarkOpenPayload) error {
+	if s == nil || s.emailLogRepo == nil || s.messageRepo == nil {
+		return nil
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	if postmarkMessageID == "" {
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		return nil
+	}
+	if logRow.OpenedAt != nil && !payload.FirstOpen {
+		return nil
+	}
+
+	readAt := s.now()
+	if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(payload.ReceivedAt)); err == nil {
+		readAt = parsed.UTC()
+	}
+
+	txErr := s.messageRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.emailLogRepo.WithTx(tx).MarkOpened(ctx, logRow.ID, readAt); err != nil {
+			return err
+		}
+		return s.messageRepo.WithTx(tx).UpdateEmailReadAt(ctx, []string(logRow.MessageIDs), readAt)
+	})
+	if txErr != nil {
+		return txErr
+	}
+
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:open")
+	return nil
 }
 
 func (s *EmailFallbackService) loadSettings(ctx context.Context, workspaceID string) (model.SupportInboxSettings, error) {
@@ -504,7 +548,7 @@ func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspace
 	headers := []email.EmailHeader{
 		{Name: "Message-ID", Value: nextMessageID},
 		{Name: "X-Conversation-ID", Value: conversationID},
-		{Name: "List-Unsubscribe", Value: fmt.Sprintf("<mailto:unsubscribe-%s@%s>", conversationID, s.replyDomain)},
+		{Name: "List-Unsubscribe", Value: fmt.Sprintf("<mailto:%s>", s.unsubscribeAddress(conversationID))},
 	}
 	if len(previous) > 0 {
 		headers = append(headers, email.EmailHeader{Name: "In-Reply-To", Value: previous[len(previous)-1]})
@@ -563,8 +607,8 @@ func (s *EmailFallbackService) buildChatLink(ctx context.Context, conv *model.Su
 	return parsed.String(), nil
 }
 
-func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, agentName, workspaceName, chatLink string) (string, string) {
-	chunks := make([]string, 0, len(messages))
+func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, agentName, workspaceName, chatLink, unsubscribeEmail string) (string, string) {
+	htmlChunks := make([]string, 0, len(messages))
 	textChunks := make([]string, 0, len(messages))
 	for _, msg := range messages {
 		text := strings.TrimSpace(msg.Content)
@@ -572,21 +616,34 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 			continue
 		}
 		textChunks = append(textChunks, text)
-		chunks = append(chunks, strings.ReplaceAll(html.EscapeString(text), "\n", "<br>"))
+		htmlChunks = append(htmlChunks, strings.ReplaceAll(html.EscapeString(text), "\n", "<br>"))
 	}
 
-	htmlBody := `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a;background:#ffffff;padding:24px;">`
-	for _, chunk := range chunks {
-		htmlBody += `<p style="margin:0 0 16px;line-height:1.6;font-size:15px;">` + chunk + `</p>`
+	var htmlBody strings.Builder
+	for _, chunk := range htmlChunks {
+		htmlBody.WriteString("<p>")
+		htmlBody.WriteString(chunk)
+		htmlBody.WriteString("</p>")
 	}
-	htmlBody += `<div style="margin:24px 0 16px;color:#6b7280;">--</div>`
-	htmlBody += `<p style="margin:0 0 12px;color:#6b7280;font-size:13px;">&#9679; ` + html.EscapeString(agentName) + ` via ` + html.EscapeString(workspaceName) + `.</p>`
+	htmlBody.WriteString("<p>--<br>")
+	htmlBody.WriteString(html.EscapeString(agentName))
+	htmlBody.WriteString(" via ")
+	htmlBody.WriteString(html.EscapeString(workspaceName))
+	htmlBody.WriteString("</p>")
 	if chatLink != "" {
-		htmlBody += `<p style="margin:0 0 12px;color:#6b7280;font-size:13px;">Reply directly to this email, or go to <a href="` + html.EscapeString(chatLink) + `">chat</a>.</p>`
+		htmlBody.WriteString(`<p>Reply directly to this email, or open the chat:<br><a href="`)
+		htmlBody.WriteString(html.EscapeString(chatLink))
+		htmlBody.WriteString(`">`)
+		htmlBody.WriteString(html.EscapeString(chatLink))
+		htmlBody.WriteString("</a></p>")
 	} else {
-		htmlBody += `<p style="margin:0 0 12px;color:#6b7280;font-size:13px;">Reply directly to this email.</p>`
+		htmlBody.WriteString("<p>Reply directly to this email.</p>")
 	}
-	htmlBody += `<p style="margin:0;color:#6b7280;font-size:13px;">Sent from <a href="https://helpin.ai">Helpin</a>. Unsubscribe from these emails.</p></div>`
+	if unsubscribeEmail != "" {
+		htmlBody.WriteString(`<p><a href="mailto:`)
+		htmlBody.WriteString(html.EscapeString(unsubscribeEmail))
+		htmlBody.WriteString(`">Unsubscribe</a> from these emails.</p>`)
+	}
 
 	textBody := strings.Join(textChunks, "\n\n")
 	if textBody != "" {
@@ -594,12 +651,14 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	}
 	textBody += "--\n" + agentName + " via " + workspaceName + "\n\nReply directly to this email"
 	if chatLink != "" {
-		textBody += ", or go to chat:\n" + chatLink
+		textBody += ", or open the chat:\n" + chatLink
 	} else {
 		textBody += "."
 	}
-	textBody += "\n\nSent from Helpin (https://helpin.ai)."
-	return htmlBody, textBody
+	if unsubscribeEmail != "" {
+		textBody += "\nUnsubscribe: mailto:" + unsubscribeEmail
+	}
+	return htmlBody.String(), textBody
 }
 
 func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID string) error {
@@ -617,6 +676,14 @@ func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID strin
 
 func (s *EmailFallbackService) msgListKey(conversationID string) string {
 	return emailFallbackMsgsKeyPrefix + conversationID
+}
+
+func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string {
+	domain := strings.TrimSpace(s.replyDomain)
+	if domain == "" {
+		domain = "replies.helpin.ai"
+	}
+	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
 }
 
 func (s *EmailFallbackService) isVisitorOnline(ctx context.Context, workspaceID string, anonymousID *string) (bool, error) {
@@ -684,6 +751,28 @@ func isLikelyUniqueConstraintError(err error) bool {
 	}
 	lower := strings.ToLower(err.Error())
 	return strings.Contains(lower, "unique") || strings.Contains(lower, "duplicate")
+}
+
+func (s *EmailFallbackService) publishMessageUpdated(workspaceID, conversationID, messageID, actorID string) {
+	if s == nil || s.wsPublisher == nil || strings.TrimSpace(messageID) == "" {
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation_message",
+		EntityID:    messageID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		ParentType:  "support_conversation",
+		ParentID:    conversationID,
+	})
+}
+
+func lastString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[len(values)-1])
 }
 
 func uniqueEmailFallbackStrings(values []string) []string {

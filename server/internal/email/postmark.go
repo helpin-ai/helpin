@@ -33,13 +33,14 @@ func NewClient(serverToken, fromEmail string) *Client {
 }
 
 type postmarkRequest struct {
-	From     string        `json:"From"`
-	To       string        `json:"To"`
-	Subject  string        `json:"Subject"`
-	HtmlBody string        `json:"HtmlBody"`
-	TextBody string        `json:"TextBody"`
-	ReplyTo  string        `json:"ReplyTo,omitempty"`
-	Headers  []EmailHeader `json:"Headers,omitempty"`
+	From       string        `json:"From"`
+	To         string        `json:"To"`
+	Subject    string        `json:"Subject"`
+	HtmlBody   string        `json:"HtmlBody"`
+	TextBody   string        `json:"TextBody"`
+	ReplyTo    string        `json:"ReplyTo,omitempty"`
+	Headers    []EmailHeader `json:"Headers,omitempty"`
+	TrackOpens bool          `json:"TrackOpens,omitempty"`
 }
 
 type postmarkResponse struct {
@@ -83,13 +84,14 @@ func (c *Client) SetHTTPClient(httpClient *http.Client) {
 // It returns the Postmark MessageID for durable logging.
 func (c *Client) SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader) (string, error) {
 	payload := postmarkRequest{
-		From:     from,
-		To:       to,
-		Subject:  subject,
-		HtmlBody: htmlBody,
-		TextBody: textBody,
-		ReplyTo:  replyTo,
-		Headers:  headers,
+		From:       from,
+		To:         to,
+		Subject:    subject,
+		HtmlBody:   htmlBody,
+		TextBody:   textBody,
+		ReplyTo:    replyTo,
+		Headers:    headers,
+		TrackOpens: true,
 	}
 	return c.send(payload)
 }

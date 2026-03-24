@@ -1477,6 +1477,7 @@ export interface SupportConversation {
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
+  email_unsubscribed?: boolean;
   anonymous_id?: string;
   opened_by_user_id?: string;
   assigned_agent_id?: string;
@@ -1540,6 +1541,7 @@ export interface SupportMessage {
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;
   email_notified_at?: string;
+  email_read_at?: string;
   attachments?: SupportAttachmentPayload[];
   created_at: string;
   updated_at: string;

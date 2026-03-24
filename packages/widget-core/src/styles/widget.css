@@ -85,13 +85,35 @@
 /* Dark theme overrides */
 .helpin-theme-dark {
   --helpin-bg: #1a1a2e;
-  --helpin-bg-secondary: #16213e;
-  --helpin-bg-muted: #0f3460;
-  --helpin-fg: #e8e8e8;
-  --helpin-fg-secondary: #b0b0b0;
-  --helpin-fg-muted: #6b7280;
+  --helpin-bg-secondary: #222240;
+  --helpin-bg-muted: #2a2a4a;
+  --helpin-fg: #f1f1f4;
+  --helpin-fg-secondary: #c4c4d0;
+  --helpin-fg-muted: #9898ab;
   --helpin-fg-inverse: #ffffff;
-  --helpin-border: #374151;
+  --helpin-border: #3d3d5c;
+
+  --helpin-ai-bg: #1e2540;
+  --helpin-ai-fg: #c8d8f0;
+  --helpin-internal-bg: #2e2818;
+  --helpin-internal-border: #d4a017;
+
+  --helpin-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --helpin-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2);
+  --helpin-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  --helpin-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+  --helpin-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.2);
+}
+
+/* Dark theme — component overrides */
+.helpin-theme-dark .helpin-bottom-nav {
+  background: rgba(34, 34, 64, 0.92);
+  box-shadow: 0 0 1px 1px rgba(255, 255, 255, 0.06),
+    0 0 20px rgba(0, 0, 0, 0.4);
+}
+
+.helpin-theme-dark .helpin-home-input:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
 }
 
 /* Launcher Button */

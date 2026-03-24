@@ -104,6 +104,9 @@ function indexedSummary(source?: AgentKnowledgeSource) {
     return '';
   }
 
+  if (source.sync_status === 'queued' && (source.indexed_documents ?? 0) > 0) {
+    return `Re-index queued. Current index includes ${source.indexed_documents ?? 0} published docs across ${source.indexed_chunks ?? 0} chunks.`;
+  }
   if (source.sync_status === 'ready') {
     return `${source.indexed_documents ?? 0} published docs indexed across ${source.indexed_chunks ?? 0} chunks.`;
   }

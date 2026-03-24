@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -54,6 +55,23 @@ func (r *SupportEmailLogRepository) GetByPostmarkMessageID(ctx context.Context, 
 		return nil, fmt.Errorf("get support email log by postmark message id: %w", err)
 	}
 	return &log, nil
+}
+
+// MarkOpened updates an outbound email log with its first observed open time.
+func (r *SupportEmailLogRepository) MarkOpened(ctx context.Context, id string, openedAt time.Time) error {
+	if id == "" {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportEmailLog{}).
+		Where("id = ? AND (opened_at IS NULL OR opened_at > ?)", id, openedAt).
+		Updates(map[string]any{
+			"status":    "opened",
+			"opened_at": openedAt,
+		}).Error; err != nil {
+		return fmt.Errorf("mark support email log opened: %w", err)
+	}
+	return nil
 }
 
 // WithTx returns a new SupportEmailLogRepository using the provided transaction.

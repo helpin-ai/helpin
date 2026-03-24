@@ -27,3 +27,13 @@ type PostmarkInboundPayload struct {
 	Date              string            `json:"Date"`
 	Headers           []PostmarkHeader  `json:"Headers"`
 }
+
+// PostmarkOpenPayload is the payload sent by Postmark open tracking webhooks.
+type PostmarkOpenPayload struct {
+	RecordType    string `json:"RecordType"`
+	MessageID     string `json:"MessageID"`
+	MessageStream string `json:"MessageStream"`
+	Recipient     string `json:"Recipient"`
+	FirstOpen     bool   `json:"FirstOpen"`
+	ReceivedAt    string `json:"ReceivedAt"`
+}

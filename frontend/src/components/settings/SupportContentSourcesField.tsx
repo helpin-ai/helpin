@@ -193,11 +193,11 @@ export function SupportContentSourcesField({
       toast.success('Website added — syncing now');
     }
 
-    const nextSelected = editingSource
-      ? selectedSourceIds
-      : uniqueStrings([...selectedSourceIds, sourceId]);
+    if (!editingSource) {
+      const nextSelected = uniqueStrings([...selectedSourceIds, sourceId]);
+      await updateAgentSources.mutateAsync({ agentId, contentSourceIds: nextSelected });
+    }
 
-    await updateAgentSources.mutateAsync({ agentId, contentSourceIds: nextSelected });
     setWizardOpen(false);
     setEditingSource(null);
     setDraft(createDefaultDraft());
@@ -271,6 +271,12 @@ export function SupportContentSourcesField({
               const statusMeta = STATUS_META[source.sync_status];
               const StatusIcon = statusMeta?.icon ?? Globe;
               const progress = Math.max(0, Math.min(source.sync_progress ?? 0, 100));
+              const indexedPages = source.indexed_pages ?? 0;
+              const indexedChunks = source.indexed_chunks ?? 0;
+              const hasIndexedContent = indexedPages > 0 || indexedChunks > 0;
+              const syncMessage = source.sync_status === 'queued'
+                ? (hasIndexedContent ? 'Queued for refresh. Existing indexed content remains available.' : 'Queued - sync will start shortly.')
+                : (hasIndexedContent ? 'Refreshing website content. Existing indexed pages remain available.' : 'Syncing...');
 
               return (
                 <div key={source.id} className={cn(
@@ -324,7 +330,8 @@ export function SupportContentSourcesField({
                           <Link2 className="h-3 w-3" />
                           {stripProtocol(source.start_url)}
                         </a>
-                        <span>{source.indexed_pages ?? 0} {(source.indexed_pages ?? 0) === 1 ? 'page' : 'pages'} · {source.indexed_chunks ?? 0} {(source.indexed_chunks ?? 0) === 1 ? 'chunk' : 'chunks'}</span>
+                        <span>Max {source.crawl_limit ?? 100} {(source.crawl_limit ?? 100) === 1 ? 'page' : 'pages'}</span>
+                        <span>{indexedPages} {indexedPages === 1 ? 'page' : 'pages'} · {indexedChunks} {indexedChunks === 1 ? 'chunk' : 'chunks'}</span>
                         <span>{formatSyncTime(source.last_sync_completed_at, source.last_sync_started_at)}</span>
                       </div>
 
@@ -332,7 +339,7 @@ export function SupportContentSourcesField({
                       {(source.sync_status === 'queued' || source.sync_status === 'running') && (
                         <div className="mt-2 space-y-1">
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{source.sync_status === 'queued' ? 'Queued — sync will start shortly.' : 'Syncing\u2026'}</span>
+                            <span>{syncMessage}</span>
                             <span className="tabular-nums">{progress}%</span>
                           </div>
                           <Progress value={progress} className="h-1.5" />
@@ -341,9 +348,16 @@ export function SupportContentSourcesField({
 
                       {/* Error message */}
                       {source.last_sync_error && (
-                        <p className="mt-2 text-xs text-destructive">
-                          {friendlyError(source.last_sync_error)}
-                        </p>
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-destructive">
+                            {friendlyError(source.last_sync_error)}
+                          </p>
+                          {hasIndexedContent && (
+                            <p className="text-xs text-muted-foreground">
+                              Last successful indexed content remains available while this refresh error is unresolved.
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

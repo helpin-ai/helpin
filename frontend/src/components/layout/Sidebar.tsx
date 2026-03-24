@@ -5,6 +5,7 @@ import { ICON_MAP } from '@/components/ui/icon-picker';
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bot,
   Briefcase,
   Building2,
@@ -610,6 +611,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/general`, label: 'General', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
+          { link: `/w/${wsSlug}/settings/knowledge`, label: 'Knowledge', icon: BookOpen },
         ],
       },
       {

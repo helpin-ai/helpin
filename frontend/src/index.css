@@ -365,6 +365,37 @@
   border-top: 1px solid var(--border);
   margin: 0.5em 0;
 }
+.prose-chat table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.85em;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid currentColor/15%;
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.prose-chat th {
+  font-weight: 600;
+  background: currentColor/8%;
+}
+.prose-chat tr:nth-child(even) {
+  background: currentColor/5%;
+}
+
+.accordion-animate {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+.accordion-animate[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.accordion-animate > div {
+  overflow: hidden;
+}
 
 .dark {
   --background: oklch(0.145 0 0);

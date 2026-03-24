@@ -13,6 +13,7 @@ import {
 import {
   useConversation,
   useConversationMessages,
+  useChatSettings,
   useUpdateConversationStatus,
   useRunConversationAgent,
   useMarkConversationUnread,
@@ -183,6 +184,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const { data: installation } = useChatSettings(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
   const markUnread = useMarkConversationUnread(workspaceId);
@@ -221,6 +223,23 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
       cancelled = true;
     };
   }, [workspaceId, conversationId, assignedAgentId]);
+
+  const isVisitorOnline = useSupportPresenceStore((s) =>
+    conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
+  );
+
+  const emailFallbackHint = useMemo(() => {
+    const settings = installation?.settings;
+    const email = conversation?.customer_email?.trim();
+    if (!conversation || !settings?.email_fallback_enabled || !email) return null;
+    if (conversation.email_unsubscribed) return null;
+    if (conversation.status === 'closed' || conversation.status === 'spam') return null;
+    if (conversation.anonymous_id && isVisitorOnline) return null;
+
+    return {
+      email,
+    };
+  }, [conversation, installation, isVisitorOnline]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
@@ -288,14 +307,16 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'delivered' | 'read' | null>(() => {
+  const receiptStatus = useMemo<'delivered' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
     if (!receiptMessageId || !conversation) return null;
-    if (conversation.source !== 'widget') return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
+    if (msg.email_read_at) return 'read_email';
     const seen = conversation.contact_last_seen_at;
-    if (seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
-    return 'delivered';
+    if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
+    if (msg.email_notified_at) return 'delivered_email';
+    if (conversation.source === 'widget') return 'delivered';
+    return null;
   }, [receiptMessageId, conversation, messages]);
 
   const groupedMessages = useMemo(() => {
@@ -551,7 +572,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
       {/* Reply composer */}
       {conversationId && (
-        <ReplyComposer workspaceId={workspaceId} conversationId={conversationId} />
+        <ReplyComposer
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          emailFallbackHint={emailFallbackHint}
+        />
       )}
     </div>
   );

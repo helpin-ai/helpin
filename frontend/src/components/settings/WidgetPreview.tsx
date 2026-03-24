@@ -16,6 +16,9 @@ interface WidgetPreviewProps {
   buttonColor?: string;
   buttonIconColor?: string;
   logoUrl?: string;
+  helpSpaces?: Array<{ id: string; name: string; slug: string }>;
+  widgetKey?: string;
+  host?: string;
 }
 
 /**
@@ -35,6 +38,9 @@ export function WidgetPreview({
   buttonColor,
   buttonIconColor,
   logoUrl,
+  helpSpaces,
+  widgetKey,
+  host,
 }: WidgetPreviewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(true);
@@ -70,13 +76,16 @@ export function WidgetPreview({
           csatRating: false,
           forceIdentify: false,
         },
+        helpSpaces,
       },
       isOpen,
       onClose: () => setIsOpen(false),
       onLauncherClick: () => setIsOpen((open) => !open),
       initialView: 'home',
+      widgetKey,
+      host,
     });
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen]);
+  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, widgetKey, host]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {

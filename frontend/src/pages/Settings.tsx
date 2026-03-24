@@ -10,11 +10,12 @@ import { RecurringTemplatesSettings } from '@/components/pm/RecurringTemplatesSe
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FlaskConical, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
+import { BookOpen, Bot, FileText, FlaskConical, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
   TeamsTab,
+  KnowledgeTab,
   ProjectDeliveryTab,
   AutomationsTab,
   ImportTab,
@@ -27,7 +28,7 @@ import {
   RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-playground' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-playground' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -49,6 +50,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Teams',
     description: '',
     icon: Users,
+    group: 'Workspace',
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge',
+    description: 'Manage help center docs and website content sources used across AI experiences.',
+    icon: BookOpen,
     group: 'Workspace',
   },
   {
@@ -137,8 +145,8 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   },
   {
     id: 'chat-general',
-    label: 'Chat',
-    description: 'Widget installation, identity capture, AI auto-reply, and routing.',
+    label: 'Chat Widget',
+    description: 'Widget installation, identity capture, appearance, AI auto-reply, and routing.',
     icon: MessageSquare,
     group: 'Support & Docs',
   },
@@ -254,6 +262,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
             access={access}
           />
         );
+      case 'knowledge':
+        return <KnowledgeTab workspaceId={workspaceId} />;
       case 'delivery':
         return (
           <ProjectDeliveryTab

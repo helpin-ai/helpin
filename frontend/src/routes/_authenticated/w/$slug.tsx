@@ -1,5 +1,5 @@
 import { useEffect, type CSSProperties } from 'react'
-import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
@@ -31,6 +31,9 @@ function WorkspaceLayout() {
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
+
+  const location = useLocation()
+  const isSupportPage = location.pathname.includes('/support')
 
   useRealtimeSync(wsId)
 
@@ -95,7 +98,7 @@ function WorkspaceLayout() {
         >
           <Sidebar />
           <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)] dark:shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.2)]">
-            <Header />
+            {!isSupportPage && <Header />}
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />
             </main>
