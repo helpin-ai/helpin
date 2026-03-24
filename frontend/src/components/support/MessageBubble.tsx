@@ -390,9 +390,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-300">
-                Via email
-              </span>
+              <span className="text-[11px] text-muted-foreground">Sent via email</span>
             </div>
           )}
 
@@ -406,7 +404,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 </>
               ) : receiptStatus === 'read_email' ? (
                 <>
-                  <MailOpen className="h-3.5 w-3.5 text-blue-500" />
+                  <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
                   <span className="text-[11px] text-muted-foreground">Read via email</span>
                 </>
               ) : receiptStatus === 'delivered_email' ? (

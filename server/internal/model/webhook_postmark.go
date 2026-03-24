@@ -15,9 +15,11 @@ type PostmarkHeader struct {
 // PostmarkInboundPayload is the payload sent by Postmark inbound webhooks.
 type PostmarkInboundPayload struct {
 	From              string            `json:"From"`
+	MessageStream     string            `json:"MessageStream"`
 	FromFull          PostmarkAddress   `json:"FromFull"`
 	To                string            `json:"To"`
 	ToFull            []PostmarkAddress `json:"ToFull"`
+	OriginalRecipient string            `json:"OriginalRecipient"`
 	Subject           string            `json:"Subject"`
 	MessageID         string            `json:"MessageID"`
 	MailboxHash       string            `json:"MailboxHash"`

@@ -182,6 +182,7 @@ type AIMessageMetadata struct {
 	AIModel      string     `json:"ai_model"`
 	AITokensUsed int        `json:"ai_tokens_used"`
 	AIAgentID    string     `json:"ai_agent_id"`
+	AIReplyKind  string     `json:"ai_reply_kind,omitempty"`
 }
 
 // AISource is a single source citation in AI message metadata.
@@ -216,6 +217,9 @@ const (
 	supportDecisionAnswer      = "answer"
 	supportDecisionClarify     = "clarify"
 	supportDecisionHandoff     = "handoff"
+	supportReplyKindAnswer     = "answer"
+	supportReplyKindClarify    = "clarify"
+	supportReplyKindGreeting   = "greeting"
 )
 
 var (
@@ -373,15 +377,23 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 	defer s.releaseLock(ctx, lockKey)
 
-	// 5. Count AI turns
+	// 5. Load conversation history once for counters, escalation checks, and prompt context.
 	agentID := strings.TrimSpace(*settings.AIAgentID)
-	aiTurnCount := s.countAITurns(ctx, conversationID, agentID)
+	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
+		history = nil
+	}
+	historyForPrompt := sanitizeConversationHistory(history, msg.ID)
+	aiTurnCount := countAgentAITurns(historyForPrompt, agentID)
+	maxFollowupTurnCount := countMaxFollowupAITurns(historyForPrompt, agentID)
 	slog.InfoContext(ctx, "support AI processing started",
 		"workspace_id", workspaceID,
 		"conversation_id", conversationID,
 		"message_id", msg.ID,
 		"agent_id", agentID,
 		"ai_turn_count", aiTurnCount,
+		"max_followup_turn_count", maxFollowupTurnCount,
 		"customer_message_preview", safeLogPreview(msg.Content, 120),
 		"customer_message_length", len(strings.TrimSpace(msg.Content)),
 	)
@@ -404,12 +416,13 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 7. Check max follow-ups
-	if aiTurnCount >= settings.AIMaxFollowups {
+	if maxFollowupTurnCount >= settings.AIMaxFollowups {
 		slog.InfoContext(ctx, "support AI escalating due to max followups",
 			"workspace_id", workspaceID,
 			"conversation_id", conversationID,
 			"message_id", msg.ID,
 			"ai_turn_count", aiTurnCount,
+			"max_followup_turn_count", maxFollowupTurnCount,
 			"max_followups", settings.AIMaxFollowups,
 		)
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "max_followups_reached"); err != nil {
@@ -435,15 +448,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 9. Load conversation history (moved before smart escalation check).
-	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-	if err != nil {
-		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
-		history = nil
-	}
-	historyForPrompt := sanitizeConversationHistory(history, msg.ID)
-
-	// 10. Smart escalation signals (pre-LLM — no cost).
+	// 9. Smart escalation signals (pre-LLM — no cost).
 	if signal := evaluatePreLLMEscalation(msg.Content, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
 		slog.InfoContext(ctx, "support AI smart escalation triggered",
 			"workspace_id", workspaceID,
@@ -459,7 +464,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 11. Load agent config
+	// 10. Load agent config
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return fmt.Errorf("get agent %s: %w", agentID, err)
@@ -472,7 +477,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 12. Send typing indicator
+	// 11. Send typing indicator
 	s.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 	defer s.publishTypingIndicator(ctx, workspaceID, conversationID, false)
 
@@ -522,7 +527,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"planner_reason", queryPlan.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil)
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify)
 		if err != nil {
 			return err
 		}
@@ -624,6 +629,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			AIModel:      modelName,
 			AITokensUsed: totalTokens,
 			AIAgentID:    agentID,
+			AIReplyKind:  classifyAnswerReplyKind(msg.Content),
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 		metadataStr := string(metadataJSON)
@@ -1110,6 +1116,7 @@ func (s *SupportAIService) publishAIReply(
 	tokensUsed int,
 	confidence float64,
 	sources []AISource,
+	replyKind string,
 ) (*model.SupportMessage, error) {
 	metadata := AIMessageMetadata{
 		AIAutoReply:  true,
@@ -1118,6 +1125,7 @@ func (s *SupportAIService) publishAIReply(
 		AIModel:      modelName,
 		AITokensUsed: tokensUsed,
 		AIAgentID:    agentID,
+		AIReplyKind:  replyKind,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 
@@ -1145,6 +1153,13 @@ func (s *SupportAIService) publishAIReply(
 	})
 
 	return aiMsg, nil
+}
+
+func classifyAnswerReplyKind(customerMessage string) string {
+	if isGreetingMessage(customerMessage) {
+		return supportReplyKindGreeting
+	}
+	return supportReplyKindAnswer
 }
 
 // buildAISystemPrompt constructs the LLM system prompt with knowledge articles.
@@ -1862,16 +1877,6 @@ func (s *SupportAIService) recordTokenUsage(ctx context.Context, agentID string,
 	}
 }
 
-// countAITurns counts AI messages in a conversation from a specific agent.
-func (s *SupportAIService) countAITurns(ctx context.Context, conversationID, agentID string) int {
-	var count int64
-	s.db.WithContext(ctx).
-		Model(&model.SupportMessage{}).
-		Where("conversation_id = ? AND sender_type IN ? AND sender_agent_id = ?", conversationID, []string{"agent", "ai"}, agentID).
-		Count(&count)
-	return int(count)
-}
-
 // acquireLock acquires a Redis SETNX lock with TTL.
 func (s *SupportAIService) acquireLock(ctx context.Context, key string) bool {
 	if s.redis == nil {
@@ -1911,7 +1916,6 @@ func (s *SupportAIService) publishTypingIndicator(_ context.Context, workspaceID
 		ActorID:     "ai",
 	})
 }
-
 
 // piiRegexes for stripping common PII patterns from AI responses.
 var piiRegexes = []*regexp.Regexp{

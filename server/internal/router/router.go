@@ -69,6 +69,7 @@ type Handlers struct {
 	SupportAI           *handler.SupportAIHandler
 	SupportAttachment   *handler.SupportAttachmentHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
+	AdminWebhookEvent   *handler.AdminWebhookEventHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -263,6 +264,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
 			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
+
+			// Admin endpoints (JWT-protected, no workspace scope)
+			r.Route("/admin", func(r chi.Router) {
+				r.Get("/webhook-events", h.AdminWebhookEvent.List)
+				r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
+			})
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)

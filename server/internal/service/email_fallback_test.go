@@ -45,6 +45,7 @@ type emailFallbackTestEnv struct {
 	messageRepo  *repository.SupportMessageRepository
 	convRepo     *repository.SupportConversationRepository
 	emailLogRepo *repository.SupportEmailLogRepository
+	webhookRepo  *repository.SupportEmailWebhookEventRepository
 	installRepo  *repository.SupportInboxInstallationRepository
 	sessionRepo  *repository.SupportInboxSessionRepository
 }
@@ -63,6 +64,7 @@ func setupEmailFallbackTestEnv(t *testing.T, settings model.SupportInboxSettings
 	messageRepo := repository.NewSupportMessageRepository(db)
 	convRepo := repository.NewSupportConversationRepository(db)
 	emailLogRepo := repository.NewSupportEmailLogRepository(db)
+	webhookRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	installRepo := repository.NewSupportInboxInstallationRepository(db)
 	sessionRepo := repository.NewSupportInboxSessionRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -90,6 +92,7 @@ func setupEmailFallbackTestEnv(t *testing.T, settings model.SupportInboxSettings
 		messageRepo,
 		convRepo,
 		emailLogRepo,
+		webhookRepo,
 		installRepo,
 		sessionRepo,
 		workspaceRepo,
@@ -105,6 +108,7 @@ func setupEmailFallbackTestEnv(t *testing.T, settings model.SupportInboxSettings
 		messageRepo:  messageRepo,
 		convRepo:     convRepo,
 		emailLogRepo: emailLogRepo,
+		webhookRepo:  webhookRepo,
 		installRepo:  installRepo,
 		sessionRepo:  sessionRepo,
 	}
@@ -390,7 +394,7 @@ func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 		MessageID:  "pm-open-1",
 		FirstOpen:  true,
 		ReceivedAt: "2026-03-20T13:05:00Z",
-	}); err != nil {
+	}, `{"RecordType":"Open","MessageID":"pm-open-1","FirstOpen":true,"ReceivedAt":"2026-03-20T13:05:00Z"}`); err != nil {
 		t.Fatalf("process open event: %v", err)
 	}
 
@@ -411,6 +415,14 @@ func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 	}
 	if logRow.OpenedAt == nil || !logRow.OpenedAt.Equal(readAt) {
 		t.Fatalf("expected opened_at=%v, got %#v", readAt, logRow.OpenedAt)
+	}
+
+	events, err := env.webhookRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list webhook events: %v", err)
+	}
+	if len(events) != 1 || events[0].EventType != "open" {
+		t.Fatalf("expected one open webhook event, got %#v", events)
 	}
 }
 
@@ -439,17 +451,18 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	payload := model.PostmarkInboundPayload{
 		FromFull:          model.PostmarkAddress{Email: customerEmail, Name: customerName},
 		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
 		Subject:           "Re: Inbound test",
 		MessageID:         "pm-in-1",
-		MailboxHash:       "conv-" + conversationID,
 		StrippedTextReply: "Thanks, that helps.",
 		HtmlBody:          "<p>Thanks, that helps.</p>",
 	}
 
-	if err := env.service.ProcessInboundEmail(ctx, payload); err != nil {
+	rawInboundPayload := `{"MessageStream":"inbound","MessageID":"pm-in-1","OriginalRecipient":"conv-` + conversationID + `@replies.helpin.ai","To":"conv-` + conversationID + `@replies.helpin.ai","StrippedTextReply":"Thanks, that helps."}`
+	if err := env.service.ProcessInboundEmail(ctx, payload, rawInboundPayload); err != nil {
 		t.Fatalf("process inbound email: %v", err)
 	}
-	if err := env.service.ProcessInboundEmail(ctx, payload); err != nil {
+	if err := env.service.ProcessInboundEmail(ctx, payload, rawInboundPayload); err != nil {
 		t.Fatalf("process duplicate inbound email: %v", err)
 	}
 
@@ -476,6 +489,23 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	}
 	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-in-1" {
 		t.Fatalf("unexpected inbound postmark message id: %#v", logs[0].PostmarkMessageID)
+	}
+	if !strings.Contains(logs[0].RawBody, `"MessageID":"pm-in-1"`) || !strings.Contains(logs[0].RawBody, `"StrippedTextReply":"Thanks, that helps."`) {
+		t.Fatalf("expected raw payload json to be stored, got %q", logs[0].RawBody)
+	}
+
+	events, err := env.webhookRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list webhook events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 webhook event rows for duplicate posts, got %d", len(events))
+	}
+	if events[0].EventType != "inbound" {
+		t.Fatalf("expected inbound webhook event, got %#v", events[0])
+	}
+	if !strings.Contains(events[0].RawPayload, `"OriginalRecipient":"conv-`+conversationID+`@replies.helpin.ai"`) {
+		t.Fatalf("expected raw webhook payload to be stored, got %q", events[0].RawPayload)
 	}
 }
 

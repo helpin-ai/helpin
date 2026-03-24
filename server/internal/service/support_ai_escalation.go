@@ -139,6 +139,116 @@ func detectRepetitionLoop(currentMessage string, history []model.SupportMessage)
 	return nil
 }
 
+func countAgentAITurns(history []model.SupportMessage, agentID string) int {
+	count := 0
+	for _, msg := range history {
+		if isAIReplyFromAgent(msg, agentID) {
+			count++
+		}
+	}
+	return count
+}
+
+func countMaxFollowupAITurns(history []model.SupportMessage, agentID string) int {
+	count := 0
+	for _, msg := range history {
+		if !isAIReplyFromAgent(msg, agentID) {
+			continue
+		}
+		if inferAIReplyKind(msg) != supportReplyKindAnswer {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func isAIReplyFromAgent(msg model.SupportMessage, agentID string) bool {
+	if msg.SenderType != "ai" {
+		return false
+	}
+	if agentID == "" {
+		return true
+	}
+	if msg.SenderAgentID == nil {
+		return false
+	}
+	return strings.TrimSpace(*msg.SenderAgentID) == agentID
+}
+
+func inferAIReplyKind(msg model.SupportMessage) string {
+	var meta AIMessageMetadata
+	if strings.TrimSpace(msg.Metadata) != "" {
+		if err := json.Unmarshal([]byte(msg.Metadata), &meta); err == nil && strings.TrimSpace(meta.AIReplyKind) != "" {
+			return strings.TrimSpace(meta.AIReplyKind)
+		}
+	}
+
+	content := strings.ToLower(strings.TrimSpace(msg.Content))
+	switch {
+	case isLikelyGreetingReply(content):
+		return supportReplyKindGreeting
+	case isLikelyClarificationReply(content):
+		return supportReplyKindClarify
+	default:
+		return supportReplyKindAnswer
+	}
+}
+
+func isGreetingMessage(content string) bool {
+	switch strings.Join(tokenizeWords(content), " ") {
+	case "hi", "hi there", "hello", "hello there", "hey", "hey there", "good morning", "good afternoon", "good evening":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLikelyGreetingReply(content string) bool {
+	if !strings.HasSuffix(content, "?") {
+		return false
+	}
+	prefixes := []string{
+		"how can i help",
+		"how can i assist",
+		"what can i help",
+		"what can i assist",
+		"hello how can i help",
+		"hi how can i help",
+		"hey how can i help",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(content, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLikelyClarificationReply(content string) bool {
+	if !strings.HasSuffix(content, "?") {
+		return false
+	}
+	patterns := []string{
+		"what product or page are you referring to",
+		"are you referring to",
+		"do you mean",
+		"could you clarify",
+		"can you clarify",
+		"which product",
+		"which page",
+		"what do you mean by",
+		"what exactly do you mean",
+		"what part are you asking about",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(content, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // wordBigrams returns a set of consecutive word pairs from lowercased text,
 // after stripping punctuation. Used for fuzzy message similarity comparison.
 func wordBigrams(text string) map[string]struct{} {

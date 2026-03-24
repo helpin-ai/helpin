@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -36,6 +37,7 @@ type EmailFallbackService struct {
 	messageRepo   *repository.SupportMessageRepository
 	convRepo      *repository.SupportConversationRepository
 	emailLogRepo  *repository.SupportEmailLogRepository
+	webhookRepo   *repository.SupportEmailWebhookEventRepository
 	installRepo   *repository.SupportInboxInstallationRepository
 	sessionRepo   *repository.SupportInboxSessionRepository
 	workspaceRepo *repository.WorkspaceRepository
@@ -58,6 +60,7 @@ func NewEmailFallbackService(
 	messageRepo *repository.SupportMessageRepository,
 	convRepo *repository.SupportConversationRepository,
 	emailLogRepo *repository.SupportEmailLogRepository,
+	webhookRepo *repository.SupportEmailWebhookEventRepository,
 	installRepo *repository.SupportInboxInstallationRepository,
 	sessionRepo *repository.SupportInboxSessionRepository,
 	workspaceRepo *repository.WorkspaceRepository,
@@ -74,6 +77,7 @@ func NewEmailFallbackService(
 		messageRepo:   messageRepo,
 		convRepo:      convRepo,
 		emailLogRepo:  emailLogRepo,
+		webhookRepo:   webhookRepo,
 		installRepo:   installRepo,
 		sessionRepo:   sessionRepo,
 		workspaceRepo: workspaceRepo,
@@ -155,18 +159,46 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 }
 
 // ProcessInboundEmail converts a Postmark inbound webhook into a support message when valid.
-func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload model.PostmarkInboundPayload) error {
+func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if s == nil {
 		return nil
 	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal inbound payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
 
-	mailboxHash := strings.TrimSpace(payload.MailboxHash)
+	resolvedConversationID := inboundConversationID(payload)
+	var resolvedConversation *model.SupportConversation
+	if resolvedConversationID != "" {
+		conv, err := s.findConversationByID(ctx, resolvedConversationID)
+		if err != nil {
+			return err
+		}
+		resolvedConversation = conv
+	}
+	s.recordWebhookEvent(ctx, "inbound", strings.TrimSpace(payload.MessageID), strings.TrimSpace(payload.MessageStream), rawPayload, resolvedConversation, nil, parseInboundWebhookReceivedAt(payload))
+
+	mailboxHash := mailboxHashFromInboundPayload(payload)
 	if mailboxHash == "" {
+		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
+			"to", strings.TrimSpace(payload.To),
+		)
 		return fmt.Errorf("missing mailbox hash")
 	}
 	if existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID)); err != nil {
 		return err
 	} else if existing != nil {
+		s.logger.InfoContext(ctx, "postmark inbound duplicate ignored",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", strings.TrimSpace(existing.ConversationID),
+			"email_log_id", existing.ID,
+		)
 		return nil
 	}
 
@@ -179,6 +211,10 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		if err != nil || conv == nil {
 			return err
 		}
+		s.logger.InfoContext(ctx, "postmark inbound unsubscribe processed",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", conv.ID,
+		)
 		return s.convRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"email_unsubscribed": true})
 	}
 
@@ -194,14 +230,27 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		return err
 	}
 	if conv == nil {
+		s.logger.InfoContext(ctx, "postmark inbound conversation not found",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", conversationID,
+		)
 		return nil
 	}
 	if isEmailFallbackTerminalStatus(conv.Status) {
+		s.logger.InfoContext(ctx, "postmark inbound ignored for terminal conversation",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", conv.ID,
+			"status", conv.Status,
+		)
 		return nil
 	}
 
 	fromEmail := inboundEmailAddress(payload)
 	if conv.CustomerEmail == nil || !strings.EqualFold(strings.TrimSpace(*conv.CustomerEmail), fromEmail) {
+		s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", conv.ID,
+		)
 		return nil
 	}
 
@@ -250,7 +299,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 			ToEmail:           strings.TrimSpace(payload.To),
 			Subject:           strings.TrimSpace(payload.Subject),
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
-			RawBody:           strings.TrimSpace(payload.HtmlBody),
+			RawBody:           rawPayload,
 			StrippedText:      content,
 			Status:            "sent",
 		}
@@ -266,11 +315,20 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	})
 	if txErr != nil {
 		if isLikelyUniqueConstraintError(txErr) {
+			s.logger.InfoContext(ctx, "postmark inbound duplicate ignored after transaction race",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"conversation_id", conv.ID,
+			)
 			return nil
 		}
 		return txErr
 	}
 
+	s.logger.InfoContext(ctx, "postmark inbound created support message",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"conversation_id", conv.ID,
+		"support_message_id", createdMsg.ID,
+	)
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
 	return nil
 }
@@ -456,13 +514,22 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 }
 
 // ProcessOpenEvent records an outbound email open and mirrors it onto the related support messages.
-func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload model.PostmarkOpenPayload) error {
+func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload model.PostmarkOpenPayload, rawPayload string) error {
 	if s == nil || s.emailLogRepo == nil || s.messageRepo == nil {
 		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal open payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
 	}
 
 	postmarkMessageID := strings.TrimSpace(payload.MessageID)
 	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "open", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, parsePostmarkTimestamp(payload.ReceivedAt))
+		s.logger.InfoContext(ctx, "postmark open ignored without message id")
 		return nil
 	}
 
@@ -470,10 +537,22 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 	if err != nil {
 		return err
 	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "open", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, parsePostmarkTimestamp(payload.ReceivedAt))
 	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark open ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
 		return nil
 	}
 	if logRow.OpenedAt != nil && !payload.FirstOpen {
+		s.logger.InfoContext(ctx, "postmark open duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
 		return nil
 	}
 
@@ -492,6 +571,11 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 		return txErr
 	}
 
+	s.logger.InfoContext(ctx, "postmark open marked support message read",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+		"message_count", len(logRow.MessageIDs),
+	)
 	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:open")
 	return nil
 }
@@ -727,6 +811,75 @@ func inboundEmailAddress(payload model.PostmarkInboundPayload) string {
 	return strings.TrimSpace(payload.From)
 }
 
+func mailboxHashFromInboundPayload(payload model.PostmarkInboundPayload) string {
+	if mailboxHash := strings.TrimSpace(payload.MailboxHash); mailboxHash != "" {
+		return mailboxHash
+	}
+	for _, candidate := range []string{
+		payload.OriginalRecipient,
+		payload.To,
+	} {
+		if mailboxHash := mailboxHashFromRecipient(candidate); mailboxHash != "" {
+			return mailboxHash
+		}
+	}
+	for _, addr := range payload.ToFull {
+		if mailboxHash := mailboxHashFromRecipient(addr.Email); mailboxHash != "" {
+			return mailboxHash
+		}
+	}
+	return ""
+}
+
+func mailboxHashFromRecipient(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if addr, err := mail.ParseAddress(value); err == nil {
+		value = strings.TrimSpace(addr.Address)
+	}
+	at := strings.Index(value, "@")
+	if at <= 0 {
+		return ""
+	}
+	local := strings.TrimSpace(value[:at])
+	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") {
+		return local
+	}
+	return ""
+}
+
+func inboundConversationID(payload model.PostmarkInboundPayload) string {
+	mailboxHash := mailboxHashFromInboundPayload(payload)
+	switch {
+	case strings.HasPrefix(mailboxHash, "conv-"):
+		return strings.TrimSpace(strings.TrimPrefix(mailboxHash, "conv-"))
+	case strings.HasPrefix(mailboxHash, "unsubscribe-"):
+		return strings.TrimSpace(strings.TrimPrefix(mailboxHash, "unsubscribe-"))
+	default:
+		return ""
+	}
+}
+
+func parseInboundWebhookReceivedAt(payload model.PostmarkInboundPayload) *time.Time {
+	return parsePostmarkTimestamp(payload.Date)
+}
+
+func parsePostmarkTimestamp(value string) *time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, time.RFC1123Z, time.RFC1123} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			parsed = parsed.UTC()
+			return &parsed
+		}
+	}
+	return nil
+}
+
 func headerValue(headers []email.EmailHeader, name string) string {
 	for _, header := range headers {
 		if strings.EqualFold(header.Name, name) {
@@ -751,6 +904,51 @@ func isLikelyUniqueConstraintError(err error) bool {
 	}
 	lower := strings.ToLower(err.Error())
 	return strings.Contains(lower, "unique") || strings.Contains(lower, "duplicate")
+}
+
+func (s *EmailFallbackService) recordWebhookEvent(
+	ctx context.Context,
+	eventType string,
+	postmarkMessageID string,
+	messageStream string,
+	rawPayload string,
+	conv *model.SupportConversation,
+	emailLog *model.SupportEmailLog,
+	receivedAt *time.Time,
+) {
+	if s == nil || s.webhookRepo == nil || strings.TrimSpace(rawPayload) == "" {
+		return
+	}
+	event := &model.SupportEmailWebhookEvent{
+		Provider:          "postmark",
+		EventType:         strings.TrimSpace(eventType),
+		PostmarkMessageID: strPtr(strings.TrimSpace(postmarkMessageID)),
+		MessageStream:     strPtr(strings.TrimSpace(messageStream)),
+		RawPayload:        rawPayload,
+		ReceivedAt:        receivedAt,
+	}
+	if event.PostmarkMessageID != nil && *event.PostmarkMessageID == "" {
+		event.PostmarkMessageID = nil
+	}
+	if event.MessageStream != nil && *event.MessageStream == "" {
+		event.MessageStream = nil
+	}
+	if conv != nil {
+		event.WorkspaceID = &conv.WorkspaceID
+		event.ConversationID = &conv.ID
+	}
+	if emailLog != nil {
+		event.EmailLogID = &emailLog.ID
+		if event.WorkspaceID == nil && strings.TrimSpace(emailLog.WorkspaceID) != "" {
+			event.WorkspaceID = &emailLog.WorkspaceID
+		}
+		if event.ConversationID == nil && strings.TrimSpace(emailLog.ConversationID) != "" {
+			event.ConversationID = &emailLog.ConversationID
+		}
+	}
+	if err := s.webhookRepo.Create(ctx, event); err != nil {
+		s.logger.WarnContext(ctx, "store support email webhook event failed", "event_type", eventType, "error", err)
+	}
 }
 
 func (s *EmailFallbackService) publishMessageUpdated(workspaceID, conversationID, messageID, actorID string) {

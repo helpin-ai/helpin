@@ -692,6 +692,19 @@ func newTestDB(t *testing.T) *gorm.DB {
 			error_message TEXT,
 			created_at DATETIME
 		)`,
+		`CREATE TABLE support_email_webhook_events (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT,
+			conversation_id TEXT,
+			email_log_id TEXT,
+			provider TEXT NOT NULL DEFAULT 'postmark',
+			event_type TEXT NOT NULL,
+			postmark_message_id TEXT,
+			message_stream TEXT,
+			raw_payload TEXT NOT NULL,
+			received_at DATETIME,
+			created_at DATETIME
+		)`,
 		`CREATE TABLE support_widget_sessions (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

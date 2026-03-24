@@ -1,0 +1,7 @@
+@import "../../../frontend/src/index.css";
+
+body {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 8%, transparent), transparent 32%),
+    linear-gradient(180deg, var(--background) 0%, color-mix(in srgb, var(--muted) 45%, var(--background)) 100%);
+}

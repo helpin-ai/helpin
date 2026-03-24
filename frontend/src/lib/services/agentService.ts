@@ -97,6 +97,4 @@ export const agentService = {
     api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
   updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
     api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
-  previewSupportReply: (workspaceId: string, agentId: string, payload: import('../pmTypes').SupportAIPreviewRequest) =>
-    api.post<import('../pmTypes').SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
 };
