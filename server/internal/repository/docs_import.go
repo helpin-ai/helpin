@@ -22,6 +22,19 @@ func NewDocsImportRepository(db *gorm.DB) *DocsImportRepository {
 	return &DocsImportRepository{db: db}
 }
 
+// ListByWorkspace returns all import jobs for a workspace, newest first.
+func (r *DocsImportRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsImportJob, error) {
+	var jobs []model.DocsImportJob
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("created_at DESC").
+		Limit(50).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("list docs import jobs: %w", err)
+	}
+	return jobs, nil
+}
+
 // Create inserts a new import job.
 func (r *DocsImportRepository) Create(ctx context.Context, job *model.DocsImportJob) error {
 	if err := r.db.WithContext(ctx).Create(job).Error; err != nil {

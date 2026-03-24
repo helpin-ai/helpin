@@ -3,15 +3,17 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  closestCorners,
+  closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BarChart3, Bot, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, StickyNote, User } from 'lucide-react';
+import { BarChart3, Bot, ChevronsLeftRight, ChevronsRightLeft, Columns2, LayoutList, Loader2, Plus, StickyNote, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
@@ -91,13 +93,17 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
     return (
       <QuickTooltip label={`Expand ${column.state.name}`}>
       <section
-        className="relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50"
+        ref={setNodeRef}
+        className={cn(
+          'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50',
+          isOver && 'bg-primary/10 ring-2 ring-inset ring-primary/30',
+        )}
         onClick={() => onToggleCollapse(column.state.id)}
       >
         {column.state.color && (
           <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
         )}
-        <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <ChevronsLeftRight className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         {automatedStateIds?.has(column.state.id) && (
           <Bot className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
@@ -118,7 +124,7 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
 
   return (
     <section className="flex h-full w-[340px] shrink-0 flex-col">
-      <header className="flex items-center justify-between px-3 pt-4 pb-3 relative">
+      <header className="group/header flex items-center justify-between px-3 pt-4 pb-3 relative">
         {column.state.color && (
           <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
         )}
@@ -147,14 +153,18 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
             </p>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5" title={`${column.story_count} items`}>
-              <StickyNote className="h-3 w-3" />
-              {column.story_count}
-            </span>
-            <span className="inline-flex items-center gap-1.5" title={`${column.point_total} pts`}>
-              <BarChart3 className="h-3 w-3" />
-              {column.point_total}
-            </span>
+            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'story' : 'stories'}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <StickyNote className="h-3 w-3" />
+                {column.story_count}
+              </span>
+            </QuickTooltip>
+            <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <BarChart3 className="h-3 w-3" />
+                {column.point_total}
+              </span>
+            </QuickTooltip>
           </p>
         </div>
         <div className="flex items-center gap-0.5">
@@ -162,15 +172,17 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity"
               onClick={() => onToggleCollapse(column.state.id)}
             >
-              <Minimize2 className="h-3.5 w-3.5" />
+              <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
-            <Plus className="h-4 w-4" />
-          </Button>
+          <QuickTooltip label="Create story">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </QuickTooltip>
         </div>
       </header>
 
@@ -180,8 +192,8 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 space-y-2 overflow-y-auto p-2 transition-colors ${
-            isOver ? 'bg-primary/5' : ''
+          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
+            isOver ? 'bg-primary/10 ring-2 ring-inset ring-primary/30 gap-4' : 'gap-2'
           }`}
         >
           {groupedStories.length > 0 ? (
@@ -299,10 +311,14 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
     return (
       <QuickTooltip label={`Expand ${displayName}`}>
         <section
-          className="relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-3 transition-colors hover:bg-muted/50"
+          ref={setNodeRef}
+          className={cn(
+            'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-3 transition-colors hover:bg-muted/50',
+            isOver && 'bg-primary/10 ring-2 ring-inset ring-primary/30',
+          )}
           onClick={() => onToggleCollapse(colKey)}
         >
-          <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ChevronsLeftRight className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {column.member ? (
             <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} className="h-5 w-5 text-[10px]" />
           ) : (
@@ -324,7 +340,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
 
   return (
     <section className="flex h-full w-[340px] shrink-0 flex-col">
-      <header className="flex items-center justify-between px-3 pt-4 pb-3">
+      <header className="group/header flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
             {column.member ? (
@@ -335,25 +351,31 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
             {displayName}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5" title={`${column.story_count} items`}>
-              <StickyNote className="h-3 w-3" />
-              {column.story_count}
-            </span>
-            <span className="inline-flex items-center gap-1.5" title={`${column.point_total} pts`}>
-              <BarChart3 className="h-3 w-3" />
-              {column.point_total}
-            </span>
+            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'story' : 'stories'}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <StickyNote className="h-3 w-3" />
+                {column.story_count}
+              </span>
+            </QuickTooltip>
+            <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <BarChart3 className="h-3 w-3" />
+                {column.point_total}
+              </span>
+            </QuickTooltip>
           </p>
         </div>
         <div className="flex items-center gap-0.5">
           <QuickTooltip label="Collapse column">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onToggleCollapse(colKey)}>
-              <Minimize2 className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity" onClick={() => onToggleCollapse(colKey)}>
+              <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.member?.id ?? null)}>
-            <Plus className="h-4 w-4" />
-          </Button>
+          <QuickTooltip label="Create story">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.member?.id ?? null)}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </QuickTooltip>
         </div>
       </header>
 
@@ -363,7 +385,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 space-y-2 overflow-y-auto p-2 transition-colors ${isOver ? 'bg-primary/5' : ''}`}
+          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-primary/10 ring-2 ring-inset ring-primary/30 gap-4' : 'gap-2'}`}
         >
           {column.stories.map((story) => (
             <StoryCard
@@ -485,6 +507,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   }, [workspaceId]);
 
   const [activeStory, setActiveStory] = useState<Story | null>(null);
+  const [dragPreviewColumns, setDragPreviewColumns] = useState<StoryStateColumn[] | null>(null);
+  const [dragPreviewMemberColumns, setDragPreviewMemberColumns] = useState<StoryMemberColumn[] | null>(null);
+  const displayColumns = dragPreviewColumns ?? columns;
+  const displayMemberColumns = dragPreviewMemberColumns ?? memberColumns;
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
@@ -518,7 +544,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     });
   }, [COLLAPSED_KEY]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   useEffect(() => {
     loadBoard(workspaceId);
@@ -666,77 +694,189 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         : columns.flatMap((column) => column.stories);
       const story = allStories.find((item) => item.id === String(event.active.id));
       setActiveStory(story ?? null);
+      // Initialize preview columns for cross-column displacement
+      if (groupBy === 'members') {
+        setDragPreviewMemberColumns(memberColumns.map((c) => ({ ...c, stories: [...c.stories] })));
+      } else {
+        setDragPreviewColumns(columns.map((c) => ({ ...c, stories: [...c.stories], story_groups: c.story_groups?.map((g) => ({ ...g, stories: [...g.stories] })) ?? [] })));
+      }
     },
     [columns, memberColumns, groupBy]
   );
 
-  const onDragEnd = useCallback(
-    async (event: DragEndEvent) => {
-      setActiveStory(null);
+  const onDragOver = useCallback(
+    (event: DragOverEvent) => {
       const { active, over } = event;
       if (!over) return;
-
       const activeId = String(active.id);
       const overId = String(over.id);
       if (activeId === overId) return;
 
       if (groupBy === 'members') {
+        const cols = dragPreviewMemberColumns;
+        if (!cols) return;
+        let fromKey: string | null = null;
+        let toKey: string | null = null;
+        for (const col of cols) {
+          const key = col.member?.id ?? '__unassigned__';
+          if (col.stories.some((s) => s.id === activeId)) fromKey = key;
+          if (key === overId || col.stories.some((s) => s.id === overId)) toKey = key;
+        }
+        if (!fromKey || !toKey || fromKey === toKey) return;
+
+        const next = cols.map((c) => ({ ...c, stories: [...c.stories] }));
+        const fromCol = next.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
+        const toCol = next.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
+        if (!fromCol || !toCol) return;
+        const idx = fromCol.stories.findIndex((s) => s.id === activeId);
+        if (idx < 0) return;
+        const [story] = fromCol.stories.splice(idx, 1);
+        let insertIdx: number;
+        if (overId === toKey) {
+          insertIdx = toCol.stories.length;
+        } else {
+          const overIdx = toCol.stories.findIndex((s) => s.id === overId);
+          insertIdx = overIdx >= 0 ? overIdx : toCol.stories.length;
+          if (overIdx >= 0) {
+            const r = active.rect.current.translated;
+            const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+            if (belowMid) insertIdx = overIdx + 1;
+          }
+        }
+        toCol.stories.splice(insertIdx, 0, story);
+        setDragPreviewMemberColumns(next);
+      } else {
+        const cols = dragPreviewColumns;
+        if (!cols) return;
+        let fromStateId: string | null = null;
+        let toStateId: string | null = null;
+        for (const col of cols) {
+          if (col.stories.some((s) => s.id === activeId)) fromStateId = col.state.id;
+          if (col.state.id === overId || col.stories.some((s) => s.id === overId)) toStateId = col.state.id;
+        }
+        if (!fromStateId || !toStateId || fromStateId === toStateId) return;
+
+        const next = cols.map((c) => ({ ...c, stories: [...c.stories], story_groups: c.story_groups?.map((g) => ({ ...g, stories: [...g.stories] })) ?? [] }));
+        const fromCol = next.find((c) => c.state.id === fromStateId);
+        const toCol = next.find((c) => c.state.id === toStateId);
+        if (!fromCol || !toCol) return;
+        const idx = fromCol.stories.findIndex((s) => s.id === activeId);
+        if (idx < 0) return;
+        const [story] = fromCol.stories.splice(idx, 1);
+        let insertIdx: number;
+        if (overId === toStateId) {
+          insertIdx = toCol.stories.length;
+        } else {
+          const overIdx = toCol.stories.findIndex((s) => s.id === overId);
+          insertIdx = overIdx >= 0 ? overIdx : toCol.stories.length;
+          if (overIdx >= 0) {
+            const r = active.rect.current.translated;
+            const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+            if (belowMid) insertIdx = overIdx + 1;
+          }
+        }
+        toCol.stories.splice(insertIdx, 0, story);
+        setDragPreviewColumns(next);
+      }
+    },
+    [groupBy, dragPreviewColumns, dragPreviewMemberColumns],
+  );
+
+  const clearDragPreview = useCallback(() => {
+    setActiveStory(null);
+    setDragPreviewColumns(null);
+    setDragPreviewMemberColumns(null);
+  }, []);
+
+  const onDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      // Capture preview state before clearing — it tells us where the story ended up
+      const savedPreviewCols = dragPreviewColumns;
+      const savedPreviewMemCols = dragPreviewMemberColumns;
+      clearDragPreview();
+
+      const { active, over } = event;
+      if (!over) return;
+      const activeId = String(active.id);
+      const overId = String(over.id);
+
+      if (groupBy === 'members') {
         const fromKey = findMemberKeyByItemId(activeId);
-        const toKey = findMemberKeyByItemId(overId);
-        if (!fromKey || !toKey) return;
+        if (!fromKey) return;
 
-        const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
-        const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
-        if (!fromColumn || !toColumn) return;
+        // Check if onDragOver moved story cross-column in preview
+        let crossKey: string | null = null;
+        let crossIdx = 0;
+        if (savedPreviewMemCols) {
+          for (const col of savedPreviewMemCols) {
+            const key = col.member?.id ?? '__unassigned__';
+            const idx = col.stories.findIndex((s) => s.id === activeId);
+            if (idx >= 0 && key !== fromKey) { crossKey = key; crossIdx = idx; break; }
+          }
+        }
 
-        const overIndex = overId === toKey
-          ? toColumn.stories.length
-          : toColumn.stories.findIndex((s) => s.id === overId);
-        if (overIndex < 0) return;
-
-        const fromIndex = fromColumn.stories.findIndex((s) => s.id === activeId);
-        if (fromIndex < 0) return;
-        if (fromKey === toKey && fromIndex === overIndex) return;
-
-        const fromMemberId = fromColumn.member?.id ?? null;
-        const toMemberId = toColumn.member?.id ?? null;
-
-        await moveMemberStory({
-          workspaceId,
-          storyId: activeId,
-          fromMemberId,
-          toMemberId,
-          toIndex: overIndex,
-        });
+        if (crossKey) {
+          // Cross-member: use preview target
+          const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
+          const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === crossKey);
+          if (!fromColumn || !toColumn) return;
+          await moveMemberStory({
+            workspaceId,
+            storyId: activeId,
+            fromMemberId: fromColumn.member?.id ?? null,
+            toMemberId: toColumn.member?.id ?? null,
+            toIndex: crossIdx,
+          });
+        }
         return;
       }
 
+      // ── State board ──
       const fromStateId = findStateIdByItemId(activeId);
-      const toStateId = findStateIdByItemId(overId);
-      if (!fromStateId || !toStateId) return;
+      if (!fromStateId) return;
 
-      const fromColumn = columns.find((column) => column.state.id === fromStateId);
-      const toColumn = columns.find((column) => column.state.id === toStateId);
-      if (!fromColumn || !toColumn) return;
+      // Check if onDragOver moved story cross-column in preview
+      let crossStateId: string | null = null;
+      let crossIdx = 0;
+      if (savedPreviewCols) {
+        for (const col of savedPreviewCols) {
+          const idx = col.stories.findIndex((s) => s.id === activeId);
+          if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
+        }
+      }
 
-      const overIndex = overId === toStateId
-        ? toColumn.stories.length
-        : toColumn.stories.findIndex((story) => story.id === overId);
-      if (overIndex < 0) return;
-
-      const fromIndex = fromColumn.stories.findIndex((story) => story.id === activeId);
-      if (fromIndex < 0) return;
-      if (fromStateId === toStateId && fromIndex === overIndex) return;
-
-      await moveStory({
-        workspaceId,
-        storyId: activeId,
-        fromStateId,
-        toStateId,
-        toIndex: overIndex,
-      });
+      if (crossStateId) {
+        // Cross-column: use preview target
+        await moveStory({
+          workspaceId,
+          storyId: activeId,
+          fromStateId,
+          toStateId: crossStateId,
+          toIndex: crossIdx,
+        });
+      } else {
+        // Same-column reorder: use over.id with arrayMove semantics
+        if (activeId === overId) return;
+        const toStateId = findStateIdByItemId(overId);
+        if (!toStateId || fromStateId !== toStateId) return;
+        const fromColumn = columns.find((c) => c.state.id === fromStateId);
+        if (!fromColumn) return;
+        if (fromColumn.state.state_type === 'done') return;
+        const fromIndex = fromColumn.stories.findIndex((s) => s.id === activeId);
+        const overIndex = overId === toStateId
+          ? fromColumn.stories.length - 1
+          : fromColumn.stories.findIndex((s) => s.id === overId);
+        if (fromIndex < 0 || overIndex < 0 || fromIndex === overIndex) return;
+        await moveStory({
+          workspaceId,
+          storyId: activeId,
+          fromStateId,
+          toStateId,
+          toIndex: overIndex,
+        });
+      }
     },
-    [columns, memberColumns, groupBy, findStateIdByItemId, findMemberKeyByItemId, moveStory, moveMemberStory, workspaceId]
+    [columns, memberColumns, groupBy, findStateIdByItemId, findMemberKeyByItemId, moveStory, moveMemberStory, workspaceId, clearDragPreview, dragPreviewColumns, dragPreviewMemberColumns]
   );
 
   const handleCreate = useCallback(
@@ -871,14 +1011,16 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       {!loading && viewMode === 'board' ? (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={closestCenter}
           onDragStart={onDragStart}
+          onDragOver={onDragOver}
           onDragEnd={onDragEnd}
+          onDragCancel={clearDragPreview}
         >
           <div className="min-h-0 flex-1 overflow-x-auto">
             <div className="flex h-full min-w-full gap-3 pb-2">
               {groupBy === 'members' ? (
-                memberColumns.filter((col) => showEmptyColumns || col.story_count > 0).map((col) => {
+                displayMemberColumns.filter((col) => showEmptyColumns || !!activeStory || col.story_count > 0).map((col) => {
                   const colKey = col.member?.id ?? '__unassigned__';
                   return (
                     <MemberColumn
@@ -902,7 +1044,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   );
                 })
               ) : (
-                columns.filter((column) => showEmptyColumns || column.story_count > 0).map((column) => (
+                displayColumns.filter((column) => showEmptyColumns || !!activeStory || column.story_count > 0).map((column) => (
                   <Column
                     key={column.state.id}
                     column={column}

@@ -75,6 +75,27 @@ func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, c
 	return r.GetByDocumentID(ctx, documentID)
 }
 
+// ListBySpaceWithImportHTML returns all content records that have stored import HTML for a given space.
+func (r *DocsContentRepository) ListBySpaceWithImportHTML(ctx context.Context, spaceID string) ([]model.DocsContent, error) {
+	var contents []model.DocsContent
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN docs_documents dd ON dd.id = docs_contents.document_id").
+		Where("dd.space_id = ? AND docs_contents.import_source_html IS NOT NULL AND docs_contents.import_source_html != ''", spaceID).
+		Find(&contents).Error; err != nil {
+		return nil, fmt.Errorf("list reconvertible docs: %w", err)
+	}
+	return contents, nil
+}
+
+// UpdateImportProvenance sets the import source fields on a content record.
+func (r *DocsContentRepository) UpdateImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) {
+	r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", contentID).Updates(map[string]interface{}{
+		"import_source_html":      sourceHTML,
+		"import_source_system":    sourceSystem,
+		"import_source_object_id": sourceObjectID,
+	})
+}
+
 // extractPlainText extracts plain text from TipTap/ProseMirror JSON content.
 // Walks the node tree and concatenates all text node values.
 func extractPlainText(raw json.RawMessage) string {
@@ -99,6 +120,20 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 		}
 	}
 
+	// Extract text from htmlBlock attrs.html (strip tags, keep text).
+	if attrsRaw, ok := node["attrs"]; ok {
+		var attrs map[string]json.RawMessage
+		if err := json.Unmarshal(attrsRaw, &attrs); err == nil {
+			if htmlRaw, ok := attrs["html"]; ok {
+				var htmlStr string
+				if err := json.Unmarshal(htmlRaw, &htmlStr); err == nil && htmlStr != "" {
+					sb.WriteString(stripHTMLTags(htmlStr))
+					sb.WriteString(" ")
+				}
+			}
+		}
+	}
+
 	// Recurse into "content" array.
 	if contentRaw, ok := node["content"]; ok {
 		var children []map[string]json.RawMessage
@@ -109,7 +144,7 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 				if nodeType, ok := child["type"]; ok {
 					var t string
 					if err := json.Unmarshal(nodeType, &t); err == nil {
-						if t == "paragraph" || t == "heading" || t == "bulletList" || t == "orderedList" || t == "blockquote" || t == "codeBlock" || t == "listItem" {
+						if t == "paragraph" || t == "heading" || t == "bulletList" || t == "orderedList" || t == "blockquote" || t == "codeBlock" || t == "listItem" || t == "callout" || t == "htmlBlock" {
 							sb.WriteString(" ")
 						}
 					}
@@ -117,6 +152,27 @@ func extractTextFromNode(node map[string]json.RawMessage, sb *strings.Builder) {
 			}
 		}
 	}
+}
+
+// stripHTMLTags removes HTML tags and returns plain text content.
+func stripHTMLTags(s string) string {
+	var sb strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			sb.WriteByte(' ')
+			continue
+		}
+		if !inTag {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 func countWords(text string) int {

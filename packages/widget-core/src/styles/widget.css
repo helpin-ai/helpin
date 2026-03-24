@@ -763,9 +763,10 @@
 }
 
 .helpin-article-content blockquote {
-  border-left: 3px solid rgba(99, 102, 241, 0.24);
-  padding-left: 14px;
+  border-left: 3px solid var(--helpin-border);
+  padding: 0.25rem 0 0.25rem 1rem;
   color: var(--helpin-fg-secondary);
+  font-style: italic;
 }
 
 .helpin-article-content hr {
@@ -802,6 +803,26 @@
 }
 .helpin-article-content .docs-callout > *:last-child {
   margin-bottom: 0;
+}
+
+.helpin-article-content .docs-html-block {
+  margin: 0 0 1em;
+}
+
+.helpin-article-content .docs-video-embed {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  margin: 0 0 1em;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.helpin-article-content .docs-video-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 .helpin-article-content code {

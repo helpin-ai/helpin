@@ -8,6 +8,9 @@ import {
   Code2,
   MessageSquareWarning,
   Minus,
+  FileCode2,
+  Play,
+  Smile,
   Table,
   Image,
   type LucideIcon,
@@ -114,6 +117,28 @@ export const slashCommands: SlashCommand[] = [
     icon: Table,
     action: (editor) =>
       (editor.chain().focus() as any).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(),
+  },
+  {
+    title: 'Emoji',
+    description: 'Insert an emoji',
+    icon: Smile,
+    action: () => {
+      // Handled specially in SlashMenu — opens emoji picker
+    },
+  },
+  {
+    title: 'HTML',
+    description: 'Custom HTML block',
+    icon: FileCode2,
+    action: (editor) => editor.chain().focus().setHtmlBlock().run(),
+  },
+  {
+    title: 'Video',
+    description: 'Embed from YouTube, Vimeo, Loom, Wistia',
+    icon: Play,
+    action: () => {
+      // Handled specially in SlashMenu — triggers video dialog
+    },
   },
   {
     title: 'Image',

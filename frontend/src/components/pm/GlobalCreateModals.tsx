@@ -63,6 +63,7 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const [workflow, setWorkflow] = useState<WorkflowWithStates | null>(null);
   const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
+  const initialOwnerMemberId = useGlobalCreateStore((s) => s.initialOwnerMemberId);
 
   useEffect(() => {
     // Try board store first (already loaded if on stories page)
@@ -86,13 +87,16 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       workflow={workflow}
       initialStateId={workflow.states[0]?.id ?? ''}
       initialTeamId={initialTeamId}
+      initialOwnerMemberId={initialOwnerMemberId}
       onCreate={async (payload) => {
         const { data, error } = await pmStoryService.create(payload);
         if (error) throw new Error(error);
         // Refresh the board if it's loaded
         const boardWs = usePMBoardStore.getState().workspaceId;
         if (boardWs) usePMBoardStore.getState().refreshBoard();
-        window.dispatchEvent(new CustomEvent('story-created'));
+        window.dispatchEvent(new CustomEvent('story-created', {
+          detail: { ownerMemberId: data?.story?.owner_member_id, teamId: data?.story?.team_id },
+        }));
         return data?.story ? { id: data.story.id } : undefined;
       }}
     />
@@ -112,7 +116,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     description: '',
     stateId: '',
     health: 'no_health' as EpicHealth,
-    teamId: storeTeamId ?? '',
+    teamId: storeTeamId ?? teams[0]?.id ?? '',
     ownerMemberId: '',
     startDate: '',
     targetDate: '',
@@ -335,7 +339,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     description: '',
     startDate: '',
     endDate: '',
-    teamId: storeTeamId ?? '',
+    teamId: storeTeamId ?? teams[0]?.id ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
