@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { FlaskConical, LogOut, Mail, ShieldCheck } from 'lucide-react'
+import { Clock, FlaskConical, LogOut, Mail, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 const NAV_ITEMS = [
   { to: '/chat-playground' as const, label: 'Chat Playground', icon: FlaskConical },
   { to: '/webhook-events' as const, label: 'Webhook Events', icon: Mail },
+  { to: '/email-queue' as const, label: 'Email Queue', icon: Clock },
 ]
 
 export function Sidebar() {

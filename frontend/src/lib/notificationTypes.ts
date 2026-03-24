@@ -122,13 +122,29 @@ export interface NotificationCategory {
   key: string
   label: string
   description: string
+  supportsEmail?: boolean
 }
 
-export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+export const WORKSPACE_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   { key: 'assignments', label: 'Assignments', description: 'Assignments and ownership changes' },
   { key: 'status_changes', label: 'Status changes', description: 'Changes to status, priority, and blocking' },
   { key: 'comments', label: 'Comments and replies', description: 'New comments on items you follow' },
   { key: 'mentions', label: 'Mentions', description: 'Mentions in comments, descriptions, or checklists' },
   { key: 'subscriptions', label: 'Subscriptions', description: 'Updates to items you follow' },
   { key: 'sprints', label: 'Sprints', description: 'Sprint creation and updates' },
+]
+
+export const SUPPORT_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  {
+    key: 'support_replies',
+    label: 'Customer replies',
+    description: 'Unread customer replies on conversations you currently own',
+    supportsEmail: true,
+  },
+  {
+    key: 'support_mentions',
+    label: 'Support mentions',
+    description: 'Mentions in internal support notes and teammate collaboration',
+    supportsEmail: true,
+  },
 ]

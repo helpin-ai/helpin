@@ -13,4 +13,7 @@ export const queryKeys = {
       ['webhook-events', params] as const,
     detail: (id: string) => ['webhook-events', id] as const,
   },
+  emailQueue: {
+    list: () => ['email-queue'] as const,
+  },
 } as const

@@ -166,12 +166,14 @@ func (NotificationPreference) TableName() string { return "notification_preferen
 
 // Notification category constants for grouping event types.
 const (
-	NotifCategoryAssignments   = "assignments"
-	NotifCategoryStatusChanges = "status_changes"
-	NotifCategoryComments      = "comments"
-	NotifCategoryMentions      = "mentions"
-	NotifCategorySubscriptions = "subscriptions"
-	NotifCategorySprints       = "sprints"
+	NotifCategoryAssignments     = "assignments"
+	NotifCategoryStatusChanges   = "status_changes"
+	NotifCategoryComments        = "comments"
+	NotifCategoryMentions        = "mentions"
+	NotifCategorySubscriptions   = "subscriptions"
+	NotifCategorySprints         = "sprints"
+	NotifCategorySupportReplies  = "support_replies"
+	NotifCategorySupportMentions = "support_mentions"
 )
 
 // EventTypeToCategory maps individual event types to their notification category.
@@ -196,6 +198,9 @@ var EventTypeToCategory = map[string]string{
 	"objective.mention": NotifCategoryMentions,
 	"epic.mention":      NotifCategoryMentions,
 	"sprint.mention":    NotifCategoryMentions,
+
+	"support_conversation.customer_reply": NotifCategorySupportReplies,
+	"support_conversation.mentioned":      NotifCategorySupportMentions,
 
 	"epic.created":      NotifCategorySubscriptions,
 	"epic.updated":      NotifCategorySubscriptions,
@@ -249,6 +254,8 @@ type NotificationEventInput struct {
 	ParentEntitySnapshot JSONB
 	ExplicitRecipients   []string // Additional recipients beyond followers
 	SkipFollowers        bool     // When true, only ExplicitRecipients are considered
+	SkipEmailDelivery    bool     // When true, only in-app notification delivery is planned
+	DelayedEmailChannel  string   // When set, schedule delayed email delivery on this channel instead of immediate/digest email
 }
 
 // UpdateNotificationRequest is the payload for updating a notification.

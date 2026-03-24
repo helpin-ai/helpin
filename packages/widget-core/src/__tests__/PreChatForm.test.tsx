@@ -19,6 +19,12 @@ const mockConfig: WidgetConfig = {
     preChatForm: true,
     requirePhone: true,
     csatRating: false,
+    forceIdentify: false,
+  },
+  availability: {
+    isOnline: true,
+    statusText: 'Online now',
+    replyTimeText: 'We typically reply in a few minutes',
   },
 };
 

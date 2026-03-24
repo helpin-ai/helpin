@@ -1,6 +1,6 @@
 import { BookOpen, Globe } from 'lucide-react';
 import { useDocsSpaces } from '@/hooks/queries';
-import { useChatSettings, useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
+import { useChatSettings, useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource } from '@/hooks/queries/useSupport';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SupportContentSourcesField } from './SupportContentSourcesField';
@@ -14,6 +14,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   const chatWidgetAgentId = chatSettings?.settings?.ai_agent_id ?? '';
   const { data: knowledgeSources = [], isLoading: knowledgeSourcesLoading } = useAgentKnowledgeSources(workspaceId, chatWidgetAgentId || undefined);
   const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
+  const reindexKnowledgeSource = useReindexAgentKnowledgeSource(workspaceId);
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
   const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
@@ -86,10 +87,13 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
             </p>
           ) : (
             <SupportKnowledgeSourcesField
+              agentId={chatWidgetAgentId}
               spaces={externalDocsSpaces}
               knowledgeSources={externalKnowledgeSources}
               onToggle={toggleSpace}
-              disabled={updateKnowledgeSources.isPending}
+              onReindex={(spaceId) => reindexKnowledgeSource.mutate({ agentId: chatWidgetAgentId, spaceId })}
+              reindexingSpaceId={reindexKnowledgeSource.variables?.spaceId}
+              disabled={updateKnowledgeSources.isPending || reindexKnowledgeSource.isPending}
             />
           )}
         </CardContent>

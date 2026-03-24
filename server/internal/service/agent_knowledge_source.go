@@ -142,6 +142,46 @@ func (s *AgentKnowledgeSourceService) Set(ctx context.Context, workspaceID, agen
 	return nil
 }
 
+// Reindex queues a fresh embedding sync for one selected help-center space.
+func (s *AgentKnowledgeSourceService) Reindex(ctx context.Context, workspaceID, agentID, spaceID string) error {
+	if strings.TrimSpace(spaceID) == "" {
+		return fmt.Errorf("space_id is required")
+	}
+
+	if s.embeddingSvc == nil {
+		return fmt.Errorf("docs embedding service is not configured")
+	}
+
+	sources, err := s.repo.ListByAgentID(ctx, agentID)
+	if err != nil {
+		return err
+	}
+
+	selected := false
+	for _, source := range sources {
+		if source.WorkspaceID == workspaceID && source.SpaceID == spaceID {
+			selected = true
+			break
+		}
+	}
+	if !selected {
+		return fmt.Errorf("knowledge source not found for this agent")
+	}
+
+	space, err := s.spaceRepo.GetByID(ctx, spaceID)
+	if err != nil {
+		return err
+	}
+	if space == nil || space.WorkspaceID != workspaceID {
+		return fmt.Errorf("space not found in workspace")
+	}
+	if space.Type != model.SpaceTypeExternalCapable {
+		return fmt.Errorf("only help center spaces can be reindexed")
+	}
+
+	return s.embeddingSvc.QueueSpaceSync(ctx, workspaceID, spaceID)
+}
+
 func (s *AgentKnowledgeSourceService) reusableStateForSpace(ctx context.Context, workspaceID, spaceID, agentID string) (*model.AgentKnowledgeSource, error) {
 	sources, err := s.repo.ListBySpaceID(ctx, workspaceID, spaceID)
 	if err != nil {

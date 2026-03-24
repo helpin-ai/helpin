@@ -13,6 +13,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+const defaultOnlineReplyTimeText = "We typically reply in a few minutes"
+
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
 func parseSettings(raw string) model.SupportInboxSettings {
 	defaults := model.DefaultSupportInboxSettings()
@@ -208,36 +210,119 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 
 // isOnline computes whether the widget is currently within business hours.
 func isOnline(s model.SupportInboxSettings) bool {
-	if !s.BusinessHoursEnabled {
-		return true // always online when business hours not configured
-	}
-
-	loc, err := time.LoadLocation(s.BusinessHoursTimezone)
-	if err != nil {
-		return true // fallback to online if timezone invalid
-	}
-
-	now := time.Now().In(loc)
-	dayNames := map[time.Weekday]string{
-		time.Monday: "mon", time.Tuesday: "tue", time.Wednesday: "wed",
-		time.Thursday: "thu", time.Friday: "fri", time.Saturday: "sat", time.Sunday: "sun",
-	}
-	dayKey := dayNames[now.Weekday()]
-	day, ok := s.BusinessHoursSchedule[dayKey]
-	if !ok || !day.Enabled {
-		return false
-	}
-
-	currentMinutes := now.Hour()*60 + now.Minute()
-	startMinutes := parseTimeToMinutes(day.Start)
-	endMinutes := parseTimeToMinutes(day.End)
-	return currentMinutes >= startMinutes && currentMinutes < endMinutes
+	return buildWidgetAvailability(s, time.Now()).IsOnline
 }
 
 func parseTimeToMinutes(t string) int {
 	var h, m int
 	fmt.Sscanf(t, "%d:%d", &h, &m)
 	return h*60 + m
+}
+
+func weekdayKey(day time.Weekday) string {
+	switch day {
+	case time.Monday:
+		return "mon"
+	case time.Tuesday:
+		return "tue"
+	case time.Wednesday:
+		return "wed"
+	case time.Thursday:
+		return "thu"
+	case time.Friday:
+		return "fri"
+	case time.Saturday:
+		return "sat"
+	default:
+		return "sun"
+	}
+}
+
+func defaultOutsideHoursMessage(settings model.SupportInboxSettings) string {
+	if strings.TrimSpace(settings.OutsideHoursMessage) != "" {
+		return settings.OutsideHoursMessage
+	}
+	return model.DefaultSupportInboxSettings().OutsideHoursMessage
+}
+
+func isWithinBusinessHours(settings model.SupportInboxSettings, localNow time.Time) bool {
+	day, ok := settings.BusinessHoursSchedule[weekdayKey(localNow.Weekday())]
+	if !ok || !day.Enabled {
+		return false
+	}
+
+	currentMinutes := localNow.Hour()*60 + localNow.Minute()
+	startMinutes := parseTimeToMinutes(day.Start)
+	endMinutes := parseTimeToMinutes(day.End)
+	return currentMinutes >= startMinutes && currentMinutes < endMinutes
+}
+
+func nextBusinessHoursStart(settings model.SupportInboxSettings, localNow time.Time) *time.Time {
+	loc := localNow.Location()
+	for dayOffset := 0; dayOffset < 8; dayOffset += 1 {
+		candidateDay := localNow.AddDate(0, 0, dayOffset)
+		day, ok := settings.BusinessHoursSchedule[weekdayKey(candidateDay.Weekday())]
+		if !ok || !day.Enabled {
+			continue
+		}
+
+		startMinutes := parseTimeToMinutes(day.Start)
+		candidateStart := time.Date(
+			candidateDay.Year(),
+			candidateDay.Month(),
+			candidateDay.Day(),
+			startMinutes/60,
+			startMinutes%60,
+			0,
+			0,
+			loc,
+		)
+
+		if candidateStart.After(localNow) {
+			return &candidateStart
+		}
+	}
+
+	return nil
+}
+
+func buildWidgetAvailability(settings model.SupportInboxSettings, now time.Time) model.WidgetConfigAvailability {
+	offlineMessage := defaultOutsideHoursMessage(settings)
+	onlineAvailability := model.WidgetConfigAvailability{
+		IsOnline:      true,
+		StatusText:    "Online now",
+		ReplyTimeText: defaultOnlineReplyTimeText,
+	}
+
+	if !settings.BusinessHoursEnabled {
+		return onlineAvailability
+	}
+
+	loc, err := time.LoadLocation(settings.BusinessHoursTimezone)
+	if err != nil {
+		return onlineAvailability
+	}
+
+	localNow := now.In(loc)
+	if isWithinBusinessHours(settings, localNow) {
+		return onlineAvailability
+	}
+
+	availability := model.WidgetConfigAvailability{
+		IsOnline:            false,
+		StatusText:          "Offline now",
+		ReplyTimeText:       offlineMessage,
+		OutsideHoursMessage: &offlineMessage,
+	}
+
+	if nextOpen := nextBusinessHoursStart(settings, localNow); nextOpen != nil {
+		statusText := fmt.Sprintf("Offline now - Back %s", nextOpen.Format("Mon 3:04 PM"))
+		nextOnlineAt := nextOpen.Format(time.RFC3339)
+		availability.StatusText = statusText
+		availability.NextOnlineAt = &nextOnlineAt
+	}
+
+	return availability
 }
 
 // GetInstallation returns the installation and its parsed settings for a workspace.

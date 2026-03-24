@@ -164,6 +164,7 @@ function getEntityRoute(slug: string, entityType: string, entityId: string): str
     case 'epic': return `/w/${slug}/pm/epics/${entityId}`
     case 'objective': return `/w/${slug}/pm/objectives/${entityId}`
     case 'sprint': return `/w/${slug}/pm/sprints`
+    case 'support_conversation': return `/w/${slug}/support/${entityId}`
     default: return null
   }
 }

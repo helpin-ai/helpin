@@ -145,7 +145,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'chat-general',
     label: 'Chat Widget',
-    description: 'Widget installation, identity capture, appearance, AI auto-reply, and routing.',
+    description: 'Widget installation, availability, identity capture, appearance, AI auto-reply, and routing.',
     icon: MessageSquare,
     group: 'Support & Docs',
   },

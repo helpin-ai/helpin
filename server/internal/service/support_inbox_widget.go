@@ -392,6 +392,10 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
+	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID); err == nil {
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, displayName)
+	}
+
 	// Branch on ai_response_mode: AI-first publishes to JetStream, manual-assist runs existing path.
 	inst, instErr := s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)
 	settings := model.DefaultSupportInboxSettings()
@@ -564,9 +568,10 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			PreChatForm:     settings.RequireEmailBeforeChat,
 			RequirePhone:    settings.RequirePhoneAfterEmail,
 			CSATRating:      settings.CSATEnabled,
-			ForceIdentify: settings.ForceVisitorIdentity,
+			ForceIdentify:   settings.ForceVisitorIdentity,
 		},
-		HelpSpaces: helpSpaces,
+		Availability: buildWidgetAvailability(settings, time.Now()),
+		HelpSpaces:   helpSpaces,
 	}, nil
 }
 

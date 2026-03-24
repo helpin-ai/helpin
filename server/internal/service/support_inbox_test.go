@@ -472,6 +472,201 @@ func TestSupportMessageRepository(t *testing.T) {
 	})
 }
 
+func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	workspaceID := "ws-support-notifs"
+	ownerUserID := "user-owner"
+
+	seedUser(t, db, ownerUserID, "owner@example.com", "Owner User", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Notifications WS", "support-notifications-ws", ownerUserID)
+	seedWorkspaceMember(t, db, "wm-owner", workspaceID, ownerUserID, "owner@example.com", "Owner User", model.RoleAdmin)
+
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-owner", ownerUserID, true, "immediate", "09:00", 1, false, "all", "UTC", now, now)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		Subject:        "Billing question",
+		Status:         "open",
+		OpenedByUserID: &ownerUserID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	emailer := &stubEmailSender{}
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		emailer,
+		"",
+	)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	)
+	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
+
+	customerName := "Customer"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "I still need help with billing", MessageType: "reply"},
+		"customer",
+		nil,
+		nil,
+		&customerName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).Order("recipient_id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != ownerUserID {
+		t.Fatalf("recipient_id = %q, want %q", notifications[0].RecipientID, ownerUserID)
+	}
+	if notifications[0].EventType != "support_conversation.customer_reply" {
+		t.Fatalf("event_type = %q, want support_conversation.customer_reply", notifications[0].EventType)
+	}
+	if notifications[0].LatestEventCategory != model.NotifCategorySupportReplies {
+		t.Fatalf("latest_event_category = %q, want %q", notifications[0].LatestEventCategory, model.NotifCategorySupportReplies)
+	}
+
+	deliveries := loadNotificationServiceDeliveries(t, db)
+	if len(deliveries) != 2 {
+		t.Fatalf("deliveries = %+v, want in_app + delayed email rows", deliveries)
+	}
+	if deliveries[0].Channel != "in_app" || deliveries[0].Status != "delivered" {
+		t.Fatalf("first delivery = %+v, want delivered in_app", deliveries[0])
+	}
+	if deliveries[1].Channel != "support_reply_email" || deliveries[1].Status != "pending" {
+		t.Fatalf("second delivery = %+v, want pending support_reply_email", deliveries[1])
+	}
+	if len(emailer.sent) != 0 {
+		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))
+	}
+}
+
+func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	workspaceID := "ws-support-read"
+	userID := "user-owner"
+
+	seedUser(t, db, userID, "owner@example.com", "Owner User", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Read WS", "support-read-ws", userID)
+	seedWorkspaceMember(t, db, "wm-owner", workspaceID, userID, "owner@example.com", "Owner User", model.RoleAdmin)
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-owner", userID, true, "immediate", "09:00", 1, false, "all", "UTC", now, now)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		&stubEmailSender{},
+		"",
+	)
+
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		Subject:        "Billing question",
+		Status:         "open",
+		OpenedByUserID: &userID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	)
+	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
+
+	customerName := "Customer"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "I still need help", MessageType: "reply"},
+		"customer",
+		nil,
+		nil,
+		&customerName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	if err := svc.MarkConversationRead(ctx, workspaceID, conv.ID, userID); err != nil {
+		t.Fatalf("MarkConversationRead: %v", err)
+	}
+
+	var notification model.Notification
+	if err := db.WithContext(ctx).
+		Where("workspace_id = ? AND recipient_id = ? AND entity_id = ?", workspaceID, userID, conv.ID).
+		First(&notification).Error; err != nil {
+		t.Fatalf("load notification: %v", err)
+	}
+	if notification.Status != "read" {
+		t.Fatalf("notification status = %q, want read", notification.Status)
+	}
+	if notification.ReadAt == nil {
+		t.Fatal("expected notification read_at to be set")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Widget Installation Repository Tests
 // ---------------------------------------------------------------------------

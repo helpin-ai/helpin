@@ -70,6 +70,13 @@ function getCategoryLabel(category: string): string {
     case 'completion': return 'Completed'
     case 'blocked': return 'Blocked'
     case 'sprint': return 'Sprint'
+    case 'assignments': return 'Assignment'
+    case 'comments': return 'Comment'
+    case 'mentions': return 'Mention'
+    case 'status_changes': return 'Status'
+    case 'subscriptions': return 'Update'
+    case 'support_replies': return 'Customer reply'
+    case 'support_mentions': return 'Support mention'
     default: return category
   }
 }
@@ -210,6 +217,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const entityState = notification.entity_snapshot?.state || ''
   const parentTitle = notification.parent_entity_snapshot?.title
   const parentIdentifier = notification.parent_entity_snapshot?.identifier
+  const openLabel = notification.entity_type === 'support_conversation' ? 'Open conversation' : `Open ${notification.entity_type}`
 
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
@@ -220,6 +228,8 @@ function NotificationDetail({ notification }: { notification: Notification }) {
       navigate({ to: '/w/$slug/pm/epics/$epicId' as string, params: { slug: wsSlug, epicId: id } })
     } else if (type === 'objective') {
       navigate({ to: '/w/$slug/pm/objectives/$objectiveId' as string, params: { slug: wsSlug, objectiveId: id } })
+    } else if (type === 'support_conversation') {
+      navigate({ to: '/w/$slug/support/$conversationId' as string, params: { slug: wsSlug, conversationId: id } })
     }
   }
 
@@ -250,7 +260,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
             )}
           </div>
           <Button variant="outline" size="sm" className="shrink-0" onClick={handleNavigateToEntity}>
-            Open {notification.entity_type}
+            {openLabel}
           </Button>
         </div>
       </div>

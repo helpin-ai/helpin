@@ -576,6 +576,15 @@ type WidgetConfigFeatures struct {
 	ForceIdentify   bool `json:"forceIdentify"`
 }
 
+// WidgetConfigAvailability matches the widget-core WidgetConfig.availability shape.
+type WidgetConfigAvailability struct {
+	IsOnline            bool    `json:"isOnline"`
+	StatusText          string  `json:"statusText"`
+	ReplyTimeText       string  `json:"replyTimeText"`
+	OutsideHoursMessage *string `json:"outsideHoursMessage,omitempty"`
+	NextOnlineAt        *string `json:"nextOnlineAt,omitempty"`
+}
+
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.
 type WidgetHelpSpace struct {
 	ID   string  `json:"id"`
@@ -615,11 +624,12 @@ type WidgetHelpArticle struct {
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WorkspaceID   string               `json:"workspaceId"`
-	WorkspaceName string               `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding `json:"branding"`
-	Features      WidgetConfigFeatures `json:"features"`
-	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
+	WorkspaceID   string                   `json:"workspaceId"`
+	WorkspaceName string                   `json:"workspaceName,omitempty"`
+	Branding      WidgetConfigBranding     `json:"branding"`
+	Features      WidgetConfigFeatures     `json:"features"`
+	Availability  WidgetConfigAvailability `json:"availability"`
+	HelpSpaces    []WidgetHelpSpace        `json:"helpSpaces"`
 }
 
 // ── Visitor Context DTOs ─────────────────────────────────────────────

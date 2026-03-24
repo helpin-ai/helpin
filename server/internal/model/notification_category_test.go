@@ -28,6 +28,8 @@ func TestNotifCategoryConstants_NonEmpty(t *testing.T) {
 		NotifCategoryMentions,
 		NotifCategorySubscriptions,
 		NotifCategorySprints,
+		NotifCategorySupportReplies,
+		NotifCategorySupportMentions,
 	}
 	for _, c := range categories {
 		if c == "" {
@@ -44,6 +46,8 @@ func TestNotifCategoryConstants_UniqueValues(t *testing.T) {
 		NotifCategoryMentions,
 		NotifCategorySubscriptions,
 		NotifCategorySprints,
+		NotifCategorySupportReplies,
+		NotifCategorySupportMentions,
 	}
 	seen := map[string]bool{}
 	for _, c := range categories {
@@ -65,6 +69,8 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 		{"comment.created", NotifCategoryComments},
 		{"story.mention", NotifCategoryMentions},
 		{"sprint.mention", NotifCategoryMentions},
+		{"support_conversation.customer_reply", NotifCategorySupportReplies},
+		{"support_conversation.mentioned", NotifCategorySupportMentions},
 		{"epic.created", NotifCategorySubscriptions},
 		{"sprint.created", NotifCategorySprints},
 	}
@@ -162,6 +168,8 @@ func TestEmittedNotificationEventTypes_AreMapped(t *testing.T) {
 		"objective.updated",
 		"objective.deleted",
 		"objective.assigned",
+		"support_conversation.customer_reply",
+		"support_conversation.mentioned",
 	}
 
 	for _, eventType := range emittedEventTypes {
@@ -185,12 +193,14 @@ func TestEventTypeToCategory_AllSprints(t *testing.T) {
 // TestEventTypeToCategory_AllMappedToValidCategory ensures every mapped event type uses a known category constant.
 func TestEventTypeToCategory_AllMappedToValidCategory(t *testing.T) {
 	validCategories := map[string]bool{
-		NotifCategoryAssignments:   true,
-		NotifCategoryStatusChanges: true,
-		NotifCategoryComments:      true,
-		NotifCategoryMentions:      true,
-		NotifCategorySubscriptions: true,
-		NotifCategorySprints:       true,
+		NotifCategoryAssignments:     true,
+		NotifCategoryStatusChanges:   true,
+		NotifCategoryComments:        true,
+		NotifCategoryMentions:        true,
+		NotifCategorySubscriptions:   true,
+		NotifCategorySprints:         true,
+		NotifCategorySupportReplies:  true,
+		NotifCategorySupportMentions: true,
 	}
 	for eventType, category := range EventTypeToCategory {
 		if !validCategories[category] {

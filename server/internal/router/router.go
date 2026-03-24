@@ -70,6 +70,7 @@ type Handlers struct {
 	SupportAttachment   *handler.SupportAttachmentHandler
 	PostmarkInbound     *handler.PostmarkInboundHandler
 	AdminWebhookEvent   *handler.AdminWebhookEventHandler
+	AdminEmailQueue     *handler.AdminEmailQueueHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -269,6 +270,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/admin", func(r chi.Router) {
 				r.Get("/webhook-events", h.AdminWebhookEvent.List)
 				r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
+				r.Get("/email-queue", h.AdminEmailQueue.List)
 			})
 
 			// Organizations
@@ -621,6 +623,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/knowledge-sources/{spaceId}/reindex", h.SupportAI.ReindexKnowledgeSource)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)

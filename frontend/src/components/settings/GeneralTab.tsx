@@ -15,7 +15,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
-import { WorkspaceMuteNotificationsCard, WorkspaceNotificationCategoriesCard } from './NotificationPreferencesPanels';
 
 const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() => {
   const names = Intl.supportedValuesOf('timeZone');
@@ -284,18 +283,6 @@ export function GeneralTab({ workspaceId, editable }: {
           )}
         </CardContent>
       </Card>
-
-      <WorkspaceMuteNotificationsCard
-        workspaceId={workspaceId}
-        workspaceName={workspace?.name}
-        cardClassName={LINEAR_CARD_CLASS}
-      />
-
-      <WorkspaceNotificationCategoriesCard
-        workspaceId={workspaceId}
-        cardClassName={LINEAR_CARD_CLASS}
-      />
-
       {editable && (
         <Card className={cn(LINEAR_CARD_CLASS, 'border-destructive/30')}>
           <CardHeader>

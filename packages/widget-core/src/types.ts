@@ -2,8 +2,20 @@ import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, Pend
 
 // Re-export shared types
 export type Message = SharedMessage;
-export type WidgetConfig = SharedWidgetConfig;
 export type PendingAttachment = SharedPendingAttachment;
+
+export interface WidgetConfig extends SharedWidgetConfig {
+  features: SharedWidgetConfig['features'] & {
+    forceIdentify?: boolean;
+  };
+  availability?: {
+    isOnline: boolean;
+    statusText: string;
+    replyTimeText: string;
+    outsideHoursMessage?: string;
+    nextOnlineAt?: string;
+  };
+}
 
 // Shared nested types used directly in widget-core
 export interface AiSource {

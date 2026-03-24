@@ -10,6 +10,7 @@ import {
 import { AppLayout } from '@/components/app-layout'
 import { ChatPlaygroundPage } from '@/features/chat-playground/chat-playground-page'
 import { WebhookEventsPage } from '@/features/webhook-events/webhook-events-page'
+import { EmailQueuePage } from '@/features/email-queue/email-queue-page'
 import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/pages/login-page'
 import { useAuthStore } from '@/stores/authStore'
@@ -65,10 +66,16 @@ const webhookEventsRoute = createRoute({
   component: WebhookEventsPage,
 })
 
+const emailQueueRoute = createRoute({
+  getParentRoute: () => authenticatedLayout,
+  path: '/email-queue',
+  component: EmailQueuePage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  authenticatedLayout.addChildren([chatPlaygroundRoute, webhookEventsRoute]),
+  authenticatedLayout.addChildren([chatPlaygroundRoute, webhookEventsRoute, emailQueueRoute]),
 ])
 
 export const router = createRouter({

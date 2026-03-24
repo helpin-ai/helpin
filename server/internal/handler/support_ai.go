@@ -87,6 +87,26 @@ func (h *SupportAIHandler) UpdateKnowledgeSources(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, sources)
 }
 
+// ReindexKnowledgeSource forces a re-index of one selected help-center space.
+// POST /pm/agents/{id}/knowledge-sources/{spaceId}/reindex
+func (h *SupportAIHandler) ReindexKnowledgeSource(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	spaceID := chi.URLParam(r, "spaceId")
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	if err := h.knowledgeSourceSvc.Reindex(r.Context(), workspaceID, agentID, spaceID); err != nil {
+		slog.ErrorContext(r.Context(), "reindex knowledge source failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+}
+
 // ListContentSources returns all workspace content sources for support AI.
 func (h *SupportAIHandler) ListContentSources(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

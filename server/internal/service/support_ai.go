@@ -1004,6 +1004,17 @@ func (s *SupportAIService) generateResponse(
 			Confidence: 0,
 		}, totalTokens, nil
 	}
+	if isTemplateLikeAIContent(contract.Content) {
+		slog.ErrorContext(ctx, "AI response matched prompt placeholder — refusing templated reply",
+			"provider", providerName,
+			"model", modelName,
+			"content_preview", truncateLog(contract.Content, 120),
+		)
+		return &AIResponseContract{
+			CanAnswer:  false,
+			Confidence: 0,
+		}, totalTokens, nil
+	}
 
 	slog.InfoContext(ctx, "AI response parsed",
 		"provider", providerName,
@@ -1162,6 +1173,16 @@ func classifyAnswerReplyKind(customerMessage string) string {
 	return supportReplyKindAnswer
 }
 
+func isTemplateLikeAIContent(content string) bool {
+	normalized := strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(content))), " ")
+	switch normalized {
+	case "", "your answer in markdown", "answer in markdown", "your response in markdown", "your answer here", "your response here", "<customer-facing answer in markdown>", "<final customer answer in markdown>":
+		return true
+	default:
+		return false
+	}
+}
+
 // buildAISystemPrompt constructs the LLM system prompt with knowledge articles.
 func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 	agentName := "Support Agent"
@@ -1192,7 +1213,7 @@ func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 
 RESPONSE FORMAT (respond with valid JSON only):
 {
-    "content": "Your answer in markdown",
+    "content": "<customer-facing answer in markdown>",
     "can_answer": true,
     "source_doc_ids": [],
     "confidence": 0.95

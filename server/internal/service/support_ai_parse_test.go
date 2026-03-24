@@ -140,3 +140,21 @@ func TestParseAIResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestIsTemplateLikeAIContent(t *testing.T) {
+	tests := []struct {
+		content string
+		want    bool
+	}{
+		{content: "Your answer in markdown", want: true},
+		{content: "  <customer-facing answer in markdown>  ", want: true},
+		{content: "Your response here", want: true},
+		{content: "ContentStudio does include AI features for caption generation.", want: false},
+	}
+
+	for _, tt := range tests {
+		if got := isTemplateLikeAIContent(tt.content); got != tt.want {
+			t.Errorf("isTemplateLikeAIContent(%q) = %v, want %v", tt.content, got, tt.want)
+		}
+	}
+}

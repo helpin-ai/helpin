@@ -631,6 +631,7 @@ func main() {
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
+	emailFallbackService.SetNotificationService(notificationService)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(
@@ -856,6 +857,7 @@ func main() {
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
+		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
 		Git:                 handler.NewGitHandler(gitService),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
@@ -946,6 +948,29 @@ func main() {
 		}
 	}()
 
+	// Start background ticker for delayed support reply fallback emails.
+	supportReplyEmailDone := make(chan struct{})
+	go func() {
+		runSupportReplySweep := func() {
+			if err := notificationService.ProcessPendingSupportReplyEmails(context.Background(), time.Now()); err != nil {
+				slog.Error("support reply email sweep failed", "error", err)
+			}
+		}
+
+		runSupportReplySweep()
+
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runSupportReplySweep()
+			case <-supportReplyEmailDone:
+				return
+			}
+		}
+	}()
+
 	// Start the email fallback poller only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && emailClient != nil {
@@ -1028,6 +1053,7 @@ func main() {
 		emailFallbackCancel()
 	}
 	close(digestDone)
+	close(supportReplyEmailDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

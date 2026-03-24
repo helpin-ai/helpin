@@ -21,12 +21,32 @@ func eventTypesForCategory(category string) []string {
 	return eventTypes
 }
 
+func eventTypesForCategories(categories ...string) []string {
+	if len(categories) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(categories))
+	for _, category := range categories {
+		if category != "" {
+			allowed[category] = struct{}{}
+		}
+	}
+
+	eventTypes := make([]string, 0)
+	for eventType, mappedCategory := range model.EventTypeToCategory {
+		if _, ok := allowed[mappedCategory]; ok {
+			eventTypes = append(eventTypes, eventType)
+		}
+	}
+	return eventTypes
+}
+
 // NotificationRepository handles notification CRUD operations.
 type NotificationRepository struct {
 	db *gorm.DB
 }
 
-// PendingDigestDelivery is a pending digest delivery joined with the current notification state.
+// PendingDigestDelivery is a pending delivery joined with the current notification state.
 type PendingDigestDelivery struct {
 	DeliveryID         string
 	RecipientID        string
@@ -105,7 +125,7 @@ func (r *NotificationRepository) List(ctx context.Context, recipientID, workspac
 	// Tab filters
 	switch filter {
 	case "mentions":
-		mentionTypes := eventTypesForCategory(model.NotifCategoryMentions)
+		mentionTypes := eventTypesForCategories(model.NotifCategoryMentions, model.NotifCategorySupportMentions)
 		if len(mentionTypes) == 0 {
 			q = q.Where("1 = 0")
 		} else {
@@ -145,7 +165,7 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, w
 		Where("(snoozed_until IS NULL OR snoozed_until <= ?)", time.Now())
 
 	if badgeMode == "mentions_only" {
-		mentionTypes := eventTypesForCategory(model.NotifCategoryMentions)
+		mentionTypes := eventTypesForCategories(model.NotifCategoryMentions, model.NotifCategorySupportMentions)
 		if len(mentionTypes) == 0 {
 			return 0, nil
 		}
@@ -161,6 +181,15 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, w
 
 // ListPendingDigestDeliveries returns pending digest deliveries joined with the current notification state.
 func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, "digest")
+}
+
+// ListPendingSupportReplyEmailDeliveries returns pending delayed support reply email deliveries.
+func (r *NotificationRepository) ListPendingSupportReplyEmailDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, "support_reply_email")
+}
+
+func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Context, channel string) ([]PendingDigestDelivery, error) {
 	var deliveries []PendingDigestDelivery
 	err := r.db.WithContext(ctx).
 		Table("notification_deliveries nd").
@@ -177,11 +206,11 @@ func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context
 		`).
 		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").
 		Joins("JOIN notifications n ON n.id = ne.notification_id").
-		Where("nd.channel = ? AND nd.status = ?", "digest", "pending").
+		Where("nd.channel = ? AND nd.status = ?", channel, "pending").
 		Order("nd.created_at ASC").
 		Scan(&deliveries).Error
 	if err != nil {
-		return nil, fmt.Errorf("list pending digest deliveries: %w", err)
+		return nil, fmt.Errorf("list pending deliveries for channel %s: %w", channel, err)
 	}
 	return deliveries, nil
 }
@@ -216,6 +245,18 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, id, recipientID
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&model.Notification{}).
 		Where("id = ? AND recipient_id = ?", id, recipientID).
+		Updates(map[string]interface{}{
+			"status":  "read",
+			"read_at": now,
+		}).Error
+}
+
+// MarkEntityCategoryAsRead marks unread notifications as read for a specific entity/category pair.
+func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, recipientID, workspaceID, entityType, entityID, category string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.Notification{}).
+		Where("recipient_id = ? AND workspace_id = ? AND entity_type = ? AND entity_id = ? AND latest_event_category = ? AND status = 'unread'",
+			recipientID, workspaceID, entityType, entityID, category).
 		Updates(map[string]interface{}{
 			"status":  "read",
 			"read_at": now,

@@ -1,4 +1,5 @@
 import { FunctionComponent } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
 import { renderMarkdown } from '../utils/markdownRenderer';
 import { FileTextIcon } from './icons';
@@ -75,6 +76,72 @@ function formatRelativeTime(dateStr: string): string {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function formatSourceCount(count: number): string {
+  return `${count} source${count === 1 ? '' : 's'}`;
+}
+
+function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }) {
+  const [open, setOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!popoverRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={popoverRef}
+      className={`helpin-sources-popover ${open ? 'is-open' : ''}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        className="helpin-message-sources-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(prev => !prev)}
+      >
+        {formatSourceCount(sources.length)}
+      </button>
+
+      {open && (
+        <div className="helpin-sources-popover-card" role="dialog" aria-label="Sources">
+          <div className="helpin-sources-popover-title">Sources</div>
+          <div className="helpin-sources-popover-list">
+            {sources.map((source, idx) => (
+              <div key={idx} className="helpin-source-item">
+                {source.title}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   message,
   config,
@@ -101,6 +168,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
   const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || (message.sources && message.sources.length > 0) || message.aiConfidence !== undefined;
+  const hasMeta = (message.sources && message.sources.length > 0) || message.aiConfidence !== undefined;
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
@@ -144,19 +212,16 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                   <div className="helpin-message-channel">Via email</div>
                 )}
 
-                {message.sources && message.sources.length > 0 && (
-                  <div className="helpin-message-sources">
-                    {message.sources.map((source, idx) => (
-                      <div key={idx} className="helpin-source-item">
-                        {source.title}
+                {hasMeta && (
+                  <div className="helpin-message-meta">
+                    {message.sources && message.sources.length > 0 && (
+                      <SourcePopover sources={message.sources} />
+                    )}
+                    {message.aiConfidence !== undefined && (
+                      <div className="helpin-message-confidence">
+                        Confidence: {Math.round(message.aiConfidence * 100)}%
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {message.aiConfidence !== undefined && (
-                  <div className="helpin-message-confidence">
-                    Confidence: {Math.round(message.aiConfidence * 100)}%
+                    )}
                   </div>
                 )}
 

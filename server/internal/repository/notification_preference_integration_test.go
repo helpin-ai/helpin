@@ -146,6 +146,50 @@ func TestNotificationPreferenceRepositoryShouldNotify_EmailDisabledAtAccountLeve
 	}
 }
 
+func TestNotificationPreferenceRepositoryShouldNotify_UsesSupportReplyCategoryPreference(t *testing.T) {
+	db := newNotificationPreferenceTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	mustExecNotificationPref(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	mustExecNotificationPref(t, db, `INSERT INTO notification_preferences (id, user_id, workspace_id, mute_workspace, channel_preferences, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"pref-1", "user-1", "ws-1", false, `{"support_replies":{"in_app":false,"email":true}}`, now, now)
+
+	repo := NewNotificationPreferenceRepository(db)
+	shouldNotify, err := repo.ShouldNotify(ctx, "user-1", "ws-1", "support_conversation.customer_reply", "in_app", "")
+	if err != nil {
+		t.Fatalf("ShouldNotify: %v", err)
+	}
+	if shouldNotify {
+		t.Fatal("expected support reply preference to block in_app notification")
+	}
+}
+
+func TestNotificationPreferenceRepositoryShouldNotify_UsesSupportMentionCategoryPreference(t *testing.T) {
+	db := newNotificationPreferenceTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	mustExecNotificationPref(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	mustExecNotificationPref(t, db, `INSERT INTO notification_preferences (id, user_id, workspace_id, mute_workspace, channel_preferences, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"pref-1", "user-1", "ws-1", false, `{"support_mentions":{"in_app":true,"email":false}}`, now, now)
+
+	repo := NewNotificationPreferenceRepository(db)
+	shouldNotify, err := repo.ShouldNotify(ctx, "user-1", "ws-1", "support_conversation.mentioned", "email", "")
+	if err != nil {
+		t.Fatalf("ShouldNotify: %v", err)
+	}
+	if shouldNotify {
+		t.Fatal("expected support mention preference to block email notification")
+	}
+}
+
 func newNotificationPreferenceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

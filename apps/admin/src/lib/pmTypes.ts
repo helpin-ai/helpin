@@ -110,3 +110,29 @@ export interface WebhookEventListResponse {
   total: number
   total_pages: number
 }
+
+// Email queue
+export interface EmailQueueMessage {
+  id: string
+  content: string
+  sender_display_name?: string
+  created_at: string
+}
+
+export interface EmailQueueEntry {
+  conversation_id: string
+  workspace_id: string
+  fire_at: string
+  delay_remaining_secs: number
+  customer_email: string
+  customer_name?: string
+  subject: string
+  status: string
+  message_count: number
+  messages: EmailQueueMessage[]
+}
+
+export interface EmailQueueResponse {
+  entries: EmailQueueEntry[]
+  total: number
+}

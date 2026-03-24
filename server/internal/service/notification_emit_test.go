@@ -272,6 +272,215 @@ func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
 	}
 }
 
+func TestEmit_SupportReplyCreatesPendingDelayedEmailDelivery(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	seedNotificationServiceWorkspace(t, db, "ws-1", "Acme Workspace", now)
+	seedNotificationServiceUser(t, db, "user-1", "user@example.com", "Recipient", now)
+	seedNotificationServiceUserSettings(t, db, "user-1", true, "immediate", nil, now)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		emailer,
+		"",
+	)
+
+	if err := service.Emit(ctx, model.NotificationEventInput{
+		WorkspaceID:         "ws-1",
+		EventType:           "support_conversation.customer_reply",
+		EntityType:          "support_conversation",
+		EntityID:            "conv-1",
+		Title:               "Customer replied in Billing question",
+		Category:            model.NotifCategorySupportReplies,
+		Priority:            "high",
+		ExplicitRecipients:  []string{"user-1"},
+		SkipFollowers:       true,
+		DelayedEmailChannel: "support_reply_email",
+	}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+
+	deliveries := loadNotificationServiceDeliveries(t, db)
+	if len(deliveries) != 2 {
+		t.Fatalf("deliveries = %+v, want in_app + delayed email rows", deliveries)
+	}
+	if deliveries[0].Channel != "in_app" || deliveries[0].Status != "delivered" {
+		t.Fatalf("first delivery = %+v, want delivered in_app", deliveries[0])
+	}
+	if deliveries[1].Channel != "support_reply_email" || deliveries[1].Status != "pending" {
+		t.Fatalf("second delivery = %+v, want pending support_reply_email", deliveries[1])
+	}
+	if len(emailer.sent) != 0 {
+		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))
+	}
+}
+
+func TestProcessPendingSupportReplyEmails_SendsAfterDelay(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+	dueAt := now.Add(-4 * time.Minute)
+
+	seedNotificationServiceWorkspace(t, db, "ws-1", "Acme Workspace", now)
+	seedNotificationServiceUser(t, db, "user-1", "user@example.com", "Recipient", now)
+	seedNotificationServiceUserSettings(t, db, "user-1", true, "immediate", nil, now)
+
+	mustExecNotificationService(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, body, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-1", "ws-1", "user-1", "support_conversation", "conv-1", "support_conversation.customer_reply", "Customer replied in Billing question", "Need help with billing", model.NotifCategorySupportReplies, 1, dueAt, "unread", "high", dueAt, dueAt)
+	mustExecNotificationService(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"event-1", "notif-1", "support_conversation.customer_reply", "Customer replied in Billing question", model.NotifCategorySupportReplies, "high", dueAt)
+	mustExecNotificationService(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"delivery-1", "event-1", "support_reply_email", "pending", dueAt, dueAt)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		emailer,
+		"",
+	)
+
+	if err := service.ProcessPendingSupportReplyEmails(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingSupportReplyEmails: %v", err)
+	}
+
+	if len(emailer.sent) != 1 {
+		t.Fatalf("sent email count = %d, want 1", len(emailer.sent))
+	}
+
+	deliveries := loadNotificationServiceDeliveries(t, db)
+	if len(deliveries) != 1 || deliveries[0].Channel != "support_reply_email" || deliveries[0].Status != "delivered" {
+		t.Fatalf("deliveries = %+v, want delivered support_reply_email", deliveries)
+	}
+}
+
+func TestProcessPendingSupportReplyEmails_SkipsHandledNotifications(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+	dueAt := now.Add(-4 * time.Minute)
+
+	seedNotificationServiceWorkspace(t, db, "ws-1", "Acme Workspace", now)
+	seedNotificationServiceUser(t, db, "user-1", "user@example.com", "Recipient", now)
+	seedNotificationServiceUserSettings(t, db, "user-1", true, "immediate", nil, now)
+
+	mustExecNotificationService(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, read_at, priority, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-1", "ws-1", "user-1", "support_conversation", "conv-1", "support_conversation.customer_reply", "Customer replied in Billing question", model.NotifCategorySupportReplies, 1, dueAt, "read", now, "high", dueAt, dueAt)
+	mustExecNotificationService(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"event-1", "notif-1", "support_conversation.customer_reply", "Customer replied in Billing question", model.NotifCategorySupportReplies, "high", dueAt)
+	mustExecNotificationService(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"delivery-1", "event-1", "support_reply_email", "pending", dueAt, dueAt)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		emailer,
+		"",
+	)
+
+	if err := service.ProcessPendingSupportReplyEmails(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingSupportReplyEmails: %v", err)
+	}
+
+	if len(emailer.sent) != 0 {
+		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))
+	}
+
+	deliveries := loadNotificationServiceDeliveries(t, db)
+	if len(deliveries) != 1 || deliveries[0].Status != "skipped" {
+		t.Fatalf("deliveries = %+v, want skipped support_reply_email", deliveries)
+	}
+	if deliveries[0].Error == nil || !strings.Contains(*deliveries[0].Error, "already handled") {
+		t.Fatalf("delivery error = %v, want handled message", deliveries[0].Error)
+	}
+}
+
+func TestProcessPendingSupportReplyEmails_BatchesToLatestPendingReply(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+	older := now.Add(-5 * time.Minute)
+	newer := now.Add(-4 * time.Minute)
+
+	seedNotificationServiceWorkspace(t, db, "ws-1", "Acme Workspace", now)
+	seedNotificationServiceUser(t, db, "user-1", "user@example.com", "Recipient", now)
+	seedNotificationServiceUserSettings(t, db, "user-1", true, "immediate", nil, now)
+
+	mustExecNotificationService(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, body, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-1", "ws-1", "user-1", "support_conversation", "conv-1", "support_conversation.customer_reply", "Customer replied in Billing question", "Latest reply body", model.NotifCategorySupportReplies, 2, newer, "unread", "high", older, newer)
+	mustExecNotificationService(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"event-1", "notif-1", "support_conversation.customer_reply", "Older reply", model.NotifCategorySupportReplies, "high", older)
+	mustExecNotificationService(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"event-2", "notif-1", "support_conversation.customer_reply", "Newer reply", model.NotifCategorySupportReplies, "high", newer)
+	mustExecNotificationService(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"delivery-1", "event-1", "support_reply_email", "pending", older, older)
+	mustExecNotificationService(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"delivery-2", "event-2", "support_reply_email", "pending", newer, newer)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		emailer,
+		"",
+	)
+
+	if err := service.ProcessPendingSupportReplyEmails(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingSupportReplyEmails: %v", err)
+	}
+
+	if len(emailer.sent) != 1 {
+		t.Fatalf("sent email count = %d, want 1", len(emailer.sent))
+	}
+
+	deliveries := loadNotificationServiceDeliveries(t, db)
+	if len(deliveries) != 2 {
+		t.Fatalf("deliveries = %+v, want 2 rows", deliveries)
+	}
+	if deliveries[0].Channel != "support_reply_email" || deliveries[0].Status != "skipped" {
+		t.Fatalf("first delivery = %+v, want skipped older delivery", deliveries[0])
+	}
+	if deliveries[1].Channel != "support_reply_email" || deliveries[1].Status != "delivered" {
+		t.Fatalf("second delivery = %+v, want delivered latest delivery", deliveries[1])
+	}
+}
+
 func TestBuildDeliveryPlans_ImmediateEmailBranches(t *testing.T) {
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	event := model.NotificationEventInput{
@@ -546,7 +755,7 @@ func loadNotificationServiceDeliveries(t *testing.T, db *gorm.DB) []struct {
 		Status  string
 		Error   *string
 	}
-	if err := db.Raw(`SELECT channel, status, error FROM notification_deliveries ORDER BY channel ASC`).Scan(&rows).Error; err != nil {
+	if err := db.Raw(`SELECT channel, status, error FROM notification_deliveries ORDER BY channel ASC, created_at ASC, id ASC`).Scan(&rows).Error; err != nil {
 		t.Fatalf("load deliveries: %v", err)
 	}
 	return rows

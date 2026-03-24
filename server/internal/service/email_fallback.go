@@ -30,25 +30,35 @@ const (
 
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
 type EmailFallbackService struct {
-	redis         *redis.Client
-	hub           *websocket.Hub
-	wsPublisher   *websocket.Publisher
-	emailClient   *email.Client
-	messageRepo   *repository.SupportMessageRepository
-	convRepo      *repository.SupportConversationRepository
-	emailLogRepo  *repository.SupportEmailLogRepository
-	webhookRepo   *repository.SupportEmailWebhookEventRepository
-	installRepo   *repository.SupportInboxInstallationRepository
-	sessionRepo   *repository.SupportInboxSessionRepository
-	workspaceRepo *repository.WorkspaceRepository
-	replyDomain   string
-	appBaseURL    string
-	logger        *slog.Logger
-	podID         string
-	pollInterval  time.Duration
-	leaseTTL      time.Duration
-	processingTTL time.Duration
-	now           func() time.Time
+	redis               *redis.Client
+	hub                 *websocket.Hub
+	wsPublisher         *websocket.Publisher
+	emailClient         *email.Client
+	messageRepo         *repository.SupportMessageRepository
+	convRepo            *repository.SupportConversationRepository
+	emailLogRepo        *repository.SupportEmailLogRepository
+	webhookRepo         *repository.SupportEmailWebhookEventRepository
+	installRepo         *repository.SupportInboxInstallationRepository
+	sessionRepo         *repository.SupportInboxSessionRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	notificationService *NotificationService
+	replyDomain         string
+	appBaseURL          string
+	logger              *slog.Logger
+	podID               string
+	pollInterval        time.Duration
+	leaseTTL            time.Duration
+	processingTTL       time.Duration
+	now                 func() time.Time
+}
+
+// SetNotificationService injects the notification service used for support reply alerts.
+func (s *EmailFallbackService) SetNotificationService(notificationService *NotificationService) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.notificationService = notificationService
+	return s
 }
 
 // NewEmailFallbackService constructs the email fallback service.
@@ -323,6 +333,8 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		}
 		return txErr
 	}
+
+	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, content, senderName)
 
 	s.logger.InfoContext(ctx, "postmark inbound created support message",
 		"message_id", strings.TrimSpace(payload.MessageID),
@@ -760,6 +772,95 @@ func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID strin
 
 func (s *EmailFallbackService) msgListKey(conversationID string) string {
 	return emailFallbackMsgsKeyPrefix + conversationID
+}
+
+// ListQueue returns all pending entries in the email fallback outbox for admin inspection.
+func (s *EmailFallbackService) ListQueue(ctx context.Context) (*model.EmailQueueResponse, error) {
+	if s.redis == nil {
+		return &model.EmailQueueResponse{}, nil
+	}
+
+	entries, err := s.redis.ZRangeWithScores(ctx, emailFallbackOutboxKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("read email outbox: %w", err)
+	}
+
+	now := s.now()
+	result := make([]model.EmailQueueEntry, 0, len(entries))
+
+	for _, z := range entries {
+		convID, ok := z.Member.(string)
+		if !ok {
+			continue
+		}
+
+		fireAt := time.Unix(int64(z.Score), 0)
+		remaining := int(fireAt.Sub(now).Seconds())
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		entry := model.EmailQueueEntry{
+			ConversationID:     convID,
+			FireAt:             fireAt,
+			DelayRemainingSecs: remaining,
+		}
+
+		// Load pending message IDs from Redis.
+		msgIDs, err := s.redis.LRange(ctx, s.msgListKey(convID), 0, -1).Result()
+		if err != nil {
+			slog.WarnContext(ctx, "email queue: read msg list", "error", err, "conversation_id", convID)
+			msgIDs = nil
+		}
+		entry.MessageCount = len(msgIDs)
+
+		// Enrich with conversation data.
+		conv, err := s.findConversationByID(ctx, convID)
+		if err != nil {
+			slog.WarnContext(ctx, "email queue: load conversation", "error", err, "conversation_id", convID)
+		}
+		if conv != nil {
+			entry.WorkspaceID = conv.WorkspaceID
+			entry.Subject = conv.Subject
+			entry.Status = conv.Status
+			if conv.CustomerEmail != nil {
+				entry.CustomerEmail = *conv.CustomerEmail
+			}
+			if conv.CustomerName != nil {
+				entry.CustomerName = *conv.CustomerName
+			}
+		}
+
+		// Load message previews.
+		if len(msgIDs) > 0 {
+			messages, err := s.messageRepo.GetByIDs(ctx, msgIDs)
+			if err != nil {
+				slog.WarnContext(ctx, "email queue: load messages", "error", err, "conversation_id", convID)
+			} else {
+				queueMsgs := make([]model.EmailQueueMessage, 0, len(messages))
+				for _, m := range messages {
+					name := ""
+					if m.SenderDisplayName != nil {
+						name = *m.SenderDisplayName
+					}
+					queueMsgs = append(queueMsgs, model.EmailQueueMessage{
+						ID:                m.ID,
+						Content:           m.Content,
+						SenderDisplayName: name,
+						CreatedAt:         m.CreatedAt,
+					})
+				}
+				entry.Messages = queueMsgs
+			}
+		}
+
+		result = append(result, entry)
+	}
+
+	return &model.EmailQueueResponse{
+		Entries: result,
+		Total:   len(result),
+	}, nil
 }
 
 func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string {

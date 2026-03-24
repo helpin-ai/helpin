@@ -17,6 +17,7 @@ import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
+import type { WidgetConfig } from '@helpin/widget-core';
 
 const ICON_OPTIONS = [
   { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
@@ -60,6 +61,77 @@ const COMMON_TIMEZONES = [
 ];
 
 const NO_AGENT_VALUE = '__none__';
+const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
+
+function parseTimeToMinutes(value: string): number {
+  const [hours = '0', minutes = '0'] = value.split(':');
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function weekdayKey(date: Date, timezone: string): string {
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(date).toLowerCase();
+  return day.slice(0, 3);
+}
+
+function zonedMinutes(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  return (hour * 60) + minute;
+}
+
+function buildPreviewAvailability(
+  businessHoursEnabled: boolean,
+  timezone: string,
+  schedule: Record<string, BusinessHoursDay>,
+  outsideMessage: string,
+): WidgetConfig['availability'] {
+  const fallbackMessage = outsideMessage || "We're currently offline. Leave a message and we'll get back to you!";
+  if (!businessHoursEnabled) {
+    return {
+      isOnline: true,
+      statusText: 'Online now',
+      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+    };
+  }
+
+  try {
+    const now = new Date();
+    const day = schedule[weekdayKey(now, timezone)];
+    const nowMinutes = zonedMinutes(now, timezone);
+    const withinHours = Boolean(
+      day?.enabled
+      && nowMinutes >= parseTimeToMinutes(day.start)
+      && nowMinutes < parseTimeToMinutes(day.end),
+    );
+
+    if (withinHours) {
+      return {
+        isOnline: true,
+        statusText: 'Online now',
+        replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+      };
+    }
+
+    return {
+      isOnline: false,
+      statusText: 'Offline now',
+      replyTimeText: fallbackMessage,
+      outsideHoursMessage: fallbackMessage,
+    };
+  } catch {
+    return {
+      isOnline: true,
+      statusText: 'Online now',
+      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
+    };
+  }
+}
 
 /* ── Two-column layout shell ─────────────────────────────────────────── */
 
@@ -372,6 +444,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
 
   const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+  const previewAvailability = buildPreviewAvailability(businessHoursEnabled, timezone, schedule, outsideMessage);
 
   // Shared preview element used by both views
   const previewElement = (
@@ -388,6 +461,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       buttonIconColor={buttonIconColor}
       logoUrl={logoUrl}
       helpSpaces={previewHelpSpaces}
+      availability={previewAvailability}
       widgetKey={widgetKey}
       host={previewHost}
     />
@@ -1017,7 +1091,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </div>
           </div>
 
-          {/* Business Hours */}
+          {/* Availability */}
           <div className="overflow-hidden rounded-lg border border-border bg-background">
             <button
               type="button"
@@ -1028,8 +1102,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 <MessageSquare className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Business Hours</p>
-                <p className="text-sm text-muted-foreground">Set when your team is available for chat</p>
+                <p className="text-sm font-medium">Availability</p>
+                <p className="text-sm text-muted-foreground">Set when your team appears online and what visitors should expect</p>
               </div>
               <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('business-hours') && 'rotate-180')} />
             </button>
@@ -1038,8 +1112,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               <div className="border-t border-border p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Enable business hours</Label>
-                    <p className="text-xs text-muted-foreground">Widget shows online/offline status based on schedule.</p>
+                    <Label className="text-sm">Enable availability schedule</Label>
+                    <p className="text-xs text-muted-foreground">Widget availability and reply expectations follow this schedule.</p>
                   </div>
                   <Switch checked={businessHoursEnabled} onCheckedChange={setBusinessHoursEnabled} />
                 </div>

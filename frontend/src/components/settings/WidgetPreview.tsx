@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { mountWidget, unmountWidget } from '@helpin/widget-core';
+import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin/widget-core';
 
 // Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
 import '@helpin/widget-core/styles';
@@ -17,6 +17,7 @@ interface WidgetPreviewProps {
   buttonIconColor?: string;
   logoUrl?: string;
   helpSpaces?: Array<{ id: string; name: string; slug: string }>;
+  availability?: WidgetConfig['availability'];
   widgetKey?: string;
   host?: string;
 }
@@ -39,6 +40,7 @@ export function WidgetPreview({
   buttonIconColor,
   logoUrl,
   helpSpaces,
+  availability,
   widgetKey,
   host,
 }: WidgetPreviewProps) {
@@ -75,6 +77,11 @@ export function WidgetPreview({
           requirePhone: false,
           csatRating: false,
           forceIdentify: false,
+        },
+        availability: availability ?? {
+          isOnline: true,
+          statusText: 'Online now',
+          replyTimeText: 'We typically reply in a few minutes',
         },
         helpSpaces,
       },

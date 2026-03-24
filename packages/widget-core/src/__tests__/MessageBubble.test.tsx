@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/preact';
+import { fireEvent, render } from '@testing-library/preact';
 import { MessageBubble } from '../components/MessageBubble';
 import type { Message } from '../types';
 
@@ -40,15 +40,19 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message--internal')).toBeTruthy();
   });
 
-  it('displays AI sources', () => {
+  it('displays AI source count and reveals titles in popover', () => {
     const message = createMessage({
       role: 'ai',
       sources: [
         { docId: 'doc-1', title: 'Test Doc', snippet: 'Test snippet', confidence: 0.9, language: 'en' },
       ],
     });
-    const { container } = render(<MessageBubble message={message} />);
-    expect(container.textContent).toContain('Test Doc');
+    const { container, getByRole, queryByText } = render(<MessageBubble message={message} />);
+    expect(container.textContent).toContain('1 source');
+    expect(queryByText('Test Doc')).toBeNull();
+
+    fireEvent.click(getByRole('button', { name: '1 source' }));
+    expect(queryByText('Test Doc')).toBeTruthy();
   });
 
   it('displays confidence score', () => {

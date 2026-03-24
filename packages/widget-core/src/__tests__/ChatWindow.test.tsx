@@ -19,6 +19,12 @@ const baseConfig = {
     preChatForm: false,
     requirePhone: false,
     csatRating: false,
+    forceIdentify: false,
+  },
+  availability: {
+    isOnline: true,
+    statusText: 'Online now',
+    replyTimeText: 'We typically reply in a few minutes',
   },
 };
 
