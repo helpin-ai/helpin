@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, Globe, ChevronDown, Star, Mail } from 'lucide-react';
+import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, Globe, ChevronDown, Star, Mail, Paperclip } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -121,6 +121,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [aiResponseMode, setAiResponseMode] = useState('off');
   const [aiMaxFollowups, setAiMaxFollowups] = useState(3);
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
+  const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
   const [businessHoursEnabled, setBusinessHoursEnabled] = useState(false);
@@ -131,6 +132,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
+  const [fileUploadsEnabled, setFileUploadsEnabled] = useState(true);
+  const [forceVisitorIdentity, setForceVisitorIdentity] = useState(false);
 
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['widget-settings']));
@@ -166,6 +169,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setAiResponseMode(s.ai_response_mode ?? 'off');
       setAiMaxFollowups(s.ai_max_followups ?? 3);
       setShowTalkToHuman(s.show_talk_to_human);
+      setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
       setBusinessHoursEnabled(s.business_hours_enabled);
@@ -176,6 +180,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setCsatEnabled(s.csat_enabled);
+      setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+      setForceVisitorIdentity(s.force_visitor_identity ?? false);
     }
   }, [data]);
 
@@ -201,6 +207,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       ai_response_mode: aiResponseMode,
       ai_max_followups: aiMaxFollowups,
       show_talk_to_human: showTalkToHuman,
+      escalation_message: escalationMessage,
       handoff_behavior: handoffBehavior,
       handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
       business_hours_enabled: businessHoursEnabled,
@@ -211,6 +218,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       email_fallback_delay_secs: emailFallbackDelaySecs,
       email_fallback_from_name: emailFallbackFromName,
       csat_enabled: csatEnabled,
+      file_uploads_enabled: fileUploadsEnabled,
+      force_visitor_identity: forceVisitorIdentity,
     }, {
       onSuccess: () => toast.success('Settings saved'),
       onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
@@ -499,6 +508,14 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   <p className="text-xs text-muted-foreground">Also ask for the visitor's phone number.</p>
                 </div>
                 <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm">Force visitors to identify themselves</Label>
+                  <p className="text-xs text-muted-foreground">Visitors must provide their email (or phone) before chatting. When disabled, they can skip the identity step.</p>
+                </div>
+                <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>
 
               <div className="space-y-2">
@@ -938,6 +955,18 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="escalation-msg" className="text-sm">Escalation Message</Label>
+                  <Textarea
+                    id="escalation-msg"
+                    value={escalationMessage}
+                    onChange={(e) => setEscalationMessage(e.target.value)}
+                    placeholder="Let me connect you with a team member who can help further."
+                    rows={2}
+                  />
+                  <p className="text-xs text-muted-foreground">Message shown to the visitor when AI hands off to a human agent.</p>
+                </div>
               </div>
             )}
           </div>
@@ -1118,6 +1147,34 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           <div className="overflow-hidden rounded-lg border border-border bg-background">
             <button
               type="button"
+              onClick={() => toggleSection('file-uploads')}
+              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Paperclip className="h-4 w-4" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">File Uploads</p>
+                <p className="text-sm text-muted-foreground">Allow visitors to attach files in chat</p>
+              </div>
+              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('file-uploads') && 'rotate-180')} />
+            </button>
+            {isExpanded('file-uploads') && (
+              <div className="border-t border-border p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Enable file uploads</Label>
+                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 10 MB).</p>
+                  </div>
+                  <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-border bg-background">
+            <button
+              type="button"
               onClick={() => toggleSection('email-notifications')}
               className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
             >
@@ -1197,6 +1254,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   setAiResponseMode(s.ai_response_mode ?? 'off');
                   setAiMaxFollowups(s.ai_max_followups ?? 3);
                   setShowTalkToHuman(s.show_talk_to_human);
+                  setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
                   setHandoffBehavior(s.handoff_behavior);
                   setHandoffTeamId(s.handoff_team_id);
                   setBusinessHoursEnabled(s.business_hours_enabled);
@@ -1207,6 +1265,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
                   setEmailFallbackFromName(s.email_fallback_from_name ?? '');
                   setCsatEnabled(s.csat_enabled);
+                  setFileUploadsEnabled(s.file_uploads_enabled ?? true);
+                  setForceVisitorIdentity(s.force_visitor_identity ?? false);
                   toast.success('Changes discarded');
                 }
               }}

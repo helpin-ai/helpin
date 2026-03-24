@@ -76,6 +76,7 @@ type SupportContentPage struct {
 	ContentFormat   string          `json:"content_format" gorm:"not null;default:'markdown'"`
 	ContentText     string          `json:"content_text" gorm:"type:text;not null"`
 	ContentHash     string          `json:"content_hash" gorm:"size:64;not null;index"`
+	ContentLength   int             `json:"content_length" gorm:"-"` // computed via SQL, not persisted
 	Metadata        json.RawMessage `json:"metadata" gorm:"type:jsonb"`
 	LastCrawledAt   time.Time       `json:"last_crawled_at" gorm:"not null"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`

@@ -10,7 +10,7 @@ import { RecurringTemplatesSettings } from '@/components/pm/RecurringTemplatesSe
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FlaskConical, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -23,11 +23,11 @@ import {
   CRMAutonomySettingsTab,
   AIAutomationsTab,
   ChatGeneralTab,
-  ChatAITab,
+  ChatPlaygroundTab,
   RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-playground' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -140,6 +140,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Chat',
     description: 'Widget installation, identity capture, AI auto-reply, and routing.',
     icon: MessageSquare,
+    group: 'Support & Docs',
+  },
+  {
+    id: 'chat-playground',
+    label: 'Chat Playground',
+    description: 'Dry-run support AI planner, retrieval, and grounded answer generation.',
+    icon: FlaskConical,
     group: 'Support & Docs',
   },
   {
@@ -302,10 +309,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <AIAutomationsTab workspaceId={workspaceId} />;
       case 'chat-general':
         return <ChatGeneralTab workspaceId={workspaceId} />;
-      case 'chat-ai':
-        return <ChatAITab workspaceId={workspaceId} />;
-      case 'redirects':
-        return <RedirectsTab workspaceId={workspaceId} editable={canManageSettings} />;
+      case 'chat-playground':
+        return <ChatPlaygroundTab workspaceId={workspaceId} />;
       default:
         return null;
     }

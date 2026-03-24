@@ -89,10 +89,14 @@ export const agentService = {
     api.del(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`),
   listContentSourcePages: (workspaceId: string, contentSourceId: string) =>
     api.get<import('../pmTypes').SupportContentPage[]>(`/pm/content-sources/${contentSourceId}/pages${qs(workspaceId)}`),
+  getContentSourcePage: (workspaceId: string, contentSourceId: string, pageId: string) =>
+    api.get<import('../pmTypes').SupportContentPage>(`/pm/content-sources/${contentSourceId}/pages/${pageId}${qs(workspaceId)}`),
   reindexContentSource: (workspaceId: string, contentSourceId: string) =>
     api.post<{ status: string }>(`/pm/content-sources/${contentSourceId}/reindex${qs(workspaceId)}`, {}),
   listAgentContentSources: (workspaceId: string, agentId: string) =>
     api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
   updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
     api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
+  previewSupportReply: (workspaceId: string, agentId: string, payload: import('../pmTypes').SupportAIPreviewRequest) =>
+    api.post<import('../pmTypes').SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
 };

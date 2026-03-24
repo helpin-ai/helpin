@@ -7,12 +7,14 @@ interface MessageListProps {
   messages: Message[];
   showDateSeparators?: boolean;
   config?: WidgetConfig;
+  onImageClick?: (src: string, alt: string) => void;
 }
 
 export const MessageList: FunctionComponent<MessageListProps> = ({
   messages,
   showDateSeparators = true,
   config,
+  onImageClick,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
@@ -78,7 +80,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
                 <span>{dateSeparator}</span>
               </div>
             )}
-            <MessageBubble message={message} config={config} isFirstInGroup={isFirstInGroup} />
+            <MessageBubble message={message} config={config} isFirstInGroup={isFirstInGroup} onImageClick={onImageClick} />
           </div>
         );
       })}

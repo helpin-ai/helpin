@@ -115,7 +115,7 @@ func (s *SupportContentSourceService) Reindex(ctx context.Context, workspaceID, 
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
-	return s.syncService.QueueSourceSync(ctx, workspaceID, id)
+	return s.syncService.QueueSourceReindex(ctx, workspaceID, id)
 }
 
 // ListPages returns all crawled pages for a content source after verifying
@@ -129,6 +129,26 @@ func (s *SupportContentSourceService) ListPages(ctx context.Context, workspaceID
 		return nil, fmt.Errorf("content source not found in workspace")
 	}
 	return s.pageRepo.ListByContentSourceID(ctx, contentSourceID)
+}
+
+// GetPage returns a single crawled page (including content) after verifying
+// that its parent content source belongs to the workspace.
+func (s *SupportContentSourceService) GetPage(ctx context.Context, workspaceID, contentSourceID, pageID string) (*model.SupportContentPage, error) {
+	source, err := s.repo.GetByID(ctx, contentSourceID)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	page, err := s.pageRepo.GetByIDWithContent(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	if page == nil || page.ContentSourceID != contentSourceID {
+		return nil, fmt.Errorf("page not found in content source")
+	}
+	return page, nil
 }
 
 // AgentContentSourceService manages per-agent content source selection.

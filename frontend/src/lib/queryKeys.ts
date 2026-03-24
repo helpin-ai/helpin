@@ -92,6 +92,7 @@ export const queryKeys = {
     knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
     contentSources: (wsId: string) => ['agents', wsId, 'content-sources'] as const,
     contentSourcePages: (wsId: string, contentSourceId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages'] as const,
+    contentSourcePage: (wsId: string, contentSourceId: string, pageId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages', pageId] as const,
     selectedContentSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'content-source-selections'] as const,
   },
 

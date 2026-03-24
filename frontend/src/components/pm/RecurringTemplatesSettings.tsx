@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { RecurringTemplateList } from '@/components/pm/RecurringTemplateList';
-import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';

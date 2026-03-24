@@ -673,6 +673,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
   moveStory: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex }) => {
     const snapshot = cloneColumns(get().columns);
+    const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
+    const contextChanged = () => {
+      const s = get();
+      return s.workflow?.workflow.id !== moveCtx.workflowId || s.teamId !== moveCtx.teamId;
+    };
 
     // Always optimistically move the card immediately
     set((state) => {
@@ -689,24 +694,35 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
       moving.workflow_state_id = toStateId;
       if (fromStateId === toStateId) {
+        // Set position so optimistic order matches intent (server will renumber)
+        moving.position = toIndex;
         fromCol.stories.splice(toIndex, 0, moving);
-        fromCol.stories = sortStories(fromCol.stories, fromCol.state.state_type);
         return { columns };
       }
 
       updateColumnTotals(fromCol, -1, -(moving.estimate ?? 0));
       updateColumnTotals(toCol, 1, moving.estimate ?? 0);
+      // For done columns, set completed_at so optimistic sort matches server behavior
+      if (toCol.state.state_type === 'done') {
+        moving.completed_at = new Date().toISOString();
+        moving.moved_at = moving.completed_at;
+        moving.completed = true;
+      } else {
+        // Clear done metadata when moving out of done
+        if (moving.completed_at) {
+          moving.completed_at = undefined as unknown as string;
+          moving.completed = false;
+        }
+      }
+      // Set position so optimistic order matches intent (server will renumber)
+      moving.position = toIndex > 0 ? (toCol.stories[toIndex - 1]?.position ?? toIndex) + 1 : 0;
       toCol.stories.splice(toIndex, 0, moving);
-      toCol.stories = sortStories(toCol.stories, toCol.state.state_type);
       return { columns };
     });
 
     if (fromStateId === toStateId) {
-      const targetColumn = get().columns.find((column) => column.state.id === toStateId);
-      const nextStory = targetColumn?.stories[toIndex];
-      const position = nextStory?.position ?? toIndex;
-      const reorderRes = await pmStoryService.reorder(workspaceId, storyId, { position });
-      if (reorderRes.error) {
+      const reorderRes = await pmStoryService.reorder(workspaceId, storyId, { position: toIndex });
+      if (reorderRes.error && !contextChanged()) {
         set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder story' });
       }
       return;
@@ -714,9 +730,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     const moveRes = await pmStoryService.move(workspaceId, storyId, { state_id: toStateId, position: toIndex });
     if (moveRes.error) {
-      set({ columns: snapshot, error: moveRes.error ?? 'Failed to move story' });
+      if (!contextChanged()) {
+        set({ columns: snapshot, error: moveRes.error ?? 'Failed to move story' });
+      }
       return;
     }
+
+    // Skip patching if user switched board context mid-flight
+    if (contextChanged()) return;
 
     const updatedStory = moveRes.data?.story;
     if (updatedStory) {
@@ -731,6 +752,13 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         }
         return { columns };
       });
+    }
+
+    // If source or target columns were truncated, refresh them to resync positions
+    const fromTruncated = snapshot.find((c) => c.state.id === fromStateId)?.has_more;
+    const toTruncated = snapshot.find((c) => c.state.id === toStateId)?.has_more;
+    if (fromTruncated || toTruncated) {
+      get().refreshBoard();
     }
   },
 
@@ -803,7 +831,16 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
   },
 
   moveMemberStory: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
+    if (fromMemberId === toMemberId) {
+      return;
+    }
+
     const snapshot = get().memberColumns.map((c) => ({ ...c, stories: [...c.stories] }));
+    const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
+    const contextChanged = () => {
+      const s = get();
+      return s.workflow?.workflow.id !== moveCtx.workflowId || s.teamId !== moveCtx.teamId;
+    };
 
     // Optimistic update
     set((state) => {
@@ -840,25 +877,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       return { memberColumns: cols };
     });
 
-    if (fromMemberId === toMemberId) {
-      const targetColumn = get().memberColumns.find((c) =>
-        toMemberId ? c.member?.id === toMemberId : c.member === null,
-      );
-      const nextStory = targetColumn?.stories[toIndex];
-      const position = nextStory?.position ?? toIndex;
-      const res = await pmStoryService.reorder(workspaceId, storyId, { position });
-      if (res.error) {
-        set({ memberColumns: snapshot, error: res.error ?? 'Failed to reorder story' });
-      }
-      return;
-    }
-
-    // Reassign owner via update endpoint
+    // Reassign owner only. Member-board ordering is derived from workflow state and story position,
+    // not a separate per-member manual ranking.
     const updateRes = await pmStoryService.update(workspaceId, storyId, {
       owner_member_id: toMemberId ?? '',
     });
-    if (updateRes.error) {
+    if (updateRes.error && !contextChanged()) {
       set({ memberColumns: snapshot, error: updateRes.error ?? 'Failed to reassign story' });
+      return;
     }
   },
 

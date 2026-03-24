@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
+  Eye,
   ExternalLink,
   FileText,
   Globe,
@@ -11,9 +12,11 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Settings2,
   Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,6 +25,7 @@ import {
   useDeleteSupportContentSource,
   useReindexSupportContentSource,
   useSupportContentSources,
+  useSupportContentSourcePage,
   useSupportContentSourcePages,
   useUpdateAgentContentSources,
   useUpdateSupportContentSource,
@@ -320,7 +324,7 @@ export function SupportContentSourcesField({
                           <Link2 className="h-3 w-3" />
                           {stripProtocol(source.start_url)}
                         </a>
-                        <span>{source.indexed_pages ?? 0} {(source.indexed_pages ?? 0) === 1 ? 'page' : 'pages'}</span>
+                        <span>{source.indexed_pages ?? 0} {(source.indexed_pages ?? 0) === 1 ? 'page' : 'pages'} · {source.indexed_chunks ?? 0} {(source.indexed_chunks ?? 0) === 1 ? 'chunk' : 'chunks'}</span>
                         <span>{formatSyncTime(source.last_sync_completed_at, source.last_sync_started_at)}</span>
                       </div>
 
@@ -589,7 +593,7 @@ export function SupportContentSourcesField({
       </Sheet>
 
       <Sheet open={!!viewingSource} onOpenChange={(open) => { if (!open) setViewingSource(null); }}>
-        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-2xl" showCloseButton>
+        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-4xl" showCloseButton>
           <SheetHeader className="border-b border-border/70 px-6 py-5 text-left">
             <SheetTitle>{viewingSource?.name} — Synced Pages</SheetTitle>
             <SheetDescription>
@@ -627,6 +631,14 @@ export function SupportContentSourcesField({
 
 function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId: string; contentSourceId: string }) {
   const { data: pages, isLoading } = useSupportContentSourcePages(workspaceId, contentSourceId);
+  const [search, setSearch] = useState('');
+  const [previewPageId, setPreviewPageId] = useState<string | null>(null);
+
+  const filteredPages = (pages ?? []).filter((page) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return page.title?.toLowerCase().includes(q) || page.url?.toLowerCase().includes(q);
+  });
 
   if (isLoading) {
     return (
@@ -652,44 +664,152 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
     );
   }
 
+  if (previewPageId) {
+    return (
+      <PageContentPreview
+        workspaceId={workspaceId}
+        contentSourceId={contentSourceId}
+        pageId={previewPageId}
+        onBack={() => setPreviewPageId(null)}
+      />
+    );
+  }
+
   return (
-    <div className="divide-y divide-border/70">
-      {pages.map((page) => (
-        <div key={page.id} className="flex items-start gap-3 px-6 py-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{page.title || 'Untitled'}</p>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-              <a
-                href={page.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
-              >
-                <ExternalLink className="h-3 w-3" />
-                <span className="max-w-[360px] truncate">{page.url}</span>
-              </a>
-              {page.last_crawled_at && (
-                <span>
-                  Crawled {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(page.last_crawled_at))}
-                </span>
-              )}
-            </div>
-          </div>
-          <Badge
-            variant="outline"
-            className={cn(
-              'shrink-0 mt-0.5',
-              page.http_status >= 200 && page.http_status < 300
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
-                : page.http_status >= 400
-                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                  : 'border-amber-500/40 bg-amber-500/10 text-amber-700',
-            )}
-          >
-            {page.http_status || '—'}
-          </Badge>
+    <div>
+      <div className="border-b border-border/70 px-6 py-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search pages by title or URL…"
+            className="pl-9"
+          />
         </div>
-      ))}
+        <p className="mt-2 text-xs text-muted-foreground">
+          {search.trim()
+            ? `${filteredPages.length} of ${pages.length} pages`
+            : `${pages.length} ${pages.length === 1 ? 'page' : 'pages'} indexed`}
+        </p>
+      </div>
+
+      {filteredPages.length === 0 ? (
+        <div className="px-6 py-12 text-center">
+          <p className="text-sm text-muted-foreground">No pages match your search.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/70">
+          {filteredPages.map((page) => (
+            <div key={page.id} className="flex items-start gap-3 px-6 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{page.title || 'Untitled'}</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                  <a
+                    href={page.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span className="max-w-[360px] truncate">{page.url}</span>
+                  </a>
+                  {page.content_length > 0 && (
+                    <span>{formatContentLength(page.content_length)}</span>
+                  )}
+                  {page.last_crawled_at && (
+                    <span>
+                      Crawled {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(page.last_crawled_at))}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 mt-0.5">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setPreviewPageId(page.id)}
+                  title="Preview content"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </Button>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    page.http_status >= 200 && page.http_status < 300
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+                      : page.http_status >= 400
+                        ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                        : 'border-amber-500/40 bg-amber-500/10 text-amber-700',
+                  )}
+                >
+                  {page.http_status || '—'}
+                </Badge>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PageContentPreview({
+  workspaceId,
+  contentSourceId,
+  pageId,
+  onBack,
+}: {
+  workspaceId: string;
+  contentSourceId: string;
+  pageId: string;
+  onBack: () => void;
+}) {
+  const { data: page, isLoading } = useSupportContentSourcePage(workspaceId, contentSourceId, pageId);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 border-b border-border/70 px-6 py-3">
+        <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={onBack} title="Back to pages">
+          <X className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{page?.title || 'Loading…'}</p>
+          {page?.url && (
+            <a
+              href={page.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+              <span className="max-w-[400px] truncate">{page.url}</span>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3 p-6">
+          <Skeleton className="h-4 w-3/4 rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-5/6 rounded" />
+          <Skeleton className="h-4 w-full rounded" />
+          <Skeleton className="h-4 w-2/3 rounded" />
+        </div>
+      ) : page?.content_text ? (
+        <div className="flex-1 overflow-auto p-6">
+          <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90 font-mono">
+            {page.content_text}
+          </pre>
+        </div>
+      ) : (
+        <div className="px-6 py-12 text-center">
+          <p className="text-sm text-muted-foreground">No content available for this page.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -876,6 +996,12 @@ function stripWWW(value: string) {
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values));
+}
+
+function formatContentLength(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function friendlyError(raw: string) {

@@ -278,12 +278,13 @@ export function CreateStoryModal({
       if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
       if (editingTemplate.external_links) { try { if (JSON.parse(editingTemplate.external_links).length > 0) setShowExternalLinks(true); } catch {} }
     } else {
-      const initialTeam = teamsRef.current.find((team) => team.id === (initialTeamId ?? ''));
+      const effectiveTeamId = initialTeamId ?? teamsRef.current[0]?.id ?? '';
+      const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
       setForm({
         ...defaultState,
         story_type: (initialTeam?.default_story_type as StoryType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
-        team_id: initialTeamId ?? '',
+        team_id: effectiveTeamId,
         owner_member_id: initialOwnerMemberId ?? '',
       });
       setStoryTypeDirty(false);

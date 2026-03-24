@@ -311,7 +311,7 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 }
 
 // WidgetCreateMessage creates a message from an external widget user.
-func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error) {
+func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error) {
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return nil, err
@@ -377,6 +377,17 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
+	}
+
+	// Link pre-uploaded attachments to this message.
+	if s.attachmentService != nil && len(attachmentIDs) > 0 {
+		if err := s.attachmentService.LinkToMessage(ctx, attachmentIDs, msg.ID); err != nil {
+			slog.ErrorContext(ctx, "link widget attachments to message", "error", err, "message_id", msg.ID)
+		}
+		msgs := []model.SupportMessage{*msg}
+		if err := s.attachmentService.HydrateMessages(ctx, msgs); err == nil {
+			msg.Attachments = msgs[0].Attachments
+		}
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
@@ -549,10 +560,11 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		Features: model.WidgetConfigFeatures{
 			AIEnabled:       settings.AIEnabled,
 			ShowTalkToHuman: settings.ShowTalkToHuman,
-			FileUploads:     false,
+			FileUploads:     settings.FileUploadsEnabled,
 			PreChatForm:     settings.RequireEmailBeforeChat,
 			RequirePhone:    settings.RequirePhoneAfterEmail,
 			CSATRating:      settings.CSATEnabled,
+			ForceIdentify: settings.ForceVisitorIdentity,
 		},
 		HelpSpaces: helpSpaces,
 	}, nil

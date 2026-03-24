@@ -86,6 +86,9 @@ type SupportMessage struct {
 	EmailNotifiedAt   *time.Time `json:"email_notified_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// Virtual field — populated by service layer, not stored in DB.
+	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
@@ -152,9 +155,10 @@ type CreateConversationRequest struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
-	Content     string `json:"content"`
-	IsInternal  bool   `json:"is_internal"`
-	MessageType string `json:"message_type"` // reply, csat_survey, system
+	Content       string   `json:"content"`
+	IsInternal    bool     `json:"is_internal"`
+	MessageType   string   `json:"message_type"` // reply, csat_survey, system
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 // LinkStoryRequest links a conversation to a story.
@@ -238,7 +242,8 @@ type WidgetIdentifyRequest struct {
 
 // WidgetMessageSendData is the payload for message:send.
 type WidgetMessageSendData struct {
-	Content string `json:"content"`
+	Content       string   `json:"content"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 // WidgetTypingData is the payload for typing:start / typing:stop.
@@ -263,15 +268,16 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID             string  `json:"id"`
-	ConversationID string  `json:"conversation_id"`
-	Content        string  `json:"content"`
-	SenderType     string  `json:"sender_type"`
-	SenderName     *string `json:"sender_name"`
-	SenderAvatar   *string `json:"sender_avatar"`
-	Metadata       *string `json:"metadata,omitempty"`
-	ViaChannel     string  `json:"via_channel,omitempty"`
-	CreatedAt      string  `json:"created_at"`
+	ID             string                     `json:"id"`
+	ConversationID string                     `json:"conversation_id"`
+	Content        string                     `json:"content"`
+	SenderType     string                     `json:"sender_type"`
+	SenderName     *string                    `json:"sender_name"`
+	SenderAvatar   *string                    `json:"sender_avatar"`
+	Metadata       *string                    `json:"metadata,omitempty"`
+	ViaChannel     string                     `json:"via_channel,omitempty"`
+	Attachments    []SupportAttachmentPayload `json:"attachments,omitempty"`
+	CreatedAt      string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
@@ -326,6 +332,9 @@ type SupportInboxSettings struct {
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
+	// Escalation
+	EscalationMessage string `json:"escalation_message"` // message shown when AI hands off to human
+
 	// Handoff Routing
 	HandoffBehavior string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
 	HandoffTeamID   *string `json:"handoff_team_id"`
@@ -360,6 +369,12 @@ type SupportInboxSettings struct {
 
 	// CSAT
 	CSATEnabled bool `json:"csat_enabled"`
+
+	// File Uploads
+	FileUploadsEnabled bool `json:"file_uploads_enabled"`
+
+	// Email Transcript
+	ForceVisitorIdentity bool `json:"force_visitor_identity"`
 }
 
 // DefaultSupportInboxSettings returns settings with sensible defaults.
@@ -378,6 +393,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIMaxFollowups:         3,
 		AIAutoResolveTimeout:   24,
 		ShowTalkToHuman:        true,
+		EscalationMessage:      "Let me connect you with a team member who can help further.",
 		HandoffBehavior:        "unassigned",
 		HandoffTeamID:          nil,
 		BusinessHoursEnabled:   false,
@@ -407,6 +423,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		LauncherPosition:       "bottom_right",
 		LauncherIcon:           "chat_bubble",
 		CSATEnabled:            false,
+		FileUploadsEnabled:     true,
+		ForceVisitorIdentity: false,
 	}
 }
 
@@ -425,6 +443,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIMaxFollowups         *int                        `json:"ai_max_followups,omitempty"`
 	AIAutoResolveTimeout   *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
+	EscalationMessage      *string                     `json:"escalation_message,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
 	BusinessHoursEnabled   *bool                       `json:"business_hours_enabled,omitempty"`
@@ -446,6 +465,77 @@ type UpdateInstallationSettingsRequest struct {
 	LauncherPosition       *string                     `json:"launcher_position,omitempty"`
 	LauncherIcon           *string                     `json:"launcher_icon,omitempty"`
 	CSATEnabled            *bool                       `json:"csat_enabled,omitempty"`
+	FileUploadsEnabled     *bool                       `json:"file_uploads_enabled,omitempty"`
+	ForceVisitorIdentity *bool                       `json:"force_visitor_identity,omitempty"`
+}
+
+// SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.
+type SupportAIPreviewRequest struct {
+	Message        string                        `json:"message"`
+	ConversationID *string                       `json:"conversation_id,omitempty"`
+	History        []SupportAIPreviewHistoryTurn `json:"history,omitempty"`
+	IncludeAnswer  *bool                         `json:"include_answer,omitempty"`
+	MaxResults     *int                          `json:"max_results,omitempty"`
+}
+
+// SupportAIPreviewHistoryTurn is a simplified conversation turn used for preview requests.
+type SupportAIPreviewHistoryTurn struct {
+	SenderType  string `json:"sender_type"`
+	MessageType string `json:"message_type,omitempty"`
+	Content     string `json:"content"`
+}
+
+// SupportAIPreviewResponse is the structured dry-run response for support AI previewing.
+type SupportAIPreviewResponse struct {
+	ConversationSource  string                    `json:"conversation_source"`
+	ConfidenceThreshold float64                   `json:"confidence_threshold"`
+	TotalTokensUsed     int                       `json:"total_tokens_used"`
+	FinalDecision       string                    `json:"final_decision"`
+	FinalReason         string                    `json:"final_reason"`
+	QueryPlan           SupportAIPreviewQueryPlan `json:"query_plan"`
+	Retrieval           SupportAIPreviewRetrieval `json:"retrieval"`
+	Answer              *SupportAIPreviewAnswer   `json:"answer,omitempty"`
+}
+
+type SupportAIPreviewQueryPlan struct {
+	Decision           string   `json:"decision"`
+	StandaloneQuery    string   `json:"standalone_query"`
+	SearchQueries      []string `json:"search_queries"`
+	ClarifyingQuestion string   `json:"clarifying_question"`
+	Reason             string   `json:"reason"`
+	TokensUsed         int      `json:"tokens_used"`
+	FallbackUsed       bool     `json:"fallback_used"`
+	Error              string   `json:"error,omitempty"`
+}
+
+type SupportAIPreviewRetrieval struct {
+	QueryCount  int                            `json:"query_count"`
+	ResultCount int                            `json:"result_count"`
+	Results     []SupportAIPreviewSearchResult `json:"results"`
+	Error       string                         `json:"error,omitempty"`
+}
+
+type SupportAIPreviewSearchResult struct {
+	ReferenceID   string  `json:"reference_id"`
+	SourceType    string  `json:"source_type"`
+	Title         string  `json:"title"`
+	URL           string  `json:"url,omitempty"`
+	ChunkIndex    int     `json:"chunk_index"`
+	CombinedScore float64 `json:"combined_score"`
+	VectorScore   float64 `json:"vector_score"`
+	LexicalScore  float64 `json:"lexical_score"`
+	Snippet       string  `json:"snippet"`
+}
+
+type SupportAIPreviewAnswer struct {
+	Content            string   `json:"content"`
+	CanAnswer          bool     `json:"can_answer"`
+	SourceDocIDs       []string `json:"source_doc_ids"`
+	LLMConfidence      float64  `json:"llm_confidence"`
+	GroundedConfidence float64  `json:"grounded_confidence"`
+	TokensUsed         int      `json:"tokens_used"`
+	Provider           string   `json:"provider"`
+	Model              string   `json:"model"`
 }
 
 // WidgetToken is the token format expected by the events-pipeline rust-capture service.
@@ -482,6 +572,7 @@ type WidgetConfigFeatures struct {
 	PreChatForm     bool `json:"preChatForm"`
 	RequirePhone    bool `json:"requirePhone"`
 	CSATRating      bool `json:"csatRating"`
+	ForceIdentify bool `json:"forceIdentify"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.

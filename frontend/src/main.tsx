@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/authStore'
+import { startTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -36,7 +37,15 @@ function InnerApp() {
 
   useEffect(() => {
     useAuthStore.getState().initialize()
+    setupVisibilityRefresh()
   }, [])
+
+  // Start proactive token refresh when user is authenticated
+  useEffect(() => {
+    if (user) {
+      startTokenRefreshTimer()
+    }
+  }, [user])
 
   // Force router to re-evaluate routes when auth state changes
   useEffect(() => {

@@ -125,7 +125,7 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	msg, err := h.supportService.WidgetCreateMessage(r.Context(), req.SessionToken, req.Content)
+	msg, err := h.supportService.WidgetCreateMessage(r.Context(), req.SessionToken, req.Content, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -199,19 +199,17 @@ func (h *SupportInboxWidgetHandler) Identify(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "anonymous_id is required")
 		return
 	}
-	if req.Email == "" {
-		writeError(w, http.StatusBadRequest, "email is required")
-		return
-	}
-
 	source := req.Source
 	if source == "" {
 		source = "sdk_identify"
 	}
 
-	if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.Email, req.Name, source); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	// Allow empty email — visitor skipped identification.
+	if req.Email != "" {
+		if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.Email, req.Name, source); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})

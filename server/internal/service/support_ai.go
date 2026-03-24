@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -36,6 +37,14 @@ type AIResponseContract struct {
 	CanAnswer    bool     `json:"can_answer"`
 	SourceDocIDs []string `json:"source_doc_ids"`
 	Confidence   float64  `json:"confidence"`
+}
+
+type SupportQueryPlanContract struct {
+	Decision           string   `json:"decision"`
+	StandaloneQuery    string   `json:"standalone_query"`
+	SearchQueries      []string `json:"search_queries"`
+	ClarifyingQuestion string   `json:"clarifying_question"`
+	Reason             string   `json:"reason"`
 }
 
 // isAIContract checks whether a raw JSON string contains the keys expected
@@ -204,6 +213,15 @@ const (
 	knowledgeSourceTypeDocs    = "docs"
 	knowledgeSourceTypeContent = "content"
 	helpinAIDisplayName        = "Helpin AI"
+	supportDecisionAnswer      = "answer"
+	supportDecisionClarify     = "clarify"
+	supportDecisionHandoff     = "handoff"
+)
+
+var (
+	ErrSupportPreviewInvalidInput         = errors.New("invalid support preview input")
+	ErrSupportPreviewAgentNotFound        = errors.New("support preview agent not found")
+	ErrSupportPreviewConversationNotFound = errors.New("support preview conversation not found")
 )
 
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
@@ -358,6 +376,15 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	// 5. Count AI turns
 	agentID := strings.TrimSpace(*settings.AIAgentID)
 	aiTurnCount := s.countAITurns(ctx, conversationID, agentID)
+	slog.InfoContext(ctx, "support AI processing started",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"message_id", msg.ID,
+		"agent_id", agentID,
+		"ai_turn_count", aiTurnCount,
+		"customer_message_preview", safeLogPreview(msg.Content, 120),
+		"customer_message_length", len(strings.TrimSpace(msg.Content)),
+	)
 
 	// 6. Confirmation detection — before generating a new reply
 	if aiTurnCount > 0 && isConfirmationMessage(msg.Content) {
@@ -368,11 +395,23 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"ai_resolution_type": "confirmed",
 		})
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		slog.InfoContext(ctx, "support AI conversation resolved from customer confirmation",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+		)
 		return nil
 	}
 
 	// 7. Check max follow-ups
 	if aiTurnCount >= settings.AIMaxFollowups {
+		slog.InfoContext(ctx, "support AI escalating due to max followups",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"ai_turn_count", aiTurnCount,
+			"max_followups", settings.AIMaxFollowups,
+		)
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "max_followups_reached"); err != nil {
 			return err
 		}
@@ -382,6 +421,13 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	// 8. Hard escalation rules check
 	if reason := checkHardEscalation(msg.Content); reason != "" {
+		slog.InfoContext(ctx, "support AI hard escalation rule matched",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"reason", reason,
+			"customer_message_preview", safeLogPreview(msg.Content, 120),
+		)
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, reason); err != nil {
 			return err
 		}
@@ -389,7 +435,31 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 9. Load agent config
+	// 9. Load conversation history (moved before smart escalation check).
+	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
+		history = nil
+	}
+	historyForPrompt := sanitizeConversationHistory(history, msg.ID)
+
+	// 10. Smart escalation signals (pre-LLM — no cost).
+	if signal := evaluatePreLLMEscalation(msg.Content, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
+		slog.InfoContext(ctx, "support AI smart escalation triggered",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"reason", signal.Reason,
+			"score", signal.Score,
+		)
+		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		return nil
+	}
+
+	// 11. Load agent config
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return fmt.Errorf("get agent %s: %w", agentID, err)
@@ -402,25 +472,11 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 10. Send typing indicator
+	// 12. Send typing indicator
 	s.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 	defer s.publishTypingIndicator(ctx, workspaceID, conversationID, false)
 
-	// 11. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
-	searchResults, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, msg.Content)
-	if err != nil {
-		slog.ErrorContext(ctx, "search knowledge base failed", "error", err)
-	}
-	knowledgeContext := buildKnowledgeContext(searchResults)
-
-	// 12. Load conversation history
-	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-	if err != nil {
-		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
-		history = nil
-	}
-
-	// 14. Check token budget
+	// 12. Check token budget before planner + answer model usage.
 	if !s.checkTokenBudget(agent) {
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "token_budget_exhausted"); err != nil {
 			return err
@@ -429,9 +485,87 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 15. Generate AI response
 	providerName, modelName := resolveSupportLLMConfig(agent)
-	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, history, knowledgeContext, msg.Content, providerName, modelName)
+
+	// 13. Plan how to handle the message: answer, clarify, or hand off.
+	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, msg.Content)
+	if err != nil {
+		slog.WarnContext(ctx, "support query planning failed; using direct retrieval fallback",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"customer_message_preview", safeLogPreview(msg.Content, 120),
+		)
+		queryPlan = defaultSupportQueryPlan(msg.Content)
+	}
+	slog.InfoContext(ctx, "support AI query plan ready",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"message_id", msg.ID,
+		"decision", queryPlan.Decision,
+		"reason", queryPlan.Reason,
+		"standalone_query_preview", safeLogPreview(queryPlan.StandaloneQuery, 140),
+		"search_query_count", len(queryPlan.SearchQueries),
+		"search_query_previews", safeLogPreviewList(queryPlan.SearchQueries, 4, 100),
+		"clarifying_question_preview", safeLogPreview(queryPlan.ClarifyingQuestion, 140),
+		"planner_tokens", plannerTokens,
+	)
+
+	switch queryPlan.Decision {
+	case supportDecisionClarify:
+		slog.InfoContext(ctx, "support AI sending clarification",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"clarifying_question_preview", safeLogPreview(queryPlan.ClarifyingQuestion, 140),
+			"planner_reason", queryPlan.Reason,
+		)
+		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil)
+		if err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &aiMsg.ID, plannerTokens)
+		return nil
+	case supportDecisionHandoff:
+		slog.InfoContext(ctx, "support AI planner requested handoff",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"planner_reason", queryPlan.Reason,
+		)
+		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, queryPlan.Reason); err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens)
+		return nil
+	}
+
+	// 14. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
+	searchResults, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, queryPlan.SearchQueries)
+	if err != nil {
+		slog.ErrorContext(ctx, "search knowledge base failed",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"search_query_previews", safeLogPreviewList(queryPlan.SearchQueries, 4, 100),
+		)
+	}
+	slog.InfoContext(ctx, "support AI retrieval completed",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"message_id", msg.ID,
+		"search_query_count", len(queryPlan.SearchQueries),
+		"search_result_count", len(searchResults),
+		"top_results", summarizeKnowledgeResults(searchResults, 5),
+	)
+	knowledgeContext := buildKnowledgeContext(searchResults)
+
+	// 15. Generate AI response
+	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, historyForPrompt, knowledgeContext, msg.Content, providerName, modelName)
 	if err != nil {
 		slog.ErrorContext(ctx, "AI response generation failed",
 			"workspace_id", workspaceID,
@@ -441,14 +575,45 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return fmt.Errorf("generate AI response: %w", err)
 	}
 
+	totalTokens := plannerTokens + tokensUsed
+
 	// 16. Record token usage atomically
-	s.recordTokenUsage(ctx, agent.ID, tokensUsed)
+	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
 	// 17. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
+	slog.InfoContext(ctx, "support AI response evaluated",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"message_id", msg.ID,
+		"can_answer", response.CanAnswer,
+		"llm_confidence", response.Confidence,
+		"grounded_confidence", confidence,
+		"confidence_threshold", settings.AIConfidenceThreshold,
+		"search_result_count", len(searchResults),
+		"source_doc_ids", response.SourceDocIDs,
+		"total_tokens_used", totalTokens,
+	)
 
 	// 18. Decide: grounded reply or escalate
 	if response.CanAnswer && confidence >= settings.AIConfidenceThreshold {
+		// 18a. Check for declining satisfaction trend before sending reply.
+		if signal := evaluatePostAnswerEscalation(historyForPrompt, confidence); signal != nil {
+			slog.InfoContext(ctx, "support AI declining satisfaction escalation",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"confidence", confidence,
+				"reason", signal.Reason,
+				"score", signal.Score,
+			)
+			if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+				return err
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
+			return nil
+		}
+
 		cleanContent := stripPII(response.Content)
 		publicSources := buildAISources(response.SourceDocIDs, searchResults)
 
@@ -457,7 +622,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			AISources:    publicSources,
 			AIConfidence: confidence,
 			AIModel:      modelName,
-			AITokensUsed: tokensUsed,
+			AITokensUsed: totalTokens,
 			AIAgentID:    agentID,
 		}
 		metadataJSON, _ := json.Marshal(metadata)
@@ -480,7 +645,16 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		// Broadcast to widget + inbox
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, aiMsg, "ai:"+agentID))
 
-		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &aiMsg.ID, tokensUsed)
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &aiMsg.ID, totalTokens)
+		slog.InfoContext(ctx, "support AI reply sent",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"reply_message_id", aiMsg.ID,
+			"confidence", confidence,
+			"source_count", len(publicSources),
+			"reply_preview", safeLogPreview(cleanContent, 160),
+		)
 
 		// Update AI state + turn count
 		pending := "pending"
@@ -490,10 +664,18 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
 		})
 	} else {
+		slog.InfoContext(ctx, "support AI escalating after response evaluation",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"can_answer", response.CanAnswer,
+			"grounded_confidence", confidence,
+			"confidence_threshold", settings.AIConfidenceThreshold,
+		)
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "low_confidence"); err != nil {
 			return err
 		}
-		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, tokensUsed)
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
 	}
 
 	return nil
@@ -501,13 +683,19 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
-	// 1. Create system message
+	// 1. Create system message — use customizable escalation message from settings
+	escalationContent := "Let me connect you with a team member who can help further."
+	if settings, err := s.loadSettings(ctx, workspaceID); err == nil && settings != nil && settings.EscalationMessage != "" {
+		escalationContent = settings.EscalationMessage
+	}
+
 	systemMsg := &model.SupportMessage{
-		WorkspaceID:    workspaceID,
-		ConversationID: conversationID,
-		SenderType:     "agent",
-		MessageType:    "system",
-		Content:        "Let me connect you with a team member who can help further.",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "agent",
+		MessageType:       "system",
+		SenderDisplayName: strPtr(helpinAIDisplayName),
+		Content:           escalationContent,
 	}
 	if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
 		return fmt.Errorf("create escalation system message: %w", err)
@@ -568,6 +756,196 @@ func (s *SupportAIService) loadSettings(ctx context.Context, workspaceID string)
 	return &settings, nil
 }
 
+// PreviewSupportReply runs the support AI planner + retrieval + answer pipeline without side effects.
+func (s *SupportAIService) PreviewSupportReply(
+	ctx context.Context,
+	workspaceID, agentID string,
+	req model.SupportAIPreviewRequest,
+) (*model.SupportAIPreviewResponse, error) {
+	if s == nil {
+		return nil, fmt.Errorf("support AI service not initialized")
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrSupportPreviewInvalidInput)
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("%w: agent_id is required", ErrSupportPreviewInvalidInput)
+	}
+	customerMessage := strings.TrimSpace(req.Message)
+	if customerMessage == "" {
+		return nil, fmt.Errorf("%w: message is required", ErrSupportPreviewInvalidInput)
+	}
+	if s.agentRepo == nil {
+		return nil, fmt.Errorf("agent repository is not configured")
+	}
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("get agent: %w", err)
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("%w: %s", ErrSupportPreviewAgentNotFound, agentID)
+	}
+
+	history, conversationSource, err := s.resolvePreviewHistory(ctx, workspaceID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	settings := model.DefaultSupportInboxSettings()
+	if s.installationRepo != nil {
+		if loaded, err := s.loadSettings(ctx, workspaceID); err == nil && loaded != nil {
+			settings = *loaded
+		}
+	}
+
+	includeAnswer := true
+	if req.IncludeAnswer != nil {
+		includeAnswer = *req.IncludeAnswer
+	}
+
+	return s.previewSupportReply(
+		ctx,
+		workspaceID,
+		agent,
+		history,
+		customerMessage,
+		includeAnswer,
+		normalizePreviewMaxResults(req.MaxResults),
+		settings.AIConfidenceThreshold,
+		conversationSource,
+	)
+}
+
+func (s *SupportAIService) resolvePreviewHistory(
+	ctx context.Context,
+	workspaceID string,
+	req model.SupportAIPreviewRequest,
+) ([]model.SupportMessage, string, error) {
+	if len(req.History) > 0 {
+		return sanitizeConversationHistory(previewHistoryToMessages(req.History), ""), "history", nil
+	}
+
+	if req.ConversationID != nil && strings.TrimSpace(*req.ConversationID) != "" {
+		conversationID := strings.TrimSpace(*req.ConversationID)
+		if s.conversationRepo != nil {
+			conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+			if err != nil {
+				return nil, "", fmt.Errorf("get conversation: %w", err)
+			}
+			if conv == nil {
+				return nil, "", fmt.Errorf("%w: %s", ErrSupportPreviewConversationNotFound, conversationID)
+			}
+		}
+		if s.messageRepo == nil {
+			return nil, "", fmt.Errorf("support message repository is not configured")
+		}
+		history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+		if err != nil {
+			return nil, "", fmt.Errorf("list conversation history: %w", err)
+		}
+		return sanitizeConversationHistory(history, ""), "conversation", nil
+	}
+
+	return nil, "none", nil
+}
+
+func (s *SupportAIService) previewSupportReply(
+	ctx context.Context,
+	workspaceID string,
+	agent *model.Agent,
+	history []model.SupportMessage,
+	customerMessage string,
+	includeAnswer bool,
+	maxResults int,
+	confidenceThreshold float64,
+	conversationSource string,
+) (*model.SupportAIPreviewResponse, error) {
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
+	}
+
+	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, customerMessage)
+	fallbackUsed := false
+	plannerError := ""
+	if plannerErr != nil {
+		fallbackUsed = true
+		plannerError = plannerErr.Error()
+		queryPlan = defaultSupportQueryPlan(customerMessage)
+	}
+
+	response := &model.SupportAIPreviewResponse{
+		ConversationSource:  conversationSource,
+		ConfidenceThreshold: confidenceThreshold,
+		FinalDecision:       queryPlan.Decision,
+		FinalReason:         queryPlan.Reason,
+		TotalTokensUsed:     plannerTokens,
+		QueryPlan: model.SupportAIPreviewQueryPlan{
+			Decision:           queryPlan.Decision,
+			StandaloneQuery:    queryPlan.StandaloneQuery,
+			SearchQueries:      cloneStringSlice(queryPlan.SearchQueries),
+			ClarifyingQuestion: queryPlan.ClarifyingQuestion,
+			Reason:             queryPlan.Reason,
+			TokensUsed:         plannerTokens,
+			FallbackUsed:       fallbackUsed,
+			Error:              plannerError,
+		},
+		Retrieval: model.SupportAIPreviewRetrieval{
+			QueryCount: len(queryPlan.SearchQueries),
+			Results:    []model.SupportAIPreviewSearchResult{},
+		},
+	}
+
+	switch queryPlan.Decision {
+	case supportDecisionClarify, supportDecisionHandoff:
+		return response, nil
+	}
+
+	searchResults, retrievalErr := s.loadKnowledgeChunks(ctx, workspaceID, agent.ID, queryPlan.SearchQueries)
+	if retrievalErr != nil {
+		response.Retrieval.Error = retrievalErr.Error()
+		searchResults = nil
+	}
+	if maxResults > 0 && len(searchResults) > maxResults {
+		searchResults = searchResults[:maxResults]
+	}
+	response.Retrieval.ResultCount = len(searchResults)
+	response.Retrieval.Results = previewSearchResults(searchResults)
+
+	if !includeAnswer {
+		return response, nil
+	}
+
+	providerName, modelName := resolveSupportLLMConfig(agent)
+	answer, answerTokens, err := s.generateResponse(ctx, agent, nil, history, buildKnowledgeContext(searchResults), customerMessage, providerName, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("generate preview response: %w", err)
+	}
+	response.TotalTokensUsed += answerTokens
+
+	groundedConfidence := evaluateConfidence(searchResults, answer)
+	response.Answer = &model.SupportAIPreviewAnswer{
+		Content:            answer.Content,
+		CanAnswer:          answer.CanAnswer,
+		SourceDocIDs:       cloneStringSlice(answer.SourceDocIDs),
+		LLMConfidence:      answer.Confidence,
+		GroundedConfidence: groundedConfidence,
+		TokensUsed:         answerTokens,
+		Provider:           providerName,
+		Model:              modelName,
+	}
+
+	if answer.CanAnswer && groundedConfidence >= confidenceThreshold {
+		response.FinalDecision = supportDecisionAnswer
+		response.FinalReason = queryPlan.Reason
+		return response, nil
+	}
+
+	response.FinalDecision = supportDecisionHandoff
+	response.FinalReason = "low_confidence"
+	return response, nil
+}
+
 // generateResponse calls the LLM with knowledge context and conversation history.
 func (s *SupportAIService) generateResponse(
 	ctx context.Context,
@@ -586,13 +964,7 @@ func (s *SupportAIService) generateResponse(
 	systemPrompt := buildAISystemPrompt(agent, knowledgeContext)
 
 	messages := make([]llm.Message, 0, len(history)+1)
-	for _, msg := range history {
-		role := "user"
-		if msg.SenderType == "agent" || msg.SenderType == "user" {
-			role = "assistant"
-		}
-		messages = append(messages, llm.Message{Role: role, Content: msg.Content})
-	}
+	messages = append(messages, buildConversationMessages(history)...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
 		Content: "<customer_message>\n" + customerMessage + "\n</customer_message>",
@@ -616,6 +988,8 @@ func (s *SupportAIService) generateResponse(
 
 	if !ok {
 		slog.ErrorContext(ctx, "AI response JSON parse failed — refusing ungrounded reply",
+			"provider", providerName,
+			"model", modelName,
 			"raw_content_prefix", truncateLog(resp.Content, 200),
 		)
 		return &AIResponseContract{
@@ -625,13 +999,152 @@ func (s *SupportAIService) generateResponse(
 		}, totalTokens, nil
 	}
 
-	slog.Info("AI response parsed",
+	slog.InfoContext(ctx, "AI response parsed",
+		"provider", providerName,
+		"model", modelName,
 		"can_answer", contract.CanAnswer,
 		"confidence", contract.Confidence,
 		"source_count", len(contract.SourceDocIDs),
 	)
 
 	return &contract, totalTokens, nil
+}
+
+func sanitizeConversationHistory(history []model.SupportMessage, currentMessageID string) []model.SupportMessage {
+	if len(history) == 0 {
+		return nil
+	}
+
+	sanitized := make([]model.SupportMessage, 0, len(history))
+	for _, msg := range history {
+		if currentMessageID != "" && msg.ID == currentMessageID {
+			continue
+		}
+		if msg.MessageType == "system" {
+			continue
+		}
+		if strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		sanitized = append(sanitized, msg)
+	}
+	return sanitized
+}
+
+func buildConversationMessages(history []model.SupportMessage) []llm.Message {
+	if len(history) == 0 {
+		return nil
+	}
+
+	messages := make([]llm.Message, 0, len(history))
+	for _, msg := range history {
+		role := "user"
+		switch msg.SenderType {
+		case "agent", "user", "ai":
+			role = "assistant"
+		}
+		messages = append(messages, llm.Message{Role: role, Content: msg.Content})
+	}
+	return messages
+}
+
+func previewHistoryToMessages(history []model.SupportAIPreviewHistoryTurn) []model.SupportMessage {
+	if len(history) == 0 {
+		return nil
+	}
+
+	messages := make([]model.SupportMessage, 0, len(history))
+	for _, turn := range history {
+		messageType := strings.TrimSpace(turn.MessageType)
+		if messageType == "" {
+			messageType = "reply"
+		}
+		messages = append(messages, model.SupportMessage{
+			SenderType:  strings.TrimSpace(turn.SenderType),
+			MessageType: messageType,
+			Content:     strings.TrimSpace(turn.Content),
+		})
+	}
+	return messages
+}
+
+func normalizePreviewMaxResults(raw *int) int {
+	if raw == nil {
+		return 8
+	}
+	value := *raw
+	if value <= 0 {
+		return 8
+	}
+	if value > 12 {
+		return 12
+	}
+	return value
+}
+
+func previewSearchResults(results []KnowledgeSearchResult) []model.SupportAIPreviewSearchResult {
+	if len(results) == 0 {
+		return []model.SupportAIPreviewSearchResult{}
+	}
+
+	preview := make([]model.SupportAIPreviewSearchResult, 0, len(results))
+	for _, result := range results {
+		preview = append(preview, model.SupportAIPreviewSearchResult{
+			ReferenceID:   result.ReferenceID,
+			SourceType:    result.SourceType,
+			Title:         result.Title,
+			URL:           result.URL,
+			ChunkIndex:    result.ChunkIndex,
+			CombinedScore: result.CombinedScore,
+			VectorScore:   result.VectorScore,
+			LexicalScore:  result.LexicalScore,
+			Snippet:       excerptText(result.Content, 220),
+		})
+	}
+	return preview
+}
+
+func (s *SupportAIService) publishAIReply(
+	ctx context.Context,
+	workspaceID, conversationID, agentID, content, modelName string,
+	tokensUsed int,
+	confidence float64,
+	sources []AISource,
+) (*model.SupportMessage, error) {
+	metadata := AIMessageMetadata{
+		AIAutoReply:  true,
+		AISources:    sources,
+		AIConfidence: confidence,
+		AIModel:      modelName,
+		AITokensUsed: tokensUsed,
+		AIAgentID:    agentID,
+	}
+	metadataJSON, _ := json.Marshal(metadata)
+
+	aiMsg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "ai",
+		SenderAgentID:     &agentID,
+		SenderDisplayName: strPtr(helpinAIDisplayName),
+		Content:           stripPII(strings.TrimSpace(content)),
+		MessageType:       "reply",
+		Metadata:          string(metadataJSON),
+	}
+	if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
+		return nil, fmt.Errorf("create AI message: %w", err)
+	}
+
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, aiMsg, "ai:"+agentID))
+
+	pending := "pending"
+	_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+		"ai_state":          &pending,
+		"assigned_agent_id": &agentID,
+		"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
+	})
+
+	return aiMsg, nil
 }
 
 // buildAISystemPrompt constructs the LLM system prompt with knowledge articles.
@@ -679,51 +1192,74 @@ RESPONSE FORMAT (respond with valid JSON only):
 	return sb.String()
 }
 
-// expandQuery uses a lightweight LLM to generate alternative search queries
-// for the RAG pipeline. Returns the original query plus up to 3 alternatives.
-// On any failure, gracefully degrades to returning only the original query.
-func (s *SupportAIService) expandQuery(ctx context.Context, originalQuery string) []string {
-	if s.llmProvider == nil || s.queryExpansionModel == "" {
-		return []string{originalQuery}
+func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model.SupportMessage, customerMessage string) (SupportQueryPlanContract, int, error) {
+	current := strings.TrimSpace(customerMessage)
+	fallback := defaultSupportQueryPlan(current)
+	if current == "" {
+		return fallback, 0, nil
+	}
+	if s.llmProvider == nil || strings.TrimSpace(s.queryExpansionModel) == "" {
+		return fallback, 0, nil
 	}
 
+	transcript := buildConversationTranscript(history, 8)
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Provider: s.queryExpansionProvider,
 		Model:    s.queryExpansionModel,
-		SystemPrompt: "Generate 3 alternative search queries for finding relevant support documentation. " +
-			"Each should rephrase the question using different words, synonyms, or angles that might match " +
-			"help articles, FAQs, or product docs. Return a JSON array of 3 strings. Only return the JSON array, nothing else.",
+		SystemPrompt: `You are a support retrieval planner.
+You do not answer the customer. You only decide how the support system should proceed.
+
+Choose exactly one decision:
+- "answer": the latest message can be resolved into a standalone retrieval intent from the recent conversation context.
+- "clarify": the message is ambiguous or underspecified, and one short clarification question would unblock retrieval.
+- "handoff": a human is required because the customer asked for a human, or the request needs account-specific action, billing/refund handling, security/privacy review, or other human-only intervention.
+
+Rules:
+- Do not choose "handoff" just because the message is short, vague, or a fragment. Use "clarify" for that.
+- If recent conversation resolves the fragment, choose "answer".
+- Preserve concrete product names, competitors, feature names, and entities from the conversation.
+- For "answer", produce one standalone_query and 2 to 4 diverse search_queries for RAG retrieval.
+- For "clarify", ask exactly one short clarifying question.
+- For "handoff", keep the reason short and machine-readable using snake_case.
+- Never invent facts that are not present in the message history.
+
+Return valid JSON only in this shape:
+{
+  "decision": "answer",
+  "standalone_query": "standalone retrieval query",
+  "search_queries": ["query 1", "query 2"],
+  "clarifying_question": "",
+  "reason": "resolved_from_context"
+}`,
 		Messages: []llm.Message{
-			{Role: "user", Content: originalQuery},
+			{
+				Role: "user",
+				Content: "<recent_conversation>\n" + transcript + "\n</recent_conversation>\n\n" +
+					"<latest_customer_message>\n" + current + "\n</latest_customer_message>",
+			},
 		},
-		Temperature: 0.7,
+		Temperature: 0.1,
 		MaxTokens:   256,
 		JSONMode:    true,
 	})
 	if err != nil {
-		slog.WarnContext(ctx, "query expansion LLM call failed; using original query only",
-			"error", err, "query", originalQuery)
-		return []string{originalQuery}
+		return fallback, 0, err
 	}
 
-	var expanded []string
-	if err := json.Unmarshal([]byte(resp.Content), &expanded); err != nil {
-		slog.WarnContext(ctx, "query expansion returned invalid JSON; using original query only",
-			"error", err, "raw_response", resp.Content)
-		return []string{originalQuery}
+	totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
+	contract, err := parseSupportQueryPlan(resp.Content)
+	if err != nil {
+		return fallback, totalTokens, err
 	}
 
-	// Cap at 3 expanded queries.
-	if len(expanded) > 3 {
-		expanded = expanded[:3]
-	}
-
-	queries := append([]string{originalQuery}, expanded...)
-	slog.DebugContext(ctx, "query expansion completed",
-		"original_query", originalQuery,
-		"expanded_queries", expanded,
-		"total_queries", len(queries))
-	return queries
+	normalized := normalizeSupportQueryPlan(contract, current)
+	slog.DebugContext(ctx, "support query plan generated",
+		"decision", normalized.Decision,
+		"standalone_query_preview", safeLogPreview(normalized.StandaloneQuery, 140),
+		"search_query_previews", safeLogPreviewList(normalized.SearchQueries, 4, 100),
+		"reason", normalized.Reason,
+	)
+	return normalized, totalTokens, nil
 }
 
 // searchSingleQuery runs embedding + hybrid search for a single query string
@@ -746,7 +1282,9 @@ func (s *SupportAIService) searchSingleQuery(
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "support query embedding failed; falling back to lexical retrieval",
-				"error", err, "query", query)
+				"error", err,
+				"query_preview", safeLogPreview(query, 120),
+			)
 		} else if len(resp.Vectors) > 0 {
 			queryEmbedding = formatVector(resp.Vectors[0])
 		}
@@ -804,7 +1342,7 @@ func (s *SupportAIService) searchSingleQuery(
 	return results, nil
 }
 
-func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID, agentID, query string) ([]KnowledgeSearchResult, error) {
+func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID, agentID string, queries []string) ([]KnowledgeSearchResult, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -843,8 +1381,10 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 		return nil, nil
 	}
 
-	// Expand the query into alternative search queries.
-	queries := s.expandQuery(ctx, query)
+	queries = dedupeQueries(queries)
+	if len(queries) == 0 {
+		return nil, nil
+	}
 
 	// Run searches concurrently for each query variant.
 	var mu sync.Mutex
@@ -883,7 +1423,7 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 		deduped = append(deduped, result)
 	}
 
-	reranked := rerankKnowledgeResults(query, deduped)
+	reranked := rerankKnowledgeResults(queries[0], deduped)
 
 	// Cap final results to avoid oversized context.
 	if len(reranked) > 12 {
@@ -999,6 +1539,232 @@ func rerankKnowledgeResults(query string, results []KnowledgeSearchResult) []Kno
 	return final
 }
 
+func parseSupportQueryPlan(raw string) (SupportQueryPlanContract, error) {
+	candidate := strings.TrimSpace(raw)
+	if strings.HasPrefix(candidate, "```") {
+		if idx := strings.Index(candidate, "\n"); idx != -1 {
+			candidate = candidate[idx+1:]
+		}
+		if idx := strings.LastIndex(candidate, "```"); idx != -1 {
+			candidate = candidate[:idx]
+		}
+		candidate = strings.TrimSpace(candidate)
+	}
+
+	var contract SupportQueryPlanContract
+	if err := json.Unmarshal([]byte(candidate), &contract); err != nil {
+		return SupportQueryPlanContract{}, err
+	}
+	return contract, nil
+}
+
+func defaultSupportQueryPlan(customerMessage string) SupportQueryPlanContract {
+	current := strings.TrimSpace(customerMessage)
+	if current == "" {
+		return SupportQueryPlanContract{
+			Decision:      supportDecisionAnswer,
+			SearchQueries: []string{},
+		}
+	}
+	return SupportQueryPlanContract{
+		Decision:        supportDecisionAnswer,
+		StandaloneQuery: current,
+		SearchQueries:   []string{current},
+		Reason:          "planner_unavailable",
+	}
+}
+
+func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage string) SupportQueryPlanContract {
+	current := strings.TrimSpace(customerMessage)
+	normalized := defaultSupportQueryPlan(current)
+
+	switch strings.ToLower(strings.TrimSpace(plan.Decision)) {
+	case supportDecisionClarify:
+		question := strings.TrimSpace(plan.ClarifyingQuestion)
+		if question == "" {
+			return normalized
+		}
+		return SupportQueryPlanContract{
+			Decision:           supportDecisionClarify,
+			SearchQueries:      []string{},
+			ClarifyingQuestion: question,
+			Reason:             normalizedPlannerReason(plan.Reason, "needs_clarification"),
+		}
+	case supportDecisionHandoff:
+		return SupportQueryPlanContract{
+			Decision:      supportDecisionHandoff,
+			SearchQueries: []string{},
+			Reason:        normalizedPlannerReason(plan.Reason, "planner_handoff"),
+		}
+	default:
+		standalone := strings.TrimSpace(plan.StandaloneQuery)
+		if standalone == "" {
+			standalone = current
+		}
+		searchQueries := dedupeQueries(append([]string{standalone}, plan.SearchQueries...))
+		if len(searchQueries) == 0 && standalone != "" {
+			searchQueries = []string{standalone}
+		}
+		if len(searchQueries) == 0 && current != "" {
+			searchQueries = []string{current}
+		}
+		return SupportQueryPlanContract{
+			Decision:        supportDecisionAnswer,
+			StandaloneQuery: standalone,
+			SearchQueries:   searchQueries,
+			Reason:          normalizedPlannerReason(plan.Reason, "resolved_from_context"),
+		}
+	}
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
+}
+
+func buildConversationTranscript(history []model.SupportMessage, maxMessages int) string {
+	if len(history) == 0 || maxMessages <= 0 {
+		return ""
+	}
+
+	start := 0
+	if len(history) > maxMessages {
+		start = len(history) - maxMessages
+	}
+
+	var sb strings.Builder
+	for _, msg := range history[start:] {
+		role := "Customer"
+		switch msg.SenderType {
+		case "agent", "user", "ai":
+			role = "Assistant"
+		}
+		sb.WriteString(role)
+		sb.WriteString(": ")
+		sb.WriteString(strings.TrimSpace(msg.Content))
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func dedupeQueries(queries []string) []string {
+	if len(queries) == 0 {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	deduped := make([]string, 0, len(queries))
+	for _, query := range queries {
+		trimmed := strings.TrimSpace(query)
+		if trimmed == "" {
+			continue
+		}
+		key := normalizeQueryKey(trimmed)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, trimmed)
+	}
+	return deduped
+}
+
+func normalizedPlannerReason(raw, fallback string) string {
+	candidate := strings.ToLower(strings.TrimSpace(raw))
+	if candidate == "" {
+		return fallback
+	}
+	var sb strings.Builder
+	lastUnderscore := false
+	for _, r := range candidate {
+		switch {
+		case r >= 'a' && r <= 'z':
+			sb.WriteRune(r)
+			lastUnderscore = false
+		case r >= '0' && r <= '9':
+			sb.WriteRune(r)
+			lastUnderscore = false
+		default:
+			if !lastUnderscore && sb.Len() > 0 {
+				sb.WriteByte('_')
+				lastUnderscore = true
+			}
+		}
+	}
+	reason := strings.Trim(sb.String(), "_")
+	if reason == "" {
+		return fallback
+	}
+	return reason
+}
+
+func (s *SupportAIService) queryPlannerModelName() string {
+	if strings.TrimSpace(s.queryExpansionModel) != "" {
+		return strings.TrimSpace(s.queryExpansionModel)
+	}
+	return "support_query_planner"
+}
+
+func normalizeQueryKey(query string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(query))), " ")
+}
+
+func safeLogPreview(content string, maxLen int) string {
+	if maxLen <= 0 {
+		maxLen = 120
+	}
+	normalized := strings.Join(strings.Fields(stripPII(strings.TrimSpace(content))), " ")
+	if normalized == "" {
+		return ""
+	}
+	return truncateLog(normalized, maxLen)
+}
+
+func safeLogPreviewList(values []string, maxItems, maxLen int) []string {
+	if len(values) == 0 || maxItems <= 0 {
+		return nil
+	}
+	if len(values) > maxItems {
+		values = values[:maxItems]
+	}
+	previews := make([]string, 0, len(values))
+	for _, value := range values {
+		preview := safeLogPreview(value, maxLen)
+		if preview == "" {
+			continue
+		}
+		previews = append(previews, preview)
+	}
+	return previews
+}
+
+func summarizeKnowledgeResults(results []KnowledgeSearchResult, maxItems int) []string {
+	if len(results) == 0 || maxItems <= 0 {
+		return nil
+	}
+
+	if len(results) > maxItems {
+		results = results[:maxItems]
+	}
+
+	summary := make([]string, 0, len(results))
+	for _, result := range results {
+		summary = append(summary, fmt.Sprintf(
+			"%s score=%.3f vec=%.3f lex=%.3f",
+			result.ReferenceID,
+			result.CombinedScore,
+			result.VectorScore,
+			result.LexicalScore,
+		))
+	}
+	return summary
+}
+
 func knowledgeReferenceID(sourceType, id string) string {
 	return sourceType + ":" + id
 }
@@ -1101,7 +1867,7 @@ func (s *SupportAIService) countAITurns(ctx context.Context, conversationID, age
 	var count int64
 	s.db.WithContext(ctx).
 		Model(&model.SupportMessage{}).
-		Where("conversation_id = ? AND sender_type = ? AND sender_agent_id = ?", conversationID, "agent", agentID).
+		Where("conversation_id = ? AND sender_type IN ? AND sender_agent_id = ?", conversationID, []string{"agent", "ai"}, agentID).
 		Count(&count)
 	return int(count)
 }
@@ -1146,47 +1912,6 @@ func (s *SupportAIService) publishTypingIndicator(_ context.Context, workspaceID
 	})
 }
 
-// isConfirmationMessage checks if a customer message is a resolution confirmation.
-func isConfirmationMessage(content string) bool {
-	lower := strings.ToLower(strings.TrimSpace(content))
-	confirmPatterns := []string{
-		"thanks", "thank you", "that helped", "got it", "perfect",
-		"that works", "awesome", "great", "resolved", "solved",
-		"that's what i needed", "all good", "helpful",
-	}
-	for _, pattern := range confirmPatterns {
-		if strings.Contains(lower, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-// checkHardEscalation checks if a message matches hard escalation rules.
-func checkHardEscalation(content string) string {
-	lower := strings.ToLower(strings.TrimSpace(content))
-
-	// Customer explicitly asks for a human
-	humanPatterns := []string{
-		"talk to someone", "real person", "human agent", "talk to a human",
-		"speak to someone", "real agent", "live agent", "connect me",
-	}
-	for _, pattern := range humanPatterns {
-		if strings.Contains(lower, pattern) {
-			return "customer_requested_human"
-		}
-	}
-
-	// Billing/refund/account deletion topics
-	billingPatterns := []string{"refund", "billing", "cancel my account", "delete my account", "charge"}
-	for _, pattern := range billingPatterns {
-		if strings.Contains(lower, pattern) {
-			return "billing_topic"
-		}
-	}
-
-	return ""
-}
 
 // piiRegexes for stripping common PII patterns from AI responses.
 var piiRegexes = []*regexp.Regexp{

@@ -12,6 +12,7 @@ export type {
   WidgetConfig,
   AiSource,
   Attachment,
+  PendingAttachment,
 } from './types';
 
 export type { WidgetView } from './components/BottomNav';
@@ -36,6 +37,7 @@ export { HelpCollectionView } from './components/HelpCollectionView';
 export { HelpArticleView } from './components/HelpArticleView';
 export { ConversationView } from './components/ConversationView';
 export { ConversationListView } from './components/ConversationListView';
+export { ImageLightbox } from './components/ImageLightbox';
 export { loadEmojiCatalog } from './components/emoji-loader';
 export type { EmojiCatalog } from './components/emoji-catalog';
 
@@ -48,8 +50,9 @@ export interface MountWidgetOptions {
   messages?: Message[];
   isOpen?: boolean;
   onClose?: () => void;
-  onSendMessage?: (content: string) => void;
+  onSendMessage?: (content: string, attachmentIds?: string[]) => void;
   onSendMessageFromHome?: (content: string) => void;
+  onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
   onQuickReply?: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
@@ -75,6 +78,7 @@ export interface MountWidgetOptions {
     key: number;
     articleSlug: string;
   };
+  onImageClick?: (src: string, alt: string) => void;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -85,6 +89,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onClose = () => {},
     onSendMessage = () => {},
     onSendMessageFromHome = onSendMessage,
+    onUploadAttachment,
     onQuickReply = () => {},
     onTyping,
     showPreChatForm = false,
@@ -106,6 +111,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     widgetKey,
     host,
     openArticleRequest,
+    onImageClick,
   } = options;
 
   const tree = h(
@@ -118,6 +124,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       onClose,
       onSendMessage,
       onSendMessageFromHome,
+      onUploadAttachment,
       onQuickReply,
       onTyping,
       showPreChatForm,
@@ -136,6 +143,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       widgetKey,
       host,
       openArticleRequest,
+      onImageClick,
     }),
     showLauncher
       ? h(WidgetLauncher, {

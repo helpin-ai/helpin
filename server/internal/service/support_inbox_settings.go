@@ -62,6 +62,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.ShowTalkToHuman != nil {
 		current.ShowTalkToHuman = *patch.ShowTalkToHuman
 	}
+	if patch.EscalationMessage != nil {
+		current.EscalationMessage = *patch.EscalationMessage
+	}
 	if patch.HandoffBehavior != nil {
 		current.HandoffBehavior = *patch.HandoffBehavior
 	}
@@ -124,6 +127,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.CSATEnabled != nil {
 		current.CSATEnabled = *patch.CSATEnabled
+	}
+	if patch.FileUploadsEnabled != nil {
+		current.FileUploadsEnabled = *patch.FileUploadsEnabled
+	}
+	if patch.ForceVisitorIdentity != nil {
+		current.ForceVisitorIdentity = *patch.ForceVisitorIdentity
 	}
 	return current
 }

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
+import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -108,7 +109,7 @@ export function useVisitorContext(workspaceId: string, conversationId: string | 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { content: string; is_internal?: boolean }) =>
+    mutationFn: (payload: { content: string; is_internal?: boolean; attachment_ids?: string[] }) =>
       supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
     onSuccess: () => {
       if (conversationId) {
@@ -118,6 +119,42 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     },
     onError: (error: Error) => {
       toast.error('Failed to send message', { description: error.message });
+    },
+  });
+}
+
+export function useUploadSupportAttachment(workspaceId: string, conversationId: string | null) {
+  return useMutation({
+    mutationFn: async ({ file }: { file: File }) => {
+      if (!conversationId) throw new Error('No conversation');
+
+      // Step 1: Initiate — get presigned URL
+      const initData = unwrap(await supportAttachmentService.initiateUpload(
+        workspaceId, conversationId, {
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type || 'application/octet-stream',
+        },
+      ));
+
+      // Step 2: Upload to S3 via presigned PUT URL
+      const uploadResp = await fetch(initData.upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-amz-acl': 'public-read',
+        },
+      });
+      if (!uploadResp.ok) throw new Error('Upload to storage failed');
+
+      // Step 3: Confirm upload
+      await supportAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+
+      return { id: initData.attachment.id, url: initData.public_url };
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to upload file', { description: error.message });
     },
   });
 }
@@ -311,6 +348,15 @@ export function useSupportContentSourcePages(workspaceId: string, contentSourceI
     queryFn: async (): Promise<SupportContentPage[]> => unwrap(await agentService.listContentSourcePages(workspaceId, contentSourceId!)),
     enabled: !!workspaceId && !!contentSourceId,
     staleTime: 30_000,
+  });
+}
+
+export function useSupportContentSourcePage(workspaceId: string, contentSourceId: string, pageId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.contentSourcePage(workspaceId, contentSourceId, pageId ?? ''),
+    queryFn: async (): Promise<SupportContentPage> => unwrap(await agentService.getContentSourcePage(workspaceId, contentSourceId, pageId!)),
+    enabled: !!workspaceId && !!contentSourceId && !!pageId,
+    staleTime: 60_000,
   });
 }
 

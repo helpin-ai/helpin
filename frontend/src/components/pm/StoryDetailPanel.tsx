@@ -19,18 +19,15 @@ import {
   Loader2,
   Maximize2,
   MoreVertical,
-  Pause,
   Paperclip,
   Play,
   RefreshCw,
   ShieldAlert,
-  StepForward,
   Tag,
   Target,
   User,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   PRIORITY_CONFIG,
@@ -65,7 +62,7 @@ import {
 import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { useStoryDelivery } from '@/components/pm/StoryDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
-import { getInitials } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -90,7 +87,6 @@ import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
 import { Badge } from '@/components/ui/badge';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
-import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
@@ -128,6 +124,7 @@ interface StoryDetailPanelProps {
   onOpenChange: (open: boolean) => void;
   storyDetail: StoryDetail | null;
   states: WorkflowState[];
+  initialRecurringSummary?: StoryRecurringSummary | null;
   onStoryUpdated: (story: StoryDetail) => void;
   onStoryArchived: (storyId: string) => void;
 }
@@ -310,6 +307,7 @@ function StoryDetailPanelBody({
   workspaceId,
   storyDetail,
   states,
+  initialRecurringSummary,
   onOpenChange,
   onStoryUpdated,
   onStoryArchived,
@@ -317,6 +315,7 @@ function StoryDetailPanelBody({
   workspaceId: string;
   storyDetail: StoryDetail;
   states: WorkflowState[];
+  initialRecurringSummary: StoryRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
   onStoryUpdated: (story: StoryDetail) => void;
   onStoryArchived: (storyId: string) => void;
@@ -331,7 +330,7 @@ function StoryDetailPanelBody({
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
-  const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(null);
+  const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
@@ -345,11 +344,7 @@ function StoryDetailPanelBody({
   }, [workspaceId]);
 
   const loadRecurringSummary = useCallback(async (currentStoryId: string) => {
-    const { data, error, status } = await pmRecurringTemplateService.getByStory(workspaceId, currentStoryId);
-    if (error && status !== 204) {
-      toast.error(error);
-      return;
-    }
+    const { data } = await pmRecurringTemplateService.getByStory(workspaceId, currentStoryId);
     setRecurringSummary(data ?? null);
   }, [workspaceId]);
 
@@ -366,35 +361,6 @@ function StoryDetailPanelBody({
     }
     setRecurringDialogOpen(true);
   }, [workspaceId, recurringSummary?.template_id]);
-
-  const runRecurringAction = useCallback(
-    async (
-      action: () => Promise<{ data: RecurringTemplateDetail | null; error: string | null }>,
-      successMessage: string,
-    ) => {
-      setRecurringSaving(true);
-      const { data, error } = await action();
-      setRecurringSaving(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      // Update local state from returned data to avoid full reload cycle.
-      if (data) {
-        setRecurringDetail(data);
-        setRecurringSummary((prev) => prev ? {
-          ...prev,
-          status: data.template.status,
-          next_run_at: data.template.next_run_at,
-          generated_count: data.template.generated_count,
-          last_error: data.template.last_error,
-          rule_summary: data.rule_summary,
-        } : prev);
-      }
-      toast.success(successMessage);
-    },
-    [],
-  );
 
   const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
     setRecurringSaving(true);
@@ -423,9 +389,6 @@ function StoryDetailPanelBody({
     toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Story is now recurring');
   }, [workspaceId, storyDetail.story.id, recurringSummary?.template_id, loadRecurringSummary]);
 
-  useEffect(() => {
-    void loadRecurringSummary(storyDetail.story.id);
-  }, [storyDetail.story.id, loadRecurringSummary]);
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
   const delivery = useStoryDelivery(workspaceId, storyDetail, onStoryUpdated);
@@ -878,29 +841,6 @@ function StoryDetailPanelBody({
             placeholder="Untitled"
           />
 
-          {/* Recurring info card */}
-          {recurringSummary ? (
-            <button
-              type="button"
-              className="mt-3 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
-              onClick={() => void openRecurringDialog()}
-            >
-              <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">{recurringSummary.rule_summary}</span>
-                  <Badge variant="outline" className={cn('text-[10px] capitalize', recurringSummary.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200' : recurringSummary.status === 'paused' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200' : 'border-border')}>
-                    {recurringSummary.status}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
-                </p>
-              </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
-          ) : null}
-
           {/* Description */}
           <div className="mt-4">
             <TiptapEditor
@@ -965,6 +905,29 @@ function StoryDetailPanelBody({
               Attach Files
             </button>
           </div>
+
+          {/* Recurring info card */}
+          {storyDetail.story.recurring_template_id && recurringSummary ? (
+            <button
+              type="button"
+              className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+              onClick={() => void openRecurringDialog()}
+            >
+              <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">{recurringSummary.rule_summary}</span>
+                  <Badge variant="outline" className={cn('text-[10px] capitalize', recurringSummary.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200' : recurringSummary.status === 'paused' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200' : 'border-border')}>
+                    {recurringSummary.status}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          ) : null}
 
           <StoryRelationshipsSection
             workspaceId={workspaceId}
@@ -1471,6 +1434,7 @@ export function StoryDetailPanel({
   onOpenChange,
   storyDetail,
   states,
+  initialRecurringSummary,
   onStoryUpdated,
   onStoryArchived,
 }: StoryDetailPanelProps) {
@@ -1484,6 +1448,7 @@ export function StoryDetailPanel({
             workspaceId={workspaceId}
             storyDetail={storyDetail}
             states={states}
+            initialRecurringSummary={initialRecurringSummary ?? null}
             onOpenChange={onOpenChange}
             onStoryUpdated={onStoryUpdated}
             onStoryArchived={onStoryArchived}

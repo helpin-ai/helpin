@@ -3,9 +3,12 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
+
+const claudeJSONToolName = "emit_json_response"
 
 // ClaudeProvider wraps the existing Claude API client.
 type ClaudeProvider struct {
@@ -23,7 +26,26 @@ func NewClaudeProvider(apiKey string) *ClaudeProvider {
 }
 
 func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	var messages []workerpkg.Message
+	apiReq := buildClaudeMessageRequest(req)
+
+	resp, err := p.client.CreateMessage(ctx, apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("claude completion: %w", err)
+	}
+
+	content := extractClaudeResponseContent(resp, req.JSONMode)
+
+	return &ChatResponse{
+		Content: content,
+		TokensUsed: TokenUsage{
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+		},
+	}, nil
+}
+
+func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
+	messages := make([]workerpkg.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		messages = append(messages, workerpkg.Message{
 			Role:    m.Role,
@@ -42,24 +64,46 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		Messages:  messages,
 		MaxTokens: maxTokens,
 	}
-
-	resp, err := p.client.CreateMessage(ctx, apiReq)
-	if err != nil {
-		return nil, fmt.Errorf("claude completion: %w", err)
-	}
-
-	var content string
-	for _, block := range resp.Content {
-		if block.Type == "text" {
-			content += block.Text
+	if req.JSONMode {
+		apiReq.Tools = []workerpkg.ToolDefinition{
+			{
+				Name:        claudeJSONToolName,
+				Description: "Return the final response as a single JSON object that matches the schema requested in the prompt. Do not emit free-form text outside the tool input.",
+				InputSchema: map[string]any{
+					"type":                 "object",
+					"additionalProperties": true,
+				},
+			},
+		}
+		apiReq.ToolChoice = &workerpkg.ToolChoice{
+			Type: "tool",
+			Name: claudeJSONToolName,
 		}
 	}
 
-	return &ChatResponse{
-		Content: content,
-		TokensUsed: TokenUsage{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-		},
-	}, nil
+	return apiReq
+}
+
+func extractClaudeResponseContent(resp *workerpkg.CreateMessageResponse, jsonMode bool) string {
+	if resp == nil {
+		return ""
+	}
+
+	if jsonMode {
+		for _, block := range resp.Content {
+			if block.Type != "tool_use" || block.Name != claudeJSONToolName || len(block.Input) == 0 {
+				continue
+			}
+			return strings.TrimSpace(string(block.Input))
+		}
+	}
+
+	var content strings.Builder
+	for _, block := range resp.Content {
+		if block.Type == "text" {
+			content.WriteString(block.Text)
+		}
+	}
+
+	return content.String()
 }
