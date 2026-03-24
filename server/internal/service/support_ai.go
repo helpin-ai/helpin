@@ -435,7 +435,31 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 9. Load agent config
+	// 9. Load conversation history (moved before smart escalation check).
+	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
+		history = nil
+	}
+	historyForPrompt := sanitizeConversationHistory(history, msg.ID)
+
+	// 10. Smart escalation signals (pre-LLM — no cost).
+	if signal := evaluatePreLLMEscalation(msg.Content, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
+		slog.InfoContext(ctx, "support AI smart escalation triggered",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"reason", signal.Reason,
+			"score", signal.Score,
+		)
+		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		return nil
+	}
+
+	// 11. Load agent config
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return fmt.Errorf("get agent %s: %w", agentID, err)
@@ -448,17 +472,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 10. Send typing indicator
+	// 12. Send typing indicator
 	s.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 	defer s.publishTypingIndicator(ctx, workspaceID, conversationID, false)
-
-	// 11. Load conversation history before retrieval planning.
-	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-	if err != nil {
-		slog.ErrorContext(ctx, "load conversation history failed", "error", err)
-		history = nil
-	}
-	historyForPrompt := sanitizeConversationHistory(history, msg.ID)
 
 	// 12. Check token budget before planner + answer model usage.
 	if !s.checkTokenBudget(agent) {
@@ -581,6 +597,23 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	// 18. Decide: grounded reply or escalate
 	if response.CanAnswer && confidence >= settings.AIConfidenceThreshold {
+		// 18a. Check for declining satisfaction trend before sending reply.
+		if signal := evaluatePostAnswerEscalation(historyForPrompt, confidence); signal != nil {
+			slog.InfoContext(ctx, "support AI declining satisfaction escalation",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"confidence", confidence,
+				"reason", signal.Reason,
+				"score", signal.Score,
+			)
+			if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+				return err
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
+			return nil
+		}
+
 		cleanContent := stripPII(response.Content)
 		publicSources := buildAISources(response.SourceDocIDs, searchResults)
 
@@ -650,13 +683,19 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
-	// 1. Create system message
+	// 1. Create system message — use customizable escalation message from settings
+	escalationContent := "Let me connect you with a team member who can help further."
+	if settings, err := s.loadSettings(ctx, workspaceID); err == nil && settings != nil && settings.EscalationMessage != "" {
+		escalationContent = settings.EscalationMessage
+	}
+
 	systemMsg := &model.SupportMessage{
-		WorkspaceID:    workspaceID,
-		ConversationID: conversationID,
-		SenderType:     "agent",
-		MessageType:    "system",
-		Content:        "Let me connect you with a team member who can help further.",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "agent",
+		MessageType:       "system",
+		SenderDisplayName: strPtr(helpinAIDisplayName),
+		Content:           escalationContent,
 	}
 	if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
 		return fmt.Errorf("create escalation system message: %w", err)
@@ -1873,47 +1912,6 @@ func (s *SupportAIService) publishTypingIndicator(_ context.Context, workspaceID
 	})
 }
 
-// isConfirmationMessage checks if a customer message is a resolution confirmation.
-func isConfirmationMessage(content string) bool {
-	lower := strings.ToLower(strings.TrimSpace(content))
-	confirmPatterns := []string{
-		"thanks", "thank you", "that helped", "got it", "perfect",
-		"that works", "awesome", "great", "resolved", "solved",
-		"that's what i needed", "all good", "helpful",
-	}
-	for _, pattern := range confirmPatterns {
-		if strings.Contains(lower, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-// checkHardEscalation checks if a message matches hard escalation rules.
-func checkHardEscalation(content string) string {
-	lower := strings.ToLower(strings.TrimSpace(content))
-
-	// Customer explicitly asks for a human
-	humanPatterns := []string{
-		"talk to someone", "real person", "human agent", "talk to a human",
-		"speak to someone", "real agent", "live agent", "connect me",
-	}
-	for _, pattern := range humanPatterns {
-		if strings.Contains(lower, pattern) {
-			return "customer_requested_human"
-		}
-	}
-
-	// Billing/refund/account deletion topics
-	billingPatterns := []string{"refund", "billing", "cancel my account", "delete my account", "charge"}
-	for _, pattern := range billingPatterns {
-		if strings.Contains(lower, pattern) {
-			return "billing_topic"
-		}
-	}
-
-	return ""
-}
 
 // piiRegexes for stripping common PII patterns from AI responses.
 var piiRegexes = []*regexp.Regexp{
