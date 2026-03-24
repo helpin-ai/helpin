@@ -24,7 +24,7 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		ParentType:  "support_conversation",
 		ParentID:    msg.ConversationID,
 	}
-	if msg.IsInternal || msg.MessageType == "system" {
+	if msg.IsInternal {
 		return event
 	}
 

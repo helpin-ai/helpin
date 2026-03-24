@@ -332,6 +332,9 @@ type SupportInboxSettings struct {
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
+	// Escalation
+	EscalationMessage string `json:"escalation_message"` // message shown when AI hands off to human
+
 	// Handoff Routing
 	HandoffBehavior string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
 	HandoffTeamID   *string `json:"handoff_team_id"`
@@ -390,6 +393,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIMaxFollowups:         3,
 		AIAutoResolveTimeout:   24,
 		ShowTalkToHuman:        true,
+		EscalationMessage:      "Let me connect you with a team member who can help further.",
 		HandoffBehavior:        "unassigned",
 		HandoffTeamID:          nil,
 		BusinessHoursEnabled:   false,
@@ -439,6 +443,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIMaxFollowups         *int                        `json:"ai_max_followups,omitempty"`
 	AIAutoResolveTimeout   *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
+	EscalationMessage      *string                     `json:"escalation_message,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
 	BusinessHoursEnabled   *bool                       `json:"business_hours_enabled,omitempty"`

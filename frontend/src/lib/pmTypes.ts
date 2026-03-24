@@ -1768,6 +1768,7 @@ export interface SupportInboxSettings {
   ai_max_followups: number;
   ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
+  escalation_message: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
   business_hours_enabled: boolean;

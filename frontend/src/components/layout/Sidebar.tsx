@@ -900,9 +900,9 @@ export function Sidebar() {
                 <SidebarMenu className="p-0 pb-3">
                   {([
                     { key: 'my_inbox' as const, label: 'My Inbox', icon: User, badge: unreadStats?.my_inbox },
-                    { key: 'all' as const, label: 'All', icon: Mail, badge: unreadStats?.total },
                     { key: 'unassigned' as const, label: 'Unassigned', icon: UserX, badge: unreadStats?.unassigned },
                     { key: 'mentions' as const, label: 'Mentions', icon: MessageSquare, badge: undefined as number | undefined },
+                    { key: 'all' as const, label: 'All', icon: Mail, badge: unreadStats?.total },
                   ]).map((item) => (
                     <SidebarMenuItem key={item.key}>
                       <SidebarMenuButton
