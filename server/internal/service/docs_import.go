@@ -341,13 +341,15 @@ func (s *DocsImportService) importArticle(
 	}
 
 	// Determine collection ID and slug from first category.
+	// Use article.Categories (from single-article fetch) rather than
+	// ref.Categories (from list endpoint, which omits categories).
 	var collectionID *string
 	var collectionSlug string
-	if len(ref.Categories) > 0 {
-		if cID, ok := categoryToCollection[ref.Categories[0]]; ok {
+	if len(article.Categories) > 0 {
+		if cID, ok := categoryToCollection[article.Categories[0]]; ok {
 			collectionID = &cID
 		}
-		if slug, ok := categoryToCollectionSlug[ref.Categories[0]]; ok {
+		if slug, ok := categoryToCollectionSlug[article.Categories[0]]; ok {
 			collectionSlug = slug
 		}
 	}
