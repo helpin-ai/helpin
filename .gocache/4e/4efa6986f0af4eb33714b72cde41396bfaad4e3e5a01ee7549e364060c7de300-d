@@ -1,7 +1,0 @@
-./ast.go
-./errors.go
-./ops.go
-./parser.go
-./pools.go
-./term.go
-./utils.go

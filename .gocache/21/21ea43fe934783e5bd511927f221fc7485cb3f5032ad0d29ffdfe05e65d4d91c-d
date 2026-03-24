@@ -1,6 +1,0 @@
-./client.go
-./convert.go
-./images.go
-./types.go
-./convert_test.go
-./images_test.go

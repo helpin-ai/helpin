@@ -1,6 +1,0 @@
-./backfill.go
-./diagnostics.go
-./resolver.go
-./backfill_test.go
-./resolver_test.go
-./testdb_test.go

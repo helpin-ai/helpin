@@ -1,5 +1,0 @@
-./claude.go
-./jsonparse.go
-./openai.go
-./provider.go
-./jsonparse_test.go

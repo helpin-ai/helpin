@@ -1,8 +1,0 @@
-./activity_options.go
-./context.go
-./context_propagator.go
-./deterministic_wrappers.go
-./doc.go
-./session.go
-./workflow.go
-./workflow_options.go

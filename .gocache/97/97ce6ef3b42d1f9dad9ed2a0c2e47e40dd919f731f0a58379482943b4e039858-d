@@ -1,8 +1,0 @@
-./doc.go
-./document.go
-./message.go
-./message_parser.go
-./select.go
-./serialization.go
-./stream.go
-./tool.go

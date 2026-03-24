@@ -44,3 +44,4 @@ node_modules/
 dist/
 packages/*/lib/
 *.log
+.gocache/
