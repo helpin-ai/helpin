@@ -531,6 +531,12 @@ export function CreateStoryModal({
           }
         }
 
+        if (recurringSetupError) {
+          toast.error(`Story created, but recurring setup failed: ${recurringSetupError}`);
+        } else {
+          toast.success(recurringDraft ? 'Story created with recurring schedule' : 'Story created');
+        }
+
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
@@ -547,12 +553,6 @@ export function CreateStoryModal({
           setRecurringDraft(null);
         } else {
           onOpenChange(false);
-        }
-
-        if (recurringSetupError) {
-          toast.error(`Story created, but recurring setup failed: ${recurringSetupError}`);
-        } else if (recurringDraft) {
-          toast.success('Story created with recurring schedule');
         }
       }
     } catch (err) {
@@ -572,11 +572,15 @@ export function CreateStoryModal({
     initialStateId,
     currentMemberId,
     initialTeamId,
+    initialOwnerMemberId,
     isTemplateMode,
     editingTemplate,
     onCreate,
     onOpenChange,
     onSaveTemplate,
+    pendingFiles,
+    recurringDraft,
+    teams,
   ]);
 
   const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();

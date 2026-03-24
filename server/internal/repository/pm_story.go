@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -33,8 +34,115 @@ func boardStoryOrderClause(stateType string) string {
 	return "position ASC, updated_at DESC"
 }
 
+func loadWorkflowStateType(tx *gorm.DB, stateID string) (string, error) {
+	var state struct {
+		StateType string
+	}
+	if err := tx.Model(&model.PMWorkflowState{}).
+		Select("state_type").
+		Where("id = ?", stateID).
+		Take(&state).Error; err != nil {
+		return "", fmt.Errorf("load workflow state: %w", err)
+	}
+	return state.StateType, nil
+}
+
 func memberBoardStoryOrderClause() string {
 	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_stories.position ASC, pm_stories.updated_at DESC"
+}
+
+func normalizeStateStoryPositions(tx *gorm.DB, workspaceID, stateID string) error {
+	stateType, err := loadWorkflowStateType(tx, stateID)
+	if err != nil {
+		return err
+	}
+
+	var stories []struct {
+		ID       string
+		Position int
+	}
+	if err := tx.Model(&model.PMStory{}).
+		Select("id, position").
+		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID).
+		Order(boardStoryOrderClause(stateType)).
+		Find(&stories).Error; err != nil {
+		return fmt.Errorf("load state stories for normalization: %w", err)
+	}
+
+	for index, story := range stories {
+		if story.Position == index {
+			continue
+		}
+		if err := tx.Model(&model.PMStory{}).
+			Where("id = ?", story.ID).
+			UpdateColumn("position", index).Error; err != nil {
+			return fmt.Errorf("normalize state story position: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func normalizeBoardPosition(tx *gorm.DB, workspaceID, stateID, excludeStoryID string, requested *int) (int, error) {
+	query := tx.Model(&model.PMStory{}).
+		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID)
+	if excludeStoryID != "" {
+		query = query.Where("id != ?", excludeStoryID)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count board stories: %w", err)
+	}
+
+	maxPosition := int(count)
+	if requested == nil {
+		return maxPosition, nil
+	}
+	if *requested < 0 {
+		return 0, nil
+	}
+	if *requested > maxPosition {
+		return maxPosition, nil
+	}
+	return *requested, nil
+}
+
+type pmDnDStorySnapshot struct {
+	ID          string
+	Position    int
+	UpdatedAt   time.Time
+	CompletedAt *time.Time
+	MovedAt     *time.Time
+}
+
+func summarizePMDnDStateSnapshot(tx *gorm.DB, workspaceID, stateID string) ([]string, error) {
+	stateType, err := loadWorkflowStateType(tx, stateID)
+	if err != nil {
+		return nil, err
+	}
+
+	var stories []pmDnDStorySnapshot
+	if err := tx.Model(&model.PMStory{}).
+		Select("id, position, updated_at, completed_at, moved_at").
+		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID).
+		Order(boardStoryOrderClause(stateType)).
+		Limit(10).
+		Find(&stories).Error; err != nil {
+		return nil, fmt.Errorf("load state snapshot: %w", err)
+	}
+
+	summary := make([]string, 0, len(stories))
+	for _, story := range stories {
+		sortKey := story.UpdatedAt.UTC()
+		if story.CompletedAt != nil {
+			sortKey = story.CompletedAt.UTC()
+		} else if story.MovedAt != nil {
+			sortKey = story.MovedAt.UTC()
+		}
+		summary = append(summary, fmt.Sprintf("%s@%d#%s", story.ID, story.Position, sortKey.Format(time.RFC3339)))
+	}
+	return summary, nil
 }
 
 func boardStoryGroupDate(story model.PMStory) time.Time {
@@ -251,11 +359,31 @@ func (r *PMStoryRepository) Create(ctx context.Context, story *model.PMStory) er
 			story.DisplayID = maxDisplayID + 1
 		}
 
+		if story.WorkflowStateID != "" {
+			if err := normalizeStateStoryPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
+				return fmt.Errorf("normalize create state positions: %w", err)
+			}
+		}
+
 		if err := tx.Create(story).Error; err != nil {
 			return fmt.Errorf("create story: %w", err)
 		}
 		return nil
 	})
+}
+
+// NextPosition returns the next append position for a workflow state after
+// normalizing any existing duplicate or sparse positions in that column.
+func (r *PMStoryRepository) NextPosition(ctx context.Context, workspaceID, stateID string) (int, error) {
+	tx := r.db.WithContext(ctx)
+	if err := normalizeStateStoryPositions(tx, workspaceID, stateID); err != nil {
+		return 0, fmt.Errorf("normalize next position state: %w", err)
+	}
+	position, err := normalizeBoardPosition(tx, workspaceID, stateID, "", nil)
+	if err != nil {
+		return 0, fmt.Errorf("calculate next position: %w", err)
+	}
+	return position, nil
 }
 
 // Update updates a story model.
@@ -287,7 +415,7 @@ func (r *PMStoryRepository) Delete(ctx context.Context, id string) error {
 
 // MoveToState moves a story to a new state at the given position,
 // renumbering siblings in both the source and target columns transactionally.
-func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID string, position int) error {
+func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID string, position *int, debugTraceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Fetch the story to get its current state and position.
 		var story model.PMStory
@@ -297,6 +425,33 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 		}
 
 		oldStateID := story.WorkflowStateID
+		if err := normalizeStateStoryPositions(tx, story.WorkspaceID, oldStateID); err != nil {
+			return fmt.Errorf("normalize source state positions: %w", err)
+		}
+		if stateID != oldStateID {
+			if err := normalizeStateStoryPositions(tx, story.WorkspaceID, stateID); err != nil {
+				return fmt.Errorf("normalize target state positions: %w", err)
+			}
+		}
+		if err := tx.Select("id, workflow_state_id, position, workspace_id").
+			Where("id = ?", storyID).First(&story).Error; err != nil {
+			return fmt.Errorf("move story refetch: %w", err)
+		}
+
+		normalizedPosition, err := normalizeBoardPosition(tx, story.WorkspaceID, stateID, storyID, position)
+		if err != nil {
+			return fmt.Errorf("move story normalize position: %w", err)
+		}
+		slog.InfoContext(ctx, "[pm-dnd] repo move normalized",
+			"trace_id", debugTraceID,
+			"story_id", storyID,
+			"workspace_id", story.WorkspaceID,
+			"from_state_id", oldStateID,
+			"to_state_id", stateID,
+			"old_position", story.Position,
+			"requested_position", position,
+			"normalized_position", normalizedPosition,
+		)
 
 		// Close the gap in the source column: shift siblings above the old position down by 1.
 		if err := tx.Model(&model.PMStory{}).
@@ -309,7 +464,7 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 		// Open a gap in the target column: shift siblings at or above the target position up by 1.
 		if err := tx.Model(&model.PMStory{}).
 			Where("workspace_id = ? AND workflow_state_id = ? AND position >= ? AND id != ? AND archived = false",
-				story.WorkspaceID, stateID, position, storyID).
+				story.WorkspaceID, stateID, normalizedPosition, storyID).
 			UpdateColumn("position", gorm.Expr("position + 1")).Error; err != nil {
 			return fmt.Errorf("move story open target gap: %w", err)
 		}
@@ -319,11 +474,24 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 		if err := tx.Model(&model.PMStory{}).Where("id = ?", storyID).
 			Updates(map[string]interface{}{
 				"workflow_state_id": stateID,
-				"position":          position,
+				"position":          normalizedPosition,
 				"moved_at":          now,
 			}).Error; err != nil {
 			return fmt.Errorf("move story update: %w", err)
 		}
+
+		fromSummary, fromErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, oldStateID)
+		toSummary, toErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, stateID)
+		slog.InfoContext(ctx, "[pm-dnd] repo move applied",
+			"trace_id", debugTraceID,
+			"story_id", storyID,
+			"from_state_id", oldStateID,
+			"to_state_id", stateID,
+			"from_state_order", fromSummary,
+			"to_state_order", toSummary,
+			"from_state_snapshot_error", fromErr,
+			"to_state_snapshot_error", toErr,
+		)
 
 		return nil
 	})
@@ -331,24 +499,45 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 
 // Reorder moves a story to a new position within its current column,
 // renumbering siblings transactionally to keep positions contiguous.
-func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, position int) error {
+func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, position int, debugTraceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var story model.PMStory
 		if err := tx.Select("id, workflow_state_id, position, workspace_id").
 			Where("id = ?", storyID).First(&story).Error; err != nil {
 			return fmt.Errorf("reorder story fetch: %w", err)
 		}
+		if err := normalizeStateStoryPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
+			return fmt.Errorf("normalize reorder state positions: %w", err)
+		}
+		if err := tx.Select("id, workflow_state_id, position, workspace_id").
+			Where("id = ?", storyID).First(&story).Error; err != nil {
+			return fmt.Errorf("reorder story refetch: %w", err)
+		}
+
+		normalizedPosition, err := normalizeBoardPosition(tx, story.WorkspaceID, story.WorkflowStateID, storyID, &position)
+		if err != nil {
+			return fmt.Errorf("reorder normalize position: %w", err)
+		}
+		slog.InfoContext(ctx, "[pm-dnd] repo reorder normalized",
+			"trace_id", debugTraceID,
+			"story_id", storyID,
+			"workspace_id", story.WorkspaceID,
+			"state_id", story.WorkflowStateID,
+			"old_position", story.Position,
+			"requested_position", position,
+			"normalized_position", normalizedPosition,
+		)
 
 		oldPos := story.Position
-		if oldPos == position {
+		if oldPos == normalizedPosition {
 			return nil
 		}
 
-		if position < oldPos {
+		if normalizedPosition < oldPos {
 			// Moving up: shift stories in [newPos, oldPos) down by 1
 			if err := tx.Model(&model.PMStory{}).
 				Where("workspace_id = ? AND workflow_state_id = ? AND position >= ? AND position < ? AND id != ? AND archived = false",
-					story.WorkspaceID, story.WorkflowStateID, position, oldPos, storyID).
+					story.WorkspaceID, story.WorkflowStateID, normalizedPosition, oldPos, storyID).
 				UpdateColumn("position", gorm.Expr("position + 1")).Error; err != nil {
 				return fmt.Errorf("reorder shift up: %w", err)
 			}
@@ -356,7 +545,7 @@ func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, positio
 			// Moving down: shift stories in (oldPos, newPos] up by 1
 			if err := tx.Model(&model.PMStory{}).
 				Where("workspace_id = ? AND workflow_state_id = ? AND position > ? AND position <= ? AND id != ? AND archived = false",
-					story.WorkspaceID, story.WorkflowStateID, oldPos, position, storyID).
+					story.WorkspaceID, story.WorkflowStateID, oldPos, normalizedPosition, storyID).
 				UpdateColumn("position", gorm.Expr("position - 1")).Error; err != nil {
 				return fmt.Errorf("reorder shift down: %w", err)
 			}
@@ -364,9 +553,18 @@ func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, positio
 
 		// Set the story's new position.
 		if err := tx.Model(&model.PMStory{}).Where("id = ?", storyID).
-			Update("position", position).Error; err != nil {
+			Update("position", normalizedPosition).Error; err != nil {
 			return fmt.Errorf("reorder update: %w", err)
 		}
+
+		summary, snapshotErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, story.WorkflowStateID)
+		slog.InfoContext(ctx, "[pm-dnd] repo reorder applied",
+			"trace_id", debugTraceID,
+			"story_id", storyID,
+			"state_id", story.WorkflowStateID,
+			"state_order", summary,
+			"state_snapshot_error", snapshotErr,
+		)
 
 		return nil
 	})

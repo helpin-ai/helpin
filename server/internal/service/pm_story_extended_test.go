@@ -12,14 +12,14 @@ import (
 
 // storyTestEnv bundles the service, DB, and common IDs used across story tests.
 type storyTestEnv struct {
-	svc    *PMStoryService
-	db     *gorm.DB
-	wsID   string
-	userID string
-	wfID   string
-	stTodo string // default "unstarted" state
+	svc          *PMStoryService
+	db           *gorm.DB
+	wsID         string
+	userID       string
+	wfID         string
+	stTodo       string // default "unstarted" state
 	stInProgress string
-	stDone string
+	stDone       string
 }
 
 // newStoryTestEnv creates a fresh test environment for PMStoryService tests:
@@ -74,14 +74,14 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, nil, nil, repository.NewPMAttachmentRepository(db), activityService, nil, nil, nil, nil)
 
 	return storyTestEnv{
-		svc:    svc,
-		db:     db,
-		wsID:   wsID,
-		userID: userID,
-		wfID:   wfID,
-		stTodo: stTodo,
+		svc:          svc,
+		db:           db,
+		wsID:         wsID,
+		userID:       userID,
+		wfID:         wfID,
+		stTodo:       stTodo,
 		stInProgress: stInProgress,
-		stDone: stDone,
+		stDone:       stDone,
 	}
 }
 
@@ -224,6 +224,33 @@ func TestPMStoryService_Create(t *testing.T) {
 		s2 := createTestStory(t, env, "Second")
 		if s2.Story.DisplayID != s1.Story.DisplayID+1 {
 			t.Errorf("display_id: first=%d, second=%d; expected consecutive", s1.Story.DisplayID, s2.Story.DisplayID)
+		}
+	})
+
+	t.Run("create without explicit position appends to end of state column", func(t *testing.T) {
+		now := time.Now().UTC()
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"create-position-a", env.wsID, 2001, "Create Position A", env.wfID, env.stTodo, 0, "feature", "none", "none", false, false, false, false, now, now,
+		)
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"create-position-b", env.wsID, 2002, "Create Position B", env.wfID, env.stTodo, 1, "feature", "none", "none", false, false, false, false, now, now,
+		)
+
+		story, err := env.svc.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Create Position C",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if story.Story.Position != 2 {
+			t.Fatalf("position = %d, want 2", story.Story.Position)
 		}
 	})
 
@@ -825,25 +852,80 @@ func TestPMStoryService_MoveToState(t *testing.T) {
 	})
 
 	t.Run("move with position", func(t *testing.T) {
+		env := newStoryTestEnv(t)
 		story := createTestStory(t, env, "Move With Position")
-		pos := 42
+		now := time.Now().UTC()
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"position-target-a", env.wsID, 1000, "Position Target A", env.wfID, env.stInProgress, 0, "feature", "none", "none", true, false, false, false, now, now,
+		)
+		pos := 1
 
 		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveStoryRequest{
-			StateID:  stInProgress,
+			StateID:  env.stInProgress,
 			Position: &pos,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("MoveToState with position: %v", err)
 		}
-		if moved.Story.WorkflowStateID != stInProgress {
-			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, stInProgress)
+		if moved.Story.WorkflowStateID != env.stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, env.stInProgress)
 		}
 		var raw model.PMStory
 		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
-		if raw.Position != 42 {
-			t.Errorf("position = %d, want 42", raw.Position)
+		if raw.Position != 1 {
+			t.Errorf("position = %d, want 1", raw.Position)
+		}
+	})
+
+	t.Run("move without position appends to end of target column", func(t *testing.T) {
+		env := newStoryTestEnv(t)
+		story := createTestStory(t, env, "Move Without Position")
+		now := time.Now().UTC()
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"state-target-a", env.wsID, 1001, "Target A", env.wfID, env.stInProgress, 0, "feature", "none", "none", true, false, false, false, now, now,
+		)
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"state-target-b", env.wsID, 1002, "Target B", env.wfID, env.stInProgress, 1, "feature", "none", "none", true, false, false, false, now, now,
+		)
+
+		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveStoryRequest{
+			StateID: env.stInProgress,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("MoveToState without position: %v", err)
+		}
+		if moved.Story.WorkflowStateID != env.stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, env.stInProgress)
+		}
+		if moved.Story.Position != 2 {
+			t.Fatalf("moved position = %d, want 2", moved.Story.Position)
+		}
+
+		var stories []model.PMStory
+		if err := env.db.
+			Where("workflow_state_id = ? AND id IN ?", env.stInProgress, []string{"state-target-a", "state-target-b", story.Story.ID}).
+			Order("position ASC").
+			Find(&stories).Error; err != nil {
+			t.Fatalf("query moved stories: %v", err)
+		}
+
+		gotIDs := []string{stories[0].ID, stories[1].ID, stories[2].ID}
+		wantIDs := []string{"state-target-a", "state-target-b", story.Story.ID}
+		for i := range wantIDs {
+			if gotIDs[i] != wantIDs[i] {
+				t.Fatalf("stories[%d] = %q, want %q (full order %v)", i, gotIDs[i], wantIDs[i], gotIDs)
+			}
+			if stories[i].Position != i {
+				t.Fatalf("stories[%d] position = %d, want %d", i, stories[i].Position, i)
+			}
 		}
 	})
 
@@ -946,10 +1028,22 @@ func TestPMStoryService_Reorder(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("reorder changes position", func(t *testing.T) {
+		env := newStoryTestEnv(t)
 		story := createTestStory(t, env, "Reorder Me")
+		now := time.Now().UTC()
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"reorder-peer-a", env.wsID, 1003, "Reorder Peer A", env.wfID, env.stTodo, 1, "feature", "none", "none", false, false, false, false, now, now,
+		)
+		mustExec(t, env.db, `INSERT INTO pm_stories (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"reorder-peer-b", env.wsID, 1004, "Reorder Peer B", env.wfID, env.stTodo, 2, "feature", "none", "none", false, false, false, false, now, now,
+		)
 
 		err := env.svc.Reorder(ctx, story.Story.ID, model.ReorderStoryRequest{
-			Position: 10,
+			Position: 2,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Reorder: %v", err)
@@ -959,8 +1053,8 @@ func TestPMStoryService_Reorder(t *testing.T) {
 		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
-		if raw.Position != 10 {
-			t.Errorf("position = %d, want 10", raw.Position)
+		if raw.Position != 2 {
+			t.Errorf("position = %d, want 2", raw.Position)
 		}
 	})
 

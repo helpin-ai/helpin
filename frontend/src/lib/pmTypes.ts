@@ -786,10 +786,12 @@ export interface UpdateStoryRequest {
 export interface MoveStoryRequest {
   state_id: string;
   position?: number;
+  debug_trace_id?: string;
 }
 
 export interface ReorderStoryRequest {
   position: number;
+  debug_trace_id?: string;
 }
 
 export interface StoryUserLinkRequest {

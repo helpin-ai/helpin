@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -312,6 +313,13 @@ func (h *PMStoryHandler) Move(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	slog.InfoContext(r.Context(), "[pm-dnd] handler move request",
+		"trace_id", req.DebugTraceID,
+		"story_id", id,
+		"actor_id", userID,
+		"state_id", req.StateID,
+		"position", req.Position,
+	)
 	story, err := h.storyService.MoveToState(r.Context(), id, req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -329,6 +337,12 @@ func (h *PMStoryHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	slog.InfoContext(r.Context(), "[pm-dnd] handler reorder request",
+		"trace_id", req.DebugTraceID,
+		"story_id", id,
+		"actor_id", userID,
+		"position", req.Position,
+	)
 	if err := h.storyService.Reorder(r.Context(), id, req, userID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -14,6 +14,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmViewService } from '@/lib/services/pmViewService';
 import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
 import { createDebouncedBoardFetchScheduler } from './pmBoardFetchScheduler';
+import { createPMDnDTraceID, logPMDnD, summarizePMDnDColumn } from '@/lib/pmDnDDebug';
 
 export type BoardFilters = Record<string, string | undefined>;
 
@@ -32,6 +33,7 @@ interface MovePayload {
   fromStateId: string;
   toStateId: string;
   toIndex: number;
+  debugTraceID?: string;
 }
 
 interface MemberMovePayload {
@@ -118,6 +120,14 @@ const compareStories = (a: Story, b: Story, stateType?: StateType) => {
 const sortStories = (stories: Story[], stateType?: StateType) => [...stories].sort((a, b) => compareStories(a, b, stateType));
 
 const isGroupedColumn = (column: Pick<StoryStateColumn, 'state'>) => column.state.state_type === groupedStateType;
+
+const reindexLoadedStories = (column: StoryStateColumn) => {
+  if (isGroupedColumn(column)) return;
+  column.stories = column.stories.map((story, index) => ({
+    ...story,
+    position: index,
+  }));
+};
 
 const storyMatchesFilters = (story: Story, teamId: string | null, filters: BoardFilters) => {
   const matchesCsv = (actual: string | undefined, value: string | undefined) => {
@@ -671,15 +681,30 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return story;
   },
 
-  moveStory: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex }) => {
+  moveStory: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
     const snapshot = cloneColumns(get().columns);
     const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
+    const targetStateType = snapshot.find((column) => column.state.id === toStateId)?.state.state_type;
+    const traceID = debugTraceID ?? createPMDnDTraceID();
     const contextChanged = () => {
       const s = get();
       return s.workflow?.workflow.id !== moveCtx.workflowId || s.teamId !== moveCtx.teamId;
     };
 
+    logPMDnD('store.move.begin', {
+      trace_id: traceID,
+      workspace_id: workspaceId,
+      story_id: storyId,
+      from_state_id: fromStateId,
+      to_state_id: toStateId,
+      to_index: toIndex,
+      target_state_type: targetStateType,
+      from_column: summarizePMDnDColumn(snapshot.find((column) => column.state.id === fromStateId)),
+      to_column: summarizePMDnDColumn(snapshot.find((column) => column.state.id === toStateId)),
+    });
+
     // Always optimistically move the card immediately
+    let optimisticColumns: StoryStateColumn[] | null = null;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const fromCol = columns.find((column) => column.state.id === fromStateId);
@@ -688,49 +713,107 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
       const sourceIndex = fromCol.stories.findIndex((candidate) => candidate.id === storyId);
       if (sourceIndex === -1) return state;
+      if (fromStateId === toStateId && fromCol.state.state_type === 'done') {
+        optimisticColumns = columns;
+        return state;
+      }
 
       const [moving] = fromCol.stories.splice(sourceIndex, 1);
       if (!moving) return state;
 
       moving.workflow_state_id = toStateId;
       if (fromStateId === toStateId) {
-        // Set position so optimistic order matches intent (server will renumber)
-        moving.position = toIndex;
         fromCol.stories.splice(toIndex, 0, moving);
+        reindexLoadedStories(fromCol);
+        optimisticColumns = columns;
         return { columns };
       }
 
       updateColumnTotals(fromCol, -1, -(moving.estimate ?? 0));
       updateColumnTotals(toCol, 1, moving.estimate ?? 0);
+      reindexLoadedStories(fromCol);
       // For done columns, set completed_at so optimistic sort matches server behavior
       if (toCol.state.state_type === 'done') {
         moving.completed_at = new Date().toISOString();
         moving.moved_at = moving.completed_at;
         moving.completed = true;
+        moving.position = toCol.stories.length;
+        toCol.stories = sortStories([...toCol.stories, moving], toCol.state.state_type);
       } else {
         // Clear done metadata when moving out of done
         if (moving.completed_at) {
           moving.completed_at = undefined as unknown as string;
           moving.completed = false;
         }
+        toCol.stories.splice(toIndex, 0, moving);
+        reindexLoadedStories(toCol);
       }
-      // Set position so optimistic order matches intent (server will renumber)
-      moving.position = toIndex > 0 ? (toCol.stories[toIndex - 1]?.position ?? toIndex) + 1 : 0;
-      toCol.stories.splice(toIndex, 0, moving);
+      optimisticColumns = columns;
       return { columns };
     });
 
+    if (fromStateId === toStateId && targetStateType === 'done') {
+      logPMDnD('store.move.skip_done_reorder', {
+        trace_id: traceID,
+        story_id: storyId,
+        state_id: fromStateId,
+      });
+    } else if (optimisticColumns) {
+      logPMDnD('store.move.optimistic_applied', {
+        trace_id: traceID,
+        story_id: storyId,
+        from_column: summarizePMDnDColumn(optimisticColumns.find((column) => column.state.id === fromStateId)),
+        to_column: summarizePMDnDColumn(optimisticColumns.find((column) => column.state.id === toStateId)),
+      });
+    }
+
     if (fromStateId === toStateId) {
-      const reorderRes = await pmStoryService.reorder(workspaceId, storyId, { position: toIndex });
+      if (targetStateType === 'done') {
+        return;
+      }
+      const reorderPayload = { position: toIndex, debug_trace_id: traceID };
+      logPMDnD('store.move.reorder_request', {
+        trace_id: traceID,
+        story_id: storyId,
+        payload: reorderPayload,
+      });
+      const reorderRes = await pmStoryService.reorder(workspaceId, storyId, reorderPayload);
       if (reorderRes.error && !contextChanged()) {
+        logPMDnD('store.move.reorder_error', {
+          trace_id: traceID,
+          story_id: storyId,
+          error: reorderRes.error,
+        });
         set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder story' });
+      } else {
+        logPMDnD('store.move.reorder_success', {
+          trace_id: traceID,
+          story_id: storyId,
+        });
       }
       return;
     }
 
-    const moveRes = await pmStoryService.move(workspaceId, storyId, { state_id: toStateId, position: toIndex });
+    const movePayload = targetStateType === 'done'
+      ? { state_id: toStateId, debug_trace_id: traceID }
+      : { state_id: toStateId, position: toIndex, debug_trace_id: traceID };
+    logPMDnD('store.move.move_request', {
+      trace_id: traceID,
+      story_id: storyId,
+      payload: movePayload,
+    });
+    const moveRes = await pmStoryService.move(
+      workspaceId,
+      storyId,
+      movePayload,
+    );
     if (moveRes.error) {
       if (!contextChanged()) {
+        logPMDnD('store.move.move_error', {
+          trace_id: traceID,
+          story_id: storyId,
+          error: moveRes.error,
+        });
         set({ columns: snapshot, error: moveRes.error ?? 'Failed to move story' });
       }
       return;
@@ -741,6 +824,19 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     const updatedStory = moveRes.data?.story;
     if (updatedStory) {
+      logPMDnD('store.move.move_success', {
+        trace_id: traceID,
+        story_id: storyId,
+        response_story: {
+          id: updatedStory.id,
+          workflow_state_id: updatedStory.workflow_state_id,
+          position: updatedStory.position,
+          completed: updatedStory.completed,
+          completed_at: updatedStory.completed_at,
+          moved_at: updatedStory.moved_at,
+          updated_at: updatedStory.updated_at,
+        },
+      });
       set((state) => {
         const columns = cloneColumns(state.columns);
         const target = columns.find((column) => column.state.id === toStateId);
@@ -757,7 +853,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     // If source or target columns were truncated, refresh them to resync positions
     const fromTruncated = snapshot.find((c) => c.state.id === fromStateId)?.has_more;
     const toTruncated = snapshot.find((c) => c.state.id === toStateId)?.has_more;
-    if (fromTruncated || toTruncated) {
+    if (fromTruncated || toTruncated || targetStateType === 'done') {
+      logPMDnD('store.move.refresh_requested', {
+        trace_id: traceID,
+        story_id: storyId,
+        from_truncated: fromTruncated,
+        to_truncated: toTruncated,
+        target_state_type: targetStateType,
+      });
       get().refreshBoard();
     }
   },

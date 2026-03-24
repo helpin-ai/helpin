@@ -39,6 +39,8 @@ import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
+import { commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from './KanbanBoard.dnd';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -763,18 +765,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const idx = fromCol.stories.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
         const [story] = fromCol.stories.splice(idx, 1);
-        let insertIdx: number;
-        if (overId === toStateId) {
-          insertIdx = toCol.stories.length;
-        } else {
-          const overIdx = toCol.stories.findIndex((s) => s.id === overId);
-          insertIdx = overIdx >= 0 ? overIdx : toCol.stories.length;
-          if (overIdx >= 0) {
-            const r = active.rect.current.translated;
-            const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
-            if (belowMid) insertIdx = overIdx + 1;
-          }
-        }
+        const overIdx = toCol.stories.findIndex((s) => s.id === overId);
+        const r = active.rect.current.translated;
+        const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const insertIdx = getStateBoardPreviewInsertIndex({
+          toStateType: toCol.state.state_type,
+          overId,
+          toStateId,
+          overIdx,
+          columnLength: toCol.stories.length,
+          pointerBelowMid: belowMid,
+        });
         toCol.stories.splice(insertIdx, 0, story);
         setDragPreviewColumns(next);
       }
@@ -793,16 +794,21 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       // Capture preview state before clearing — it tells us where the story ended up
       const savedPreviewCols = dragPreviewColumns;
       const savedPreviewMemCols = dragPreviewMemberColumns;
-      clearDragPreview();
 
       const { active, over } = event;
-      if (!over) return;
+      if (!over) {
+        clearDragPreview();
+        return;
+      }
       const activeId = String(active.id);
       const overId = String(over.id);
 
       if (groupBy === 'members') {
         const fromKey = findMemberKeyByItemId(activeId);
-        if (!fromKey) return;
+        if (!fromKey) {
+          clearDragPreview();
+          return;
+        }
 
         // Check if onDragOver moved story cross-column in preview
         let crossKey: string | null = null;
@@ -819,21 +825,33 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           // Cross-member: use preview target
           const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
           const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === crossKey);
-          if (!fromColumn || !toColumn) return;
-          await moveMemberStory({
-            workspaceId,
-            storyId: activeId,
-            fromMemberId: fromColumn.member?.id ?? null,
-            toMemberId: toColumn.member?.id ?? null,
-            toIndex: crossIdx,
+          if (!fromColumn || !toColumn) {
+            clearDragPreview();
+            return;
+          }
+          await commitDropBeforeClearingPreview({
+            commit: () => moveMemberStory({
+              workspaceId,
+              storyId: activeId,
+              fromMemberId: fromColumn.member?.id ?? null,
+              toMemberId: toColumn.member?.id ?? null,
+              toIndex: crossIdx,
+            }),
+            clearPreview: clearDragPreview,
           });
+        } else {
+          clearDragPreview();
         }
         return;
       }
 
       // ── State board ──
       const fromStateId = findStateIdByItemId(activeId);
-      if (!fromStateId) return;
+      if (!fromStateId) {
+        clearDragPreview();
+        return;
+      }
+      const debugTraceID = createPMDnDTraceID();
 
       // Check if onDragOver moved story cross-column in preview
       let crossStateId: string | null = null;
@@ -847,32 +865,85 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       if (crossStateId) {
         // Cross-column: use preview target
-        await moveStory({
-          workspaceId,
-          storyId: activeId,
-          fromStateId,
-          toStateId: crossStateId,
-          toIndex: crossIdx,
+        logPMDnD('drag_end_cross_state', {
+          trace_id: debugTraceID,
+          story_id: activeId,
+          over_id: overId,
+          from_state_id: fromStateId,
+          to_state_id: crossStateId,
+          to_index: crossIdx,
+        });
+        await commitDropBeforeClearingPreview({
+          commit: () => moveStory({
+            workspaceId,
+            storyId: activeId,
+            fromStateId,
+            toStateId: crossStateId,
+            toIndex: crossIdx,
+            debugTraceID,
+          }),
+          clearPreview: clearDragPreview,
         });
       } else {
         // Same-column reorder: use over.id with arrayMove semantics
-        if (activeId === overId) return;
+        if (activeId === overId) {
+          clearDragPreview();
+          return;
+        }
         const toStateId = findStateIdByItemId(overId);
-        if (!toStateId || fromStateId !== toStateId) return;
+        if (!toStateId || fromStateId !== toStateId) {
+          clearDragPreview();
+          return;
+        }
         const fromColumn = columns.find((c) => c.state.id === fromStateId);
-        if (!fromColumn) return;
-        if (fromColumn.state.state_type === 'done') return;
+        if (!fromColumn) {
+          clearDragPreview();
+          return;
+        }
+        if (fromColumn.state.state_type === 'done') {
+          logPMDnD('drag_end_done_column_noop', {
+            trace_id: debugTraceID,
+            story_id: activeId,
+            state_id: fromStateId,
+            over_id: overId,
+          });
+          clearDragPreview();
+          return;
+        }
         const fromIndex = fromColumn.stories.findIndex((s) => s.id === activeId);
         const overIndex = overId === toStateId
           ? fromColumn.stories.length - 1
           : fromColumn.stories.findIndex((s) => s.id === overId);
-        if (fromIndex < 0 || overIndex < 0 || fromIndex === overIndex) return;
-        await moveStory({
-          workspaceId,
-          storyId: activeId,
-          fromStateId,
-          toStateId,
-          toIndex: overIndex,
+        const toIndex = getSameStateBoardDropIndex({
+          overId,
+          stateId: toStateId,
+          overIndex,
+          columnLength: fromColumn.stories.length,
+        });
+        if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) {
+          clearDragPreview();
+          return;
+        }
+        logPMDnD('drag_end_same_state', {
+          trace_id: debugTraceID,
+          story_id: activeId,
+          over_id: overId,
+          state_id: toStateId,
+          state_type: fromColumn.state.state_type,
+          from_index: fromIndex,
+          over_index: overIndex,
+          to_index: toIndex,
+        });
+        await commitDropBeforeClearingPreview({
+          commit: () => moveStory({
+            workspaceId,
+            storyId: activeId,
+            fromStateId,
+            toStateId,
+            toIndex,
+            debugTraceID,
+          }),
+          clearPreview: clearDragPreview,
         });
       }
     },
