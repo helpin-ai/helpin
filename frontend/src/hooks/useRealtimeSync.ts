@@ -6,6 +6,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
+import { logPMDnD } from '@/lib/pmDnDDebug'
 
 const BOARD_ENTITIES = new Set(['story'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
@@ -46,13 +47,30 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     // Story-level events → incremental patch when possible, debounced full refresh as fallback
     if (BOARD_ENTITIES.has(event.entity)) {
       const store = usePMBoardStore.getState()
+      const traceID = typeof event.data?.debug_trace_id === 'string' ? event.data.debug_trace_id : null
+      logPMDnD('ws.story_event', {
+        trace_id: traceID,
+        action: event.action,
+        entity: event.entity,
+        story_id: event.entity_id,
+        workspace_id: event.workspace_id,
+        actor_id: event.actor_id,
+      })
 
       if (event.action === 'deleted') {
         // Delete can be patched locally without re-fetching
         const patched = store.patchStory('deleted', event.entity_id)
         if (!patched) scheduleRefresh()
+      } else if (event.action === 'moved' || event.action === 'reordered') {
+        // Position changes renumber siblings; patching only the moved story leaves stale ordering.
+        logPMDnD('ws.story_event_refresh', {
+          trace_id: traceID,
+          action: event.action,
+          story_id: event.entity_id,
+        })
+        scheduleRefresh()
       } else {
-        // For created/updated/moved, fetch the updated story and patch it in
+        // For created/updated, fetch the updated story and patch it in
         pmStoryService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
             const story = { ...res.data.story }
@@ -60,7 +78,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             if (story.owner_member_id && !story.owner_name && res.data.owner_member) {
               story.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
-            const patched = store.patchStory(event.action as 'created' | 'updated' | 'moved', event.entity_id, story)
+            const patched = store.patchStory(event.action as 'created' | 'updated', event.entity_id, story)
             if (!patched) scheduleRefresh()
           } else {
             // Story might have been archived/deleted by the time we fetch.

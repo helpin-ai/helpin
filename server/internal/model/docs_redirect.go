@@ -31,6 +31,13 @@ type CreateDocsRedirectRequest struct {
 	TargetArticleSlug    *string `json:"target_article_slug"`
 }
 
+// UpdateDocsRedirectRequest is the payload for updating a redirect.
+type UpdateDocsRedirectRequest struct {
+	SourcePath           *string `json:"source_path"`
+	TargetCollectionSlug *string `json:"target_collection_slug"`
+	TargetArticleSlug    *string `json:"target_article_slug"`
+}
+
 // DocsRedirectFilter controls list query filtering and pagination.
 type DocsRedirectFilter struct {
 	Search  string `json:"search"`

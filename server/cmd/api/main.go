@@ -667,7 +667,7 @@ func main() {
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	contentCrawler := crawler.NewSmartCrawler(
@@ -899,6 +899,7 @@ func main() {
 			docsImportService,
 			docsEmbeddingService,
 			agentService,
+			jwtManager,
 		),
 	}
 

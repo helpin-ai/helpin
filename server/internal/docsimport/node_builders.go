@@ -92,14 +92,20 @@ func HardBreak() Node {
 	return Node{Type: "hardBreak"}
 }
 
-// Image creates a resizableImage node.
-func Image(src, alt string) Node {
+// Image creates a resizableImage node. If linkUrl is non-empty, the image
+// will be wrapped in a link when rendered.
+func Image(src, alt, linkUrl string) Node {
+	attrs := map[string]any{
+		"src": src,
+		"alt": alt,
+	}
+	if linkUrl != "" {
+		attrs["linkUrl"] = linkUrl
+		attrs["linkNewTab"] = true
+	}
 	return Node{
-		Type: "resizableImage",
-		Attrs: map[string]any{
-			"src": src,
-			"alt": alt,
-		},
+		Type:  "resizableImage",
+		Attrs: attrs,
 	}
 }
 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { createRootRouteWithContext } from '@tanstack/react-router'
+import { createRootRouteWithContext, useRouterState } from '@tanstack/react-router'
+import { Eye } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
@@ -13,6 +14,8 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
 
 function RootLayout() {
   const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const isPreview = pathname.startsWith('/preview/')
 
   const {
     data: config,
@@ -91,7 +94,8 @@ function RootLayout() {
     )
   }
 
-  if (config && !config.is_published) {
+  // Allow preview routes even when help center is not published
+  if (config && !config.is_published && !isPreview) {
     return (
       <ErrorState
         title="Help Center unavailable"
@@ -103,6 +107,17 @@ function RootLayout() {
 
   return (
     <DocsProvider subdomain={subdomain} config={config!} spaces={spaces ?? []}>
+      {isPreview && (
+        <div className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-center">
+          <Eye size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+            Preview Mode
+          </span>
+          <span className="text-xs text-amber-600/70 dark:text-amber-400/60">
+            — This is how your article will appear in the help center.
+          </span>
+        </div>
+      )}
       <AppShell />
     </DocsProvider>
   )

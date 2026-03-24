@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -67,6 +68,19 @@ func (s *PMStoryService) SetAgentService(svc *AgentService) {
 // SetRecurringService sets the recurring template service (breaks circular dependency).
 func (s *PMStoryService) SetRecurringService(svc *PMRecurringTemplateService) {
 	s.recurringService = svc
+}
+
+func pmDnDWebsocketData(traceID string) json.RawMessage {
+	if strings.TrimSpace(traceID) == "" {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]string{
+		"debug_trace_id": traceID,
+	})
+	if err != nil {
+		return nil
+	}
+	return payload
 }
 
 // requireCanEdit checks that the actor has at least member role (owner, admin, or member).
@@ -258,6 +272,12 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 	if req.Position != nil {
 		story.Position = *req.Position
+	} else {
+		position, err := s.storyRepo.NextPosition(ctx, req.WorkspaceID, stateID)
+		if err != nil {
+			return nil, err
+		}
+		story.Position = position
 	}
 
 	if err := s.storyRepo.Create(ctx, story); err != nil {
@@ -794,6 +814,16 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if current == nil {
 		return nil, fmt.Errorf("story not found")
 	}
+	s.logger.InfoContext(ctx, "[pm-dnd] service move start",
+		"trace_id", req.DebugTraceID,
+		"story_id", current.ID,
+		"workspace_id", current.WorkspaceID,
+		"actor_id", actorID,
+		"from_state_id", current.WorkflowStateID,
+		"from_position", current.Position,
+		"to_state_id", req.StateID,
+		"requested_position", req.Position,
+	)
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return nil, err
 	}
@@ -807,12 +837,10 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if !ok {
 		return nil, fmt.Errorf("state_id must belong to story workflow")
 	}
-
-	position := current.Position
-	if req.Position != nil {
-		position = *req.Position
+	if req.Position != nil && *req.Position < 0 {
+		return nil, fmt.Errorf("position must be >= 0")
 	}
-	if err := s.storyRepo.MoveToState(ctx, current.ID, req.StateID, position); err != nil {
+	if err := s.storyRepo.MoveToState(ctx, current.ID, req.StateID, req.Position, req.DebugTraceID); err != nil {
 		return nil, err
 	}
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
@@ -830,7 +858,14 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for story move", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "moved", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "moved",
+		Entity:      "story",
+		EntityID:    current.ID,
+		WorkspaceID: current.WorkspaceID,
+		ActorID:     actorID,
+		Data:        pmDnDWebsocketData(req.DebugTraceID),
+	})
 
 	if s.notificationService != nil {
 		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
@@ -877,7 +912,23 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 
 	s.logger.InfoContext(ctx, "story moved", "story_id", current.ID, "workspace_id", current.WorkspaceID, "new_state", newStateName, "actor_id", actorID)
-	return s.storyRepo.GetByID(ctx, current.ID)
+	detail, err := s.storyRepo.GetByID(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+	if detail != nil {
+		s.logger.InfoContext(ctx, "[pm-dnd] service move result",
+			"trace_id", req.DebugTraceID,
+			"story_id", detail.Story.ID,
+			"final_state_id", detail.Story.WorkflowStateID,
+			"final_position", detail.Story.Position,
+			"completed", detail.Story.Completed,
+			"completed_at", detail.Story.CompletedAt,
+			"moved_at", detail.Story.MovedAt,
+			"updated_at", detail.Story.UpdatedAt,
+		)
+	}
+	return detail, nil
 }
 
 // Reorder changes story position in its state.
@@ -889,19 +940,43 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	s.logger.InfoContext(ctx, "[pm-dnd] service reorder start",
+		"trace_id", req.DebugTraceID,
+		"story_id", current.ID,
+		"workspace_id", current.WorkspaceID,
+		"actor_id", actorID,
+		"state_id", current.WorkflowStateID,
+		"from_position", current.Position,
+		"requested_position", req.Position,
+	)
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
 	if req.Position < 0 {
 		return fmt.Errorf("position must be >= 0")
 	}
-	if err := s.storyRepo.Reorder(ctx, id, req.Position); err != nil {
+	if err := s.storyRepo.Reorder(ctx, id, req.Position, req.DebugTraceID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position}); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for story reorder", "error", err, "story_id", current.ID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "reordered",
+		Entity:      "story",
+		EntityID:    id,
+		WorkspaceID: current.WorkspaceID,
+		ActorID:     actorID,
+		Data:        pmDnDWebsocketData(req.DebugTraceID),
+	})
+	if raw, err := s.storyRepo.GetRawByID(ctx, id); err == nil && raw != nil {
+		s.logger.InfoContext(ctx, "[pm-dnd] service reorder result",
+			"trace_id", req.DebugTraceID,
+			"story_id", raw.ID,
+			"state_id", raw.WorkflowStateID,
+			"final_position", raw.Position,
+		)
+	}
 	return nil
 }
 

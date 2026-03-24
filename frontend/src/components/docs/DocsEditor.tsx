@@ -37,6 +37,9 @@ import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
 import { HtmlBlockExtension } from './HtmlBlockExtension'
+import { CodeBlockExtension } from './CodeBlockExtension'
+import { SearchReplaceExtension } from './SearchReplaceExtension'
+import { SearchReplaceBar } from './SearchReplaceBar'
 import { EmojiPickerPopover } from './EmojiPickerPopover'
 import { InsertVideoDialog } from './InsertVideoDialog'
 import { TableControls } from './TableControls'
@@ -657,6 +660,8 @@ export function DocsEditor({
   const videoInsertPosRef = useRef<number>(0)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const emojiInsertPosRef = useRef<number>(0)
+  const [showSearch, setShowSearch] = useState(false)
+  const [showSearchReplace, setShowSearchReplace] = useState(false)
 
   const doSave = useCallback(
     async (json: JSONContent) => {
@@ -761,14 +766,17 @@ export function DocsEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        codeBlock: false,
         link: {
           openOnClick: false,
           HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer' },
         },
       }),
+      CodeBlockExtension,
       Placeholder.configure({
         placeholder: ({ node }) => {
           if (node.type.name === 'heading') return 'Heading';
+          if (node.type.name === 'codeBlock') return '';
           return "Type '/' for commands, or start writing...";
         },
       }),
@@ -791,6 +799,7 @@ export function DocsEditor({
       UnderlineExtension,
       Subscript,
       Superscript,
+      SearchReplaceExtension,
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
     editable: !readOnly,
@@ -1004,7 +1013,7 @@ img { max-width: 100%; }
     input.click()
   }, [editor, scheduleSave])
 
-  // ── Keyboard shortcut: Ctrl+Shift+M → toggle source view ──────────────────
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
   useEffect(() => {
     if (readOnly) return
@@ -1012,6 +1021,17 @@ img { max-width: 100%; }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
         e.preventDefault()
         toggleSourceView()
+      }
+      // Ctrl+F → search, Ctrl+H → search & replace
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        setShowSearch(true)
+        setShowSearchReplace(false)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault()
+        setShowSearch(true)
+        setShowSearchReplace(true)
       }
     }
     window.addEventListener('keydown', handler)
@@ -1109,6 +1129,17 @@ img { max-width: 100%; }
           </div>
         ) : (
           <div className="mx-auto max-w-3xl">
+            {showSearch && editor && (
+              <SearchReplaceBar
+                editor={editor}
+                showReplace={showSearchReplace}
+                onClose={() => {
+                  setShowSearch(false)
+                  setShowSearchReplace(false)
+                  editor.commands.focus()
+                }}
+              />
+            )}
             {/* Title */}
             {title !== undefined && (
               <div className="group/title px-6 pt-10 pb-1">

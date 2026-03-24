@@ -8,8 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Plus, Search } from 'lucide-react';
+import { Trash2, Plus, Search, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 
 const PER_PAGE = 20;
 
@@ -41,11 +43,13 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editRedirect, setEditRedirect] = useState<DocsRedirect | null>(null);
   const [sourcePath, setSourcePath] = useState('');
   const [targetCollectionSlug, setTargetCollectionSlug] = useState('');
   const [targetArticleSlug, setTargetArticleSlug] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -80,7 +84,27 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
-  const handleCreate = async (e: FormEvent) => {
+  const resetForm = () => {
+    setSourcePath('');
+    setTargetCollectionSlug('');
+    setTargetArticleSlug('');
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setEditRedirect(null);
+    setCreateOpen(true);
+  };
+
+  const openEdit = (r: DocsRedirect) => {
+    setSourcePath(r.source_path);
+    setTargetCollectionSlug(r.target_collection_slug);
+    setTargetArticleSlug(r.target_article_slug ?? '');
+    setEditRedirect(r);
+    setCreateOpen(true);
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!sourcePath.trim() || !targetCollectionSlug.trim()) {
       toast.error('Source path and target collection slug are required.');
@@ -88,20 +112,35 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
     }
     setSaving(true);
     try {
-      const { error } = await docsRedirectService.create(workspaceId, {
-        source_path: sourcePath.trim(),
-        target_collection_slug: targetCollectionSlug.trim(),
-        target_article_slug: targetArticleSlug.trim() || undefined,
-      });
-      if (error) {
-        toast.error(error);
+      if (editRedirect) {
+        const { error } = await docsRedirectService.update(workspaceId, editRedirect.id, {
+          source_path: sourcePath.trim(),
+          target_collection_slug: targetCollectionSlug.trim(),
+          target_article_slug: targetArticleSlug.trim() || undefined,
+        });
+        if (error) {
+          toast.error(error);
+        } else {
+          toast.success('Redirect updated.');
+          setCreateOpen(false);
+          resetForm();
+          setEditRedirect(null);
+          loadRedirects();
+        }
       } else {
-        toast.success('Redirect created.');
-        setCreateOpen(false);
-        setSourcePath('');
-        setTargetCollectionSlug('');
-        setTargetArticleSlug('');
-        loadRedirects();
+        const { error } = await docsRedirectService.create(workspaceId, {
+          source_path: sourcePath.trim(),
+          target_collection_slug: targetCollectionSlug.trim(),
+          target_article_slug: targetArticleSlug.trim() || undefined,
+        });
+        if (error) {
+          toast.error(error);
+        } else {
+          toast.success('Redirect created.');
+          setCreateOpen(false);
+          resetForm();
+          loadRedirects();
+        }
       }
     } finally {
       setSaving(false);
@@ -152,7 +191,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
               </SelectContent>
             </Select>
             {editable && (
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Button size="sm" onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-1" /> Add Redirect
               </Button>
             )}
@@ -168,7 +207,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
               </p>
             </div>
             {editable && (
-              <Button onClick={() => setCreateOpen(true)}>
+              <Button onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-1" />
                 Add Redirect
               </Button>
@@ -176,39 +215,56 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead>Source Path</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead className="w-[120px]">Type</TableHead>
-                  <TableHead className="w-[100px]">Source</TableHead>
-                  <TableHead className="w-[120px]">Created</TableHead>
-                  {editable && <TableHead className="w-[60px]" />}
+                  <TableHead className="w-[30%]">Source Path</TableHead>
+                  <TableHead className="w-[30%]">Target</TableHead>
+                  <TableHead className="w-[100px]">Type</TableHead>
+                  <TableHead className="w-[90px]">Source</TableHead>
+                  <TableHead className="w-[100px]">Created</TableHead>
+                  {editable && <TableHead className="w-[70px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {redirects.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
-                      <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">{r.source_path}</code>
+                      <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-xs font-mono" title={r.source_path}>{r.source_path}</code>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatTarget(r)}</TableCell>
+                    <TableCell>
+                      <span className="block truncate text-sm text-muted-foreground" title={formatTarget(r)}>{formatTarget(r)}</span>
+                    </TableCell>
                     <TableCell>{typeBadge(r.type)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{r.source_system ?? '\u2014'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground truncate">{r.source_system ?? '\u2014'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {new Date(r.created_at).toLocaleDateString()}
                     </TableCell>
                     {editable && (
                       <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={deletingId === r.id}
-                          onClick={() => handleDelete(r.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-0.5">
+                          <QuickTooltip label="Edit redirect">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => openEdit(r)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </QuickTooltip>
+                          <QuickTooltip label="Delete redirect">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              disabled={deletingId === r.id}
+                              onClick={() => setDeleteConfirmId(r.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </QuickTooltip>
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -242,11 +298,11 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
         )}
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) { setEditRedirect(null); resetForm(); } }}>
         <DialogContent className="sm:max-w-md">
-          <form onSubmit={handleCreate}>
+          <form onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>Add Redirect</DialogTitle>
+              <DialogTitle>{editRedirect ? 'Edit Redirect' : 'Add Redirect'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -281,11 +337,24 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+              <Button type="submit" disabled={saving}>{saving ? 'Saving...' : editRedirect ? 'Update' : 'Save'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}
+        title="Delete redirect"
+        description="This redirect may be serving live traffic. Deleting it could cause broken links for visitors. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (deleteConfirmId) handleDelete(deleteConfirmId);
+          setDeleteConfirmId(null);
+        }}
+      />
     </>
   );
 }

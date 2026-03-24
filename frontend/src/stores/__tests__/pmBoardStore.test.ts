@@ -34,6 +34,31 @@ import { usePMBoardStore } from '../pmBoardStore'
 
 const mockedStoryService = vi.mocked(pmStoryService)
 
+const makeStory = (overrides: Record<string, unknown>) => ({
+  id: 'story-default',
+  name: 'Story',
+  workflow_state_id: 'state-todo',
+  position: 0,
+  updated_at: '2026-03-22T00:00:00Z',
+  ...overrides,
+})
+
+const makeStateColumn = (overrides: Record<string, unknown>) => ({
+  state: {
+    id: 'state-todo',
+    name: 'To Do',
+    state_type: 'unstarted',
+    position: 0,
+    ...((overrides.state as Record<string, unknown> | undefined) ?? {}),
+  },
+  stories: [],
+  story_groups: [],
+  story_count: 0,
+  point_total: 0,
+  has_more: false,
+  ...overrides,
+})
+
 describe('usePMBoardStore.moveMemberStory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -126,5 +151,128 @@ describe('usePMBoardStore.moveMemberStory', () => {
     expect(mockedStoryService.reorder).not.toHaveBeenCalled()
     expect(usePMBoardStore.getState().memberColumns[0]?.stories.map((story) => story.id)).toEqual(['story-2'])
     expect(usePMBoardStore.getState().memberColumns[1]?.stories.map((story) => story.id)).toEqual(['story-1'])
+  })
+})
+
+describe('usePMBoardStore.moveStory', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockedStoryService.reorder.mockResolvedValue({
+      data: null,
+      error: null,
+      status: 200,
+    } as never)
+    mockedStoryService.move.mockResolvedValue({
+      data: {
+        story: makeStory({
+          id: 'story-1',
+          workflow_state_id: 'state-done',
+          position: 3,
+          completed: true,
+          completed_at: '2026-03-24T10:00:00Z',
+          moved_at: '2026-03-24T10:00:00Z',
+          updated_at: '2026-03-24T10:00:00Z',
+        }),
+      },
+      error: null,
+      status: 200,
+    } as never)
+  })
+
+  afterEach(() => {
+    usePMBoardStore.setState({
+      error: null,
+      columns: [],
+      workflow: null,
+      teamId: null,
+    })
+  })
+
+  it('reindexes loaded siblings after same-column reorder', async () => {
+    usePMBoardStore.setState({
+      workflow: null,
+      teamId: null,
+      error: null,
+      columns: [
+        makeStateColumn({
+          state: { id: 'state-todo', name: 'To Do', state_type: 'unstarted', position: 0 },
+          story_count: 3,
+          stories: [
+            makeStory({ id: 'story-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
+            makeStory({ id: 'story-2', workflow_state_id: 'state-todo', position: 1, updated_at: '2026-03-24T10:01:00Z' }),
+            makeStory({ id: 'story-3', workflow_state_id: 'state-todo', position: 2, updated_at: '2026-03-24T10:02:00Z' }),
+          ],
+        }),
+      ] as never,
+    })
+
+    await usePMBoardStore.getState().moveStory({
+      workspaceId: 'ws-1',
+      storyId: 'story-1',
+      fromStateId: 'state-todo',
+      toStateId: 'state-todo',
+      toIndex: 2,
+    })
+
+    expect(mockedStoryService.reorder).toHaveBeenCalledWith(
+      'ws-1',
+      'story-1',
+      expect.objectContaining({
+        position: 2,
+        debug_trace_id: expect.any(String),
+      }),
+    )
+    const stories = usePMBoardStore.getState().columns[0]?.stories ?? []
+    expect(stories.map((story) => story.id)).toEqual(['story-2', 'story-3', 'story-1'])
+    expect(stories.map((story) => story.position)).toEqual([0, 1, 2])
+  })
+
+  it('omits manual position when moving into done', async () => {
+    usePMBoardStore.setState({
+      workflow: null,
+      teamId: null,
+      error: null,
+      columns: [
+        makeStateColumn({
+          state: { id: 'state-todo', name: 'To Do', state_type: 'started', position: 0 },
+          story_count: 1,
+          stories: [
+            makeStory({ id: 'story-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
+          ],
+        }),
+        makeStateColumn({
+          state: { id: 'state-done', name: 'Done', state_type: 'done', position: 1 },
+          story_count: 1,
+          stories: [
+            makeStory({
+              id: 'story-done-old',
+              workflow_state_id: 'state-done',
+              position: 0,
+              completed: true,
+              completed_at: '2026-03-24T09:00:00Z',
+              moved_at: '2026-03-24T09:00:00Z',
+              updated_at: '2026-03-24T09:00:00Z',
+            }),
+          ],
+        }),
+      ] as never,
+    })
+
+    await usePMBoardStore.getState().moveStory({
+      workspaceId: 'ws-1',
+      storyId: 'story-1',
+      fromStateId: 'state-todo',
+      toStateId: 'state-done',
+      toIndex: 1,
+    })
+
+    expect(mockedStoryService.move).toHaveBeenCalledWith(
+      'ws-1',
+      'story-1',
+      expect.objectContaining({
+        state_id: 'state-done',
+        debug_trace_id: expect.any(String),
+      }),
+    )
   })
 })

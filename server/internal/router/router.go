@@ -179,6 +179,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
+			// Document preview (token-authenticated)
+			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
+
 			// Legacy/redirect resolver
 			r.Get("/resolve/*", h.Docs.PublicResolvePath)
 		})
@@ -720,6 +723,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
 
+				// Preview token — docs.read
+				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)
+
 				// Versions — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/versions", h.Docs.CreateVersion)
@@ -752,6 +758,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Redirect management
 				r.With(requirePerm(authorization.PermDocsAdmin)).Get("/redirects", h.Docs.ListRedirects)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/redirects", h.Docs.CreateRedirect)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Patch("/redirects/{id}", h.Docs.UpdateRedirect)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/redirects/{id}", h.Docs.DeleteRedirect)
 
 				// Feedback
