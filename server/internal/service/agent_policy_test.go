@@ -6,7 +6,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
+func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 	tests := []struct {
 		name      string
 		agent     model.Agent
@@ -14,44 +14,44 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 		shouldErr bool
 	}{
 		{
-			name:   "product planner can run on epics",
-			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
+			name:   "epic planner can run on epics",
+			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
 			target: "epic",
 		},
 		{
-			name:   "product planner can run on stories",
-			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
+			name:   "epic planner can run on stories",
+			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
 			target: "story",
 		},
 		{
-			name:   "product planner can run on crm deals",
-			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
+			name:   "epic planner can run on crm deals",
+			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
 			target: "crm_deal",
 		},
 		{
-			name:   "engineer can run on stories",
-			agent:  model.Agent{AgentClass: model.AgentClassEngineer},
+			name:   "code builder can run on stories",
+			agent:  model.Agent{PresetKey: model.AgentPresetCodeBuilder},
 			target: "story",
 		},
 		{
-			name:      "engineer cannot run on epics",
-			agent:     model.Agent{AgentClass: model.AgentClassEngineer},
+			name:      "code builder cannot run on epics",
+			agent:     model.Agent{PresetKey: model.AgentPresetCodeBuilder},
 			target:    "epic",
 			shouldErr: true,
 		},
 		{
-			name:   "reviewer can run on stories",
-			agent:  model.Agent{AgentClass: model.AgentClassReviewer},
+			name:   "review agent can run on stories",
+			agent:  model.Agent{PresetKey: model.AgentPresetReviewAgent},
 			target: "story",
 		},
 		{
-			name:   "support can run on support conversations",
-			agent:  model.Agent{AgentClass: model.AgentClassSupport},
+			name:   "support agent can run on support conversations",
+			agent:  model.Agent{PresetKey: model.AgentPresetSupportAgent},
 			target: "support_conversation",
 		},
 		{
-			name:      "invalid human class is not runnable",
-			agent:     model.Agent{AgentClass: "human"},
+			name:      "unknown preset is not runnable",
+			agent:     model.Agent{PresetKey: "unknown"},
 			target:    "story",
 			shouldErr: true,
 		},
@@ -61,7 +61,7 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateAgentTarget(&tc.agent, tc.target)
 			if tc.shouldErr && err == nil {
-				t.Fatalf("expected error for target %q and agent class %q", tc.target, tc.agent.AgentClass)
+				t.Fatalf("expected error for target %q and preset %q", tc.target, tc.agent.PresetKey)
 			}
 			if !tc.shouldErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -70,45 +70,74 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 	}
 }
 
-func TestNormalizeAgentRecordMapsLegacyAliases(t *testing.T) {
+func TestNormalizeAgentRecordDefaultsToPreset(t *testing.T) {
 	agent := &model.Agent{
-		CapabilityProfile: "orchestrator",
-		TriggerMode:       "manual",
+		TriggerMode: "manual",
 	}
 
 	normalizeAgentRecord(agent)
 
-	if agent.AgentClass != model.AgentClassProductPlanner {
-		t.Fatalf("expected orchestrator alias to normalize to %q, got %q", model.AgentClassProductPlanner, agent.AgentClass)
+	if agent.PresetKey != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected blank agent to default to %q, got %q", model.AgentPresetCodeBuilder, agent.PresetKey)
 	}
-	if agent.CapabilityProfile != model.AgentClassProductPlanner {
-		t.Fatalf("expected capability profile to normalize to %q, got %q", model.AgentClassProductPlanner, agent.CapabilityProfile)
-	}
-}
-
-func TestNormalizeAgentRecordPreservesExplicitCustomCapabilityProfile(t *testing.T) {
-	agent := &model.Agent{
-		AgentClass:        model.AgentClassProductPlanner,
-		CapabilityProfile: "planner_with_docs_focus",
-		TriggerMode:       "manual",
-	}
-
-	normalizeAgentRecord(agent)
-
-	if agent.CapabilityProfile != "planner_with_docs_focus" {
-		t.Fatalf("expected explicit capability profile to be preserved, got %q", agent.CapabilityProfile)
+	if agent.RuntimeKind != "opencode" {
+		t.Fatalf("expected default runtime opencode, got %q", agent.RuntimeKind)
 	}
 }
 
-func TestAgentDefaultsDerivedFromClass(t *testing.T) {
-	if got := defaultRoleForAgentClass(model.AgentClassReviewer); got != "Reviewer" {
-		t.Fatalf("expected reviewer role label, got %q", got)
+func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
+	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "Review Agent" {
+		t.Fatalf("expected review preset role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForAgentClass(model.AgentClassProductPlanner); got != "native_sdk" {
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
 		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
-	if got := defaultRuntimeKindForAgentClass(model.AgentClassSupport); got != "native_sdk" {
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
+	}
+}
+
+func TestPresetDefinitionForAgentDefaultsFromSystemFlag(t *testing.T) {
+	systemAgent := &model.Agent{IsSystem: true}
+	preset, ok := presetDefinitionForAgent(systemAgent)
+	if !ok {
+		t.Fatal("expected preset resolution for system agent")
+	}
+	if preset.Key != model.AgentPresetEpicPlanner {
+		t.Fatalf("expected epic planner preset, got %q", preset.Key)
+	}
+
+	regularAgent := &model.Agent{}
+	preset, ok = presetDefinitionForAgent(regularAgent)
+	if !ok {
+		t.Fatal("expected preset resolution for regular agent")
+	}
+	if preset.Key != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected code builder preset, got %q", preset.Key)
+	}
+}
+
+func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
+	presets := ListAgentPresets()
+	if len(presets) == 0 {
+		t.Fatal("expected preset catalog")
+	}
+
+	found := false
+	for _, preset := range presets {
+		if preset.Key != model.AgentPresetEpicPlanner {
+			continue
+		}
+		found = true
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected epic planner runtime native_sdk, got %q", preset.RuntimeKind)
+		}
+		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
+			t.Fatalf("expected epic planner default mode interactive, got %q", preset.DefaultInvocationMode)
+		}
+	}
+	if !found {
+		t.Fatal("expected epic planner preset in catalog")
 	}
 }
 
@@ -135,9 +164,17 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		supported bool
 	}{
 		{
-			name: "native sdk supports interactive",
+			name: "native sdk planner supports interactive",
 			agent: model.Agent{
-				AgentClass:  model.AgentClassProductPlanner,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			supported: true,
+		},
+		{
+			name: "native sdk code builder supports interactive",
+			agent: model.Agent{
+				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "native_sdk",
 			},
 			supported: true,
@@ -145,7 +182,7 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		{
 			name: "opencode does not support interactive",
 			agent: model.Agent{
-				AgentClass:  model.AgentClassProductPlanner,
+				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "opencode",
 			},
 			supported: false,
@@ -163,23 +200,20 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 	}
 }
 
-func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonPlanners(t *testing.T) {
+func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonEpicPlanner(t *testing.T) {
 	planningNotes := "use specs first"
 	systemPrompt := "do the work"
 	budget := 100
 	agent := &model.Agent{
-		AgentClass:         model.AgentClassEngineer,
-		RuntimeKind:        "",
-		PlanningNotes:      &planningNotes,
-		SystemPrompt:       &systemPrompt,
-		MonthlyTokenBudget: &budget,
+		PresetKey:           model.AgentPresetCodeBuilder,
+		RuntimeKind:         "",
+		PlanningNotes:       &planningNotes,
+		SystemPrompt:        &systemPrompt,
+		MonthlyTokenBudget:  &budget,
 	}
 
 	normalizeAgentRecord(agent)
 
-	if agent.AgentClass != model.AgentClassEngineer {
-		t.Fatalf("expected engineer class, got %q", agent.AgentClass)
-	}
 	if agent.PlanningNotes != nil {
 		t.Fatalf("expected non-planner normalization to clear planning notes, got %+v", agent.PlanningNotes)
 	}

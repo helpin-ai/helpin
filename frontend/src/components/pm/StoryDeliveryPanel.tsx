@@ -83,7 +83,7 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
       if (agentsRes.error) {
         toast.error(agentsRes.error);
       } else {
-        setAgents((agentsRes.data ?? []).filter((agent) => agent.agent_class === 'engineer' || agent.agent_class === 'reviewer'));
+        setAgents((agentsRes.data ?? []).filter(isStoryDeliveryAgent));
       }
 
       if (reposRes.error) {
@@ -123,7 +123,7 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
   );
 
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
-  const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent.agent_class));
+  const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
   const branchPreview = target?.working_branch || buildBranchPreview(storyDetail.story.display_id, storyDetail.story.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
@@ -301,7 +301,7 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
     }
 
     setTriggeringRun(true);
-    const { error } = await agentService.runAgent(workspaceId, storyDetail.story.id);
+    const { error } = await agentService.runStory(workspaceId, storyDetail.story.id);
     setTriggeringRun(false);
     if (error) {
       toast.error(error);
@@ -416,7 +416,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                         <div className="flex items-center gap-2">
                           <Bot className="h-3 w-3 text-muted-foreground" />
                           <span>{agent.name}</span>
-                          <span className="text-muted-foreground">· {agent.capability_profile}</span>
+                          <span className="text-muted-foreground">· {agentSummaryLabel(agent)}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -567,8 +567,45 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   );
 }
 
-function requiresRepoProfile(agentClass: string) {
-  return agentClass === 'engineer' || agentClass === 'reviewer';
+function isStoryDeliveryAgent(agent: { preset_key?: string; allowed_targets?: string[] }) {
+  if (agent.allowed_targets?.includes('story')) {
+    return true;
+  }
+  return agent.preset_key === 'code_builder' ||
+    agent.preset_key === 'review_agent';
+}
+
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+  switch (agent.preset_key) {
+    case 'code_builder':
+      return 'Code Builder';
+    case 'review_agent':
+      return 'Review Agent';
+    case 'story_planner':
+      return 'Story Planner';
+    case 'epic_planner':
+      return 'Epic Planner';
+    case 'support_agent':
+      return 'Support Agent';
+    case 'crm_operator':
+      return 'CRM Operator';
+    default:
+      return agent.runtime_kind === 'native_sdk' ? 'Interactive Agent' : 'Autonomous Agent';
+  }
+}
+
+function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: string[] }) {
+  if (agent.runtime_kind === 'opencode') {
+    return true;
+  }
+  return Boolean(
+    agent.allowed_tools?.some((tool) =>
+      tool === 'write_file' ||
+      tool === 'create_branch' ||
+      tool === 'commit_and_push' ||
+      tool === 'open_pr',
+    ),
+  );
 }
 
 function buildBranchPreview(displayId: number, storyName: string) {

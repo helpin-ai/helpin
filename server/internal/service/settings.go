@@ -16,7 +16,6 @@ import (
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
 	pmWorkflowService *PMWorkflowService
-	braveSearchAPIKey string
 	logger            *slog.Logger
 }
 
@@ -48,11 +47,10 @@ func isValidDefaultStoryType(value string) bool {
 }
 
 // NewSettingsService creates a new SettingsService.
-func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService, braveSearchAPIKey string) *SettingsService {
+func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService) *SettingsService {
 	return &SettingsService{
 		settingsRepo:      settingsRepo,
 		pmWorkflowService: pmWorkflowService,
-		braveSearchAPIKey: strings.TrimSpace(braveSearchAPIKey),
 		logger:            slog.Default().With("service", "settings"),
 	}
 }
@@ -306,17 +304,6 @@ func (s *SettingsService) DeleteJobRole(ctx context.Context, workspaceID, jobRol
 
 // UpdateSystem updates workspace system settings.
 func (s *SettingsService) UpdateSystem(ctx context.Context, workspaceID string, req model.UpdateSystemSettingsRequest) (*model.WorkspaceSettings, error) {
-	if req.PlanningMethodology != nil {
-		methodology := normalizePlanningMethodology(*req.PlanningMethodology)
-		req.PlanningMethodology = &methodology
-	}
-	if req.PlanningWebSearchProvider != nil {
-		provider := model.NormalizePlanningWebSearchProvider(*req.PlanningWebSearchProvider)
-		req.PlanningWebSearchProvider = &provider
-	}
-	if err := s.validatePlanningWebSearchSettings(ctx, workspaceID, req); err != nil {
-		return nil, err
-	}
 	result, err := s.settingsRepo.UpdateSystem(ctx, workspaceID, req)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to update system settings", "error", err, "workspace_id", workspaceID)
@@ -324,45 +311,6 @@ func (s *SettingsService) UpdateSystem(ctx context.Context, workspaceID string, 
 	}
 	s.logger.InfoContext(ctx, "system settings updated", "workspace_id", workspaceID)
 	return result, nil
-}
-
-func (s *SettingsService) validatePlanningWebSearchSettings(ctx context.Context, workspaceID string, req model.UpdateSystemSettingsRequest) error {
-	var current *model.WorkspaceSettings
-	if s.settingsRepo != nil {
-		settings, err := s.settingsRepo.GetWorkspaceSettings(ctx, workspaceID)
-		if err != nil {
-			return err
-		}
-		current = settings
-	}
-	enabled, provider := resolvePlanningWebSearchConfig(current, req)
-
-	if enabled && provider == model.PlanningWebSearchProviderBrave && s.braveSearchAPIKey == "" {
-		return fmt.Errorf("brave web search is not available because BRAVE_SEARCH_API_KEY is not configured")
-	}
-
-	return nil
-}
-
-func resolvePlanningWebSearchConfig(current *model.WorkspaceSettings, req model.UpdateSystemSettingsRequest) (bool, string) {
-	if current == nil {
-		current = &model.WorkspaceSettings{
-			PlanningWebSearchProvider: model.PlanningWebSearchProviderBrave,
-		}
-	}
-
-	enabled := current.PlanningWebSearchEnabled
-	if req.PlanningWebSearchEnabled != nil {
-		enabled = *req.PlanningWebSearchEnabled
-	}
-	provider := model.NormalizePlanningWebSearchProvider(current.PlanningWebSearchProvider)
-	if req.PlanningWebSearchProvider != nil {
-		provider = model.NormalizePlanningWebSearchProvider(*req.PlanningWebSearchProvider)
-	}
-	if provider == "" {
-		provider = model.PlanningWebSearchProviderBrave
-	}
-	return enabled, provider
 }
 
 func (s *SettingsService) prepareTeamHandle(ctx context.Context, workspaceID string, requested *string, name string, excludeID *string) (string, error) {

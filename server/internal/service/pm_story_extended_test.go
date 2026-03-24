@@ -151,6 +151,21 @@ func TestPMStoryService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("non-member system actor skips auto requester fallback", func(t *testing.T) {
+		story, err := env.svc.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "System-created story",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+		}, "agent-system-001")
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if story.Story.RequesterMemberID != nil {
+			t.Fatalf("expected requester_member_id to remain nil for non-member actor, got %#v", story.Story.RequesterMemberID)
+		}
+	})
+
 	t.Run("create with explicit type bug", func(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateStoryRequest{
 			WorkspaceID:     env.wsID,

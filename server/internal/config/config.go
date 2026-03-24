@@ -28,6 +28,7 @@ type Config struct {
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey      string
+	AnthropicBaseURL     string
 	OpenAIAPIKey         string
 	OpenAIBaseURL        string
 	OpenAIEmbeddingModel string
@@ -135,6 +136,7 @@ func Load() (*Config, error) {
 		AWSRegion:                    os.Getenv("AWS_REGION"),
 		AWSEndpointURL:               os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AnthropicAPIKey:              os.Getenv("ANTHROPIC_API_KEY"),
+		AnthropicBaseURL:             strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
 		OpenAIAPIKey:                 strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIBaseURL:                strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:         strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),

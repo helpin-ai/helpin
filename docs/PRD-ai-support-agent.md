@@ -5,6 +5,12 @@
 **Author:** TeamPulse
 **Feature:** AI-powered autonomous support agent with knowledge base RAG, NATS event streaming, and human handoff
 
+Implementation note as of March 23, 2026:
+
+- support agents are now modeled as preset-backed agents, typically `support_agent`
+- execution mode and runtime matter more than any old agent taxonomy
+- any historical references below to a dedicated "support class" should be read as "a support-capable agent targeting `support_conversation`"
+
 ---
 
 ## 1. Problem Statement
@@ -25,12 +31,12 @@ These answers were resolved during design review and are canonical for implement
 | What is a "human handoff"? | Assign conversation to a human user (via `OpenedByUserID`). **v1 ships `unassigned` handoff only** — conversation moves to open status for any human agent to pick up. `assign_to_team` and `round_robin` require `assigned_team_id` on `SupportConversation` which doesn't exist yet; deferred to Phase 5. |
 | Should AI answer outside business hours? | Yes — AI responds regardless of business hours schedule. The offline message still shows, but AI answers alongside it. |
 | Which docs are eligible for RAG? | Only **published** documents (`status = 'published'`). Draft and archived docs are excluded. |
-| Which sender_type for AI messages? | **Normalize to `"agent"`** (not `"ai"`). The existing codebase uses `sender_type: "agent"` with `sender_agent_id` set. Adding a separate `"ai"` type would fork rendering paths in widget, SDK, and dashboard. AI messages are distinguished by having a non-nil `sender_agent_id` pointing to an Agent with `agent_class: "support"`. |
-| Response mode options in v1? | **`ai_first` and `off` only**. `ai_assist` is deferred to Phase 5 — not exposed in UI to avoid dead config. |
-| Separate service or reuse existing agent runs? | **Separate `SupportAIService`**. The existing path (`maybeAutoRunConversationAgent` → `RunConversationAgentAuto` in `agent.go:602`) uses the support runtime profile (`runtime_profiles.go:42`) which hard-codes `ApprovalRequired: true` and `draft_support_reply` tool — explicitly built for "draft replies with human approval." The new AI-first responder is a separate autonomous path. The existing agent-run path is preserved for manual assist mode. The `Agent` record is used as **config only** (model, prompt, budget, knowledge sources), not as an `AgentRun`. |
-| Worker or main API? | **Dedicated worker consumer**. Main API saves customer message, broadcasts it, publishes a JetStream event. Worker node consumes the event, runs RAG + LLM + confidence gating, writes AI reply or escalates. This avoids tying LLM latency/retries to the HTTP tier. Not a Flow/Temporal workflow — just a JetStream pull consumer. |
-| New NATS package? | **No**. Reuse existing JetStream infrastructure in `websocket/jetstream.go` (`ConnectJetStream()`, `EnsureJetStreamInfrastructure()`). Add a new `SUPPORT_AI` stream to the existing `EnsureJetStreamInfrastructure()` function alongside `HELPIN_PLANNING` and `HELPIN_WS_EVENTS`. |
-| NATS fallback for local dev? | **No fallback**. The API already connects to NATS at startup and calls `os.Exit(1)` on failure (`main.go:374-377`). NATS is a hard dependency. Local dev uses a local NATS instance. |
+| Which sender_type for AI messages? | **Normalize to `"agent"`** (not `"ai"`). The existing codebase uses `sender_type: "agent"` with `sender_agent_id` set. Adding a separate `"ai"` type would fork rendering paths in widget, SDK, and dashboard. AI messages are distinguished by having a non-nil `sender_agent_id` pointing to a support-capable agent record. |
+| Response mode options in v1? | **`ai_first` and `off` only**. `ai_assist` remains deferred and is not exposed in UI to avoid dead config. |
+| Separate service or reuse existing agent runs? | **Separate `SupportAIService`**. The existing support agent-run path is preserved for manual-assist/draft workflows. The new AI-first responder is a separate autonomous path. The `Agent` record is used as config only: model, prompt, budget, and knowledge/content sources. |
+| Worker or main API? | **Dedicated worker consumer**. Main API saves the customer message, broadcasts it, and publishes a JetStream event. A worker consumes that event, runs RAG + LLM + confidence gating, then writes an AI reply or escalates. This keeps LLM latency and retries out of the HTTP tier. |
+| New NATS package? | **No**. Reuse the existing JetStream infrastructure in `websocket/jetstream.go` and add a `SUPPORT_AI` stream alongside the websocket event stream. |
+| NATS fallback for local dev? | **No fallback**. NATS is a hard dependency in this design. |
 
 ---
 
@@ -58,7 +64,7 @@ The support agent has **two distinct execution paths** — they share the `Agent
 
 | Path | Trigger | Runtime | Approval | Purpose |
 |------|---------|---------|----------|---------|
-| **Manual assist** (existing) | `maybeAutoRunConversationAgent()` in `support_inbox_widget.go:376` | `AgentRun` via `RunConversationAgentAuto` in `agent.go:602` → worker Temporal | `ApprovalRequired: true` (`runtime_profiles.go:48`) | Draft replies for human review; tools: `list_conversation_messages`, `draft_support_reply`, `update_conversation_status` |
+| **Manual assist** (existing) | `maybeAutoRunConversationAgent()` in `support_inbox_widget.go:376` | `AgentRun` via `RunConversationAgentAuto` in `agent.go:602` → worker Temporal | Human-reviewed support draft flow | Draft replies for human review; tools: `list_conversation_messages`, `draft_support_reply`, `update_conversation_status` |
 | **AI-first auto-reply** (new) | JetStream event published after `WidgetCreateMessage()` | `SupportAIService` consumer on worker node | Autonomous — no approval needed | Instant AI answers using RAG + confidence gating |
 
 The manual-assist path is **not** being modified or replaced. It continues to serve the "AI drafts, human approves" workflow. When `ai_response_mode == "ai_first"`, the AI-first path runs instead of (not alongside) the manual-assist path.
@@ -118,13 +124,12 @@ Confidence Evaluation (multi-signal, not just self-reported)
 **Reuses existing infrastructure** — no new NATS package. The app already has JetStream wiring in `websocket/jetstream.go`:
 - `ConnectJetStream()` opens the shared NATS connection (`main.go:373`)
 - `EnsureJetStreamInfrastructure()` creates/updates streams (`main.go:379`)
-- Existing streams: `HELPIN_PLANNING` (worker→API planning events), `HELPIN_WS_EVENTS` (cross-pod WS relay)
+- Existing stream: `HELPIN_WS_EVENTS` (cross-pod WS relay)
 
 **New stream** added to `EnsureJetStreamInfrastructure()`:
 
 ```
 JetStream Streams (existing + new):
-├── HELPIN_PLANNING       (existing, unchanged)
 ├── HELPIN_WS_EVENTS      (existing, unchanged)
 └── SUPPORT_AI            (NEW — durable, file-backed, MaxAge: 24h)
     ├── support.ai.request.{workspace_id}    — triggers AI processing
@@ -537,9 +542,9 @@ AI messages use `sender_type: "agent"` (same as existing agent messages) with `s
 
 | Model | Change | Why |
 |-------|--------|-----|
-| `Agent` (agent_class: "support") | No change | Already has `AgentClassSupport` constant, `Provider`, `Model`, `SystemPrompt`, `MonthlyTokenBudget` — used as config only for AI-first path |
+| `Agent` (support-capable preset/targeting) | No change | Provides the support executor identity and config for AI-first replies |
 | `SupportConversation` | **Add `AIState`, `AIResolvedAt`, `AIEscalatedAt`, `AIResolutionType`, `AITurnCount`** (see 5.2.1) | `OpenedByUserID` tracks human assignment; `AssignedAgentID` is the AI agent; new fields track AI lifecycle independently from human `Status` |
-| `SupportMessage` | No change | `sender_type: "agent"`, `sender_agent_id`, `metadata` JSONB all exist (`support_inbox.go:62-77`) |
+| `SupportMessage` | No change | `sender_type: "agent"`, `sender_agent_id`, `metadata` JSONB all exist |
 | `WidgetMessageReceivedPayload` | **Add `Metadata *string`** | WS payload must carry AI metadata to widget (`support_inbox.go:251`) |
 | `WidgetConfigFeatures` | **Add `ShowTalkToHuman bool`** | Widget needs to know whether to show "Talk to a human" button (`support_inbox.go:442`) |
 | `AgentHandoff` | No change | Tracks AI→human escalations with context |
@@ -593,7 +598,7 @@ PUT  /support/settings
      Body: { ..., "ai_agent_id": "uuid", "ai_response_mode": "ai_first", "ai_max_followups": 3 }
      → Extended with new AI settings fields
      → Validates ai_response_mode is "ai_first" or "off" (not "ai_assist" in v1)
-     → Validates ai_agent_id references an agent with agent_class: "support" in the workspace
+     → Validates ai_agent_id references a support-capable agent in the workspace
 ```
 
 ---
@@ -1063,7 +1068,7 @@ Add to the "AI Auto-Reply" card:
 
 | Control | Type | Description |
 |---------|------|-------------|
-| AI Agent | Select dropdown | Choose from agents with `agent_class: "support"` |
+| AI Agent | Select dropdown | Choose from agents that can target `support_conversation` |
 | Response Mode | Radio group | "AI First" / "Off" (no "AI Assist" in v1) |
 | Max Follow-ups | Number input (1–10) | Default 3 |
 | Knowledge Sources | Read-only display | Shows spaces linked to selected agent, "Edit" link opens agent config |
@@ -1074,7 +1079,7 @@ Knowledge sources are managed on the agent, not duplicated in settings. The Chat
 
 **File:** Agent edit modal (agents page)
 
-When editing an agent with `agent_class: "support"`:
+When editing a support-capable agent:
 - "Knowledge Sources" section appears
 - Multi-select from available docs spaces (internal + external)
 - Each space shows: name, type badge (Internal/Public), published doc count
@@ -1242,7 +1247,7 @@ useUpdateAgentKnowledgeSources()
 | 24 | `frontend/src/lib/services/agentService.ts` | Knowledge source API calls |
 | 25 | `frontend/src/hooks/queries/index.ts` | `useAgentKnowledgeSources`, `useUpdateAgentKnowledgeSources` hooks |
 | 26 | `frontend/src/components/settings/ChatAITab.tsx` | Add response mode radio (ai_first/off), max follow-ups input, auto-resolve timeout, read-only knowledge source display |
-| 27 | Agent edit modal | Knowledge source picker for `agent_class: "support"` agents |
+| 27 | Agent edit modal | Knowledge source picker for support-capable preset-backed agents |
 | 28 | `packages/shared/src/types/widget-config.ts` | Add `showTalkToHuman` to features interface |
 | 29 | `packages/widget-core/src/components/ConversationView.tsx` | "Talk to human" button (visible when `config.features.showTalkToHuman`), AI typing indicator |
 
@@ -1266,15 +1271,15 @@ useUpdateAgentKnowledgeSources()
 |-----------|------|-------|
 | Full-text search | `repository/docs_search.go` | `Search()` with space ID filtering + `PublicSearch()` for citation mapping |
 | LLM provider | `internal/llm/provider.go` | `ChatCompletion()` via `ClaudeProvider` |
-| Agent model | `model/agent.go:12` | `AgentClassSupport` constant; `Provider`, `Model`, `SystemPrompt`, `MonthlyTokenBudget` fields for AI config |
-| Message sender_type | `model/support_inbox.go:66` | Use `"agent"` (not `"ai"`) with `sender_agent_id` |
-| Metadata JSONB | `model/support_inbox.go:74` | Stores AI sources + confidence |
-| JetStream infrastructure | `websocket/jetstream.go:41-110` | `ConnectJetStream()`, `EnsureJetStreamInfrastructure()` — add SUPPORT_AI stream |
-| JetStream bridge | `websocket/jetstream.go:170` | Pattern for consuming JetStream events on API side |
+| Agent model | `model/agent.go` | preset-backed support agent configuration |
+| Message sender_type | `model/support_inbox.go` | Use `"agent"` (not `"ai"`) with `sender_agent_id` |
+| Metadata JSONB | `model/support_inbox.go` | Stores AI sources + confidence |
+| JetStream infrastructure | `websocket/jetstream.go` | `ConnectJetStream()` and `EnsureJetStreamInfrastructure()` can host the `SUPPORT_AI` stream |
+| JetStream bridge | `websocket/jetstream.go` | Existing pattern for consuming JetStream events on the API side |
 | WebSocket publisher | `internal/websocket/publisher.go` | Broadcast AI responses to widget + inbox |
 | Agent handoff | `model/agent_handoff.go` | Track AI→human escalations with context |
 | Settings pattern | `service/support_inbox_settings.go` | Merge/validate JSONB settings |
-| Runtime profiles | `worker/runtime_profiles.go:42` | Existing support profile with `ApprovalRequired: true` — keep for manual-assist path |
+| Manual assist support path | `service/support_inbox_widget.go` + worker tool policy | Keep the existing human-reviewed draft flow for manual assist |
 | Support tools | `worker/tools_teampulse.go:108` | Existing `draft_support_reply` tool — keep for manual-assist path |
 | Widget auto-run | `service/support_inbox_widget.go:424` | Existing `maybeAutoRunConversationAgent()` — keep for manual-assist, branch on `ai_response_mode` |
 | Space visibility | `model/docs.go` | `SpaceTypeInternal` / `SpaceTypeExternalCapable` for citation filtering |
@@ -1317,7 +1322,7 @@ Set `ai_response_mode: "off"` in workspace settings → all new conversations go
 | Test | Method | Expected Outcome |
 |------|--------|------------------|
 | Backend builds | `cd server && go build ./...` | Clean compilation |
-| NATS streams | Start server | SUPPORT_AI stream created alongside existing HELPIN_PLANNING and HELPIN_WS_EVENTS |
+| NATS streams | Start server | SUPPORT_AI stream created alongside existing HELPIN_WS_EVENTS |
 | Two-path branching | Set `ai_response_mode: "ai_first"` vs `"off"` | `"ai_first"` publishes JetStream event; `"off"` calls `maybeAutoRunConversationAgent` (existing path) |
 | AI auto-reply | Send widget message with AI enabled + `ai_first` mode | AI message appears in conversation within 3s (processed by worker consumer) |
 | Dedup safety | Restart NATS consumer during processing | No duplicate AI replies |

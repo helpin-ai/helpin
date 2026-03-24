@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,11 +29,14 @@ type supportDraftReply struct {
 }
 
 const stuckPostRunThreshold = 2 * time.Minute
+const staleQueuedRunThreshold = 30 * time.Second
+const defaultSystemProductPlannerName = "Epic Planner"
 
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo        *repository.AgentRepository
 	runRepo          *repository.AgentRunRepository
+	runMessageRepo   *repository.AgentRunMessageRepository
 	artifactRepo     *repository.AgentRunArtifactRepository
 	storyRepo        *repository.PMStoryRepository
 	storyLinkRepo    *repository.PMStoryLinkRepository
@@ -61,6 +65,7 @@ type AgentService struct {
 func NewAgentService(
 	agentRepo *repository.AgentRepository,
 	runRepo *repository.AgentRunRepository,
+	runMessageRepo *repository.AgentRunMessageRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
@@ -83,6 +88,7 @@ func NewAgentService(
 	return &AgentService{
 		agentRepo:        agentRepo,
 		runRepo:          runRepo,
+		runMessageRepo:   runMessageRepo,
 		artifactRepo:     artifactRepo,
 		storyRepo:        storyRepo,
 		storyLinkRepo:    storyLinkRepo,
@@ -117,6 +123,116 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 	return s
 }
 
+// SeedWorkspaceDefaults creates workspace-scoped built-in agents.
+func (s *AgentService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
+	_, err := s.ensureBuiltInAgent(ctx, workspaceID, actorID, model.AgentPresetEpicPlanner)
+	return err
+}
+
+func (s *AgentService) ensureSystemProductPlannerAgent(ctx context.Context, workspaceID, actorID string) (*model.Agent, error) {
+	return s.ensureBuiltInAgent(ctx, workspaceID, actorID, model.AgentPresetEpicPlanner)
+}
+
+func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, actorID, presetKey string) (*model.Agent, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+
+	presetKey = normalizePresetKey(presetKey)
+	preset, ok := agentPresetDefinition(presetKey)
+	if !ok {
+		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
+	}
+
+	existing, err := s.agentRepo.GetSystemByPreset(ctx, workspaceID, presetKey)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		changed := false
+		beforePresetKey := existing.PresetKey
+		beforeRole := existing.Role
+		beforeRuntimeKind := existing.RuntimeKind
+		beforeTriggerMode := existing.TriggerMode
+		beforeApprovalMode := existing.ApprovalMode
+		beforeDefaultInvocationMode := existing.DefaultInvocationMode
+		beforeAllowedTools := string(existing.AllowedTools)
+		beforeAllowedCommands := string(existing.AllowedCommands)
+		beforeAllowedTargets := string(existing.AllowedTargets)
+		hadPlanningNotes := existing.PlanningNotes != nil
+		if existing.PlanningNotes != nil || (presetKey == model.AgentPresetEpicPlanner && productPlannerPromptNeedsRefresh(existing.SystemPrompt)) {
+			existing.SystemPrompt = storedSystemPromptForPreset(presetKey, nil, existing.PlanningNotes)
+			existing.PlanningNotes = nil
+			changed = true
+		}
+		if existing.PresetKey != presetKey {
+			existing.PresetKey = presetKey
+			changed = true
+		}
+		if strings.TrimSpace(existing.RuntimeKind) == "" {
+			existing.RuntimeKind = preset.RuntimeKind
+			changed = true
+		}
+		if strings.TrimSpace(existing.DefaultInvocationMode) == "" {
+			existing.DefaultInvocationMode = preset.DefaultInvocationMode
+			changed = true
+		}
+		normalizeAgentRecord(existing)
+		if existing.PresetKey != beforePresetKey ||
+			existing.Role != beforeRole ||
+			existing.RuntimeKind != beforeRuntimeKind ||
+			existing.TriggerMode != beforeTriggerMode ||
+			existing.ApprovalMode != beforeApprovalMode ||
+			existing.DefaultInvocationMode != beforeDefaultInvocationMode ||
+			string(existing.AllowedTools) != beforeAllowedTools ||
+			string(existing.AllowedCommands) != beforeAllowedCommands ||
+			string(existing.AllowedTargets) != beforeAllowedTargets ||
+			(hadPlanningNotes && existing.PlanningNotes == nil) {
+			changed = true
+		}
+		if changed {
+			if err := s.agentRepo.Update(ctx, existing); err != nil {
+				return nil, err
+			}
+		}
+		return existing, nil
+	}
+
+	systemPrompt := storedSystemPromptForPreset(presetKey, nil, nil)
+	agent := &model.Agent{
+		WorkspaceID:           workspaceID,
+		IsSystem:              true,
+		Name:                  defaultSystemProductPlannerName,
+		PresetKey:             presetKey,
+		Role:                  preset.DefaultRole,
+		Status:                "idle",
+		RuntimeKind:           preset.RuntimeKind,
+		Skills:                json.RawMessage("[]"),
+		TriggerMode:           preset.DefaultTriggerMode,
+		SystemPrompt:          systemPrompt,
+		PlanningNotes:         nil,
+		AllowedTools:          mustJSONStringSlice(preset.AllowedTools),
+		AllowedCommands:       mustJSONStringSlice(preset.AllowedCommands),
+		AllowedTargets:        mustJSONStringSlice(preset.AllowedTargetTypes),
+		ApprovalMode:          preset.ApprovalMode,
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: preset.DefaultInvocationMode,
+	}
+	normalizeAgentRecord(agent)
+	if err := s.validateModelRouting(agent); err != nil {
+		return nil, err
+	}
+	if err := s.agentRepo.Create(ctx, agent); err != nil {
+		return nil, err
+	}
+	if s.activitySvc != nil {
+		newValue := agent.Name
+		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
+	}
+	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
+	return agent, nil
+}
+
 // ListAgents returns all agents in a workspace.
 func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	if workspaceID == "" {
@@ -145,9 +261,25 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 	return agent, nil
 }
 
-// ListRuntimeProfiles returns the available runtime profiles.
-func (s *AgentService) ListRuntimeProfiles() []model.RuntimeProfile {
-	return worker.ListRuntimeProfiles()
+func (s *AgentService) ListAgentPresets() []model.AgentPresetDefinition {
+	return ListAgentPresets()
+}
+
+// ListToolCatalog returns the tool catalog with categories and preset mappings.
+func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
+	catalog := worker.ListToolCatalog()
+	presets := ListAgentPresets()
+	for idx := range catalog.Tools {
+		tool := &catalog.Tools[idx]
+		presetKeys := make([]string, 0, len(presets))
+		for _, preset := range presets {
+			if slices.Contains(preset.AllowedTools, tool.Name) {
+				presetKeys = append(presetKeys, preset.Key)
+			}
+		}
+		tool.Presets = presetKeys
+	}
+	return catalog
 }
 
 func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
@@ -182,34 +314,41 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
 
-	tools := req.Tools
-	if tools == nil {
-		tools = json.RawMessage("[]")
-	}
-
 	skills := req.Skills
 	if skills == nil {
 		skills = json.RawMessage("[]")
 	}
 
-	agentClass := normalizeAgentClass(stringOrDefault(req.AgentClass, ""), stringOrDefault(req.CapabilityProfile, ""), req.Role)
+	presetKey := normalizePresetKey(stringOrDefault(req.PresetKey, ""))
+	if presetKey == "" {
+		presetKey = defaultPresetKeyForAgent(false)
+	}
+	if err := validateAgentPresetKey(presetKey); err != nil {
+		return nil, err
+	}
+	preset, _ := agentPresetDefinition(presetKey)
+
 	role := strings.TrimSpace(req.Role)
 	if role == "" {
-		role = defaultRoleForAgentClass(agentClass)
+		if preset.DefaultRole != "" {
+			role = preset.DefaultRole
+		} else {
+			role = "Agent"
+		}
 	}
-	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, defaultRuntimeKindForAgentClass(agentClass)))
-	triggerMode := stringOrDefault(req.TriggerMode, defaultTriggerModeForAgentClass(agentClass))
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, preset.RuntimeKind))
+	if runtimeKind == "" {
+		runtimeKind = "opencode"
+	}
+	triggerMode := stringOrDefault(req.TriggerMode, preset.DefaultTriggerMode)
+	if triggerMode == "" {
+		triggerMode = "manual"
+	}
 	if err := validateRuntimeKind(runtimeKind); err != nil {
 		return nil, err
 	}
-	if err := validateAgentClass(agentClass); err != nil {
-		return nil, err
-	}
-	if err := validateTriggerModeForAgentClass(triggerMode, agentClass); err != nil {
-		return nil, err
-	}
 
-	approvalMode := "class_default"
+	approvalMode := preset.ApprovalMode
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		approvalMode = *req.ApprovalMode
 	}
@@ -219,32 +358,32 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	}
 
 	agent := &model.Agent{
-		WorkspaceID:        req.WorkspaceID,
-		Name:               strings.TrimSpace(req.Name),
-		AgentClass:         agentClass,
-		Role:               role,
-		Status:             "idle",
-		RuntimeKind:        runtimeKind,
-		CapabilityProfile:  capabilityProfileForAgentClass(agentClass),
-		Skills:             skills,
-		TriggerMode:        triggerMode,
-		Provider:           trimPtr(req.Provider),
-		Model:              trimPtr(req.Model),
-		SystemPrompt:       trimPtr(req.SystemPrompt),
-		PlanningNotes:      trimPtr(req.PlanningNotes),
-		Tools:              tools,
-		MonthlyTokenBudget: normalizeTokenBudget(req.MonthlyTokenBudget),
-		TeamID:             trimPtr(req.TeamID),
-		AllowedTools:       normalizeJSONSlice(req.AllowedTools),
-		AllowedCommands:    normalizeJSONSlice(req.AllowedCommands),
-		AllowedTargets:     normalizeJSONSlice(req.AllowedTargets),
-		Schedule:           trimPtr(req.Schedule),
-		TargetSelector:     req.TargetSelector,
-		TriggerEvents:      normalizeJSONSlice(req.TriggerEvents),
-		ApprovalMode:       approvalMode,
-		MaxConcurrentRuns:  maxConcurrentRuns,
+		WorkspaceID:           req.WorkspaceID,
+		Name:                  strings.TrimSpace(req.Name),
+		PresetKey:             presetKey,
+		Role:                  role,
+		Status:                "idle",
+		RuntimeKind:           runtimeKind,
+		Skills:                skills,
+		TriggerMode:           triggerMode,
+		Provider:              trimPtr(req.Provider),
+		Model:                 trimPtr(req.Model),
+		SystemPrompt:          storedSystemPromptForPreset(presetKey, req.SystemPrompt, req.PlanningNotes),
+		PlanningNotes:         nil,
+		MonthlyTokenBudget:    normalizeTokenBudget(req.MonthlyTokenBudget),
+		TeamID:                trimPtr(req.TeamID),
+		AllowedTools:          sliceOrPresetJSON(req.AllowedTools, preset.AllowedTools),
+		AllowedCommands:       sliceOrPresetJSON(req.AllowedCommands, preset.AllowedCommands),
+		AllowedTargets:        sliceOrPresetJSON(req.AllowedTargets, preset.AllowedTargetTypes),
+		Schedule:              trimPtr(req.Schedule),
+		ApprovalMode:          approvalMode,
+		MaxConcurrentRuns:     maxConcurrentRuns,
+		DefaultInvocationMode: stringOrDefault(req.DefaultInvocationMode, preset.DefaultInvocationMode),
 	}
 	normalizeAgentRecord(agent)
+	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return nil, err
+	}
 	if err := s.validateModelRouting(agent); err != nil {
 		return nil, err
 	}
@@ -259,7 +398,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
 	// Start cron schedule if configured.
-	if agent.Schedule != nil && *agent.Schedule != "" {
+	if s.runEngine != nil && agent.Schedule != nil && *agent.Schedule != "" {
 		if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
 			slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
 		}
@@ -277,14 +416,26 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
 	}
+	if agent.IsSystem {
+		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != model.AgentPresetEpicPlanner {
+			return nil, fmt.Errorf("system planner preset cannot be changed")
+		}
+		if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" && strings.TrimSpace(*req.RuntimeKind) != defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner) {
+			return nil, fmt.Errorf("system planner runtime cannot be changed")
+		}
+		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
+			return nil, fmt.Errorf("system planner cannot be restricted to a team")
+		}
+	}
 
-	classChanged := false
+	presetChanged := false
+	previousPresetKey := normalizePresetKey(agent.PresetKey)
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
 	}
-	if req.AgentClass != nil {
-		agent.AgentClass = strings.TrimSpace(*req.AgentClass)
-		classChanged = true
+	if req.PresetKey != nil {
+		agent.PresetKey = normalizePresetKey(*req.PresetKey)
+		presetChanged = true
 	}
 	if req.Role != nil {
 		agent.Role = strings.TrimSpace(*req.Role)
@@ -292,26 +443,30 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.Status != nil {
 		agent.Status = *req.Status
 	}
+	preset, hasPreset := presetDefinitionForAgent(agent)
 	if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		if err := validateRuntimeKind(*req.RuntimeKind); err != nil {
 			return nil, err
 		}
 		agent.RuntimeKind = *req.RuntimeKind
-	} else if classChanged {
-		agent.RuntimeKind = defaultRuntimeKindForAgentClass(agent.AgentClass)
-	}
-	if req.CapabilityProfile != nil && strings.TrimSpace(*req.CapabilityProfile) != "" {
-		profile := worker.NormalizeCapabilityProfile(*req.CapabilityProfile)
-		if err := validateAgentClass(profile); err != nil {
-			return nil, err
+	} else if presetChanged {
+		if hasPreset && preset.RuntimeKind != "" {
+			agent.RuntimeKind = preset.RuntimeKind
+		} else {
+			agent.RuntimeKind = "opencode"
 		}
-		agent.AgentClass = profile
 	}
 	if req.Skills != nil {
 		agent.Skills = req.Skills
 	}
 	if req.TriggerMode != nil && strings.TrimSpace(*req.TriggerMode) != "" {
 		agent.TriggerMode = *req.TriggerMode
+	} else if presetChanged {
+		if hasPreset && preset.DefaultTriggerMode != "" {
+			agent.TriggerMode = preset.DefaultTriggerMode
+		} else {
+			agent.TriggerMode = "manual"
+		}
 	}
 	if req.Provider != nil {
 		agent.Provider = trimPtr(req.Provider)
@@ -322,11 +477,21 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.SystemPrompt != nil {
 		agent.SystemPrompt = trimPtr(req.SystemPrompt)
 	}
-	if req.PlanningNotes != nil {
-		agent.PlanningNotes = trimPtr(req.PlanningNotes)
-	}
-	if req.Tools != nil {
-		agent.Tools = req.Tools
+	if req.SystemPrompt != nil || req.PlanningNotes != nil || presetChanged {
+		var legacyPlanningNotes *string
+		if req.PlanningNotes != nil {
+			legacyPlanningNotes = req.PlanningNotes
+		}
+		if presetChanged && req.SystemPrompt == nil {
+			previousDefaultPrompt := defaultSystemPromptForPreset(previousPresetKey)
+			if agent.SystemPrompt == nil || (previousDefaultPrompt != nil && *agent.SystemPrompt == *previousDefaultPrompt) {
+				agent.SystemPrompt = nil
+			}
+		}
+		agent.SystemPrompt = storedSystemPromptForPreset(agent.PresetKey, agent.SystemPrompt, legacyPlanningNotes)
+		if req.PlanningNotes != nil || normalizePresetKey(agent.PresetKey) != model.AgentPresetEpicPlanner {
+			agent.PlanningNotes = nil
+		}
 	}
 	if req.MonthlyTokenBudget != nil {
 		agent.MonthlyTokenBudget = normalizeTokenBudget(req.MonthlyTokenBudget)
@@ -339,12 +504,18 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if req.AllowedTools != nil {
 		agent.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+	} else if presetChanged && hasPreset {
+		agent.AllowedTools = mustJSONStringSlice(preset.AllowedTools)
 	}
 	if req.AllowedCommands != nil {
 		agent.AllowedCommands = normalizeJSONSlice(req.AllowedCommands)
+	} else if presetChanged && hasPreset {
+		agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
 	}
 	if req.AllowedTargets != nil {
 		agent.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
+	} else if presetChanged && hasPreset {
+		agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 	}
 	scheduleChanged := false
 	if req.Schedule != nil {
@@ -359,26 +530,39 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		}
 		scheduleChanged = oldSchedule != newSchedule
 	}
-	if req.TargetSelector != nil {
-		agent.TargetSelector = req.TargetSelector
-	}
-	if req.TriggerEvents != nil {
-		agent.TriggerEvents = normalizeJSONSlice(req.TriggerEvents)
-	}
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		agent.ApprovalMode = *req.ApprovalMode
+	} else if presetChanged && hasPreset && preset.ApprovalMode != "" {
+		agent.ApprovalMode = preset.ApprovalMode
 	}
 	if req.MaxConcurrentRuns != nil && *req.MaxConcurrentRuns > 0 {
 		agent.MaxConcurrentRuns = *req.MaxConcurrentRuns
 	}
-	if classChanged && (req.Role == nil || strings.TrimSpace(*req.Role) == "") {
-		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
+	if req.DefaultInvocationMode != nil {
+		agent.DefaultInvocationMode = strings.TrimSpace(*req.DefaultInvocationMode)
+	} else if presetChanged && hasPreset {
+		agent.DefaultInvocationMode = preset.DefaultInvocationMode
+	}
+	if presetChanged && (req.Role == nil || strings.TrimSpace(*req.Role) == "") {
+		if hasPreset && preset.DefaultRole != "" {
+			agent.Role = preset.DefaultRole
+		} else {
+			agent.Role = "Agent"
+		}
+	}
+	if agent.IsSystem {
+		agent.PresetKey = model.AgentPresetEpicPlanner
+		agent.RuntimeKind = defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner)
+		agent.TriggerMode = defaultTriggerModeForPresetKey(model.AgentPresetEpicPlanner)
+		agent.TeamID = nil
+		agent.SystemPrompt = storedSystemPromptForPreset(model.AgentPresetEpicPlanner, agent.SystemPrompt, agent.PlanningNotes)
+		agent.PlanningNotes = nil
 	}
 	normalizeAgentRecord(agent)
-	if err := validateAgentClass(agent.AgentClass); err != nil {
+	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
 		return nil, err
 	}
-	if err := validateTriggerModeForAgentClass(agent.TriggerMode, agent.AgentClass); err != nil {
+	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
 		return nil, err
 	}
 	if err := s.validateModelRouting(agent); err != nil {
@@ -394,7 +578,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
 
 	// Sync cron schedule if it changed.
-	if scheduleChanged {
+	if scheduleChanged && s.runEngine != nil {
 		_ = s.runEngine.StopSchedule(ctx, agent.ID)
 		if agent.Schedule != nil && *agent.Schedule != "" {
 			if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
@@ -415,9 +599,14 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	if agent == nil {
 		return fmt.Errorf("agent not found")
 	}
+	if agent.IsSystem {
+		return fmt.Errorf("system agents cannot be deleted")
+	}
 
 	// Stop any active cron schedule.
-	_ = s.runEngine.StopSchedule(ctx, id)
+	if s.runEngine != nil {
+		_ = s.runEngine.StopSchedule(ctx, id)
+	}
 
 	if err := s.agentRepo.Delete(ctx, workspaceID, id); err != nil {
 		return err
@@ -479,7 +668,19 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.reconcileStuckRuns(ctx, runs), total, nil
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
+}
+
+// ListWorkspaceRuns returns runs across the entire workspace.
+func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string, pagination model.PMPagination) ([]model.AgentRun, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	runs, total, err := s.runRepo.ListByWorkspace(ctx, workspaceID, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -494,6 +695,7 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	if updated := s.reconcileStuckRun(ctx, run); updated != nil {
 		run = updated
 	}
+	model.NormalizeAgentRunPauseState(run)
 	return run, nil
 }
 
@@ -503,6 +705,24 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+}
+
+// ListRunMessages returns persisted conversation history for a run.
+func (s *AgentService) ListRunMessages(ctx context.Context, workspaceID, runID string) ([]model.AgentRunMessage, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if s.runMessageRepo == nil {
+		return []model.AgentRunMessage{}, nil
+	}
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, fmt.Errorf("agent run not found")
+	}
+	return s.runMessageRepo.ListByRun(ctx, workspaceID, runID)
 }
 
 // ListTargetRuns returns runs for a specific target object.
@@ -517,55 +737,161 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if err != nil {
 		return nil, err
 	}
-	return s.reconcileStuckRuns(ctx, runs), nil
+	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), nil
 }
 
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
-	story, err := s.storyRepo.GetRawByID(ctx, storyID)
-	if err != nil {
-		return nil, fmt.Errorf("get story: %w", err)
-	}
-	if story == nil {
-		return nil, fmt.Errorf("story not found")
-	}
-	if story.AssignedAgentID == nil || *story.AssignedAgentID == "" {
-		return nil, fmt.Errorf("no agent assigned to this story")
-	}
+	return s.StartTargetRun(ctx, workspaceID, "story", storyID, model.StartAgentRunRequest{}, actorID)
+}
 
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *story.AssignedAgentID, "story")
-	if err != nil {
-		return nil, err
+// RunEpicAgent starts a direct planner run for an epic.
+func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
+	return s.StartTargetRun(ctx, workspaceID, "epic", epicID, req, actorID)
+}
+
+// StartTargetRun starts a direct agent run for a supported target type.
+func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID string) (*model.AgentRun, error) {
+	switch targetType {
+	case "story":
+		story, err := s.storyRepo.GetRawByID(ctx, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("get story: %w", err)
+		}
+		if story == nil || story.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("story not found")
+		}
+
+		agentID := strings.TrimSpace(req.AgentID)
+		if agentID == "" && story.AssignedAgentID != nil {
+			agentID = strings.TrimSpace(*story.AssignedAgentID)
+		}
+		if agentID == "" {
+			return nil, fmt.Errorf("no agent assigned to this story")
+		}
+		if story.AssignedAgentID == nil || *story.AssignedAgentID != agentID {
+			if err := s.AssignAgentToStory(ctx, workspaceID, story.ID, agentID, actorID); err != nil {
+				return nil, err
+			}
+			story.AssignedAgentID = &agentID
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "story")
+		if err != nil {
+			return nil, err
+		}
+		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
+
+		var delivery *model.StoryDeliveryTarget
+		if s.gitService != nil {
+			delivery, err = s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, story.ID, resolved.RequiresRepo)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		input := map[string]any{"story_id": story.ID}
+		if req.AdditionalContext != nil && strings.TrimSpace(*req.AdditionalContext) != "" {
+			input["additional_context"] = strings.TrimSpace(*req.AdditionalContext)
+		}
+		payload, _ := json.Marshal(input)
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "story",
+			targetID:       story.ID,
+			storyID:        &story.ID,
+			actorID:        &actorID,
+			input:          payload,
+			delivery:       delivery,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "story", story.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+		}
+		s.publishRunEvent(run, actorID)
+		return run, nil
+
+	case "epic":
+		epicWithStats, err := s.epicRepo.GetByID(ctx, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("get epic: %w", err)
+		}
+		if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("epic not found")
+		}
+		epic := &epicWithStats.Epic
+
+		agentID := strings.TrimSpace(req.AgentID)
+		if agentID == "" {
+			systemPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+			if err != nil {
+				return nil, err
+			}
+			agentID = systemPlanner.ID
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
+		if err != nil {
+			if strings.TrimSpace(req.AgentID) == "" {
+				systemPlanner, ensureErr := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+				if ensureErr == nil && systemPlanner != nil && systemPlanner.ID != agentID {
+					agent, err = s.requireRunnableAgent(ctx, workspaceID, systemPlanner.ID, "epic")
+					if err == nil {
+						agentID = systemPlanner.ID
+					}
+				}
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		if agent.IsSystem && normalizePresetKey(agent.PresetKey) == model.AgentPresetEpicPlanner {
+			refreshedPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+			if err != nil {
+				return nil, err
+			}
+			if refreshedPlanner != nil {
+				agent = refreshedPlanner
+				agentID = refreshedPlanner.ID
+			}
+		}
+		input := map[string]any{"epic_id": epic.ID}
+		if req.AdditionalContext != nil && strings.TrimSpace(*req.AdditionalContext) != "" {
+			input["additional_context"] = strings.TrimSpace(*req.AdditionalContext)
+		}
+		payload, _ := json.Marshal(input)
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "epic",
+			targetID:       epic.ID,
+			actorID:        &actorID,
+			input:          payload,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		epic.LastPlanningRunID = &run.ID
+		if err := s.epicRepo.Update(ctx, epic); err != nil {
+			return nil, err
+		}
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+		}
+		s.publishRunEvent(run, actorID)
+		return run, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported target type %q", targetType)
 	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-	deliveryTarget, err := s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, storyID, profile)
-	if err != nil {
-		return nil, err
-	}
-
-	input, _ := json.Marshal(map[string]any{
-		"story_id": storyID,
-	})
-
-	run, err := s.createRun(ctx, createRunParams{
-		workspaceID: workspaceID,
-		agent:       agent,
-		profile:     profile,
-		targetType:  "story",
-		targetID:    storyID,
-		storyID:     &storyID,
-		actorID:     &actorID,
-		input:       input,
-		delivery:    deliveryTarget,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "story", storyID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
-	s.publishRunEvent(run, actorID)
-
-	return run, nil
 }
 
 // RunConversationAgent creates a new conversation-targeted agent run and starts its Temporal workflow.
@@ -594,8 +920,6 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if err != nil {
 		return nil, err
 	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-
 	input, _ := json.Marshal(map[string]any{
 		"conversation_id": conversationID,
 		"source":          conversation.Source,
@@ -604,12 +928,12 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	run, err := s.createRun(ctx, createRunParams{
 		workspaceID:    workspaceID,
 		agent:          agent,
-		profile:        profile,
 		targetType:     "support_conversation",
 		targetID:       conversationID,
 		conversationID: &conversationID,
 		actorID:        actorID,
 		input:          input,
+		invocationMode: resolveInvocationMode(agent),
 	})
 	if err != nil {
 		return nil, err
@@ -629,27 +953,19 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
-		return nil, fmt.Errorf("only queued, running, or approval-pending runs can be cancelled")
+	if !model.IsAgentRunActiveStatus(run.Status) {
+		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
 
 	now := time.Now()
 	run.Status = "cancelled"
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ExecutionStage = strPtr("cancelled")
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
 	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
-	if s.runEngine != nil && run.FlowRunID != nil && run.FlowNodeRunID != nil {
-		_ = s.runEngine.SignalFlowRun(ctx, *run.FlowRunID, temporalapp.FlowRunSignal{
-			Type:        temporalapp.FlowSignalTypeChildState,
-			NodeRunID:   *run.FlowNodeRunID,
-			ChildType:   temporalapp.FlowChildTypeAgentRun,
-			ChildID:     run.ID,
-			ChildStatus: model.AgentRunStatusCancelled,
-		})
-	}
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.publishRunEvent(run, actorID)
@@ -657,63 +973,13 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	return run, nil
 }
 
-// ApproveRun approves a pending outcome, publishing support drafts when requested.
-func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actorID string, req model.ApproveAgentRunRequest) (*model.AgentRun, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+// ResumeRun resumes a paused interactive run using one generic intent path.
+func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, error) {
+	run, _, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, req)
 	if err != nil {
 		return nil, err
 	}
-	if run.ApprovalState != "pending" {
-		return nil, fmt.Errorf("run does not require approval")
-	}
-
-	if run.TargetType == "support_conversation" && run.ConversationID != nil {
-		var summary supportRunSummary
-		_ = json.Unmarshal(run.OutputSummary, &summary)
-		if summary.DraftReply == nil || strings.TrimSpace(summary.DraftReply.Content) == "" {
-			return nil, fmt.Errorf("run has no support draft to approve")
-		}
-
-		if req.SendMessage {
-			conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, *run.ConversationID)
-			if err != nil || conversation == nil {
-				return nil, fmt.Errorf("conversation not found")
-			}
-
-			msg := &model.SupportMessage{
-				WorkspaceID:       workspaceID,
-				ConversationID:    *run.ConversationID,
-				SenderType:        "agent",
-				SenderAgentID:     &run.AgentID,
-				SenderDisplayName: summary.DraftReply.SenderDisplayName,
-				Content:           summary.DraftReply.Content,
-				IsInternal:        summary.DraftReply.IsInternal,
-				MessageType:       "reply",
-			}
-			if err := s.messageRepo.Create(ctx, msg); err != nil {
-				return nil, fmt.Errorf("create approved support reply: %w", err)
-			}
-
-			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, actorID))
-			s.pushVisitorConversationRefresh(ctx, workspaceID, conversation)
-		}
-	}
-
-	run.ApprovalState = "approved"
-	if run.Status == "awaiting_approval" {
-		now := time.Now()
-		run.Status = "completed"
-		run.CompletedAt = &now
-		run.ExecutionStage = strPtr("approved")
-	}
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
-	}
-	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
-	s.publishRunEvent(run, actorID)
-
-	// Evaluate automation rules for the run approval event
-	if s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
 		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
 		if storyErr == nil && story != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
@@ -726,8 +992,330 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 			}, nil)
 		}
 	}
-
 	return run, nil
+}
+
+// SendRunMessage appends a user message to a paused interactive run and resumes the workflow.
+func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
+	_, message, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentReply,
+		Content: req.Content,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, fmt.Errorf("resume did not create a run message")
+	}
+	return message, nil
+}
+
+func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, *model.AgentRunMessage, error) {
+	intent := normalizeResumeIntent(req.Intent)
+	if intent == "" {
+		return nil, nil, fmt.Errorf("intent is required")
+	}
+
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonHumanApproval && run.ApprovalState != "pending" {
+		run.ApprovalState = "pending"
+	}
+	if !model.IsAgentRunPausedStatus(run.Status) {
+		return nil, nil, fmt.Errorf("run is not paused for human input")
+	}
+	model.NormalizeAgentRunPauseState(run)
+
+	var (
+		message     *model.AgentRunMessage
+		signal      temporalapp.RunResumeSignal
+		replyText   string
+		stage       = "resuming"
+		approvalSet bool
+	)
+
+	switch intent {
+	case model.AgentRunResumeIntentReply:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		message, err = s.createRunMessage(ctx, run, "user", "user_reply", replyText)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
+			return nil, nil, err
+		}
+		signalIntent := model.AgentRunResumeIntentReply
+		if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
+			if isExplicitInteractiveApprovalReply(replyText) {
+				run.ApprovalState = "approved"
+				approvalSet = true
+				stage = "approved"
+				signalIntent = model.AgentRunResumeIntentApprove
+			} else {
+				run.ApprovalState = "rejected"
+			}
+		}
+		signal = temporalapp.RunResumeSignal{
+			Intent:  signalIntent,
+			Content: replyText,
+		}
+	case model.AgentRunResumeIntentApprove:
+		if run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run does not require approval")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			replyText = "approve"
+		}
+		if req.SendMessage || strings.TrimSpace(req.Content) != "" {
+			if s.runMessageRepo == nil {
+				return nil, nil, fmt.Errorf("run messages are not configured")
+			}
+			message, err = s.createRunMessage(ctx, run, "user", "approval", replyText)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
+			return nil, nil, err
+		}
+		run.ApprovalState = "approved"
+		approvalSet = true
+		stage = "approved"
+		signal = temporalapp.RunResumeSignal{
+			Intent:  model.AgentRunResumeIntentApprove,
+			Content: replyText,
+		}
+	case model.AgentRunResumeIntentRequestChanges:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		if run.PauseReason != model.AgentRunPauseReasonHumanApproval || run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run is not awaiting approval")
+		}
+		message, err = s.createRunMessage(ctx, run, "user", "request_changes", replyText)
+		if err != nil {
+			return nil, nil, err
+		}
+		run.ApprovalState = "rejected"
+		signal = temporalapp.RunResumeSignal{
+			Intent:  model.AgentRunResumeIntentRequestChanges,
+			Content: replyText,
+		}
+	default:
+		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
+	}
+
+	now := time.Now()
+	run.Status = model.AgentRunStatusRunning
+	run.PauseReason = model.AgentRunPauseReasonNone
+	run.ExecutionStage = strPtr(stage)
+	run.LastHeartbeatAt = &now
+	run.CompletedAt = nil
+	if !approvalSet && intent != model.AgentRunResumeIntentRequestChanges && run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+		run.ApprovalState = "not_required"
+	}
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, nil, err
+	}
+	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
+		return nil, nil, err
+	}
+	_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), signal)
+	s.publishRunEvent(run, actorID)
+	return run, message, nil
+}
+
+func normalizeResumeIntent(intent string) string {
+	switch strings.TrimSpace(strings.ToLower(intent)) {
+	case model.AgentRunResumeIntentReply:
+		return model.AgentRunResumeIntentReply
+	case model.AgentRunResumeIntentApprove:
+		return model.AgentRunResumeIntentApprove
+	case model.AgentRunResumeIntentRequestChanges:
+		return model.AgentRunResumeIntentRequestChanges
+	default:
+		return ""
+	}
+}
+
+func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Context, run *model.AgentRun, actorID, reply string) error {
+	if s.runMessageRepo == nil || s.artifactRepo == nil || run == nil {
+		return nil
+	}
+	if run.InvocationMode != model.InvocationModeInteractive {
+		return nil
+	}
+	if !isExplicitInteractiveApprovalReply(reply) {
+		return nil
+	}
+
+	messages, err := s.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages)
+	if err != nil {
+		return err
+	}
+	if sourceMessage == nil || approval == nil {
+		return nil
+	}
+	existingArtifacts, err := s.artifactRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	for _, artifact := range existingArtifacts {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
+			continue
+		}
+		var existing model.ApprovedRunPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &existing); err != nil {
+			continue
+		}
+		if strings.TrimSpace(existing.SourceMessageID) == sourceMessage.ID {
+			return nil
+		}
+	}
+	if preview == nil {
+		preview, err = latestRunPreviewArtifact(existingArtifacts, previewPanelKeyForApprovalPhase(approval.Phase))
+		if err != nil {
+			return err
+		}
+	}
+	if preview == nil {
+		return nil
+	}
+
+	payload := model.ApprovedRunPreview{
+		Phase:           strings.TrimSpace(approval.Phase),
+		ApprovalTitle:   strings.TrimSpace(approval.Title),
+		ApprovalSummary: strings.TrimSpace(approval.Summary),
+		PanelKey:        strings.TrimSpace(preview.PanelKey),
+		PreviewTitle:    strings.TrimSpace(preview.Title),
+		Format:          strings.TrimSpace(preview.Format),
+		Content:         append(json.RawMessage(nil), preview.Content...),
+		SourceMessageID: sourceMessage.ID,
+		ApprovedBy:      strings.TrimSpace(actorID),
+		ApprovedAt:      time.Now().UTC(),
+	}
+	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
+}
+
+func latestApprovalCheckpoint(messages []model.AgentRunMessage) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "assistant" || len(message.ToolInvocations) == 0 || string(message.ToolInvocations) == "null" {
+			continue
+		}
+		var invocations []model.ToolInvocation
+		if err := json.Unmarshal(message.ToolInvocations, &invocations); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse assistant tool invocations: %w", err)
+		}
+		approvalIndex := -1
+		for idx := len(invocations) - 1; idx >= 0; idx-- {
+			if strings.TrimSpace(invocations[idx].ToolName) == worker.ToolRequestHumanApproval {
+				approvalIndex = idx
+				break
+			}
+		}
+		if approvalIndex == -1 {
+			continue
+		}
+		approval := worker.ExtractLatestHumanApprovalRequest(invocations[:approvalIndex+1])
+		if approval == nil {
+			continue
+		}
+		preview := worker.ExtractLatestPublishedPreview(invocations[:approvalIndex], "")
+		return &message, approval, preview, nil
+	}
+	return nil, nil, nil, nil
+}
+
+func previewPanelKeyForApprovalPhase(phase string) string {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "prd":
+		return "prd_draft"
+	case "stories":
+		return "story_plan"
+	default:
+		return ""
+	}
+}
+
+func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
+	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+			continue
+		}
+
+		var payload worker.PublishedPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			return nil, fmt.Errorf("parse run preview artifact: %w", err)
+		}
+		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+			continue
+		}
+		return &payload, nil
+	}
+	return nil, nil
+}
+
+func isExplicitInteractiveApprovalReply(reply string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reply))
+	if normalized == "" || strings.Contains(normalized, "?") {
+		return false
+	}
+
+	for _, marker := range []string{
+		"change", "changes", "revise", "revision", "update", "updates", "edit",
+		"fix", "before approval", "before you", "before we", "add ", "but ",
+		"however", "except", "can you", "could you", "would you", "question",
+		"concern", "clarify", "clarification", "one more", "edge case",
+	} {
+		if strings.Contains(normalized, marker) {
+			return false
+		}
+	}
+
+	for _, marker := range []string{
+		"approve", "approved", "approval", "looks good", "lgtm", "ship it",
+		"good to go", "works for me", "sounds good", "go ahead",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// ApproveRun approves a pending outcome, publishing support drafts when requested.
+func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actorID string, req model.ApproveAgentRunRequest) (*model.AgentRun, error) {
+	return s.ResumeRun(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:      model.AgentRunResumeIntentApprove,
+		SendMessage: req.SendMessage,
+	})
+}
+
+func (s *AgentService) RequestRunChanges(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunRequestChangesRequest) (*model.AgentRun, error) {
+	return s.ResumeRun(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentRequestChanges,
+		Content: req.Content,
+	})
 }
 
 // HandoffRun records an explicit handoff from a run to another agent or user.
@@ -792,16 +1380,14 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 type createRunParams struct {
 	workspaceID    string
 	agent          *model.Agent
-	profile        model.RuntimeProfile
 	targetType     string
 	targetID       string
 	storyID        *string
 	conversationID *string
-	flowRunID      *string
-	flowNodeRunID  *string
 	actorID        *string
 	input          []byte
 	delivery       *model.StoryDeliveryTarget
+	invocationMode string
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -814,17 +1400,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			activeRun = updated
 		}
 	}
-	if activeRun != nil && params.flowNodeRunID != nil && activeRun.FlowNodeRunID != nil && *params.flowNodeRunID == *activeRun.FlowNodeRunID {
-		return activeRun, nil
-	}
-	if activeRun != nil && params.flowRunID != nil && activeRun.FlowRunID != nil && *params.flowRunID == *activeRun.FlowRunID {
-		return activeRun, nil
-	}
-	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running" || activeRun.Status == "awaiting_approval") {
+	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
+		if activeRun.AgentID == params.agent.ID {
+			model.NormalizeAgentRunPauseState(activeRun)
+			return activeRun, nil
+		}
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
 	}
 
-	resolved := worker.ResolveAgentProfile(params.agent)
+	resolved := worker.ResolveAgentProfile(params.agent, params.invocationMode)
 	approvalState := worker.ResolveApprovalState(resolved)
 	taskQueue := resolved.Queue
 
@@ -836,11 +1420,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
 		RuntimeKind:       params.agent.RuntimeKind,
+		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
+		PauseReason:       model.AgentRunPauseReasonNone,
 		TriggeredByUserID: params.actorID,
 		Status:            "queued",
-		FlowRunID:         params.flowRunID,
-		FlowNodeRunID:     params.flowNodeRunID,
 		TaskQueue:         &taskQueue,
 		RunnerPool:        &taskQueue,
 		Input:             json.RawMessage(params.input),
@@ -870,6 +1454,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		errMsg := err.Error()
 		now := time.Now()
 		run.Status = "failed"
+		run.PauseReason = model.AgentRunPauseReasonNone
 		run.CompletedAt = &now
 		run.ErrorMessage = &errMsg
 		run.ExecutionStage = strPtr("failed_to_start")
@@ -908,6 +1493,16 @@ func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID s
 	return s.agentRepo.Update(ctx, agent)
 }
 
+func (s *AgentService) markAgentWorking(ctx context.Context, workspaceID, agentID string, storyID *string) error {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil || agent == nil {
+		return err
+	}
+	agent.Status = "working"
+	agent.ActiveStoryID = storyID
+	return s.agentRepo.Update(ctx, agent)
+}
+
 func (s *AgentService) publishSimpleEvent(action, entity, entityID, workspaceID, actorID string) {
 	if s.wsPublisher == nil {
 		return
@@ -925,6 +1520,11 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 	if s.wsPublisher == nil {
 		return
 	}
+	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
+	data, _ := json.Marshal(map[string]string{
+		"status":       status,
+		"pause_reason": pauseReason,
+	})
 	event := websocket.Event{
 		Action:      "updated",
 		Entity:      "agent_run",
@@ -933,8 +1533,57 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 		ActorID:     actorID,
 		ParentType:  run.TargetType,
 		ParentID:    run.TargetID,
+		Data:        data,
 	}
 	s.wsPublisher.Publish(event)
+}
+
+func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if s.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	data, _ := json.Marshal(message)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "agent_run_message",
+		EntityID:    message.ID,
+		WorkspaceID: run.WorkspaceID,
+		ActorID:     actorID,
+		ParentType:  "agent_run",
+		ParentID:    run.ID,
+		Data:        data,
+	})
+}
+
+func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {
+	if s.runMessageRepo == nil {
+		return nil, fmt.Errorf("run messages are not configured")
+	}
+	sequenceNo, err := s.runMessageRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	message := &model.AgentRunMessage{
+		WorkspaceID: run.WorkspaceID,
+		RunID:       run.ID,
+		Role:        role,
+		Content:     content,
+		MessageType: messageType,
+		SequenceNo:  sequenceNo,
+	}
+	if err := s.runMessageRepo.Create(ctx, message); err != nil {
+		return nil, err
+	}
+	s.publishRunMessageEvent(run, message, run.AgentID)
+	return message, nil
+}
+
+func resolveInvocationMode(agent *model.Agent) string {
+	if agent == nil {
+		return model.InvocationModeAutonomous
+	}
+	normalizeAgentRecord(agent)
+	return agent.DefaultInvocationMode
 }
 
 func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, artifactType, format, content string, seqNo int) error {
@@ -945,6 +1594,31 @@ func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 		Format:        format,
 		StorageMode:   "inline",
 		InlineContent: &content,
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    seqNo,
+	}
+	return s.artifactRepo.Create(ctx, artifact)
+}
+
+func (s *AgentService) saveJSONArtifact(ctx context.Context, run *model.AgentRun, artifactType, format string, payload any) error {
+	if s.artifactRepo == nil || run == nil {
+		return nil
+	}
+	content, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal artifact %s: %w", artifactType, err)
+	}
+	seqNo, err := s.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	artifact := &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  artifactType,
+		Format:        format,
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(content)),
 		Metadata:      json.RawMessage("{}"),
 		SequenceNo:    seqNo,
 	}
@@ -973,21 +1647,6 @@ func (s *AgentService) pushVisitorConversationRefresh(ctx context.Context, works
 	})
 }
 
-func defaultCapabilityProfileForRole(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "planner", "prd", "product":
-		return model.AgentClassProductPlanner
-	case "support":
-		return model.AgentClassSupport
-	case "reviewer", "reviewer_tester", "tester":
-		return model.AgentClassReviewer
-	case "orchestrator":
-		return model.AgentClassProductPlanner
-	default:
-		return model.AgentClassEngineer
-	}
-}
-
 // GetRunnerHealth returns the configured shared runner pools and active runs for a workspace.
 func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) temporalapp.RunnerHealth {
 	if s.runEngine == nil {
@@ -1004,6 +1663,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 		return health
 	}
 	activeRuns = s.reconcileStuckRuns(ctx, activeRuns)
+	activeRuns = s.normalizeRunCollection(activeRuns)
 
 	queueIndex := make(map[string]int, len(health.Queues))
 	for idx, queue := range health.Queues {
@@ -1012,7 +1672,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 
 	now := time.Now()
 	for _, run := range activeRuns {
-		if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
+		if !model.IsAgentRunActiveStatus(run.Status) {
 			continue
 		}
 		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
@@ -1030,8 +1690,10 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 			queue.QueuedRuns++
 		case "running":
 			queue.RunningRuns++
-		case "awaiting_approval":
-			queue.AwaitingApprovalRuns++
+		case model.AgentRunStatusPaused:
+			if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
+				queue.AwaitingApprovalRuns++
+			}
 		}
 		if run.LastHeartbeatAt != nil && (queue.LatestHeartbeatAt == nil || run.LastHeartbeatAt.After(*queue.LatestHeartbeatAt)) {
 			queue.LatestHeartbeatAt = run.LastHeartbeatAt
@@ -1072,6 +1734,32 @@ func stringOrDefault(value *string, fallback string) string {
 	return *value
 }
 
+func mustJSONStringSlice(values []string) json.RawMessage {
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+	}
+	if len(trimmed) == 0 {
+		return json.RawMessage("[]")
+	}
+	payload, err := json.Marshal(trimmed)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return payload
+}
+
+func sliceOrPresetJSON(raw json.RawMessage, fallback []string) json.RawMessage {
+	if len(raw) > 0 && string(raw) != "null" {
+		return normalizeJSONSlice(raw)
+	}
+	return mustJSONStringSlice(fallback)
+}
+
 func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.AgentRun) []model.AgentRun {
 	if len(runs) == 0 {
 		return runs
@@ -1086,6 +1774,9 @@ func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.Agen
 }
 
 func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRun) *model.AgentRun {
+	if updated := s.reconcileStaleQueuedRun(ctx, run, time.Now()); updated != nil {
+		run = updated
+	}
 	if !shouldFailStuckPostRun(run, time.Now()) {
 		return run
 	}
@@ -1093,11 +1784,65 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	now := time.Now()
 	errMsg := "run was marked failed after OpenCode finished but finalization did not reach a terminal state"
 	run.Status = "failed"
+	run.PauseReason = model.AgentRunPauseReasonNone
 	run.CompletedAt = &now
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed")
 	run.LastHeartbeatAt = &now
 	if err := s.runRepo.Update(ctx, run); err != nil {
+		return run
+	}
+	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
+	s.runRepo.Notify(ctx, run)
+	model.NormalizeAgentRunPauseState(run)
+	return run
+}
+
+func (s *AgentService) reconcileStaleQueuedRun(ctx context.Context, run *model.AgentRun, now time.Time) *model.AgentRun {
+	if !shouldInspectQueuedRun(run, now) {
+		return run
+	}
+
+	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
+	workflowRunID := strings.TrimSpace(derefString(run.WorkflowRunID))
+
+	switch {
+	case workflowID == "":
+		return s.failStaleRun(ctx, run, now, "run remained queued but no Temporal workflow execution was recorded")
+	case s.runEngine == nil:
+		return run
+	}
+
+	state, err := s.runEngine.DescribeRun(ctx, workflowID, workflowRunID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to inspect queued Temporal execution", "run_id", run.ID, "workflow_id", workflowID, "error", err)
+		return run
+	}
+	if !state.Exists {
+		return s.failStaleRun(ctx, run, now, "run remained queued but the Temporal workflow execution was not found")
+	}
+	if !state.Open {
+		status := strings.ToLower(strings.TrimSpace(state.Status.String()))
+		if status == "" || status == "workflow_execution_status_unspecified" {
+			status = "closed"
+		}
+		return s.failStaleRun(ctx, run, now, fmt.Sprintf("run remained queued but the Temporal workflow is already %s", status))
+	}
+	return run
+}
+
+func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, now time.Time, errMsg string) *model.AgentRun {
+	if run == nil || s.runRepo == nil {
+		return run
+	}
+	run.Status = "failed"
+	run.PauseReason = model.AgentRunPauseReasonNone
+	run.CompletedAt = &now
+	run.ErrorMessage = &errMsg
+	run.ExecutionStage = strPtr("failed_to_start")
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		slog.WarnContext(ctx, "failed to persist stale run reconciliation", "run_id", run.ID, "error", err)
 		return run
 	}
 	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
@@ -1118,6 +1863,13 @@ func shouldFailStuckPostRun(run *model.AgentRun, now time.Time) bool {
 	return now.Sub(*run.LastHeartbeatAt) > stuckPostRunThreshold
 }
 
+func shouldInspectQueuedRun(run *model.AgentRun, now time.Time) bool {
+	if run == nil || run.Status != "queued" {
+		return false
+	}
+	return now.Sub(run.CreatedAt) > staleQueuedRunThreshold
+}
+
 func isStuckPostRunStage(stage *string) bool {
 	switch derefString(stage) {
 	case "opencode_finished", "persisting_changes", "pushing_changes", "finalizing":
@@ -1127,6 +1879,13 @@ func isStuckPostRunStage(stage *string) bool {
 	}
 }
 
+func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.AgentRun {
+	for idx := range runs {
+		model.NormalizeAgentRunPauseState(&runs[idx])
+	}
+	return runs
+}
+
 func validateRuntimeKind(runtimeKind string) error {
 	switch runtimeKind {
 	case "opencode", "native_sdk":
@@ -1134,10 +1893,6 @@ func validateRuntimeKind(runtimeKind string) error {
 	default:
 		return fmt.Errorf("runtime_kind must be one of opencode, native_sdk")
 	}
-}
-
-func validateCapabilityProfile(profileName string) error {
-	return validateAgentClass(worker.NormalizeCapabilityProfile(profileName))
 }
 
 func validateTriggerMode(triggerMode string) error {

@@ -187,7 +187,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolRunCommand)
 
 	if webSearch != nil {
-		r.register("web_search", "Search the public web for planning research. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
+		r.register("web_search_brave", "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"query": map[string]interface{}{
@@ -212,7 +212,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 			"required": []string{"query"},
 		}, func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-			return r.toolWebSearch(ctx, input)
+			return r.toolWebSearchBrave(ctx, input)
 		})
 	}
 
@@ -259,6 +259,74 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolOpenPR)
 
 	// Helpin tools
+	r.register("request_human_input", "Present structured single-select questions in the interactive run drawer and wait for the human's answer.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"questions": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":   map[string]interface{}{"type": "string"},
+						"type": map[string]interface{}{"type": "string", "enum": []string{QuestionTypeSingleSelect}},
+						"text": map[string]interface{}{"type": "string"},
+						"options": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"value":    map[string]interface{}{"type": "string"},
+									"label":    map[string]interface{}{"type": "string"},
+									"freetext": map[string]interface{}{"type": "boolean"},
+								},
+								"required":             []string{"value", "label"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					"required":             []string{"id", "text", "options"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"questions"},
+		"additionalProperties": false,
+	}, toolRequestHumanInput)
+
+	r.register("request_human_approval", "Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":   map[string]interface{}{"type": "string"},
+			"title":   map[string]interface{}{"type": "string"},
+			"summary": map[string]interface{}{"type": "string"},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestHumanApproval)
+
+	r.register("publish_preview", "Publish a structured preview panel in the interactive run drawer right pane. Use this for markdown drafts and JSON plans that should be reviewed separately from the main chat.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"panel_key": map[string]interface{}{"type": "string"},
+			"title":     map[string]interface{}{"type": "string"},
+			"format":    map[string]interface{}{"type": "string", "enum": []string{PreviewFormatMarkdown, PreviewFormatJSON}},
+			"content": map[string]interface{}{
+				"description": "Panel content. Use a string for markdown previews or any JSON value for json previews.",
+				"oneOf": []map[string]interface{}{
+					{"type": "string"},
+					{"type": "object"},
+					{"type": "array"},
+					{"type": "number"},
+					{"type": "boolean"},
+					{"type": "null"},
+				},
+			},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"panel_key", "title", "format", "content"},
+		"additionalProperties": false,
+	}, toolPublishPreview)
+
 	r.register("add_story_comment", "Add a comment to the current story visible in Helpin.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -285,6 +353,11 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListStoryChecklist)
+
+	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolListWorkspaceTeams)
 
 	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
@@ -461,6 +534,128 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"document_id", "linked_object_type", "linked_object_id"},
 	}, toolLinkDocumentToObject)
 
+	r.register("ensure_epic_spec_doc", "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current story count, and a planning_hint for branching.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolEnsureEpicSpecDoc)
+
+	r.register("approve_epic_spec", "Mark the current epic spec document as approved and record the approved spec version on the epic.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"version_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional existing document version ID to approve. Omit to approve the current document content.",
+			},
+		},
+	}, toolApproveEpicSpec)
+
+	fileChangeSchema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path":        map[string]interface{}{"type": "string"},
+			"action":      map[string]interface{}{"type": "string", "enum": []string{"create", "modify", "delete"}},
+			"description": map[string]interface{}{"type": "string"},
+		},
+		"required":             []string{"path", "action", "description"},
+		"additionalProperties": false,
+	}
+	implementationBriefSchema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"approach": map[string]interface{}{"type": "string"},
+			"files_to_modify": map[string]interface{}{
+				"type":  "array",
+				"items": fileChangeSchema,
+			},
+			"test_strategy": map[string]interface{}{"type": "string"},
+			"vertical_layers": map[string]interface{}{
+				"type":  "array",
+				"items": map[string]interface{}{"type": "string"},
+			},
+			"depends_on_files": map[string]interface{}{
+				"type":  "array",
+				"items": map[string]interface{}{"type": "string"},
+			},
+		},
+		"required":             []string{"approach", "files_to_modify", "test_strategy"},
+		"additionalProperties": false,
+	}
+
+	r.register("create_story_batch", "Create implementation-ready stories for the current epic. Supports stable refs, direct assignment, and dependency refs.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"stories": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"ref":         map[string]interface{}{"type": "string"},
+						"name":        map[string]interface{}{"type": "string"},
+						"description": map[string]interface{}{"type": "string"},
+						"story_type":  map[string]interface{}{"type": "string"},
+						"estimate":    map[string]interface{}{"type": "integer"},
+						"priority":    map[string]interface{}{"type": "string"},
+						"acceptance_criteria": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "string"},
+						},
+						"dependency_refs": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "string"},
+						},
+						"source_refs": map[string]interface{}{
+							"type":  "array",
+							"items": map[string]interface{}{"type": "object"},
+						},
+						"assign_agent_id":      map[string]interface{}{"type": "string"},
+						"slice_type":           map[string]interface{}{"type": "string"},
+						"implementation_brief": implementationBriefSchema,
+					},
+					"required": []string{"name", "description", "story_type"},
+				},
+			},
+		},
+		"required": []string{"stories"},
+	}, toolCreateStoryBatch)
+
+	r.register("assign_story_agent", "Assign or reassign an agent to an existing story.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"story_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The story ID to assign",
+			},
+			"agent_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The target agent ID",
+			},
+		},
+		"required": []string{"story_id", "agent_id"},
+	}, toolAssignStoryAgent)
+
+	r.register("list_epic_stories", "List all non-archived stories linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolListEpicStories)
+
+	r.register("set_story_dependencies", "Create explicit story dependency links between existing stories.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"dependencies": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"source_story_id": map[string]interface{}{"type": "string"},
+						"target_story_id": map[string]interface{}{"type": "string"},
+					},
+					"required": []string{"source_story_id", "target_story_id"},
+				},
+			},
+		},
+		"required": []string{"dependencies"},
+	}, toolSetStoryDependencies)
+
 	return r
 }
 
@@ -505,7 +700,13 @@ func (r *ToolRegistry) Execute(ctx *ExecutionContext, name string, input json.Ra
 // ExecuteAllowed runs a tool by name only if it is enabled for the execution context.
 func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input json.RawMessage) (string, error) {
 	if len(ctx.AllowedTools) > 0 && !ctx.AllowedTools[name] {
-		return "", fmt.Errorf("tool %q is not allowed for capability profile %q", name, ctx.RuntimeProfile.Name)
+		if ctx == nil {
+			return "", fmt.Errorf("tool %q is not allowed", name)
+		}
+		if ctx.Agent != nil && ctx.Agent.Name != "" {
+			return "", fmt.Errorf("tool %q is not allowed for agent %q", name, ctx.Agent.Name)
+		}
+		return "", fmt.Errorf("tool %q is not allowed for the current agent policy", name)
 	}
 	return r.Execute(ctx, name, input)
 }

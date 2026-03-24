@@ -33,7 +33,7 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
 // ── Pipeline Rules Section (state edit dialog) ──
 
 const ACTION_LABELS: Record<string, string> = {
-  run_agent: 'Run agent',
+  start_agent_run: 'Run agent',
   move_to_state: 'Move to state',
   merge_branch: 'Merge branch',
 };
@@ -64,7 +64,7 @@ function PipelineRulesSection({
 }) {
   const [adding, setAdding] = useState(false);
   const [newTrigger, setNewTrigger] = useState<string>('story.state_entered');
-  const [newAction, setNewAction] = useState<string>('run_agent');
+  const [newAction, setNewAction] = useState<string>('start_agent_run');
   const [newAgentId, setNewAgentId] = useState<string>('');
   const [newTargetStateId, setNewTargetStateId] = useState<string>('');
   const [newTargetBranch, setNewTargetBranch] = useState<string>('');
@@ -74,8 +74,8 @@ function PipelineRulesSection({
     if (!newAction) return;
     setSaving(true);
 
-    let actionConfig: Record<string, string> = {};
-    if (newAction === 'run_agent') {
+    let actionConfig: Record<string, unknown> = {};
+    if (newAction === 'start_agent_run') {
       if (!newAgentId) { toast.error('Select an agent'); setSaving(false); return; }
       actionConfig = { agent_id: newAgentId };
     } else if (newAction === 'move_to_state') {
@@ -124,9 +124,9 @@ function PipelineRulesSection({
 
   const ruleDescription = (rule: AutomationRule) => {
     const trigger = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
-    if (rule.action_type === 'run_agent') return `${trigger} → Run ${agentName(rule.action_config?.agent_id)}`;
-    if (rule.action_type === 'move_to_state') return `${trigger} → Move to ${stateFn(rule.action_config?.target_state_id)}`;
-    if (rule.action_type === 'merge_branch') return `${trigger} → Merge to ${rule.action_config?.target_branch}`;
+    if (rule.action_type === 'start_agent_run') return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}`;
+    if (rule.action_type === 'move_to_state') return `${trigger} → Move to ${stateFn(rule.action_config?.target_state_id as string)}`;
+    if (rule.action_type === 'merge_branch') return `${trigger} → Merge to ${rule.action_config?.target_branch as string}`;
     return `${trigger} → ${rule.action_type}`;
   };
 
@@ -169,26 +169,26 @@ function PipelineRulesSection({
                 <SelectItem value="agent_run.approved">On run approved</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={newAction} onValueChange={setNewAction}>
-              <SelectTrigger className="h-7 flex-1 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="run_agent">Run agent</SelectItem>
+              <Select value={newAction} onValueChange={setNewAction}>
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                <SelectItem value="start_agent_run">Run agent</SelectItem>
                 <SelectItem value="move_to_state">Move to state</SelectItem>
                 <SelectItem value="merge_branch">Merge branch</SelectItem>
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
           </div>
 
-          {newAction === 'run_agent' && (
+          {newAction === 'start_agent_run' && (
             <Select value={newAgentId} onValueChange={setNewAgentId}>
               <SelectTrigger className="h-7 text-xs">
                 <SelectValue placeholder="Select agent..." />
               </SelectTrigger>
               <SelectContent>
-                {agents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

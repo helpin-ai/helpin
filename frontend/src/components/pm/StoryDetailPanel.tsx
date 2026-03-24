@@ -614,7 +614,11 @@ function StoryDetailPanelBody({
     const ids = new Set<string>();
     if (!pipelineRules) return ids;
     for (const rule of pipelineRules) {
-      if (rule.enabled && rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'story.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
         const stateId = rule.trigger_config?.state_id;
         if (stateId) ids.add(stateId);
       }
@@ -1281,7 +1285,7 @@ function StoryDetailPanelBody({
                     value={delivery.selectedAgentId || '__none__'}
                     options={[
                       { value: '__none__', label: 'No agent' },
-                      ...delivery.agents.map((a) => ({ value: a.id, label: `${a.name} · ${a.capability_profile}` })),
+                      ...delivery.agents.map((a) => ({ value: a.id, label: `${a.name} · ${agentSummaryLabel(a)}` })),
                     ]}
                     onChange={(v) => {
                       const val = v === '__none__' ? '' : v;
@@ -1457,4 +1461,23 @@ export function StoryDetailPanel({
       </SheetContent>
     </Sheet>
   );
+}
+
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+  switch (agent.preset_key) {
+    case 'code_builder':
+      return 'Code Builder';
+    case 'review_agent':
+      return 'Review Agent';
+    case 'story_planner':
+      return 'Story Planner';
+    case 'epic_planner':
+      return 'Epic Planner';
+    case 'support_agent':
+      return 'Support Agent';
+    case 'crm_operator':
+      return 'CRM Operator';
+    default:
+      return agent.runtime_kind === 'native_sdk' ? 'Interactive Agent' : 'Autonomous Agent';
+  }
 }

@@ -62,9 +62,8 @@ func (r *RedisRelay) Start(ctx context.Context) {
 		return
 	}
 
-	// Subscribe to the global channel and planning_stream for cross-pod events.
-	if err := r.pubsub.Subscribe(ctx, "ws:events:global", "planning_stream"); err != nil {
-		slog.Error("redis relay: subscribe to global/planning_stream channels", "error", err)
+	if err := r.pubsub.Subscribe(ctx, "ws:events:global"); err != nil {
+		slog.Error("redis relay: subscribe to global channel", "error", err)
 		return
 	}
 	slog.Info("redis relay started", "pod_id", r.podID)
@@ -89,12 +88,6 @@ func (r *RedisRelay) Start(ctx context.Context) {
 // handleMessage processes a single Redis Pub/Sub message, forwarding it
 // to the local Hub if it originated from a different pod.
 func (r *RedisRelay) handleMessage(msg *redis.Message) {
-	// Planning stream events use a different envelope format.
-	if msg.Channel == "planning_stream" {
-		r.handlePlanningStream(msg.Payload)
-		return
-	}
-
 	var env relayEnvelope
 	if err := json.Unmarshal([]byte(msg.Payload), &env); err != nil {
 		slog.Warn("redis relay: unmarshal envelope", "error", err, "channel", msg.Channel)
@@ -115,20 +108,6 @@ func (r *RedisRelay) handleMessage(msg *redis.Message) {
 
 	r.hub.Broadcast(env.Event)
 }
-
-// handlePlanningStream routes planning_stream messages to the Hub's SendToSession.
-func (r *RedisRelay) handlePlanningStream(payload string) {
-	var wrapper struct {
-		SessionID string          `json:"session_id"`
-		Event     json.RawMessage `json:"event"`
-	}
-	if err := json.Unmarshal([]byte(payload), &wrapper); err != nil {
-		slog.Warn("redis relay: invalid planning_stream payload", "error", err)
-		return
-	}
-	r.hub.SendToSession(wrapper.SessionID, json.RawMessage(wrapper.Event))
-}
-
 // Publish sends an event to the appropriate Redis channel.
 // Events with a WorkspaceID go to the workspace-specific channel;
 // events without go to the global channel.

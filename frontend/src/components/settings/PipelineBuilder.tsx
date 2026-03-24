@@ -27,9 +27,9 @@ export function PipelineBuilder({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
 
-  // Build a lookup: stateId → { agentRule, advanceRule, mergeRule }
+  // Build a lookup: stateId → { runRule, advanceRule, mergeRule }
   const stateRuleMap = useMemo(() => {
-    const map = new Map<string, { agentRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
+    const map = new Map<string, { runRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
     for (const state of states) {
       map.set(state.id, {});
     }
@@ -37,8 +37,11 @@ export function PipelineBuilder({
       const stateId = rule.trigger_config?.state_id;
       if (!stateId || !map.has(stateId)) continue;
       const entry = map.get(stateId)!;
-      if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
-        entry.agentRule = rule;
+      if (
+        rule.trigger_type === 'story.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        entry.runRule = rule;
       } else if (rule.trigger_type === 'agent_run.approved' && rule.action_type === 'move_to_state') {
         entry.advanceRule = rule;
       } else if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'merge_branch') {
@@ -50,12 +53,16 @@ export function PipelineBuilder({
 
   const handleAgentChange = async (stateId: string, stateName: string, agentId: string) => {
     setSaving(stateId);
-    const existing = stateRuleMap.get(stateId)?.agentRule;
+    const entry = stateRuleMap.get(stateId);
+    const existing = entry?.runRule;
 
     if (!agentId) {
       if (existing) await automationRuleService.remove(workspaceId, existing.id);
     } else if (existing) {
-      await automationRuleService.update(workspaceId, existing.id, { action_config: { agent_id: agentId } });
+      await automationRuleService.update(workspaceId, existing.id, {
+        action_type: 'start_agent_run',
+        action_config: { agent_id: agentId },
+      });
     } else {
       await automationRuleService.create(workspaceId, {
         workspace_id: workspaceId,
@@ -63,7 +70,7 @@ export function PipelineBuilder({
         workflow_id: workflowId,
         trigger_type: 'story.state_entered',
         trigger_config: { state_id: stateId },
-        action_type: 'run_agent',
+        action_type: 'start_agent_run',
         action_config: { agent_id: agentId },
       });
     }
@@ -131,18 +138,20 @@ export function PipelineBuilder({
         <div className="flex items-start gap-0 min-w-max pb-2">
           {states.map((state, idx) => {
             const entry = stateRuleMap.get(state.id);
-            const agentId = entry?.agentRule?.action_config?.agent_id ?? '';
+            const runRule = entry?.runRule;
+            const selectedAgentId = (runRule?.action_config?.agent_id as string) ?? '';
             const hasAdvance = !!entry?.advanceRule;
-            const mergeBranch = entry?.mergeRule?.action_config?.target_branch ?? '';
+            const mergeBranch = (entry?.mergeRule?.action_config?.target_branch as string) ?? '';
             const isLast = idx === states.length - 1;
             const isSaving = saving === state.id;
+            const hasExecution = !!selectedAgentId;
 
             return (
               <div key={state.id} className="flex items-start">
                 {/* State card */}
                 <div className={cn(
-                  'relative w-[160px] shrink-0 rounded-lg border bg-background p-3 transition-colors',
-                  agentId ? 'border-violet-300 dark:border-violet-800' : 'border-border',
+                  'relative w-[180px] shrink-0 rounded-lg border bg-background p-3 transition-colors',
+                  hasExecution ? 'border-violet-300 dark:border-violet-800' : 'border-border',
                   isSaving && 'opacity-60',
                 )}>
                   {/* State header */}
@@ -155,44 +164,46 @@ export function PipelineBuilder({
                     <span className="text-xs font-semibold truncate">{state.name}</span>
                   </div>
 
-                  {/* Agent selector */}
+                  {/* Execution selector */}
                   {editable ? (
-                    <Select
-                      value={agentId || '__none__'}
-                      onValueChange={(v) => handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-full">
-                        <SelectValue placeholder="No agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">
-                          <span className="text-muted-foreground">No agent</span>
-                        </SelectItem>
-                        {agents.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            <span className="flex items-center gap-1.5">
-                              <Bot className="h-3 w-3 text-violet-500" />
-                              {a.name}
-                            </span>
+                    <div className="space-y-1.5">
+                      <Select
+                        value={selectedAgentId || '__none__'}
+                        onValueChange={(v) => handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-full">
+                          <SelectValue placeholder="No agent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-muted-foreground">No agent</span>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          {agents.map((agent) => (
+                            <SelectItem key={agent.id} value={agent.id}>
+                              <span className="flex items-center gap-1.5">
+                                <Bot className="h-3 w-3 text-violet-500" />
+                                {agent.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-1">
-                      {agentId ? (
-                        <>
+                    <div className="space-y-1 text-xs text-muted-foreground px-1">
+                      {selectedAgentId ? (
+                        <div className="flex items-center gap-1.5">
                           <Bot className="h-3 w-3 text-violet-500" />
-                          <span className="truncate">{agents.find((a) => a.id === agentId)?.name ?? 'Agent'}</span>
-                        </>
+                          <span className="truncate">{agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Agent'}</span>
+                        </div>
                       ) : (
                         <span>No agent</span>
                       )}
                     </div>
                   )}
 
-                  {/* Auto-advance toggle (only if agent is assigned and not last state) */}
-                  {agentId && !isLast && (
+                  {/* Auto-advance toggle (only if execution configured and not last state) */}
+                  {hasExecution && !isLast && (
                     <div className="mt-2 flex items-center gap-1.5">
                       <Switch
                         className="h-3.5 w-7 [&>span]:h-2.5 [&>span]:w-2.5"

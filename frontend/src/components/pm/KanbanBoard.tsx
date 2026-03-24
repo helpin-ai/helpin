@@ -468,13 +468,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
 
-  // Fetch automation rules to show bot icons on columns with run_agent actions
+  // Fetch automation rules to show bot icons on columns with direct agent-run automation.
   const { data: automationRules } = useAutomationRulesByWorkflow(workspaceId, workflow?.workflow.id);
   const automatedStateIds = useMemo(() => {
     const ids = new Set<string>();
     if (!automationRules) return ids;
     for (const rule of automationRules) {
-      if (rule.enabled && rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'story.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
         const stateId = rule.trigger_config?.state_id;
         if (stateId) ids.add(stateId);
       }

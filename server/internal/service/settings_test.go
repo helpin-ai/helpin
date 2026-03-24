@@ -130,7 +130,7 @@ func newSettingsService(t *testing.T) (*SettingsService, *gorm.DB) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, nil, "")
+	svc := NewSettingsService(repo, nil)
 	return svc, db
 }
 
@@ -172,9 +172,6 @@ func TestGetAll_WithSeededSettings(t *testing.T) {
 	if cfg.Settings.TeamWeight != 50 {
 		t.Fatalf("expected team_weight=50, got %d", cfg.Settings.TeamWeight)
 	}
-	if cfg.Settings.PlanningWebSearchEnabled {
-		t.Fatal("expected planning_web_search_enabled=false by default")
-	}
 	// Empty workspace should have zero teams, people, etc.
 	if len(cfg.Teams) != 0 {
 		t.Fatalf("expected 0 teams, got %d", len(cfg.Teams))
@@ -202,12 +199,6 @@ func TestGetAll_AutoInitializesWhenNoSettings(t *testing.T) {
 	// Auto-initialized row should carry defaults.
 	if cfg.Settings.SprintDurationWeeks != 2 {
 		t.Fatalf("expected sprint_duration_weeks=2, got %d", cfg.Settings.SprintDurationWeeks)
-	}
-	if cfg.Settings.PlanningMethodology != model.PlanningMethodologyStructuredV1 {
-		t.Fatalf("expected planning_methodology=%q, got %q", model.PlanningMethodologyStructuredV1, cfg.Settings.PlanningMethodology)
-	}
-	if cfg.Settings.PlanningWebSearchProvider != model.PlanningWebSearchProviderBrave {
-		t.Fatalf("expected planning_web_search_provider=%q, got %q", model.PlanningWebSearchProviderBrave, cfg.Settings.PlanningWebSearchProvider)
 	}
 }
 
@@ -269,12 +260,6 @@ func TestInitialize_CreatesDefaultSettings(t *testing.T) {
 	}
 	if settings.SprintDurationWeeks != 2 {
 		t.Fatalf("expected sprint_duration_weeks=2, got %d", settings.SprintDurationWeeks)
-	}
-	if settings.PlanningMethodology != model.PlanningMethodologyStructuredV1 {
-		t.Fatalf("expected planning_methodology=%q, got %q", model.PlanningMethodologyStructuredV1, settings.PlanningMethodology)
-	}
-	if settings.PlanningWebSearchProvider != model.PlanningWebSearchProviderBrave {
-		t.Fatalf("expected planning_web_search_provider=%q, got %q", model.PlanningWebSearchProviderBrave, settings.PlanningWebSearchProvider)
 	}
 }
 
@@ -341,14 +326,12 @@ func TestUpdateSystem_MultipleFields(t *testing.T) {
 	notifications := false
 	autoBonuses := true
 	weight := 75
-	methodology := model.PlanningMethodologyBasicV1
 
 	updated, err := svc.UpdateSystem(ctx, "ws1", model.UpdateSystemSettingsRequest{
 		SprintDurationWeeks:  &weeks,
 		NotificationsEnabled: &notifications,
 		AutoCalculateBonuses: &autoBonuses,
 		TeamWeight:           &weight,
-		PlanningMethodology:  &methodology,
 	})
 	if err != nil {
 		t.Fatalf("UpdateSystem: %v", err)
@@ -364,71 +347,6 @@ func TestUpdateSystem_MultipleFields(t *testing.T) {
 	}
 	if updated.TeamWeight != 75 {
 		t.Fatalf("expected team_weight=75, got %d", updated.TeamWeight)
-	}
-	if updated.PlanningMethodology != model.PlanningMethodologyBasicV1 {
-		t.Fatalf("expected planning_methodology=%q, got %q", model.PlanningMethodologyBasicV1, updated.PlanningMethodology)
-	}
-}
-
-func TestUpdateSystem_NormalizesMethodology(t *testing.T) {
-	svc, db := newSettingsService(t)
-	ctx := context.Background()
-
-	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
-	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
-	seedSettings(t, db, "s1", "ws1")
-
-	invalid := "nonexistent_methodology"
-	updated, err := svc.UpdateSystem(ctx, "ws1", model.UpdateSystemSettingsRequest{
-		PlanningMethodology: &invalid,
-	})
-	if err != nil {
-		t.Fatalf("UpdateSystem: %v", err)
-	}
-	// Unknown methodologies should normalize to structured_v1.
-	if updated.PlanningMethodology != model.PlanningMethodologyStructuredV1 {
-		t.Fatalf("expected normalized methodology=%q, got %q", model.PlanningMethodologyStructuredV1, updated.PlanningMethodology)
-	}
-}
-
-func TestUpdateSystem_RejectsBraveWithoutAPIKey(t *testing.T) {
-	// Service is constructed with empty braveSearchAPIKey.
-	svc, db := newSettingsService(t)
-	ctx := context.Background()
-
-	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
-	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
-	seedSettings(t, db, "s1", "ws1")
-
-	enabled := true
-	_, err := svc.UpdateSystem(ctx, "ws1", model.UpdateSystemSettingsRequest{
-		PlanningWebSearchEnabled: &enabled,
-	})
-	if err == nil {
-		t.Fatal("expected error when enabling brave search without API key")
-	}
-}
-
-func TestUpdateSystem_AllowsBraveWithAPIKey(t *testing.T) {
-	db := newTestDB(t)
-	addSettingsExtraTables(t, db)
-	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, nil, "test-brave-key-123")
-	ctx := context.Background()
-
-	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
-	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
-	seedSettings(t, db, "s1", "ws1")
-
-	enabled := true
-	updated, err := svc.UpdateSystem(ctx, "ws1", model.UpdateSystemSettingsRequest{
-		PlanningWebSearchEnabled: &enabled,
-	})
-	if err != nil {
-		t.Fatalf("UpdateSystem: %v", err)
-	}
-	if !updated.PlanningWebSearchEnabled {
-		t.Fatal("expected planning_web_search_enabled=true")
 	}
 }
 

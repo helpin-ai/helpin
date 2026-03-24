@@ -14,11 +14,12 @@ const (
 
 // Action type constants.
 const (
-	ActionRunAgent    = "run_agent"
-	ActionMoveToState = "move_to_state"
-	ActionMergeBranch = "merge_branch"
-	ActionRunCommand  = "run_command"
-	ActionStartFlow   = "start_flow"
+	ActionRunAgent      = "run_agent"
+	ActionStartAgentRun = "start_agent_run"
+	ActionMoveToState   = "move_to_state"
+	ActionMergeBranch   = "merge_branch"
+	ActionRunCommand    = "run_command"
+	ActionStartFlow     = "start_flow"
 )
 
 // AutomationRule represents a user-configured trigger → action mapping.
@@ -64,7 +65,9 @@ type ActionConfigRunCommand struct {
 
 // ActionConfigStartFlow holds config for start_flow actions.
 type ActionConfigStartFlow struct {
-	TemplateID string `json:"template_id"`
+	TemplateID string          `json:"template_id"`
+	AgentID    string          `json:"agent_id,omitempty"`
+	FlowInput  json.RawMessage `json:"flow_input,omitempty"`
 }
 
 // TriggerConfigRunApproved holds config for agent_run.approved triggers.
