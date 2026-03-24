@@ -75,6 +75,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import { docsService } from '@/lib/services/docsService'
 import type { DocsVersion } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
@@ -356,6 +357,35 @@ export function DocsDocumentDetail() {
         <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
           {DOC_STATUS_LABELS[doc.status] ?? doc.status}
         </span>
+
+        {isExternalHelpCenter && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 text-xs"
+            onClick={async () => {
+              try {
+                const res = await docsService.getPreviewToken(wsId, docId)
+                if (res.error || !res.data) {
+                  toast.error(res.error || 'Failed to generate preview')
+                  return
+                }
+                const hcUrl = import.meta.env.VITE_HELPCENTER_URL || 'http://localhost:5174'
+                const { token, subdomain } = res.data
+                window.open(
+                  `${hcUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`,
+                  '_blank',
+                  'noopener',
+                )
+              } catch {
+                toast.error('Failed to generate preview')
+              }
+            }}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </Button>
+        )}
 
         {canPublishDocs && doc.status === 'draft' && (
           <Button

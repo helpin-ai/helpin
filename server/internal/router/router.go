@@ -177,6 +177,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
+			// Document preview (token-authenticated)
+			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
+
 			// Legacy/redirect resolver
 			r.Get("/resolve/*", h.Docs.PublicResolvePath)
 		})
@@ -713,6 +716,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
+
+				// Preview token — docs.read
+				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)
 
 				// Versions — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)

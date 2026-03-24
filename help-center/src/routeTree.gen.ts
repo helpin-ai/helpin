@@ -13,6 +13,7 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as SpaceSlugRouteImport } from './routes/$spaceSlug'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpaceSlugIndexRouteImport } from './routes/$spaceSlug/index'
+import { Route as PreviewDocIdRouteImport } from './routes/preview.$docId'
 import { Route as SpaceSlugArticleSlugRouteImport } from './routes/$spaceSlug/$articleSlug'
 
 const SearchRoute = SearchRouteImport.update({
@@ -35,6 +36,11 @@ const SpaceSlugIndexRoute = SpaceSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SpaceSlugRoute,
 } as any)
+const PreviewDocIdRoute = PreviewDocIdRouteImport.update({
+  id: '/preview/$docId',
+  path: '/preview/$docId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpaceSlugArticleSlugRoute = SpaceSlugArticleSlugRouteImport.update({
   id: '/$articleSlug',
   path: '/$articleSlug',
@@ -46,12 +52,14 @@ export interface FileRoutesByFullPath {
   '/$spaceSlug': typeof SpaceSlugRouteWithChildren
   '/search': typeof SearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/preview/$docId': typeof PreviewDocIdRoute
   '/$spaceSlug/': typeof SpaceSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/search': typeof SearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/preview/$docId': typeof PreviewDocIdRoute
   '/$spaceSlug': typeof SpaceSlugIndexRoute
 }
 export interface FileRoutesById {
@@ -60,6 +68,7 @@ export interface FileRoutesById {
   '/$spaceSlug': typeof SpaceSlugRouteWithChildren
   '/search': typeof SearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/preview/$docId': typeof PreviewDocIdRoute
   '/$spaceSlug/': typeof SpaceSlugIndexRoute
 }
 export interface FileRouteTypes {
@@ -69,15 +78,22 @@ export interface FileRouteTypes {
     | '/$spaceSlug'
     | '/search'
     | '/$spaceSlug/$articleSlug'
+    | '/preview/$docId'
     | '/$spaceSlug/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/search' | '/$spaceSlug/$articleSlug' | '/$spaceSlug'
+  to:
+    | '/'
+    | '/search'
+    | '/$spaceSlug/$articleSlug'
+    | '/preview/$docId'
+    | '/$spaceSlug'
   id:
     | '__root__'
     | '/'
     | '/$spaceSlug'
     | '/search'
     | '/$spaceSlug/$articleSlug'
+    | '/preview/$docId'
     | '/$spaceSlug/'
   fileRoutesById: FileRoutesById
 }
@@ -85,6 +101,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SpaceSlugRoute: typeof SpaceSlugRouteWithChildren
   SearchRoute: typeof SearchRoute
+  PreviewDocIdRoute: typeof PreviewDocIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -117,6 +134,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpaceSlugIndexRouteImport
       parentRoute: typeof SpaceSlugRoute
     }
+    '/preview/$docId': {
+      id: '/preview/$docId'
+      path: '/preview/$docId'
+      fullPath: '/preview/$docId'
+      preLoaderRoute: typeof PreviewDocIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$spaceSlug/$articleSlug': {
       id: '/$spaceSlug/$articleSlug'
       path: '/$articleSlug'
@@ -145,6 +169,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SpaceSlugRoute: SpaceSlugRouteWithChildren,
   SearchRoute: SearchRoute,
+  PreviewDocIdRoute: PreviewDocIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -19,6 +19,7 @@ import (
 type DocsHelpcenterService struct {
 	hcRepo         *repository.DocsHelpcenterRepository
 	docRepo        *repository.DocsDocumentRepository
+	contentRepo    *repository.DocsContentRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	collectionRepo *repository.DocsCollectionRepository
 	redirectRepo   *repository.DocsRedirectRepository
@@ -29,12 +30,13 @@ type DocsHelpcenterService struct {
 func NewDocsHelpcenterService(
 	hcRepo *repository.DocsHelpcenterRepository,
 	docRepo *repository.DocsDocumentRepository,
+	contentRepo *repository.DocsContentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
 	collectionRepo *repository.DocsCollectionRepository,
 	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client}
+	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client}
 }
 
 // UploadAsset uploads a help center asset (logo or favicon) to S3 and returns the public URL.
@@ -503,6 +505,62 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 // GetPublicCollection returns a collection and its published articles by workspace and collection slug.
 func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
 	return s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+}
+
+// PreviewArticleHTML renders a document's TipTap content as HTML for preview, regardless of status.
+func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspaceID, docID string) (*model.PreviewArticleResponse, error) {
+	doc, err := s.docRepo.GetByID(ctx, docID)
+	if err != nil {
+		return nil, fmt.Errorf("get document: %w", err)
+	}
+	if doc == nil || doc.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	content, err := s.contentRepo.GetByDocumentID(ctx, docID)
+	if err != nil {
+		return nil, fmt.Errorf("get content: %w", err)
+	}
+
+	var contentHTML string
+	if content != nil && len(content.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(content.Content)
+		if err != nil {
+			slog.ErrorContext(ctx, "preview render failed", "error", err, "doc_id", docID)
+		} else {
+			contentHTML = rendered
+		}
+	}
+
+	// Resolve space name and slug.
+	var spaceName, spaceSlug string
+	space, err := s.spaceRepo.GetByID(ctx, doc.SpaceID)
+	if err == nil && space != nil {
+		spaceName = space.Name
+		spaceSlug = space.Slug
+	}
+
+	// Resolve collection name.
+	var collectionName *string
+	if doc.CollectionID != nil {
+		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err == nil && coll != nil {
+			collectionName = &coll.Name
+		}
+	}
+
+	return &model.PreviewArticleResponse{
+		ID:             doc.ID,
+		Title:          doc.Title,
+		Excerpt:        doc.Excerpt,
+		Icon:           doc.Icon,
+		Status:         doc.Status,
+		CollectionID:   doc.CollectionID,
+		CollectionName: collectionName,
+		SpaceName:      spaceName,
+		SpaceSlug:      spaceSlug,
+		ContentHTML:    contentHTML,
+	}, nil
 }
 
 // ListRedirects returns paginated redirects for a workspace.

@@ -576,6 +576,20 @@ type PublicArticleResponse struct {
 	ContentHTML     *string `json:"content_html"`
 }
 
+// PreviewArticleResponse contains rendered HTML for article preview (any status).
+type PreviewArticleResponse struct {
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Excerpt        *string `json:"excerpt"`
+	Icon           *string `json:"icon"`
+	Status         string  `json:"status"`
+	CollectionID   *string `json:"collection_id"`
+	CollectionName *string `json:"collection_name"`
+	SpaceName      string  `json:"space_name"`
+	SpaceSlug      string  `json:"space_slug"`
+	ContentHTML    string  `json:"content_html"`
+}
+
 // PublicSearchResultResponse is a search result with space context.
 type PublicSearchResultResponse struct {
 	ID             string  `json:"id"`

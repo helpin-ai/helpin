@@ -3,6 +3,7 @@ import type {
   HelpCenterConfig,
   Space,
   ArticleDetail,
+  PreviewArticleDetail,
   SearchResult,
   NavItem,
 } from './types'
@@ -36,5 +37,10 @@ export const helpCenterService = {
     api.post(
       `/hc/${subdomain}/spaces/${spaceSlug}/articles/${articleSlug}/feedback`,
       payload,
+    ),
+
+  getPreview: (subdomain: string, docId: string, token: string) =>
+    api.get<PreviewArticleDetail>(
+      `/hc/${subdomain}/preview/${docId}?token=${encodeURIComponent(token)}`,
     ),
 }

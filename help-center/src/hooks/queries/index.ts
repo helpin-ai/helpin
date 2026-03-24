@@ -49,6 +49,16 @@ export function useArticle(
   })
 }
 
+export function usePreviewArticle(subdomain: string, docId: string, token: string) {
+  return useQuery({
+    queryKey: ['preview', subdomain, docId],
+    queryFn: async () => unwrap(await helpCenterService.getPreview(subdomain, docId, token)),
+    enabled: !!subdomain && !!docId && !!token,
+    staleTime: 0,
+    retry: false,
+  })
+}
+
 export function useSearchArticles(
   subdomain: string,
   query: string,
