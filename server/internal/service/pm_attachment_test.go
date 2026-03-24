@@ -28,7 +28,7 @@ func newAttachmentTestEnv(t *testing.T) (*PMAttachmentService, *repository.PMAtt
 	return svc, repo, db, workspaceID, userID
 }
 
-func seedTemporaryAttachment(t *testing.T, db *gorm.DB, attachmentID, workspaceID, entityID, uploadedByID string) {
+func seedEditorUploadAttachment(t *testing.T, db *gorm.DB, attachmentID, workspaceID, entityID, uploadedByID string) {
 	t.Helper()
 	now := time.Now().UTC()
 	mustExec(
@@ -85,7 +85,7 @@ func TestPMAttachmentRepository_ReassignToEntity(t *testing.T) {
 	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
 	ctx := context.Background()
 
-	seedTemporaryAttachment(t, db, "attachment-1", workspaceID, workspaceID, userID)
+	seedEditorUploadAttachment(t, db, "attachment-1", workspaceID, workspaceID, userID)
 
 	if err := repo.ReassignToEntity(ctx, []string{"attachment-1"}, "objective", "objective-1"); err != nil {
 		t.Fatalf("ReassignToEntity: %v", err)

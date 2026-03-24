@@ -161,6 +161,12 @@ type redirectEntry struct {
 	NewSlug string `json:"new_slug"`
 }
 
+// articleStats holds per-article outcome counts returned by importArticle.
+type articleStats struct {
+	Published       bool
+	RedirectCreated bool
+}
+
 // runImport is the background worker that performs the actual HelpScout import.
 func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImportStartRequest, spaceID, workspaceID, userID string) {
 	ctx := context.Background()
@@ -229,14 +235,18 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	var (
-		completed int
-		failed    int
-		failures  []model.ImportFailure
-		redirects []redirectEntry
+		completed      int
+		failed         int
+		published      int
+		drafted        int
+		artRedirects   int
+		failures       []model.ImportFailure
+		redirects      []redirectEntry
 	)
 
 	for i, ref := range articleRefs {
-		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryToCollection, categoryToCollectionSlug, uploader, req.ImportStatus, &redirects); err != nil {
+		stats, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryToCollection, categoryToCollectionSlug, uploader, req.ImportStatus, &redirects)
+		if err != nil {
 			s.logger.Error("article import failed",
 				"job_id", jobID,
 				"article_id", ref.ID,
@@ -251,6 +261,14 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			})
 		} else {
 			completed++
+			if stats.Published {
+				published++
+			} else {
+				drafted++
+			}
+			if stats.RedirectCreated {
+				artRedirects++
+			}
 		}
 
 		// Update progress every 5 articles or on last article.
@@ -272,6 +290,22 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	} else {
 		if err := s.importRepo.SetRedirectMap(ctx, jobID, redirectJSON); err != nil {
 			s.logger.Error("failed to set redirect map", "job_id", jobID, "error", err)
+		}
+	}
+
+	// Store import summary.
+	summary := model.ImportSummary{
+		CollectionsCreated: len(categories),
+		ArticlesPublished:  published,
+		ArticlesDrafted:    drafted,
+		RedirectsCreated:   len(categories) + artRedirects, // category + article redirects
+	}
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		s.logger.Error("failed to marshal import summary", "job_id", jobID, "error", err)
+	} else {
+		if err := s.importRepo.SetSummary(ctx, jobID, summaryJSON); err != nil {
+			s.logger.Error("failed to set import summary", "job_id", jobID, "error", err)
 		}
 	}
 
@@ -304,12 +338,12 @@ func (s *DocsImportService) importArticle(
 	uploader helpscout.ImageUploader,
 	importStatus string,
 	redirects *[]redirectEntry,
-) error {
+) (*articleStats, error) {
 	// Fetch full article. Use draft if import_status is "match_source" and article has a draft.
 	useDraft := importStatus == "match_source" && ref.HasDraft
 	article, err := client.GetArticle(ctx, ref.ID, useDraft)
 	if err != nil {
-		return fmt.Errorf("fetch article %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("fetch article %s: %w", ref.ID, err)
 	}
 
 	html := article.Text
@@ -330,7 +364,7 @@ func (s *DocsImportService) importArticle(
 	// Convert HTML to canonical Tiptap JSON.
 	convResult, err := docsimport.ConvertHTML(html)
 	if err != nil {
-		return fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
 	}
 	for _, w := range convResult.Warnings {
 		s.logger.Warn("import conversion warning",
@@ -361,17 +395,17 @@ func (s *DocsImportService) importArticle(
 		Title:        ref.Name,
 	}, userID)
 	if err != nil {
-		return fmt.Errorf("create document for article %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("create document for article %s: %w", ref.ID, err)
 	}
 
 	// Save content as canonical Tiptap JSON.
 	contentJSON, err := json.Marshal(convResult.Doc)
 	if err != nil {
-		return fmt.Errorf("marshal content for article %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("marshal content for article %s: %w", ref.ID, err)
 	}
 	savedContent, err := s.contentSvc.Save(ctx, doc.ID, json.RawMessage(contentJSON))
 	if err != nil {
-		return fmt.Errorf("save content for article %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("save content for article %s: %w", ref.ID, err)
 	}
 
 	// Store import provenance — post-image-rewrite, pre-conversion HTML snapshot.
@@ -384,10 +418,11 @@ func (s *DocsImportService) importArticle(
 		Slug:       ref.Slug,
 	}
 	if _, err := s.helpcenterSvc.CreateArticle(ctx, hcArticle); err != nil {
-		return fmt.Errorf("create helpcenter article for %s: %w", ref.ID, err)
+		return nil, fmt.Errorf("create helpcenter article for %s: %w", ref.ID, err)
 	}
 
 	// Create legacy redirect for HelpScout article URL.
+	stats := &articleStats{}
 	if collectionSlug != "" {
 		articleSlug := ref.Slug
 		articleRedirect := &model.DocsRedirect{
@@ -403,6 +438,8 @@ func (s *DocsImportService) importArticle(
 		if err := s.redirectRepo.Create(ctx, articleRedirect); err != nil {
 			s.logger.Error("create article redirect", "error", err, "article_id", ref.ID)
 			// Non-fatal.
+		} else {
+			stats.RedirectCreated = true
 		}
 	}
 
@@ -414,6 +451,8 @@ func (s *DocsImportService) importArticle(
 				"document_id", doc.ID,
 				"error", err,
 			)
+		} else {
+			stats.Published = true
 		}
 	}
 
@@ -423,7 +462,7 @@ func (s *DocsImportService) importArticle(
 		NewSlug: ref.Slug,
 	})
 
-	return nil
+	return stats, nil
 }
 
 // ReconvertResult holds the outcome of a reconversion run.
@@ -576,7 +615,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 		}
 
 		ref := article.ArticleRef
-		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, nil, nil, uploader, "", &redirects); err != nil {
+		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, nil, nil, uploader, "", &redirects); err != nil {
 			s.logger.Error("retry article import failed", "article_id", f.ArticleID, "error", err)
 			retryFailed++
 			newFailures = append(newFailures, model.ImportFailure{

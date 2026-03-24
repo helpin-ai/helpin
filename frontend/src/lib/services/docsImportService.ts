@@ -20,6 +20,13 @@ export interface ImportFailure {
   error: string;
 }
 
+export interface ImportSummary {
+  collections_created: number;
+  articles_published: number;
+  articles_drafted: number;
+  redirects_created: number;
+}
+
 export interface ImportStatusResponse {
   id: string;
   status: 'pending' | 'running' | 'done' | 'failed' | 'interrupted';
@@ -29,6 +36,7 @@ export interface ImportStatusResponse {
   failed: number;
   failures: ImportFailure[];
   redirect_map: unknown;
+  summary: ImportSummary | null;
   started_by: string;
   started_at: string;
   completed_at: string | null;

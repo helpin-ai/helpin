@@ -108,6 +108,18 @@ func (r *DocsImportRepository) SetRedirectMap(ctx context.Context, id string, re
 	return nil
 }
 
+// SetSummary stores the import summary JSON on the job.
+func (r *DocsImportRepository) SetSummary(ctx context.Context, id string, summary json.RawMessage) error {
+	updates := map[string]interface{}{
+		"summary":    summary,
+		"updated_at": time.Now(),
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("set docs import job summary: %w", err)
+	}
+	return nil
+}
+
 // SetError updates the error field of an import job.
 func (r *DocsImportRepository) SetError(ctx context.Context, id, errMsg string) error {
 	updates := map[string]interface{}{

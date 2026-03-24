@@ -144,7 +144,7 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		}
 		alt := getAttr(n, "alt")
 		if src != "" {
-			return []Node{Image(src, alt)}
+			return []Node{Image(src, alt, "")}
 		}
 		return nil
 
@@ -217,7 +217,7 @@ func (c *converter) convertParagraph(n *html.Node) []Node {
 			}
 			alt := getAttr(child, "alt")
 			if src != "" {
-				result = append(result, Image(src, alt))
+				result = append(result, Image(src, alt, ""))
 			}
 		} else if child.Type == html.ElementNode && child.DataAtom == atom.Br {
 			inlineBuffer = append(inlineBuffer, HardBreak())
@@ -290,6 +290,22 @@ func (c *converter) convertInlineElement(n *html.Node, parentMarks []Mark) []Nod
 		mark = &m
 	case atom.A:
 		href := getAttr(n, "href")
+		// If the only child is an <img>, create a linked image node.
+		if img := onlyChildImg(n); img != nil {
+			src := getAttr(img, "src")
+			if src == "" {
+				src = getAttr(img, "data-src")
+			}
+			alt := getAttr(img, "alt")
+			linkUrl := ""
+			if href != "" && isSafeURL(href) {
+				linkUrl = href
+			}
+			if src != "" {
+				return []Node{Image(src, alt, linkUrl)}
+			}
+			return nil
+		}
 		if href != "" && isSafeURL(href) {
 			m := LinkMark(href)
 			mark = &m
@@ -303,7 +319,7 @@ func (c *converter) convertInlineElement(n *html.Node, parentMarks []Mark) []Nod
 		}
 		alt := getAttr(n, "alt")
 		if src != "" {
-			return []Node{Image(src, alt)}
+			return []Node{Image(src, alt, "")}
 		}
 		return nil
 	}
@@ -396,7 +412,7 @@ func (c *converter) convertFigure(n *html.Node) []Node {
 			src := getAttr(child, "src")
 			alt := getAttr(child, "alt")
 			if src != "" {
-				result = append(result, Image(src, alt))
+				result = append(result, Image(src, alt, ""))
 			}
 		} else if child.DataAtom == atom.Figcaption {
 			// Caption as a paragraph
@@ -472,6 +488,24 @@ func renderNode(n *html.Node) string {
 	var sb strings.Builder
 	html.Render(&sb, n)
 	return sb.String()
+}
+
+// onlyChildImg returns the sole <img> child of n if n has exactly one element
+// child and it is an <img>. Returns nil otherwise.
+func onlyChildImg(n *html.Node) *html.Node {
+	var img *html.Node
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.TextNode && strings.TrimSpace(child.Data) == "" {
+			continue // skip whitespace text nodes
+		}
+		if child.Type == html.ElementNode && child.DataAtom == atom.Img && img == nil {
+			img = child
+			continue
+		}
+		// More than one meaningful child or non-img element.
+		return nil
+	}
+	return img
 }
 
 // isSafeURL checks that a URL uses a safe scheme (http, https, mailto, tel, or relative).

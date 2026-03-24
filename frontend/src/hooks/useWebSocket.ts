@@ -6,7 +6,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 export interface WSEvent {
   event_id?: string
   sent_at?: string
-  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'visitor_online' | 'visitor_offline'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'reordered' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'visitor_online' | 'visitor_offline'
   entity: string
   entity_id: string
   workspace_id: string
