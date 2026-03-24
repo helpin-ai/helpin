@@ -44,6 +44,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       // Refresh failed, clear tokens
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+      localStorage.removeItem('remember_me');
+      stopTokenRefreshTimer();
       window.location.href = '/login';
       return { data: null, error: 'Session expired' };
     }
@@ -77,6 +79,45 @@ async function tryRefreshToken(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Proactive token refresh
+// ---------------------------------------------------------------------------
+
+const TOKEN_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+let refreshTimerId: ReturnType<typeof setInterval> | null = null;
+
+/** Start a periodic timer that refreshes the access token every 5 minutes. */
+export function startTokenRefreshTimer(): void {
+  stopTokenRefreshTimer();
+  refreshTimerId = setInterval(() => {
+    const token = localStorage.getItem('refresh_token');
+    if (token) {
+      tryRefreshToken();
+    }
+  }, TOKEN_REFRESH_INTERVAL);
+}
+
+/** Stop the periodic token refresh timer. */
+export function stopTokenRefreshTimer(): void {
+  if (refreshTimerId !== null) {
+    clearInterval(refreshTimerId);
+    refreshTimerId = null;
+  }
+}
+
+/**
+ * Refresh the token when the user returns to the tab after being away.
+ * Should be called once on app startup.
+ */
+export function setupVisibilityRefresh(): void {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && localStorage.getItem('refresh_token')) {
+      tryRefreshToken();
+    }
+  });
 }
 
 /** Upload a file directly to S3 using a presigned PUT URL. */

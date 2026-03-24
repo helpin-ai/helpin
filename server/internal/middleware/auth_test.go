@@ -14,7 +14,7 @@ import (
 
 func TestRequireAuth_ValidToken(t *testing.T) {
 	jwtMgr := auth.NewJWTManager("test-secret")
-	accessToken, _, err := jwtMgr.GenerateTokenPair("user-abc", "alice@example.com")
+	accessToken, _, err := jwtMgr.GenerateTokenPair("user-abc", "alice@example.com", false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestRequireAuth_ExpiredToken(t *testing.T) {
 func TestRequireAuth_WrongSecret(t *testing.T) {
 	// Generate token with one secret
 	otherMgr := auth.NewJWTManager("other-secret")
-	accessToken, _, err := otherMgr.GenerateTokenPair("user-xyz", "xyz@example.com")
+	accessToken, _, err := otherMgr.GenerateTokenPair("user-xyz", "xyz@example.com", false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}

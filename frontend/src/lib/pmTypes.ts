@@ -1456,6 +1456,15 @@ export interface ConversationListResponse {
   meta: ConversationListMeta;
 }
 
+export interface SupportAttachmentPayload {
+  id: string;
+  file_key: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  url: string;
+}
+
 export interface SupportMessage {
   id: string;
   workspace_id: string;
@@ -1471,8 +1480,75 @@ export interface SupportMessage {
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;
   email_notified_at?: string;
+  attachments?: SupportAttachmentPayload[];
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportAIPreviewHistoryTurn {
+  sender_type: MessageSenderType;
+  message_type?: string;
+  content: string;
+}
+
+export interface SupportAIPreviewRequest {
+  message: string;
+  conversation_id?: string;
+  history?: SupportAIPreviewHistoryTurn[];
+  include_answer?: boolean;
+  max_results?: number;
+}
+
+export interface SupportAIPreviewQueryPlan {
+  decision: string;
+  standalone_query: string;
+  search_queries: string[];
+  clarifying_question: string;
+  reason: string;
+  tokens_used: number;
+  fallback_used: boolean;
+  error?: string;
+}
+
+export interface SupportAIPreviewSearchResult {
+  reference_id: string;
+  source_type: string;
+  title: string;
+  url?: string;
+  chunk_index: number;
+  combined_score: number;
+  vector_score: number;
+  lexical_score: number;
+  snippet: string;
+}
+
+export interface SupportAIPreviewRetrieval {
+  query_count: number;
+  result_count: number;
+  results: SupportAIPreviewSearchResult[];
+  error?: string;
+}
+
+export interface SupportAIPreviewAnswer {
+  content: string;
+  can_answer: boolean;
+  source_doc_ids: string[];
+  llm_confidence: number;
+  grounded_confidence: number;
+  tokens_used: number;
+  provider: string;
+  model: string;
+}
+
+export interface SupportAIPreviewResponse {
+  conversation_source: string;
+  confidence_threshold: number;
+  total_tokens_used: number;
+  final_decision: string;
+  final_reason: string;
+  query_plan: SupportAIPreviewQueryPlan;
+  retrieval: SupportAIPreviewRetrieval;
+  answer?: SupportAIPreviewAnswer;
 }
 
 export interface AIMessageMetadata {
@@ -1547,6 +1623,8 @@ export interface SupportContentPage {
   http_status: number;
   content_format: string;
   content_hash: string;
+  content_text?: string;
+  content_length: number;
   last_crawled_at: string;
   created_at: string;
   updated_at: string;
@@ -1651,6 +1729,8 @@ export interface SupportInboxSettings {
   widget_avatar_url: string;
   widget_help_space_ids: string[];
   csat_enabled: boolean;
+  file_uploads_enabled: boolean;
+  force_visitor_identity: boolean;
 }
 
 export interface SupportInstallationResponse {

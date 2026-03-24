@@ -20,9 +20,9 @@ const ALIGNMENT_OPTIONS = [
   { value: 'right', label: 'Right', icon: AlignRight },
 ] as const;
 
-export function ResizableImageComponent({ node, updateAttributes, selected, deleteNode, editor }: NodeViewProps) {
+export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor }: NodeViewProps) {
   const { src, alt, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
-  const { copyImage, downloadImage, openInNewTab } = useImageActions();
+  const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);

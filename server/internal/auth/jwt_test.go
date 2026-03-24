@@ -18,7 +18,7 @@ const (
 func TestGenerateAndValidateAccessToken(t *testing.T) {
 	mgr := NewJWTManager(testSecret)
 
-	accessToken, _, err := mgr.GenerateTokenPair(testUserID, testEmail)
+	accessToken, _, err := mgr.GenerateTokenPair(testUserID, testEmail, false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	mgr := NewJWTManager(testSecret)
 
-	_, refreshToken, err := mgr.GenerateTokenPair(testUserID, testEmail)
+	_, refreshToken, err := mgr.GenerateTokenPair(testUserID, testEmail, false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error = %v", err)
 	}
@@ -72,10 +72,30 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	if claims.ExpiresAt == nil {
 		t.Fatal("ExpiresAt is nil")
 	}
-	// Refresh token expires in 7 days; verify it's within a reasonable window.
+	// Refresh token (no remember me) expires in 24 hours.
 	expiresIn := time.Until(claims.ExpiresAt.Time)
-	if expiresIn < 6*24*time.Hour+23*time.Hour || expiresIn > 7*24*time.Hour+1*time.Minute {
-		t.Errorf("refresh token expiry = %v from now, want ~7d", expiresIn)
+	if expiresIn < 23*time.Hour+59*time.Minute || expiresIn > 24*time.Hour+1*time.Minute {
+		t.Errorf("refresh token expiry = %v from now, want ~24h", expiresIn)
+	}
+}
+
+func TestGenerateTokenPair_RememberMe(t *testing.T) {
+	mgr := NewJWTManager(testSecret)
+
+	_, refreshToken, err := mgr.GenerateTokenPair(testUserID, testEmail, true)
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error = %v", err)
+	}
+
+	claims, err := mgr.ValidateToken(refreshToken)
+	if err != nil {
+		t.Fatalf("ValidateToken(refreshToken) error = %v", err)
+	}
+
+	// Refresh token with remember me expires in 30 days.
+	expiresIn := time.Until(claims.ExpiresAt.Time)
+	if expiresIn < 29*24*time.Hour+23*time.Hour || expiresIn > 30*24*time.Hour+1*time.Minute {
+		t.Errorf("refresh token expiry = %v from now, want ~30d", expiresIn)
 	}
 }
 
@@ -107,7 +127,7 @@ func TestValidateToken_Expired(t *testing.T) {
 func TestValidateToken_Tampered(t *testing.T) {
 	mgr := NewJWTManager(testSecret)
 
-	accessToken, _, err := mgr.GenerateTokenPair(testUserID, testEmail)
+	accessToken, _, err := mgr.GenerateTokenPair(testUserID, testEmail, false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error = %v", err)
 	}
@@ -131,7 +151,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 	generator := NewJWTManager("secret-one")
 	validator := NewJWTManager("secret-two")
 
-	accessToken, _, err := generator.GenerateTokenPair(testUserID, testEmail)
+	accessToken, _, err := generator.GenerateTokenPair(testUserID, testEmail, false)
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error = %v", err)
 	}

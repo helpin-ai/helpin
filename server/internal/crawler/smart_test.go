@@ -40,14 +40,14 @@ func TestNewSmartCrawler_ModeDefaults(t *testing.T) {
 			wantMode: "cloudflare_with_fallback",
 		},
 		{
-			name:     "empty mode defaults to cloudflare_with_fallback",
+			name:     "empty mode defaults to local",
 			mode:     "",
-			wantMode: "cloudflare_with_fallback",
+			wantMode: "local",
 		},
 		{
-			name:     "unknown mode defaults to cloudflare_with_fallback",
+			name:     "unknown mode defaults to local",
 			mode:     "unknown",
-			wantMode: "cloudflare_with_fallback",
+			wantMode: "local",
 		},
 		{
 			name:     "uppercase LOCAL normalized to local",

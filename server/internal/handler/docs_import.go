@@ -9,6 +9,28 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+// ImportListJobs handles GET /api/docs/import/jobs.
+func (h *DocsHandler) ImportListJobs(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	jobs, err := h.importService.ListJobs(r.Context(), wsID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, jobs)
+}
+
+// ImportReconvert handles POST /api/docs/import/{jobId}/reconvert.
+func (h *DocsHandler) ImportReconvert(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobId")
+	result, err := h.importService.Reconvert(r.Context(), jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // ImportPreviewHelpscout handles POST /api/docs/import/helpscout/preview.
 func (h *DocsHandler) ImportPreviewHelpscout(w http.ResponseWriter, r *http.Request) {
 	var req model.DocsImportPreviewRequest

@@ -2,20 +2,21 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Send, Paperclip, StickyNote, MessageCircle } from 'lucide-react';
+import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useSendMessage } from '@/hooks/queries/useSupport';
+import { useSendMessage, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -76,6 +77,41 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const lastTypingSentRef = useRef(0);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
+
+  // File attachments
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadMutation = useUploadSupportAttachment(workspaceId, conversationId);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    { localId: string; fileName: string; fileType: string; status: 'uploading' | 'done' | 'error'; attachmentId?: string; previewUrl?: string }[]
+  >([]);
+
+  const handleFileSelect = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} exceeds 10 MB limit`);
+        continue;
+      }
+      const localId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      setPendingAttachments((prev) => [...prev, { localId, fileName: file.name, fileType: file.type, status: 'uploading', previewUrl }]);
+      try {
+        const result = await uploadMutation.mutateAsync({ file });
+        setPendingAttachments((prev) => prev.map((a) => a.localId === localId ? { ...a, status: 'done', attachmentId: result.id } : a));
+      } catch {
+        setPendingAttachments((prev) => prev.map((a) => a.localId === localId ? { ...a, status: 'error' } : a));
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [uploadMutation]);
+
+  const removeAttachment = useCallback((localId: string) => {
+    setPendingAttachments((prev) => {
+      const att = prev.find((a) => a.localId === localId);
+      if (att?.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      return prev.filter((a) => a.localId !== localId);
+    });
+  }, []);
 
   // Mention state
   const [mentionState, setMentionState] = useState<{
@@ -284,21 +320,28 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const handleSend = useCallback(async () => {
     if (!editor) return;
     const text = editor.getText().trim();
-    if (!text || sendMutation.isPending) return;
+    const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
+    if ((!text && doneAttachments.length === 0) || sendMutation.isPending) return;
 
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     sendTyping(false);
 
+    const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
+
     await sendMutation.mutateAsync({
-      content: text,
+      content: text || ' ',
       is_internal: useSupportInboxStore.getState().replyMode === 'note',
+      ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
 
+    // Clean up preview URLs
+    pendingAttachments.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
+    setPendingAttachments([]);
     editor.commands.clearContent();
     clearDraft(conversationId);
     editor.commands.focus();
-  }, [editor, sendMutation, sendTyping, clearDraft, conversationId]);
+  }, [editor, sendMutation, sendTyping, clearDraft, conversationId, pendingAttachments]);
 
   handleSendRef.current = handleSend;
 
@@ -373,6 +416,41 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
         <EditorContent editor={editor} />
       </div>
 
+      {/* Attachment preview strip */}
+      {pendingAttachments.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto px-3 pb-1.5">
+          {pendingAttachments.map((att) => (
+            <div key={att.localId} className="relative flex-shrink-0">
+              {att.previewUrl ? (
+                <img src={att.previewUrl} alt={att.fileName} className="h-14 w-14 rounded-lg object-cover border border-border" />
+              ) : (
+                <div className="flex h-14 w-14 flex-col items-center justify-center rounded-lg border border-border bg-muted px-1">
+                  <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="mt-0.5 max-w-[48px] truncate text-[8px] text-muted-foreground">{att.fileName}</span>
+                </div>
+              )}
+              {att.status === 'uploading' && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                </div>
+              )}
+              {att.status === 'error' && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-red-500/20 border border-red-400">
+                  <span className="text-[9px] font-medium text-red-600">Failed</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => removeAttachment(att.localId)}
+                className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground/80 text-background hover:bg-foreground"
+              >
+                <XIcon className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Bottom toolbar */}
       <div className="flex items-center justify-between px-3 pb-2.5">
         <div className="flex items-center gap-0.5">
@@ -385,12 +463,20 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => fileInputRef.current?.click()}>
                 <Paperclip className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">Attach file</TooltipContent>
           </Tooltip>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
+            onChange={(e) => handleFileSelect(e.target.files)}
+          />
           {members.length > 0 && (
             <span className="ml-1 text-[10px] text-muted-foreground">
               Type @ to mention
@@ -404,7 +490,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           </kbd>
           <Button
             size="sm"
-            disabled={sendMutation.isPending || !content.trim()}
+            disabled={sendMutation.isPending || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
             onClick={handleSend}
             className={cn(
               'h-7 gap-1.5 rounded-full px-3 text-xs',

@@ -1,8 +1,9 @@
-import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig } from '@helpin/shared';
+import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, PendingAttachment as SharedPendingAttachment } from '@helpin/shared';
 
 // Re-export shared types
 export type Message = SharedMessage;
 export type WidgetConfig = SharedWidgetConfig;
+export type PendingAttachment = SharedPendingAttachment;
 
 // Shared nested types used directly in widget-core
 export interface AiSource {
@@ -14,10 +15,12 @@ export interface AiSource {
 }
 
 export interface Attachment {
+  id?: string;
   fileKey: string;
   fileName: string;
   fileType: string;
   fileSize: number;
+  url?: string;
 }
 
 export interface Conversation {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -56,15 +57,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		modelName = req.Model
 	}
 
-	body := map[string]interface{}{
-		"model":       modelName,
-		"messages":    messages,
-		"max_tokens":  maxTokens,
-		"temperature": req.Temperature,
-	}
-	if req.JSONMode {
-		body["response_format"] = map[string]string{"type": "json_object"}
-	}
+	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode)
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -120,6 +113,34 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 			OutputTokens: result.Usage.CompletionTokens,
 		},
 	}, nil
+}
+
+func (p *OpenAIProvider) buildChatCompletionBody(
+	modelName string,
+	messages []map[string]string,
+	maxTokens int,
+	temperature float64,
+	jsonMode bool,
+) map[string]interface{} {
+	body := map[string]interface{}{
+		"model":       modelName,
+		"messages":    messages,
+		"temperature": temperature,
+	}
+	if p.usesMaxCompletionTokens(modelName) {
+		body["max_completion_tokens"] = maxTokens
+	} else {
+		body["max_tokens"] = maxTokens
+	}
+	if jsonMode {
+		body["response_format"] = map[string]string{"type": "json_object"}
+	}
+	return body
+}
+
+func (p *OpenAIProvider) usesMaxCompletionTokens(modelName string) bool {
+	model := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.HasPrefix(model, "gpt-5")
 }
 
 func (p *OpenAIProvider) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {

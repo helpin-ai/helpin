@@ -23,6 +23,15 @@ const baseConfig = {
 };
 
 describe('ChatWindow', () => {
+  const sampleMessage = {
+    id: 'msg-1',
+    conversationId: 'conv-1',
+    role: 'customer' as const,
+    content: 'Need help',
+    isInternal: false,
+    createdAt: new Date().toISOString(),
+  };
+
   it('does not render when closed', () => {
     const { container } = render(
       <ChatWindow
@@ -165,5 +174,82 @@ describe('ChatWindow', () => {
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(handleClose).toHaveBeenCalled();
+  });
+
+  it('shows talk to human when enabled and the conversation is idle', () => {
+    const { getByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('Talk to a human')).toBeTruthy();
+  });
+
+  it('hides talk to human while AI is thinking', () => {
+    const { queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        isAIThinking={true}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('hides talk to human while an agent is typing', () => {
+    const { queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        isTyping={true}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
   });
 });

@@ -64,7 +64,7 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email)
+	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signup", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -142,13 +142,13 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email)
+	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, req.RememberMe)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signin", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	s.logger.InfoContext(ctx, "user signed in", "user_id", user.ID, "email", user.Email)
+	s.logger.InfoContext(ctx, "user signed in", "user_id", user.ID, "email", user.Email, "remember_me", req.RememberMe)
 
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
@@ -266,7 +266,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 		return nil, fmt.Errorf("user not found")
 	}
 
-	accessToken, newRefresh, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email)
+	accessToken, newRefresh, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens during refresh", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)

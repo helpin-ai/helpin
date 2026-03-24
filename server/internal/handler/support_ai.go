@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -200,6 +201,26 @@ func (h *SupportAIHandler) ListContentSourcePages(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, pages)
 }
 
+// GetContentSourcePage returns a single synced page including its content.
+// GET /pm/content-sources/{contentSourceId}/pages/{pageId}
+func (h *SupportAIHandler) GetContentSourcePage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	contentSourceID := chi.URLParam(r, "contentSourceId")
+	pageID := chi.URLParam(r, "pageId")
+	page, err := h.contentSourceSvc.GetPage(r.Context(), workspaceID, contentSourceID, pageID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get content source page failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
 // GetAgentContentSources returns selected workspace content source IDs for an agent.
 func (h *SupportAIHandler) GetAgentContentSources(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
@@ -245,6 +266,42 @@ func (h *SupportAIHandler) UpdateAgentContentSources(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, ids)
+}
+
+// PreviewSupportReply runs the support AI planner + RAG pipeline without side effects.
+// POST /api/pm/agents/{id}/support-preview
+func (h *SupportAIHandler) PreviewSupportReply(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "support ai service unavailable")
+		return
+	}
+
+	var req model.SupportAIPreviewRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.aiService.PreviewSupportReply(r.Context(), workspaceID, chi.URLParam(r, "id"), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrSupportPreviewInvalidInput):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrSupportPreviewAgentNotFound), errors.Is(err, service.ErrSupportPreviewConversationNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			slog.ErrorContext(r.Context(), "support ai preview failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to preview support response")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // EscalateToHuman handles the widget "Talk to a human" button.

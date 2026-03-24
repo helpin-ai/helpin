@@ -87,6 +87,21 @@ describe('renderMarkdown', () => {
     expect(result).toBe('<blockquote>quoted text<br>more quoted</blockquote>');
   });
 
+  it('renders GitHub-style tables', () => {
+    const input = '| Feature | ContentStudio | Publer |\n| --- | --- | --- |\n| Planner Views | Calendar, Feed, List | Basic calendar |\n| AI Tools | Captions, hashtags | Basic AI |';
+    const result = renderMarkdown(input);
+    expect(result).toContain('<div class="helpin-table-wrap"><table>');
+    expect(result).toContain('<thead><tr><th>Feature</th><th>ContentStudio</th><th>Publer</th></tr></thead>');
+    expect(result).toContain('<tbody><tr><td>Planner Views</td><td>Calendar, Feed, List</td><td>Basic calendar</td></tr><tr><td>AI Tools</td><td>Captions, hashtags</td><td>Basic AI</td></tr></tbody>');
+  });
+
+  it('renders inline markdown inside table cells', () => {
+    const input = '| Feature | Winner |\n| --- | --- |\n| AI Tools | **ContentStudio** |\n| Docs | [Read more](https://example.com) |';
+    const result = renderMarkdown(input);
+    expect(result).toContain('<td><strong>ContentStudio</strong></td>');
+    expect(result).toContain('<td><a href="https://example.com" target="_blank" rel="noopener noreferrer">Read more</a></td>');
+  });
+
   it('renders horizontal rules', () => {
     const input = 'above\n\n---\n\nbelow';
     const result = renderMarkdown(input);

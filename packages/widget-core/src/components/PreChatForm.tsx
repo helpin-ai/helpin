@@ -17,8 +17,6 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   const [step, setStep] = useState<'email' | 'phone' | 'done'>('email');
   const formRef = useRef<HTMLDivElement>(null);
   const brandColor = config.branding?.primaryColor || '#6366f1';
-  const workspaceName = config.workspaceName || 'Support';
-  const logoUrl = config.branding?.logoUrl;
 
   useEffect(() => {
     if (typeof formRef.current?.scrollIntoView === 'function') {
@@ -27,6 +25,7 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   }, [step]);
 
   const requirePhone = config.features?.requirePhone !== false;
+  const emailRequired = config.features?.forceIdentify === true;
 
   const handleEmailSubmit = (e: Event) => {
     e.preventDefault();
@@ -35,6 +34,15 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
       setStep('phone');
     } else {
       onSubmit({ phone: '', email: email.trim() });
+      setStep('done');
+    }
+  };
+
+  const handleSkipEmail = () => {
+    if (requirePhone) {
+      setStep('phone');
+    } else {
+      onSubmit({ phone: '', email: '' });
       setStep('done');
     }
   };
@@ -50,22 +58,14 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   return (
     <div className="helpin-inline-prechat" ref={formRef}>
       <div className="helpin-message-row helpin-message-row--agent">
-        <div className="helpin-message-agent-header">
-          {logoUrl ? (
-            <img src={logoUrl} alt={workspaceName} className="helpin-message-avatar" />
-          ) : (
-            <span className="helpin-message-avatar-placeholder">
-              {workspaceName.charAt(0).toUpperCase()}
-            </span>
-          )}
-          <span className="helpin-message-agent-name">{workspaceName}</span>
-        </div>
         <div className="helpin-message-agent-bubble-wrap">
           <div className="helpin-message-bubble helpin-message--agent">
             {step === 'email' && (
               <>
                 <div className="helpin-message-content">
-                  Please enter your email address so we can get back to you by email if needed.
+                  {emailRequired
+                    ? 'Please enter your email address to continue.'
+                    : 'Please enter your email address so we can get back to you by email if needed.'}
                 </div>
                 <form onSubmit={handleEmailSubmit} className="helpin-inline-prechat-form">
                   <label className="helpin-sr-only" htmlFor="helpin-prechat-email">Email address</label>
@@ -92,6 +92,15 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
                     <ChevronRightIcon size={16} color="white" />
                   </button>
                 </form>
+                {!emailRequired && (
+                  <button
+                    type="button"
+                    className="helpin-inline-prechat-skip"
+                    onClick={handleSkipEmail}
+                  >
+                    Skip
+                  </button>
+                )}
               </>
             )}
             {step === 'phone' && (

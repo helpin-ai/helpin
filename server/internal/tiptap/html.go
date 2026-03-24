@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net/url"
 	"strings"
 )
 
@@ -136,6 +137,34 @@ func renderNode(b *strings.Builder, n *Node) {
 		fmt.Fprintf(b, "<aside class=\"docs-callout docs-callout--%s\" data-callout-variant=\"%s\">\n", variant, variant)
 		renderChildren(b, n)
 		b.WriteString("</aside>\n")
+
+	case "videoEmbed":
+		embedUrl := strAttr(n.Attrs, "embedUrl")
+		provider := strAttr(n.Attrs, "provider")
+		if embedUrl != "" {
+			// Parse URL and validate scheme + host to prevent injection
+			allowed := isAllowedVideoEmbed(embedUrl)
+			if allowed {
+				b.WriteString("<div class=\"docs-video-embed\" data-video-provider=\"")
+				b.WriteString(html.EscapeString(provider))
+				b.WriteString("\">\n")
+				b.WriteString("<iframe src=\"")
+				b.WriteString(html.EscapeString(embedUrl))
+				b.WriteString("\" frameborder=\"0\" allowfullscreen sandbox=\"allow-scripts allow-same-origin allow-popups allow-presentation\" referrerpolicy=\"no-referrer\" loading=\"lazy\"></iframe>\n")
+				b.WriteString("</div>\n")
+			}
+		}
+
+	case "htmlBlock":
+		rawHTML := strAttr(n.Attrs, "html")
+		if rawHTML != "" {
+			sanitized := SanitizeHTMLBlock(rawHTML)
+			if sanitized != "" {
+				b.WriteString("<div class=\"docs-html-block\">\n")
+				b.WriteString(sanitized)
+				b.WriteString("\n</div>\n")
+			}
+		}
 
 	case "horizontalRule":
 		b.WriteString("<hr>\n")
@@ -321,6 +350,32 @@ func renderImage(b *strings.Builder, n *Node) {
 		fmt.Fprintf(b, ` style="%s"`, strings.Join(style, ";"))
 	}
 	b.WriteString(" loading=\"lazy\">")
+}
+
+// allowedVideoHosts maps hostnames to required path prefixes for video embeds.
+var allowedVideoHosts = map[string]string{
+	"www.youtube.com":       "/embed/",
+	"player.vimeo.com":      "/video/",
+	"www.loom.com":          "/embed/",
+	"fast.wistia.net":       "/embed/iframe/",
+}
+
+// isAllowedVideoEmbed validates that the embed URL uses https and matches
+// a whitelisted host + path prefix. This prevents injection via crafted URLs
+// like https://attacker.example/?next=youtube.com/embed/abc.
+func isAllowedVideoEmbed(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" {
+		return false
+	}
+	prefix, ok := allowedVideoHosts[u.Host]
+	if !ok {
+		return false
+	}
+	return strings.HasPrefix(u.Path, prefix)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

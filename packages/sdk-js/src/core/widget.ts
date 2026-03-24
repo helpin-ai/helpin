@@ -74,6 +74,7 @@ export class WidgetManager {
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
+  private preChatDone = false;
   private notificationAudio: HTMLAudioElement | null = null;
   private notificationAudioUnlocked = false;
   private audioUnlockListener: (() => void) | null = null;
@@ -99,6 +100,11 @@ export class WidgetManager {
     this.isShutdown = false;
     this.config = settings;
     this.widgetKey = settings.key;
+
+    // Restore pre-chat done state from localStorage.
+    if (this.widgetKey) {
+      try { this.preChatDone = localStorage.getItem(`helpin_prechat_${this.widgetKey}`) === '1'; } catch { /* ignore */ }
+    }
 
     if (settings.host) {
       this.host = settings.host.replace(/^https?:\/\//, '');
@@ -149,7 +155,9 @@ export class WidgetManager {
     if (this.widgetKey) {
       clearSession(this.widgetKey);
       clearConfigCache(this.widgetKey);
+      try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
     }
+    this.preChatDone = false;
 
     // 3. Reset in-memory state + unmount widget
     this.cleanup();
@@ -352,9 +360,11 @@ export class WidgetManager {
 }`;
     }
 
-    // Show pre-chat form only when: feature is enabled AND session is anonymous (no email yet)
+    // Show pre-chat form only when: feature is enabled AND session is anonymous (no email yet) AND not already completed/skipped.
+    // When forceIdentify is on, ignore the skip flag — email is mandatory.
     const alreadyIdentified = !!this.currentEmail || !!this.config?.user?.email;
-    const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified;
+    const forceIdentify = !!this.widgetConfig.features?.forceIdentify;
+    const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified && (forceIdentify || !this.preChatDone);
 
     const mountOptions: Parameters<typeof mountWidget>[1] & {
       openArticleRequest?: {
@@ -366,9 +376,10 @@ export class WidgetManager {
       messages: this.messages,
       isOpen: this.isOpen,
       onClose: () => this.hide(),
-      onSendMessage: (content: string) => this.handleSendMessage(content),
+      onSendMessage: (content: string, attachmentIds?: string[]) => this.handleSendMessage(content, { attachmentIds }),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
+      onUploadAttachment: (file: File, localId: string) => this.handleUploadAttachment(file, localId),
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
@@ -388,6 +399,7 @@ export class WidgetManager {
       widgetKey: this.widgetKey || undefined,
       host: this.host,
       openArticleRequest: this.openArticleRequest || undefined,
+      onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),
       onViewChange: (view: WidgetView) => {
         this.currentView = view;
         // Refresh conversations list from server when navigating to Messages tab
@@ -474,8 +486,8 @@ export class WidgetManager {
     this.isTyping = false;
   }
 
-  private handleSendMessage(content: string, options: { startNewConversation?: boolean } = {}): void {
-    if (!content.trim()) return;
+  private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
+    if (!content.trim() && (!options.attachmentIds || options.attachmentIds.length === 0)) return;
 
     if (options.startNewConversation) {
       this.resetActiveConversation();
@@ -503,11 +515,82 @@ export class WidgetManager {
     this.stopTyping();
 
     // Send via WS
+    const payload: Record<string, unknown> = { content };
+    if (options.attachmentIds && options.attachmentIds.length > 0) {
+      payload.attachment_ids = options.attachmentIds;
+    }
+
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('message:send', { content });
+      this.wsSend('message:send', payload);
     } else {
       // Fallback to HTTP if WS not available
       this.sendMessageHTTP(content);
+    }
+  }
+
+  private async handleUploadAttachment(file: File, _localId: string): Promise<{ attachmentId: string; url: string } | null> {
+    if (!this.sessionToken) return null;
+
+    try {
+      // Step 1: Initiate — get presigned URL from server
+      const initResp = await fetch(`https://${this.host}/widget/support/attachments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': this.sessionToken,
+        },
+        body: JSON.stringify({
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type || 'application/octet-stream',
+        }),
+      });
+
+      if (!initResp.ok) {
+        console.error('[helpin] Failed to initiate attachment upload:', initResp.status);
+        return null;
+      }
+
+      const initData = await initResp.json();
+      const attachmentId = initData.attachment?.id;
+      const uploadUrl = initData.upload_url;
+      const publicUrl = initData.public_url;
+
+      if (!attachmentId || !uploadUrl) return null;
+
+      // Step 2: Upload file directly to S3 via presigned PUT URL
+      const uploadResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-amz-acl': 'public-read',
+        },
+      });
+
+      if (!uploadResp.ok) {
+        console.error('[helpin] Failed to upload file to storage:', uploadResp.status);
+        return null;
+      }
+
+      // Step 3: Confirm upload with server
+      const confirmResp = await fetch(`https://${this.host}/widget/support/attachments/${attachmentId}/confirm`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': this.sessionToken,
+        },
+      });
+
+      if (!confirmResp.ok) {
+        console.error('[helpin] Failed to confirm attachment upload:', confirmResp.status);
+        return null;
+      }
+
+      return { attachmentId, url: publicUrl };
+    } catch (error) {
+      console.error('[helpin] Attachment upload error:', error);
+      return null;
     }
   }
 
@@ -593,18 +676,96 @@ export class WidgetManager {
   }
 
   private handlePreChatSubmit(data: { phone: string; email: string }): void {
-    this.triggerCallback('onUserEmailSupplied', data.email);
-    this.currentEmail = data.email;
+    if (data.email) {
+      this.triggerCallback('onUserEmailSupplied', data.email);
+      this.currentEmail = data.email;
+    }
 
-    // Upgrade session via WS with source=prechat
+    // Mark pre-chat as done so it doesn't reappear on reload.
+    this.preChatDone = true;
+    if (this.widgetKey) {
+      try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* ignore */ }
+    }
+
+    // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('session:upgrade', { email: data.email, phone: data.phone, source: 'widget_prechat' });
+      this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
     }
 
     // Fire lead tracking event to events pipeline (ClickHouse)
-    if ((globalThis as any).helpin?.track) {
+    if (data.email && (globalThis as any).helpin?.track) {
       (globalThis as any).helpin.track('lead', { email: data.email });
     }
+
+    this.render();
+  }
+
+  // ─── Image Lightbox (rendered in parent document, outside shadow DOM) ───
+
+  private showImageLightbox(src: string, _alt: string): void {
+    // Remove any existing lightbox
+    this.dismissImageLightbox();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'helpin-image-lightbox';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 2147483647;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px);
+      cursor: zoom-out; animation: helpin-lb-fade-in 0.15s ease;
+    `;
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = `
+      max-width: 90vw; max-height: 90vh; object-fit: contain;
+      border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      cursor: default;
+    `;
+    img.onclick = (e) => e.stopPropagation();
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    closeBtn.style.cssText = `
+      position: absolute; top: 16px; right: 16px;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background 0.15s;
+    `;
+    closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255,255,255,0.25)'; };
+    closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(255,255,255,0.15)'; };
+    closeBtn.onclick = () => this.dismissImageLightbox();
+
+    overlay.onclick = () => this.dismissImageLightbox();
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+
+    // Add fade-in animation
+    const style = document.createElement('style');
+    style.id = 'helpin-lb-style';
+    style.textContent = `@keyframes helpin-lb-fade-in { from { opacity: 0; } to { opacity: 1; } }`;
+    document.head.appendChild(style);
+
+    document.body.appendChild(overlay);
+
+    // Close on Escape key
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') this.dismissImageLightbox();
+    };
+    document.addEventListener('keydown', handleEscape);
+    (overlay as any)._escHandler = handleEscape;
+  }
+
+  private dismissImageLightbox(): void {
+    const existing = document.getElementById('helpin-image-lightbox');
+    if (existing) {
+      if ((existing as any)._escHandler) {
+        document.removeEventListener('keydown', (existing as any)._escHandler);
+      }
+      existing.remove();
+    }
+    document.getElementById('helpin-lb-style')?.remove();
   }
 
   // ─── Escalation ────────────────────────────────────────────
@@ -782,6 +943,19 @@ export class WidgetManager {
     }
   }
 
+  /** Map snake_case attachment payloads from the API to camelCase Attachment objects. */
+  private static mapAttachments(raw: any[] | undefined): any[] | undefined {
+    if (!raw || !Array.isArray(raw) || raw.length === 0) return undefined;
+    return raw.map((a: any) => ({
+      id: a.id,
+      fileKey: a.file_key,
+      fileName: a.file_name,
+      fileType: a.file_type,
+      fileSize: a.file_size,
+      url: a.url,
+    }));
+  }
+
   private handleWSMessage(data: { type: string; data?: any }): void {
     switch (data.type) {
       case 'session:joined': {
@@ -829,6 +1003,7 @@ export class WidgetManager {
               senderAvatar: m.sender_avatar_url || undefined,
               viaChannel: m.via_channel || undefined,
               isInternal: m.is_internal || false,
+              attachments: WidgetManager.mapAttachments(m.attachments),
               createdAt: m.created_at,
             };
             // Map AI metadata to widget Message fields
@@ -916,7 +1091,7 @@ export class WidgetManager {
           try { wsMeta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata; } catch { /* ignore */ }
         }
         const wsIsAI = msg.sender_type === 'ai' || !!(wsMeta?.ai_agent_id);
-        const newMsg: Message = {
+        const newMsg: any = {
           id: msg.id || `ws-${Date.now()}`,
           conversationId: msg.conversation_id || '',
           role: msg.sender_type === 'customer' ? 'customer' : wsIsAI ? 'ai' : 'agent',
@@ -925,6 +1100,7 @@ export class WidgetManager {
           senderAvatar: msg.sender_avatar || undefined,
           viaChannel: msg.via_channel || undefined,
           isInternal: false,
+          attachments: WidgetManager.mapAttachments(msg.attachments),
           createdAt: msg.created_at || new Date().toISOString(),
         };
         // Map AI metadata from WS payload
@@ -1081,6 +1257,7 @@ export class WidgetManager {
               senderAvatar: m.sender_avatar_url || undefined,
               viaChannel: m.via_channel || undefined,
               isInternal: m.is_internal || false,
+              attachments: WidgetManager.mapAttachments(m.attachments),
               createdAt: m.created_at,
             };
             if (meta) {

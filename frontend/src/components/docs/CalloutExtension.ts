@@ -61,7 +61,7 @@ export const CalloutExtension = Node.create({
       if (
         calloutNode.childCount === 1 &&
         calloutNode.firstChild?.type.name === 'paragraph' &&
-        calloutNode.firstChild.content.size === 0 &&
+        calloutNode.firstChild?.content.size === 0 &&
         (!requireCursorAtStart || $from.parentOffset === 0)
       ) {
         const calloutFrom = $from.before(depth);
@@ -87,8 +87,8 @@ export const CalloutExtension = Node.create({
         const calloutNode = $from.node(depth);
         const childIndex = $from.index(depth);
         const isLastChild = childIndex === calloutNode.childCount - 1;
-        const currentChild = $from.node(depth + 1);
-        const isEmpty = currentChild?.type.name === 'paragraph' && currentChild.content.size === 0;
+        const currentChild = depth + 1 <= $from.depth ? $from.node(depth + 1) : null;
+        const isEmpty = currentChild?.type.name === 'paragraph' && currentChild?.content.size === 0;
 
         // Exit on 3rd Enter: if the last TWO children are empty paragraphs
         if (isLastChild && isEmpty && calloutNode.childCount >= 3) {

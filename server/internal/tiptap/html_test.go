@@ -155,6 +155,59 @@ func TestRenderHTML_CalloutDefaultVariant(t *testing.T) {
 	}
 }
 
+func TestRenderHTML_VideoEmbed(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"videoEmbed","attrs":{"provider":"youtube","sourceUrl":"https://www.youtube.com/watch?v=abc123","embedUrl":"https://www.youtube.com/embed/abc123"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `<iframe src="https://www.youtube.com/embed/abc123"`) {
+		t.Errorf("expected youtube iframe, got: %s", got)
+	}
+	if !strings.Contains(got, `docs-video-embed`) {
+		t.Errorf("expected video embed wrapper, got: %s", got)
+	}
+}
+
+func TestRenderHTML_VideoEmbedUnsafeURL(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"videoEmbed","attrs":{"provider":"evil","sourceUrl":"https://evil.com","embedUrl":"https://evil.com/hack"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "iframe") {
+		t.Errorf("expected no iframe for unsafe URL, got: %s", got)
+	}
+}
+
+func TestRenderHTML_HTMLBlock(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div class=\"custom\"><p>Safe content</p></div>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `docs-html-block`) {
+		t.Errorf("expected html block wrapper, got: %s", got)
+	}
+	if !strings.Contains(got, "Safe content") {
+		t.Errorf("expected safe content preserved, got: %s", got)
+	}
+}
+
+func TestRenderHTML_HTMLBlockSanitizesScript(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<p>Hello</p><script>alert('xss')</script>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "script") {
+		t.Errorf("expected script stripped, got: %s", got)
+	}
+	if !strings.Contains(got, "Hello") {
+		t.Errorf("expected safe text preserved, got: %s", got)
+	}
+}
+
 func TestRenderHTML_HorizontalRule(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"horizontalRule"}]}`
 	got, err := RenderHTML(json.RawMessage(input))

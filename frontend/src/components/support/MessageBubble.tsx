@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
-import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, FileText, RotateCcw, StickyNote, XCircle } from 'lucide-react';
+import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -26,6 +27,12 @@ function renderMentionHighlights(content: string): ReactNode[] | null {
     parts.push(content.slice(lastIndex));
   }
   return parts.length > 1 ? parts : null;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -139,6 +146,11 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   }, [displayContent, isInternal]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+  const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
+  const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
+  const showBubble = !!displayContent || fileAttachments.length > 0;
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -277,24 +289,69 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
         )}
 
         <div className="max-w-[70%]">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-                  isCustomer
-                    ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                    : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                }`}
-              >
-                <div className="prose-chat">
-                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+          {showBubble && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                    isCustomer
+                      ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                      : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                  }`}
+                >
+                  {displayContent && (
+                    <div className="prose-chat">
+                      <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                    </div>
+                  )}
+                  {fileAttachments.length > 0 && (
+                    <div className={`${displayContent ? 'mt-2' : ''} space-y-1.5`}>
+                      {fileAttachments.map((att) => (
+                        <a
+                          key={att.id}
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted/50 ${
+                            isCustomer ? 'border-border' : 'border-white/20 text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Paperclip className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                          <span className="truncate font-medium">{att.file_name}</span>
+                          <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
+                          <Download className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side={isCustomer ? 'right' : 'left'}>
-              {tooltipContent}
-            </TooltipContent>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipContent side={isCustomer ? 'right' : 'left'}>
+                {tooltipContent}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* Image attachments: outside the bubble, clickable for preview */}
+          {imageAttachments.length > 0 && (
+            <div className={`${showBubble ? 'mt-1.5' : ''} space-y-1.5`}>
+              {imageAttachments.map((att) => (
+                <button
+                  key={att.id}
+                  type="button"
+                  onClick={() => setLightboxSrc(att.url)}
+                  className="block cursor-zoom-in overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+                >
+                  <img
+                    src={att.url}
+                    alt={att.file_name}
+                    className="max-h-60 max-w-full rounded-xl object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
@@ -304,6 +361,28 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
           </div>
         )}
       </div>
+
+      {/* Lightbox modal — rendered in portal for full-screen overlay */}
+      {lightboxSrc && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            onClick={() => setLightboxSrc(null)}
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body,
+      )}
 
       {/* Status below the bubble row — outside the avatar alignment */}
       {hasStatusBelow && (

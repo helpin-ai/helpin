@@ -67,7 +67,14 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
   // 5. Italic: *text* (must run after bold)
   result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
 
-  // 6. Links: [text](url)
+  // 6a. Images: ![alt](url)
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, url) => {
+    const safeUrl = sanitizeUrl(url);
+    if (!safeUrl) return escapeHtml(alt);
+    return `<img src="${safeUrl}" alt="${escapeHtml(alt)}" class="helpin-inline-image" loading="lazy" />`;
+  });
+
+  // 6b. Links: [text](url)
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
     const safeUrl = sanitizeUrl(url);
     return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
@@ -84,6 +91,28 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
 function isHorizontalRule(line: string): boolean {
   const trimmed = line.trim();
   return /^[-*_]{3,}$/.test(trimmed);
+}
+
+function parseTableCells(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) return [];
+
+  let parts = trimmed.split('|');
+  if (parts.length < 2) return [];
+  if (parts[0]?.trim() === '') parts = parts.slice(1);
+  if (parts[parts.length - 1]?.trim() === '') parts = parts.slice(0, -1);
+
+  const cells = parts.map(part => part.trim());
+  if (cells.length < 2 || cells.some(cell => cell === '')) {
+    return [];
+  }
+  return cells;
+}
+
+function isTableSeparatorLine(line: string, expectedColumns: number): boolean {
+  const cells = parseTableCells(line);
+  if (cells.length !== expectedColumns || cells.length === 0) return false;
+  return cells.every(cell => /^:?-{3,}:?$/.test(cell));
 }
 
 function processBlocks(lines: string[], inlineCodeMap: PlaceholderMap): string {
@@ -107,6 +136,34 @@ function processBlocks(lines: string[], inlineCodeMap: PlaceholderMap): string {
       const content = applyInlineTransforms(headingMatch[2], inlineCodeMap);
       output.push(`<h${level}>${content}</h${level}>`);
       i++;
+      continue;
+    }
+
+    // GitHub-style tables
+    const headerCells = parseTableCells(line);
+    if (
+      headerCells.length >= 2 &&
+      i+1 < lines.length &&
+      isTableSeparatorLine(lines[i+1], headerCells.length)
+    ) {
+      const headerHtml = headerCells
+        .map(cell => `<th>${applyInlineTransforms(cell, inlineCodeMap)}</th>`)
+        .join('');
+
+      i += 2;
+      const bodyRows: string[] = [];
+      while (i < lines.length) {
+        const rowCells = parseTableCells(lines[i]);
+        if (rowCells.length !== headerCells.length) break;
+        const rowHtml = rowCells
+          .map(cell => `<td>${applyInlineTransforms(cell, inlineCodeMap)}</td>`)
+          .join('');
+        bodyRows.push(`<tr>${rowHtml}</tr>`);
+        i++;
+      }
+
+      const bodyHtml = bodyRows.length > 0 ? `<tbody>${bodyRows.join('')}</tbody>` : '';
+      output.push(`<div class="helpin-table-wrap"><table><thead><tr>${headerHtml}</tr></thead>${bodyHtml}</table></div>`);
       continue;
     }
 

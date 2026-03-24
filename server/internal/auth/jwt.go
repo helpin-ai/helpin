@@ -24,8 +24,9 @@ func NewJWTManager(secret string) *JWTManager {
 	return &JWTManager{secret: []byte(secret)}
 }
 
-// GenerateTokenPair creates a new access token (15 min) and refresh token (7 days).
-func (m *JWTManager) GenerateTokenPair(userID, email string) (accessToken, refreshToken string, err error) {
+// GenerateTokenPair creates a new access token (15 min) and refresh token.
+// When rememberMe is true, the refresh token lasts 30 days; otherwise 24 hours.
+func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool) (accessToken, refreshToken string, err error) {
 	now := time.Now()
 
 	// Access token: 15 minutes
@@ -41,15 +42,19 @@ func (m *JWTManager) GenerateTokenPair(userID, email string) (accessToken, refre
 	accessTkn := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessToken, err = accessTkn.SignedString(m.secret)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to sign access token: %w", err)
+		return "", "", fmt.Errorf("sign access token: %w", err)
 	}
 
-	// Refresh token: 7 days
+	// Refresh token: 30 days if remember me, 24 hours otherwise
+	refreshDuration := 24 * time.Hour
+	if rememberMe {
+		refreshDuration = 30 * 24 * time.Hour
+	}
 	refreshClaims := Claims{
 		UserID: userID,
 		Email:  email,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(refreshDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Subject:   userID,
 		},
@@ -57,7 +62,7 @@ func (m *JWTManager) GenerateTokenPair(userID, email string) (accessToken, refre
 	refreshTkn := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshToken, err = refreshTkn.SignedString(m.secret)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to sign refresh token: %w", err)
+		return "", "", fmt.Errorf("sign refresh token: %w", err)
 	}
 
 	return accessToken, refreshToken, nil

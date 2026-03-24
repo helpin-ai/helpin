@@ -15,79 +15,85 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health             *handler.HealthHandler
-	Auth               *handler.AuthHandler
-	Organization       *handler.OrganizationHandler
-	Workspace          *handler.WorkspaceHandler
-	Settings           *handler.SettingsHandler
-	Invite             *handler.InviteHandler
-	PMWorkflow         *handler.PMWorkflowHandler
-	PMImport           *handler.PMImportHandler
-	PMLabel            *handler.PMLabelHandler
-	PMEpic             *handler.PMEpicHandler
-	PMSprint           *handler.PMSprintHandler
-	PMStory            *handler.PMStoryHandler
-	PMComment          *handler.PMCommentHandler
-	PMAttachment       *handler.PMAttachmentHandler
-	PMObjective        *handler.PMObjectiveHandler
-	PMChecklistItem    *handler.PMChecklistItemHandler
-	PMExternalLink     *handler.PMExternalLinkHandler
-	PMView             *handler.PMViewHandler
-	PMAutomation       *handler.PMAutomationHandler
-	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	Health              *handler.HealthHandler
+	Auth                *handler.AuthHandler
+	Organization        *handler.OrganizationHandler
+	Workspace           *handler.WorkspaceHandler
+	Settings            *handler.SettingsHandler
+	Invite              *handler.InviteHandler
+	PMWorkflow          *handler.PMWorkflowHandler
+	PMImport            *handler.PMImportHandler
+	PMLabel             *handler.PMLabelHandler
+	PMEpic              *handler.PMEpicHandler
+	PMSprint            *handler.PMSprintHandler
+	PMStory             *handler.PMStoryHandler
+	PMComment           *handler.PMCommentHandler
+	PMAttachment        *handler.PMAttachmentHandler
+	PMObjective         *handler.PMObjectiveHandler
+	PMChecklistItem     *handler.PMChecklistItemHandler
+	PMExternalLink      *handler.PMExternalLinkHandler
+	PMView              *handler.PMViewHandler
+	PMAutomation        *handler.PMAutomationHandler
+	PMStoryTemplate     *handler.PMStoryTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
-	Search             *handler.SearchHandler
-	Agent              *handler.AgentHandler
-	SupportInbox       *handler.SupportInboxHandler
-	SupportInboxWidget *handler.SupportInboxWidgetHandler
-	Git                *handler.GitHandler
-	Docs               *handler.DocsHandler
-	Notification       *handler.NotificationHandler
-	UserNotifSettings  *handler.UserNotificationSettingsHandler
-	CRMContact         *handler.CRMContactHandler
-	CRMCompany         *handler.CRMCompanyHandler
-	CRMDeal            *handler.CRMDealHandler
-	CRMAssociation     *handler.CRMAssociationHandler
-	Associations       *handler.AssociationsHandler
-	CRMActivity        *handler.CRMActivityHandler
-	CRMProperty        *handler.CRMPropertyHandler
-	CRMList            *handler.CRMListHandler
-	CRMImport          *handler.CRMImportHandler
-	CRMEmail           *handler.CRMEmailHandler
-	CRMCalendar        *handler.CRMCalendarHandler
-	CRMEnrichment      *handler.CRMEnrichmentHandler
-	CRMSignal          *handler.CRMSignalHandler
-	CRMSummary         *handler.CRMSummaryHandler
-	CRMSuggestion      *handler.CRMSuggestionHandler
-	CRMSequence        *handler.CRMSequenceHandler
-	CRMWritingProfile  *handler.CRMWritingProfileHandler
-	CRMSearch          *handler.CRMSearchHandler
-	CRMDealAutomation  *handler.CRMDealAutomationHandler
-	AutomationRule     *handler.AutomationRuleHandler
-	PMRoadmap          *handler.PMRoadmapHandler
-	Flow               *handler.FlowHandler
-	SDKAssets          *handler.SDKAssetsHandler
-	SupportAI          *handler.SupportAIHandler
-	PostmarkInbound    *handler.PostmarkInboundHandler
+	Search              *handler.SearchHandler
+	Agent               *handler.AgentHandler
+	SupportInbox        *handler.SupportInboxHandler
+	SupportInboxWidget  *handler.SupportInboxWidgetHandler
+	Git                 *handler.GitHandler
+	Docs                *handler.DocsHandler
+	Notification        *handler.NotificationHandler
+	UserNotifSettings   *handler.UserNotificationSettingsHandler
+	CRMContact          *handler.CRMContactHandler
+	CRMCompany          *handler.CRMCompanyHandler
+	CRMDeal             *handler.CRMDealHandler
+	CRMAssociation      *handler.CRMAssociationHandler
+	Associations        *handler.AssociationsHandler
+	CRMActivity         *handler.CRMActivityHandler
+	CRMProperty         *handler.CRMPropertyHandler
+	CRMList             *handler.CRMListHandler
+	CRMImport           *handler.CRMImportHandler
+	CRMEmail            *handler.CRMEmailHandler
+	CRMCalendar         *handler.CRMCalendarHandler
+	CRMEnrichment       *handler.CRMEnrichmentHandler
+	CRMSignal           *handler.CRMSignalHandler
+	CRMSummary          *handler.CRMSummaryHandler
+	CRMSuggestion       *handler.CRMSuggestionHandler
+	CRMSequence         *handler.CRMSequenceHandler
+	CRMWritingProfile   *handler.CRMWritingProfileHandler
+	CRMSearch           *handler.CRMSearchHandler
+	CRMDealAutomation   *handler.CRMDealAutomationHandler
+	AutomationRule      *handler.AutomationRuleHandler
+	PMRoadmap           *handler.PMRoadmapHandler
+	Flow                *handler.FlowHandler
+	SDKAssets           *handler.SDKAssetsHandler
+	SupportAI           *handler.SupportAIHandler
+	SupportAttachment   *handler.SupportAttachmentHandler
+	PostmarkInbound     *handler.PostmarkInboundHandler
 }
 
 // New creates and configures the Chi router with all routes.
 func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzService, slugResolver authorization.SlugResolver, corsOrigins []string) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Global middleware
+	// Global middleware (applied to all routes)
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
+
+	// API-scoped CORS — restricted to configured origins (dashboard, frontend).
+	// Widget/SDK routes have their own open CORS (AllowedOrigins: *).
+	// This must NOT be global, otherwise it short-circuits widget preflight requests
+	// from customer domains that aren't in corsOrigins.
+	apiCORS := cors.Handler(cors.Options{
 		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID"},
 		ExposedHeaders:   []string{"Link", "Deprecation", "Sunset"},
 		AllowCredentials: true,
 		MaxAge:           300,
-	}))
+	})
 
 	// Permission middleware helpers for readability.
 	requirePerm := func(perm authorization.Permission) func(http.Handler) http.Handler {
@@ -108,8 +114,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Route("/widget", func(r chi.Router) {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
-			AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-			AllowedHeaders:   []string{"Content-Type"},
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+			AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 			AllowCredentials: false,
 			MaxAge:           3600,
 		}))
@@ -120,6 +126,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+		if h.SupportAttachment != nil {
+			r.Post("/support/attachments", h.SupportAttachment.WidgetCreate)
+			r.Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+		}
 	})
 
 	// ---- SDK asset serving (no JWT, open CORS, cache headers) ----
@@ -130,11 +140,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	}
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(apiCORS)
+
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
+		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
 		r.Post("/invitations/accept-with-signup", h.Invite.AcceptWithSignup)
 
@@ -175,8 +188,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/widget/support", func(r chi.Router) {
 			r.Use(cors.Handler(cors.Options{
 				AllowedOrigins:   []string{"*"},
-				AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-				AllowedHeaders:   []string{"Content-Type"},
+				AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+				AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
@@ -191,6 +204,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			if h.SupportAI != nil {
 				r.Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+			}
+			if h.SupportAttachment != nil {
+				r.Post("/attachments", h.SupportAttachment.WidgetCreate)
+				r.Patch("/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 			}
 		})
 
@@ -411,6 +428,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Viewing presence — Deprecated: use WebSocket support:viewing:start/stop instead. Kept as HTTP fallback.
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/viewing", h.SupportInbox.ViewingPresence)
+
+				// File attachments
+				if h.SupportAttachment != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{convId}/attachments", h.SupportAttachment.Create)
+					r.With(requirePerm(authorization.PermSupportEdit)).Patch("/inbox/attachments/{attachmentId}/confirm", h.SupportAttachment.ConfirmUpload)
+					r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/attachments/{attachmentId}", h.SupportAttachment.Delete)
+				}
 			})
 
 			// PM module
@@ -599,6 +623,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
@@ -607,6 +632,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/content-sources/{contentSourceId}", h.SupportAI.UpdateContentSource)
 					r.With(requirePerm(authorization.PermPMEdit)).Delete("/content-sources/{contentSourceId}", h.SupportAI.DeleteContentSource)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages", h.SupportAI.ListContentSourcePages)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages/{pageId}", h.SupportAI.GetContentSourcePage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
@@ -726,11 +752,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/articles/{docId}/feedback", h.Docs.SubmitArticleFeedback)
 
 				// Docs import
+				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/jobs", h.Docs.ImportListJobs)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/preview", h.Docs.ImportPreviewHelpscout)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/retry", h.Docs.ImportRetry)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/redirect-map", h.Docs.ImportGetRedirectMap)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/reconvert", h.Docs.ImportReconvert)
 			})
 
 			// CRM module

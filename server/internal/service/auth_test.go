@@ -427,7 +427,7 @@ func TestRefreshToken(t *testing.T) {
 
 		// Generate a token with a different secret.
 		otherJWT := auth.NewJWTManager("different-secret")
-		_, otherRefresh, err := otherJWT.GenerateTokenPair("some-id", "some@email.com")
+		_, otherRefresh, err := otherJWT.GenerateTokenPair("some-id", "some@email.com", false)
 		if err != nil {
 			t.Fatalf("generate token pair failed: %v", err)
 		}

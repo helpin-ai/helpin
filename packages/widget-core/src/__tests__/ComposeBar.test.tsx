@@ -33,7 +33,7 @@ describe('ComposeBar', () => {
     const form = container.querySelector('.helpin-compose-bar') as HTMLFormElement;
     fireEvent.submit(form);
     
-    expect(onSend).toHaveBeenCalledWith('Hello world');
+    expect(onSend).toHaveBeenCalledWith('Hello world', undefined);
   });
 
   it('does not send empty messages', () => {
@@ -94,7 +94,7 @@ describe('ComposeBar', () => {
     
     fireEvent.keyDown(input, { key: 'Enter', bubbles: true });
     
-    expect(onSend).toHaveBeenCalledWith('Enter message');
+    expect(onSend).toHaveBeenCalledWith('Enter message', undefined);
   });
 
   it('does not send on Shift+Enter', () => {

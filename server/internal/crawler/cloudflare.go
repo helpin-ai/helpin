@@ -241,8 +241,9 @@ func joinCloudflareErrors(errors []struct{ Message string `json:"message"` }, fa
 const defaultCloudflarePollInterval = 5 * time.Second
 
 // crawlWithCloudflare performs a full Cloudflare Browser Rendering crawl and
-// delivers each completed page via the onPage callback. It polls until the job
-// finishes, then paginates through all completed records.
+// delivers each completed page via the onPage callback. It fetches completed
+// records incrementally during polling so that callers see progress updates
+// before the entire job finishes.
 func crawlWithCloudflare(
 	ctx context.Context,
 	client *CloudflareCrawlClient,
@@ -261,55 +262,25 @@ func crawlWithCloudflare(
 		"start_url", source.StartURL,
 	)
 
-	// 2. Poll until the job is no longer running.
-	for {
-		job, err := client.GetCrawlResult(ctx, jobID, 1, "", "")
-		if err != nil {
-			return 0, err
-		}
-		switch job.Status {
-		case "running":
-			logger.Debug("cloudflare crawl polling",
-				"job_id", jobID,
-				"finished", job.Finished,
-				"total", job.Total,
-			)
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-time.After(defaultCloudflarePollInterval):
-			}
-		case "completed":
-			logger.Info("cloudflare crawl completed",
-				"job_id", jobID,
-				"total", job.Total,
-				"finished", job.Finished,
-			)
-			goto fetch
-		default:
-			return 0, fmt.Errorf("crawl job ended with status %s", job.Status)
-		}
-	}
+	// 2. Poll and deliver completed records incrementally.
+	delivered := map[string]struct{}{} // track URLs already sent to onPage
+	pageCount := 0
 
-fetch:
-	// 3. Paginate through all completed records.
-	var (
-		cursor    string
-		pageCount int
-	)
-	for {
-		job, err := client.GetCrawlResult(ctx, jobID, 100, cursor, "completed")
-		if err != nil {
-			return pageCount, err
-		}
-		for _, record := range job.Records {
+	deliverRecords := func(records []CloudflareCrawlRecord) error {
+		for _, record := range records {
+			recordURL := strings.TrimSpace(record.URL)
+			if _, seen := delivered[recordURL]; seen {
+				continue
+			}
+			delivered[recordURL] = struct{}{}
+
 			text := cfRecordText(record)
 			if strings.TrimSpace(text) == "" {
 				continue
 			}
 
 			cr := CrawlRecord{
-				URL:        strings.TrimSpace(record.URL),
+				URL:        recordURL,
 				Title:      cfRecordTitle(record),
 				HTTPStatus: cfRecordHTTPStatus(record),
 				Markdown:   text,
@@ -317,9 +288,57 @@ fetch:
 				Metadata:   record.Metadata,
 			}
 			if err := onPage(cr); err != nil {
-				return pageCount, fmt.Errorf("onPage callback: %w", err)
+				return fmt.Errorf("onPage callback: %w", err)
 			}
 			pageCount++
+		}
+		return nil
+	}
+
+	for {
+		// Fetch completed records and check job status in one call.
+		job, err := client.GetCrawlResult(ctx, jobID, 100, "", "completed")
+		if err != nil {
+			return pageCount, err
+		}
+
+		// Deliver any newly completed records.
+		if err := deliverRecords(job.Records); err != nil {
+			return pageCount, err
+		}
+
+		if job.Status == "completed" {
+			logger.Info("cloudflare crawl completed",
+				"job_id", jobID,
+				"total", job.Total,
+				"finished", job.Finished,
+			)
+			break
+		}
+
+		logger.Debug("cloudflare crawl polling",
+			"job_id", jobID,
+			"finished", job.Finished,
+			"total", job.Total,
+			"delivered", pageCount,
+		)
+
+		select {
+		case <-ctx.Done():
+			return pageCount, ctx.Err()
+		case <-time.After(defaultCloudflarePollInterval):
+		}
+	}
+
+	// 3. Final pagination pass to catch any remaining records.
+	var cursor string
+	for {
+		job, err := client.GetCrawlResult(ctx, jobID, 100, cursor, "completed")
+		if err != nil {
+			return pageCount, err
+		}
+		if err := deliverRecords(job.Records); err != nil {
+			return pageCount, err
 		}
 
 		nextCursor := strings.TrimSpace(string(job.Cursor))
