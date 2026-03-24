@@ -24,15 +24,19 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"If approved PRD persistence is already complete:",
 		"`request_human_input`",
 		"`request_human_approval`",
-		"`publish_preview`",
+		"`publish_prd_draft`",
+		"`publish_story_plan`",
 		"Each question must be single-select.",
 		"`files_to_modify` must be an array of objects",
+		"\"name\": \"Add tracking helper\"",
+		"\"dependency_refs\": [\"story_1\"]",
+		"\"story_type\": \"feature\"",
+		"\"test_strategy\": [\"...\"]",
+		"Do not use `title` or `type` in story-plan JSON.",
+		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_stories` array.",
 		"`list_workspace_teams`",
-		"`panel_key=\"prd_draft\"`",
-		"`panel_key=\"story_plan\"`",
-		"Call `ensure_epic_spec_doc`.",
-		"Call `approve_epic_spec`",
-		"Call `create_story_batch` to create the stories.",
+		"platform will persist the approved PRD artifact",
+		"platform will apply the approved story plan artifact and create the stories",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
 		"### Vertical Slicing (Critical)",
 		"### Blocker & Enabler Consolidation",
@@ -70,5 +74,48 @@ func TestProductPlannerPromptNeedsRefreshForLegacyApprovalPrompt(t *testing.T) {
 	}
 	if productPlannerPromptNeedsRefresh(currentPrompt) {
 		t.Fatal("expected current planner prompt to remain valid")
+	}
+}
+
+func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
+	prompt := defaultSystemPromptForPreset(model.AgentPresetStoryPlanner)
+	if prompt == nil {
+		t.Fatal("expected story planner prompt")
+	}
+
+	for _, snippet := range []string{
+		"Run a single interactive planning conversation for one story.",
+		"`publish_story_plan_doc`",
+		"`phase=\"story_doc\"`",
+		"platform will persist and link the approved preview",
+		"Produce a planning document, not code.",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected story planner prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+	for _, legacySnippet := range []string{
+		"`ensure_story_plan_doc`",
+		"`write_document_content`",
+		"`link_document_to_object`",
+	} {
+		if strings.Contains(*prompt, legacySnippet) {
+			t.Fatalf("expected story planner prompt to avoid legacy manual persistence step %q\n%s", legacySnippet, *prompt)
+		}
+	}
+}
+
+func TestStoryPlannerPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
+	legacyPrompt := "You are Story Planner for Helpin.\n- Ask clarifying questions inline.\n- Produce implementation-ready stories."
+	if !storyPlannerPromptNeedsRefresh(&legacyPrompt) {
+		t.Fatal("expected legacy story planner prompt to require refresh")
+	}
+
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetStoryPlanner)
+	if currentPrompt == nil {
+		t.Fatal("expected story planner prompt")
+	}
+	if storyPlannerPromptNeedsRefresh(currentPrompt) {
+		t.Fatal("expected current story planner prompt to remain valid")
 	}
 }

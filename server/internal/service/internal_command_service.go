@@ -128,6 +128,20 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.ensure_story_plan_doc",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"story"},
+		ExposeAsTool:         true,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			doc, err := s.agentService.EnsureStoryPlanDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"document_id": doc.ID, "title": doc.Title}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "pm.approve_epic_spec",
 		Module:               "pm",
 		Mutating:             true,

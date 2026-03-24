@@ -24,50 +24,51 @@ const (
 
 // PMStory represents a single work item.
 type PMStory struct {
-	ID                string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string                 `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID         int                    `json:"display_id" gorm:"not null;index"`
-	Name              string                 `json:"name" gorm:"not null"`
-	Description       *string                `json:"description"`
-	StoryType         string                 `json:"story_type" gorm:"not null;default:'feature'"`
-	WorkflowID        string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
-	WorkflowStateID   string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
-	EpicID            *string                `json:"epic_id" gorm:"type:uuid;index"`
-	SprintID          *string                `json:"sprint_id" gorm:"type:uuid;index"`
-	TeamID            *string                `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID           *string                `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID     *string                `json:"owner_member_id" gorm:"type:uuid;index"`
-	RequesterID       *string                `json:"requester_id" gorm:"type:uuid"`
-	RequesterMemberID *string                `json:"requester_member_id" gorm:"type:uuid;index"`
-	Estimate          *int                   `json:"estimate"`
-	Priority          string                 `json:"priority" gorm:"not null;default:'none'"`
-	Severity          string                 `json:"severity" gorm:"not null;default:'none'"`
-	Deadline          *time.Time             `json:"deadline" gorm:"type:date"`
-	Position          int                    `json:"position" gorm:"not null;default:0"`
-	Started           bool                   `json:"started" gorm:"not null;default:false"`
-	StartedAt         *time.Time             `json:"started_at"`
-	Completed         bool                   `json:"completed" gorm:"not null;default:false"`
-	CompletedAt       *time.Time             `json:"completed_at"`
-	MovedAt           *time.Time             `json:"moved_at"`
-	Blocked           bool                   `json:"blocked" gorm:"not null;default:false"`
-	Blocker           *string                `json:"blocker"`
-	Archived          bool                   `json:"archived" gorm:"not null;default:false"`
-	AssignedAgentID   *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
-	TemplateID        *string                `json:"template_id"`
-	RecurringTemplateID       *string         `json:"recurring_template_id" gorm:"type:uuid;index"`
-	RecurringRunID            *string         `json:"recurring_run_id" gorm:"type:uuid;index"`
-	RecurringOccurrenceNumber *int            `json:"recurring_occurrence_number"`
-	ExternalID                *string         `json:"external_id"`
-	SliceType                 *string         `json:"slice_type,omitempty" gorm:"type:text"`
-	ImplementationBrief       json.RawMessage `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
-	IsBlockedByStory          bool            `json:"is_blocked_by_story" gorm:"-"`
-	BlockedByCount    int                    `json:"blocked_by_count" gorm:"-"`
-	IsBlockingOther   bool                   `json:"is_blocking_other_story" gorm:"-"`
-	BlockingCount     int                    `json:"blocking_count" gorm:"-"`
-	BlockedByStories  []StoryDependencyStory `json:"blocked_by_stories,omitempty" gorm:"-"`
-	BlockingStories   []StoryDependencyStory `json:"blocking_stories,omitempty" gorm:"-"`
-	CreatedAt         time.Time              `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                        string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID               string                 `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID                 int                    `json:"display_id" gorm:"not null;index"`
+	Name                      string                 `json:"name" gorm:"not null"`
+	Description               *string                `json:"description"`
+	StoryType                 string                 `json:"story_type" gorm:"not null;default:'feature'"`
+	WorkflowID                string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
+	WorkflowStateID           string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
+	EpicID                    *string                `json:"epic_id" gorm:"type:uuid;index"`
+	SprintID                  *string                `json:"sprint_id" gorm:"type:uuid;index"`
+	TeamID                    *string                `json:"team_id" gorm:"type:uuid;index"`
+	OwnerID                   *string                `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID             *string                `json:"owner_member_id" gorm:"type:uuid;index"`
+	RequesterID               *string                `json:"requester_id" gorm:"type:uuid"`
+	RequesterMemberID         *string                `json:"requester_member_id" gorm:"type:uuid;index"`
+	Estimate                  *int                   `json:"estimate"`
+	Priority                  string                 `json:"priority" gorm:"not null;default:'none'"`
+	Severity                  string                 `json:"severity" gorm:"not null;default:'none'"`
+	Deadline                  *time.Time             `json:"deadline" gorm:"type:date"`
+	Position                  int                    `json:"position" gorm:"not null;default:0"`
+	Started                   bool                   `json:"started" gorm:"not null;default:false"`
+	StartedAt                 *time.Time             `json:"started_at"`
+	Completed                 bool                   `json:"completed" gorm:"not null;default:false"`
+	CompletedAt               *time.Time             `json:"completed_at"`
+	MovedAt                   *time.Time             `json:"moved_at"`
+	Blocked                   bool                   `json:"blocked" gorm:"not null;default:false"`
+	Blocker                   *string                `json:"blocker"`
+	Archived                  bool                   `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID           *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	PlanDocumentID            *string                `json:"plan_document_id" gorm:"type:uuid;index"`
+	TemplateID                *string                `json:"template_id"`
+	RecurringTemplateID       *string                `json:"recurring_template_id" gorm:"type:uuid;index"`
+	RecurringRunID            *string                `json:"recurring_run_id" gorm:"type:uuid;index"`
+	RecurringOccurrenceNumber *int                   `json:"recurring_occurrence_number"`
+	ExternalID                *string                `json:"external_id"`
+	SliceType                 *string                `json:"slice_type,omitempty" gorm:"type:text"`
+	ImplementationBrief       json.RawMessage        `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
+	IsBlockedByStory          bool                   `json:"is_blocked_by_story" gorm:"-"`
+	BlockedByCount            int                    `json:"blocked_by_count" gorm:"-"`
+	IsBlockingOther           bool                   `json:"is_blocking_other_story" gorm:"-"`
+	BlockingCount             int                    `json:"blocking_count" gorm:"-"`
+	BlockedByStories          []StoryDependencyStory `json:"blocked_by_stories,omitempty" gorm:"-"`
+	BlockingStories           []StoryDependencyStory `json:"blocking_stories,omitempty" gorm:"-"`
+	CreatedAt                 time.Time              `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMStory) TableName() string { return "pm_stories" }
@@ -131,33 +132,33 @@ type PMPagination struct {
 
 // CreateStoryRequest is the payload for creating a story.
 type CreateStoryRequest struct {
-	WorkspaceID       string     `json:"workspace_id"`
-	Name              string     `json:"name"`
-	Description       *string    `json:"description"`
-	StoryType         string     `json:"story_type"`
-	WorkflowID        string     `json:"workflow_id"`
-	WorkflowStateID   string     `json:"workflow_state_id"`
-	EpicID            *string    `json:"epic_id"`
-	SprintID          *string    `json:"sprint_id"`
-	TeamID            *string    `json:"team_id"`
-	OwnerID           *string    `json:"owner_id"`
-	OwnerMemberID     *string    `json:"owner_member_id"`
-	RequesterID       *string    `json:"requester_id"`
-	RequesterMemberID *string    `json:"requester_member_id"`
-	Estimate          *int       `json:"estimate"`
-	Priority          *string    `json:"priority"`
-	Severity          *string    `json:"severity"`
-	Deadline          *time.Time `json:"deadline"`
-	Position          *int       `json:"position"`
-	Blocked           *bool      `json:"blocked"`
-	Blocker           *string    `json:"blocker"`
+	WorkspaceID       string                       `json:"workspace_id"`
+	Name              string                       `json:"name"`
+	Description       *string                      `json:"description"`
+	StoryType         string                       `json:"story_type"`
+	WorkflowID        string                       `json:"workflow_id"`
+	WorkflowStateID   string                       `json:"workflow_state_id"`
+	EpicID            *string                      `json:"epic_id"`
+	SprintID          *string                      `json:"sprint_id"`
+	TeamID            *string                      `json:"team_id"`
+	OwnerID           *string                      `json:"owner_id"`
+	OwnerMemberID     *string                      `json:"owner_member_id"`
+	RequesterID       *string                      `json:"requester_id"`
+	RequesterMemberID *string                      `json:"requester_member_id"`
+	Estimate          *int                         `json:"estimate"`
+	Priority          *string                      `json:"priority"`
+	Severity          *string                      `json:"severity"`
+	Deadline          *time.Time                   `json:"deadline"`
+	Position          *int                         `json:"position"`
+	Blocked           *bool                        `json:"blocked"`
+	Blocker           *string                      `json:"blocker"`
 	TemplateID        *string                      `json:"template_id"`
 	ExternalID        *string                      `json:"external_id"`
 	OwnerIDs          []string                     `json:"owner_ids"`
 	FollowerIDs       []string                     `json:"follower_ids"`
 	LabelIDs          []string                     `json:"label_ids"`
 	AttachmentIDs     []string                     `json:"attachment_ids,omitempty"`
-	ChecklistItems    []CreateChecklistItemRequest  `json:"checklist_items,omitempty"`
+	ChecklistItems    []CreateChecklistItemRequest `json:"checklist_items,omitempty"`
 	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 

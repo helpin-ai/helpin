@@ -99,7 +99,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	if len(history) == 0 {

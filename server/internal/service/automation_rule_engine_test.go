@@ -58,6 +58,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT,
 			external_id TEXT,
+			plan_document_id TEXT,
 			slice_type TEXT,
 			implementation_brief TEXT,
 			created_at DATETIME,

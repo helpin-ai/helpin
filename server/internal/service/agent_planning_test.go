@@ -154,6 +154,24 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 	}
 }
 
+func TestValidatePlanningStoriesReturnsRepairOrientedErrorForMissingName(t *testing.T) {
+	stories := []model.ProposedStory{
+		{
+			Description:        "Missing title field",
+			StoryType:          "feature",
+			AcceptanceCriteria: []string{"works"},
+		},
+	}
+
+	err := validatePlanningStories(stories)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `use field "name"`) {
+		t.Fatalf("expected repair-oriented error, got %v", err)
+	}
+}
+
 func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -231,7 +249,7 @@ func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing epic team to be rejected")
 	}
-	if !strings.Contains(err.Error(), "must have a team before creating stories") {
+	if !strings.Contains(err.Error(), "must have a team before stories can be created") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

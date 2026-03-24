@@ -187,7 +187,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if existingSummary.Proposal != nil {
 		proposal = *existingSummary.Proposal
 	} else if err := json.Unmarshal(run.OutputSummary, &proposal); err != nil {
-		return nil, fmt.Errorf("run does not contain a valid planning proposal")
+		return nil, fmt.Errorf("story plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_stories\"")
 	}
 
 	proposedStories := req.ProposedStories
@@ -195,7 +195,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		proposedStories = proposal.ProposedStories
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("at least one proposed story is required")
+		return nil, fmt.Errorf("story plan must include at least one item in \"proposed_stories\"")
 	}
 	if err := validatePlanningStories(proposedStories); err != nil {
 		return nil, err
@@ -346,7 +346,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		for _, depRef := range ps.DependencyRefs {
 			sourceStory, exists := refToStory[depRef]
 			if !exists {
-				return nil, fmt.Errorf("dependency %q does not reference a known story ref", depRef)
+				return nil, fmt.Errorf("story %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
 			if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
 				WorkspaceID:   workspaceID,
@@ -428,7 +428,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("story service is not configured")
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("at least one proposed story is required")
+		return nil, fmt.Errorf("story plan must include at least one item in \"proposed_stories\"")
 	}
 	if err := validatePlanningStories(proposedStories); err != nil {
 		return nil, err
@@ -544,7 +544,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		for _, depRef := range ps.DependencyRefs {
 			sourceStory, exists := refToStory[depRef]
 			if !exists {
-				return nil, fmt.Errorf("dependency %q does not reference a known story ref", depRef)
+				return nil, fmt.Errorf("story %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
 			if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
 				WorkspaceID:   workspaceID,
@@ -654,6 +654,99 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 	return doc, nil
 }
 
+// EnsureStoryPlanDocument ensures the story has a canonical planning doc and returns it.
+func (s *AgentService) EnsureStoryPlanDocument(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
+	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	if err != nil {
+		return nil, fmt.Errorf("get story: %w", err)
+	}
+	if story == nil || story.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("story not found")
+	}
+	var epic *model.PMEpic
+	if story.EpicID != nil && strings.TrimSpace(*story.EpicID) != "" {
+		epicWithStats, err := s.epicRepo.GetByID(ctx, *story.EpicID)
+		if err != nil {
+			return nil, fmt.Errorf("get parent epic: %w", err)
+		}
+		if epicWithStats != nil {
+			epic = &epicWithStats.Epic
+		}
+	}
+	return s.ensureStoryPlanDocument(ctx, workspaceID, story, epic, actorID)
+}
+
+func (s *AgentService) ensureStoryPlanDocument(ctx context.Context, workspaceID string, story *model.PMStory, epic *model.PMEpic, actorID string) (*model.DocsDocument, error) {
+	if story.PlanDocumentID != nil && strings.TrimSpace(*story.PlanDocumentID) != "" {
+		doc, err := s.docsDocumentRepo.GetByID(ctx, *story.PlanDocumentID)
+		if err != nil {
+			return nil, err
+		}
+		if doc != nil {
+			if err := s.ensureStoryPlanLink(ctx, workspaceID, doc.ID, story.ID, actorID); err != nil {
+				return nil, err
+			}
+			return doc, nil
+		}
+	}
+
+	space, err := s.docsSpaceRepo.GetBySlug(ctx, workspaceID, productSpecsSpaceSlug)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		space, err = s.docsSpaceRepo.Create(ctx, &model.DocsSpace{
+			WorkspaceID: workspaceID,
+			Name:        productSpecsSpaceName,
+			Slug:        productSpecsSpaceSlug,
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			IsSystem:    true,
+			Position:    2,
+			CreatedBy:   actorID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create product specs space: %w", err)
+		}
+	}
+
+	teamID := story.TeamID
+	if teamID == nil && epic != nil {
+		teamID = epic.TeamID
+	}
+	if teamID == nil {
+		teamID = strPtr(actorID)
+	}
+
+	title := strings.TrimSpace(story.Name) + " Plan"
+	doc, err := s.docsDocumentRepo.Create(ctx, &model.DocsDocument{
+		WorkspaceID: workspaceID,
+		SpaceID:     space.ID,
+		Title:       title,
+		Status:      model.DocStatusDraft,
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		OwnerID:     strPtr(actorID),
+		TeamID:      teamID,
+		TemplateKey: strPtr("story_plan"),
+		Tags:        model.DocsStringArray{"story-plan", "story"},
+		CreatedBy:   actorID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	story.PlanDocumentID = &doc.ID
+	if err := s.storyRepo.Update(ctx, story); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureStoryPlanLink(ctx, workspaceID, doc.ID, story.ID, actorID); err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
 func (s *AgentService) ensureEpicSpecLink(ctx context.Context, workspaceID, documentID, epicID, actorID string) error {
 	links, err := s.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectEpic, epicID)
 	if err != nil {
@@ -669,6 +762,27 @@ func (s *AgentService) ensureEpicSpecLink(ctx context.Context, workspaceID, docu
 		DocumentID:       documentID,
 		LinkedObjectType: model.LinkedObjectEpic,
 		LinkedObjectID:   epicID,
+		LinkContext:      model.LinkContextCreatedFrom,
+		CreatedBy:        actorID,
+	})
+	return err
+}
+
+func (s *AgentService) ensureStoryPlanLink(ctx context.Context, workspaceID, documentID, storyID, actorID string) error {
+	links, err := s.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectStory, storyID)
+	if err != nil {
+		return err
+	}
+	for _, link := range links {
+		if link.DocumentID == documentID {
+			return nil
+		}
+	}
+	_, err = s.docsLinkRepo.Create(ctx, &model.DocsLink{
+		WorkspaceID:      workspaceID,
+		DocumentID:       documentID,
+		LinkedObjectType: model.LinkedObjectStory,
+		LinkedObjectID:   storyID,
 		LinkContext:      model.LinkContextCreatedFrom,
 		CreatedBy:        actorID,
 	})
@@ -723,86 +837,14 @@ func (s *AgentService) loadCreatedStories(ctx context.Context, ids []string) ([]
 }
 
 func validatePlanningStories(stories []model.ProposedStory) error {
-	refToIdx := make(map[string]int, len(stories))
+	if err := model.NormalizeProposedStories(stories); err != nil {
+		return err
+	}
 	for idx := range stories {
-		stories[idx].Name = strings.TrimSpace(stories[idx].Name)
-		if stories[idx].Name == "" {
-			return fmt.Errorf("proposed story %d is missing a name", idx+1)
-		}
 		stories[idx].StoryType = normalizePlannedStoryType(stories[idx].StoryType)
 		if stories[idx].Priority != nil {
 			normalizedPriority := normalizePlannedStoryPriority(*stories[idx].Priority)
 			stories[idx].Priority = &normalizedPriority
-		}
-		if strings.TrimSpace(stories[idx].Ref) == "" {
-			stories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
-		}
-		if brief := stories[idx].ImplementationBrief; brief != nil {
-			brief.Approach = strings.TrimSpace(brief.Approach)
-			brief.TestStrategy = strings.TrimSpace(brief.TestStrategy)
-			brief.VerticalLayers = filterNonEmptyStrings(brief.VerticalLayers)
-			brief.DependsOnFiles = filterNonEmptyStrings(brief.DependsOnFiles)
-			files := make([]model.FileChange, 0, len(brief.FilesToModify))
-			for _, change := range brief.FilesToModify {
-				change.Path = strings.TrimSpace(change.Path)
-				if change.Path == "" {
-					continue
-				}
-				change.Description = strings.TrimSpace(change.Description)
-				files = append(files, change)
-			}
-			brief.FilesToModify = files
-		}
-		if prev, exists := refToIdx[stories[idx].Ref]; exists {
-			return fmt.Errorf("story refs must be unique; stories %d and %d both use %q", prev+1, idx+1, stories[idx].Ref)
-		}
-		refToIdx[stories[idx].Ref] = idx
-	}
-	for idx, story := range stories {
-		filteredCriteria := make([]string, 0, len(story.AcceptanceCriteria))
-		for _, item := range story.AcceptanceCriteria {
-			item = strings.TrimSpace(item)
-			if item != "" {
-				filteredCriteria = append(filteredCriteria, item)
-			}
-		}
-		stories[idx].AcceptanceCriteria = filteredCriteria
-		if len(filteredCriteria) == 0 {
-			return fmt.Errorf("story %d must include at least one acceptance criterion", idx+1)
-		}
-
-		for _, depRef := range story.DependencyRefs {
-			if _, ok := refToIdx[depRef]; !ok {
-				return fmt.Errorf("story %d references unknown dependency ref %q", idx+1, depRef)
-			}
-			if depRef == story.Ref {
-				return fmt.Errorf("story %d cannot depend on itself", idx+1)
-			}
-		}
-	}
-
-	visited := make(map[string]uint8, len(stories))
-	var visit func(ref string) error
-	visit = func(ref string) error {
-		switch visited[ref] {
-		case 1:
-			return fmt.Errorf("circular dependency detected involving %q", ref)
-		case 2:
-			return nil
-		}
-		visited[ref] = 1
-		story := stories[refToIdx[ref]]
-		for _, depRef := range story.DependencyRefs {
-			if err := visit(depRef); err != nil {
-				return err
-			}
-		}
-		visited[ref] = 2
-		return nil
-	}
-	for _, story := range stories {
-		if err := visit(story.Ref); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -813,7 +855,7 @@ func plannerStoryTeamID(epic *model.PMEpic) (*string, error) {
 		return nil, fmt.Errorf("epic is required")
 	}
 	if epic.TeamID == nil || strings.TrimSpace(*epic.TeamID) == "" {
-		return nil, fmt.Errorf("epic %q must have a team before creating stories", strings.TrimSpace(epic.Name))
+		return nil, fmt.Errorf("epic %q must have a team before stories can be created", strings.TrimSpace(epic.Name))
 	}
 	teamID := strings.TrimSpace(*epic.TeamID)
 	return &teamID, nil

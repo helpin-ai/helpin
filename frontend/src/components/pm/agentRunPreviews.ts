@@ -11,6 +11,19 @@ export interface PublishedPreview {
   surroundingText: string;
 }
 
+const PREVIEW_TOOL_NAMES = new Set([
+  'publish_preview',
+  'preview_md',
+  'preview_json',
+  'publish_prd_draft',
+  'publish_story_plan',
+  'publish_story_plan_doc',
+]);
+
+export function isPublishedPreviewToolName(value: unknown): boolean {
+  return PREVIEW_TOOL_NAMES.has(asString(value));
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -26,6 +39,17 @@ function normalizePreviewFormat(value: unknown): PreviewFormat | null {
   return null;
 }
 
+function parseJsonPreviewContent(content: unknown): unknown {
+  if (typeof content !== 'string') return content;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return content;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return content;
+  }
+}
+
 function parsePreviewInput(input: unknown, surroundingText: string): PublishedPreview | null {
   const payload = asRecord(input);
   if (!payload) return null;
@@ -37,7 +61,7 @@ function parsePreviewInput(input: unknown, surroundingText: string): PublishedPr
     return null;
   }
 
-  const content = payload.content;
+  const content = format === 'json' ? parseJsonPreviewContent(payload.content) : payload.content;
   if (format === 'markdown') {
     if (typeof content !== 'string' || content.trim().length === 0) return null;
   }
@@ -69,13 +93,23 @@ export function parseMessagePublishedPreview(
   const invocations = Array.isArray(message.tool_invocations) ? message.tool_invocations : [];
   for (let index = invocations.length - 1; index >= 0; index -= 1) {
     const invocation = asRecord(invocations[index]);
-    if (!invocation || invocation.tool_name !== 'publish_preview') continue;
+    if (!invocation || !isPublishedPreviewToolName(invocation.tool_name)) continue;
     const preview = parsePreviewInput(invocation.input, message.content);
     if (!preview) continue;
     if (expectedPanelKey && preview.panelKey !== expectedPanelKey) continue;
     return preview;
   }
   return null;
+}
+
+function parseArtifactAssistantMessageSequenceNo(
+  artifact: Pick<AgentRunArtifact, 'metadata'> | null | undefined,
+): number | null {
+  if (!artifact?.metadata || typeof artifact.metadata !== 'object' || Array.isArray(artifact.metadata)) {
+    return null;
+  }
+  const value = artifact.metadata.assistant_message_sequence_no;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 export function parseArtifactPublishedPreview(
@@ -89,4 +123,21 @@ export function parseArtifactPublishedPreview(
   } catch {
     return null;
   }
+}
+
+export function resolveMessagePublishedPreview(
+  message: Pick<AgentRunMessage, 'content' | 'tool_invocations' | 'sequence_no'>,
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>>,
+  panelKey?: string,
+): PublishedPreview | null {
+  const expectedPanelKey = panelKey?.trim().toLowerCase() ?? '';
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (parseArtifactAssistantMessageSequenceNo(artifact) !== message.sequence_no) continue;
+    const preview = parseArtifactPublishedPreview(artifact);
+    if (!preview) continue;
+    if (expectedPanelKey && preview.panelKey !== expectedPanelKey) continue;
+    return preview;
+  }
+  return parseMessagePublishedPreview(message, panelKey);
 }

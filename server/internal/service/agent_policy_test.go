@@ -1,9 +1,12 @@
 package service
 
 import (
+	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
@@ -205,11 +208,11 @@ func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonEpicPlanner(t *testing
 	systemPrompt := "do the work"
 	budget := 100
 	agent := &model.Agent{
-		PresetKey:           model.AgentPresetCodeBuilder,
-		RuntimeKind:         "",
-		PlanningNotes:       &planningNotes,
-		SystemPrompt:        &systemPrompt,
-		MonthlyTokenBudget:  &budget,
+		PresetKey:          model.AgentPresetCodeBuilder,
+		RuntimeKind:        "",
+		PlanningNotes:      &planningNotes,
+		SystemPrompt:       &systemPrompt,
+		MonthlyTokenBudget: &budget,
 	}
 
 	normalizeAgentRecord(agent)
@@ -225,5 +228,102 @@ func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonEpicPlanner(t *testing
 	}
 	if agent.RuntimeKind == "" {
 		t.Fatal("expected runtime kind default to be populated")
+	}
+}
+
+func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:      model.AgentPresetEpicPlanner,
+		TriggerMode:    "manual",
+		RuntimeKind:    "native_sdk",
+		AllowedTools:   json.RawMessage(`["request_human_approval","publish_preview","create_story_batch"]`),
+		AllowedTargets: json.RawMessage(`["epic"]`),
+	}
+
+	normalizeAgentRecord(agent)
+
+	tools := parseJSONStringSlice(agent.AllowedTools)
+	for _, required := range []string{
+		worker.ToolPublishPRDDraft,
+		worker.ToolPublishStoryPlan,
+	} {
+		if !slices.Contains(tools, required) {
+			t.Fatalf("expected migrated tool list to contain %q, got %v", required, tools)
+		}
+	}
+	for _, unexpected := range []string{
+		worker.ToolPublishPreview,
+		worker.ToolPreviewMarkdown,
+		worker.ToolPreviewJSON,
+		worker.ToolPublishStoryPlanDoc,
+	} {
+		if slices.Contains(tools, unexpected) {
+			t.Fatalf("expected migrated tool list to exclude %q, got %v", unexpected, tools)
+		}
+	}
+}
+
+func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:      model.AgentPresetStoryPlanner,
+		TriggerMode:    "manual",
+		RuntimeKind:    "native_sdk",
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","write_document_content","search_documents"]`),
+		AllowedTargets: json.RawMessage(`["story"]`),
+	}
+
+	normalizeAgentRecord(agent)
+
+	tools := parseJSONStringSlice(agent.AllowedTools)
+	if !slices.Contains(tools, worker.ToolPublishStoryPlanDoc) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolPublishStoryPlanDoc, tools)
+	}
+	for _, unexpected := range []string{
+		worker.ToolPreviewMarkdown,
+		worker.ToolPreviewJSON,
+		worker.ToolPublishPreview,
+		worker.ToolPublishPRDDraft,
+		worker.ToolPublishStoryPlan,
+		"write_document_content",
+	} {
+		if slices.Contains(tools, unexpected) {
+			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
+		}
+	}
+	if !slices.Contains(tools, "search_documents") {
+		t.Fatalf("expected non-preview tools to be preserved, got %v", tools)
+	}
+}
+
+func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:      model.AgentPresetEpicPlanner,
+		TriggerMode:    "manual",
+		RuntimeKind:    "native_sdk",
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","publish_story_plan","publish_prd_draft","create_story_batch"]`),
+		AllowedTargets: json.RawMessage(`["epic"]`),
+	}
+
+	normalizeAgentRecord(agent)
+
+	tools := parseJSONStringSlice(agent.AllowedTools)
+	for _, required := range []string{
+		worker.ToolPublishPRDDraft,
+		worker.ToolPublishStoryPlan,
+	} {
+		if !slices.Contains(tools, required) {
+			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
+		}
+	}
+	for _, unexpected := range []string{
+		worker.ToolPreviewMarkdown,
+		worker.ToolPreviewJSON,
+		worker.ToolPublishPreview,
+		worker.ToolPublishStoryPlanDoc,
+		"create_story_batch",
+	} {
+		if slices.Contains(tools, unexpected) {
+			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
+		}
 	}
 }

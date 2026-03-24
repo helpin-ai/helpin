@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput } from '../agentRunPreviews';
+import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, resolveMessagePublishedPreview } from '../agentRunPreviews';
 
 describe('agentRunPreviews', () => {
   it('parses published preview payloads from tool invocations', () => {
@@ -64,5 +64,81 @@ describe('agentRunPreviews', () => {
 
     expect(parsed?.panelKey).toBe('story_plan');
     expect(parsed?.title).toBe('Story Plan');
+  });
+
+  it('parses json preview content when the payload content is itself a json string', () => {
+    const parsed = parsePublishedPreviewRawInput(JSON.stringify({
+      panel_key: 'story_plan',
+      title: 'Story Plan',
+      format: 'json',
+      content: JSON.stringify({
+        summary: 'Plan',
+        proposed_stories: [{ title: 'Story A', type: 'feature' }],
+      }),
+    }));
+
+    expect(parsed?.content).toEqual({
+      summary: 'Plan',
+      proposed_stories: [{ title: 'Story A', type: 'feature' }],
+    });
+  });
+
+  it('parses dedicated planner preview tool payloads from tool invocations', () => {
+    const parsed = parseMessagePublishedPreview({
+      content: 'Review the proposed stories.',
+      tool_invocations: [
+        {
+          tool_name: 'publish_story_plan',
+          input: {
+            panel_key: 'story_plan',
+            title: 'Story Plan',
+            format: 'json',
+            content: {
+              summary: 'Slice plan',
+              proposed_stories: [{ title: 'Story A' }],
+            },
+          },
+        },
+      ],
+    } as never);
+
+    expect(parsed?.panelKey).toBe('story_plan');
+    expect(parsed?.format).toBe('json');
+  });
+
+  it('prefers assistant-linked preview artifacts over message tool invocations', () => {
+    const parsed = resolveMessagePublishedPreview(
+      {
+        content: 'Review the draft in the preview pane.',
+        sequence_no: 7,
+        tool_invocations: [
+          {
+            tool_name: 'publish_preview',
+            input: {
+              panel_key: 'prd_draft',
+              title: 'PRD Draft',
+              format: 'markdown',
+              content: '# Problem\nStale draft',
+            },
+          },
+        ],
+      } as never,
+      [
+        {
+          artifact_type: 'run_preview',
+          inline_content: JSON.stringify({
+            panel_key: 'prd_draft',
+            title: 'PRD Draft',
+            format: 'markdown',
+            content: '# Problem\nArtifact draft',
+          }),
+          metadata: {
+            assistant_message_sequence_no: 7,
+          },
+        },
+      ] as never,
+    );
+
+    expect(parsed?.content).toBe('# Problem\nArtifact draft');
   });
 });

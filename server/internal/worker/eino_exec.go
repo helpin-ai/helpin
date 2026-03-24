@@ -273,6 +273,7 @@ func ExecuteWithEino(
 		result.Usage.OutputTokens += usage.OutputTokens
 		result.AssistantBlocks = assistantBlocks
 		result.AssistantText = extractTextFromExecutionBlocks(assistantBlocks)
+		execCtx.CurrentAssistantText = result.AssistantText
 		result.Messages = append(result.Messages, ExecutionMessage{
 			Role:    "assistant",
 			Content: result.AssistantText,
@@ -402,6 +403,7 @@ func executeWithEinoAgentic(
 		result.Usage.OutputTokens += usage.OutputTokens
 		result.AssistantBlocks = assistantBlocks
 		result.AssistantText = extractTextFromExecutionBlocks(assistantBlocks)
+		execCtx.CurrentAssistantText = result.AssistantText
 		result.ProviderContinuation = continuation
 		result.Messages = append(result.Messages, ExecutionMessage{
 			Role:    "assistant",
@@ -529,6 +531,7 @@ func streamAssistantMessage(
 	if err != nil {
 		return nil, nil, ExecutionUsage{}, err
 	}
+	sanitizeSchemaMessageToolCalls(finalMsg)
 	blocks := fromSchemaAssistantMessage(finalMsg)
 	if onEvent != nil {
 		onEvent(ExecutionEvent{
@@ -602,12 +605,13 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 						})
 					}
 				case ExecutionBlockTypeToolCall:
+					argsJSON := normalizeExecutionBlockToolInput(block.Input)
 					assistant.ToolCalls = append(assistant.ToolCalls, schema.ToolCall{
 						ID:   block.ToolCallID,
 						Type: "function",
 						Function: schema.FunctionCall{
 							Name:      block.ToolName,
-							Arguments: string(block.Input),
+							Arguments: string(argsJSON),
 						},
 					})
 				}
@@ -655,10 +659,11 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 						assistant.ContentBlocks = append(assistant.ContentBlocks, schema.NewContentBlock(&schema.AssistantGenText{Text: block.Text}))
 					}
 				case ExecutionBlockTypeToolCall:
+					argsJSON := normalizeExecutionBlockToolInput(block.Input)
 					assistant.ContentBlocks = append(assistant.ContentBlocks, schema.NewContentBlock(&schema.FunctionToolCall{
 						CallID:    block.ToolCallID,
 						Name:      block.ToolName,
-						Arguments: string(block.Input),
+						Arguments: string(argsJSON),
 					}))
 				}
 			}
@@ -751,6 +756,18 @@ func extractTextFromExecutionBlocks(blocks []ExecutionBlock) string {
 	return strings.Join(parts, "\n")
 }
 
+func ExtractPersistedContentFromExecutionBlocks(blocks []ExecutionBlock) string {
+	if text := strings.TrimSpace(extractTextFromExecutionBlocks(blocks)); text != "" {
+		return text
+	}
+	for _, block := range blocks {
+		if block.Type == ExecutionBlockTypeToolResult && strings.TrimSpace(block.Output) != "" {
+			return strings.TrimSpace(block.Output)
+		}
+	}
+	return ""
+}
+
 func chunkTextDelta(chunk *schema.Message) string {
 	if chunk == nil {
 		return ""
@@ -789,10 +806,50 @@ func normalizeToolArguments(raw string) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	if json.Valid([]byte(trimmed)) {
-		return json.RawMessage(trimmed)
+		switch trimmed[0] {
+		case '{':
+			return json.RawMessage(trimmed)
+		case '"':
+			var text string
+			if err := json.Unmarshal([]byte(trimmed), &text); err == nil {
+				text = strings.TrimSpace(text)
+				if text == "" {
+					return json.RawMessage(`{}`)
+				}
+				encoded, _ := json.Marshal(map[string]string{"raw": text})
+				return json.RawMessage(encoded)
+			}
+		}
 	}
 	encoded, _ := json.Marshal(map[string]string{"raw": trimmed})
 	return json.RawMessage(encoded)
+}
+
+func normalizeExecutionBlockToolInput(raw json.RawMessage) json.RawMessage {
+	return normalizeToolArguments(string(raw))
+}
+
+func NormalizeExecutionBlocks(blocks []ExecutionBlock) []ExecutionBlock {
+	if len(blocks) == 0 {
+		return blocks
+	}
+	normalized := make([]ExecutionBlock, len(blocks))
+	copy(normalized, blocks)
+	for i := range normalized {
+		if normalized[i].Type == ExecutionBlockTypeToolCall {
+			normalized[i].Input = normalizeExecutionBlockToolInput(normalized[i].Input)
+		}
+	}
+	return normalized
+}
+
+func sanitizeSchemaMessageToolCalls(msg *schema.Message) {
+	if msg == nil || len(msg.ToolCalls) == 0 {
+		return
+	}
+	for i := range msg.ToolCalls {
+		msg.ToolCalls[i].Function.Arguments = string(normalizeToolArguments(msg.ToolCalls[i].Function.Arguments))
+	}
 }
 
 func summarizeToolInput(input json.RawMessage) string {
@@ -800,7 +857,7 @@ func summarizeToolInput(input json.RawMessage) string {
 }
 
 func toolInputForEvent(toolName string, input json.RawMessage) string {
-	if strings.TrimSpace(toolName) == ToolPublishPreview {
+	if isPreviewToolName(toolName) {
 		return strings.TrimSpace(string(input))
 	}
 	return summarizeToolInput(input)

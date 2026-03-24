@@ -98,6 +98,9 @@ func normalizeAgentRecord(agent *model.Agent) {
 
 	preset, hasPreset := agentPresetDefinition(presetKey)
 	if hasPreset {
+		agent.SystemPrompt = storedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes)
+		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
+		agent.AllowedTools = sanitizePlannerAgentTools(agent.AllowedTools, presetKey)
 		if jsonSliceIsEmpty(agent.AllowedTools) {
 			agent.AllowedTools = mustJSONStringSlice(preset.AllowedTools)
 		}
@@ -151,6 +154,106 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	agent.SupportedModes = supportedModesForAgent(agent)
 	agent.DefaultInvocationMode = normalizeDefaultInvocationMode(agent.DefaultInvocationMode, agent)
+}
+
+func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMessage {
+	tools := parseJSONStringSlice(raw)
+	if len(tools) == 0 || !slices.Contains(tools, worker.ToolPublishPreview) {
+		return raw
+	}
+	if slices.Contains(tools, worker.ToolPublishPRDDraft) || slices.Contains(tools, worker.ToolPublishStoryPlan) || slices.Contains(tools, worker.ToolPublishStoryPlanDoc) {
+		return raw
+	}
+
+	migrated := make([]string, 0, len(tools)+3)
+	for _, toolName := range tools {
+		switch toolName {
+		case worker.ToolPublishPreview, worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan, worker.ToolPublishStoryPlanDoc:
+			continue
+		}
+		migrated = append(migrated, toolName)
+	}
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		migrated = append(migrated, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan)
+	case model.AgentPresetStoryPlanner:
+		migrated = append(migrated, worker.ToolPublishStoryPlanDoc)
+	}
+	return mustJSONStringSlice(migrated)
+}
+
+func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMessage {
+	tools := parseJSONStringSlice(raw)
+	if len(tools) == 0 {
+		return raw
+	}
+
+	type plannerPolicy struct {
+		allowedPreviewTools  []string
+		disallowedExtraTools []string
+	}
+	var policy plannerPolicy
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		policy.allowedPreviewTools = []string{worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan}
+		policy.disallowedExtraTools = []string{
+			worker.ToolPreviewMarkdown,
+			worker.ToolPreviewJSON,
+			worker.ToolPublishPreview,
+			worker.ToolPublishStoryPlanDoc,
+			"ensure_epic_spec_doc",
+			"ensure_story_plan_doc",
+			"write_document_content",
+			"link_document_to_object",
+			"approve_epic_spec",
+			"create_story_batch",
+			"assign_story_agent",
+			"set_story_dependencies",
+		}
+	case model.AgentPresetStoryPlanner:
+		policy.allowedPreviewTools = []string{worker.ToolPublishStoryPlanDoc}
+		policy.disallowedExtraTools = []string{
+			worker.ToolPreviewMarkdown,
+			worker.ToolPreviewJSON,
+			worker.ToolPublishPreview,
+			worker.ToolPublishPRDDraft,
+			worker.ToolPublishStoryPlan,
+			"ensure_epic_spec_doc",
+			"ensure_story_plan_doc",
+			"write_document_content",
+			"link_document_to_object",
+			"approve_epic_spec",
+			"create_story_batch",
+			"assign_story_agent",
+			"set_story_dependencies",
+		}
+	default:
+		return raw
+	}
+
+	allowedSet := make(map[string]bool, len(policy.allowedPreviewTools))
+	for _, toolName := range policy.allowedPreviewTools {
+		allowedSet[toolName] = true
+	}
+
+	disallowedSet := make(map[string]bool, len(policy.disallowedExtraTools))
+	for _, toolName := range policy.disallowedExtraTools {
+		disallowedSet[toolName] = true
+	}
+
+	filtered := make([]string, 0, len(tools))
+	for _, toolName := range tools {
+		if disallowedSet[toolName] && !allowedSet[toolName] {
+			continue
+		}
+		filtered = append(filtered, toolName)
+	}
+	for _, toolName := range policy.allowedPreviewTools {
+		if !slices.Contains(filtered, toolName) {
+			filtered = append(filtered, toolName)
+		}
+	}
+	return mustJSONStringSlice(filtered)
 }
 
 func normalizeDefaultInvocationMode(value string, agent *model.Agent) string {

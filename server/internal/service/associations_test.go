@@ -115,6 +115,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			completed BOOLEAN NOT NULL DEFAULT false,
 			archived BOOLEAN NOT NULL DEFAULT false,
 			blocked BOOLEAN NOT NULL DEFAULT false,
+			plan_document_id TEXT,
 			blocker TEXT,
 			recurring_template_id TEXT,
 			recurring_run_id TEXT,

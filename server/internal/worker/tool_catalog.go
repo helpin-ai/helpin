@@ -30,6 +30,11 @@ var toolCategory = map[string]string{
 	// PM / Stories
 	"request_human_input":    "Interaction",
 	"request_human_approval": "Interaction",
+	"preview_md":             "Interaction",
+	"preview_json":           "Interaction",
+	"publish_prd_draft":      "Interaction",
+	"publish_story_plan":     "Interaction",
+	"publish_story_plan_doc": "Interaction",
 	"publish_preview":        "Interaction",
 	"add_story_comment":      "PM / Stories",
 	"update_story_state":     "PM / Stories",
@@ -60,6 +65,7 @@ var toolCategory = map[string]string{
 	"write_document_content":  "Docs",
 	"link_document_to_object": "Docs",
 	"ensure_epic_spec_doc":    "Docs",
+	"ensure_story_plan_doc":   "Docs",
 }
 
 var categoryOrder = []string{
