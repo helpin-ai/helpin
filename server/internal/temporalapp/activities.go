@@ -194,6 +194,15 @@ type resolvedRunState struct {
 	accessToken    string
 }
 
+func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
+	defer func() {
+		if recover() != nil {
+			// Some unit tests call activities directly without a Temporal activity context.
+		}
+	}()
+	activity.RecordHeartbeat(ctx, details...)
+}
+
 // PrepareRunActivity resolves repo state, snapshots delivery metadata, and creates the working branch if needed.
 func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID string) error {
 	state, err := a.loadRunState(ctx, runID)
@@ -225,7 +234,7 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 	}
 	a.runRepo.Notify(ctx, state.run)
 
-	activity.RecordHeartbeat(ctx, "prepared")
+	recordActivityHeartbeatSafe(ctx, "prepared")
 	return nil
 }
 
@@ -405,7 +414,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 				return ctx.Err()
 			}
 			now := time.Now()
-			activity.RecordHeartbeat(ctx, stage)
+			recordActivityHeartbeatSafe(ctx, stage)
 			state.run.ExecutionStage = &stage
 			state.run.LastHeartbeatAt = &now
 			if err := a.runRepo.UpdateStage(ctx, state.run.WorkspaceID, state.run.ID, stage, &now); err != nil {
@@ -1376,7 +1385,19 @@ func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *work
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
-	if state == nil || state.run == nil || state.epic == nil || state.run.TargetType != "epic" || execCtx == nil || execCtx.LastExecutionResult == nil {
+	if state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	switch state.run.TargetType {
+	case "epic":
+		if state.epic == nil {
+			return nil
+		}
+	case "story":
+		if state.story == nil {
+			return nil
+		}
+	default:
 		return nil
 	}
 

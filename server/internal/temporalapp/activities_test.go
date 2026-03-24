@@ -1087,6 +1087,85 @@ func TestCaptureTranscriptPlanningArtifactsLinksPreviewToAssistantTurn(t *testin
 	}
 }
 
+func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:story-preview-linkage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create artifact table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-story-1", WorkspaceID: "ws-1", TargetType: "story"}
+	state := &resolvedRunState{
+		run:   run,
+		story: &model.PMStory{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
+	}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			ToolInvocations: []model.ToolInvocation{
+				{
+					ToolName: workerpkg.ToolPublishStoryPlanDoc,
+					Input: json.RawMessage(`{
+						"title":"Story Planning Document",
+						"content":"# Outcome\n\nImplement Kafka health monitoring."
+					}`),
+				},
+			},
+		},
+	}
+
+	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 11}, planningRunInput{Stage: model.PlanningStageStoryPlanDoc}); err != nil {
+		t.Fatalf("captureTranscriptPlanningArtifacts returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list preview artifacts: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("expected one preview artifact, got %#v", artifacts)
+	}
+	if artifacts[0].ArtifactType != workerpkg.RunPreviewArtifactType {
+		t.Fatalf("expected run preview artifact, got %#v", artifacts[0])
+	}
+
+	var preview workerpkg.PublishedPreview
+	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &preview); err != nil {
+		t.Fatalf("unmarshal preview artifact: %v", err)
+	}
+	if preview.PanelKey != "story_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
+		t.Fatalf("unexpected persisted story preview %#v", preview)
+	}
+
+	var metadata map[string]any
+	if err := json.Unmarshal(artifacts[0].Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal preview metadata: %v", err)
+	}
+	if got := metadata["assistant_message_sequence_no"]; got != float64(11) {
+		t.Fatalf("expected preview metadata to link to assistant turn, got %#v", metadata)
+	}
+}
+
 func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T) {
 	state := &resolvedRunState{
 		run: &model.AgentRun{

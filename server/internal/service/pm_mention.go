@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -94,8 +95,34 @@ func resolveMentionRecipients(ctx context.Context, workspaceRepo *repository.Wor
 
 	seen := make(map[string]bool)
 	var userIDs []string
+	teamScope := make(map[string]struct{}, len(readableTeamIDs))
+	for _, teamID := range readableTeamIDs {
+		if trimmed := strings.TrimSpace(teamID); trimmed != "" {
+			teamScope[trimmed] = struct{}{}
+		}
+	}
 	for _, mention := range mentions {
 		lower := strings.ToLower(mention)
+		if team, err := workspaceRepo.GetTeamByHandle(ctx, workspaceID, lower); err != nil {
+			return nil, fmt.Errorf("resolve mention recipients: %w", err)
+		} else if team != nil {
+			if _, allowed := teamScope[team.ID]; !allowed {
+				// Team handles should not fall through to similarly named user handles.
+				continue
+			}
+			teamUserIDs, err := workspaceRepo.ListActiveTeamUserIDs(ctx, workspaceID, team.ID)
+			if err != nil {
+				return nil, fmt.Errorf("resolve mention recipients: %w", err)
+			}
+			for _, uid := range teamUserIDs {
+				if uid == "" || uid == authorID || seen[uid] {
+					continue
+				}
+				seen[uid] = true
+				userIDs = append(userIDs, uid)
+			}
+			continue
+		}
 		if uid, ok := nameToUserID[lower]; ok && uid != authorID && !seen[uid] {
 			seen[uid] = true
 			userIDs = append(userIDs, uid)

@@ -77,10 +77,11 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `story_plan`\n5. `awaiting_story_approval`\n6. `create_stories`"
 	if err := db.Exec(`INSERT INTO agents (
 		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
-		skills, trigger_mode, system_prompt, approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"agent-system", "ws-test", true, defaultSystemProductPlannerName, model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
-		"[]", "manual", legacyPrompt, "never", 1, model.InvocationModeInteractive, now, now,
+		[]byte("[]"), "manual", legacyPrompt, []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
 	).Error; err != nil {
 		t.Fatalf("insert system agent: %v", err)
 	}
@@ -133,7 +134,7 @@ func TestDeleteAgentRejectsSystemAgent(t *testing.T) {
 		max_concurrent_runs, default_invocation_mode, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"agent-system", "ws-test", true, defaultSystemProductPlannerName, model.AgentPresetEpicPlanner, "Epic Planner", "idle", "native_sdk",
-		"[]", "manual", "[]", "[]", "[]", "never", 1, model.InvocationModeInteractive, now, now,
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
 	).Error; err != nil {
 		t.Fatalf("insert system agent: %v", err)
 	}
@@ -171,23 +172,23 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
-			skills TEXT NOT NULL DEFAULT '[]',
+			skills BLOB NOT NULL DEFAULT '[]',
 			trigger_mode TEXT NOT NULL,
 			provider TEXT,
 			model TEXT,
 			system_prompt TEXT,
 			planning_notes TEXT,
-			tools TEXT NOT NULL DEFAULT '[]',
+			tools BLOB NOT NULL DEFAULT '[]',
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
 			active_story_id TEXT,
 			team_id TEXT,
-			allowed_tools TEXT NOT NULL DEFAULT '[]',
-			allowed_commands TEXT NOT NULL DEFAULT '[]',
-			allowed_targets TEXT NOT NULL DEFAULT '[]',
+			allowed_tools BLOB NOT NULL DEFAULT '[]',
+			allowed_commands BLOB NOT NULL DEFAULT '[]',
+			allowed_targets BLOB NOT NULL DEFAULT '[]',
 			schedule TEXT,
 			target_selector TEXT,
-			trigger_events TEXT NOT NULL DEFAULT '[]',
+			trigger_events BLOB NOT NULL DEFAULT '[]',
 			approval_mode TEXT NOT NULL DEFAULT 'never',
 			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
