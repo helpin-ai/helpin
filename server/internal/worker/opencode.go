@@ -1,19 +1,16 @@
 package worker
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -21,18 +18,19 @@ import (
 )
 
 const (
-	openCodeChunkFlushInterval = 2 * time.Second
-	openCodeChunkFlushBytes    = 4 * 1024
-	openCodePostRunTimeout     = 2 * time.Minute
-	openCodeScannerBufferSize  = 1024 * 1024
+	openCodeChunkFlushInterval    = 2 * time.Second
+	openCodeChunkFlushBytes       = 4 * 1024
+	openCodePostRunTimeout        = 2 * time.Minute
+	openCodeScannerBufferSize     = 1024 * 1024
+	openCodeGracefulShutdownDelay = 10 * time.Second
 )
 
-var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-
+// OpenCodeExecutor shells out to the opencode CLI for each agent run.
 type OpenCodeExecutor struct {
 	kind              string
 	commandPath       string
 	anthropicAPIKey   string
+	anthropicBaseURL  string
 	openAIAPIKey      string
 	openAIBaseURL     string
 	openRouterAPIKey  string
@@ -41,10 +39,12 @@ type OpenCodeExecutor struct {
 	artifactRepo      *repository.AgentRunArtifactRepository
 }
 
+// NewOpenCodeExecutor constructs an OpenCodeExecutor with the given dependencies.
 func NewOpenCodeExecutor(
 	kind string,
 	commandPath string,
 	anthropicAPIKey string,
+	anthropicBaseURL string,
 	openAIAPIKey string,
 	openAIBaseURL string,
 	openRouterAPIKey string,
@@ -59,6 +59,7 @@ func NewOpenCodeExecutor(
 		kind:              kind,
 		commandPath:       commandPath,
 		anthropicAPIKey:   strings.TrimSpace(anthropicAPIKey),
+		anthropicBaseURL:  strings.TrimSpace(anthropicBaseURL),
 		openAIAPIKey:      strings.TrimSpace(openAIAPIKey),
 		openAIBaseURL:     strings.TrimSpace(openAIBaseURL),
 		openRouterAPIKey:  strings.TrimSpace(openRouterAPIKey),
@@ -72,6 +73,7 @@ func (e *OpenCodeExecutor) Kind() string {
 	return e.kind
 }
 
+// Execute runs the opencode CLI as a subprocess and collects its output.
 func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
@@ -82,7 +84,8 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	if execCtx.StoryID != "" && execCtx.Services != nil && execCtx.Services.ListChecklist != nil {
 		items, err := execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.StoryID)
 		if err != nil {
-			log.Printf("warning: failed to list checklist for opencode run: %v", err)
+			slog.WarnContext(execCtx.Context, "failed to list checklist for opencode run",
+				"error", err, "story_id", execCtx.StoryID)
 		} else {
 			checklist = items
 		}
@@ -92,13 +95,17 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	if execCtx.ConversationID != "" && execCtx.Services != nil && execCtx.Services.ListConversationMessages != nil {
 		messages, err := execCtx.Services.ListConversationMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.ConversationID)
 		if err != nil {
-			log.Printf("warning: failed to list ticket messages for opencode run: %v", err)
+			slog.WarnContext(execCtx.Context, "failed to list ticket messages for opencode run",
+				"error", err, "conversation_id", execCtx.ConversationID)
 		} else {
 			ticketMessages = messages
 		}
 	}
 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
+	}
 	userPrompt := BuildUserPrompt(
 		execCtx.Story,
 		execCtx.Epic,
@@ -106,6 +113,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
+		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
 	)
@@ -116,7 +124,8 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 
 	userPrompt = buildOpenCodeUserPrompt(execCtx, userPrompt)
 	modelID := e.resolveModelID(execCtx.Agent)
-	configContent, err := buildOpenCodeConfigContent(execCtx, modelID, systemPrompt)
+	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, e.anthropicBaseURL, e.openRouterBaseURL)
+	configContent, err := buildOpenCodeConfigContent(execCtx, modelID, systemPrompt, providerConfig)
 	if err != nil {
 		return fmt.Errorf("build opencode config: %w", err)
 	}
@@ -134,6 +143,17 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	cmd := exec.CommandContext(execCtx.Context, e.commandPath, args...)
 	cmd.Dir = execCtx.WorkDir
 	cmd.Env = e.buildEnv(execCtx.Agent, configContent)
+
+	// Run the subprocess in its own process group so we can signal the entire
+	// tree on cancellation instead of only the main PID.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	}
+	cmd.WaitDelay = openCodeGracefulShutdownDelay
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -216,7 +236,8 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			waitErr = streamErr
 			continue
 		}
-		log.Printf("warning: failed to stream opencode output: %v", streamErr)
+		slog.WarnContext(execCtx.Context, "failed to stream opencode output",
+			"error", streamErr, "run_id", run.ID)
 	}
 
 	if waitErr != nil {
@@ -264,49 +285,38 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)
 			}
-			payload, _ := json.Marshal(draft)
-			run.OutputSummary = payload
-			if err := e.runRepo.Update(postRunCtx, run); err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
+				return err
 			}
-			artifactWriter.Save(postRunCtx, "product_spec_draft", "json", string(payload), false)
 		case model.PlanningStagePlanStories:
 			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)
 			}
-			payload, _ := json.Marshal(proposal)
-			run.OutputSummary = payload
-			if err := e.runRepo.Update(postRunCtx, run); err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "story_plan_proposal", proposal); err != nil {
+				return err
 			}
-			artifactWriter.Save(postRunCtx, "story_plan_proposal", "json", string(payload), false)
 		default:
 			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)
 			}
-			payload, _ := json.Marshal(proposal)
-			run.OutputSummary = payload
-			if err := e.runRepo.Update(postRunCtx, run); err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "orchestration_proposal", proposal); err != nil {
+				return err
 			}
-			artifactWriter.Save(postRunCtx, "orchestration_proposal", "json", string(payload), false)
 		}
 	case execCtx.TargetType == "support_conversation" && execCtx.Conversation != nil:
 		summary, err := extractSupportRunSummaryFromResponseText(responseText)
 		if err != nil {
 			return normalizeOpenCodePostRunError(postRunCtx, err)
 		}
-		payload, _ := json.Marshal(summary)
-		run.OutputSummary = payload
-		if err := e.runRepo.Update(postRunCtx, run); err != nil {
-			return normalizeOpenCodePostRunError(postRunCtx, err)
+		if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "support_draft", summary); err != nil {
+			return err
 		}
-		artifactWriter.Save(postRunCtx, "support_draft", "json", string(payload), false)
 		if summary.Status != nil && execCtx.Services != nil && execCtx.Services.UpdateConversationStatus != nil {
 			if err := execCtx.Services.UpdateConversationStatus(postRunCtx, execCtx.WorkspaceID, execCtx.ConversationID, *summary.Status); err != nil {
-				log.Printf("warning: failed to update support conversation status: %v", err)
+				slog.WarnContext(postRunCtx, "failed to update support conversation status",
+					"error", err, "conversation_id", execCtx.ConversationID)
 			}
 		}
 	default:
@@ -323,7 +333,7 @@ func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []
 	env := os.Environ()
 	provider := model.AgentModelProviderAnthropic
 	if agent != nil {
-		if resolvedProvider := strings.TrimSpace(derefOpenCodeString(agent.Provider)); resolvedProvider != "" {
+		if resolvedProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); resolvedProvider != "" {
 			provider = resolvedProvider
 		}
 	}
@@ -333,9 +343,8 @@ func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []
 	case model.AgentModelProviderOpenAI:
 		env = appendIfMissingEnv(env, "OPENAI_API_KEY", e.openAIAPIKey)
 		env = appendIfMissingEnv(env, "OPENAI_BASE_URL", e.openAIBaseURL)
-	case model.AgentModelProviderOpenRouter:
+	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 		env = appendIfMissingEnv(env, "OPENROUTER_API_KEY", e.openRouterAPIKey)
-		env = appendIfMissingEnv(env, "OPENROUTER_BASE_URL", e.openRouterBaseURL)
 	}
 	env = upsertEnv(env, "NO_COLOR", "1")
 	env = upsertEnv(env, "OPENCODE_CONFIG_CONTENT", configContent)
@@ -346,10 +355,10 @@ func (e *OpenCodeExecutor) resolveModelID(agent *model.Agent) string {
 	provider := model.AgentModelProviderAnthropic
 	modelName := ""
 	if agent != nil {
-		if resolvedProvider := strings.TrimSpace(derefOpenCodeString(agent.Provider)); resolvedProvider != "" {
+		if resolvedProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); resolvedProvider != "" {
 			provider = resolvedProvider
 		}
-		modelName = strings.TrimSpace(derefOpenCodeString(agent.Model))
+		modelName = normalizeOpenCodeConfiguredModelName(provider, strings.TrimSpace(derefOpenCodeString(agent.Model)))
 	}
 	if provider == "" {
 		provider = model.AgentModelProviderAnthropic
@@ -375,7 +384,8 @@ func (e *OpenCodeExecutor) saveArtifact(ctx context.Context, run *model.AgentRun
 		SequenceNo:    seqNo,
 	}
 	if err := e.artifactRepo.Create(ctx, artifact); err != nil {
-		log.Printf("warning: failed to save artifact: %v", err)
+		slog.WarnContext(ctx, "failed to save artifact",
+			"error", err, "run_id", run.ID, "artifact_type", artifactType)
 	}
 }
 
@@ -386,6 +396,27 @@ func (e *OpenCodeExecutor) notifyRun(ctx context.Context, run *model.AgentRun) {
 	notifyCtx, cancel := backgroundContextOnCancel(ctx)
 	defer cancel()
 	e.runRepo.Notify(notifyCtx, run)
+}
+
+// saveOutputSummary marshals a post-run result into the run's OutputSummary,
+// persists the run, and saves the payload as an artifact.
+func (e *OpenCodeExecutor) saveOutputSummary(
+	ctx context.Context,
+	run *model.AgentRun,
+	writer *openCodeArtifactWriter,
+	artifactType string,
+	value any,
+) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marshal %s output: %w", artifactType, err)
+	}
+	run.OutputSummary = payload
+	if err := e.runRepo.Update(ctx, run); err != nil {
+		return normalizeOpenCodePostRunError(ctx, err)
+	}
+	writer.Save(ctx, artifactType, "json", string(payload), false)
+	return nil
 }
 
 type openCodeArtifactWriter struct {
@@ -411,369 +442,6 @@ func (w *openCodeArtifactWriter) Save(ctx context.Context, artifactType, format,
 	if notify {
 		w.executor.notifyRun(ctx, w.run)
 	}
-}
-
-type openCodeStreamCollector struct {
-	runID  string
-	writer *openCodeArtifactWriter
-	mu     sync.Mutex
-
-	stdoutFull  strings.Builder
-	stderrFull  strings.Builder
-	stdoutChunk strings.Builder
-	stderrChunk strings.Builder
-	response    strings.Builder
-	eventError  string
-	tokensUsed  int
-}
-
-func newOpenCodeStreamCollector(runID string, writer *openCodeArtifactWriter) *openCodeStreamCollector {
-	return &openCodeStreamCollector{
-		runID:  runID,
-		writer: writer,
-	}
-}
-
-func (c *openCodeStreamCollector) AppendLine(ctx context.Context, stream, line string) {
-	logLine := strings.TrimSpace(line)
-	if logLine != "" {
-		log.Printf("[run=%s][opencode.%s] %s", shortRunID(c.runID), stream, truncate(logLine, 1000))
-	}
-
-	c.mu.Lock()
-	full, chunk := c.buffersFor(stream)
-	full.WriteString(line)
-	full.WriteByte('\n')
-	chunk.WriteString(line)
-	chunk.WriteByte('\n')
-	shouldFlush := chunk.Len() >= openCodeChunkFlushBytes
-	c.mu.Unlock()
-
-	if shouldFlush {
-		c.FlushStream(ctx, stream, true)
-	}
-}
-
-func (c *openCodeStreamCollector) AppendResponseText(text string) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.response.Len() > 0 {
-		c.response.WriteString("\n")
-	}
-	c.response.WriteString(text)
-}
-
-func (c *openCodeStreamCollector) AddTokens(tokens int) {
-	if tokens <= 0 {
-		return
-	}
-	c.mu.Lock()
-	c.tokensUsed += tokens
-	c.mu.Unlock()
-}
-
-func (c *openCodeStreamCollector) SetEventError(message string) {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return
-	}
-
-	c.mu.Lock()
-	if c.eventError == "" {
-		c.eventError = message
-	}
-	c.mu.Unlock()
-}
-
-func (c *openCodeStreamCollector) FlushLoop(ctx context.Context, done <-chan struct{}) {
-	ticker := time.NewTicker(openCodeChunkFlushInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			c.FlushPending(ctx, true)
-		case <-done:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (c *openCodeStreamCollector) FlushPending(ctx context.Context, notify bool) {
-	c.FlushStream(ctx, "stdout", notify)
-	c.FlushStream(ctx, "stderr", notify)
-}
-
-func (c *openCodeStreamCollector) FlushStream(ctx context.Context, stream string, notify bool) {
-	c.mu.Lock()
-	_, chunk := c.buffersFor(stream)
-	content := chunk.String()
-	chunk.Reset()
-	c.mu.Unlock()
-
-	if content == "" {
-		return
-	}
-	c.writer.Save(ctx, "opencode_"+stream+"_chunk", "text", content, notify)
-}
-
-func (c *openCodeStreamCollector) Outputs() (string, string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.stdoutFull.String(), c.stderrFull.String()
-}
-
-func (c *openCodeStreamCollector) ResponseText() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.response.String()
-}
-
-func (c *openCodeStreamCollector) EventError() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.eventError
-}
-
-func (c *openCodeStreamCollector) TokensUsed() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.tokensUsed
-}
-
-func (c *openCodeStreamCollector) buffersFor(stream string) (*strings.Builder, *strings.Builder) {
-	if stream == "stderr" {
-		return &c.stderrFull, &c.stderrChunk
-	}
-	return &c.stdoutFull, &c.stdoutChunk
-}
-
-func consumeOpenCodeTextStream(reader io.Reader, stream string, ctx context.Context, collector *openCodeStreamCollector, wg *sync.WaitGroup, errCh chan<- error) {
-	defer wg.Done()
-
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), openCodeScannerBufferSize)
-	for scanner.Scan() {
-		collector.AppendLine(ctx, stream, stripANSI(scanner.Text()))
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
-		errCh <- fmt.Errorf("read %s: %w", stream, err)
-		return
-	}
-	errCh <- nil
-}
-
-func consumeOpenCodeJSONStream(reader io.Reader, ctx context.Context, collector *openCodeStreamCollector, wg *sync.WaitGroup, errCh chan<- error) {
-	defer wg.Done()
-
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), openCodeScannerBufferSize)
-	for scanner.Scan() {
-		line := strings.TrimSpace(stripANSI(scanner.Text()))
-		if line == "" {
-			continue
-		}
-
-		displayLine, responseText, tokensUsed, eventErr, err := parseOpenCodeJSONEvent(line)
-		if err != nil {
-			log.Printf("warning: treating non-json opencode stdout line as plain text: %v", err)
-			collector.AppendLine(ctx, "stdout", line)
-			continue
-		}
-		if strings.TrimSpace(displayLine) != "" {
-			collector.AppendLine(ctx, "stdout", displayLine)
-		}
-		if responseText != "" {
-			collector.AppendResponseText(responseText)
-		}
-		if tokensUsed > 0 {
-			collector.AddTokens(tokensUsed)
-		}
-		if eventErr != "" {
-			collector.SetEventError(eventErr)
-		}
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
-		errCh <- fmt.Errorf("read stdout: %w", err)
-		return
-	}
-	errCh <- nil
-}
-
-func parseOpenCodeJSONEvent(line string) (displayLine, responseText string, tokensUsed int, eventErr string, err error) {
-	var event map[string]any
-	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		return "", "", 0, "", fmt.Errorf("unmarshal event line %q: %w", truncate(line, 200), err)
-	}
-
-	eventType := lookupString(event, "type")
-	part, _ := event["part"].(map[string]any)
-	switch eventType {
-	case "text":
-		responseText = strings.TrimSpace(lookupString(part, "text"))
-		return responseText, responseText, 0, "", nil
-	case "tool_use":
-		return renderOpenCodeToolUse(part), "", 0, "", nil
-	case "step_start":
-		return renderOpenCodeStepStart(part), "", 0, "", nil
-	case "step_finish":
-		tokensUsed = openCodeTokensFromPart(part)
-		return renderOpenCodeStepFinish(part, tokensUsed), "", tokensUsed, "", nil
-	case "error":
-		eventErr = firstNonEmptyText(
-			lookupString(event, "error"),
-			lookupString(event, "message"),
-			lookupString(part, "error"),
-			lookupString(part, "message"),
-			renderOpenCodeRawPart(part),
-		)
-		return strings.TrimSpace(firstNonEmptyText("Error: "+strings.TrimSpace(eventErr), eventErr)), "", 0, strings.TrimSpace(eventErr), nil
-	default:
-		return renderOpenCodeGenericEvent(eventType, part), "", 0, "", nil
-	}
-}
-
-func renderOpenCodeStepStart(part map[string]any) string {
-	title := firstNonEmptyText(
-		lookupString(part, "title"),
-		lookupString(part, "name"),
-		lookupString(part, "tool"),
-	)
-	if title == "" {
-		return "Step started"
-	}
-	return "Step started: " + title
-}
-
-func renderOpenCodeToolUse(part map[string]any) string {
-	title := firstNonEmptyText(
-		lookupString(part, "title"),
-		lookupString(part, "name"),
-		lookupString(part, "tool"),
-	)
-	if title == "" {
-		if metadata, ok := part["metadata"].(map[string]any); ok {
-			title = firstNonEmptyText(
-				lookupString(metadata, "command"),
-				lookupString(metadata, "description"),
-				lookupString(metadata, "path"),
-			)
-		}
-	}
-	if title == "" {
-		title = renderOpenCodeRawPart(part)
-	}
-	if title == "" {
-		return "Tool used"
-	}
-	return "Tool: " + title
-}
-
-func renderOpenCodeStepFinish(part map[string]any, tokensUsed int) string {
-	var details []string
-	if stopReason := firstNonEmptyText(lookupString(part, "stopReason"), lookupString(part, "stop_reason")); stopReason != "" {
-		details = append(details, "stop="+stopReason)
-	}
-	if tokensUsed > 0 {
-		details = append(details, fmt.Sprintf("tokens=%d", tokensUsed))
-	}
-	if len(details) == 0 {
-		return "Step finished"
-	}
-	return "Step finished (" + strings.Join(details, ", ") + ")"
-}
-
-func renderOpenCodeGenericEvent(eventType string, part map[string]any) string {
-	label := strings.TrimSpace(eventType)
-	if label == "" {
-		label = "event"
-	}
-	raw := renderOpenCodeRawPart(part)
-	if raw == "" {
-		return "OpenCode " + label
-	}
-	return "OpenCode " + label + ": " + raw
-}
-
-func renderOpenCodeRawPart(part map[string]any) string {
-	if len(part) == 0 {
-		return ""
-	}
-	payload, err := json.Marshal(part)
-	if err != nil {
-		return ""
-	}
-	return truncate(string(payload), 1000)
-}
-
-func openCodeTokensFromPart(part map[string]any) int {
-	tokens, _ := part["tokens"].(map[string]any)
-	if len(tokens) == 0 {
-		return 0
-	}
-
-	total := lookupInt(tokens, "input") + lookupInt(tokens, "output") + lookupInt(tokens, "reasoning")
-	if cache, ok := tokens["cache"].(map[string]any); ok {
-		total += lookupInt(cache, "read") + lookupInt(cache, "write")
-	}
-	return total
-}
-
-func lookupString(values map[string]any, key string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	raw, ok := values[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	switch typed := raw.(type) {
-	case string:
-		return typed
-	case fmt.Stringer:
-		return typed.String()
-	default:
-		return strings.TrimSpace(fmt.Sprint(raw))
-	}
-}
-
-func lookupInt(values map[string]any, key string) int {
-	if len(values) == 0 {
-		return 0
-	}
-	raw, ok := values[key]
-	if !ok || raw == nil {
-		return 0
-	}
-	switch typed := raw.(type) {
-	case float64:
-		return int(typed)
-	case float32:
-		return int(typed)
-	case int:
-		return typed
-	case int64:
-		return int(typed)
-	case int32:
-		return int(typed)
-	case json.Number:
-		value, err := typed.Int64()
-		if err == nil {
-			return int(value)
-		}
-	case string:
-		value, err := strconv.Atoi(strings.TrimSpace(typed))
-		if err == nil {
-			return value
-		}
-	}
-	return 0
 }
 
 func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run *model.AgentRun, artifactWriter *openCodeArtifactWriter) error {
@@ -870,7 +538,7 @@ func normalizeOpenCodePostRunError(ctx context.Context, err error) error {
 }
 
 func isEngineerStoryRun(execCtx *ExecutionContext) bool {
-	return execCtx != nil && execCtx.Agent != nil && execCtx.Agent.AgentClass == model.AgentClassEngineer && execCtx.Story != nil
+	return execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
 }
 
 func resolveWorkingBranch(execCtx *ExecutionContext) (string, error) {
@@ -896,218 +564,6 @@ func buildEngineerCommitMessage(story *model.PMStory) string {
 		return fmt.Sprintf("tp: story #%d %s", story.DisplayID, story.Name)
 	}
 	return fmt.Sprintf("tp: story %s", story.Name)
-}
-
-func buildOpenCodeUserPrompt(execCtx *ExecutionContext, userPrompt string) string {
-	parts := []string{strings.TrimSpace(userPrompt)}
-	if execCtx != nil && execCtx.Agent != nil && execCtx.Agent.AgentClass == model.AgentClassEngineer && execCtx.Story != nil {
-		parts = append(parts, "This is an implementation run, not an analysis-only pass. Make the code changes in the repository, run relevant validation when practical, and finish with a concise summary of the concrete files changed.")
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
-}
-
-func openCodeAgentName(execCtx *ExecutionContext) string {
-	if execCtx == nil || execCtx.Agent == nil {
-		return "teampulse"
-	}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassProductPlanner:
-		return "teampulse-planner"
-	case model.AgentClassEngineer:
-		return "teampulse-engineer"
-	case model.AgentClassReviewer:
-		return "teampulse-reviewer"
-	case model.AgentClassSupport:
-		return "teampulse-support"
-	default:
-		return "teampulse"
-	}
-}
-
-func stripANSI(value string) string {
-	return ansiEscapePattern.ReplaceAllString(value, "")
-}
-
-func sanitizeOpenCodeOutput(value string) string {
-	return strings.TrimSpace(stripANSI(value))
-}
-
-func firstNonEmptyText(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func defaultOpenCodeModelForProvider(provider string) string {
-	switch strings.TrimSpace(provider) {
-	case model.AgentModelProviderOpenAI:
-		return "gpt-5-mini"
-	case model.AgentModelProviderOpenRouter:
-		return "openai/gpt-5-mini"
-	default:
-		return "claude-sonnet-4-20250514"
-	}
-}
-
-func derefOpenCodeString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-type openCodeSupportDraftReply struct {
-	Content           string  `json:"content"`
-	IsInternal        bool    `json:"is_internal"`
-	SenderDisplayName *string `json:"sender_display_name,omitempty"`
-	ApprovalRequired  bool    `json:"approval_required"`
-}
-
-type openCodeSupportRunSummary struct {
-	Status     *string                    `json:"status,omitempty"`
-	DraftReply *openCodeSupportDraftReply `json:"draft_reply,omitempty"`
-}
-
-func extractSupportRunSummaryFromResponseText(responseText string) (*openCodeSupportRunSummary, error) {
-	var summary openCodeSupportRunSummary
-	if err := unmarshalLatestJSON(responseText, &summary); err != nil {
-		return nil, fmt.Errorf("failed to parse support summary: %w", err)
-	}
-	if summary.DraftReply == nil || strings.TrimSpace(summary.DraftReply.Content) == "" {
-		return nil, fmt.Errorf("support run did not return a draft reply")
-	}
-	if !summary.DraftReply.ApprovalRequired {
-		summary.DraftReply.ApprovalRequired = true
-	}
-	return &summary, nil
-}
-
-func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt string) (string, error) {
-	agentName := openCodeAgentName(execCtx)
-	agentConfig := map[string]any{
-		"description": openCodeAgentDescription(execCtx),
-		"mode":        "primary",
-		"prompt":      systemPrompt,
-	}
-	if modelID != "" {
-		agentConfig["model"] = modelID
-	}
-	if permissions := buildOpenCodePermissions(execCtx); len(permissions) > 0 {
-		agentConfig["permission"] = permissions
-	}
-
-	config := map[string]any{
-		"$schema": "https://opencode.ai/config.json",
-		"agent": map[string]any{
-			agentName: agentConfig,
-		},
-	}
-	if modelID != "" {
-		config["model"] = modelID
-		config["small_model"] = modelID
-	}
-
-	payload, err := json.Marshal(config)
-	if err != nil {
-		return "", err
-	}
-	return string(payload), nil
-}
-
-func openCodeAgentDescription(execCtx *ExecutionContext) string {
-	if execCtx == nil || execCtx.Agent == nil {
-		return "Teampulse runtime agent"
-	}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassProductPlanner:
-		return "Teampulse planner agent for OpenSpec-style product planning."
-	case model.AgentClassEngineer:
-		return "Teampulse engineer agent for story implementation runs."
-	case model.AgentClassReviewer:
-		return "Teampulse reviewer agent for code review and validation."
-	case model.AgentClassSupport:
-		return "Teampulse support agent for structured support triage."
-	default:
-		return "Teampulse runtime agent"
-	}
-}
-
-func buildOpenCodePermissions(execCtx *ExecutionContext) map[string]any {
-	if execCtx == nil || execCtx.Agent == nil {
-		return nil
-	}
-
-	permissions := map[string]any{}
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassEngineer:
-		permissions["edit"] = "allow"
-	case model.AgentClassProductPlanner, model.AgentClassReviewer, model.AgentClassSupport:
-		permissions["edit"] = "deny"
-	}
-
-	switch execCtx.Agent.AgentClass {
-	case model.AgentClassSupport:
-		permissions["bash"] = "deny"
-	default:
-		if bashRules := buildOpenCodeBashPermissions(execCtx, runtimeProfileFor(execCtx), execCtx.Config); len(bashRules) > 0 {
-			permissions["bash"] = bashRules
-		}
-	}
-
-	return permissions
-}
-
-func runtimeProfileFor(execCtx *ExecutionContext) model.RuntimeProfile {
-	if execCtx == nil {
-		return GetRuntimeProfile("")
-	}
-	if execCtx.RuntimeProfile.Name != "" {
-		return execCtx.RuntimeProfile
-	}
-	if execCtx.Agent != nil {
-		return GetRuntimeProfile(execCtx.Agent.CapabilityProfile)
-	}
-	return GetRuntimeProfile("")
-}
-
-func buildOpenCodeBashPermissions(execCtx *ExecutionContext, profile model.RuntimeProfile, config *WorkflowConfig) map[string]string {
-	allowed := allowedCommandsFor(profile, config)
-	rules := map[string]string{"*": "deny"}
-	for _, command := range allowed {
-		command = strings.TrimSpace(command)
-		if command == "" || command == "git" {
-			continue
-		}
-		rules[command] = "allow"
-		rules[command+" *"] = "allow"
-	}
-
-	if execCtx != nil && execCtx.Agent != nil {
-		switch execCtx.Agent.AgentClass {
-		case model.AgentClassEngineer, model.AgentClassProductPlanner, model.AgentClassReviewer:
-			for _, pattern := range readOnlyGitPermissionPatterns() {
-				rules[pattern] = "allow"
-			}
-		}
-	}
-
-	return rules
-}
-
-func readOnlyGitPermissionPatterns() []string {
-	return []string{
-		"git status", "git status *",
-		"git diff", "git diff *",
-		"git log", "git log *",
-		"git show", "git show *",
-		"git rev-parse", "git rev-parse *",
-		"git branch", "git branch *",
-		"git ls-files", "git ls-files *",
-		"git grep", "git grep *",
-	}
 }
 
 func openCodeRunProducedRepoChanges(execCtx *ExecutionContext) (bool, error) {
@@ -1137,30 +593,6 @@ func openCodeRunProducedRepoChanges(execCtx *ExecutionContext) (bool, error) {
 	}
 
 	return false, fmt.Errorf("inspect repository diff: unable to compare HEAD against %q", baseBranch)
-}
-
-func appendIfMissingEnv(env []string, key, value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return env
-	}
-	prefix := key + "="
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return env
-		}
-	}
-	return append(env, prefix+value)
-}
-
-func upsertEnv(env []string, key, value string) []string {
-	prefix := key + "="
-	for idx, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			env[idx] = prefix + value
-			return env
-		}
-	}
-	return append(env, prefix+value)
 }
 
 func backgroundContextOnCancel(ctx context.Context) (context.Context, context.CancelFunc) {

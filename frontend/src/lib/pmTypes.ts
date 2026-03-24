@@ -89,12 +89,9 @@ export interface Epic {
   health: EpicHealth;
   health_comment?: string;
   archived: boolean;
-  orchestrator_agent_id?: string;
-  active_flow_run_id?: string;
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
-  active_planning_session_id?: string;
   spec_clarifications?: SpecClarification[];
   spec_clarified_at?: string;
   spec_clarified_by?: string;
@@ -1060,7 +1057,7 @@ export interface AutomationRule {
   trigger_type: string;
   trigger_config: Record<string, string>;
   action_type: string;
-  action_config: Record<string, string>;
+  action_config: Record<string, unknown>;
   position: number;
   stop_on_match: boolean;
   created_by?: string;
@@ -1077,7 +1074,7 @@ export interface CreateAutomationRuleRequest {
   trigger_type: string;
   trigger_config: Record<string, string>;
   action_type: string;
-  action_config: Record<string, string>;
+  action_config: Record<string, unknown>;
   position?: number;
   stop_on_match?: boolean;
 }
@@ -1089,7 +1086,7 @@ export interface UpdateAutomationRuleRequest {
   trigger_type?: string;
   trigger_config?: Record<string, string>;
   action_type?: string;
-  action_config?: Record<string, string>;
+  action_config?: Record<string, unknown>;
   position?: number;
   stop_on_match?: boolean;
 }
@@ -1126,25 +1123,33 @@ export interface UpdateViewRequest {
 
 // ── Agents ──────────────────────────────────────────────────────────
 
-export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support';
+export type AgentPresetKey =
+  | 'epic_planner'
+  | 'story_planner'
+  | 'crm_operator'
+  | 'support_agent'
+  | 'code_builder'
+  | 'review_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
-export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
+export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
-export type AgentApprovalMode = 'class_default' | 'never' | 'always';
+export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
+export type AgentInvocationMode = 'interactive' | 'autonomous';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval';
 
 export interface Agent {
   id: string;
   workspace_id: string;
+  is_system: boolean;
   name: string;
-  agent_class: AgentClass;
+  preset_key?: AgentPresetKey;
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
-  capability_profile: string;
   skills: string[];
   trigger_mode: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -1164,6 +1169,7 @@ export interface Agent {
   trigger_events: string[];
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: number;
+  default_invocation_mode: AgentInvocationMode;
   supported_modes?: Array<'interactive' | 'autonomous'>;
   created_at: string;
   updated_at: string;
@@ -1178,15 +1184,15 @@ export interface AgentRun {
   target_type: AgentTargetType;
   target_id: string;
   runtime_kind: AgentRuntimeKind;
+  invocation_mode: AgentInvocationMode;
   parent_run_id?: string;
   handoff_state?: string;
   approval_state: AgentApprovalState;
+  pause_reason: AgentRunPauseReason;
   triggered_by_user_id?: string;
   status: AgentRunStatus;
   workflow_id?: string;
   workflow_run_id?: string;
-  flow_run_id?: string;
-  flow_node_run_id?: string;
   task_queue?: string;
   runner_pool?: string;
   repository_id?: string;
@@ -1204,6 +1210,54 @@ export interface AgentRun {
   completed_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRunMessage {
+  id: string;
+  workspace_id: string;
+  run_id: string;
+  role: string;
+  content: string;
+  message_type: string;
+  content_blocks?: Array<Record<string, unknown>>;
+  tool_invocations?: Array<Record<string, unknown>>;
+  token_usage?: Record<string, unknown>;
+  sequence_no: number;
+  created_at: string;
+}
+
+export interface AgentRunStreamEvent {
+  event_id?: string;
+  sent_at?: string;
+  type: string;
+  run_id: string;
+  message_id?: string;
+  text?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  tool_input?: string;
+  output_summary?: string;
+  duration_ms?: number;
+  error?: string;
+}
+
+export interface StartAgentRunRequest {
+  agent_id?: string;
+  additional_context?: string;
+}
+
+export interface SendAgentRunMessageRequest {
+  content: string;
+}
+
+export interface SendAgentRunRequestChangesRequest {
+  content: string;
+}
+
+export interface ResumeAgentRunRequest {
+  intent: 'reply' | 'approve' | 'request_changes';
+  content?: string;
+  send_message?: boolean;
 }
 
 export interface StoryImplementationBrief {
@@ -1284,10 +1338,9 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
-  agent_class?: AgentClass;
+  preset_key?: AgentPresetKey;
   role?: string;
   runtime_kind?: AgentRuntimeKind;
-  capability_profile?: string;
   skills?: string[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -1305,15 +1358,15 @@ export interface CreateAgentRequest {
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
   max_concurrent_runs?: number;
+  default_invocation_mode?: AgentInvocationMode;
 }
 
 export interface UpdateAgentRequest {
   name?: string;
-  agent_class?: AgentClass;
+  preset_key?: AgentPresetKey;
   role?: string;
   status?: AgentStatus;
   runtime_kind?: AgentRuntimeKind;
-  capability_profile?: string;
   skills?: string[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -1332,6 +1385,7 @@ export interface UpdateAgentRequest {
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
   max_concurrent_runs?: number;
+  default_invocation_mode?: AgentInvocationMode;
 }
 
 export interface AssignAgentRequest {
@@ -1350,15 +1404,21 @@ export interface HandoffAgentRunRequest {
   context?: Record<string, unknown>;
 }
 
-export interface RuntimeProfile {
-  name: string;
-  runtime_kind: AgentRuntimeKind;
+export interface AgentPresetDefinition {
+  key: AgentPresetKey;
+  label: string;
   description: string;
+  default_role: string;
+  runtime_kind: AgentRuntimeKind;
+  default_trigger_mode: AgentTriggerMode;
+  allowed_trigger_modes: AgentTriggerMode[];
   allowed_tools: string[];
   allowed_commands: string[];
   allowed_target_types: AgentTargetType[];
-  approval_required: boolean;
-  requires_repo: boolean;
+  approval_mode: AgentApprovalMode;
+  default_invocation_mode: AgentInvocationMode;
+  supported_modes: AgentInvocationMode[];
+  system_prompt?: string;
 }
 
 export interface AgentModelProviderOption {
@@ -1868,218 +1928,6 @@ export interface AgentHandoff {
   created_at: string;
 }
 
-// ── Planning Sessions ───────────────────────────────────────────────
-
-export type PlanningSessionStatus = 'active' | 'paused' | 'finalizing' | 'completed' | 'abandoned';
-
-export interface PlanningSession {
-  id: string;
-  workspace_id: string;
-  epic_id: string;
-  agent_id: string;
-  flow_run_id?: string;
-  flow_node_run_id?: string;
-  status: PlanningSessionStatus;
-  planning_methodology: string;
-  spec_document_id?: string;
-  spec_draft: string;
-  spec_sections: SpecSectionEntry[]; // deprecated
-  context_snapshot: Record<string, unknown>;
-  token_usage: SessionTokenUsage;
-  started_by?: string;
-  started_at: string;
-  last_active_at: string;
-  completed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SessionTokenUsage {
-  input: number;
-  output: number;
-}
-
-export interface PlanningSessionMessage {
-  id: string;
-  session_id: string;
-  role: string;
-  content: string;
-  message_type: string;
-  section_metadata?: Record<string, unknown>;
-  tool_invocations?: ToolInvocation[];
-  content_blocks?: PlanningMessageBlock[];
-  token_usage?: SessionTokenUsage;
-  created_at: string;
-}
-
-export interface ToolInvocation {
-  tool_name: string;
-  input: Record<string, unknown>;
-  output_summary: string;
-  duration_ms: number;
-}
-
-export interface PlanningMessageBlock {
-  type: 'text' | 'tool_call' | 'tool_result';
-  text?: string;
-  tool_call_id?: string;
-  tool_name?: string;
-  input?: Record<string, unknown>;
-  output?: string;
-  is_error?: boolean;
-}
-
-export interface SpecSectionEntry {
-  key: string;
-  title: string;
-  status: string;
-  message_id: string;
-  spec_markdown?: string;
-}
-
-export interface PlanningStreamEvent {
-  event_id?: string;
-  sent_at?: string;
-  type:
-    | 'assistant_message_started'
-    | 'assistant_message_delta'
-    | 'tool_call_started'
-    | 'tool_call_finished'
-    | 'assistant_message_completed'
-    | 'turn_completed'
-    | 'error';
-  session_id: string;
-  message_id?: string;
-  text?: string;
-  tool_call_id?: string;
-  tool_name?: string;
-  tool_input?: string;
-  output_summary?: string;
-  duration_ms?: number;
-  error?: string;
-}
-
-export type FlowStatus = 'running' | 'awaiting_input' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
-export type FlowNodeType = 'interactive_agent' | 'agent_task' | 'approval_gate' | 'system_action' | 'terminal';
-export type FlowNodeStatus =
-  | 'queued'
-  | 'running'
-  | 'awaiting_input'
-  | 'awaiting_approval'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'skipped';
-
-export interface FlowRun {
-  id: string;
-  workspace_id: string;
-  template_id: string;
-  template_version: number;
-  target_type: string;
-  target_id: string;
-  status: FlowStatus;
-  current_node_id?: string;
-  trigger_type: string;
-  trigger_payload: Record<string, unknown>;
-  input: Record<string, unknown>;
-  output_summary: Record<string, unknown>;
-  spec_snapshot: Record<string, unknown>;
-  dedupe_key?: string;
-  started_by?: string;
-  completed_at?: string;
-  cancellation_reason?: string;
-  retry_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface FlowNodeRun {
-  id: string;
-  flow_run_id: string;
-  node_id: string;
-  node_type: FlowNodeType;
-  status: FlowNodeStatus;
-  attempt_count: number;
-  agent_id?: string;
-  child_run_id?: string;
-  child_session_id?: string;
-  input: Record<string, unknown>;
-  output: Record<string, unknown>;
-  error_message?: string;
-  started_at?: string;
-  completed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface FlowNodeSpec {
-  id: string;
-  type: FlowNodeType;
-  required_mode?: 'interactive' | 'autonomous';
-  actions?: string[];
-  allowed_tools?: string[];
-  loopback_node_id?: string;
-  command_name?: string;
-}
-
-export interface FlowSpec {
-  template_id: string;
-  template_version: number;
-  target_type: string;
-  supported_triggers: string[];
-  nodes: FlowNodeSpec[];
-}
-
-export interface FlowRunView {
-  run: FlowRun;
-  spec: FlowSpec;
-  node_runs: FlowNodeRun[];
-}
-
-export interface StartEpicPlanningFlowInput {
-  spec_planner_agent_id: string;
-  story_planner_agent_id?: string;
-  additional_context?: string;
-}
-
-export interface StartStoryCompletionFlowInput {
-  agent_id: string;
-  additional_context?: string;
-}
-
-export interface StartCRMDealReviewFlowInput {
-  agent_id: string;
-  additional_context?: string;
-}
-
-export interface FlowRequestChangesPayload {
-  comment: string;
-  structured_feedback?: Record<string, unknown>;
-}
-
-export interface FlowApprovalDecision {
-  decision: string;
-  actor_id?: string;
-  comment?: string;
-  structured_feedback?: Record<string, unknown>;
-  override_payload?: Record<string, unknown>;
-  decided_at?: string;
-}
-
-export interface StartFlowRunRequest {
-  template_id: string;
-  target_type: string;
-  target_id: string;
-  input?:
-    | StartEpicPlanningFlowInput
-    | StartStoryCompletionFlowInput
-    | StartCRMDealReviewFlowInput
-    | Record<string, unknown>;
-  trigger_type?: string;
-  trigger_payload?: Record<string, unknown>;
-}
-
 export interface StructuredQuestionOption {
   value: string;
   label: string;
@@ -2088,8 +1936,34 @@ export interface StructuredQuestionOption {
 
 export interface StructuredQuestion {
   id: string;
+  type?: 'single_select';
   text: string;
   options: StructuredQuestionOption[];
+}
+
+export interface ToolInputSchemaProperty {
+  type: string;
+  description?: string;
+  items?: Record<string, unknown>;
+}
+
+export interface ToolInputSchema {
+  type: string;
+  properties: Record<string, ToolInputSchemaProperty>;
+  required?: string[];
+}
+
+export interface ToolCatalogEntry {
+  name: string;
+  description: string;
+  category: string;
+  input_schema: ToolInputSchema;
+  presets: AgentPresetKey[];
+}
+
+export interface ToolCatalogResponse {
+  tools: ToolCatalogEntry[];
+  categories: string[];
 }
 
 // ── Visitor Context ─────────────────────────────────────────────────

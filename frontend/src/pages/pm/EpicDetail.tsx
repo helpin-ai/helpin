@@ -3,7 +3,6 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
   ArrowLeft,
-  Bot,
   CalendarDays,
   ChevronRight,
   Hash,
@@ -11,12 +10,10 @@ import {
   Layers,
   Loader2,
   Pencil,
-  Play,
   User,
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -24,22 +21,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import {
   diffRemovedInlineAttachmentIds,
   extractInlineAttachmentIds,
@@ -51,13 +32,11 @@ import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
-import { agentService } from '@/lib/services/agentService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useFlowRun, useStartFlowRun } from '@/hooks/queries/useFlow';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType, Agent, StartFlowRunRequest, StartEpicPlanningFlowInput } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -66,7 +45,7 @@ import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
-import { FlowRunDetailSheet, RUN_STATUS_CONFIG, NODE_LABELS } from '@/pages/pm/Flows';
+import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -77,7 +56,6 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
-
 // ── Sidebar Popover Select ─────────────────────────────────────────
 
 function SidebarPopoverSelect<T extends string>({
@@ -227,26 +205,6 @@ export function EpicDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  // Flow state
-  const [flowRunId, setFlowRunId] = useState<string | null>(null);
-  const [showFlowSheet, setShowFlowSheet] = useState(false);
-  const [showStartFlowDialog, setShowStartFlowDialog] = useState(false);
-  const { data: flowRunView } = useFlowRun(workspaceId ?? '', flowRunId ?? undefined);
-
-  // Sync flowRunId with epic data
-  useEffect(() => {
-    if (epic?.epic.active_flow_run_id) {
-      setFlowRunId(epic.epic.active_flow_run_id);
-    }
-  }, [epic?.epic.active_flow_run_id]);
-
-  // Refresh stories when flow completes
-  useEffect(() => {
-    if (flowRunView && flowRunView.run.status === 'completed' && workspaceId) {
-      fetchData(false);
-    }
-  }, [flowRunView?.run.status]);
-
   const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const assignableMemberNames = useMemo(
@@ -287,6 +245,10 @@ export function EpicDetailPage() {
     setRepositories(reposRes.data ?? []);
     setLoading(false);
   }, [workspaceId, epicId]);
+
+  const handlePlannerRunCompleted = useCallback(() => {
+    void fetchData(false);
+  }, [fetchData]);
 
   // Load epic data + reference data
   useEffect(() => {
@@ -643,30 +605,15 @@ export function EpicDetailPage() {
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Planning</h3>
             <div className="mt-3">
-              {flowRunId && flowRunView ? (
-                <button
-                  type="button"
-                  className="w-full rounded-lg border border-border/60 p-3 text-left hover:bg-muted/40 transition-colors"
-                  onClick={() => setShowFlowSheet(true)}
-                >
-                  <div className="flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="text-sm font-medium flex-1 truncate">
-                      {NODE_LABELS[flowRunView.run.current_node_id ?? ''] ?? flowRunView.run.current_node_id ?? 'Planning flow'}
-                    </span>
-                    <Badge variant="secondary" className={`text-[10px] shrink-0 ${RUN_STATUS_CONFIG[flowRunView.run.status]?.className ?? ''}`}>
-                      {RUN_STATUS_CONFIG[flowRunView.run.status]?.label ?? flowRunView.run.status}
-                    </Badge>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  </div>
-                </button>
-              ) : canEdit ? (
-                <Button variant="outline" size="sm" onClick={() => setShowStartFlowDialog(true)}>
-                  <Bot className="mr-1.5 h-3.5 w-3.5" /> Start Planning
-                </Button>
-              ) : (
-                <p className="text-sm text-muted-foreground">No active planning flow.</p>
-              )}
+              {workspaceId ? (
+                <EpicPlannerPanel
+                  workspaceId={workspaceId}
+                  epicId={epicId}
+                  lastRunId={epic.epic.last_planning_run_id}
+                  canEdit={canEdit}
+                  onRunCompleted={handlePlannerRunCompleted}
+                />
+              ) : null}
             </div>
           </div>
 
@@ -815,144 +762,6 @@ export function EpicDetailPage() {
           ) : null}
         </aside>
       </div>
-
-      {/* Flow detail sheet */}
-      {workspaceId && (
-        <FlowRunDetailSheet
-          open={showFlowSheet}
-          onOpenChange={setShowFlowSheet}
-          runView={flowRunView ?? null}
-          workspaceId={workspaceId}
-        />
-      )}
-
-      {/* Start epic flow dialog */}
-      {workspaceId && (
-        <StartEpicFlowDialog
-          open={showStartFlowDialog}
-          onOpenChange={setShowStartFlowDialog}
-          workspaceId={workspaceId}
-          epicId={epicId}
-          onStarted={(runId) => {
-            setFlowRunId(runId);
-            setShowFlowSheet(true);
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// StartEpicFlowDialog — Simplified dialog for starting epic planning from epic detail
-// ---------------------------------------------------------------------------
-
-function StartEpicFlowDialog({
-  open,
-  onOpenChange,
-  workspaceId,
-  epicId,
-  onStarted,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  workspaceId: string;
-  epicId: string;
-  onStarted: (runId: string) => void;
-}) {
-  const [specPlannerId, setSpecPlannerId] = useState('');
-  const [storyPlannerId, setStoryPlannerId] = useState('');
-  const [context, setContext] = useState('');
-  const [agents, setAgents] = useState<Agent[]>([]);
-
-  const plannerAgents = useMemo(
-    () => agents.filter((a) => a.agent_class === 'product_planner'),
-    [agents],
-  );
-
-  const startMutation = useStartFlowRun(workspaceId);
-
-  useEffect(() => {
-    if (!open || !workspaceId) return;
-    agentService.list(workspaceId).then((res) => {
-      if (res.data) setAgents(res.data);
-    });
-  }, [open, workspaceId]);
-
-  const handleStart = async () => {
-    if (!specPlannerId) return;
-    const input: StartEpicPlanningFlowInput = {
-      spec_planner_agent_id: specPlannerId,
-      ...(storyPlannerId ? { story_planner_agent_id: storyPlannerId } : {}),
-      ...(context.trim() ? { additional_context: context.trim() } : {}),
-    };
-    const req: StartFlowRunRequest = {
-      template_id: 'pm.epic_planning_v2',
-      target_type: 'epic',
-      target_id: epicId,
-      input,
-    };
-    const result = await startMutation.mutateAsync(req);
-    onOpenChange(false);
-    setSpecPlannerId('');
-    setStoryPlannerId('');
-    setContext('');
-    onStarted(result.run.id);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Start Epic Planning</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Spec Planner Agent</Label>
-            <Select value={specPlannerId} onValueChange={setSpecPlannerId}>
-              <SelectTrigger><SelectValue placeholder="Select a planner agent..." /></SelectTrigger>
-              <SelectContent>
-                {plannerAgents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Story Planner Agent <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Select value={storyPlannerId || '_none'} onValueChange={(v) => setStoryPlannerId(v === '_none' ? '' : v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Same as spec planner</SelectItem>
-                {plannerAgents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Additional Context <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Textarea
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="Any extra instructions for the planning agents..."
-              rows={3}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleStart} disabled={!specPlannerId || startMutation.isPending}>
-            {startMutation.isPending ? (
-              <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Starting...</>
-            ) : (
-              <><Play className="mr-1.5 h-4 w-4" /> Start</>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

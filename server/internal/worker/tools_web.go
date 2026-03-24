@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const braveSearchAPIURL = "https://api.search.brave.com/res/v1/web/search"
@@ -127,21 +125,12 @@ func (c *BraveSearchClient) Search(ctx context.Context, query WebSearchQuery) ([
 	return results, nil
 }
 
-func (r *ToolRegistry) toolWebSearch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func (r *ToolRegistry) toolWebSearchBrave(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx == nil {
 		return "", fmt.Errorf("execution context is required")
 	}
-	if ctx.PlanningStage != model.PlanningStageDraftSpec {
-		return "", fmt.Errorf("web search is only available during the draft_spec stage")
-	}
-	if !ctx.PlanningWebSearchEnabled {
-		return "", fmt.Errorf("web search is not enabled for this workspace")
-	}
-	if model.NormalizePlanningWebSearchProvider(ctx.PlanningWebSearchProvider) != model.PlanningWebSearchProviderBrave {
-		return "", fmt.Errorf("unsupported planning web search provider %q", ctx.PlanningWebSearchProvider)
-	}
 	if r == nil || r.webSearch == nil {
-		return "", fmt.Errorf("web search provider is not configured on this worker")
+		return "", fmt.Errorf("brave search is not configured on this worker")
 	}
 
 	var params struct {

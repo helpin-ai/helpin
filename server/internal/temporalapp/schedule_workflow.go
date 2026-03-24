@@ -101,7 +101,7 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 		return ScheduledRunResult{}, fmt.Errorf("agent already has an active run, skipping")
 	}
 
-	resolved := workerpkg.ResolveAgentProfile(agent)
+	resolved := workerpkg.ResolveAgentProfile(agent, model.InvocationModeAutonomous)
 	approvalState := workerpkg.ResolveApprovalState(resolved)
 	taskQueue := resolved.Queue
 

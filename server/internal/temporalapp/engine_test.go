@@ -16,10 +16,10 @@ func TestHealthIncludesSharedQueues(t *testing.T) {
 	if len(health.Queues) != len(SharedQueues()) {
 		t.Fatalf("expected %d queues, got %d", len(SharedQueues()), len(health.Queues))
 	}
-	if health.Queues[0].Name != QueueAgentEngineer {
-		t.Fatalf("expected first queue %q, got %q", QueueAgentEngineer, health.Queues[0].Name)
+	if health.Queues[0].Name != QueueAgentNativeInteractive {
+		t.Fatalf("expected first queue %q, got %q", QueueAgentNativeInteractive, health.Queues[0].Name)
 	}
-	if health.Queues[0].Concurrency != 1 {
-		t.Fatalf("expected engineer concurrency 1, got %d", health.Queues[0].Concurrency)
+	if health.Queues[0].Concurrency != 8 {
+		t.Fatalf("expected native interactive concurrency 8, got %d", health.Queues[0].Concurrency)
 	}
 }

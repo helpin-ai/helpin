@@ -249,9 +249,7 @@ func (r *SettingsRepository) listJobRoleCriteria(ctx context.Context, workspaceI
 // Initialize creates default workspace settings.
 func (r *SettingsRepository) Initialize(ctx context.Context, workspaceID string) (*model.WorkspaceSettings, error) {
 	s := &model.WorkspaceSettings{
-		WorkspaceID:               workspaceID,
-		PlanningMethodology:       model.PlanningMethodologyStructuredV1,
-		PlanningWebSearchProvider: model.PlanningWebSearchProviderBrave,
+		WorkspaceID: workspaceID,
 	}
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -1043,15 +1041,6 @@ func (r *SettingsRepository) UpdateSystem(ctx context.Context, workspaceID strin
 	}
 	if req.TeamWeight != nil {
 		updates["team_weight"] = *req.TeamWeight
-	}
-	if req.PlanningMethodology != nil {
-		updates["planning_methodology"] = *req.PlanningMethodology
-	}
-	if req.PlanningWebSearchEnabled != nil {
-		updates["planning_web_search_enabled"] = *req.PlanningWebSearchEnabled
-	}
-	if req.PlanningWebSearchProvider != nil {
-		updates["planning_web_search_provider"] = *req.PlanningWebSearchProvider
 	}
 
 	if err := r.db.WithContext(ctx).Model(&model.WorkspaceSettings{}).Where("workspace_id = ?", workspaceID).Updates(updates).Error; err != nil {

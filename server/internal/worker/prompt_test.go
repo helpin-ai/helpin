@@ -7,48 +7,43 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestBuildSystemPromptStructuredPlanningUsesMethodologyPack(t *testing.T) {
-	systemPrompt := "Prefer shorter drafts."
-	planningNotes := "Prioritize support-ticket evidence."
+func TestBuildSystemPromptDirectEpicRunUsesAgentSystemPrompt(t *testing.T) {
+	systemPrompt := "You are the saved planner prompt."
 
 	prompt := BuildSystemPrompt(
 		&model.Agent{
-			Name:          "Planner",
-			AgentClass:    model.AgentClassProductPlanner,
-			SystemPrompt:  &systemPrompt,
-			PlanningNotes: &planningNotes,
+			Name:         "Planner",
+			PresetKey:    model.AgentPresetEpicPlanner,
+			SystemPrompt: &systemPrompt,
 		},
 		nil,
 		&model.PMEpic{Name: "Billing refresh"},
 		nil,
-		model.PlanningStageDraftSpec,
-		model.PlanningMethodologyStructuredV1,
+		"",
+		"",
 		nil,
 	)
 
-	for _, expected := range []string{
-		"Workspace planning methodology: structured_v1",
+	if !strings.Contains(prompt, systemPrompt) {
+		t.Fatalf("expected prompt to contain stored system prompt\n%s", prompt)
+	}
+	for _, unexpected := range []string{
+		"Planning methodology:",
 		"Think like an analyst first",
-		"Think like a PM second",
-		`"sources":[{"title":"..."`,
-		"## Planner Notes",
-		planningNotes,
-		"## Advanced Planner Notes",
-		"must not override the workflow stage requirements",
-		"Do not embed a Research Sources section inside spec_markdown",
-		"Return JSON only, with no markdown fences.",
+		"Treat these as secondary preferences",
+		"Use tools to update the epic's canonical product spec",
 	} {
-		if !strings.Contains(prompt, expected) {
-			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect direct epic prompt to contain %q\n%s", unexpected, prompt)
 		}
 	}
 }
 
-func TestBuildSystemPromptBasicPlanningKeepsSimpleGuidance(t *testing.T) {
+func TestBuildSystemPromptLegacyPlanningStageKeepsMethodologyPack(t *testing.T) {
 	prompt := BuildSystemPrompt(
 		&model.Agent{
-			Name:       "Planner",
-			AgentClass: model.AgentClassProductPlanner,
+			Name:      "Planner",
+			PresetKey: model.AgentPresetEpicPlanner,
 		},
 		nil,
 		&model.PMEpic{Name: "Billing refresh"},
@@ -58,7 +53,7 @@ func TestBuildSystemPromptBasicPlanningKeepsSimpleGuidance(t *testing.T) {
 		nil,
 	)
 
-	if !strings.Contains(prompt, "Workspace planning methodology: basic_v1") {
+	if !strings.Contains(prompt, "Planning methodology: basic_v1") {
 		t.Fatalf("expected methodology marker in prompt\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "Turn the approved spec into concrete stories.") {
@@ -69,13 +64,119 @@ func TestBuildSystemPromptBasicPlanningKeepsSimpleGuidance(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMEpic{Name: "Billing refresh"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"Run mode: interactive\nOperator notes:\nFocus on B2B admins first.",
+	)
+
+	if !strings.Contains(prompt, "Please work on epic: **Billing refresh**") {
+		t.Fatalf("expected epic context in prompt\n%s", prompt)
+	}
+	for _, unexpected := range []string{
+		"Use the planner tools to create or update the canonical PRD",
+		"Please plan and execute the epic setup directly",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect direct epic user prompt to contain %q\n%s", unexpected, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Run mode: interactive") {
+		t.Fatalf("expected initial instructions to be preserved\n%s", prompt)
+	}
+}
+
+func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMEpic{Name: "Billing refresh"},
+		nil,
+		nil,
+		nil,
+		nil,
+		&ArtifactContext{
+			Entries: []ArtifactContextEntry{
+				{
+					Label:   "Current preview for prd_draft",
+					Source:  "run_preview",
+					Status:  "draft",
+					Format:  "markdown",
+					Content: "# Problem\n\nCurrent draft body",
+				},
+			},
+		},
+		"",
+		"",
+	)
+
+	if !strings.Contains(prompt, "Current persisted artifacts:") {
+		t.Fatalf("expected artifact context heading in prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Current preview for prd_draft [source=run_preview, status=draft, format=markdown]:") {
+		t.Fatalf("expected artifact context metadata in prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Current draft body") {
+		t.Fatalf("expected artifact content in prompt\n%s", prompt)
+	}
+}
+
+func TestBuildExecutionSupplementPromptIncludesResumeGuidanceAndArtifacts(t *testing.T) {
+	supplement := BuildExecutionSupplementPrompt(
+		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		&ArtifactContext{
+			Entries: []ArtifactContextEntry{
+				{
+					Label:   "Current preview for prd_draft",
+					Source:  "run_preview",
+					Status:  "draft",
+					Format:  "markdown",
+					Content: "# Problem\n\nLatest draft body",
+				},
+			},
+		},
+	)
+
+	for _, marker := range []string{
+		"This is an interactive transcript that may resume after a human reply.",
+		"Do not treat a human reply as the end of the run by default.",
+		"Use the latest persisted artifacts below as the current source of truth",
+		"Latest draft body",
+	} {
+		if !strings.Contains(supplement, marker) {
+			t.Fatalf("expected supplement to contain %q\n%s", marker, supplement)
+		}
+	}
+}
+
+func TestProviderSupportsResponseContinuation(t *testing.T) {
+	if !ProviderSupportsResponseContinuation(model.AgentModelProviderOpenAI) {
+		t.Fatal("expected openai to support response continuation")
+	}
+	for _, provider := range []string{
+		model.AgentModelProviderOpenRouter,
+		model.AgentModelProviderOpenRouterResponses,
+		model.AgentModelProviderAnthropic,
+	} {
+		if ProviderSupportsResponseContinuation(provider) {
+			t.Fatalf("expected provider %q not to support response continuation", provider)
+		}
+	}
+}
+
 func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 	systemPrompt := "You are a careful engineer."
 
 	prompt := BuildSystemPrompt(
 		&model.Agent{
 			Name:         "Engineer",
-			AgentClass:   model.AgentClassEngineer,
+			PresetKey:    model.AgentPresetCodeBuilder,
 			SystemPrompt: &systemPrompt,
 		},
 		&model.PMStory{Name: "Implement feature flag"},

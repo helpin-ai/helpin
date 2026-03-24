@@ -59,11 +59,11 @@ func toolRunCommand(ctx *ExecutionContext, input json.RawMessage) (string, error
 		base = base[strings.LastIndex(base, "/")+1:]
 	}
 
-	allowedListValues := allowedCommandsFor(ctx.RuntimeProfile, ctx.Config)
+	allowedListValues := allowedCommandsFor(ctx.ResolvedProfile, ctx.Config)
 	allowed := make(map[string]bool, len(allowedListValues))
 	switch {
-	case len(ctx.RuntimeProfile.AllowedCommands) == 0:
-		// No commands are permitted for this capability profile.
+	case len(ctx.ResolvedProfile.Commands) == 0:
+		// No commands are permitted for this agent policy.
 	case len(allowedListValues) == 0 && ctx.Config == nil:
 		for cmdName := range defaultAllowedCommands {
 			allowed[cmdName] = true

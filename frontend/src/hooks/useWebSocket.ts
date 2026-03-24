@@ -88,9 +88,6 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
         // Handle online visitors snapshot (sent on agent connect)
         if (parsed.type === 'support:online_visitors' && parsed.data?.visitors) {
           useSupportPresenceStore.getState().setOnlineVisitors(parsed.data.visitors as string[])
-        } else if (parsed.session_id && parsed.type) {
-          // Stream event — dispatch as DOM CustomEvent for usePlanningStream
-          window.dispatchEvent(new CustomEvent('planning-stream', { detail: parsed }))
         } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
           // Handle presence snapshot (sent as {type, data} envelope)
           const snapshot = parsed.data as PresenceSnapshot & { conversation_id?: string }
@@ -99,9 +96,6 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
           // Standard event (has action/entity fields)
           const event = parsed as WSEvent
           onEventRef.current(event)
-          if (event.entity === 'planning_session_message') {
-            window.dispatchEvent(new CustomEvent('planning-session-message', { detail: event }))
-          }
         }
       } catch {
         // ignore malformed messages

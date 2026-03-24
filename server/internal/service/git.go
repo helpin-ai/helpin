@@ -19,7 +19,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 var ErrStoryDeliveryTargetRequired = errors.New("story has no delivery target configured")
@@ -438,13 +437,13 @@ func (s *GitService) UpdateStoryDeliveryTarget(ctx context.Context, workspaceID,
 	return target, nil
 }
 
-// ResolveStoryDeliveryTargetForRun returns a delivery target suitable for a given capability profile.
-func (s *GitService) ResolveStoryDeliveryTargetForRun(ctx context.Context, workspaceID, storyID string, profile model.RuntimeProfile) (*model.StoryDeliveryTarget, error) {
+// ResolveStoryDeliveryTargetForRun returns a delivery target suitable for a given execution policy.
+func (s *GitService) ResolveStoryDeliveryTargetForRun(ctx context.Context, workspaceID, storyID string, requiresRepo bool) (*model.StoryDeliveryTarget, error) {
 	target, err := s.GetStoryDeliveryTarget(ctx, workspaceID, storyID)
 	if err != nil {
 		return nil, err
 	}
-	if profile.RequiresRepo && (target.RepositoryID == nil || target.RepoFullName == nil || target.BaseBranch == nil) {
+	if requiresRepo && (target.RepositoryID == nil || target.RepoFullName == nil || target.BaseBranch == nil) {
 		return nil, ErrStoryDeliveryTargetRequired
 	}
 	return target, nil
@@ -851,5 +850,5 @@ func QueueForAgent(agent *model.Agent) string {
 	if agent == nil {
 		return temporalapp.QueueAutomation
 	}
-	return temporalapp.QueueForProfile(worker.GetRuntimeProfile(agent.CapabilityProfile).Name)
+	return temporalapp.QueueForRuntime(agent.RuntimeKind, resolveInvocationMode(agent))
 }

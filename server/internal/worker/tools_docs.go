@@ -60,12 +60,20 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 	}
 
 	type docDetail struct {
-		ID     string  `json:"id"`
-		Title  string  `json:"title"`
-		Status string  `json:"status"`
-		TeamID *string `json:"team_id,omitempty"`
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Status      string  `json:"status"`
+		TeamID      *string `json:"team_id,omitempty"`
+		ContentText string  `json:"content_text,omitempty"`
 	}
 	detail := docDetail{ID: doc.ID, Title: doc.Title, Status: doc.Status, TeamID: doc.TeamID}
+
+	if ctx.Services.GetDocumentContent != nil {
+		if text, err := ctx.Services.GetDocumentContent(ctx.Context, params.DocumentID); err == nil {
+			detail.ContentText = text
+		}
+	}
+
 	result, _ := json.MarshalIndent(detail, "", "  ")
 	return string(result), nil
 }
@@ -114,10 +122,46 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 	if strings.TrimSpace(params.DocumentID) == "" {
 		return "", fmt.Errorf("document_id is required")
 	}
+	if len(params.Content) == 0 || strings.TrimSpace(string(params.Content)) == "" || strings.TrimSpace(string(params.Content)) == "null" {
+		fallbackContent, ok := latestApprovedMarkdownArtifactContent(ctx)
+		if !ok {
+			return "", fmt.Errorf("content is required")
+		}
+		params.Content = fallbackContent
+	}
 	if err := ctx.Services.WriteDocumentContent(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.Content); err != nil {
 		return "", fmt.Errorf("write document content: %w", err)
 	}
 	return fmt.Sprintf("Document %s updated.", params.DocumentID), nil
+}
+
+func latestApprovedMarkdownArtifactContent(ctx *ExecutionContext) (json.RawMessage, bool) {
+	if ctx == nil || ctx.ArtifactContext == nil || len(ctx.ArtifactContext.Entries) == 0 {
+		return nil, false
+	}
+
+	for i := len(ctx.ArtifactContext.Entries) - 1; i >= 0; i-- {
+		entry := ctx.ArtifactContext.Entries[i]
+		if strings.TrimSpace(entry.Source) != "approved_preview" {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(entry.Status), "approved") {
+			continue
+		}
+		if strings.TrimSpace(entry.Format) != PreviewFormatMarkdown {
+			continue
+		}
+		content := strings.TrimSpace(entry.Content)
+		if content == "" {
+			continue
+		}
+		payload, err := json.Marshal(content)
+		if err != nil {
+			return nil, false
+		}
+		return payload, true
+	}
+	return nil, false
 }
 
 func toolLinkDocumentToObject(ctx *ExecutionContext, input json.RawMessage) (string, error) {

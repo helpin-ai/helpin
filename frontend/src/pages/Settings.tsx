@@ -15,7 +15,6 @@ import {
   GeneralTab,
   MembersTab,
   TeamsTab,
-  AITab,
   ProjectDeliveryTab,
   AutomationsTab,
   ImportTab,
@@ -28,7 +27,7 @@ import {
   RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-playground' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-playground' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -85,13 +84,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Delivery',
     description: 'Connect GitHub, curate repositories, and monitor shared runner pools.',
     icon: Globe,
-    group: 'Project Settings',
-  },
-  {
-    id: 'ai',
-    label: 'AI',
-    description: 'Choose the workspace planning methodology used for epic PRD and story planning.',
-    icon: Bot,
     group: 'Project Settings',
   },
   {
@@ -155,6 +147,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Chat Playground',
     description: 'Dry-run support AI planner, retrieval, and grounded answer generation.',
     icon: FlaskConical,
+    group: 'Support & Docs',
+  },
+  {
+    id: 'chat-ai',
+    label: 'AI & Routing',
+    description: 'Configure support AI auto-reply, routing, handoff, and related chat behavior.',
+    icon: Bot,
     group: 'Support & Docs',
   },
 ];
@@ -260,15 +259,6 @@ export default function Settings({ section, initialTeamId }: { section: Settings
           <ProjectDeliveryTab
             workspaceId={workspaceId}
             editable={canManageSettings}
-          />
-        );
-      case 'ai':
-        return (
-          <AITab
-            workspaceId={workspaceId}
-            config={settings.settings}
-            editable={canManageSettings}
-            onRefresh={load}
           />
         );
       case 'workflows':

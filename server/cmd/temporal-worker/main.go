@@ -78,6 +78,7 @@ func main() {
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
 
 	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
@@ -100,7 +101,6 @@ func main() {
 	deliveryRepo := repository.NewStoryDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
-	flowRepo := repository.NewFlowRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -144,6 +144,7 @@ func main() {
 	runtimes := workerpkg.NewDefaultRuntimeRegistry(
 		cfg.OpenCodePath,
 		cfg.AnthropicAPIKey,
+		cfg.AnthropicBaseURL,
 		cfg.OpenAIAPIKey,
 		cfg.OpenAIBaseURL,
 		cfg.OpenRouterAPIKey,
@@ -264,6 +265,7 @@ func main() {
 	agentService := service.NewAgentService(
 		agentRepo,
 		runRepo,
+		runMessageRepo,
 		artifactRepo,
 		storyRepo,
 		storyLinkRepo,
@@ -327,6 +329,7 @@ func main() {
 	)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
+		runMessageRepo,
 		agentRepo,
 		artifactRepo,
 		storyRepo,
@@ -383,103 +386,6 @@ func main() {
 		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
-	// Planning session worker — separate queue with session pinning.
-	// Uses JetStream to relay events cross-process to the API server's WS hub.
-	planningModels := &workerpkg.EinoModelFactory{
-		AnthropicAPIKey: cfg.AnthropicAPIKey,
-		OpenAIAPIKey:    cfg.OpenAIAPIKey,
-		OpenAIBaseURL:   cfg.OpenAIBaseURL,
-		OpenRouterKey:   cfg.OpenRouterAPIKey,
-		OpenRouterURL:   cfg.OpenRouterBaseURL,
-	}
-
-	if cfg.AnthropicAPIKey != "" || cfg.OpenAIAPIKey != "" || cfg.OpenRouterAPIKey != "" {
-		planningSessionRepo := repository.NewPlanningSessionRepository(db)
-
-		var webSearchClient workerpkg.WebSearchClient
-		toolRegistry := workerpkg.NewToolRegistry(webSearchClient)
-
-		jsStreamer := ws.NewJetStreamSessionStreamer(jetstream)
-
-		planningService := service.NewPlanningSessionService(
-			planningSessionRepo, epicRepo, agentRepo, settingsRepo,
-			docsContentRepo, docsVersionRepo, docsLinkRepo,
-			docsDocumentRepo, docsSpaceRepo,
-			planningModels, toolRegistry,
-			jsStreamer, wsPublisher,
-		)
-		planningService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
-		flowService := service.NewFlowService(
-			flowRepo,
-			epicRepo,
-			storyRepo,
-			crmDealRepo,
-			agentRepo,
-			runRepo,
-			planningSessionRepo,
-			agentService,
-			planningService,
-			runEngine,
-			wsPublisher,
-		)
-		flowService.SetCommandService(commandService)
-		flowActivities := service.NewFlowRuntimeActivities(flowService)
-
-		planningActivities := temporalapp.NewPlanningSessionActivities(
-			planningSessionRepo, epicRepo, gitIntRepo, gitRepo, githubAppClient,
-			planningService.RunAgentTurnWithContext,
-			planningService.RunFinalizationTurnWithContext,
-		)
-		planningWorker := tworker.New(temporalClient, temporalapp.QueuePlanningInteractive, tworker.Options{
-			MaxConcurrentActivityExecutionSize: 4,
-			EnableSessionWorker:                true,
-		})
-		flowWorker := tworker.New(temporalClient, temporalapp.QueueFlowOrchestrator, tworker.Options{
-			MaxConcurrentActivityExecutionSize: 4,
-		})
-		planningWorker.RegisterWorkflow(temporalapp.PlanningSessionWorkflow)
-		flowWorker.RegisterWorkflow(temporalapp.FlowRunWorkflow)
-		planningWorker.RegisterActivityWithOptions(planningActivities.PrepareWorkspaceActivity, activity.RegisterOptions{
-			Name: "PlanningSessionActivities.PrepareWorkspaceActivity",
-		})
-		planningWorker.RegisterActivityWithOptions(planningActivities.RunTurnActivity, activity.RegisterOptions{
-			Name: "PlanningSessionActivities.RunTurnActivity",
-		})
-		planningWorker.RegisterActivityWithOptions(planningActivities.FinalizeTurnActivity, activity.RegisterOptions{
-			Name: "PlanningSessionActivities.FinalizeTurnActivity",
-		})
-		planningWorker.RegisterActivityWithOptions(planningActivities.CleanupWorkspaceActivity, activity.RegisterOptions{
-			Name: "PlanningSessionActivities.CleanupWorkspaceActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapRunActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.BootstrapRunActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.FinalizeInteractiveNodeActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.FinalizeInteractiveNodeActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.HandleApprovalActionActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.HandleApprovalActionActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.RetryNodeActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.RetryNodeActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.CancelRunActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.CancelRunActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.ProgressRunStateActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.ProgressRunStateActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.LoadRunStateActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.LoadRunStateActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.HandleChildStateActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.HandleChildStateActivity",
-		})
-		workers = append(workers, planningWorker)
-		workers = append(workers, flowWorker)
-		log.Printf("planning session worker registered on queues %s and %s", temporalapp.QueuePlanningInteractive, temporalapp.QueueFlowOrchestrator)
-	}
-
 	for _, sharedWorker := range workers {
 		if err := sharedWorker.Start(); err != nil {
 			log.Fatalf("failed to start temporal worker: %v", err)
@@ -513,6 +419,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	})
 	w.RegisterActivityWithOptions(activities.ExecuteRunActivity, activity.RegisterOptions{
 		Name: "AgentRunActivities.ExecuteRunActivity",
+	})
+	w.RegisterActivityWithOptions(activities.MarkRunFailedActivity, activity.RegisterOptions{
+		Name: "AgentRunActivities.MarkRunFailedActivity",
 	})
 
 	// Register email sync workflow and activities.
@@ -628,43 +537,6 @@ func selectedQueues() []temporalapp.QueueConfig {
 		log.Fatal("TEMPORAL_WORKER_QUEUES did not contain any valid queues")
 	}
 	return selected
-}
-
-type planningWorkflowAdapter struct {
-	engine *temporalapp.RunEngine
-}
-
-func (a *planningWorkflowAdapter) StartPlanningSession(ctx context.Context, sessionID string) error {
-	return a.engine.StartPlanningSession(ctx, sessionID)
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningMessage(ctx context.Context, sessionID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type: temporalapp.PlanningSessionSignalTypeMessage,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, sessionID, actorID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type:    temporalapp.PlanningSessionSignalTypeFinalize,
-		ActorID: actorID,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type: temporalapp.PlanningSessionSignalTypeAbandon,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
-	return a.engine.SignalFlowRun(ctx, flowRunID, temporalapp.FlowRunSignal{
-		Type:        temporalapp.FlowSignalTypeChildState,
-		NodeRunID:   nodeRunID,
-		ChildType:   childType,
-		ChildID:     childID,
-		ChildStatus: childStatus,
-	})
 }
 
 func queueNames(queues []temporalapp.QueueConfig) []string {

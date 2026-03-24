@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { gitService } from '@/lib/services/gitService';
-import { agentService } from '@/lib/services/agentService';
-import type { GitIntegration, GitRepository, RunnerHealth } from '@/lib/pmTypes';
+import type { GitIntegration, GitRepository } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { GitBranch, GitPullRequest, Loader2, Plus, RefreshCw, Server, Zap } from 'lucide-react';
+import { GitBranch, GitPullRequest, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -19,7 +18,6 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
 }) {
   const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
-  const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
   const [installingGitHubApp, setInstallingGitHubApp] = useState(false);
   const [installActionError, setInstallActionError] = useState<string | null>(null);
@@ -34,14 +32,12 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
   const hasRepositories = repositories.length > 0;
 
   const loadGitStatus = useCallback(async () => {
-    const [integrationsRes, reposRes, runnerRes] = await Promise.all([
+    const [integrationsRes, reposRes] = await Promise.all([
       gitService.listIntegrations(workspaceId),
       gitService.listRepositories(workspaceId, { all: true }),
-      agentService.getRunnerHealth(workspaceId),
     ]);
     setIntegrations(integrationsRes.data ?? []);
     setRepositories(reposRes.data ?? []);
-    setRunnerHealth(runnerRes.data ?? null);
   }, [workspaceId]);
 
   useEffect(() => {
@@ -283,149 +279,6 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                 : 'Repositories will appear here after you connect a GitHub integration and sync.'}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* ── Runners & Activity ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Runners & Activity</CardTitle>
-            <Badge variant="outline" className="text-[10px]">
-              {runnerHealth?.temporal_configured
-                ? <span className="text-green-600 dark:text-green-400">Temporal connected</span>
-                : <span>Temporal not configured</span>}
-            </Badge>
-          </div>
-          <CardDescription>Shared runner queues and in-flight workflow runs for this workspace.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Stats overview */}
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-lg border border-border/60 p-4">
-              <div className="flex items-center gap-2">
-                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Integrations</p>
-              </div>
-              <p className="mt-2 text-2xl font-semibold">{integrations.length}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 p-4">
-              <div className="flex items-center gap-2">
-                <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repositories</p>
-              </div>
-              <p className="mt-2 text-2xl font-semibold">{repositories.length}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 p-4">
-              <div className="flex items-center gap-2">
-                <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Runner Queues</p>
-              </div>
-              <p className="mt-2 text-2xl font-semibold">{runnerHealth?.queues?.length ?? 0}</p>
-              {runnerHealth?.namespace && (
-                <p className="mt-1 text-xs text-muted-foreground">Namespace: {runnerHealth.namespace}</p>
-              )}
-            </div>
-            <div className="rounded-lg border border-border/60 p-4">
-              <div className="flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active Runs</p>
-              </div>
-              <p className="mt-2 text-2xl font-semibold">{runnerHealth?.active_runs?.length ?? 0}</p>
-            </div>
-          </div>
-
-          {/* Runner Queues */}
-          {runnerHealth?.queues?.length ? (
-            <div>
-              <h4 className="mb-3 text-sm font-semibold">Runner Queues</h4>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {runnerHealth.queues.map((queue) => (
-                  <div key={queue.name} className="rounded-lg border border-border/60 p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{queue.name}</p>
-                      <Badge variant="outline" className="text-[10px]">x{queue.concurrency}</Badge>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Queued</p>
-                        <p className="mt-0.5 text-sm font-medium">{queue.queued_runs}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Running</p>
-                        <p className="mt-0.5 text-sm font-medium">{queue.running_runs}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Awaiting approval</p>
-                        <p className="mt-0.5 text-sm font-medium">{queue.awaiting_approval_runs}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Heartbeat</p>
-                        <p className="mt-0.5 text-sm font-medium">
-                          {queue.latest_heartbeat_at ? new Date(queue.latest_heartbeat_at).toLocaleTimeString() : 'n/a'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-              No runner queues configured. Runner queues appear when Temporal workers are connected.
-            </div>
-          )}
-
-          {/* In-flight Runs */}
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <h4 className="text-sm font-semibold">In-flight Runs</h4>
-              {(runnerHealth?.active_runs?.length ?? 0) > 0 && (
-                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                  {runnerHealth!.active_runs.length}
-                </span>
-              )}
-            </div>
-            {runnerHealth?.active_runs?.length ? (
-              <div className="space-y-2">
-                {runnerHealth.active_runs.map((run) => (
-                  <div key={run.id} className="rounded-lg border border-border/60 p-4">
-                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">{run.task_queue}</p>
-                          <Badge
-                            variant={run.stale ? 'destructive' : 'outline'}
-                            className={!run.stale && run.status === 'running'
-                              ? 'border-blue-500/30 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                              : ''
-                            }
-                          >
-                            {run.status}
-                          </Badge>
-                          {run.execution_stage ? <Badge variant="secondary" className="text-[10px]">{run.execution_stage}</Badge> : null}
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {run.target_type} · <span className="font-mono">{run.target_id.slice(0, 8)}</span>
-                          {run.workflow_id ? ` · ${run.workflow_id}` : ''}
-                        </p>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        <p>Started: {run.started_at ? new Date(run.started_at).toLocaleString() : 'Pending'}</p>
-                        <p>Heartbeat: {run.last_heartbeat_at ? new Date(run.last_heartbeat_at).toLocaleString() : 'n/a'}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-                <Zap className="mx-auto h-8 w-8 text-muted-foreground/30" />
-                <p className="mt-2 text-sm text-muted-foreground">No in-flight runs right now.</p>
-              </div>
-            )}
-          </div>
         </CardContent>
       </Card>
 

@@ -2,38 +2,56 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // ResolvedProfile is the single runtime boundary for agent execution.
-// It merges class defaults with per-agent overrides so that downstream
-// code (tool resolution, target validation, queue selection, approval)
-// never needs to inspect agent_class directly.
+// It merges preset/tool defaults with per-agent overrides so downstream
+// code only deals with concrete policy.
 type ResolvedProfile struct {
-	OriginalClass   string
-	Tools           []string
-	Commands        []string
-	TargetTypes     []string
-	ApprovalMode    string // "never", "always", "class_default"
-	RequiresRepo    bool
-	Queue           string
+	Tools            []string
+	Commands         []string
+	TargetTypes      []string
+	ApprovalMode     string // "never", "always", "preset_default"
+	ApprovalRequired bool
+	RequiresRepo     bool
+	Queue            string
 }
 
-// ResolveAgentProfile merges class-level defaults with per-agent overrides.
+// ResolveAgentProfile merges preset/runtime defaults with per-agent overrides.
 // Per-agent fields (AllowedTools, AllowedTargets, etc.) take precedence when
-// non-empty; otherwise the class profile provides the defaults.
-func ResolveAgentProfile(agent *model.Agent) ResolvedProfile {
-	classProfile := GetRuntimeProfile(agent.CapabilityProfile)
+// non-empty; otherwise the preset-aligned profile provides the defaults.
+func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedProfile {
+	if agent == nil {
+		defaultProfile := GetRuntimeProfile("")
+		return ResolvedProfile{
+			Tools:            defaultProfile.AllowedTools,
+			Commands:         defaultProfile.AllowedCommands,
+			TargetTypes:      defaultProfile.AllowedTargetTypes,
+			ApprovalMode:     "never",
+			ApprovalRequired: defaultProfile.ApprovalRequired,
+			RequiresRepo:     defaultProfile.RequiresRepo,
+			Queue:            QueueForRuntime(defaultProfile.RuntimeKind, model.InvocationModeAutonomous),
+		}
+	}
+	mode := model.InvocationModeAutonomous
+	if len(invocationMode) > 0 {
+		mode = invocationMode[0]
+	} else if agent != nil && agent.DefaultInvocationMode != "" {
+		mode = agent.DefaultInvocationMode
+	}
+	defaultProfile := GetRuntimeProfile(defaultProfileNameForPreset(agent.PresetKey, agent.IsSystem))
 
 	resolved := ResolvedProfile{
-		OriginalClass: agent.AgentClass,
-		Tools:         classProfile.AllowedTools,
-		Commands:      classProfile.AllowedCommands,
-		TargetTypes:   classProfile.AllowedTargetTypes,
-		ApprovalMode:  "class_default",
-		RequiresRepo:  classProfile.RequiresRepo,
-		Queue:         QueueForClass(agent.AgentClass),
+		Tools:            defaultProfile.AllowedTools,
+		Commands:         defaultProfile.AllowedCommands,
+		TargetTypes:      defaultProfile.AllowedTargetTypes,
+		ApprovalMode:     "never",
+		ApprovalRequired: defaultProfile.ApprovalRequired,
+		RequiresRepo:     defaultProfile.RequiresRepo,
+		Queue:            QueueForRuntime(agent.RuntimeKind, mode),
 	}
 
 	// Per-agent tool overrides
@@ -48,13 +66,8 @@ func ResolveAgentProfile(agent *model.Agent) ResolvedProfile {
 	}
 
 	// Approval mode override
-	if agent.ApprovalMode != "" && agent.ApprovalMode != "class_default" {
+	if agent.ApprovalMode != "" && agent.ApprovalMode != "preset_default" {
 		resolved.ApprovalMode = agent.ApprovalMode
-	}
-
-	// Queue: cross-module agents use the general queue
-	if hasCrossModuleTools(resolved.Tools) {
-		resolved.Queue = "automation-default"
 	}
 
 	// Repo: required if agent has any filesystem or git tools
@@ -70,73 +83,45 @@ func ResolveApprovalState(resolved ResolvedProfile) string {
 		return "not_required"
 	case "always":
 		return "pending"
-	case "class_default":
-		classProfile := GetRuntimeProfile(resolved.OriginalClass)
-		if classProfile.ApprovalRequired {
+	default:
+		if resolved.ApprovalRequired {
 			return "pending"
 		}
 		return "not_required"
-	default:
-		return "not_required"
 	}
 }
 
-// QueueForClass maps an agent class to its Temporal task queue.
-// Imported by temporalapp/queues.go — kept here to co-locate with resolution.
-func QueueForClass(class string) string {
-	switch NormalizeCapabilityProfile(class) {
-	case model.AgentClassEngineer:
-		return "agent-engineer"
-	case model.AgentClassProductPlanner:
-		return "agent-planner"
-	case model.AgentClassReviewer:
-		return "agent-reviewer"
-	case model.AgentClassSupport:
-		return "agent-support"
+func defaultProfileNameForPreset(presetKey string, isSystem bool) string {
+	switch strings.TrimSpace(presetKey) {
+	case model.AgentPresetEpicPlanner, model.AgentPresetStoryPlanner, model.AgentPresetCRMOperator:
+		return model.AgentPresetEpicPlanner
+	case model.AgentPresetSupportAgent:
+		return model.AgentPresetSupportAgent
+	case model.AgentPresetReviewAgent:
+		return model.AgentPresetReviewAgent
+	case model.AgentPresetCodeBuilder:
+		return model.AgentPresetCodeBuilder
+	default:
+		if isSystem {
+			return model.AgentPresetEpicPlanner
+		}
+		return model.AgentPresetCodeBuilder
+	}
+}
+
+// QueueForRuntime maps runtime and invocation mode to a shared Temporal queue.
+func QueueForRuntime(runtimeKind, invocationMode string) string {
+	switch runtimeKind {
+	case "native_sdk":
+		if invocationMode == model.InvocationModeInteractive {
+			return "agent-native-interactive"
+		}
+		return "agent-native-autonomous"
+	case "opencode":
+		return "agent-opencode-autonomous"
 	default:
 		return "automation-default"
 	}
-}
-
-// hasCrossModuleTools returns true if the tool set spans more than one module
-// (e.g. code tools + support tools + CRM tools).
-func hasCrossModuleTools(tools []string) bool {
-	modules := 0
-	hasCode := false
-	hasSupport := false
-	hasCRM := false
-	hasDocs := false
-
-	for _, t := range tools {
-		switch t {
-		case "read_file", "write_file", "list_directory", "search_files", "ripgrep",
-			"grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr":
-			if !hasCode {
-				hasCode = true
-				modules++
-			}
-		case "list_conversation_messages", "draft_support_reply", "update_conversation_status":
-			if !hasSupport {
-				hasSupport = true
-				modules++
-			}
-		case "list_deals", "update_deal_stage", "add_deal_note", "list_contacts",
-			"create_contact", "list_buyer_signals":
-			if !hasCRM {
-				hasCRM = true
-				modules++
-			}
-		case "list_documents", "read_document", "create_document", "update_document",
-			"write_document_content", "link_document_to_object",
-			"search_documents":
-			if !hasDocs {
-				hasDocs = true
-				modules++
-			}
-		}
-	}
-
-	return modules > 1
 }
 
 // hasRepoTools returns true if any tool in the set requires repository access.

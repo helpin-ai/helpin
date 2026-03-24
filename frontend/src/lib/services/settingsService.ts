@@ -25,9 +25,6 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
     sprint_duration_weeks: 2,
     notifications_enabled: true,
     team_weight: 50,
-    planning_methodology: 'structured_v1',
-    planning_web_search_enabled: false,
-    planning_web_search_provider: 'brave',
   },
   teams: raw.teams ?? [],
   people: raw.people ?? [],
@@ -79,7 +76,7 @@ export const settingsService = {
     api.put(`/settings/job-roles${qs(workspaceId)}`, { workspace_id: workspaceId, job_role: jobRole, criteria }),
   deleteJobRole: (workspaceId: string, jobRole: string) =>
     api.del(`/settings/job-roles${qs(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
-  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; planning_methodology?: 'structured_v1' | 'basic_v1'; planning_web_search_enabled?: boolean; planning_web_search_provider?: 'brave' }) =>
+  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean }) =>
     api.put(`/settings/system${qs(workspaceId)}`, data),
   addTeamInvitation: (workspaceId: string, teamId: string, invitationId: string) =>
     api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations${qs(workspaceId)}`, { invitation_id: invitationId }),

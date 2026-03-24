@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 const (
@@ -21,13 +21,11 @@ const (
 )
 
 type planningRunInput struct {
-	Stage                     string `json:"stage,omitempty"`
-	AdditionalContext         string `json:"additional_context,omitempty"`
-	SpecDocumentID            string `json:"spec_document_id,omitempty"`
-	SpecVersionID             string `json:"spec_version_id,omitempty"`
-	PlanningMethodology       string `json:"planning_methodology,omitempty"`
-	PlanningWebSearchEnabled  bool   `json:"planning_web_search_enabled,omitempty"`
-	PlanningWebSearchProvider string `json:"planning_web_search_provider,omitempty"`
+	Stage               string `json:"stage,omitempty"`
+	AdditionalContext   string `json:"additional_context,omitempty"`
+	SpecDocumentID      string `json:"spec_document_id,omitempty"`
+	SpecVersionID       string `json:"spec_version_id,omitempty"`
+	PlanningMethodology string `json:"planning_methodology,omitempty"`
 }
 
 type epicPlanningRunSummary struct {
@@ -112,7 +110,6 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	}
 
 	epic.ApprovedSpecVersionID = &version.ID
-	epic.PlanningState = model.EpicPlanningStateReadyForStoryPlanning
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
 	}
@@ -141,6 +138,11 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 
 // ConfirmEpicRun confirms a story plan, creates stories, and writes dependency links.
 func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmPlanningRequest) ([]model.PMStory, error) {
+	// Interactive path: stories provided directly, no agent run to validate.
+	if runID == "" && len(req.ProposedStories) > 0 {
+		return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedStories)
+	}
+
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
@@ -176,6 +178,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	teamID, err := plannerStoryTeamID(epic)
+	if err != nil {
+		return nil, err
+	}
 
 	var proposal model.OrchestrationProposal
 	if existingSummary.Proposal != nil {
@@ -271,6 +277,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				Description: strPtr(desc),
 				StoryType:   storyType,
 				EpicID:      &epicID,
+				TeamID:      teamID,
 				Estimate:    ps.Estimate,
 				Priority:    ps.Priority,
 				ExternalID:  strPtr(externalID),
@@ -390,9 +397,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	outputSummary, _ := json.Marshal(runSummary)
 	run.OutputSummary = outputSummary
 	run.ApprovalState = "approved"
-	if run.Status == "awaiting_approval" {
+	if model.IsAgentRunPausedStatus(run.Status) && run.PauseReason == model.AgentRunPauseReasonHumanApproval {
 		now := time.Now()
 		run.Status = "completed"
+		run.PauseReason = model.AgentRunPauseReasonNone
 		run.CompletedAt = &now
 		run.ExecutionStage = strPtr("approved")
 	}
@@ -400,7 +408,6 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, err
 	}
 
-	epic.PlanningState = model.EpicPlanningStateStoriesCreated
 	epic.LastPlanningRunID = &run.ID
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
@@ -414,15 +421,19 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	return created, nil
 }
 
-func planningStoryExternalID(runID string, index int, ref string) string {
-	ref = strings.TrimSpace(ref)
-	if ref != "" {
-		return fmt.Sprintf("planning:%s:%s", runID, ref)
+// createStoriesFromProposal creates stories from proposed stories without requiring an agent run.
+// Used by the interactive story planning path.
+func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
+	if s.storyService == nil {
+		return nil, fmt.Errorf("story service is not configured")
 	}
-	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
-}
+	if len(proposedStories) == 0 {
+		return nil, fmt.Errorf("at least one proposed story is required")
+	}
+	if err := validatePlanningStories(proposedStories); err != nil {
+		return nil, err
+	}
 
-func (s *AgentService) StartEpicStoryPlanningForFlow(ctx context.Context, workspaceID, epicID, actorID, agentID, additionalContext, flowRunID, flowNodeRunID string) (*model.AgentRun, error) {
 	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("get epic: %w", err)
@@ -431,84 +442,140 @@ func (s *AgentService) StartEpicStoryPlanningForFlow(ctx context.Context, worksp
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
-	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
-		return nil, fmt.Errorf("epic does not have a product spec document yet")
-	}
-	if epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*epic.ApprovedSpecVersionID) == "" {
-		return nil, fmt.Errorf("planning requires an approved spec version")
-	}
-	if epic.PlanningRepositoryID == nil || strings.TrimSpace(*epic.PlanningRepositoryID) == "" {
-		return nil, fmt.Errorf("planning requires an epic planning repository")
-	}
-	return s.startEpicPlanningRun(ctx, workspaceID, epic, actorID, agentID, planningRunInput{
-		Stage:             model.PlanningStagePlanStories,
-		AdditionalContext: strings.TrimSpace(additionalContext),
-		SpecDocumentID:    *epic.SpecDocumentID,
-		SpecVersionID:     *epic.ApprovedSpecVersionID,
-	}, &flowRunID, &flowNodeRunID)
-}
-
-func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID string, epic *model.PMEpic, actorID, agentID string, input planningRunInput, flowRunID, flowNodeRunID *string) (*model.AgentRun, error) {
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
+	teamID, err := plannerStoryTeamID(epic)
 	if err != nil {
 		return nil, err
 	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-	settings := s.resolvePlanningWorkspaceAISettings(ctx, workspaceID)
-	if strings.TrimSpace(input.PlanningMethodology) != "" {
-		input.PlanningMethodology = normalizePlanningMethodology(input.PlanningMethodology)
-	} else {
-		input.PlanningMethodology = settings.methodology
+
+	// Use a stable key for external IDs in the interactive path.
+	syntheticRunID := "interactive-" + epicID
+
+	externalIDs := make([]string, 0, len(proposedStories))
+	for idx, ps := range proposedStories {
+		externalIDs = append(externalIDs, planningStoryExternalID(syntheticRunID, idx, ps.Ref))
 	}
-	input.PlanningWebSearchEnabled = input.PlanningWebSearchEnabled || settings.webSearchEnabled
-	if strings.TrimSpace(input.PlanningWebSearchProvider) != "" {
-		input.PlanningWebSearchProvider = model.NormalizePlanningWebSearchProvider(input.PlanningWebSearchProvider)
-	} else {
-		input.PlanningWebSearchProvider = settings.webSearchProvider
+	existingStories, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("lookup existing planned stories: %w", err)
+	}
+	existingByExternalID := make(map[string]model.PMStory, len(existingStories))
+	for _, story := range existingStories {
+		if story.ExternalID == nil || strings.TrimSpace(*story.ExternalID) == "" {
+			continue
+		}
+		existingByExternalID[*story.ExternalID] = story
 	}
 
-	payload, _ := json.Marshal(input)
-	run, err := s.createRun(ctx, createRunParams{
-		workspaceID:   workspaceID,
-		agent:         agent,
-		profile:       profile,
-		targetType:    "epic",
-		targetID:      epic.ID,
-		flowRunID:     flowRunID,
-		flowNodeRunID: flowNodeRunID,
-		actorID:       &actorID,
-		input:         payload,
-	})
-	if err != nil {
+	created := make([]model.PMStory, 0, len(proposedStories))
+	refToStory := make(map[string]model.PMStory, len(proposedStories))
+
+	for idx, ps := range proposedStories {
+		storyType := strings.ToLower(strings.TrimSpace(ps.StoryType))
+		if !isValidStoryType(storyType) {
+			storyType = model.PMStoryTypeFeature
+		}
+
+		externalID := planningStoryExternalID(syntheticRunID, idx, ps.Ref)
+		var detail *model.StoryDetail
+		if existing, ok := existingByExternalID[externalID]; ok {
+			detail, err = s.storyService.GetByID(ctx, existing.ID)
+			if err != nil {
+				return nil, fmt.Errorf("reload existing story %d: %w", idx+1, err)
+			}
+		} else {
+			desc := renderPlannedStoryDescription(ps)
+			detail, err = s.storyService.Create(ctx, model.CreateStoryRequest{
+				WorkspaceID: workspaceID,
+				Name:        strings.TrimSpace(ps.Name),
+				Description: strPtr(desc),
+				StoryType:   storyType,
+				EpicID:      &epicID,
+				TeamID:      teamID,
+				Estimate:    ps.Estimate,
+				Priority:    ps.Priority,
+				ExternalID:  strPtr(externalID),
+			}, actorID)
+			if err != nil {
+				return nil, fmt.Errorf("create story %d: %w", idx+1, err)
+			}
+		}
+
+		briefFields := map[string]interface{}{}
+		if ps.SliceType != "" {
+			briefFields["slice_type"] = ps.SliceType
+		}
+		if ps.ImplementationBrief != nil {
+			if b, marshalErr := json.Marshal(ps.ImplementationBrief); marshalErr != nil {
+				slog.WarnContext(ctx, "marshal implementation brief", "error", marshalErr, "story_ref", ps.Ref)
+			} else {
+				briefFields["implementation_brief"] = b
+			}
+		}
+		if len(briefFields) > 0 {
+			if err := s.storyRepo.UpdateFields(ctx, detail.Story.ID, briefFields); err != nil {
+				slog.WarnContext(ctx, "failed to persist story brief fields",
+					"story_id", detail.Story.ID, "error", err)
+			}
+		}
+
+		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
+			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+				slog.WarnContext(ctx, "skipping agent assignment for planned story",
+					"story", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
+			} else {
+				detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
+				if err != nil {
+					return nil, fmt.Errorf("reload story %q: %w", ps.Name, err)
+				}
+			}
+		}
+
+		created = append(created, detail.Story)
+		if strings.TrimSpace(ps.Ref) != "" {
+			refToStory[ps.Ref] = detail.Story
+		}
+	}
+
+	for _, ps := range proposedStories {
+		targetStory, ok := refToStory[ps.Ref]
+		if !ok || len(ps.DependencyRefs) == 0 {
+			continue
+		}
+		for _, depRef := range ps.DependencyRefs {
+			sourceStory, exists := refToStory[depRef]
+			if !exists {
+				return nil, fmt.Errorf("dependency %q does not reference a known story ref", depRef)
+			}
+			if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
+				WorkspaceID:   workspaceID,
+				SourceStoryID: sourceStory.ID,
+				TargetStoryID: targetStory.ID,
+				LinkType:      model.PMStoryLinkTypeBlocks,
+				CreatedBy:     actorID,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err := s.epicRepo.Update(ctx, epic); err != nil {
 		return nil, err
 	}
-	return run, nil
+
+	return created, nil
 }
 
-type planningWorkspaceAISettings struct {
-	methodology       string
-	webSearchEnabled  bool
-	webSearchProvider string
+// CreateEpicStoryBatch creates stories directly from planner tool input.
+func (s *AgentService) CreateEpicStoryBatch(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
+	return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, proposedStories)
 }
 
-func (s *AgentService) resolvePlanningWorkspaceAISettings(ctx context.Context, workspaceID string) planningWorkspaceAISettings {
-	resolved := planningWorkspaceAISettings{
-		methodology:       model.PlanningMethodologyStructuredV1,
-		webSearchProvider: model.PlanningWebSearchProviderBrave,
+func planningStoryExternalID(runID string, index int, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref != "" {
+		return fmt.Sprintf("planning:%s:%s", runID, ref)
 	}
-	if s.settingsRepo == nil {
-		return resolved
-	}
-
-	settings, err := s.settingsRepo.GetWorkspaceSettings(ctx, workspaceID)
-	if err != nil || settings == nil {
-		return resolved
-	}
-
-	resolved.methodology = normalizePlanningMethodology(settings.PlanningMethodology)
-	resolved.webSearchEnabled = settings.PlanningWebSearchEnabled
-	resolved.webSearchProvider = model.NormalizePlanningWebSearchProvider(settings.PlanningWebSearchProvider)
-	return resolved
+	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
 }
 
 // EnsureEpicSpecDocument ensures the epic has a canonical product spec doc and returns it.
@@ -613,7 +680,8 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	if err != nil || activeRun == nil {
 		return err
 	}
-	if activeRun.Status != "awaiting_approval" || activeRun.ApprovalState != "pending" {
+	model.NormalizeAgentRunPauseState(activeRun)
+	if activeRun.Status != model.AgentRunStatusPaused || activeRun.PauseReason != model.AgentRunPauseReasonHumanApproval || activeRun.ApprovalState != "pending" {
 		return nil
 	}
 	if parsePlanningRunStage(activeRun.Input) != stage {
@@ -623,6 +691,7 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	now := time.Now()
 	activeRun.ApprovalState = "approved"
 	activeRun.Status = "completed"
+	activeRun.PauseReason = model.AgentRunPauseReasonNone
 	activeRun.CompletedAt = &now
 	activeRun.ExecutionStage = strPtr("approved")
 	if err := s.runRepo.Update(ctx, activeRun); err != nil {
@@ -660,8 +729,29 @@ func validatePlanningStories(stories []model.ProposedStory) error {
 		if stories[idx].Name == "" {
 			return fmt.Errorf("proposed story %d is missing a name", idx+1)
 		}
+		stories[idx].StoryType = normalizePlannedStoryType(stories[idx].StoryType)
+		if stories[idx].Priority != nil {
+			normalizedPriority := normalizePlannedStoryPriority(*stories[idx].Priority)
+			stories[idx].Priority = &normalizedPriority
+		}
 		if strings.TrimSpace(stories[idx].Ref) == "" {
 			stories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+		}
+		if brief := stories[idx].ImplementationBrief; brief != nil {
+			brief.Approach = strings.TrimSpace(brief.Approach)
+			brief.TestStrategy = strings.TrimSpace(brief.TestStrategy)
+			brief.VerticalLayers = filterNonEmptyStrings(brief.VerticalLayers)
+			brief.DependsOnFiles = filterNonEmptyStrings(brief.DependsOnFiles)
+			files := make([]model.FileChange, 0, len(brief.FilesToModify))
+			for _, change := range brief.FilesToModify {
+				change.Path = strings.TrimSpace(change.Path)
+				if change.Path == "" {
+					continue
+				}
+				change.Description = strings.TrimSpace(change.Description)
+				files = append(files, change)
+			}
+			brief.FilesToModify = files
 		}
 		if prev, exists := refToIdx[stories[idx].Ref]; exists {
 			return fmt.Errorf("story refs must be unique; stories %d and %d both use %q", prev+1, idx+1, stories[idx].Ref)
@@ -718,6 +808,64 @@ func validatePlanningStories(stories []model.ProposedStory) error {
 	return nil
 }
 
+func plannerStoryTeamID(epic *model.PMEpic) (*string, error) {
+	if epic == nil {
+		return nil, fmt.Errorf("epic is required")
+	}
+	if epic.TeamID == nil || strings.TrimSpace(*epic.TeamID) == "" {
+		return nil, fmt.Errorf("epic %q must have a team before creating stories", strings.TrimSpace(epic.Name))
+	}
+	teamID := strings.TrimSpace(*epic.TeamID)
+	return &teamID, nil
+}
+
+func normalizePlannedStoryType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "feature", "feat", "user_story", "story":
+		return model.PMStoryTypeFeature
+	case "bug", "fix", "defect":
+		return model.PMStoryTypeBug
+	case "chore", "task", "maintenance", "infra", "infrastructure", "ops":
+		return model.PMStoryTypeChore
+	default:
+		return model.PMStoryTypeFeature
+	}
+}
+
+func normalizePlannedStoryPriority(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "none", "no priority", "n/a", "na", "unset":
+		return model.PMStoryPriorityNone
+	case "low", "p3", "minor":
+		return model.PMStoryPriorityLow
+	case "medium", "med", "normal", "default", "p2":
+		return model.PMStoryPriorityMedium
+	case "high", "important", "p1":
+		return model.PMStoryPriorityHigh
+	case "urgent", "critical", "blocker", "highest", "p0":
+		return model.PMStoryPriorityUrgent
+	default:
+		return model.PMStoryPriorityNone
+	}
+}
+
+func filterNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			filtered = append(filtered, value)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
 func renderPlannedStoryDescription(story model.ProposedStory) string {
 	var sections []string
 	if summary := strings.TrimSpace(story.Description); summary != "" {
@@ -760,7 +908,13 @@ func renderPlannedStoryDescription(story model.ProposedStory) string {
 	if len(sections) == 0 {
 		return ""
 	}
-	return strings.Join(sections, "\n\n")
+	markdown := strings.Join(sections, "\n\n")
+	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(markdown))
+	if err != nil {
+		slog.Warn("failed to render planned story markdown to html", "error", err)
+		return markdown
+	}
+	return strings.TrimSpace(rendered)
 }
 
 func validateSpecClarifications(updated, current []model.SpecClarificationItem) ([]model.SpecClarificationItem, int, error) {
@@ -868,7 +1022,7 @@ func (s *AgentService) syncClarificationsIntoSpecDoc(ctx context.Context, docume
 	}
 
 	updatedMarkdown := upsertSpecClarificationsSection(content.ContentText, clarifications)
-	savedContent, err := s.docsContentRepo.Upsert(ctx, documentID, serviceMarkdownToDocsJSON(updatedMarkdown))
+	savedContent, err := s.docsContentRepo.Upsert(ctx, documentID, tiptap.MarkdownToJSON(updatedMarkdown))
 	if err != nil {
 		return err
 	}
@@ -930,123 +1084,6 @@ func renderSpecClarificationsSection(clarifications []model.SpecClarificationIte
 	return strings.Join(lines, "\n")
 }
 
-func serviceMarkdownToDocsJSON(markdown string) json.RawMessage {
-	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
-	nodes := make([]map[string]interface{}, 0, len(lines))
-	paragraphLines := make([]string, 0)
-	bulletLines := make([]string, 0)
-
-	flushParagraph := func() {
-		if len(paragraphLines) == 0 {
-			return
-		}
-		text := strings.TrimSpace(strings.Join(paragraphLines, " "))
-		paragraphLines = paragraphLines[:0]
-		if text == "" {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type": "paragraph",
-			"content": []map[string]interface{}{
-				{"type": "text", "text": text},
-			},
-		})
-	}
-
-	flushBullets := func() {
-		if len(bulletLines) == 0 {
-			return
-		}
-		items := make([]map[string]interface{}, 0, len(bulletLines))
-		for _, item := range bulletLines {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "listItem",
-				"content": []map[string]interface{}{
-					{
-						"type": "paragraph",
-						"content": []map[string]interface{}{
-							{"type": "text", "text": item},
-						},
-					},
-				},
-			})
-		}
-		bulletLines = bulletLines[:0]
-		if len(items) == 0 {
-			return
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"type":    "bulletList",
-			"content": items,
-		})
-	}
-
-	for _, rawLine := range lines {
-		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			flushParagraph()
-			flushBullets()
-			continue
-		}
-		if level, headingText, ok := parseServiceMarkdownHeading(line); ok {
-			flushParagraph()
-			flushBullets()
-			nodes = append(nodes, map[string]interface{}{
-				"type": "heading",
-				"attrs": map[string]interface{}{
-					"level": level,
-				},
-				"content": []map[string]interface{}{
-					{"type": "text", "text": headingText},
-				},
-			})
-			continue
-		}
-		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-			flushParagraph()
-			bulletLines = append(bulletLines, strings.TrimSpace(line[2:]))
-			continue
-		}
-		flushBullets()
-		paragraphLines = append(paragraphLines, line)
-	}
-
-	flushParagraph()
-	flushBullets()
-
-	if len(nodes) == 0 {
-		nodes = append(nodes, map[string]interface{}{"type": "paragraph"})
-	}
-
-	payload, _ := json.Marshal(map[string]interface{}{
-		"type":    "doc",
-		"content": nodes,
-	})
-	return payload
-}
-
-func parseServiceMarkdownHeading(line string) (int, string, bool) {
-	if !strings.HasPrefix(line, "#") {
-		return 0, "", false
-	}
-	level := 0
-	for level < len(line) && line[level] == '#' && level < 6 {
-		level++
-	}
-	if level == 0 || level >= len(line) || line[level] != ' ' {
-		return 0, "", false
-	}
-	text := strings.TrimSpace(line[level+1:])
-	if text == "" {
-		return 0, "", false
-	}
-	return level, text, true
-}
-
 func truncateString(value string, limit int) string {
 	value = strings.TrimSpace(value)
 	if limit <= 0 || len(value) <= limit {
@@ -1086,4 +1123,35 @@ func decodePlanningRunSummary(raw json.RawMessage) (epicPlanningRunSummary, erro
 func isValidUUID(s string) bool {
 	_, err := uuid.Parse(s)
 	return err == nil
+}
+
+// ClearEpicSpecForDocument resets spec approval state on any epic
+// whose spec document matches the given document ID.
+func (s *AgentService) ClearEpicSpecForDocument(ctx context.Context, documentID string) error {
+	links, err := s.docsLinkRepo.ListByDocument(ctx, documentID)
+	if err != nil {
+		return fmt.Errorf("list links for document %s: %w", documentID, err)
+	}
+	for _, link := range links {
+		if link.LinkedObjectType != "epic" {
+			continue
+		}
+		epic, err := s.epicRepo.GetByID(ctx, link.LinkedObjectID)
+		if err != nil {
+			slog.ErrorContext(ctx, "fetch epic for spec cleanup", "error", err, "epic_id", link.LinkedObjectID)
+			continue
+		}
+		if epic == nil || epic.Epic.SpecDocumentID == nil || *epic.Epic.SpecDocumentID != documentID {
+			continue
+		}
+		epic.Epic.SpecDocumentID = nil
+		epic.Epic.ApprovedSpecVersionID = nil
+		if err := s.epicRepo.Update(ctx, &epic.Epic); err != nil {
+			slog.ErrorContext(ctx, "clear epic spec state", "error", err, "epic_id", epic.Epic.ID)
+			continue
+		}
+		slog.InfoContext(ctx, "cleared epic spec state after document deletion",
+			"epic_id", epic.Epic.ID, "document_id", documentID)
+	}
+	return nil
 }

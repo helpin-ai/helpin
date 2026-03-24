@@ -204,9 +204,6 @@ export interface WorkspaceConfig {
   sprint_duration_weeks: number;
   notifications_enabled: boolean;
   team_weight: number;
-  planning_methodology: 'structured_v1' | 'basic_v1';
-  planning_web_search_enabled: boolean;
-  planning_web_search_provider: 'brave';
 }
 
 export interface WorkspaceTeam {

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -263,11 +262,14 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *mo
 func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, execCtx *model.RuleExecutionContext) error {
 	switch rule.ActionType {
 	case model.ActionRunAgent:
+		return fmt.Errorf("run_agent is no longer supported")
+
+	case model.ActionStartAgentRun:
 		var cfg model.ActionConfigRunAgent
 		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
-			return fmt.Errorf("parse run_agent config: %w", err)
+			return fmt.Errorf("parse start_agent_run config: %w", err)
 		}
-		return e.executeRunAgent(ctx, rule, event, story, cfg)
+		return e.executeStartAgentRun(ctx, rule, event, story, cfg)
 
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
@@ -291,63 +293,63 @@ func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.Au
 		return e.executeRunCommand(ctx, rule, event, story, cfg)
 
 	case model.ActionStartFlow:
-		return fmt.Errorf("start_flow action not yet implemented")
+		return fmt.Errorf("start_flow is no longer supported")
 
 	default:
 		return fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
 }
 
-func (e *AutomationRuleEngine) executeRunAgent(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
+func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
 	if e.agentService == nil {
 		return fmt.Errorf("agent service not configured")
 	}
-	if cfg.AgentID == "" {
-		return fmt.Errorf("agent_id is required in run_agent config")
-	}
 
-	// Assign the agent to the story
-	story.AssignedAgentID = &cfg.AgentID
-	if err := e.storyRepo.Update(ctx, story); err != nil {
-		return fmt.Errorf("assign agent to story: %w", err)
+	targetType := event.TargetType
+	targetID := event.TargetID
+	if targetType == "" && story != nil {
+		targetType = "story"
+		targetID = story.ID
 	}
-
-	// Ensure delivery target exists (inherits from team defaults if needed).
-	// Without this, RunAgent fails with ErrStoryDeliveryTargetRequired when
-	// the story was just created and hasn't been opened in the UI yet.
-	if e.gitService != nil {
-		if _, err := e.gitService.GetStoryDeliveryTarget(ctx, event.WorkspaceID, event.StoryID); err != nil {
-			e.logger.WarnContext(ctx, "failed to resolve delivery target for automated run",
-				"error", err,
-				"rule_id", rule.ID,
-				"story_id", event.StoryID,
-			)
+	if targetType != "story" || targetID == "" {
+		return fmt.Errorf("start_agent_run currently requires a story target")
+	}
+	if story == nil {
+		var err error
+		story, err = e.storyRepo.GetRawByID(ctx, targetID)
+		if err != nil {
+			return fmt.Errorf("load story for start_agent_run: %w", err)
+		}
+		if story == nil {
+			return fmt.Errorf("story %s not found", targetID)
 		}
 	}
 
-	// Start the agent run
-	_, err := e.agentService.RunAgent(ctx, event.WorkspaceID, event.StoryID, "system")
-	if err != nil {
-		if errors.Is(err, ErrStoryDeliveryTargetRequired) {
-			e.logger.WarnContext(ctx, "skipping run_agent: no delivery target configured",
-				"rule_id", rule.ID,
-				"story_id", event.StoryID,
-			)
-			return fmt.Errorf("story has no delivery target configured — configure a repository first")
+	if cfg.AgentID != "" && (story.AssignedAgentID == nil || *story.AssignedAgentID != cfg.AgentID) {
+		story.AssignedAgentID = &cfg.AgentID
+		if err := e.storyRepo.Update(ctx, story); err != nil {
+			return fmt.Errorf("assign agent to story: %w", err)
 		}
+	}
+
+	if _, err := e.agentService.RunAgent(ctx, event.WorkspaceID, story.ID, "system"); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
 
-	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", event.StoryID, nil,
-		fmt.Sprintf("automation rule '%s' assigned agent and started run", rule.Name),
-		nil, nil, nil, nil)
+	if e.activitySvc != nil {
+		_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", story.ID, nil,
+			fmt.Sprintf("automation rule '%s' started an agent run", rule.Name),
+			nil, nil, nil, nil)
+	}
 
-	e.wsPublisher.Publish(websocket.Event{
-		Action:    "updated",
-		Entity:    "story",
-		EntityID:  event.StoryID,
-		WorkspaceID: event.WorkspaceID,
-	})
+	if e.wsPublisher != nil {
+		e.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "story",
+			EntityID:    story.ID,
+			WorkspaceID: event.WorkspaceID,
+		})
+	}
 
 	return nil
 }
@@ -712,11 +714,13 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 
 	switch actionType {
 	case model.ActionRunAgent:
+		return fmt.Errorf("action_type %s is no longer supported", actionType)
+	case model.ActionStartAgentRun:
 		var cfg model.ActionConfigRunAgent
 		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
 		}
-		if cfg.AgentID == "" {
+		if strings.TrimSpace(cfg.AgentID) == "" {
 			return fmt.Errorf("agent_id is required in action_config for %s", actionType)
 		}
 	case model.ActionMoveToState:
@@ -744,13 +748,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 			return fmt.Errorf("command_name is required in action_config for %s", actionType)
 		}
 	case model.ActionStartFlow:
-		var cfg model.ActionConfigStartFlow
-		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
-			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
-		}
-		if cfg.TemplateID == "" {
-			return fmt.Errorf("template_id is required in action_config for %s", actionType)
-		}
+		return fmt.Errorf("action_type %s is no longer supported", actionType)
 	default:
 		return fmt.Errorf("unsupported action_type: %s", actionType)
 	}

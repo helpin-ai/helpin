@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 type InternalCommandDefinition struct {
@@ -153,19 +154,49 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic"},
 		ExposeAsTool:         true,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			var req model.ConfirmPlanningRequest
+			var req struct {
+				Stories []model.ProposedStory `json:"stories"`
+				RunID   string                `json:"run_id,omitempty"`
+			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse story batch input: %w", err)
 			}
-			stories, err := s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, req.RunID, fallbackActor(meta), req)
+			if len(req.Stories) == 0 {
+				var legacy model.ConfirmPlanningRequest
+				if err := json.Unmarshal(input, &legacy); err != nil {
+					return nil, fmt.Errorf("stories is required")
+				}
+				req.Stories = legacy.ProposedStories
+				req.RunID = legacy.RunID
+			}
+			if len(req.Stories) == 0 {
+				return nil, fmt.Errorf("stories is required")
+			}
+
+			var stories []model.PMStory
+			var err error
+			if strings.TrimSpace(req.RunID) != "" {
+				legacy := model.ConfirmPlanningRequest{
+					RunID:           strings.TrimSpace(req.RunID),
+					ProposedStories: req.Stories,
+				}
+				stories, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
+			} else {
+				stories, err = s.agentService.CreateEpicStoryBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Stories)
+			}
 			if err != nil {
 				return nil, err
 			}
-			ids := make([]string, 0, len(stories))
-			for _, story := range stories {
-				ids = append(ids, story.ID)
+			results := make([]map[string]any, 0, len(stories))
+			for idx, story := range stories {
+				ref := strings.TrimSpace(req.Stories[idx].Ref)
+				results = append(results, map[string]any{
+					"ref":      ref,
+					"story_id": story.ID,
+					"name":     story.Name,
+				})
 			}
-			return mustJSON(map[string]any{"created_story_ids": ids}), nil
+			return mustJSON(map[string]any{"stories": results}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -187,6 +218,17 @@ func (s *InternalCommandService) registerDefaults() {
 			for _, dep := range req.Dependencies {
 				if strings.TrimSpace(dep.SourceStoryID) == "" || strings.TrimSpace(dep.TargetStoryID) == "" {
 					return nil, fmt.Errorf("source_story_id and target_story_id are required")
+				}
+				source, err := s.storyRepo.GetRawByID(ctx, dep.SourceStoryID)
+				if err != nil {
+					return nil, err
+				}
+				target, err := s.storyRepo.GetRawByID(ctx, dep.TargetStoryID)
+				if err != nil {
+					return nil, err
+				}
+				if source == nil || target == nil || source.WorkspaceID != meta.WorkspaceID || target.WorkspaceID != meta.WorkspaceID {
+					return nil, fmt.Errorf("stories must belong to the current workspace")
 				}
 				if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
 					WorkspaceID:   meta.WorkspaceID,
@@ -215,18 +257,10 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse assign input: %w", err)
 			}
-			story, err := s.storyRepo.GetRawByID(ctx, req.StoryID)
-			if err != nil {
+			if err := s.agentService.AssignAgentToStory(ctx, meta.WorkspaceID, req.StoryID, req.AgentID, fallbackActor(meta)); err != nil {
 				return nil, err
 			}
-			if story == nil {
-				return nil, fmt.Errorf("story not found")
-			}
-			story.AssignedAgentID = &req.AgentID
-			if err := s.storyRepo.Update(ctx, story); err != nil {
-				return nil, err
-			}
-			return mustJSON(map[string]any{"story_id": story.ID, "agent_id": req.AgentID}), nil
+			return mustJSON(map[string]any{"story_id": req.StoryID, "agent_id": req.AgentID}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -311,7 +345,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.write_document_content",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"document", "epic", "story", "crm_deal"},
 		ExposeAsTool:         true,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -324,7 +358,25 @@ func (s *InternalCommandService) registerDefaults() {
 			if strings.TrimSpace(req.DocumentID) == "" {
 				return nil, fmt.Errorf("document_id is required")
 			}
-			content, err := s.docsContentService.Save(ctx, req.DocumentID, req.Content)
+			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
+				return nil, fmt.Errorf("content is required")
+			}
+			// Auto-convert markdown to TipTap JSON when the agent sends a
+			// plain string instead of a structured document object.
+			docContent := req.Content
+			if len(docContent) > 0 && docContent[0] == '"' {
+				var markdown string
+				if err := json.Unmarshal(docContent, &markdown); err == nil {
+					if strings.TrimSpace(markdown) == "" {
+						return nil, fmt.Errorf("content must not be empty")
+					}
+					docContent = tiptap.MarkdownToJSON(markdown)
+				}
+			}
+			if documentContentIsEffectivelyEmpty(docContent) {
+				return nil, fmt.Errorf("content must not be empty")
+			}
+			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent)
 			if err != nil {
 				return nil, err
 			}
@@ -602,6 +654,64 @@ func fallbackActor(meta model.InternalCommandContext) string {
 
 func commandTimePtr(value time.Time) *time.Time {
 	return &value
+}
+
+func stringPtrOrNil(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func documentContentIsEffectivelyEmpty(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return true
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return true
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case map[string]any:
+		return !documentNodeHasText(typed)
+	default:
+		return false
+	}
+}
+
+func documentNodeHasText(node map[string]any) bool {
+	if text, ok := node["text"].(string); ok && strings.TrimSpace(text) != "" {
+		return true
+	}
+
+	content, ok := node["content"].([]any)
+	if !ok {
+		return false
+	}
+	for _, child := range content {
+		childNode, ok := child.(map[string]any)
+		if !ok {
+			continue
+		}
+		if documentNodeHasText(childNode) {
+			return true
+		}
+	}
+	return false
+}
+
+func mustJSON(value any) json.RawMessage {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return payload
 }
 
 func firstNonEmptyCommand(values ...string) string {

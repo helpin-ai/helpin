@@ -34,18 +34,47 @@ type ExecutionContext struct {
 	PlanningMethodology       string
 	PlanningSpecDocumentID    string
 	PlanningSpecVersionID     string
-	PlanningWebSearchEnabled  bool
-	PlanningWebSearchProvider string
 	Config                    *WorkflowConfig
-	RuntimeProfile            model.RuntimeProfile
+	ResolvedProfile           ResolvedProfile
 	AllowedTools              map[string]bool
 	Services                  *ServiceBridge
 	PendingSupportDraft       *SupportDraftReply
 	LatestPRMetadata          *PRMetadata
 	Heartbeat                 func(stage string) error
+	OnExecutionEvent          func(event ExecutionEvent)
 	OnGitPush                 func(branch, sha string) error
 	OnPROpen                  func(metadata PRMetadata, title string) error
+	PlanningTurnKind          string
+	PlanningTurnAttempt       int
+	ArtifactContext           *ArtifactContext
+	ProviderContinuation      *ProviderContinuation
+	ConversationHistory       []ExecutionMessage
+	LastExecutionResult       *ExecutionResult
 }
+
+type ArtifactContext struct {
+	Entries []ArtifactContextEntry
+}
+
+type ArtifactContextEntry struct {
+	Label   string
+	Source  string
+	Status  string
+	Format  string
+	Content string
+}
+
+type ProviderContinuation struct {
+	Provider       string
+	ResponseID     string
+	PreviousResponseID string
+	AfterSequenceNo int
+}
+
+const (
+	PlanningTurnKindInitial = "initial"
+	PlanningTurnKindMessage = "message"
+)
 
 // WorkflowConfig holds settings from WORKFLOW.md or defaults.
 type WorkflowConfig struct {
@@ -69,26 +98,34 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 // ServiceBridge provides access to Helpin services from within tool execution.
 type ServiceBridge struct {
 	// PM / Stories
-	AddComment         func(ctx context.Context, workspaceID, storyID, agentID, content string) error
-	UpdateStoryState   func(ctx context.Context, workspaceID, storyID, stateID string) error
-	ListChecklist      func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
+	AddComment           func(ctx context.Context, workspaceID, storyID, agentID, content string) error
+	UpdateStoryState     func(ctx context.Context, workspaceID, storyID, stateID string) error
+	ListChecklist        func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
+	CreateStoryBatch     func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error)
+	AssignStoryAgent     func(ctx context.Context, workspaceID, actorID, storyID, agentID string) error
+	SetStoryDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []StoryDependencyLink) error
+	ListEpicStories      func(ctx context.Context, workspaceID, epicID string) ([]EpicStorySummary, error)
+	ListWorkspaceTeams   func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
+	ApproveEpicSpec      func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
 
 	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
 	UpdateConversationStatus func(ctx context.Context, workspaceID, conversationID, status string) error
 
 	// CRM
-	ListDeals          func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error)
-	GetDeal            func(ctx context.Context, id string) (*model.CRMDeal, error)
-	UpdateDealStage    func(ctx context.Context, dealID, stageID string) error
-	AddDealNote        func(ctx context.Context, workspaceID, dealID, agentID, content string) error
-	ListContacts       func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error)
-	ListBuyerSignals   func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
+	ListDeals        func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error)
+	GetDeal          func(ctx context.Context, id string) (*model.CRMDeal, error)
+	UpdateDealStage  func(ctx context.Context, dealID, stageID string) error
+	AddDealNote      func(ctx context.Context, workspaceID, dealID, agentID, content string) error
+	ListContacts     func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error)
+	ListBuyerSignals func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
 
 	// Docs
-	GetDocument        func(ctx context.Context, id string) (*model.DocsDocument, error)
-	ListDocuments      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
-	SearchDocuments    func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
+	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
+	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
+	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
 }
@@ -98,6 +135,40 @@ type DocsSearchHit struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
 	Excerpt string `json:"excerpt"`
+}
+
+type StoryDependencyLink struct {
+	SourceStoryID string `json:"source_story_id"`
+	TargetStoryID string `json:"target_story_id"`
+}
+
+type CreateStoryBatchStoryResult struct {
+	Ref     string `json:"ref,omitempty"`
+	StoryID string `json:"story_id"`
+	Name    string `json:"name"`
+}
+
+type CreateStoryBatchResult struct {
+	Stories []CreateStoryBatchStoryResult `json:"stories"`
+}
+
+// EpicStorySummary is a simplified story for the list_epic_stories tool.
+type EpicStorySummary struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	StoryType       string  `json:"story_type"`
+	Status          string  `json:"status"` // "not_started", "in_progress", "done"
+	Estimate        *int    `json:"estimate,omitempty"`
+	Priority        string  `json:"priority"`
+	AssignedAgentID *string `json:"assigned_agent_id,omitempty"`
+}
+
+type WorkspaceTeamSummary struct {
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	Handle           *string `json:"handle,omitempty"`
+	TeamType         string  `json:"team_type,omitempty"`
+	DefaultStoryType string  `json:"default_story_type,omitempty"`
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

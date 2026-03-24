@@ -105,9 +105,6 @@ func newTestDB(t *testing.T) *gorm.DB {
 			notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
 			auto_calculate_bonuses BOOLEAN NOT NULL DEFAULT 0,
 			team_weight INTEGER NOT NULL DEFAULT 50,
-			planning_methodology TEXT NOT NULL DEFAULT 'structured_v1',
-			planning_web_search_enabled BOOLEAN NOT NULL DEFAULT 0,
-			planning_web_search_provider TEXT NOT NULL DEFAULT 'brave',
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -774,11 +771,4 @@ func mustExec(t *testing.T, db *gorm.DB, query string, args ...any) {
 }
 
 // seedTemporaryAttachment inserts a temporary (unconfirmed) attachment into the test DB.
-func seedTemporaryAttachment(t *testing.T, db *gorm.DB, id, workspaceID, entityID, uploadedByID string) {
-	t.Helper()
-	now := time.Now()
-	mustExec(t, db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, workspaceID, "temporary", entityID, "test-file.png", 1024, "image/png", "uploads/"+id+".png", true, uploadedByID, now)
-}
-
 // min is provided by the builtin (Go 1.21+) or pm_import.go

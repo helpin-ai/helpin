@@ -29,7 +29,7 @@ func planningPackSections(agent *model.Agent, planningStage, methodology string)
 
 	sections := []string{
 		"\n## Planning Methodology",
-		"Workspace planning methodology: " + methodology,
+		"Planning methodology: " + methodology,
 	}
 
 	switch methodology {

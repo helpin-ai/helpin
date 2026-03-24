@@ -11,7 +11,7 @@ import {
   User,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { STATUS_COLORS, STATUS_LABELS } from './constants';
 import { useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';

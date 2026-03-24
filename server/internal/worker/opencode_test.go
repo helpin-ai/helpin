@@ -16,7 +16,7 @@ import (
 )
 
 func TestOpenCodeResolveModelIDDefaultsToAnthropicSonnet(t *testing.T) {
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
 
 	got := executor.resolveModelID(&model.Agent{})
 	want := "anthropic/claude-sonnet-4-20250514"
@@ -28,15 +28,15 @@ func TestOpenCodeResolveModelIDDefaultsToAnthropicSonnet(t *testing.T) {
 func TestBuildOpenCodeConfigContentUsesTeampulseAgentAndPermissions(t *testing.T) {
 	execCtx := &ExecutionContext{
 		Agent: &model.Agent{
-			Name:              "Engineer",
-			AgentClass:        model.AgentClassEngineer,
-			CapabilityProfile: "engineer",
+			Name:         "Engineer",
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
 		},
 		Story:  &model.PMStory{Name: "Implement notification preferences"},
 		Config: DefaultWorkflowConfig(),
 	}
 
-	payload, err := buildOpenCodeConfigContent(execCtx, "openai/gpt-5-mini", "system prompt")
+	payload, err := buildOpenCodeConfigContent(execCtx, "openai/gpt-5-mini", "system prompt", nil)
 	if err != nil {
 		t.Fatalf("build config: %v", err)
 	}
@@ -99,9 +99,104 @@ func TestBuildOpenCodeConfigContentUsesTeampulseAgentAndPermissions(t *testing.T
 	}
 }
 
+func TestOpenCodeResolveModelIDStripsProviderPrefixFromStoredModel(t *testing.T) {
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	provider := model.AgentModelProviderOpenRouter
+	modelName := "openrouter/qwen/qwen3.5-122b-a10b"
+
+	got := executor.resolveModelID(&model.Agent{
+		Provider: &provider,
+		Model:    &modelName,
+	})
+	want := "openrouter/qwen/qwen3.5-122b-a10b"
+	if got != want {
+		t.Fatalf("expected normalized model id %q, got %q", want, got)
+	}
+}
+
+func TestBuildOpenCodeConfigContentAddsOpenRouterModelAndBaseURL(t *testing.T) {
+	provider := model.AgentModelProviderOpenRouter
+	modelName := "qwen/qwen3.5-122b-a10b"
+	execCtx := &ExecutionContext{
+		Agent: &model.Agent{
+			Provider: &provider,
+			Model:    &modelName,
+		},
+	}
+
+	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, "", "https://openrouter.ai/api/v1")
+	payload, err := buildOpenCodeConfigContent(execCtx, "openrouter/qwen/qwen3.5-122b-a10b", "system prompt", providerConfig)
+	if err != nil {
+		t.Fatalf("build config: %v", err)
+	}
+
+	var decoded struct {
+		Provider map[string]struct {
+			Options struct {
+				BaseURL string `json:"baseURL"`
+			} `json:"options"`
+			Models map[string]json.RawMessage `json:"models"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+
+	openRouter, ok := decoded.Provider["openrouter"]
+	if !ok {
+		t.Fatalf("expected openrouter provider config")
+	}
+	if openRouter.Options.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("expected openrouter baseURL to be set, got %q", openRouter.Options.BaseURL)
+	}
+	if _, ok := openRouter.Models["qwen/qwen3.5-122b-a10b"]; !ok {
+		t.Fatalf("expected openrouter custom model to be registered, got %#v", openRouter.Models)
+	}
+}
+
+func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
+	provider := model.AgentModelProviderAnthropic
+	modelName := "anthropic/claude-sonnet-4-20250514"
+	execCtx := &ExecutionContext{
+		Agent: &model.Agent{
+			Provider: &provider,
+			Model:    &modelName,
+		},
+	}
+
+	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, "https://api.anthropic.com/v1", "")
+	payload, err := buildOpenCodeConfigContent(execCtx, "anthropic/claude-sonnet-4-20250514", "system prompt", providerConfig)
+	if err != nil {
+		t.Fatalf("build config: %v", err)
+	}
+
+	var decoded struct {
+		Provider map[string]struct {
+			Options struct {
+				BaseURL string `json:"baseURL"`
+			} `json:"options"`
+			Models map[string]json.RawMessage `json:"models"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+
+	anthropic, ok := decoded.Provider["anthropic"]
+	if !ok {
+		t.Fatalf("expected anthropic provider config")
+	}
+	if anthropic.Options.BaseURL != "https://api.anthropic.com/v1" {
+		t.Fatalf("expected anthropic baseURL to be set, got %q", anthropic.Options.BaseURL)
+	}
+	if _, ok := anthropic.Models["claude-sonnet-4-20250514"]; !ok {
+		t.Fatalf("expected anthropic model to be registered, got %#v", anthropic.Models)
+	}
+}
+
 func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testing.T) {
 	result := buildOpenCodeUserPrompt(&ExecutionContext{
-		Agent: &model.Agent{AgentClass: model.AgentClassEngineer},
+		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
 		Story: &model.PMStory{Name: "Story"},
 	}, "Please implement the story.")
 
@@ -256,7 +351,7 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 	runGitCmd(t, workDir, "git", "checkout", "-b", "tp-123-implement")
 	writeTestFile(t, filepath.Join(workDir, "README.md"), "hello\nupdated\n")
 
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
 	var pushedBranch string
 	var pushedSHA string
 	execCtx := &ExecutionContext{
@@ -264,7 +359,7 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 		WorkDir:       workDir,
 		BaseBranch:    "main",
 		WorkingBranch: "tp-123-implement",
-		Agent:         &model.Agent{AgentClass: model.AgentClassEngineer},
+		Agent:         &model.Agent{AllowedTools: []byte(`["write_file","commit_and_push","open_pr"]`)},
 		Story:         &model.PMStory{DisplayID: 123, Name: "Implement notification preferences"},
 		OnGitPush: func(branch, sha string) error {
 			pushedBranch = branch

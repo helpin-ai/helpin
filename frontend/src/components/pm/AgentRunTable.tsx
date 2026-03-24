@@ -1,8 +1,8 @@
-import { Clock, Loader2, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
+import { Clock, Loader2, CheckCircle2, MessageSquareMore, XCircle, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
-import { STATUS_META } from './agentRunConstants';
+import { getAgentRunDisplayStatus, STATUS_META } from './agentRunConstants';
 import type { AgentRun } from '@/lib/pmTypes';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 
@@ -16,6 +16,7 @@ interface Props {
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   queued: <Clock className="h-3 w-3" />,
   running: <Loader2 className="h-3 w-3 animate-spin" />,
+  awaiting_input: <MessageSquareMore className="h-3 w-3" />,
   awaiting_approval: <ShieldCheck className="h-3 w-3" />,
   completed: <CheckCircle2 className="h-3 w-3" />,
   failed: <XCircle className="h-3 w-3" />,
@@ -51,7 +52,8 @@ export function AgentRunTable({ runs, selectedRunId, onSelectRun, loading }: Pro
 
       {/* Rows */}
       {runs.map((run) => {
-        const meta = STATUS_META[run.status] ?? STATUS_META.queued;
+        const displayStatus = getAgentRunDisplayStatus(run);
+        const meta = STATUS_META[displayStatus] ?? STATUS_META.queued;
         const isSelected = run.id === selectedRunId;
         const branch = run.working_branch || run.base_branch || '';
 
@@ -65,7 +67,7 @@ export function AgentRunTable({ runs, selectedRunId, onSelectRun, loading }: Pro
           >
             <div className={TABLE_CELL} style={{ width: 120 }}>
               <Badge variant={meta.variant} className="gap-1 px-1.5 py-0 text-[10px]">
-                {STATUS_ICONS[run.status]}
+                {STATUS_ICONS[displayStatus]}
                 {meta.label}
               </Badge>
             </div>

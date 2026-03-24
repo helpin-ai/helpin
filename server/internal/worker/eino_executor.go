@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -48,11 +49,11 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		config = DefaultWorkflowConfig()
 	}
 
-	if execCtx.RuntimeProfile.Name == "" {
-		execCtx.RuntimeProfile = GetRuntimeProfile(execCtx.Agent.CapabilityProfile)
+	if len(execCtx.ResolvedProfile.Tools) == 0 {
+		execCtx.ResolvedProfile = ResolveAgentProfile(execCtx.Agent)
 	}
 	if len(execCtx.AllowedTools) == 0 {
-		execCtx.AllowedTools = allowedToolSet(execCtx.RuntimeProfile)
+		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
@@ -82,22 +83,59 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
+		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
 	)
+
+	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
+	if supplement := BuildExecutionSupplementPrompt(run, execCtx.ArtifactContext); supplement != "" {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
+	}
+	if len(history) == 0 {
+		history = []ExecutionMessage{{
+			Role:    "user",
+			Content: userPrompt,
+		}}
+	}
 
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
 	defer cancel()
 
-	history := []ExecutionMessage{{
-		Role:    "user",
-		Content: userPrompt,
-	}}
-
 	runCtx := *execCtx
 	runCtx.Context = ctx
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("native_sdk_starting")
+	}
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	stopHeartbeat := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+	defer stopHeartbeat()
+	if execCtx.Heartbeat != nil {
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					_ = execCtx.Heartbeat("native_sdk_running")
+				case <-done:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 	result, execErr := ExecuteWithEino(ctx, e.modelFactory, execCtx.Agent, systemPrompt, history, e.tools.DefinitionsFor(execCtx.AllowedTools), &runCtx, e.tools, config.MaxIterations, func(event ExecutionEvent) {
+		if execCtx.OnExecutionEvent != nil {
+			execCtx.OnExecutionEvent(event)
+		}
 		if execCtx.Heartbeat == nil {
 			return
 		}
@@ -108,11 +146,13 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			_ = execCtx.Heartbeat("tool_" + event.ToolName)
 		}
 	})
+	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
 		return fmt.Errorf("eino execution: %w", execErr)
 	}
 
 	totalTokens := result.Usage.InputTokens + result.Usage.OutputTokens
+	execCtx.LastExecutionResult = result
 	if execCtx.Agent.MonthlyTokenBudget != nil {
 		budget := *execCtx.Agent.MonthlyTokenBudget
 		if execCtx.Agent.TokensUsedThisMonth+totalTokens > budget {
@@ -144,6 +184,9 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	convLog, _ := json.MarshalIndent(result.Messages, "", "  ")
 	seqNo++
 	e.saveArtifact(ctx, run, "conversation_log", "json", string(convLog), seqNo)
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("native_sdk_finished")
+	}
 
 	if execCtx.PendingSupportDraft != nil {
 		summary, _ := json.Marshal(map[string]any{
@@ -218,6 +261,8 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			e.saveArtifact(ctx, run, "story_plan_proposal", "json", string(payload), seqNo)
 			seqNo++
 			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
+		case "":
+			// Direct epic planner runs manage phase state in the Temporal activity layer.
 		default:
 			proposal, err := extractPlanningProposalFromResponseText(result.AssistantText, execCtx.Epic.ID, "", totalTokens)
 			if err != nil {

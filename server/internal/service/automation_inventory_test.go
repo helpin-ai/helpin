@@ -34,7 +34,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			default_story_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous'
 		)`,
 		`CREATE TABLE pm_automations (
 			id TEXT PRIMARY KEY,
@@ -72,12 +73,12 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		`CREATE TABLE agents (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
-			agent_class TEXT NOT NULL,
+			preset_key TEXT,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT,
-			capability_profile TEXT,
 			skills TEXT,
 			trigger_mode TEXT,
 			provider TEXT,

@@ -1,14 +1,12 @@
 package model
 
 import (
-	"strings"
 	"time"
 )
 
 const (
 	PlanningMethodologyStructuredV1 = "structured_v1"
 	PlanningMethodologyBasicV1      = "basic_v1"
-	PlanningWebSearchProviderBrave  = "brave"
 )
 
 func NormalizePlanningMethodology(value string) string {
@@ -22,15 +20,6 @@ func NormalizePlanningMethodology(value string) string {
 	}
 }
 
-func NormalizePlanningWebSearchProvider(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", PlanningWebSearchProviderBrave:
-		return PlanningWebSearchProviderBrave
-	default:
-		return PlanningWebSearchProviderBrave
-	}
-}
-
 // WorkspaceSettings represents a row in the workspace_settings table.
 type WorkspaceSettings struct {
 	ID                        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -40,9 +29,6 @@ type WorkspaceSettings struct {
 	NotificationsEnabled      bool      `json:"notifications_enabled" gorm:"not null;default:true"`
 	AutoCalculateBonuses      bool      `json:"auto_calculate_bonuses" gorm:"not null;default:false"`
 	TeamWeight                int       `json:"team_weight" gorm:"not null;default:50"`
-	PlanningMethodology       string    `json:"planning_methodology" gorm:"not null;default:'structured_v1'"`
-	PlanningWebSearchEnabled  bool      `json:"planning_web_search_enabled" gorm:"not null;default:false"`
-	PlanningWebSearchProvider string    `json:"planning_web_search_provider" gorm:"not null;default:'brave'"`
 	CreatedAt                 time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -350,13 +336,10 @@ type JobRoleCriteriaItem struct {
 
 // UpdateSystemSettingsRequest is the payload for updating workspace system settings.
 type UpdateSystemSettingsRequest struct {
-	SprintDurationWeeks       *int    `json:"sprint_duration_weeks"`
-	NotificationsEnabled      *bool   `json:"notifications_enabled"`
-	AutoCalculateBonuses      *bool   `json:"auto_calculate_bonuses"`
-	TeamWeight                *int    `json:"team_weight"`
-	PlanningMethodology       *string `json:"planning_methodology"`
-	PlanningWebSearchEnabled  *bool   `json:"planning_web_search_enabled"`
-	PlanningWebSearchProvider *string `json:"planning_web_search_provider"`
+	SprintDurationWeeks  *int  `json:"sprint_duration_weeks"`
+	NotificationsEnabled *bool `json:"notifications_enabled"`
+	AutoCalculateBonuses *bool `json:"auto_calculate_bonuses"`
+	TeamWeight           *int  `json:"team_weight"`
 }
 
 // InitializeSettingsRequest is the payload for initializing workspace settings.

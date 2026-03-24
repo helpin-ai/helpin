@@ -173,17 +173,13 @@ func main() {
 		&model.PMView{},
 		&model.PMAutomation{},
 		&model.AutomationRule{},
-		&model.FlowRun{},
-		&model.FlowNodeRun{},
-		&model.FlowTrigger{},
-		&model.PlanningSession{},
-		&model.PlanningSessionMessage{},
 		&model.WorkspaceInvitation{},
 		&model.InvitationTeamPreassignment{},
 		&model.PMTeamEstimateSettings{},
 		&model.PMTeamFieldVisibility{},
 		&model.Agent{},
 		&model.AgentRun{},
+		&model.AgentRunMessage{},
 		&model.AgentRunArtifact{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
@@ -447,15 +443,13 @@ func main() {
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
-	flowRepo := repository.NewFlowRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	pmRecurringTemplateRepo := repository.NewPMRecurringTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
-	planningSessionRepo := repository.NewPlanningSessionRepository(db)
-	wsHandler.SetPlanningSessionRepository(planningSessionRepo)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
@@ -612,6 +606,7 @@ func main() {
 	agentService := service.NewAgentService(
 		agentRepo,
 		agentRunRepo,
+		agentRunMessageRepo,
 		agentRunArtifactRepo,
 		pmStoryRepo,
 		pmStoryLinkRepo,
@@ -654,42 +649,6 @@ func main() {
 	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	agentService.SetRuleEngine(ruleEngine)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
-
-	// Planning session service — HTTP-only (activities run in cmd/temporal-worker).
-	// No claudeClient/toolRegistry/streamer needed: streaming runs in the worker process.
-	planningSessionService := service.NewPlanningSessionService(
-		planningSessionRepo,
-		pmEpicRepo,
-		agentRepo,
-		settingsRepo,
-		docsContentRepo,
-		docsVersionRepo,
-		docsLinkRepo,
-		docsDocumentRepo,
-		docsSpaceRepo,
-		nil, // modelFactory — activities run in temporal-worker
-		nil, // toolRegistry — activities run in temporal-worker
-		nil, // streamer — activities run in temporal-worker
-		wsPublisher,
-	)
-
-	// Wire up Temporal-based planning session workflow.
-	if temporalClient != nil {
-		planningSessionService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
-	}
-	flowService := service.NewFlowService(
-		flowRepo,
-		pmEpicRepo,
-		pmStoryRepo,
-		crmDealRepo,
-		agentRepo,
-		agentRunRepo,
-		planningSessionRepo,
-		agentService,
-		planningSessionService,
-		runEngine,
-		wsPublisher,
-	)
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
@@ -809,7 +768,6 @@ func main() {
 		pmStoryRepo,
 		pmStoryLinkRepo,
 	)
-	flowService.SetCommandService(commandService)
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetGitService(gitService)
 	ruleEngine.SetCommandService(commandService)
@@ -830,9 +788,9 @@ func main() {
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	orgService := service.NewOrganizationService(orgRepo)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
+	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
@@ -885,7 +843,6 @@ func main() {
 		PMView:             handler.NewPMViewHandler(pmViewService),
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
-		Flow:               handler.NewFlowHandler(flowService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
@@ -935,6 +892,7 @@ func main() {
 			docsSearchService,
 			docsImportService,
 			docsEmbeddingService,
+			agentService,
 		),
 	}
 
@@ -1077,45 +1035,6 @@ func main() {
 	}
 
 	slog.Info("server stopped")
-}
-
-// planningWorkflowAdapter implements service.PlanningWorkflowStarter
-// by delegating to the Temporal RunEngine.
-type planningWorkflowAdapter struct {
-	engine *temporalapp.RunEngine
-}
-
-func (a *planningWorkflowAdapter) StartPlanningSession(ctx context.Context, sessionID string) error {
-	return a.engine.StartPlanningSession(ctx, sessionID)
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningMessage(ctx context.Context, sessionID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type: temporalapp.PlanningSessionSignalTypeMessage,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, sessionID, actorID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type:    temporalapp.PlanningSessionSignalTypeFinalize,
-		ActorID: actorID,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
-	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
-		Type: temporalapp.PlanningSessionSignalTypeAbandon,
-	})
-}
-
-func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
-	return a.engine.SignalFlowRun(ctx, flowRunID, temporalapp.FlowRunSignal{
-		Type:        temporalapp.FlowSignalTypeChildState,
-		NodeRunID:   nodeRunID,
-		ChildType:   childType,
-		ChildID:     childID,
-		ChildStatus: childStatus,
-	})
 }
 
 // ensureSprintCronWorkflow starts the sprint automation cron workflow if not already running.

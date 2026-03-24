@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -25,6 +26,7 @@ func (n *RunNotifier) PublishRunEvent(_ context.Context, run *model.AgentRun) {
 	if n == nil || n.publisher == nil || run == nil {
 		return
 	}
+	data, _ := json.Marshal(map[string]string{"status": run.Status})
 	n.publisher.Publish(Event{
 		Action:      "updated",
 		Entity:      "agent_run",
@@ -32,5 +34,6 @@ func (n *RunNotifier) PublishRunEvent(_ context.Context, run *model.AgentRun) {
 		WorkspaceID: run.WorkspaceID,
 		ParentType:  run.TargetType,
 		ParentID:    run.TargetID,
+		Data:        data,
 	})
 }
