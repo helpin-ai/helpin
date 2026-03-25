@@ -19,11 +19,12 @@ type S3Client struct {
 	presignClient *s3.PresignClient
 	bucket        string
 	endpointURL   string
+	publicBaseURL string
 }
 
 // NewS3Client creates a new S3Client from the given configuration.
 // If accessKeyID is empty, S3 features are disabled and nil is returned.
-func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL string) *S3Client {
+func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publicBaseURL string) *S3Client {
 	if accessKeyID == "" || bucket == "" {
 		return nil
 	}
@@ -49,6 +50,7 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL strin
 		presignClient: presignClient,
 		bucket:        bucket,
 		endpointURL:   endpointURL,
+		publicBaseURL: publicBaseURL,
 	}
 }
 
@@ -78,15 +80,22 @@ func (s *S3Client) EnsureCORS(ctx context.Context) error {
 
 // PublicURL constructs a direct public URL for the given storage key.
 func (s *S3Client) PublicURL(key string) string {
-	if s.endpointURL == "" {
+	baseURL := s.publicBaseURL
+	if baseURL == "" {
+		baseURL = s.endpointURL
+	}
+	if baseURL == "" {
 		return ""
+	}
+	if s.publicBaseURL != "" {
+		return fmt.Sprintf("%s/%s", s.publicBaseURL, key)
 	}
 	return fmt.Sprintf("%s/%s/%s", s.endpointURL, s.bucket, key)
 }
 
 // HasPublicURL returns true when the endpoint URL is configured (public access possible).
 func (s *S3Client) HasPublicURL() bool {
-	return s.endpointURL != ""
+	return s.publicBaseURL != "" || s.endpointURL != ""
 }
 
 // GeneratePresignedPutURL generates a presigned PUT URL for uploading a file.
