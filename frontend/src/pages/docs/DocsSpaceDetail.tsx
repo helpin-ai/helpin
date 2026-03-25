@@ -15,6 +15,7 @@ import {
   FolderInput,
   FolderOpen,
   Globe,
+  Languages,
   ListFilter,
   MoreHorizontal,
   Pencil,
@@ -39,6 +40,17 @@ import {
   useUnarchiveDocsDocument,
   useDeleteDocsDocument,
   useDuplicateDocsDocument,
+  useDocsHelpcenterCollectionTranslations,
+  useDocsHelpcenterLocales,
+  useDocsHelpcenterSpaceTranslations,
+  useMarkDocsHelpcenterCollectionTranslationReviewed,
+  useMarkDocsHelpcenterSpaceTranslationReviewed,
+  usePublishDocsHelpcenterCollectionTranslation,
+  usePublishDocsHelpcenterSpaceTranslation,
+  useUnpublishDocsHelpcenterCollectionTranslation,
+  useUnpublishDocsHelpcenterSpaceTranslation,
+  useUpsertDocsHelpcenterCollectionTranslation,
+  useUpsertDocsHelpcenterSpaceTranslation,
   usePublishDocsDocument,
   useAssignableMembers,
   useWorkspaceAccess,
@@ -52,6 +64,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
@@ -63,6 +83,9 @@ import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
+import { EditCollectionTranslationDialog } from '@/components/docs/helpcenter/EditCollectionTranslationDialog'
+import { EditSpaceTranslationDialog } from '@/components/docs/helpcenter/EditSpaceTranslationDialog'
+import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
 
 function statusColor(status: string): string {
   switch (status) {
@@ -94,7 +117,7 @@ export function DocsSpaceDetail() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate)
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { canEditDocs } = usePermissions(access)
+  const { canEditDocs, canAdminDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
   const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
@@ -104,6 +127,8 @@ export function DocsSpaceDetail() {
   const { data: collections } = useDocsCollections(wsId, spaceId)
   const docFilters = { space_id: spaceId, include_archived: 'true', ...(filterStatus ? { status: filterStatus } : {}) }
   const { data: documents } = useDocsDocuments(wsId, docFilters)
+  const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
+  const { data: spaceTranslations = [] } = useDocsHelpcenterSpaceTranslations(wsId, spaceId)
   const { data: members = [] } = useAssignableMembers(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
@@ -111,6 +136,10 @@ export function DocsSpaceDetail() {
   const duplicateDoc = useDuplicateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const [editSpaceOpen, setEditSpaceOpen] = useState(false)
+  const [translationsOpen, setTranslationsOpen] = useState(false)
+  const [editingSpaceTranslationLocale, setEditingSpaceTranslationLocale] = useState<string | null>(null)
+  const [editingCollectionTranslationLocale, setEditingCollectionTranslationLocale] = useState<string | null>(null)
+  const [translationCollectionId, setTranslationCollectionId] = useState('')
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
   const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
   const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<DocsDocument | null>(null)
@@ -156,6 +185,10 @@ export function DocsSpaceDetail() {
   const deleteCollection = useDeleteDocsCollection(wsId)
   const updateSpace = useUpdateDocsSpace(wsId)
   const deleteSpace = useDeleteDocsSpace(wsId)
+  const upsertSpaceTranslation = useUpsertDocsHelpcenterSpaceTranslation(wsId, spaceId)
+  const publishSpaceTranslation = usePublishDocsHelpcenterSpaceTranslation(wsId, spaceId)
+  const unpublishSpaceTranslation = useUnpublishDocsHelpcenterSpaceTranslation(wsId, spaceId)
+  const markSpaceTranslationReviewed = useMarkDocsHelpcenterSpaceTranslationReviewed(wsId, spaceId)
   const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
 
   // Inline space rename
@@ -185,6 +218,95 @@ export function DocsSpaceDetail() {
     id: string
     name: string
   } | null>(null)
+
+  useEffect(() => {
+    const availableCollections = collections ?? []
+    if (availableCollections.length === 0) {
+      setTranslationCollectionId('')
+      return
+    }
+    if (activeCollection && activeCollection !== '__uncollected__' && availableCollections.some((collection) => collection.id === activeCollection)) {
+      setTranslationCollectionId(activeCollection)
+      return
+    }
+    setTranslationCollectionId((current) => (
+      current && availableCollections.some((collection) => collection.id === current)
+        ? current
+        : availableCollections[0].id
+    ))
+  }, [collections, activeCollection])
+
+  const { data: collectionTranslations = [] } = useDocsHelpcenterCollectionTranslations(wsId, translationCollectionId)
+  const upsertCollectionTranslation = useUpsertDocsHelpcenterCollectionTranslation(wsId, translationCollectionId)
+  const publishCollectionTranslation = usePublishDocsHelpcenterCollectionTranslation(wsId, translationCollectionId)
+  const unpublishCollectionTranslation = useUnpublishDocsHelpcenterCollectionTranslation(wsId, translationCollectionId)
+  const markCollectionTranslationReviewed = useMarkDocsHelpcenterCollectionTranslationReviewed(wsId, translationCollectionId)
+
+  const defaultLocale = localesConfig?.default_locale ?? 'en'
+  const enabledLocales = localesConfig?.enabled_locales?.length
+    ? localesConfig.enabled_locales
+    : [defaultLocale]
+  const spaceTranslationsByLocale = new Map(spaceTranslations.map((translation) => [translation.locale, translation]))
+  const collectionTranslationsByLocale = new Map(collectionTranslations.map((translation) => [translation.locale, translation]))
+  const selectedTranslationCollection = (collections ?? []).find((collection) => collection.id === translationCollectionId) ?? null
+
+  const spaceTranslationRows = enabledLocales.map((locale) => {
+    const translation = spaceTranslationsByLocale.get(locale)
+    const isDefaultLocale = locale === defaultLocale
+    return {
+      locale,
+      state: translation?.status ?? 'missing',
+      updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
+      helperText: isDefaultLocale
+        ? 'Mirrored from the source space and refreshed automatically when the source changes.'
+        : translation?.source_synced === false
+          ? 'Source changes landed after this translation. Review the copy before publishing again.'
+          : 'Localized space copy is used in the public navigation and locale-aware URLs.',
+      isDefaultLocale,
+      sourceMirrorLabel: 'Source mirror',
+    }
+  })
+
+  const collectionTranslationRows = enabledLocales.map((locale) => {
+    const translation = collectionTranslationsByLocale.get(locale)
+    const isDefaultLocale = locale === defaultLocale
+    const parentPublished = spaceTranslationsByLocale.get(locale)?.status === 'published'
+    return {
+      locale,
+      state: translation?.status ?? 'missing',
+      updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
+      helperText: isDefaultLocale
+        ? 'Mirrored from the source collection and kept in sync automatically.'
+        : translation?.source_synced === false
+          ? 'Source collection details changed. Review this translation before republishing.'
+          : 'Localized collection labels and descriptions shape the public information architecture for this locale.',
+      publishBlockedReason: !isDefaultLocale && translation && !parentPublished
+        ? 'Publish the parent translation first'
+        : undefined,
+      isDefaultLocale,
+      sourceMirrorLabel: 'Source mirror',
+    }
+  })
+
+  const handleSaveSpaceTranslation = async (data: Parameters<typeof upsertSpaceTranslation.mutateAsync>[0]) => {
+    try {
+      await upsertSpaceTranslation.mutateAsync(data)
+      toast.success('Space translation saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save translation')
+      throw err
+    }
+  }
+
+  const handleSaveCollectionTranslation = async (data: Parameters<typeof upsertCollectionTranslation.mutateAsync>[0]) => {
+    try {
+      await upsertCollectionTranslation.mutateAsync(data)
+      toast.success('Collection translation saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save translation')
+      throw err
+    }
+  }
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return
@@ -302,28 +424,41 @@ export function DocsSpaceDetail() {
             </p>
           </div>
         </div>
-        {canEditDocs && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={() => setEditSpaceOpen(true)}>
-                <Settings className="h-3.5 w-3.5" />
-                Edit space
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete space
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <div className="flex items-center gap-2">
+          {space.type === 'external_capable' && canAdminDocs && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setTranslationsOpen(true)}
+            >
+              <Languages className="h-3.5 w-3.5" />
+              Translations
+            </Button>
+          )}
+          {canEditDocs && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={() => setEditSpaceOpen(true)}>
+                  <Settings className="h-3.5 w-3.5" />
+                  Edit space
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete space
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </header>
 
       {/* Collection tabs */}
@@ -669,6 +804,143 @@ export function DocsSpaceDetail() {
           </div>
         )
       })()}
+
+      <Sheet open={translationsOpen} onOpenChange={setTranslationsOpen}>
+        <SheetContent className="w-full sm:max-w-2xl">
+          <SheetHeader className="border-b border-border/60">
+            <SheetTitle className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-primary" />
+              Public translations
+            </SheetTitle>
+            <SheetDescription>
+              Manage the language variants for this space and its collections without changing the source docs structure.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 space-y-6 overflow-y-auto p-4">
+            <TranslationsPanel
+              title="Space translations"
+              description="These localized labels and slugs power the space-level public route and navigation."
+              locales={enabledLocales}
+              rows={spaceTranslationRows}
+              onAdd={setEditingSpaceTranslationLocale}
+              onEdit={setEditingSpaceTranslationLocale}
+              onPublish={(locale) => {
+                publishSpaceTranslation.mutate(locale, {
+                  onSuccess: () => toast.success('Space translation published'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
+                })
+              }}
+              onUnpublish={(locale) => {
+                unpublishSpaceTranslation.mutate(locale, {
+                  onSuccess: () => toast.success('Space translation reverted to draft'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unpublish translation'),
+                })
+              }}
+              onMarkReviewed={(locale) => {
+                markSpaceTranslationReviewed.mutate(locale, {
+                  onSuccess: () => toast.success('Space translation marked as reviewed'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark translation reviewed'),
+                })
+              }}
+            />
+
+            <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Collection translations</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Pick a collection to manage its public label, slug, and description for each enabled locale.
+                  </p>
+                </div>
+                {selectedTranslationCollection && (
+                  <Select value={translationCollectionId} onValueChange={setTranslationCollectionId}>
+                    <SelectTrigger className="w-full sm:w-72">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(collections ?? []).map((collection) => (
+                        <SelectItem key={collection.id} value={collection.id}>
+                          {collection.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {selectedTranslationCollection ? (
+                <TranslationsPanel
+                  title={selectedTranslationCollection.name}
+                  description="Collection translations inherit readiness from the parent space translation in the same locale."
+                  locales={enabledLocales}
+                  rows={collectionTranslationRows}
+                  onAdd={setEditingCollectionTranslationLocale}
+                  onEdit={setEditingCollectionTranslationLocale}
+                  onPublish={(locale) => {
+                    publishCollectionTranslation.mutate(locale, {
+                      onSuccess: () => toast.success('Collection translation published'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
+                    })
+                  }}
+                  onUnpublish={(locale) => {
+                    unpublishCollectionTranslation.mutate(locale, {
+                      onSuccess: () => toast.success('Collection translation reverted to draft'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unpublish translation'),
+                    })
+                  }}
+                  onMarkReviewed={(locale) => {
+                    markCollectionTranslationReviewed.mutate(locale, {
+                      onSuccess: () => toast.success('Collection translation marked as reviewed'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark translation reviewed'),
+                    })
+                  }}
+                />
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center">
+                  <p className="text-sm font-medium">No collections yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Create a collection first, then translate its public-facing name and description here.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {editingSpaceTranslationLocale && (
+        <EditSpaceTranslationDialog
+          key={`${editingSpaceTranslationLocale}-${spaceTranslationsByLocale.get(editingSpaceTranslationLocale)?.updated_at ?? 'new'}`}
+          open={Boolean(editingSpaceTranslationLocale)}
+          onOpenChange={(open) => {
+            if (!open) setEditingSpaceTranslationLocale(null)
+          }}
+          locale={editingSpaceTranslationLocale}
+          sourceName={space.name}
+          sourceSlug={space.slug}
+          translation={spaceTranslationsByLocale.get(editingSpaceTranslationLocale) ?? null}
+          isSaving={upsertSpaceTranslation.isPending}
+          onSave={handleSaveSpaceTranslation}
+        />
+      )}
+
+      {editingCollectionTranslationLocale && selectedTranslationCollection && (
+        <EditCollectionTranslationDialog
+          key={`${selectedTranslationCollection.id}-${editingCollectionTranslationLocale}-${collectionTranslationsByLocale.get(editingCollectionTranslationLocale)?.updated_at ?? 'new'}`}
+          open={Boolean(editingCollectionTranslationLocale)}
+          onOpenChange={(open) => {
+            if (!open) setEditingCollectionTranslationLocale(null)
+          }}
+          locale={editingCollectionTranslationLocale}
+          sourceName={selectedTranslationCollection.name}
+          sourceSlug={selectedTranslationCollection.slug}
+          sourceDescription={selectedTranslationCollection.description}
+          translation={collectionTranslationsByLocale.get(editingCollectionTranslationLocale) ?? null}
+          isSaving={upsertCollectionTranslation.isPending}
+          onSave={handleSaveCollectionTranslation}
+        />
+      )}
 
       {/* Typed confirm delete dialog */}
       <TypedConfirmDialog

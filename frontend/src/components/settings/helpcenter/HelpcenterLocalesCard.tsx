@@ -1,0 +1,189 @@
+import { useMemo, useState } from 'react'
+import { Globe2, Languages } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import {
+  HELP_CENTER_LOCALE_OPTIONS,
+  getHelpcenterLocaleLabel,
+  type DocsHelpcenterLocalesConfig,
+  type UpdateDocsHelpcenterLocalesRequest,
+} from '@/lib/docsTypes'
+
+interface HelpcenterLocalesCardProps {
+  config: DocsHelpcenterLocalesConfig
+  isSaving: boolean
+  onSave: (data: UpdateDocsHelpcenterLocalesRequest) => void | Promise<void>
+}
+
+function withDefaultFirst(locales: string[], defaultLocale: string) {
+  const unique = Array.from(new Set(locales))
+  const withoutDefault = unique.filter((locale) => locale !== defaultLocale)
+  return [defaultLocale, ...withoutDefault]
+}
+
+export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLocalesCardProps) {
+  const [draft, setDraft] = useState<UpdateDocsHelpcenterLocalesRequest>({
+    default_locale: config.default_locale,
+    enabled_locales: config.enabled_locales,
+    show_language_switcher: config.show_language_switcher,
+    fallback_to_default_locale: config.fallback_to_default_locale,
+  })
+
+  const localeOptions = useMemo(() => {
+    const byValue = new Map(HELP_CENTER_LOCALE_OPTIONS.map((option) => [option.value, option]))
+    for (const locale of draft.enabled_locales) {
+      if (!byValue.has(locale)) {
+        byValue.set(locale, { value: locale, label: getHelpcenterLocaleLabel(locale) })
+      }
+    }
+    return Array.from(byValue.values())
+  }, [draft.enabled_locales])
+
+  const enabledLocales = withDefaultFirst(draft.enabled_locales, draft.default_locale)
+
+  const toggleLocale = (locale: string, checked: boolean) => {
+    setDraft((current) => {
+      const next = new Set(current.enabled_locales)
+      if (checked) {
+        next.add(locale)
+      } else if (locale !== current.default_locale) {
+        next.delete(locale)
+      }
+      return {
+        ...current,
+        enabled_locales: withDefaultFirst(Array.from(next), current.default_locale),
+      }
+    })
+  }
+
+  return (
+    <Card className="border-border/60 shadow-none">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Languages className="h-4 w-4 text-primary" />
+          Languages
+        </CardTitle>
+        <CardDescription>
+          Configure the languages your public help center supports. The default locale stays mirrored from the source docs tree.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,220px)_1fr]">
+          <div className="space-y-2">
+            <Label htmlFor="helpcenter-default-locale">Default locale</Label>
+            <Select
+              value={draft.default_locale}
+              onValueChange={(value) =>
+                setDraft((current) => ({
+                  ...current,
+                  default_locale: value,
+                  enabled_locales: withDefaultFirst([...current.enabled_locales, value], value),
+                }))
+              }
+            >
+              <SelectTrigger id="helpcenter-default-locale" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {localeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Published fallback pages resolve from this locale when a requested translation is missing.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+              <div className="space-y-1">
+                <Label htmlFor="show-language-switcher" className="text-sm font-medium">
+                  Show language switcher
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Let visitors jump between translated help-center pages directly from public navigation.
+                </p>
+              </div>
+              <Switch
+                id="show-language-switcher"
+                checked={draft.show_language_switcher}
+                onCheckedChange={(checked) => setDraft((current) => ({ ...current, show_language_switcher: checked }))}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+              <div className="space-y-1">
+                <Label htmlFor="fallback-to-default" className="text-sm font-medium">
+                  Fallback to default locale
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Serve the default-language page when a requested translation has not been created or published yet.
+                </p>
+              </div>
+              <Switch
+                id="fallback-to-default"
+                checked={draft.fallback_to_default_locale}
+                onCheckedChange={(checked) => setDraft((current) => ({ ...current, fallback_to_default_locale: checked }))}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Globe2 className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="text-sm font-medium">Enabled locales</h3>
+              <p className="text-xs text-muted-foreground">
+                Choose the languages translators can work in. Default locale is always kept enabled.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {localeOptions.map((option) => {
+              const checked = draft.enabled_locales.includes(option.value)
+              const isDefault = option.value === draft.default_locale
+              return (
+                <label
+                  key={option.value}
+                  htmlFor={`locale-${option.value}`}
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-sm transition-colors ${
+                    checked ? 'border-primary/25 bg-primary/5' : 'border-border/60 bg-background'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground">{option.label}</p>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{option.value}</p>
+                  </div>
+                  <Checkbox
+                    id={`locale-${option.value}`}
+                    checked={checked}
+                    disabled={isDefault}
+                    onCheckedChange={(value) => toggleLocale(option.value, Boolean(value))}
+                  />
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+          <p className="text-xs text-muted-foreground">
+            Enabled: {enabledLocales.map(getHelpcenterLocaleLabel).join(', ')}
+          </p>
+          <Button type="button" onClick={() => onSave(draft)} disabled={isSaving}>
+            {isSaving ? 'Saving locales…' : 'Save locales'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}

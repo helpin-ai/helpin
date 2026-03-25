@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
+  ArrowUpDown,
   BookOpen,
   Check,
   ChevronRight,
+  CircleHelp,
   FileText,
   Folder,
   Globe,
@@ -24,9 +26,11 @@ import {
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { Button } from '@/components/ui/button'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
+import { DocsArrangeTree } from '@/components/docs/DocsArrangeTree'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 
@@ -93,7 +97,7 @@ function DocRow({
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
       </span>
       <span className="shrink-0 text-[11px] text-muted-foreground">
-        {timeAgo(doc.updated_at)}
+        Updated: {timeAgo(doc.updated_at)}
       </span>
     </button>
   )
@@ -129,14 +133,14 @@ function CollectionSection({
       <Collapsible.Trigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40"
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[13px] font-medium text-foreground/70 transition-colors hover:bg-muted/40"
         >
           <ChevronRight
-            className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
+            className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
           <CollectionIcon name={icon} />
           <span className="truncate">{name}</span>
-          <span className="ml-auto rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{documents.length}</span>
+          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{documents.length} {documents.length === 1 ? 'doc' : 'docs'}</span>
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content>
@@ -161,11 +165,13 @@ function SpaceSection({
   wsId,
   wsSlug,
   navigate,
+  teamNames,
 }: {
   space: DocsSpace
   wsId: string
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
+  teamNames: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const { data: collections } = useDocsCollections(wsId, space.id)
@@ -186,6 +192,7 @@ function SpaceSection({
     }
   }
   const docCount = documents?.length ?? 0
+  const collCount = collections?.length ?? 0
 
   return (
     <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
@@ -204,19 +211,20 @@ function SpaceSection({
               <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-semibold">{space.name}</span>
-                {space.type === 'external_capable' && (
-                  <QuickTooltip label="External">
-                    <Globe className="h-3 w-3 shrink-0 text-blue-500" />
-                  </QuickTooltip>
+              <span className="truncate text-sm font-semibold">{space.name}</span>
+            </div>
+            {!expanded && (
+              <div className="flex items-center gap-5 shrink-0">
+                {collCount > 0 && (
+                  <span className="text-[11px] text-muted-foreground">{collCount} {collCount === 1 ? 'collection' : 'collections'}</span>
+                )}
+                {docCount > 0 && (
+                  <span className="text-[11px] text-muted-foreground">{docCount} {docCount === 1 ? 'doc' : 'docs'}</span>
+                )}
+                {teamNames && (
+                  <span className="text-[11px] text-muted-foreground/60 truncate max-w-[150px]">{teamNames}</span>
                 )}
               </div>
-            </div>
-            {!expanded && docCount > 0 && (
-              <span className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">
-                {docCount}
-              </span>
             )}
           </button>
         </Collapsible.Trigger>
@@ -284,6 +292,19 @@ export function DocsHome() {
   const { data: spaces, isLoading } = useDocsSpaces(wsId)
 
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false)
+  const [arrangeMode, setArrangeMode] = useState(false)
+
+  const { data: settings } = useWorkspaceSettings(wsId)
+  const allTeams = settings?.teams ?? []
+  const teamMap = new Map(allTeams.map((t) => [t.id, t.name]))
+
+  const getTeamNames = (space: DocsSpace): string => {
+    if (space.visibility === 'workspace_wide') return 'All teams'
+    if (space.team_ids?.length > 0) {
+      return space.team_ids.map((id) => teamMap.get(id) ?? 'Unknown').join(', ')
+    }
+    return ''
+  }
 
   // Template picker state
   const [selected, setSelected] = useState<Set<string>>(() => new Set(SPACE_TEMPLATES.map((t) => t.slug)))
@@ -332,13 +353,32 @@ export function DocsHome() {
   }
 
   return (
-    <div className="space-y-4">
-      <header>
-        <h2 className="text-xl font-semibold">Documentation</h2>
-        <p className="text-sm text-muted-foreground">
-          Browse and manage your team's knowledge base.
-        </p>
+    <div className="mx-auto max-w-4xl space-y-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">All Docs</h2>
+          <p className="text-sm text-muted-foreground">
+            All spaces, collections, and articles in one place.
+          </p>
+        </div>
+        {canEditDocs && spaces && spaces.length > 0 && (
+          <Button
+            variant={arrangeMode ? 'default' : 'outline'}
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setArrangeMode(!arrangeMode)}
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {arrangeMode ? 'Done arranging' : 'Arrange'}
+          </Button>
+        )}
       </header>
+
+      {arrangeMode && (
+        <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-md px-3 py-2 text-center">
+          <span className="font-semibold">Note:</span> Drag and drop to reorder spaces, collections, and articles. Changes to external spaces will be reflected on your public help center.
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-3 py-4">
@@ -445,45 +485,54 @@ export function DocsHome() {
             </p>
           )}
         </div>
+      ) : arrangeMode ? (
+        <DocsArrangeTree spaces={spaces} wsId={wsId} />
       ) : (
-        <div className="space-y-6">
-          {/* Internal spaces */}
-          {spaces.filter((s) => s.type === 'internal').length > 0 && (
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal</h3>
-              <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
-                {spaces.filter((s) => s.type === 'internal').map((space) => (
-                  <SpaceSection
-                    key={space.id}
-                    space={space}
-                    wsId={wsId}
-                    wsSlug={wsSlug}
-                    navigate={navigate}
-                  />
-                ))}
+          <div className="space-y-6">
+            {/* Internal spaces */}
+            {spaces.filter((s) => s.type === 'internal').length > 0 && (
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Team Spaces</h3>
+                <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                  {spaces.filter((s) => s.type === 'internal').map((space) => (
+                    <SpaceSection
+                      key={space.id}
+                      space={space}
+                      wsId={wsId}
+                      wsSlug={wsSlug}
+                      navigate={navigate}
+                      teamNames={getTeamNames(space)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* External spaces */}
-          {spaces.filter((s) => s.type === 'external_capable').length > 0 && (
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">External</h3>
-              <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
-                {spaces.filter((s) => s.type === 'external_capable').map((space) => (
-                  <SpaceSection
-                    key={space.id}
-                    space={space}
-                    wsId={wsId}
-                    wsSlug={wsSlug}
-                    navigate={navigate}
-                  />
-                ))}
+            {/* External spaces */}
+            {spaces.filter((s) => s.type === 'external_capable').length > 0 && (
+              <div>
+                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  External Spaces
+                  <QuickTooltip label="These spaces are published to your public help center">
+                    <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/50" />
+                  </QuickTooltip>
+                </h3>
+                <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                  {spaces.filter((s) => s.type === 'external_capable').map((space) => (
+                    <SpaceSection
+                      key={space.id}
+                      space={space}
+                      wsId={wsId}
+                      wsSlug={wsSlug}
+                      navigate={navigate}
+                      teamNames={getTeamNames(space)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
       <CreateSpaceDialog wsId={wsId} open={createSpaceOpen} onOpenChange={setCreateSpaceOpen} />
     </div>
   )

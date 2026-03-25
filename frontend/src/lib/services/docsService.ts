@@ -7,6 +7,10 @@ import type {
   DocsVersion,
   DocsLink,
   DocsHelpcenterConfig,
+  DocsHelpcenterSpaceTranslation,
+  DocsHelpcenterCollectionTranslation,
+  DocsHelpcenterArticleTranslation,
+  DocsHelpcenterLocalesConfig,
   DocsSearchResult,
   CreateDocsSpaceRequest,
   UpdateDocsSpaceRequest,
@@ -20,6 +24,10 @@ import type {
   UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
+  UpdateDocsHelpcenterLocalesRequest,
+  UpsertDocsHelpcenterSpaceTranslationRequest,
+  UpsertDocsHelpcenterCollectionTranslationRequest,
+  UpsertDocsHelpcenterArticleTranslationRequest,
   DocsArticleFeedbackRequest,
   PublicDocResponse,
 } from '../docsTypes';
@@ -136,6 +144,40 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
+  getHelpcenterLocales: (wsId: string) =>
+    api.get<DocsHelpcenterLocalesConfig>(`/docs/helpcenter/locales${qs(wsId)}`),
+  updateHelpcenterLocales: (wsId: string, payload: UpdateDocsHelpcenterLocalesRequest) =>
+    api.put<DocsHelpcenterLocalesConfig>(`/docs/helpcenter/locales${qs(wsId)}`, payload),
+  listSpaceTranslations: (wsId: string, spaceId: string) =>
+    api.get<DocsHelpcenterSpaceTranslation[]>(`/docs/spaces/${spaceId}/helpcenter/translations${qs(wsId)}`),
+  upsertSpaceTranslation: (wsId: string, spaceId: string, payload: UpsertDocsHelpcenterSpaceTranslationRequest) =>
+    api.put<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations${qs(wsId)}`, payload),
+  publishSpaceTranslation: (wsId: string, spaceId: string, locale: string) =>
+    api.post<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  unpublishSpaceTranslation: (wsId: string, spaceId: string, locale: string) =>
+    api.post<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
+  markSpaceTranslationReviewed: (wsId: string, spaceId: string, locale: string) =>
+    api.post<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
+  listCollectionTranslations: (wsId: string, collectionId: string) =>
+    api.get<DocsHelpcenterCollectionTranslation[]>(`/docs/collections/${collectionId}/helpcenter/translations${qs(wsId)}`),
+  upsertCollectionTranslation: (wsId: string, collectionId: string, payload: UpsertDocsHelpcenterCollectionTranslationRequest) =>
+    api.put<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations${qs(wsId)}`, payload),
+  publishCollectionTranslation: (wsId: string, collectionId: string, locale: string) =>
+    api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  unpublishCollectionTranslation: (wsId: string, collectionId: string, locale: string) =>
+    api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
+  markCollectionTranslationReviewed: (wsId: string, collectionId: string, locale: string) =>
+    api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
+  listArticleTranslations: (wsId: string, docId: string) =>
+    api.get<DocsHelpcenterArticleTranslation[]>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`),
+  upsertArticleTranslation: (wsId: string, docId: string, payload: UpsertDocsHelpcenterArticleTranslationRequest) =>
+    api.put<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`, payload),
+  publishArticleTranslation: (wsId: string, docId: string, locale: string) =>
+    api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  unpublishArticleTranslation: (wsId: string, docId: string, locale: string) =>
+    api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
+  markArticleTranslationReviewed: (wsId: string, docId: string, locale: string) =>
+    api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
   uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');
     const formData = new FormData();
@@ -168,6 +210,14 @@ export const docsService = {
   // ── Public Shared Document (no auth) ──────────────────────────────────
   getSharedDoc: (shareToken: string) =>
     api.get<PublicDocResponse>(`/docs/shared/${shareToken}`),
+
+  // ── Reorder ────────────────────────────────────────────────────────────
+  reorderSpaces: (wsId: string, data: import('../docsTypes').ReorderDocsSpacesRequest) =>
+    api.put(`/docs/spaces/reorder${qs(wsId)}`, data),
+  reorderCollections: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsCollectionsRequest) =>
+    api.put(`/docs/spaces/${spaceId}/collections/reorder${qs(wsId)}`, data),
+  reorderDocuments: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsDocumentsRequest) =>
+    api.put(`/docs/spaces/${spaceId}/documents/reorder${qs(wsId)}`, data),
 
   // ── Preview ────────────────────────────────────────────────────────────
   getPreviewToken: (wsId: string, docId: string) =>
