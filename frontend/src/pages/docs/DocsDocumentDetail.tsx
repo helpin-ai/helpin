@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO, isThisYear } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
+import { timeAgo } from '@/lib/utils'
 import {
   ArrowLeft,
   Archive,
@@ -80,7 +81,7 @@ import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/componen
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
-import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
+import { TranslationsPanel, type TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -254,7 +255,7 @@ export function DocsDocumentDetail() {
     () => new Map(collectionTranslations.map((translation) => [translation.locale, translation])),
     [collectionTranslations],
   )
-  const articleTranslationRows = enabledLocales.map((locale) => {
+  const articleTranslationRows: TranslationRow[] = enabledLocales.map((locale) => {
     const translation = articleTranslationsByLocale.get(locale)
     const isDefaultLocale = locale === defaultLocale
     const spaceReady = spaceTranslationsByLocale.get(locale)?.status === 'published'

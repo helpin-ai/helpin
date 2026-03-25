@@ -14,12 +14,11 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronRight, FileText, Folder, Globe, GripVertical } from 'lucide-react'
+import { ChevronRight, FileText, Folder, GripVertical } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
-import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   useDocsCollections,
   useDocsDocuments,

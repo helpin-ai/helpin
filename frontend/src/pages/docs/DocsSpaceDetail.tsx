@@ -85,7 +85,7 @@ import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditCollectionTranslationDialog } from '@/components/docs/helpcenter/EditCollectionTranslationDialog'
 import { EditSpaceTranslationDialog } from '@/components/docs/helpcenter/EditSpaceTranslationDialog'
-import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
+import { TranslationsPanel, type TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
 
 function statusColor(status: string): string {
   switch (status) {
@@ -250,7 +250,7 @@ export function DocsSpaceDetail() {
   const collectionTranslationsByLocale = new Map(collectionTranslations.map((translation) => [translation.locale, translation]))
   const selectedTranslationCollection = (collections ?? []).find((collection) => collection.id === translationCollectionId) ?? null
 
-  const spaceTranslationRows = enabledLocales.map((locale) => {
+  const spaceTranslationRows: TranslationRow[] = enabledLocales.map((locale) => {
     const translation = spaceTranslationsByLocale.get(locale)
     const isDefaultLocale = locale === defaultLocale
     return {
@@ -267,7 +267,7 @@ export function DocsSpaceDetail() {
     }
   })
 
-  const collectionTranslationRows = enabledLocales.map((locale) => {
+  const collectionTranslationRows: TranslationRow[] = enabledLocales.map((locale) => {
     const translation = collectionTranslationsByLocale.get(locale)
     const isDefaultLocale = locale === defaultLocale
     const parentPublished = spaceTranslationsByLocale.get(locale)?.status === 'published'
