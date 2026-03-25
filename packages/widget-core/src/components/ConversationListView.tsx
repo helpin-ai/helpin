@@ -47,7 +47,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
           <span className="helpin-conversations-title">Messages</span>
           {onClose && (
             <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
-              <XIcon size={16} />
+              <XIcon size={18} />
             </button>
           )}
         </div>
@@ -77,7 +77,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
         <span className="helpin-conversations-title">Messages</span>
         {onClose && (
           <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
-            <XIcon size={16} />
+            <XIcon size={18} />
           </button>
         )}
       </div>

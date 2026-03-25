@@ -32,7 +32,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
         <span className="helpin-help-title">Help</span>
         {onClose ? (
           <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
-            <XIcon size={16} />
+            <XIcon size={18} />
           </button>
         ) : (
           <div className="helpin-help-header-spacer" />

@@ -2473,12 +2473,14 @@
 }
 
 /* Mobile Responsive */
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .helpin-chat-window {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100vh;
+    max-height: 100dvh;
     bottom: 0;
     right: 0;
     left: 0;
@@ -2486,9 +2488,157 @@
     transform-origin: bottom center;
   }
 
+  .helpin-chat-window--expanded {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  .helpin-window-actions {
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    gap: 8px;
+  }
+
+  .helpin-window-close {
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
+  }
+
   .helpin-launcher {
-    bottom: 16px;
-    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  .helpin-window-close,
+  .helpin-window-close-inline,
+  .helpin-help-back,
+  .helpin-conversation-back,
+  .helpin-conversation-header-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .helpin-window-close svg,
+  .helpin-window-close-inline svg,
+  .helpin-help-back svg,
+  .helpin-conversation-back svg,
+  .helpin-conversation-header-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .helpin-help-header-spacer,
+  .helpin-conversations-header-spacer {
+    width: 40px;
+  }
+
+  .helpin-home-header {
+    padding: calc(26px + env(safe-area-inset-top, 0px)) 16px 20px;
+  }
+
+  .helpin-home-content {
+    padding: 16px 16px 0;
+  }
+
+  .helpin-home-welcome {
+    font-size: 20px;
+    margin-bottom: 6px;
+  }
+
+  .helpin-home-status {
+    margin-bottom: 14px;
+  }
+
+  .helpin-home-actions {
+    gap: 10px;
+  }
+
+  .helpin-home-action {
+    padding: 14px;
+  }
+
+  .helpin-messages-header,
+  .helpin-help-header,
+  .helpin-article-header,
+  .helpin-conversations-header,
+  .helpin-conversation-header {
+    gap: 8px;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-bottom: 12px;
+  }
+
+  .helpin-help-content,
+  .helpin-article-content {
+    padding: 16px 14px;
+  }
+
+  .helpin-message-list {
+    padding: 14px 12px;
+    gap: 10px;
+  }
+
+  .helpin-conversation-thread .helpin-message-list {
+    padding: 14px 12px 10px;
+  }
+
+  .helpin-message-bubble {
+    font-size: 13px;
+    padding: 9px 12px;
+  }
+
+  .helpin-message--customer,
+  .helpin-message--agent,
+  .helpin-message--ai {
+    max-width: 86%;
+  }
+
+  .helpin-human-handoff-banner {
+    margin: 10px 12px 0;
+    padding: 11px 12px;
+  }
+
+  .helpin-inline-prechat {
+    padding: 4px 12px 8px;
+  }
+
+  .helpin-compose-wrapper {
+    padding: 10px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .helpin-compose-input {
+    padding: 12px 14px 6px;
+    font-size: 16px;
+  }
+
+  .helpin-compose-actions {
+    padding: 6px 8px 8px;
+  }
+
+  .helpin-compose-footer {
+    display: none;
+  }
+
+  .helpin-bottom-nav {
+    margin: 0;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    box-shadow: none;
+    border-top: 1px solid var(--helpin-border);
+    background: var(--helpin-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .helpin-bottom-nav-item {
+    min-width: 0;
+    flex: 1;
+    padding: 6px 4px;
+  }
+
+  .helpin-powered-by {
+    padding: 4px 16px calc(8px + env(safe-area-inset-bottom, 0px));
   }
 }
 

@@ -406,7 +406,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               onClick={onClose}
               aria-label="Close"
             >
-              <XIcon size={16} />
+              <XIcon size={18} />
             </button>
           )}
         </div>
