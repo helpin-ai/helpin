@@ -10,13 +10,15 @@
 
 Helpin already supports:
 - live support conversations
+- AI-assisted support flows
 - customer email fallback when the customer is offline
 - support inbox presence
 - per-user notification infrastructure
 
 What is still missing is the operational layer that mature support products expose:
-- clear team availability / office hours
-- customer-facing reply expectations when the team is offline
+- a clear AI-first support model
+- clear human availability / office hours
+- customer-facing reply expectations when a conversation needs human follow-up
 - teammate email notifications for unread customer replies
 - routing decisions that understand who is actually available
 
@@ -24,12 +26,13 @@ This is the gap Crisp and Intercom cover well.
 
 This spec intentionally combines those features into one roadmap, but in a clear order:
 
-1. **Availability**
-2. **Wire availability properly into the widget and app**
-3. **Unread teammate notifications**
-4. **Routing and escalation improvements**
+1. **AI-first support model**
+2. **Human availability**
+3. **Wire AI handoff + availability properly into the widget and app**
+4. **Unread teammate notifications**
+5. **Routing and escalation improvements**
 
-The key product decision is that **Availability comes first**. Without a reliable model of when the team is online, notification routing becomes noisy and arbitrary.
+The key product decision is that **AI comes first and human availability comes second**. Without that separation, the product risks leading with "offline" messaging even when AI can help immediately.
 
 ## 1.1 Current Implementation Status
 
@@ -38,7 +41,8 @@ The key product decision is that **Availability comes first**. Without a reliabl
 - Workspace business-hours settings already exist in support chat settings
 - Workspace and account notification preferences are now consolidated under `settings/notifications`
 - Widget config now exposes computed availability state
-- Widget home and conversation views now render dynamic online/offline availability copy
+- Widget preview/runtime now support AI-first entry copy
+- Widget conversation handoff now reveals human availability only after a human request
 - Widget/settings preview now reflects business-hours availability
 - Support-specific notification controls now exist under `settings/notifications`
 - Support notification taxonomy now exists in the shared notification system
@@ -47,14 +51,14 @@ The key product decision is that **Availability comes first**. Without a reliabl
 
 ### Partially complete
 
-- Availability is implemented for the widget experience, but the settings UI is still labeled `Business Hours` rather than a first-class `Availability` section
-- Availability exists as a backend/widget signal, but is not yet used by support inbox operational logic
+- Human availability is implemented for the widget experience, but only the widget handoff path uses the new AI-first reveal rules so far
+- Human availability exists as a backend/widget signal, but is not yet used by support inbox operational logic
+- AI is now modeled in the widget entry flow as the front door, and backend flow-state persistence now exists, but richer live-status/routing behavior is still not implemented
 
 ### Not yet complete
 
+- Human live status model (`online`, `away`, `offline`)
 - Team-specific availability overrides
-- Support-specific notification controls in `settings/notifications`
-- Unread teammate email notifications
 - Availability-aware routing, assignment, and escalation behavior
 
 ## 2. External Product Reference
@@ -82,8 +86,9 @@ Intercom documents:
 The pattern is not "send email when something happens."
 
 The pattern is:
+- let AI handle the first response and triage layer
 - define when the team is available
-- show the customer what to expect
+- reveal human expectations only when human help is actually needed
 - notify teammates only if the message remains unattended
 - route responsibility to one eligible person
 
@@ -98,7 +103,7 @@ These docs suggest a few concrete product rules that Helpin should follow:
 2. **Office hours are workspace/team constructs, not per-teammate schedules.**
    Intercom explicitly supports workspace defaults plus team-specific office hours and reply times, but not teammate-level office hours.
 
-3. **Reply expectations should be configurable and optionally delayed until assignment.**
+3. **Reply expectations should be configurable and shown at the right stage.**
    Intercom supports showing reply expectations before assignment or only after a conversation has been assigned to a team. Their recommended mode is to show them only after team assignment when teams have different hours.
 
 4. **Immediate in-app/browser signals and delayed email serve different purposes.**
@@ -107,10 +112,14 @@ These docs suggest a few concrete product rules that Helpin should follow:
 5. **Routing should use both assignment and online eligibility.**
    Crisp’s docs make it clear that notification and routing behavior prefer the assigned operator, but also consider current online availability.
 
+6. **Availability and presence are not the front door of the product.**
+   Crisp and Intercom both care deeply about availability, but the support experience should still separate first-response handling from human staffing signals. For Helpin, that means AI-first entry, with human availability revealed on escalation.
+
 ## 3. Goals
 
-- Introduce a first-class support availability model in Helpin
-- Let customers know whether the team is online and when they can expect a reply
+- Introduce a first-class AI-first support model in Helpin
+- Introduce a first-class human availability model in Helpin
+- Let customers know when a human team is available only when human follow-up is actually needed
 - Notify one responsible teammate when customer replies remain unread
 - Reuse existing Helpin systems where practical
 - Keep the system low-noise and operationally understandable
@@ -127,6 +136,7 @@ These docs suggest a few concrete product rules that Helpin should follow:
 ## 5. What We Were Missing
 
 Compared to Crisp and Intercom, the previous draft was still missing or under-defined:
+- explicit AI coverage as a first-class support layer
 - explicit availability / office hours as a first-class support feature
 - a clean definition of who counts as an available teammate
 - customer-facing reply expectations tied to availability
@@ -206,20 +216,34 @@ Examples:
 
 Core rule:
 - **Notifications** decides how a user gets alerted
-- **Availability** decides whether the team is considered online and what the customer sees
+- **Availability** decides whether the human team is considered online and what the customer sees after escalation
 
 ## 5.2 Canonical Support State Model
 
 To avoid ambiguity in later phases, Helpin should treat these as distinct concepts:
 
+### AI coverage
+
+Definition:
+- whether AI is available to handle first response, triage, information gathering, and resolution attempts
+
+Primary uses:
+- widget/app entry experience
+- first response expectations
+- triage before human involvement
+- deciding whether a conversation should be escalated to humans
+
+Product rule:
+- AI is the front door of support
+- human availability must not be used as the default first-contact experience when AI can still help immediately
+
 ### Office-hours availability
 
 Definition:
-- whether the workspace or assigned team is considered open based on configured office hours
+- whether the workspace or assigned team is considered open for human support based on configured office hours
 
 Primary uses:
-- widget online/offline state
-- reply expectations
+- human reply expectations after escalation
 - routing eligibility
 - fallback recipient selection
 
@@ -230,7 +254,7 @@ Definition:
 
 Primary uses:
 - immediate in-app/browser notification suppression
-- richer routing later
+- richer human routing later
 - future “active in inbox” behaviors
 
 ### Ownership
@@ -252,6 +276,7 @@ Computed from:
 - ownership
 - office-hours availability
 - live presence
+- AI escalation state
 - account/workspace/support notification preferences
 - DND
 
@@ -260,47 +285,59 @@ Product rule:
 
 ## 6. Proposed Rollout Order
 
-### Phase 1: Availability
+### Phase 1: AI-First Support Model
 
-Build the availability system first.
+Build the AI-first support model first.
+
+This should introduce:
+- AI as the default first-response layer
+- explicit human handoff conditions
+- customer-facing copy that does not lead with human online/offline state
+- queue states that distinguish AI handling from waiting for human
+- groundwork for later availability-aware routing and notifications
+
+### Phase 2: Human Availability
+
+Once AI-first flow is explicit, build the human availability system.
 
 This should introduce:
 - workspace default office hours
-- optional team-specific office hours
-- support availability computation
-- customer-facing "online/offline" and "back later" messaging
+- no team-specific office hours in v1
+- support availability computation for human coverage
+- customer-facing human reply expectations after escalation
 - groundwork for routing and notification suppression
 - configurable reply expectations for inside and outside office hours
 - explicit support for showing reply expectations either before assignment or only after team assignment
 
-### Phase 2: Wire Availability Properly Into the Widget and App
+### Phase 3: Wire AI Handoff and Availability Properly Into the Widget and App
 
-Once availability exists as a backend capability, we need to finish the product wiring.
+Once AI-first and human availability exist as backend capabilities, we need to finish the product wiring.
 
-Today, Helpin already stores business hours in support settings, but the behavior is incomplete:
-- settings are editable
-- backend has business-hours computation
-- but widget config does not expose availability state
-- widget UI still uses static reply copy
+Today, Helpin already stores business hours in support settings and exposes widget availability, but the behavior is incomplete for the new target model:
+- widget currently exposes human availability too early
+- AI-first entry and handoff states are not modeled explicitly
 - app-side support workflows do not consistently use availability
 
 This phase should add:
-- widget config fields for computed availability
-- widget home and conversation UI that reflects online/offline state
-- outside-hours message rendering in the widget
+- widget/app entry that leads with AI availability
+- handoff states that reveal human expectations only when needed
+- widget config fields for computed human availability
+- widget home and conversation UI that reflects human availability at the right stage
+- outside-hours message rendering in the human handoff path
 - app-side support surfaces that show availability state where relevant
 - backend consumers that rely on the shared availability resolver instead of hardcoded assumptions
 - support settings copy and layout that clearly treat business hours as availability, not notification preferences
 
 ### Current status
 
-- Widget config availability: done
-- Widget availability UI: done
+- AI-first entry model: partially done
+- Widget config human availability: done
+- Widget human availability UI wiring: partially done, with handoff visibility now aligned to AI-first entry
 - Settings preview wiring: done
 - App-side operational usage: not done
-- Availability settings IA rename/cleanup: not done
+- Availability settings IA rename/cleanup: partially done
 
-### Phase 3: Agent Email Notifications for Unread Customer Replies
+### Phase 4: Agent Email Notifications for Unread Customer Replies
 
 After availability exists, build the Crisp/Intercom-style delayed teammate email notifications:
 - 3 minute delay
@@ -309,7 +346,7 @@ After availability exists, build the Crisp/Intercom-style delayed teammate email
 - send to one person only
 - model email as fallback after immediate in-app/browser notification surfaces
 
-### Phase 4: Routing and Escalation
+### Phase 5: Routing and Escalation
 
 After we trust availability and notification behavior:
 - improve assignment logic
@@ -321,80 +358,164 @@ After we trust availability and notification behavior:
 
 If we implement only one thing next, it should be:
 
-## Availability
+## AI-first support model
 
 That is the strongest foundation because it unlocks:
-- better widget expectations
+- better entry experience
+- cleaner escalation rules
+- better widget expectations when human help is actually needed
 - better routing
 - better notification recipient selection
 - cleaner future SLA logic
 
 After that, the next best step is:
 
-## Wire availability properly into the widget and app
+## Human availability
 
-That closes the existing product gap immediately and makes the availability model real.
+That defines scheduled human coverage without confusing it with AI availability.
 
 After those two, the next step should be:
 
-## Unread teammate email notifications
+## Wire AI handoff and availability properly into the widget and app
 
-That gives immediate operational value once availability is fully wired.
+That closes the current product gap and removes the mismatch between AI-first intent and human-availability-first UI.
 
 After those three, the next step should be:
+
+## Unread teammate email notifications
+
+That gives immediate operational value once AI handoff and human availability are fully wired.
+
+After those four, the next step should be:
 
 ## Team-aware routing and reply expectations
 
 That means this is the recommended sequence:
 
-1. Availability
-2. Wire availability properly into the widget and app
-3. Agent email notifications for unread customer replies
-4. Routing + reply expectations refinement
-5. Reminders / SLA-style escalation
+1. AI-first support model
+2. Human availability
+3. Wire AI handoff and availability properly into the widget and app
+4. Agent email notifications for unread customer replies
+5. Routing + reply expectations refinement
+6. Reminders / SLA-style escalation
 
-## 8. Phase 1 PRD: Availability
+## 8. Phase 1 PRD: AI-First Support Model
 
 ### 8.1 Problem Statement
 
-Today Helpin has business hours for the widget and outside-hours messaging, but it does not yet model support availability as a broader operational concept for:
-- team-level support hours
-- customer expectations
-- routing
-- teammate notifications
+Today Helpin has AI-assisted support, business hours for the widget, and outside-hours messaging, but it does not yet model support as:
+- AI first
+- human escalation second
+- human availability shown only when relevant
 
 That means:
-- the widget can feel online/offline, but the system does not know who is truly available to receive work
-- customer reply expectations are limited
-- teammate notifications cannot intelligently prefer the right person
+- the widget can lead with human availability even when AI can help immediately
+- AI handoff is not explicit enough in the product model
+- later routing and teammate notifications do not have a clean escalation state to build on
 
 ### 8.2 Goals
 
-- Define when support is available
-- Expose that state to both backend logic and the widget
-- Support a workspace default plus team overrides
+- Define AI as the front door of support
+- Define when AI should hand off to humans
+- Ensure human availability is only revealed when human help is actually needed
 - Keep the first version simple and predictable
 
 ### 8.3 Product Decisions
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
-| Availability scope | Workspace default + optional team overrides | Matches Intercom’s office-hours model |
-| Per-teammate schedules in v1 | No | Too much complexity too early |
-| Timezone basis | Each office-hours config has its own timezone | Needed for team/region support |
-| Widget behavior | Show online/offline + return timing | Sets customer expectations |
-| Routing use | Availability is advisory in v1, authoritative in later phases | Reduces rollout risk |
-| Reply expectation visibility | Support both `before_assignment` and `after_team_assignment`; default to `before_assignment` until team routing is live | Matches Intercom’s model without blocking rollout |
-| Dynamic reply times in v1 | No | Intercom supports dynamic reply time, but manual presets/custom are enough for first rollout |
+| Front door | AI first | Avoids leading with "offline" when AI can still help |
+| Human availability at first contact | Hidden by default | Reveal only when escalation or human request makes it relevant |
+| Handoff timing | AI escalates on low confidence, explicit human request, or issues requiring human judgment/action | Keeps AI useful without overpromising |
+| Queue model | Distinguish AI handling from waiting for human | Needed for clean ops and reporting |
+| Human availability dependency | Separate from AI coverage | Prevents office hours from muting AI availability |
 
 ### 8.4 User Stories
 
-- As a customer, I want to know when the team is available and when I should expect a reply.
+- As a customer, I want immediate help without having to first interpret whether the human team is online.
+- As a customer, when AI cannot solve my issue, I want clear expectations for human follow-up.
+- As an admin, I want AI to handle first response while still respecting human support coverage.
+- As the system, I want a clean escalation state so routing and notifications can make better decisions.
+
+### 8.5 Functional Requirements
+
+#### AI-first entry
+
+The customer-facing support entry should:
+- lead with AI availability, not human online/offline state
+- invite the user to ask a question immediately
+- avoid promising human response timing before escalation
+
+#### Human handoff conditions
+
+The system should hand off to humans when:
+- AI confidence is low
+- the issue requires human judgment or action
+- the user asks for a human
+- policy/routing rules require human review
+
+#### Escalation states
+
+The system should explicitly distinguish at least:
+- `ai_handling`
+- `waiting_for_human`
+- `queued_for_human`
+- `after_hours_queue`
+- `assigned_to_human`
+- `resolved_by_ai`
+- `resolved_by_human`
+
+### 8.6 Acceptance Criteria
+
+- Customer entry leads with AI-first messaging
+- Human availability is not shown by default at first contact
+- Handoff states exist in the product model
+- The product can distinguish AI handling from human-queue states
+
+### Implementation status
+
+- AI-assisted support exists in product: done
+- AI-first support model in PRD/system behavior: partially done
+- Explicit handoff/queue states: partially done
+- Human availability hidden until escalation: partially done
+
+## 9. Phase 2 PRD: Human Availability
+
+### 9.1 Problem Statement
+
+Once AI is the first layer, Helpin still needs a clean model of scheduled human support coverage for:
+- human reply expectations
+- routing
+- teammate notifications
+- after-hours handling
+
+### 9.2 Goals
+
+- Define when human support is considered available
+- Expose that state to backend logic and later handoff UI
+- Support a workspace default plus team overrides
+- Keep the first version simple and predictable
+
+### 9.3 Product Decisions
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Availability scope | Workspace default + optional team overrides | Matches Intercom’s office-hours model |
+| Per-teammate schedules in v1 | No | Too much complexity too early |
+| Timezone basis | Each office-hours config has its own timezone | Needed for team/region support |
+| Human visibility in widget | Only after escalation / human request | Matches AI-first product direction |
+| Routing use | Availability is advisory in v1, authoritative in later phases | Reduces rollout risk |
+| Reply expectation visibility | Support both `before_assignment` and `after_team_assignment`; default to `after_escalation` in AI-first mode | Preserves flexibility without leading with human staffing |
+| Dynamic reply times in v1 | No | Manual presets/custom are enough for first rollout |
+
+### 9.4 User Stories
+
+- As a customer, when AI escalates my issue, I want to know when the human team is available and when I should expect a reply.
 - As an admin, I want to configure support hours for the workspace.
 - As an admin, I want different teams to optionally have different support hours.
 - As the system, I want to know whether a support team is currently available so routing and notifications can make better decisions.
 
-### 8.5 Functional Requirements
+### 9.5 Functional Requirements
 
 #### Workspace default office hours
 
@@ -408,14 +529,21 @@ Add support configuration for:
 
 #### Team-specific office hours
 
-If a conversation is assigned or routed to a support team with custom hours, that team’s schedule overrides the workspace default for:
-- widget reply expectation
+Deferred post-v1.
+
+For now, Helpin should use:
+- workspace default office hours
+- teammate live status
+- teammate manual status overrides
+
+If team-specific office hours are added later, they can override the workspace default for:
+- human reply expectation
 - routing decisions
 - later notification recipient selection
 
 #### Availability computation
 
-The backend should expose a computed availability result:
+The backend should expose a computed human-availability result:
 
 ```go
 type SupportAvailabilitySnapshot struct {
@@ -423,20 +551,20 @@ type SupportAvailabilitySnapshot struct {
     NextOnlineAt *time.Time
     ReplyTimeLabel string
     ReplyExpectationVisibility string // before_assignment | after_team_assignment
-    Source string // workspace_default | team_override
-    TeamID *string
+    Source string // workspace_default
+    TeamID *string // reserved for future team override support
 }
 ```
 
-#### Widget behavior
+#### Handoff behavior
 
-The widget should be able to render:
-- online now
+Once AI escalates, the widget/app should be able to render:
+- humans available now
 - reply expected in a few minutes / hours / by next business day
 - back on Monday / back at 9:00 AM style messaging
 - optionally hide team-specific reply expectations until assignment when configured
 
-### 8.6 Data Model
+### 9.6 Data Model
 
 We already have `SupportInboxSettings` with:
 - `BusinessHoursEnabled`
@@ -455,7 +583,7 @@ OfflineReplyTimeMode  string `json:"offline_reply_time_mode"`  // next_business_
 OfflineReplyTimeHours *int   `json:"offline_reply_time_hours,omitempty"`
 ```
 
-For team overrides, add a new model:
+Deferred post-v1, if needed:
 
 ```go
 type SupportTeamAvailability struct {
@@ -475,19 +603,21 @@ type SupportTeamAvailability struct {
 }
 ```
 
-### 8.7 APIs
+### 9.7 APIs
 
 Add:
 - workspace support settings read/write for reply expectation fields
-- team availability CRUD endpoints
 - public widget config field for availability snapshot
-- internal resolver that computes effective availability for workspace or team
+- internal resolver that computes effective availability for the workspace
 
-### 8.8 Acceptance Criteria
+Later, if team overrides are added:
+- team availability CRUD endpoints
+- resolver support for workspace vs team override
+
+### 9.8 Acceptance Criteria
 
 - Admin can set default support office hours
-- Admin can optionally override office hours for a support team
-- Widget shows online/offline expectations using computed availability
+- Widget/app can show human expectations using computed availability after escalation
 - Backend can resolve effective availability for a conversation
 - Availability logic is timezone-correct
 - Reply expectations can be shown either before assignment or only after team assignment
@@ -495,33 +625,33 @@ Add:
 ### Implementation status
 
 - Default support office hours: done
-- Team overrides: not done
-- Widget online/offline expectations: done
+- Team overrides: deferred post-v1
+- Widget/app human expectations after escalation: not done
 - Backend availability resolution for widget use: done
 - Backend availability resolution for conversation/team routing decisions: not done
 
-## 9. Phase 2 PRD: Wire Availability Properly Into the Widget and App
+## 10. Phase 3 PRD: Wire AI Handoff and Availability Properly Into the Widget and App
 
-This phase takes the availability model and makes it visible and operational.
+This phase takes the AI-first model plus human availability model and makes them visible and operational.
 
-### 9.1 Problem Statement
+### 10.1 Problem Statement
 
-Helpin already has business-hours settings in the support settings UI, but they are not fully wired into the public widget config or support app behavior.
+Helpin already has business-hours settings in the support settings UI and some human-availability wiring in the widget, but it is not yet aligned to the AI-first product direction.
 
 That creates a mismatch:
-- admins think business hours are active
-- the widget does not reliably show online/offline state from those settings
-- the outside-hours message is not fully honored in the customer experience
+- the widget can lead with human availability before AI escalation
+- the outside-hours message is not fully honored in the right handoff context
 - support app behavior still does not use availability as a first-class signal
 
-### 9.2 Goals
+### 10.2 Goals
 
-- Make support availability visible in the widget
+- Make AI the front door in the widget/app
+- Make human availability visible only when it becomes relevant
 - Make support availability available to app-side support workflows
-- Replace static widget reply copy with availability-aware messaging
+- Replace static widget reply copy with AI-first and escalation-aware messaging
 - Ensure business-hours settings are actually reflected in the product
 
-### 9.3 Functional Requirements
+### 10.3 Functional Requirements
 
 #### Public widget config
 
@@ -537,15 +667,15 @@ availability: {
 }
 ```
 
-This payload must be computed server-side from the support availability resolver.
+This payload must be computed server-side from the support availability resolver and used only in the appropriate handoff stage.
 
 #### Widget UI
 
 Update the widget so:
-- home view reflects online/offline state
-- conversation header can show current availability status when appropriate
-- static copy like "We typically reply in a few minutes" is replaced by dynamic availability-aware text
-- outside-hours message is shown when the team is offline
+- home view leads with AI-first messaging
+- conversation header can show human availability status when appropriate
+- static copy like "We typically reply in a few minutes" is replaced by AI-first or escalation-aware text
+- outside-hours message is shown when the human team is offline and handoff is needed
 - reply expectations can be hidden until team assignment if configured
 
 #### App-side support UI
@@ -567,32 +697,32 @@ As part of this phase, Helpin should make the settings split explicit:
 - consolidate per-user notification preferences under `settings/notifications`
 - reserve support chat settings for operational support configuration
 
-### 9.4 Acceptance Criteria
+### 10.4 Acceptance Criteria
 
-- widget config includes computed availability
-- widget home view reflects online/offline state from real settings
-- outside-hours message appears when the team is offline
-- static reply-time copy is removed where availability-aware copy should be used
+- widget entry leads with AI-first messaging
+- widget config includes computed human availability
+- outside-hours message appears in the correct human-handoff context
+- static reply-time copy is removed where AI-first or escalation-aware copy should be used
 - app-side support code can consume the same availability snapshot
 - widget respects reply expectation visibility mode
 
 ### Implementation status
 
-- widget config includes computed availability: done
-- widget home view reflects real settings: done
-- outside-hours message appears in widget copy: done
+- widget config includes computed human availability: done
+- widget home view still reflects human availability too early: needs revision
+- outside-hours message appears in widget copy: partially done, but not yet tied to explicit human handoff
 - static reply-time copy removed from widget home CTA: done
 - app-side support code consumes availability snapshot operationally: not done
 
-## 10. Phase 3 PRD: Agent Email Notifications for Unread Customer Replies
+## 11. Phase 4 PRD: Agent Email Notifications for Unread Customer Replies
 
 This is the original unread-teammate-notification feature, but now built on top of availability.
 
-### 10.1 Problem Statement
+### 11.1 Problem Statement
 
 When a customer sends a new message and no teammate notices it, Helpin should notify one responsible teammate by email after a delay.
 
-### 10.2 Trigger
+### 11.2 Trigger
 
 Schedule a notification candidate when:
 - a new `support_message` is created
@@ -602,15 +732,15 @@ Schedule a notification candidate when:
 - conversation is not terminal
 - workspace feature is enabled
 
-### 10.3 Delay
+### 11.3 Delay
 
 Fixed at **180 seconds**
 
-### 10.4 Suppression
+### 11.4 Suppression
 
 Do not send if the conversation is read or replied to by a teammate before the timer fires.
 
-### 10.5 Recipient Selection
+### 11.5 Recipient Selection
 
 One recipient only, in this order:
 
@@ -630,7 +760,7 @@ Signal priority for this phase:
 - office-hours availability decides which team/user bucket is eligible
 - live presence is used only for suppression and later refinement, not as the only definition of availability
 
-### 10.6 Preferences
+### 11.6 Preferences
 
 Workspace-level switch:
 
@@ -655,7 +785,7 @@ They should not live under:
 - `settings/general`
 - support availability / business hours settings
 
-### 10.7 Delivery Model
+### 11.7 Delivery Model
 
 Reuse existing notification tables and async delivery infrastructure.
 
@@ -664,7 +794,7 @@ Notification channel intent:
 - `browser`: immediate
 - `email`: delayed fallback
 
-### 10.8 Acceptance Criteria
+### 11.8 Acceptance Criteria
 
 - unread customer replies schedule a delayed email check
 - read-before-delay suppresses email
@@ -673,7 +803,7 @@ Notification channel intent:
 - assigned agent is preferred
 - availability-aware fallback routing is respected
 
-## 11. Phase 4 PRD: Routing and Escalation
+## 12. Phase 5 PRD: Routing and Escalation
 
 Once availability and unread notifications are stable, expand to:
 - routing conversations to teams that are currently available
@@ -683,11 +813,11 @@ Once availability and unread notifications are stable, expand to:
 
 This should be a separate implementation phase, not bundled into the first release.
 
-## 12. What We Should Build Next After Availability
+## 13. What We Should Build Next After AI-First and Availability
 
-If availability is phase 1, the next best feature is:
+If AI-first support model is phase 1 and human availability is phase 2, the next best feature is:
 
-### wire availability properly into the widget and app
+### wire AI handoff and availability properly into the widget and app
 
 Why:
 - the current business-hours setup is incomplete without this wiring step
@@ -711,11 +841,13 @@ Then later:
 
 ### reminders / SLA-aware escalation
 
-## 13. Recommended Engineering Approach
+## 14. Recommended Engineering Approach
 
-### Availability
+### AI-first + availability
 
-Build this first in the support settings and support-team model layer, then expose a single resolver service:
+Build this in two steps:
+- model AI-first entry + handoff states
+- then expose a single human-availability resolver service
 
 ```go
 ResolveAvailability(ctx, workspaceID, teamID, atTime) -> SupportAvailabilitySnapshot
@@ -756,7 +888,7 @@ Once availability exists, implement teammate unread-email notifications by reusi
 
 Do not build a second notification stack under support unless we hit a real limitation.
 
-## 13.1 Implementation Checklist by Module
+## 14.1 Implementation Checklist by Module
 
 This section translates the PRD into concrete codebase work.
 
@@ -782,12 +914,14 @@ Frontend:
   - [Settings.tsx](/root/teampulse/frontend/src/pages/Settings.tsx)
   - [routes/_authenticated/w/$slug/settings/$section.tsx](/root/teampulse/frontend/src/routes/_authenticated/w/$slug/settings/$section.tsx)
 
-### Phase 1B: Workspace Availability Model
+### Phase 1B: AI-First + Workspace Human Availability Model
 
 Status:
 - partially done
 
 Backend model/service:
+- [x] define persisted AI-first/handoff flow state model
+  - support conversation/service models under `server/internal/model/` and `server/internal/service/`
 - [x] keep workspace business-hours settings on `SupportInboxSettings`
   - [support_inbox.go](/root/teampulse/server/internal/model/support_inbox.go)
 - [x] compute widget-facing availability from support settings
@@ -796,28 +930,25 @@ Backend model/service:
   - [support_inbox.go](/root/teampulse/server/internal/model/support_inbox.go)
 - [ ] extract/rename the availability helper into a first-class resolver API
   - [support_inbox_settings.go](/root/teampulse/server/internal/service/support_inbox_settings.go)
-- [ ] add team availability model + repository
-  - `server/internal/model/support_team_availability.go`
-  - `server/internal/repository/support_team_availability.go`
-- [ ] wire team availability into startup / migrations
-  - [main.go](/root/teampulse/server/cmd/api/main.go)
+- [ ] defer team availability model + repository until post-v1
+  - keep workspace-level office hours as the only scheduled-availability source for now
 
 Backend API:
 - [x] expose widget availability through the public widget config
   - [support_inbox_widget.go](/root/teampulse/server/internal/service/support_inbox_widget.go)
   - [support_inbox_widget.go](/root/teampulse/server/internal/handler/support_inbox_widget.go)
-- [ ] extend support settings PATCH/GET payloads for reply expectation visibility and future team overrides
+- [ ] extend support settings PATCH/GET payloads for reply expectation visibility
   - [support_inbox.go](/root/teampulse/server/internal/model/support_inbox.go)
   - [support_inbox.go](/root/teampulse/server/internal/handler/support_inbox.go)
-- [ ] add team availability CRUD endpoints
-  - [router.go](/root/teampulse/server/internal/router/router.go)
+- [ ] skip team availability CRUD endpoints in v1
 
 Tests:
 - [x] add focused widget-availability backend tests
   - [support_inbox_availability_test.go](/root/teampulse/server/internal/service/support_inbox_availability_test.go)
-- [ ] add API-level tests for team availability and reply expectation settings
+- [ ] add API-level tests for reply expectation settings
+- [ ] add tests for AI-first handoff state transitions
 
-### Phase 2: Wire Availability Properly Into the Widget and App
+### Phase 2: Wire AI Handoff and Availability Properly Into the Widget and App
 
 Status:
 - partially done
@@ -828,13 +959,16 @@ Shared contract:
   - [types.ts](/root/teampulse/packages/widget-core/src/types.ts)
 
 Widget UI:
-- [x] render dynamic availability copy on widget home view
+- [x] replace current widget entry with AI-first messaging
   - [HomeView.tsx](/root/teampulse/packages/widget-core/src/components/HomeView.tsx)
 - [x] render availability state in conversation header fallback state
   - [ConversationView.tsx](/root/teampulse/packages/widget-core/src/components/ConversationView.tsx)
 - [x] add supporting styles
   - [widget.css](/root/teampulse/packages/widget-core/src/styles/widget.css)
 - [ ] respect `reply_expectation_visibility`
+  - [HomeView.tsx](/root/teampulse/packages/widget-core/src/components/HomeView.tsx)
+  - [ConversationView.tsx](/root/teampulse/packages/widget-core/src/components/ConversationView.tsx)
+- [x] reveal human availability only after AI escalation / human-request path
   - [HomeView.tsx](/root/teampulse/packages/widget-core/src/components/HomeView.tsx)
   - [ConversationView.tsx](/root/teampulse/packages/widget-core/src/components/ConversationView.tsx)
 
@@ -854,7 +988,7 @@ App UI:
 Verification:
 - [x] frontend typecheck passes for widget/app config changes
 - [x] widget-core typecheck passes for availability config changes
-- [ ] add widget-core rendering tests for online/offline copy
+- [x] add widget-core rendering tests for AI-first entry and human handoff visibility
   - `packages/widget-core/src/__tests__/`
 
 ### Phase 3: Support Notification Taxonomy and Preferences
@@ -884,7 +1018,7 @@ Tests:
 ### Phase 4: Unread Teammate Email Notifications
 
 Status:
-- partially done
+- done
 
 Trigger path:
 - [x] emit support notification events from customer-message creation paths
@@ -903,7 +1037,7 @@ Delivery logic:
   - email client under `server/internal/email/`
 
 Frontend:
-- [ ] add support-notification preference controls before enabling delivery broadly
+- [x] add support-notification preference controls before enabling delivery broadly
   - [NotificationPreferencesPanels.tsx](/root/teampulse/frontend/src/components/settings/NotificationPreferencesPanels.tsx)
 
 Tests:
@@ -915,17 +1049,27 @@ Tests:
 ### Phase 5: Availability-Aware Routing and Escalation
 
 Status:
-- not started
+- partially done
 
 Backend:
-- [ ] use availability resolver in support routing/assignment decisions
+- [x] add automatic human live status model (`online` / `away` / `offline`)
+  - websocket presence provider now tracks internal agent connections + last seen
+  - support presence/service layer under `server/internal/service/`
+- [x] add manual human status overrides on top of automatic presence
+  - workspace-scoped per-user override layer now supports `Automatic`, `Online`, `Away`, `Offline`
+- [x] extract the current workspace business-hours helper into a first-class availability resolver
+- [x] use availability resolver in support routing/assignment decisions
   - support inbox service(s) in `server/internal/service/`
-- [ ] support fallback recipient pools / available-team routing
+- [x] support fallback recipient pools / available-team routing
+  - v1 now supports owner -> configured handoff team -> workspace fallback using workspace office hours plus live/manual status for after-hours exceptional availability
+- [ ] keep team-level office-hour overrides deferred until post-v1
 - [ ] later add reminder / escalation workflow layer
 
 Frontend:
-- [ ] expose availability/routing state in support inbox assignment surfaces
+- [x] expose live owner presence in the support conversation header
   - support inbox components under `frontend/src/components/support/`
+- [x] add a self-serve support status picker in the inbox UI
+- [ ] expose availability/routing state in broader support inbox assignment surfaces
 
 Open implementation rule:
 - do not start this phase before Phase 3 and Phase 4 definitions are stable
@@ -939,11 +1083,12 @@ Open implementation rule:
 
 Yes, we should plan this as:
 
-1. **Availability**
-2. **Wire availability properly into the widget and app**
-3. **Agent email notifications for unread customer replies**
-4. **Routing and reply expectation refinement**
-5. **Reminders / SLA-style escalation**
+1. **AI-first support model**
+2. **Human availability**
+3. **Wire AI handoff and availability properly into the widget and app**
+4. **Agent email notifications for unread customer replies**
+5. **Routing and reply expectation refinement**
+6. **Reminders / SLA-style escalation**
 
 That sequence is the cleanest product and engineering path.
 

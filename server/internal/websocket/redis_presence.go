@@ -12,6 +12,8 @@ import (
 
 // Key TTL constants for Redis presence state.
 const (
+	agentConnTTL   = 90 * time.Second
+	agentSeenTTL   = 24 * time.Hour
 	viewingConnTTL = 60 * time.Second
 	typingTTL      = 15 * time.Second
 	visitorConnTTL = 90 * time.Second
@@ -34,6 +36,16 @@ func NewRedisPresence(rdb *redis.Client, podID string) *RedisPresence {
 // support:viewing:conn:{workspaceID}:{conversationID}:{userID}:{connID}
 func viewingConnKey(workspaceID, conversationID, userID, connID string) string {
 	return fmt.Sprintf("support:viewing:conn:%s:%s:%s:%s", workspaceID, conversationID, userID, connID)
+}
+
+// support:agents:conn:{workspaceID}:{userID}:{podID}:{connID}
+func agentConnKey(workspaceID, userID, podID, connID string) string {
+	return fmt.Sprintf("support:agents:conn:%s:%s:%s:%s", workspaceID, userID, podID, connID)
+}
+
+// support:agents:last_seen:{workspaceID}:{userID}
+func agentLastSeenKey(workspaceID, userID string) string {
+	return fmt.Sprintf("support:agents:last_seen:%s:%s", workspaceID, userID)
 }
 
 // support:viewing:active:{workspaceID}:{userID}:{connID}
@@ -59,6 +71,113 @@ func visitorConnKey(workspaceID, anonymousID, podID, connID string) string {
 // support:visitors:online:{workspaceID}
 func visitorSetKey(workspaceID string) string {
 	return fmt.Sprintf("support:visitors:online:%s", workspaceID)
+}
+
+// --- Agent online presence ---
+
+// SetAgentOnline marks an internal agent connection as online.
+func (p *RedisPresence) SetAgentOnline(ctx context.Context, workspaceID, userID, connID string) (bool, error) {
+	existing, err := p.scanKeys(ctx, agentConnKey(workspaceID, userID, "*", "*"), 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetAgentOnline scan: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	pipe := p.rdb.Pipeline()
+	pipe.Set(ctx, agentConnKey(workspaceID, userID, p.podID, connID), "1", agentConnTTL)
+	pipe.Set(ctx, agentLastSeenKey(workspaceID, userID), now, agentSeenTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return false, fmt.Errorf("redis presence SetAgentOnline: %w", err)
+	}
+
+	return len(existing) == 0, nil
+}
+
+// SetAgentOffline removes an internal agent connection. Returns true if this was the last connection.
+func (p *RedisPresence) SetAgentOffline(ctx context.Context, workspaceID, userID, connID string) (bool, error) {
+	p.rdb.Del(ctx, agentConnKey(workspaceID, userID, p.podID, connID))
+	if err := p.rdb.Set(ctx, agentLastSeenKey(workspaceID, userID), time.Now().UTC().Format(time.RFC3339Nano), agentSeenTTL).Err(); err != nil {
+		return false, fmt.Errorf("redis presence SetAgentOffline last_seen: %w", err)
+	}
+
+	remaining, err := p.scanKeys(ctx, agentConnKey(workspaceID, userID, "*", "*"), 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetAgentOffline scan: %w", err)
+	}
+	return len(remaining) == 0, nil
+}
+
+// GetOnlineAgents returns the list of internal user IDs with at least one active connection.
+func (p *RedisPresence) GetOnlineAgents(ctx context.Context, workspaceID string) ([]string, error) {
+	keys, err := p.scanKeys(ctx, fmt.Sprintf("support:agents:conn:%s:*", workspaceID), 10_000)
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetOnlineAgents: %w", err)
+	}
+	if len(keys) == 0 {
+		return []string{}, nil
+	}
+
+	seen := make(map[string]struct{})
+	agents := make([]string, 0, len(keys))
+	prefix := fmt.Sprintf("support:agents:conn:%s:", workspaceID)
+	for _, key := range keys {
+		rest := strings.TrimPrefix(key, prefix)
+		parts := strings.SplitN(rest, ":", 3)
+		if len(parts) < 3 || parts[0] == "" {
+			continue
+		}
+		userID := parts[0]
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		agents = append(agents, userID)
+	}
+	return agents, nil
+}
+
+// GetAgentLastSeen returns recent activity timestamps for internal agents in a workspace.
+func (p *RedisPresence) GetAgentLastSeen(ctx context.Context, workspaceID string) (map[string]time.Time, error) {
+	keys, err := p.scanKeys(ctx, fmt.Sprintf("support:agents:last_seen:%s:*", workspaceID), 10_000)
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetAgentLastSeen scan: %w", err)
+	}
+	if len(keys) == 0 {
+		return map[string]time.Time{}, nil
+	}
+
+	vals, err := p.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetAgentLastSeen MGet: %w", err)
+	}
+
+	out := make(map[string]time.Time, len(keys))
+	prefix := fmt.Sprintf("support:agents:last_seen:%s:", workspaceID)
+	for i, key := range keys {
+		raw, ok := vals[i].(string)
+		if !ok || raw == "" {
+			continue
+		}
+		userID := strings.TrimPrefix(key, prefix)
+		ts, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil || userID == "" {
+			continue
+		}
+		out[userID] = ts.UTC()
+	}
+	return out, nil
+}
+
+// RefreshAgentOnline refreshes the TTL and last-seen timestamp for an internal agent connection.
+func (p *RedisPresence) RefreshAgentOnline(ctx context.Context, workspaceID, userID, connID string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	pipe := p.rdb.Pipeline()
+	pipe.Set(ctx, agentConnKey(workspaceID, userID, p.podID, connID), "1", agentConnTTL)
+	pipe.Set(ctx, agentLastSeenKey(workspaceID, userID), now, agentSeenTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("redis presence RefreshAgentOnline: %w", err)
+	}
+	return nil
 }
 
 // --- Viewing ---

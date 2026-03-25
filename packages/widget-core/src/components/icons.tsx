@@ -98,6 +98,11 @@ export const MoreVerticalIcon = createIcon(
   'MoreVerticalIcon',
 );
 
+export const ExternalLinkIcon = createIcon(
+  ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+  'ExternalLinkIcon',
+);
+
 // ── Launcher icons ────────────────────────────────────────────
 export const MessageCircleIcon = createIcon(
   ['M7.9 20A9 9 0 1 0 4 16.1L2 22z'],

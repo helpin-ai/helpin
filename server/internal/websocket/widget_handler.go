@@ -307,18 +307,29 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 		messages = []model.SupportMessage{}
 	}
 
+	var activeTeammate *model.WidgetActiveTeammate
+	if session.ConversationID != nil {
+		for i := range conversations {
+			if conversations[i].ID == *session.ConversationID {
+				activeTeammate = widgetActiveTeammateFromConversation(&conversations[i])
+				break
+			}
+		}
+	}
+
 	var customerEmail string
 	if session.CustomerEmail != nil {
 		customerEmail = *session.CustomerEmail
 	}
 
 	return SendToClient(conn, "session:joined", model.WidgetSessionJoinedPayload{
-		SessionToken:  session.SessionToken,
-		ExpiresAt:     session.ExpiresAt.Format(time.RFC3339),
-		IsAnonymous:   session.IsAnonymous,
-		CustomerEmail: customerEmail,
-		Conversations: conversations,
-		Messages:      messages,
+		SessionToken:   session.SessionToken,
+		ExpiresAt:      session.ExpiresAt.Format(time.RFC3339),
+		IsAnonymous:    session.IsAnonymous,
+		CustomerEmail:  customerEmail,
+		Conversations:  conversations,
+		Messages:       messages,
+		ActiveTeammate: activeTeammate,
 	})
 }
 
@@ -513,7 +524,22 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				SendToClient(conn, "connection:error", map[string]string{"code": "escalate_failed", "message": "Failed to escalate to human"})
 				continue
 			}
-			SendToClient(conn, "conversation:escalated", map[string]string{"conversation_id": *session.ConversationID})
+			convs, _ := h.service.GetVisitorConversations(ctx, session.WorkspaceID, session.AnonymousID)
+			if convs == nil {
+				convs = []model.SupportConversation{}
+			}
+			var activeTeammate *model.WidgetActiveTeammate
+			for i := range convs {
+				if convs[i].ID == *session.ConversationID {
+					activeTeammate = widgetActiveTeammateFromConversation(&convs[i])
+					break
+				}
+			}
+			SendToClient(conn, "conversation:escalated", map[string]any{
+				"conversation_id": *session.ConversationID,
+				"active_teammate": activeTeammate,
+			})
+			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
 
 		case "conversation:new":
 			// Clear the persisted active conversation before the next message creates a fresh one.
@@ -590,4 +616,26 @@ func derefStr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func widgetActiveTeammateFromConversation(conversation *model.SupportConversation) *model.WidgetActiveTeammate {
+	if conversation == nil || conversation.OpenedByUserID == nil || conversation.OpenedByDisplayName == nil {
+		return nil
+	}
+	userID := strings.TrimSpace(*conversation.OpenedByUserID)
+	name := strings.TrimSpace(*conversation.OpenedByDisplayName)
+	if userID == "" || name == "" {
+		return nil
+	}
+	return &model.WidgetActiveTeammate{
+		UserID:    userID,
+		Name:      name,
+		AvatarURL: conversation.OpenedByAvatarURL,
+		Status: func() string {
+			if conversation.OpenedByStatus == nil {
+				return ""
+			}
+			return strings.TrimSpace(*conversation.OpenedByStatus)
+		}(),
+	}
 }

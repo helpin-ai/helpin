@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { ChevronLeftIcon } from './icons';
+import { ChevronLeftIcon, ExternalLinkIcon } from './icons';
 import { fetchHelpArticle, type HelpArticle } from './helpApi';
 
 interface HelpArticleViewProps {
@@ -19,6 +19,9 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   const [article, setArticle] = useState<HelpArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const articleExternalURL = article?.public_path
+    ? `${host.startsWith('http://') || host.startsWith('https://') ? host.replace(/\/$/, '') : `https://${host}`}${article.public_path}`
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +59,20 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
         <div className="helpin-article-header-copy">
           <span className="helpin-help-title">{article?.title || 'Article'}</span>
         </div>
+        {articleExternalURL ? (
+          <a
+            href={articleExternalURL}
+            className="helpin-window-close-inline"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open article in Help Center"
+            title="Open article in Help Center"
+          >
+            <ExternalLinkIcon size={16} />
+          </a>
+        ) : (
+          <div className="helpin-help-header-spacer" />
+        )}
       </div>
       <div className="helpin-article-content">
         {isLoading && <p className="helpin-help-empty">Loading article...</p>}

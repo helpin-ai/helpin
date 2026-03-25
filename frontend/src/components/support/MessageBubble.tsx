@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, MailOpen, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';

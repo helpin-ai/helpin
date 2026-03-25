@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { Message, Conversation, WidgetConfig } from '../types';
+import type { ActiveTeammate, Message, Conversation, WidgetConfig } from '../types';
 import { BottomNav, type WidgetBaseView, WidgetView } from './BottomNav';
 import { HomeView } from './HomeView';
 import { MessagesView } from './MessagesView';
@@ -30,15 +30,21 @@ interface ChatWindowProps {
   isAIThinking?: boolean;
   typingAgentName?: string;
   typingAgentAvatar?: string;
+  activeTeammate?: ActiveTeammate;
   onEscalateToHuman?: () => void;
   quickReplies?: string[];
   initialView?: WidgetView;
   connectionStatus?: ConnectionStatus;
   onRetryConnection?: () => void;
   conversations?: Conversation[];
+  activeConversation?: Conversation;
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
+  isConversationExpanded?: boolean;
+  onToggleConversationExpanded?: () => void;
+  transcriptEmail?: string;
+  onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
   widgetKey?: string;
   host?: string;
   openArticleRequest?: {
@@ -64,15 +70,21 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   isAIThinking = false,
   typingAgentName,
   typingAgentAvatar,
+  activeTeammate,
   onEscalateToHuman,
   quickReplies = [],
   initialView = 'home',
   connectionStatus = 'idle',
   onRetryConnection,
   conversations = [],
+  activeConversation,
   onSelectConversation = () => {},
   onStartNewConversation,
   onViewChange,
+  isConversationExpanded = false,
+  onToggleConversationExpanded,
+  transcriptEmail,
+  onRequestTranscript,
   widgetKey,
   host,
   openArticleRequest,
@@ -91,6 +103,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [activeArticleSlug, setActiveArticleSlug] = useState<string | null>(null);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
+  const [humanSupportRequested, setHumanSupportRequested] = useState(false);
 
   // Sync activeView when initialView prop changes (e.g. first-open → conversation)
   useEffect(() => {
@@ -143,10 +156,16 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
+  const homeTeammates = activeTeammate?.name
+    ? [activeTeammate]
+    : (config.availableTeammates ?? []).slice(0, 4);
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';
-  const expandedClass = activeView === 'help-article' ? 'helpin-chat-window--expanded' : '';
+  const expandedClass =
+    activeView === 'help-article' || (activeView === 'conversation' && isConversationExpanded)
+      ? 'helpin-chat-window--expanded'
+      : '';
 
   const handleNavigate = (view: WidgetBaseView) => {
     if (view !== 'help') {
@@ -160,6 +179,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
   const handleStartConversation = (fromView: WidgetBaseView) => {
     setPreviousView(fromView);
+    setHumanSupportRequested(false);
     setActiveView('conversation');
   };
 
@@ -194,9 +214,52 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     <div
       className={`helpin-chat-window ${positionClass} ${expandedClass} ${isVisible ? 'helpin-chat-window--visible' : 'helpin-chat-window--hidden'} helpin-theme-${colorScheme}`}
     >
+      {activeView === 'home' && (
+        <div className="helpin-window-actions helpin-window-actions--home">
+          {homeTeammates.length > 0 && (
+            <div className="helpin-home-header-team">
+              {homeTeammates.map((teammate, index) => (
+                <div
+                  key={teammate.userId || `${teammate.name}-${index}`}
+                  className="helpin-home-header-presence helpin-avatar-tooltip"
+                  aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
+                  data-tooltip={teammate.name}
+                >
+                  <div className="helpin-home-teammate-avatar-wrap">
+                    {teammate.avatarUrl ? (
+                      <img src={teammate.avatarUrl} alt={teammate.name} className="helpin-home-teammate-avatar" />
+                    ) : (
+                      <div className="helpin-home-teammate-avatar helpin-home-teammate-avatar--placeholder">
+                        <span>{teammate.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                    )}
+                    <span
+                      className={`helpin-presence-dot helpin-presence-dot--${teammate.status || 'online'}`}
+                      aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            className="helpin-window-close helpin-window-close--home"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <XIcon size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
-      {activeView !== 'conversation' && !(activeView === 'messages' && conversations.length > 0) && (
-        <button className="helpin-window-close" onClick={onClose} aria-label="Close">
+      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && !(activeView === 'messages' && conversations.length > 0) && (
+        <button
+          className="helpin-window-close"
+          onClick={onClose}
+          aria-label="Close"
+        >
           <XIcon size={18} />
         </button>
       )}
@@ -241,17 +304,27 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         {activeView === 'conversation' && (
           <ConversationView
             config={config}
+            conversation={activeConversation}
             messages={messages}
+            activeTeammate={activeTeammate}
             onSendMessage={onSendMessage}
             onUploadAttachment={onUploadAttachment}
             onTyping={onTyping}
             isTyping={isTyping}
             isAIThinking={isAIThinking}
-            onEscalateToHuman={onEscalateToHuman}
+            onEscalateToHuman={onEscalateToHuman ? () => {
+              setHumanSupportRequested(true);
+              onEscalateToHuman();
+            } : undefined}
+            showHumanAvailability={humanSupportRequested}
             typingAgentName={typingAgentName}
             typingAgentAvatar={typingAgentAvatar}
             onBack={() => setActiveView(previousView)}
             onClose={onClose}
+            isExpanded={isConversationExpanded}
+            onToggleExpanded={onToggleConversationExpanded}
+            transcriptEmail={transcriptEmail}
+            onRequestTranscript={onRequestTranscript}
             showPreChatForm={showPreChatForm}
             onPreChatSubmit={onPreChatSubmit}
             onImageClick={onImageClick}
@@ -288,6 +361,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             config={config}
             host={host}
             widgetKey={widgetKey}
+            onClose={onClose}
             onContact={() => handleStartConversation('help')}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}

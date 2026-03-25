@@ -1,5 +1,5 @@
 import { h, render } from 'preact';
-import type { Message, Conversation, WidgetConfig } from './types';
+import type { ActiveTeammate, Message, Conversation, WidgetConfig } from './types';
 import type { WidgetView } from './components/BottomNav';
 import { ChatWindow } from './components/ChatWindow';
 import { WidgetLauncher } from './components/WidgetLauncher';
@@ -8,6 +8,7 @@ export type {
   WidgetAdapter,
   Message,
   Conversation,
+  ActiveTeammate,
   CustomerInfo,
   WidgetConfig,
   AiSource,
@@ -62,6 +63,7 @@ export interface MountWidgetOptions {
   onEscalateToHuman?: () => void;
   typingAgentName?: string;
   typingAgentAvatar?: string;
+  activeTeammate?: ActiveTeammate;
   quickReplies?: string[];
   initialView?: WidgetView;
   showLauncher?: boolean;
@@ -69,9 +71,14 @@ export interface MountWidgetOptions {
   unreadCount?: number;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
   conversations?: Conversation[];
+  activeConversation?: Conversation;
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
+  isConversationExpanded?: boolean;
+  onToggleConversationExpanded?: () => void;
+  transcriptEmail?: string;
+  onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
   widgetKey?: string;
   host?: string;
   openArticleRequest?: {
@@ -99,15 +106,21 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onEscalateToHuman,
     typingAgentName,
     typingAgentAvatar,
+    activeTeammate,
     quickReplies = [],
     initialView = 'home',
     showLauncher = true,
     onLauncherClick,
     unreadCount = 0,
     conversations = [],
+    activeConversation,
     onSelectConversation = () => {},
     onStartNewConversation = () => {},
     onViewChange,
+    isConversationExpanded = false,
+    onToggleConversationExpanded,
+    transcriptEmail,
+    onRequestTranscript,
     widgetKey,
     host,
     openArticleRequest,
@@ -134,12 +147,18 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       onEscalateToHuman,
       typingAgentName,
       typingAgentAvatar,
+      activeTeammate,
       quickReplies,
       initialView,
       conversations,
+      activeConversation,
       onSelectConversation,
       onStartNewConversation,
       onViewChange,
+      isConversationExpanded,
+      onToggleConversationExpanded,
+      transcriptEmail,
+      onRequestTranscript,
       widgetKey,
       host,
       openArticleRequest,

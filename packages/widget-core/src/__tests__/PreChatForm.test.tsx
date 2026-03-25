@@ -14,7 +14,9 @@ const mockConfig: WidgetConfig = {
   },
   features: {
     aiEnabled: false,
+    aiFirst: false,
     showTalkToHuman: false,
+    escalationMessage: 'Let me connect you with a team member who can help further.',
     fileUploads: false,
     preChatForm: true,
     requirePhone: true,

@@ -28,16 +28,19 @@ var priorityOrder = map[string]int{
 
 // NotificationService orchestrates notification creation and delivery.
 type NotificationService struct {
-	notifRepo        *repository.NotificationRepository
-	prefRepo         *repository.NotificationPreferenceRepository
-	userSettingsRepo *repository.UserNotificationSettingsRepository
-	followerRepo     *repository.FollowerRepository
-	userRepo         *repository.UserRepository
-	workspaceRepo    *repository.WorkspaceRepository
-	wsPublisher      *ws.Publisher
-	emailClient      emailSender
-	appBaseURL       string
-	logger           *slog.Logger
+	notifRepo          *repository.NotificationRepository
+	prefRepo           *repository.NotificationPreferenceRepository
+	userSettingsRepo   *repository.UserNotificationSettingsRepository
+	followerRepo       *repository.FollowerRepository
+	userRepo           *repository.UserRepository
+	workspaceRepo      *repository.WorkspaceRepository
+	installationRepo   *repository.SupportInboxInstallationRepository
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository
+	wsPublisher        *ws.Publisher
+	presence           ws.PresenceProvider
+	emailClient        emailSender
+	appBaseURL         string
+	logger             *slog.Logger
 }
 
 type emailSender interface {
@@ -68,6 +71,20 @@ func NewNotificationService(
 		appBaseURL:       strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
 		logger:           slog.Default().With("service", "notification"),
 	}
+}
+
+func (s *NotificationService) SetSupportRoutingDependencies(
+	installationRepo *repository.SupportInboxInstallationRepository,
+	presence ws.PresenceProvider,
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+) *NotificationService {
+	if s == nil {
+		return nil
+	}
+	s.installationRepo = installationRepo
+	s.presence = presence
+	s.statusOverrideRepo = statusOverrideRepo
+	return s
 }
 
 type notificationDeliveryPlan struct {

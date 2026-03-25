@@ -246,7 +246,10 @@ type SupportAIService struct {
 	agentRepo              *repository.AgentRepository
 	handoffRepo            *repository.AgentHandoffRepository
 	installationRepo       *repository.SupportInboxInstallationRepository
+	workspaceRepo          *repository.WorkspaceRepository
+	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
 	wsPublisher            *websocket.Publisher
+	presence               websocket.PresenceProvider
 	js                     nats.JetStreamContext
 	redis                  *redis.Client
 	db                     *gorm.DB
@@ -295,6 +298,20 @@ func NewSupportAIService(
 		redis:                  redisClient,
 		db:                     db,
 	}
+}
+
+func (s *SupportAIService) SetSupportRoutingDependencies(
+	workspaceRepo *repository.WorkspaceRepository,
+	presence websocket.PresenceProvider,
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.workspaceRepo = workspaceRepo
+	s.presence = presence
+	s.statusOverrideRepo = statusOverrideRepo
+	return s
 }
 
 // PublishAIRequest publishes an AI processing event to JetStream.
@@ -361,6 +378,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"ai_state":           &pending,
 			"ai_resolved_at":     nil,
 			"ai_resolution_type": nil,
+			"flow_state":         model.SupportConversationFlowStateAIHandling,
 		})
 	}
 
@@ -405,6 +423,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"ai_state":           "resolved",
 			"ai_resolved_at":     now,
 			"ai_resolution_type": "confirmed",
+			"flow_state":         model.SupportConversationFlowStateResolvedByAI,
 		})
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		slog.InfoContext(ctx, "support AI conversation resolved from customer confirmation",
@@ -668,6 +687,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"ai_state":          &pending,
 			"assigned_agent_id": &agentID,
 			"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
+			"flow_state":        model.SupportConversationFlowStateAIHandling,
 		})
 	} else {
 		slog.InfoContext(ctx, "support AI escalating after response evaluation",
@@ -689,9 +709,25 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return fmt.Errorf("get conversation for escalation: %w", err)
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	now := time.Now()
+	settings, availability, err := loadSupportAvailability(ctx, s.installationRepo, workspaceID, now)
+	if err != nil {
+		slog.ErrorContext(ctx, "load support availability for escalation", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		settings = model.DefaultSupportInboxSettings()
+		availability = resolveSupportAvailability(settings, now)
+	}
+
 	// 1. Create system message — use customizable escalation message from settings
 	escalationContent := "Let me connect you with a team member who can help further."
-	if settings, err := s.loadSettings(ctx, workspaceID); err == nil && settings != nil && settings.EscalationMessage != "" {
+	if strings.TrimSpace(settings.EscalationMessage) != "" {
 		escalationContent = settings.EscalationMessage
 	}
 
@@ -708,14 +744,44 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 	}
 
 	// 2. Transition AI state: pending → escalated
-	now := time.Now()
+	selection, selectErr := selectSupportConversationRecipient(
+		ctx,
+		s.workspaceRepo,
+		s.installationRepo,
+		nil,
+		s.presence,
+		s.statusOverrideRepo,
+		supportRecipientSelectorInput{
+			WorkspaceID:         workspaceID,
+			OwnerUserID:         conv.OpenedByUserID,
+			HandoffBehavior:     settings.HandoffBehavior,
+			HandoffTeamID:       settings.HandoffTeamID,
+			RequireAvailability: true,
+			Now:                 now,
+		},
+	)
+	if selectErr != nil {
+		slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
+	}
+
+	flowState := escalatedConversationFlowState(settings, now)
+	if selection != nil {
+		flowState = model.SupportConversationFlowStateAssignedToHuman
+	}
 	fields := map[string]any{
 		"ai_state":          "escalated",
 		"ai_escalated_at":   now,
 		"assigned_agent_id": nil,
+		"flow_state":        flowState,
+	}
+	if selection != nil {
+		fields["opened_by_user_id"] = selection.UserID
 	}
 	if reason == "customer_requested" || reason == "customer_requested_human" {
 		fields["customer_requested_human_at"] = now
+	}
+	if !availability.IsWithinOfficeHours && selection == nil {
+		fields["flow_state"] = model.SupportConversationFlowStateAfterHoursQueue
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
@@ -1161,6 +1227,7 @@ func (s *SupportAIService) publishAIReply(
 		"ai_state":          &pending,
 		"assigned_agent_id": &agentID,
 		"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
+		"flow_state":        model.SupportConversationFlowStateAIHandling,
 	})
 
 	return aiMsg, nil

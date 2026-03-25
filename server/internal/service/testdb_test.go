@@ -609,6 +609,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			display_id INTEGER NOT NULL,
 			subject TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'open',
+			flow_state TEXT,
 			priority TEXT NOT NULL DEFAULT 'medium',
 			channel TEXT NOT NULL DEFAULT 'widget',
 			customer_name TEXT,
@@ -634,6 +635,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_teammate_status_overrides (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			manual_status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE support_messages (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -651,6 +660,21 @@ func newTestDB(t *testing.T) *gorm.DB {
 			via_channel TEXT,
 			email_notified_at DATETIME,
 			email_read_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_handoffs (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT,
+			epic_id TEXT,
+			story_id TEXT,
+			from_agent_id TEXT,
+			to_agent_id TEXT,
+			to_user_id TEXT,
+			handoff_type TEXT NOT NULL,
+			reason TEXT,
+			context BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

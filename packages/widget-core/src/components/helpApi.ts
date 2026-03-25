@@ -21,6 +21,7 @@ export interface HelpArticle {
   excerpt?: string;
   icon?: string;
   content_html?: string | null;
+  public_path?: string;
 }
 
 function getApiBase(host: string): string {

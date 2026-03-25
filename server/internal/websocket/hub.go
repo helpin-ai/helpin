@@ -190,6 +190,25 @@ func (h *Hub) Unregister(c *Client) {
 				ActorID:     c.UserID,
 			})
 		}
+		lastConn, err := h.Presence.SetAgentOffline(ctx, c.WorkspaceID, c.UserID, c.ConnID)
+		if err != nil {
+			slog.Error("agent presence cleanup on disconnect", "error", err,
+				"user_id", c.UserID, "workspace_id", c.WorkspaceID, "conn_id", c.ConnID)
+		} else if lastConn {
+			data, _ := json.Marshal(map[string]any{
+				"user_id":      c.UserID,
+				"status":       "away",
+				"last_seen_at": time.Now().UTC(),
+			})
+			h.BroadcastAll(Event{
+				Action:      "updated",
+				Entity:      "support_teammate_presence",
+				EntityID:    c.UserID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+				Data:        data,
+			})
+		}
 	}
 }
 
@@ -228,6 +247,8 @@ func (h *Hub) Broadcast(event Event) {
 		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
 	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:
 		widgetData, _ = json.Marshal(widgetMessage{Type: "conversations:listed", Data: event.Data})
+	case event.Entity == "support_teammate_presence" && event.Action == "updated" && len(event.Data) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "teammate:presence", Data: event.Data})
 	}
 
 	// Copy targets under read lock.
@@ -290,6 +311,10 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 	// Widget config updates go to all widget clients in the workspace
 	if event.Entity == "support_widget" && event.Action == "config_updated" {
+		return client.IsWidget
+	}
+
+	if event.Entity == "support_teammate_presence" && event.Action == "updated" {
 		return client.IsWidget
 	}
 

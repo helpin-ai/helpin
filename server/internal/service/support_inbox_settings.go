@@ -210,7 +210,7 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 
 // isOnline computes whether the widget is currently within business hours.
 func isOnline(s model.SupportInboxSettings) bool {
-	return buildWidgetAvailability(s, time.Now()).IsOnline
+	return resolveSupportAvailability(s, time.Now()).IsWithinOfficeHours
 }
 
 func parseTimeToMinutes(t string) int {
@@ -287,42 +287,7 @@ func nextBusinessHoursStart(settings model.SupportInboxSettings, localNow time.T
 }
 
 func buildWidgetAvailability(settings model.SupportInboxSettings, now time.Time) model.WidgetConfigAvailability {
-	offlineMessage := defaultOutsideHoursMessage(settings)
-	onlineAvailability := model.WidgetConfigAvailability{
-		IsOnline:      true,
-		StatusText:    "Online now",
-		ReplyTimeText: defaultOnlineReplyTimeText,
-	}
-
-	if !settings.BusinessHoursEnabled {
-		return onlineAvailability
-	}
-
-	loc, err := time.LoadLocation(settings.BusinessHoursTimezone)
-	if err != nil {
-		return onlineAvailability
-	}
-
-	localNow := now.In(loc)
-	if isWithinBusinessHours(settings, localNow) {
-		return onlineAvailability
-	}
-
-	availability := model.WidgetConfigAvailability{
-		IsOnline:            false,
-		StatusText:          "Offline now",
-		ReplyTimeText:       offlineMessage,
-		OutsideHoursMessage: &offlineMessage,
-	}
-
-	if nextOpen := nextBusinessHoursStart(settings, localNow); nextOpen != nil {
-		statusText := fmt.Sprintf("Offline now - Back %s", nextOpen.Format("Mon 3:04 PM"))
-		nextOnlineAt := nextOpen.Format(time.RFC3339)
-		availability.StatusText = statusText
-		availability.NextOnlineAt = &nextOnlineAt
-	}
-
-	return availability
+	return resolveSupportAvailability(settings, now).WidgetAvailability
 }
 
 // GetInstallation returns the installation and its parsed settings for a workspace.

@@ -193,6 +193,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       } else if (event.action === 'visitor_offline') {
         store.setVisitorOffline(event.entity_id)
       }
+    } else if (event.entity === 'support_teammate_presence') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
         const s = useSupportPresenceStore.getState()

@@ -186,6 +186,7 @@ func main() {
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
 		&model.SupportEmailWebhookEvent{},
+		&model.SupportTeammateStatusOverride{},
 		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
@@ -542,6 +543,7 @@ func main() {
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
+	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
@@ -562,6 +564,10 @@ func main() {
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
+	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	supportInboxService.SetPresenceProvider(wsHub.Presence)
+	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	notificationService.SetSupportRoutingDependencies(supportInstallRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -789,6 +795,7 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	orgService := service.NewOrganizationService(orgRepo)

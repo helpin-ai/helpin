@@ -18,6 +18,9 @@ interface WidgetPreviewProps {
   logoUrl?: string;
   helpSpaces?: Array<{ id: string; name: string; slug: string }>;
   availability?: WidgetConfig['availability'];
+  aiFirst?: boolean;
+  showTalkToHuman?: boolean;
+  escalationMessage?: string;
   widgetKey?: string;
   host?: string;
 }
@@ -41,6 +44,9 @@ export function WidgetPreview({
   logoUrl,
   helpSpaces,
   availability,
+  aiFirst = false,
+  showTalkToHuman = false,
+  escalationMessage,
   widgetKey,
   host,
 }: WidgetPreviewProps) {
@@ -70,8 +76,10 @@ export function WidgetPreview({
           buttonIconColor,
         },
         features: {
-          aiEnabled: false,
-          showTalkToHuman: false,
+          aiEnabled: aiFirst,
+          aiFirst,
+          showTalkToHuman,
+          escalationMessage,
           fileUploads: false,
           preChatForm: false,
           requirePhone: false,
@@ -92,7 +100,7 @@ export function WidgetPreview({
       widgetKey,
       host,
     });
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, widgetKey, host]);
+  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen, helpSpaces, availability, aiFirst, showTalkToHuman, escalationMessage, widgetKey, host]);
 
   // Unmount only when the React component itself unmounts
   useEffect(() => {

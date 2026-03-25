@@ -462,6 +462,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       logoUrl={logoUrl}
       helpSpaces={previewHelpSpaces}
       availability={previewAvailability}
+      aiFirst={aiEnabled && aiResponseMode === 'ai_first'}
+      showTalkToHuman={showTalkToHuman}
+      escalationMessage={escalationMessage}
       widgetKey={widgetKey}
       host={previewHost}
     />
@@ -1113,7 +1116,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Enable availability schedule</Label>
-                    <p className="text-xs text-muted-foreground">Widget availability and reply expectations follow this schedule.</p>
+                    <p className="text-xs text-muted-foreground">Human team availability and reply expectations follow this schedule after AI handoff.</p>
                   </div>
                   <Switch checked={businessHoursEnabled} onCheckedChange={setBusinessHoursEnabled} />
                 </div>

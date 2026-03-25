@@ -759,11 +759,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         state_id: fromStateId,
       });
     } else if (optimisticColumns) {
+      const loggedColumns = optimisticColumns as StoryStateColumn[];
       logPMDnD('store.move.optimistic_applied', {
         trace_id: traceID,
         story_id: storyId,
-        from_column: summarizePMDnDColumn(optimisticColumns.find((column) => column.state.id === fromStateId)),
-        to_column: summarizePMDnDColumn(optimisticColumns.find((column) => column.state.id === toStateId)),
+        from_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === fromStateId)),
+        to_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === toStateId)),
       });
     }
 

@@ -11,6 +11,7 @@ type SupportConversation struct {
 	DisplayID         int        `json:"display_id" gorm:"not null;index"`
 	Subject           string     `json:"subject" gorm:"not null"`
 	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
+	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
 	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
 	CustomerName      *string    `json:"customer_name"`
@@ -40,11 +41,48 @@ type SupportConversation struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
-	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
-	UnreadCount int     `json:"unread_count" gorm:"->"`
+	LastMessage         *string `json:"last_message,omitempty" gorm:"->"`
+	UnreadCount         int     `json:"unread_count" gorm:"->"`
+	OpenedByDisplayName *string `json:"opened_by_display_name,omitempty" gorm:"-"`
+	OpenedByAvatarURL   *string `json:"opened_by_avatar_url,omitempty" gorm:"-"`
+	OpenedByStatus      *string `json:"opened_by_status,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
+
+const (
+	SupportConversationFlowStateAIHandling      = "ai_handling"
+	SupportConversationFlowStateWaitingForHuman = "waiting_for_human"
+	SupportConversationFlowStateQueuedForHuman  = "queued_for_human"
+	SupportConversationFlowStateAfterHoursQueue = "after_hours_queue"
+	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
+	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
+	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+const (
+	SupportTeammateStatusOnline  = "online"
+	SupportTeammateStatusAway    = "away"
+	SupportTeammateStatusOffline = "offline"
+)
+
+const (
+	SupportTeammateStatusSourceAuto   = "auto"
+	SupportTeammateStatusSourceManual = "manual"
+)
+
+// SupportTeammatePresenceStatus represents a teammate's live support availability.
+type SupportTeammatePresenceStatus struct {
+	UserID       string     `json:"user_id"`
+	Status       string     `json:"status"`
+	Source       string     `json:"source"` // auto | manual
+	ManualStatus *string    `json:"manual_status,omitempty"`
+	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type UpdateSupportTeammatePresenceRequest struct {
+	ManualStatus *string `json:"manual_status"`
+}
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
@@ -202,6 +240,16 @@ type WidgetSessionRevokeRequest struct {
 	SessionToken string `json:"session_token"`
 }
 
+type WidgetTranscriptRequest struct {
+	SessionToken string `json:"session_token"`
+	Email        string `json:"email,omitempty"`
+}
+
+type WidgetTranscriptResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 // ── WS Message Types ─────────────────────────────────────────────────
 
 // WidgetWSMessage is the envelope for all widget WS messages.
@@ -257,14 +305,22 @@ type WidgetConversationSelectData struct {
 	ConversationID string `json:"conversation_id"`
 }
 
+type WidgetActiveTeammate struct {
+	UserID    string  `json:"user_id"`
+	Name      string  `json:"name"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
+	Status    string  `json:"status,omitempty"`
+}
+
 // WidgetSessionJoinedPayload is sent to the client after session:create or session:restore.
 type WidgetSessionJoinedPayload struct {
-	SessionToken  string                `json:"session_token"`
-	ExpiresAt     string                `json:"expires_at"`
-	IsAnonymous   bool                  `json:"is_anonymous"`
-	CustomerEmail string                `json:"customer_email,omitempty"`
-	Conversations []SupportConversation `json:"conversations"`
-	Messages      []SupportMessage      `json:"messages"`
+	SessionToken   string                `json:"session_token"`
+	ExpiresAt      string                `json:"expires_at"`
+	IsAnonymous    bool                  `json:"is_anonymous"`
+	CustomerEmail  string                `json:"customer_email,omitempty"`
+	Conversations  []SupportConversation `json:"conversations"`
+	Messages       []SupportMessage      `json:"messages"`
+	ActiveTeammate *WidgetActiveTeammate `json:"active_teammate,omitempty"`
 }
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
@@ -567,13 +623,15 @@ type WidgetConfigBranding struct {
 
 // WidgetConfigFeatures matches the widget-core WidgetConfig.features shape.
 type WidgetConfigFeatures struct {
-	AIEnabled       bool `json:"aiEnabled"`
-	ShowTalkToHuman bool `json:"showTalkToHuman"`
-	FileUploads     bool `json:"fileUploads"`
-	PreChatForm     bool `json:"preChatForm"`
-	RequirePhone    bool `json:"requirePhone"`
-	CSATRating      bool `json:"csatRating"`
-	ForceIdentify   bool `json:"forceIdentify"`
+	AIEnabled         bool   `json:"aiEnabled"`
+	AIFirst           bool   `json:"aiFirst"`
+	ShowTalkToHuman   bool   `json:"showTalkToHuman"`
+	EscalationMessage string `json:"escalationMessage,omitempty"`
+	FileUploads       bool   `json:"fileUploads"`
+	PreChatForm       bool   `json:"preChatForm"`
+	RequirePhone      bool   `json:"requirePhone"`
+	CSATRating        bool   `json:"csatRating"`
+	ForceIdentify     bool   `json:"forceIdentify"`
 }
 
 // WidgetConfigAvailability matches the widget-core WidgetConfig.availability shape.
@@ -619,17 +677,19 @@ type WidgetHelpArticle struct {
 	Excerpt     *string `json:"excerpt,omitempty"`
 	Icon        *string `json:"icon,omitempty"`
 	ContentHTML *string `json:"content_html"`
+	PublicPath  *string `json:"public_path,omitempty"`
 }
 
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WorkspaceID   string                   `json:"workspaceId"`
-	WorkspaceName string                   `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding     `json:"branding"`
-	Features      WidgetConfigFeatures     `json:"features"`
-	Availability  WidgetConfigAvailability `json:"availability"`
-	HelpSpaces    []WidgetHelpSpace        `json:"helpSpaces"`
+	WorkspaceID        string                   `json:"workspaceId"`
+	WorkspaceName      string                   `json:"workspaceName,omitempty"`
+	Branding           WidgetConfigBranding     `json:"branding"`
+	Features           WidgetConfigFeatures     `json:"features"`
+	Availability       WidgetConfigAvailability `json:"availability"`
+	AvailableTeammates []WidgetActiveTeammate   `json:"availableTeammates,omitempty"`
+	HelpSpaces         []WidgetHelpSpace        `json:"helpSpaces"`
 }
 
 // ── Visitor Context DTOs ─────────────────────────────────────────────

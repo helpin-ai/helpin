@@ -33,6 +33,11 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
 }) => {
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const companyName = config.workspaceName || 'Support';
+  const ctaStyle = {
+    backgroundColor: brandColor,
+    borderColor: brandColor,
+    color: '#ffffff',
+  } as Record<string, string>;
 
   if (conversations.length === 0) {
     return (
@@ -42,7 +47,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
           <span className="helpin-conversations-title">Messages</span>
           {onClose && (
             <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
-              <XIcon size={16} />
+              <XIcon size={18} />
             </button>
           )}
         </div>
@@ -55,7 +60,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
           <button
             className="helpin-conversations-new-btn"
             onClick={onStartConversation}
-            style={{ borderColor: brandColor, color: brandColor }}
+            style={ctaStyle}
           >
             <span>Send us a message</span>
             <SendIcon size={16} />
@@ -72,7 +77,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
         <span className="helpin-conversations-title">Messages</span>
         {onClose && (
           <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
-            <XIcon size={16} />
+            <XIcon size={18} />
           </button>
         )}
       </div>
@@ -113,6 +118,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
         <button
           className="helpin-conversations-new-btn"
           onClick={onStartConversation}
+          style={ctaStyle}
         >
           <span>Send us a message</span>
           <SendIcon size={16} />

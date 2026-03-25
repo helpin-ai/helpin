@@ -14,6 +14,7 @@ import {
   useConversation,
   useConversationMessages,
   useChatSettings,
+  useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
   useMarkConversationUnread,
@@ -185,6 +186,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: installation } = useChatSettings(workspaceId);
+  useSupportTeammatePresence(workspaceId);
+  useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
   const markUnread = useMarkConversationUnread(workspaceId);
@@ -410,7 +413,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
 
           <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">

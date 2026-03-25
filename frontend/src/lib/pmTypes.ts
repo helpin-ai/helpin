@@ -1476,6 +1476,7 @@ export interface SupportConversation {
   display_id: number;
   subject: string;
   status: ConversationStatus;
+  flow_state?: 'ai_handling' | 'waiting_for_human' | 'queued_for_human' | 'after_hours_queue' | 'assigned_to_human' | 'resolved_by_ai' | 'resolved_by_human' | null;
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
@@ -1504,6 +1505,14 @@ export interface UnreadStats {
   total: number;
   my_inbox: number;
   unassigned: number;
+}
+
+export interface SupportTeammatePresenceStatus {
+  user_id: string;
+  status: 'online' | 'away' | 'offline';
+  source: 'auto' | 'manual';
+  manual_status?: 'online' | 'away' | 'offline';
+  last_seen_at?: string;
 }
 
 export interface ConversationListMeta {

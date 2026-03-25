@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 )
 
 // PresenceState tracks who is viewing and typing in each conversation.
@@ -24,6 +25,10 @@ type PresenceState struct {
 	typingOwner map[string]map[string]map[string]string
 	// workspaceID → anonymousID → connID → struct{} (visitor connections)
 	visitorConns map[string]map[string]map[string]struct{}
+	// workspaceID → userID → connID → struct{} (internal agent connections)
+	agentConns map[string]map[string]map[string]struct{}
+	// workspaceID → userID → last seen time
+	agentLastSeen map[string]map[string]time.Time
 }
 
 // NewPresenceState creates an empty presence registry.
@@ -35,7 +40,113 @@ func NewPresenceState() *PresenceState {
 		activeViewing: make(map[string]map[string]map[string]string),
 		typingOwner:   make(map[string]map[string]map[string]string),
 		visitorConns:  make(map[string]map[string]map[string]struct{}),
+		agentConns:    make(map[string]map[string]map[string]struct{}),
+		agentLastSeen: make(map[string]map[string]time.Time),
 	}
+}
+
+// --- Agent online presence ---
+
+// SetAgentOnline marks an internal agent connection as online.
+func (p *PresenceState) SetAgentOnline(_ context.Context, workspaceID, userID, connID string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.agentConns[workspaceID] == nil {
+		p.agentConns[workspaceID] = make(map[string]map[string]struct{})
+	}
+	if p.agentConns[workspaceID][userID] == nil {
+		p.agentConns[workspaceID][userID] = make(map[string]struct{})
+	}
+	firstConn := len(p.agentConns[workspaceID][userID]) == 0
+	p.agentConns[workspaceID][userID][connID] = struct{}{}
+
+	if p.agentLastSeen[workspaceID] == nil {
+		p.agentLastSeen[workspaceID] = make(map[string]time.Time)
+	}
+	p.agentLastSeen[workspaceID][userID] = time.Now().UTC()
+
+	return firstConn, nil
+}
+
+// SetAgentOffline removes an internal agent connection. Returns true if this was the last connection.
+func (p *PresenceState) SetAgentOffline(_ context.Context, workspaceID, userID, connID string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	lastConn := false
+	if ws := p.agentConns[workspaceID]; ws != nil {
+		if conns := ws[userID]; conns != nil {
+			delete(conns, connID)
+			if len(conns) == 0 {
+				delete(ws, userID)
+				lastConn = true
+				if len(ws) == 0 {
+					delete(p.agentConns, workspaceID)
+				}
+			}
+		}
+	}
+
+	if p.agentLastSeen[workspaceID] == nil {
+		p.agentLastSeen[workspaceID] = make(map[string]time.Time)
+	}
+	p.agentLastSeen[workspaceID][userID] = time.Now().UTC()
+
+	return lastConn, nil
+}
+
+// GetOnlineAgents returns the list of internal user IDs with at least one active connection.
+func (p *PresenceState) GetOnlineAgents(_ context.Context, workspaceID string) ([]string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	ws := p.agentConns[workspaceID]
+	if ws == nil {
+		return nil, nil
+	}
+	agents := make([]string, 0, len(ws))
+	for userID, conns := range ws {
+		if len(conns) > 0 {
+			agents = append(agents, userID)
+		}
+	}
+	return agents, nil
+}
+
+// GetAgentLastSeen returns the most recent activity timestamps for internal agents in a workspace.
+func (p *PresenceState) GetAgentLastSeen(_ context.Context, workspaceID string) (map[string]time.Time, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	ws := p.agentLastSeen[workspaceID]
+	if ws == nil {
+		return map[string]time.Time{}, nil
+	}
+	out := make(map[string]time.Time, len(ws))
+	for userID, ts := range ws {
+		out[userID] = ts
+	}
+	return out, nil
+}
+
+// RefreshAgentOnline updates the last-seen timestamp for an internal agent connection.
+func (p *PresenceState) RefreshAgentOnline(_ context.Context, workspaceID, userID, connID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if ws := p.agentConns[workspaceID]; ws != nil {
+		if conns := ws[userID]; conns != nil {
+			if _, ok := conns[connID]; ok {
+				if p.agentLastSeen[workspaceID] == nil {
+					p.agentLastSeen[workspaceID] = make(map[string]time.Time)
+				}
+				p.agentLastSeen[workspaceID][userID] = time.Now().UTC()
+			}
+		}
+	}
+
+	return nil
 }
 
 // --- Viewing ---
@@ -303,8 +414,8 @@ func (p *PresenceState) ClearAllForConn(_ context.Context, workspaceID, userID, 
 
 // PresenceSnapshot holds the current viewers and typers for a conversation.
 type PresenceSnapshot struct {
-	Viewers []string          `json:"viewers"`           // userIDs currently viewing
-	Typers  map[string]string `json:"typers,omitempty"`  // userID → draft content
+	Viewers []string          `json:"viewers"`          // userIDs currently viewing
+	Typers  map[string]string `json:"typers,omitempty"` // userID → draft content
 }
 
 // GetSnapshot returns the current presence for a conversation.

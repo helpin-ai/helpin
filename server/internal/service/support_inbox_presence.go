@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -40,5 +41,21 @@ func (s *SupportInboxService) PublishViewingPresence(ctx context.Context, worksp
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
+	})
+}
+
+// PublishSupportTeammatePresence broadcasts a teammate presence update.
+func PublishSupportTeammatePresence(ctx context.Context, publisher *websocket.Publisher, workspaceID string, status model.SupportTeammatePresenceStatus) {
+	if publisher == nil {
+		return
+	}
+	data, _ := json.Marshal(status)
+	publisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_teammate_presence",
+		EntityID:    status.UserID,
+		WorkspaceID: workspaceID,
+		ActorID:     status.UserID,
+		Data:        data,
 	})
 }
