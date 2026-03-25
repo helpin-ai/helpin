@@ -58,6 +58,7 @@ export interface DocsDocument {
   excerpt?: string;
   icon?: string;
   tags: string[];
+  position: number;
   is_pinned: boolean;
   is_publicly_shared: boolean;
   share_token?: string;
@@ -319,6 +320,22 @@ export interface ToggleDocShareRequest {
 export interface PublicDocResponse {
   document: DocsDocument;
   content: DocsContent | null;
+}
+
+// ─── Reorder DTOs ───────────────────────────────────────────────────────────
+
+export interface ReorderDocsSpacesRequest {
+  section: SpaceType;
+  space_ids: string[];
+}
+
+export interface ReorderDocsCollectionsRequest {
+  collection_ids: string[];
+}
+
+export interface ReorderDocsDocumentsRequest {
+  collection_id?: string;
+  document_ids: string[];
 }
 
 // ─── Display helpers ────────────────────────────────────────────────────────

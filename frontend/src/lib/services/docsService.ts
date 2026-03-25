@@ -169,6 +169,14 @@ export const docsService = {
   getSharedDoc: (shareToken: string) =>
     api.get<PublicDocResponse>(`/docs/shared/${shareToken}`),
 
+  // ── Reorder ────────────────────────────────────────────────────────────
+  reorderSpaces: (wsId: string, data: import('../docsTypes').ReorderDocsSpacesRequest) =>
+    api.put(`/docs/spaces/reorder${qs(wsId)}`, data),
+  reorderCollections: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsCollectionsRequest) =>
+    api.put(`/docs/spaces/${spaceId}/collections/reorder${qs(wsId)}`, data),
+  reorderDocuments: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsDocumentsRequest) =>
+    api.put(`/docs/spaces/${spaceId}/documents/reorder${qs(wsId)}`, data),
+
   // ── Preview ────────────────────────────────────────────────────────────
   getPreviewToken: (wsId: string, docId: string) =>
     api.post<{ token: string; subdomain: string }>(`/docs/documents/${docId}/preview-token${qs(wsId)}`),

@@ -173,6 +173,7 @@ type DocsDocument struct {
 	Excerpt          *string         `json:"excerpt"`
 	Icon             *string         `json:"icon"`
 	Tags             DocsStringArray `json:"tags" gorm:"type:text[]"`
+	Position         int             `json:"position" gorm:"not null;default:0"`
 	IsPinned         bool            `json:"is_pinned" gorm:"not null;default:false"`
 	IsPubliclyShared bool            `json:"is_publicly_shared" gorm:"not null;default:false"`
 	ShareToken       *string         `json:"share_token" gorm:"uniqueIndex"`
@@ -438,6 +439,25 @@ type CreateDocsDocumentRequest struct {
 	TemplateKey  *string  `json:"template_key"`
 	Icon         *string  `json:"icon"`
 	Tags         []string `json:"tags"`
+}
+
+// ─── Reorder request DTOs ───────────────────────────────────────────────────
+
+// ReorderDocsSpacesRequest reorders spaces within a section (internal or external_capable).
+type ReorderDocsSpacesRequest struct {
+	Section  string   `json:"section"`   // "internal" | "external_capable"
+	SpaceIDs []string `json:"space_ids"` // full ordered sibling list
+}
+
+// ReorderDocsCollectionsRequest reorders collections within a space.
+type ReorderDocsCollectionsRequest struct {
+	CollectionIDs []string `json:"collection_ids"` // full ordered list for one space
+}
+
+// ReorderDocsDocumentsRequest reorders documents within a bucket (collection or uncategorized).
+type ReorderDocsDocumentsRequest struct {
+	CollectionID *string  `json:"collection_id"` // nil => uncategorized bucket
+	DocumentIDs  []string `json:"document_ids"`  // full ordered list for one bucket
 }
 
 // UpdateDocsDocumentRequest is the payload for updating a document.

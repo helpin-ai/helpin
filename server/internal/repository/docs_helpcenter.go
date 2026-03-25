@@ -217,7 +217,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.collection_id, d.created_at ASC
+		ORDER BY d.collection_id, d.position ASC, d.created_at ASC
 	`, spaceID).Scan(&articles).Error; err != nil {
 		return nil, fmt.Errorf("list space nav articles: %w", err)
 	}
@@ -363,7 +363,7 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesByCollectionID(ctx context.
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.is_pinned DESC, d.created_at ASC
+		ORDER BY d.position ASC, d.created_at ASC
 	`, collectionID).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list widget articles by collection: %w", err)
 	}
@@ -401,7 +401,7 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesBySpaceUncategorized(ctx co
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.is_pinned DESC, d.created_at ASC
+		ORDER BY d.position ASC, d.created_at ASC
 	`, spaceID).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list uncategorized widget articles: %w", err)
 	}
@@ -549,7 +549,7 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.is_pinned DESC, d.created_at ASC
+		ORDER BY d.position ASC, d.created_at ASC
 	`, coll.ID).Scan(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("list public collection articles: %w", err)
 	}

@@ -36,12 +36,19 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, fmt.Errorf("space does not belong to this workspace")
 	}
 
+	// Append to end of space.
+	nextPos, err := s.collectionRepo.NextPosition(ctx, spaceID)
+	if err != nil {
+		nextPos = 0
+	}
+
 	coll := &model.DocsCollection{
 		SpaceID:     spaceID,
 		WorkspaceID: workspaceID,
 		Name:        req.Name,
 		Description: req.Description,
 		Icon:        req.Icon,
+		Position:    nextPos,
 		CreatedBy:   userID,
 	}
 	if req.Slug != nil && *req.Slug != "" {
@@ -89,4 +96,12 @@ func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
 // Restore restores a soft-deleted collection.
 func (s *DocsCollectionService) Restore(ctx context.Context, id string) (*model.DocsCollection, error) {
 	return s.collectionRepo.Restore(ctx, id)
+}
+
+// ReorderCollections reorders collections within a space.
+func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID string, req model.ReorderDocsCollectionsRequest) error {
+	if len(req.CollectionIDs) == 0 {
+		return nil
+	}
+	return s.collectionRepo.Reorder(ctx, spaceID, req.CollectionIDs)
 }

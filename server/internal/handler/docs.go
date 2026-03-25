@@ -405,6 +405,51 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, content)
 }
 
+// ReorderSpaces reorders spaces within a section.
+func (h *DocsHandler) ReorderSpaces(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	var req model.ReorderDocsSpacesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.spaceSvc.ReorderSpaces(r.Context(), wsID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderCollections reorders collections within a space.
+func (h *DocsHandler) ReorderCollections(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsCollectionsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.collectionSvc.ReorderCollections(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderDocuments reorders documents within a bucket.
+func (h *DocsHandler) ReorderDocuments(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsDocumentsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.documentSvc.ReorderDocuments(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
 // GeneratePreviewToken creates a short-lived JWT for previewing a document in the help center app.
 func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Request) {
 	wsID := r.URL.Query().Get("workspace_id")

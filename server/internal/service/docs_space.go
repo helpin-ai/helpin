@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -50,6 +51,13 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 		return nil, fmt.Errorf("invalid space type: %s", req.Type)
 	}
 
+	// Append to end of section.
+	nextPos, err := s.spaceRepo.NextPosition(ctx, workspaceID, req.Type)
+	if err != nil {
+		slog.ErrorContext(ctx, "next space position failed", "error", err)
+		nextPos = 0
+	}
+
 	space := &model.DocsSpace{
 		WorkspaceID:       workspaceID,
 		TeamID:            req.TeamID,
@@ -58,6 +66,7 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 		Icon:              req.Icon,
 		Visibility:        req.Visibility,
 		Type:              req.Type,
+		Position:          nextPos,
 		DefaultReviewDays: req.DefaultReviewDays,
 		CreatedBy:         userID,
 	}
@@ -228,6 +237,7 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 	}
 
 	updates := map[string]interface{}{}
+	originalType := space.Type
 	if req.Name != nil {
 		updates["name"] = *req.Name
 	}
@@ -238,7 +248,17 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		updates["icon"] = *req.Icon
 	}
 	if req.Type != nil {
+		if *req.Type != model.SpaceTypeInternal && *req.Type != model.SpaceTypeExternalCapable {
+			return nil, fmt.Errorf("invalid space type: %s", *req.Type)
+		}
 		updates["type"] = *req.Type
+		if *req.Type != originalType {
+			nextPos, err := s.spaceRepo.NextPosition(ctx, space.WorkspaceID, *req.Type)
+			if err != nil {
+				return nil, err
+			}
+			updates["position"] = nextPos
+		}
 	}
 	if req.Visibility != nil {
 		updates["visibility"] = *req.Visibility
@@ -250,6 +270,11 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		space, err = s.spaceRepo.Update(ctx, id, updates)
 		if err != nil {
 			return nil, err
+		}
+		if req.Type != nil && *req.Type != originalType {
+			if err := s.spaceRepo.NormalizeSection(ctx, space.WorkspaceID, originalType); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -367,4 +392,15 @@ func slugify(name string) string {
 	}, s)
 	s = strings.Join(strings.Fields(s), "-")
 	return s
+}
+
+// ReorderSpaces reorders spaces within a section (internal or external_capable).
+func (s *DocsSpaceService) ReorderSpaces(ctx context.Context, workspaceID string, req model.ReorderDocsSpacesRequest) error {
+	if req.Section != model.SpaceTypeInternal && req.Section != model.SpaceTypeExternalCapable {
+		return fmt.Errorf("invalid section: %s", req.Section)
+	}
+	if len(req.SpaceIDs) == 0 {
+		return nil
+	}
+	return s.spaceRepo.Reorder(ctx, workspaceID, req.Section, req.SpaceIDs)
 }

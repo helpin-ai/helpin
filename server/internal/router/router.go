@@ -718,6 +718,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/publish", h.Docs.PublishDocument)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/unpublish", h.Docs.UnpublishDocument)
 
+				// Reorder — docs.edit
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/reorder", h.Docs.ReorderSpaces)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/collections/reorder", h.Docs.ReorderCollections)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/documents/reorder", h.Docs.ReorderDocuments)
+
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)

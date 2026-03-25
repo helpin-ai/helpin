@@ -50,6 +50,13 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		teamID = nil
 	}
 
+	// Get next position in the target bucket.
+	nextPos, err := s.docRepo.NextPosition(ctx, req.SpaceID, collectionID)
+	if err != nil {
+		slog.ErrorContext(ctx, "next document position failed", "error", err)
+		nextPos = 0
+	}
+
 	doc := &model.DocsDocument{
 		WorkspaceID:  workspaceID,
 		SpaceID:      req.SpaceID,
@@ -62,6 +69,7 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		TemplateKey:  req.TemplateKey,
 		Icon:         req.Icon,
 		Tags:         model.DocsStringArray(req.Tags),
+		Position:     nextPos,
 		CreatedBy:    userID,
 	}
 	return s.docRepo.Create(ctx, doc)
@@ -96,13 +104,31 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 		return nil, err
 	}
 
+	// Handle collection_id change as a move operation to preserve ordering.
+	if req.CollectionID != nil {
+		newCollID := req.CollectionID
+		if *newCollID == "" {
+			newCollID = nil
+		}
+		oldCollID := doc.CollectionID
+
+		// Only move if collection actually changed.
+		collChanged := (oldCollID == nil && newCollID != nil) ||
+			(oldCollID != nil && newCollID == nil) ||
+			(oldCollID != nil && newCollID != nil && *oldCollID != *newCollID)
+
+		if collChanged {
+			if err := s.docRepo.Move(ctx, id, doc.SpaceID, newCollID); err != nil {
+				return nil, fmt.Errorf("move document to collection: %w", err)
+			}
+		}
+	}
+
 	updates := map[string]interface{}{}
 	if req.Title != nil {
 		updates["title"] = *req.Title
 	}
-	if req.CollectionID != nil {
-		updates["collection_id"] = *req.CollectionID
-	}
+	// collection_id is handled above via move semantics, skip raw patch.
 	if req.OwnerID != nil {
 		updates["owner_id"] = *req.OwnerID
 	}
@@ -122,7 +148,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 		updates["is_pinned"] = *req.IsPinned
 	}
 	if len(updates) == 0 {
-		return doc, nil
+		return s.docRepo.GetByID(ctx, id)
 	}
 	return s.docRepo.Update(ctx, id, updates)
 }
@@ -342,6 +368,11 @@ func checkLocked(doc *model.DocsDocument) error {
 		return fmt.Errorf("document is locked and cannot be modified")
 	}
 	return nil
+}
+
+// ReorderDocuments reorders documents within a bucket (collection or uncategorized).
+func (s *DocsDocumentService) ReorderDocuments(ctx context.Context, spaceID string, req model.ReorderDocsDocumentsRequest) error {
+	return s.docRepo.Reorder(ctx, spaceID, req.CollectionID, req.DocumentIDs)
 }
 
 func generateShareToken() (string, error) {

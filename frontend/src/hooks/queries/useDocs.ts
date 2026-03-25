@@ -17,6 +17,9 @@ import type {
   UpdateDocsHelpcenterConfigRequest,
   DocsArticleFeedbackRequest,
   DocsDocument,
+  ReorderDocsSpacesRequest,
+  ReorderDocsCollectionsRequest,
+  ReorderDocsDocumentsRequest,
 } from '@/lib/docsTypes'
 
 // ── Spaces ──────────────────────────────────────────────────────────────────
@@ -567,6 +570,35 @@ export function useDocsHelpcenterConfig(wsId: string) {
     queryKey: queryKeys.docs.helpcenterConfig(wsId),
     queryFn: async () => unwrap(await docsService.getHelpcenterConfig(wsId)),
     enabled: !!wsId,
+  })
+}
+
+export function useReorderDocsSpaces(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: ReorderDocsSpacesRequest) =>
+      unwrap(await docsService.reorderSpaces(wsId, data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.docs.spaces(wsId) }) },
+  })
+}
+
+export function useReorderDocsCollections(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ spaceId, data }: { spaceId: string; data: ReorderDocsCollectionsRequest }) =>
+      unwrap(await docsService.reorderCollections(wsId, spaceId, data)),
+    onSuccess: (_, { spaceId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+    },
+  })
+}
+
+export function useReorderDocsDocuments(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ spaceId, data }: { spaceId: string; data: ReorderDocsDocumentsRequest }) =>
+      unwrap(await docsService.reorderDocuments(wsId, spaceId, data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) }) },
   })
 }
 
