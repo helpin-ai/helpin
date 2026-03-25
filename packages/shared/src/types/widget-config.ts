@@ -21,7 +21,9 @@ export interface WidgetConfig {
   };
   features: {
     aiEnabled: boolean;
+    aiFirst: boolean;
     showTalkToHuman: boolean;
+    escalationMessage?: string;
     fileUploads: boolean;
     preChatForm: boolean;
     requirePhone: boolean;

@@ -1,6 +1,9 @@
 package websocket
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // PresenceProvider abstracts presence state storage for viewing, typing,
 // and visitor-online tracking. Both the in-memory PresenceState (dev/tests)
@@ -10,6 +13,13 @@ import "context"
 // The in-memory implementation ignores TTL/refresh (keys never expire) but
 // still tracks connID for correctness.
 type PresenceProvider interface {
+	// Agent online presence — conn-scoped (one internal user can have multiple tabs).
+	SetAgentOnline(ctx context.Context, workspaceID, userID, connID string) (firstConn bool, err error)
+	SetAgentOffline(ctx context.Context, workspaceID, userID, connID string) (lastConn bool, err error)
+	GetOnlineAgents(ctx context.Context, workspaceID string) ([]string, error)
+	GetAgentLastSeen(ctx context.Context, workspaceID string) (map[string]time.Time, error)
+	RefreshAgentOnline(ctx context.Context, workspaceID, userID, connID string) error
+
 	// Viewing — conn-scoped (one agent can view from multiple tabs).
 	SetViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)
 	ClearViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)

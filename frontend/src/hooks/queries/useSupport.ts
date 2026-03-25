@@ -77,6 +77,31 @@ export function useUnreadStats(workspaceId: string) {
   });
 }
 
+export function useSupportTeammatePresence(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.teammatePresence(workspaceId),
+    queryFn: async () => unwrap(await supportService.listTeammatePresence(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useUpdateMySupportTeammatePresence(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (manualStatus: 'online' | 'away' | 'offline' | null) =>
+      supportService.updateMyTeammatePresence(workspaceId, manualStatus).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update support status', { description: error.message });
+    },
+  });
+}
+
 export function useConversation(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.conversation(workspaceId, conversationId ?? ''),

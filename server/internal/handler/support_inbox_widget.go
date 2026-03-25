@@ -183,6 +183,33 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, messages)
 }
 
+// SendTranscript handles POST /api/widget/support/conversations/{id}/transcript.
+func (h *SupportInboxWidgetHandler) SendTranscript(w http.ResponseWriter, r *http.Request) {
+	conversationID := chi.URLParam(r, "conversationId")
+	if conversationID == "" {
+		writeError(w, http.StatusBadRequest, "conversation_id is required")
+		return
+	}
+
+	var req model.WidgetTranscriptRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.SessionToken == "" {
+		writeError(w, http.StatusBadRequest, "session_token is required")
+		return
+	}
+
+	resp, err := h.supportService.SendWidgetConversationTranscript(r.Context(), req.SessionToken, conversationID, req.Email)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // Identify handles POST /api/widget/identify (headless SDK path).
 // When the widget is not open, the SDK sends identity data via HTTP instead of WebSocket.
 func (h *SupportInboxWidgetHandler) Identify(w http.ResponseWriter, r *http.Request) {

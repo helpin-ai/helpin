@@ -588,7 +588,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       </div>
 
       <AlertDialog open={offlineEmailConfirmOpen} onOpenChange={setOfflineEmailConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            window.requestAnimationFrame(() => {
+              document.getElementById('offline-email-confirm-send')?.focus();
+            });
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Send this reply by email too?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -611,6 +618,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           <AlertDialogFooter>
             <AlertDialogCancel disabled={sendMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              id="offline-email-confirm-send"
               variant="default"
               disabled={sendMutation.isPending}
               onClick={(event) => {

@@ -37,6 +37,17 @@ export interface ShowArticleOptions {
 type WidgetCallback = (...args: any[]) => void;
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 
+type WidgetActiveTeammate = {
+  userId: string;
+  name: string;
+  avatarUrl?: string;
+  status?: 'online' | 'away' | 'offline';
+};
+
+type WidgetConversation = Conversation & {
+  activeTeammate?: WidgetActiveTeammate;
+};
+
 const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
@@ -64,7 +75,7 @@ export class WidgetManager {
   private mountContainer: HTMLElement | null = null;
   private shadowRoot: ShadowRoot | null = null;
   private messages: Message[] = [];
-  private conversations: Conversation[] = [];
+  private conversations: WidgetConversation[] = [];
   private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private openArticleRequest: { key: number; articleSlug: string } | null = null;
@@ -73,7 +84,9 @@ export class WidgetManager {
   private isAIThinking = false;
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
+  private activeTeammate: WidgetActiveTeammate | undefined;
   private currentEmail: string | null = null;
+  private isConversationExpanded = false;
   private preChatDone = false;
   private notificationAudio: HTMLAudioElement | null = null;
   private notificationAudioUnlocked = false;
@@ -188,7 +201,9 @@ export class WidgetManager {
     this.articleRequestKey = 0;
     this.isTyping = false;
     this.connectionStatus = 'idle';
+    this.activeTeammate = undefined;
     this.currentEmail = null;
+    this.isConversationExpanded = false;
 
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
@@ -259,6 +274,48 @@ export class WidgetManager {
   showConversation(conversationId: string): void {
     this.currentView = 'home';
     this.show();
+  }
+
+  toggleConversationExpanded(): void {
+    this.isConversationExpanded = !this.isConversationExpanded;
+    this.render();
+  }
+
+  async requestConversationTranscript(email?: string): Promise<{ success: boolean; message: string }> {
+    if (!this.sessionToken) {
+      throw new Error('Session not ready');
+    }
+    if (!this.activeConversationId) {
+      throw new Error('No active conversation');
+    }
+
+    const response = await fetch(
+      `https://${this.host}/widget/support/conversations/${encodeURIComponent(this.activeConversationId)}/transcript`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_token: this.sessionToken,
+          email,
+        }),
+      },
+    );
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Unable to send transcript right now.');
+    }
+
+    if (email && !this.currentEmail) {
+      this.currentEmail = email;
+    }
+
+    return {
+      success: Boolean(payload?.success),
+      message: payload?.message || 'Transcript sent.',
+    };
   }
 
   private getConversationIdFromHash(): string | null {
@@ -367,10 +424,15 @@ export class WidgetManager {
     const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified && (forceIdentify || !this.preChatDone);
 
     const mountOptions: Parameters<typeof mountWidget>[1] & {
+      activeTeammate?: WidgetActiveTeammate;
       openArticleRequest?: {
         key: number;
         articleSlug: string;
       };
+      isConversationExpanded?: boolean;
+      onToggleConversationExpanded?: () => void;
+      transcriptEmail?: string;
+      onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
     } = {
       config: this.widgetConfig,
       messages: this.messages,
@@ -388,6 +450,7 @@ export class WidgetManager {
       onEscalateToHuman: () => this.handleEscalateToHuman(),
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
+      activeTeammate: this.activeTeammate,
       initialView: this.currentView,
       showLauncher: true,
       onLauncherClick: () => this.toggle(),
@@ -396,6 +459,10 @@ export class WidgetManager {
       conversations: this.conversations,
       onSelectConversation: (id: string) => this.handleSelectConversation(id),
       onStartNewConversation: () => this.handleStartNewConversation(),
+      isConversationExpanded: this.isConversationExpanded,
+      onToggleConversationExpanded: () => this.toggleConversationExpanded(),
+      transcriptEmail: this.currentEmail || undefined,
+      onRequestTranscript: (email?: string) => this.requestConversationTranscript(email),
       widgetKey: this.widgetKey || undefined,
       host: this.host,
       openArticleRequest: this.openArticleRequest || undefined,
@@ -482,8 +549,39 @@ export class WidgetManager {
 
   private resetActiveConversation(): void {
     this.activeConversationId = null;
+    this.activeTeammate = undefined;
     this.messages = [];
     this.isTyping = false;
+  }
+
+  private mapActiveTeammate(raw: any): WidgetActiveTeammate | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const userId = typeof raw.user_id === 'string' ? raw.user_id.trim() : '';
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if (!userId || !name) return undefined;
+    return {
+      userId,
+      name,
+      avatarUrl: typeof raw.avatar_url === 'string' && raw.avatar_url.trim() ? raw.avatar_url : undefined,
+      status: raw.status === 'online' || raw.status === 'away' || raw.status === 'offline' ? raw.status : undefined,
+    };
+  }
+
+  private mapConversation(raw: any): WidgetConversation {
+    return {
+      id: raw.id,
+      subject: raw.subject || 'Untitled',
+      status: raw.status || 'open',
+      lastMessage: raw.last_message,
+      lastMessageAt: raw.updated_at || raw.created_at,
+      unreadCount: raw.unread_count ?? 0,
+      activeTeammate: this.mapActiveTeammate({
+        user_id: raw.opened_by_user_id,
+        name: raw.opened_by_display_name,
+        avatar_url: raw.opened_by_avatar_url,
+        status: raw.opened_by_status,
+      }),
+    };
   }
 
   private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
@@ -784,6 +882,7 @@ export class WidgetManager {
 
   private handleSelectConversation(conversationId: string): void {
     this.activeConversationId = conversationId;
+    this.activeTeammate = this.conversations.find((conversation) => conversation.id === conversationId)?.activeTeammate;
 
     // Request messages for this conversation via WS (also marks it read server-side)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
@@ -969,19 +1068,14 @@ export class WidgetManager {
 
         // Load conversations list from server
         if (payload.conversations && payload.conversations.length > 0) {
-          this.conversations = payload.conversations.map((c: any) => ({
-            id: c.id,
-            subject: c.subject || 'Untitled',
-            status: c.status || 'open',
-            lastMessage: c.last_message,
-            lastMessageAt: c.updated_at || c.created_at,
-            unreadCount: c.unread_count ?? 0,
-          }));
+          this.conversations = payload.conversations.map((c: any) => this.mapConversation(c));
         }
 
         // Set active conversation from messages (if session has one)
         if (payload.messages && payload.messages.length > 0 && payload.messages[0].conversation_id) {
           this.activeConversationId = payload.messages[0].conversation_id;
+          this.activeTeammate = this.mapActiveTeammate(payload.active_teammate)
+            || this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate;
           // Auto-navigate to the active conversation so the user resumes where they left off
           this.currentView = 'conversation';
         }
@@ -1156,6 +1250,10 @@ export class WidgetManager {
             }, ...this.conversations];
           }
 
+          if (this.activeConversationId === newMsg.conversationId && this.conversations.length > 0) {
+            this.activeTeammate = this.conversations.find((conversation) => conversation.id === newMsg.conversationId)?.activeTeammate;
+          }
+
           if (msg.sender_type !== 'customer' && isActiveAndOpen && this.wsConnection?.readyState === WebSocket.OPEN) {
             this.wsSend('conversation:read', { conversation_id: newMsg.conversationId });
           }
@@ -1172,6 +1270,7 @@ export class WidgetManager {
         const convId = data.data?.conversation_id;
         if (convId) {
           this.activeConversationId = convId;
+          this.activeTeammate = undefined;
           // Add new conversation to the list with real server ID
           if (!this.conversations.some(c => c.id === convId)) {
             const lastCustomerMsg = [...this.messages].reverse().find(m => m.role === 'customer');
@@ -1222,17 +1321,18 @@ export class WidgetManager {
       case 'conversations:listed': {
         const convs = data.data?.conversations;
         if (Array.isArray(convs)) {
-          this.conversations = convs.map((c: any) => ({
-            id: c.id,
-            subject: c.subject || 'Untitled',
-            status: c.status || 'open',
-            lastMessage: c.last_message,
-            lastMessageAt: c.updated_at || c.created_at,
-            // Don't show unread badge for the conversation the user is actively viewing
-            unreadCount: (this.isOpen && this.currentView === 'conversation' && this.activeConversationId === c.id)
-              ? 0
-              : (c.unread_count ?? 0),
-          }));
+          this.conversations = convs.map((c: any) => {
+            const conversation = this.mapConversation(c);
+            return {
+              ...conversation,
+              unreadCount: (this.isOpen && this.currentView === 'conversation' && this.activeConversationId === c.id)
+                ? 0
+                : conversation.unreadCount,
+            };
+          });
+          if (this.activeConversationId) {
+            this.activeTeammate = this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate;
+          }
           this.syncUnreadCount();
           this.render();
         }
@@ -1242,6 +1342,8 @@ export class WidgetManager {
       case 'conversation:messages': {
         const msgs = data.data?.messages;
         if (Array.isArray(msgs)) {
+          this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
+            || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
           this.messages = msgs.map((m: any) => {
             let meta: any = null;
             if (m.metadata) {
@@ -1266,6 +1368,48 @@ export class WidgetManager {
             }
             return mapped;
           });
+          this.render();
+        }
+        break;
+      }
+
+      case 'conversation:escalated': {
+        this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate) || this.activeTeammate;
+        this.render();
+        break;
+      }
+
+      case 'teammate:presence': {
+        const userId = typeof data.data?.user_id === 'string' ? data.data.user_id : '';
+        const status = data.data?.status;
+        if (!userId || (status !== 'online' && status !== 'away' && status !== 'offline')) {
+          break;
+        }
+
+        this.conversations = this.conversations.map((conversation) => {
+          const teammate = conversation.activeTeammate;
+          if (!teammate || teammate.userId !== userId) {
+            return conversation;
+          }
+          return {
+            ...conversation,
+            activeTeammate: {
+              userId: teammate.userId,
+              name: teammate.name,
+              avatarUrl: teammate.avatarUrl,
+              status,
+            },
+          };
+        });
+
+        const activeTeammate = this.activeTeammate;
+        if (activeTeammate && activeTeammate.userId === userId) {
+          this.activeTeammate = {
+            userId: activeTeammate.userId,
+            name: activeTeammate.name,
+            avatarUrl: activeTeammate.avatarUrl,
+            status,
+          };
           this.render();
         }
         break;

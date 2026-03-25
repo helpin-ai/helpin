@@ -271,6 +271,76 @@ func TestPresence_GetActiveViewing(t *testing.T) {
 	}
 }
 
+func TestPresence_AgentOnlineOfflineAndLastSeen(t *testing.T) {
+	p := NewPresenceState()
+	ctx := context.Background()
+
+	firstConn, err := p.SetAgentOnline(ctx, "ws-1", "user-1", "conn-1")
+	if err != nil {
+		t.Fatalf("SetAgentOnline: %v", err)
+	}
+	if !firstConn {
+		t.Fatal("expected first connection to be reported")
+	}
+
+	firstConn, err = p.SetAgentOnline(ctx, "ws-1", "user-1", "conn-2")
+	if err != nil {
+		t.Fatalf("SetAgentOnline second conn: %v", err)
+	}
+	if firstConn {
+		t.Fatal("expected second connection to not be reported as first")
+	}
+
+	onlineAgents, err := p.GetOnlineAgents(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("GetOnlineAgents: %v", err)
+	}
+	if len(onlineAgents) != 1 || onlineAgents[0] != "user-1" {
+		t.Fatalf("online agents = %v, want [user-1]", onlineAgents)
+	}
+
+	lastSeen, err := p.GetAgentLastSeen(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("GetAgentLastSeen: %v", err)
+	}
+	firstSeen := lastSeen["user-1"]
+	if firstSeen.IsZero() {
+		t.Fatal("expected last_seen for user-1")
+	}
+
+	if err := p.RefreshAgentOnline(ctx, "ws-1", "user-1", "conn-2"); err != nil {
+		t.Fatalf("RefreshAgentOnline: %v", err)
+	}
+	lastSeen, _ = p.GetAgentLastSeen(ctx, "ws-1")
+	if lastSeen["user-1"].Before(firstSeen) {
+		t.Fatal("expected refreshed last_seen to be >= original")
+	}
+
+	lastConn, err := p.SetAgentOffline(ctx, "ws-1", "user-1", "conn-1")
+	if err != nil {
+		t.Fatalf("SetAgentOffline conn-1: %v", err)
+	}
+	if lastConn {
+		t.Fatal("expected remaining connection after first disconnect")
+	}
+
+	lastConn, err = p.SetAgentOffline(ctx, "ws-1", "user-1", "conn-2")
+	if err != nil {
+		t.Fatalf("SetAgentOffline conn-2: %v", err)
+	}
+	if !lastConn {
+		t.Fatal("expected last connection on second disconnect")
+	}
+
+	onlineAgents, err = p.GetOnlineAgents(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("GetOnlineAgents after disconnect: %v", err)
+	}
+	if len(onlineAgents) != 0 {
+		t.Fatalf("expected no online agents after disconnect, got %v", onlineAgents)
+	}
+}
+
 func TestPresence_VisitorOnlineOffline(t *testing.T) {
 	p := NewPresenceState()
 	ctx := context.Background()

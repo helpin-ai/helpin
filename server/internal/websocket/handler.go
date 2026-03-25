@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"nhooyr.io/websocket"
 
@@ -124,6 +125,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.hub.Unregister(client) // also cleans up presence + broadcasts stop events
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
+
+	firstConn, err := h.hub.Presence.SetAgentOnline(r.Context(), workspaceID, client.UserID, client.ConnID)
+	if err != nil {
+		slog.Error("presence SetAgentOnline", "error", err, "user_id", client.UserID, "workspace_id", workspaceID)
+	} else if firstConn {
+		data, _ := json.Marshal(map[string]any{
+			"user_id":      client.UserID,
+			"status":       "online",
+			"last_seen_at": time.Now().UTC(),
+		})
+		h.hub.BroadcastAll(Event{
+			Action:      "updated",
+			Entity:      "support_teammate_presence",
+			EntityID:    client.UserID,
+			WorkspaceID: workspaceID,
+			ActorID:     client.UserID,
+			Data:        data,
+		})
+	}
 
 	// Send current online visitors as initial snapshot.
 	// Try PresenceProvider first (shared across pods), fall back to Hub's in-memory map.
@@ -263,6 +283,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "support:ping":
+			if err := h.hub.Presence.RefreshAgentOnline(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
+				slog.Error("presence RefreshAgentOnline", "error", err)
+			}
 			// Refresh all active presence keys for this agent connection (keepalive).
 			if err := h.hub.Presence.RefreshAllForConn(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
 				slog.Error("presence RefreshAllForConn", "error", err)

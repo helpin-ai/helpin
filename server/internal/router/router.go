@@ -124,6 +124,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
 		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.Post("/messages", h.SupportInboxWidget.SendMessage)
+		r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 		r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
@@ -205,6 +206,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
 			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			if h.SupportAI != nil {
@@ -407,6 +409,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/teammates/presence", h.SupportInbox.ListTeammatePresence)
+				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}", h.SupportInbox.GetConversation)

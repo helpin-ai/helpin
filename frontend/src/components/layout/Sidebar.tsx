@@ -70,7 +70,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -89,6 +94,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
 
 type NavItem = {
   link: string;
@@ -440,6 +446,13 @@ export function Sidebar() {
   const { isAdmin, canManageSettings } = usePermissions(access);
   const { navFilter, setNavFilter } = useSupportInboxStore();
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '');
+  const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '');
+  const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');
+  const mySupportPresence = useMemo(
+    () => (user?.id ? teammatePresence.find((entry) => entry.user_id === user.id) ?? null : null),
+    [teammatePresence, user?.id],
+  );
+  const selectedSupportPresenceMode = mySupportPresence?.manual_status ?? 'auto';
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
@@ -737,7 +750,7 @@ export function Sidebar() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="rounded-full transition-opacity hover:opacity-80"
+                    className="relative rounded-full transition-opacity hover:opacity-80"
                     aria-label="Account menu"
                   >
                     <Avatar className="size-8">
@@ -745,6 +758,17 @@ export function Sidebar() {
                         {initials}
                       </AvatarFallback>
                     </Avatar>
+                    {mySupportPresence && (
+                      <span
+                        className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${
+                          mySupportPresence.status === 'online'
+                            ? 'bg-emerald-500'
+                            : mySupportPresence.status === 'away'
+                              ? 'bg-amber-500'
+                              : 'bg-slate-300 dark:bg-slate-600'
+                        }`}
+                      />
+                    )}
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="right" align="end" className="w-56">
@@ -752,6 +776,40 @@ export function Sidebar() {
                     {user?.full_name || user?.email || 'Account'}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {mySupportPresence && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              mySupportPresence.status === 'online'
+                                ? 'bg-emerald-500'
+                                : mySupportPresence.status === 'away'
+                                  ? 'bg-amber-500'
+                                  : 'bg-slate-300 dark:bg-slate-600'
+                            }`}
+                          />
+                          <span>Support status</span>
+                        </span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-44">
+                        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                          Set your status
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuRadioGroup
+                          value={selectedSupportPresenceMode}
+                          onValueChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : (value as 'online' | 'away' | 'offline'))}
+                        >
+                          <DropdownMenuRadioItem value="auto">Automatic</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="online">Online</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="away">Away</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="offline">Offline</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {mySupportPresence && <DropdownMenuSeparator />}
                   <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}>
                     <User className="h-4 w-4" />
                     <span>Profile</span>

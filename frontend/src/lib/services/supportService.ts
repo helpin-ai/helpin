@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings, ConversationListResponse, UnreadStats, VisitorContextResponse } from '../pmTypes';
+import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings, ConversationListResponse, UnreadStats, VisitorContextResponse, SupportTeammatePresenceStatus } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
@@ -35,6 +35,10 @@ export const supportService = {
   // Unread
   getUnreadStats: (workspaceId: string) =>
     api.get<UnreadStats>(`/support/inbox/unread-stats${qs(workspaceId)}`),
+  listTeammatePresence: (workspaceId: string) =>
+    api.get<SupportTeammatePresenceStatus[]>(`/support/inbox/teammates/presence${qs(workspaceId)}`),
+  updateMyTeammatePresence: (workspaceId: string, manualStatus: 'online' | 'away' | 'offline' | null) =>
+    api.put<SupportTeammatePresenceStatus>(`/support/inbox/me/presence${qs(workspaceId)}`, { manual_status: manualStatus }),
   markConversationRead: (workspaceId: string, conversationId: string) =>
     api.post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
   markConversationUnread: (workspaceId: string, conversationId: string) =>

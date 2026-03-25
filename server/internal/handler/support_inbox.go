@@ -259,6 +259,49 @@ func (h *SupportInboxHandler) GetUnreadStats(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// ListTeammatePresence handles GET /api/support/inbox/teammates/presence.
+func (h *SupportInboxHandler) ListTeammatePresence(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	statuses, err := h.supportService.ListTeammatePresence(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, statuses)
+}
+
+// UpdateMyTeammatePresence handles PUT /api/support/inbox/me/presence.
+func (h *SupportInboxHandler) UpdateMyTeammatePresence(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateSupportTeammatePresenceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	status, err := h.supportService.UpdateMyTeammatePresence(r.Context(), workspaceID, userID, req.ManualStatus)
+	if err != nil {
+		if err == service.ErrInvalidTeammateStatus {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 // ListContactConversations handles GET /api/crm/contacts/{id}/support-tickets.
 func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

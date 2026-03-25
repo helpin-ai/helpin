@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ type SupportInboxService struct {
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
 	attachmentService       *SupportAttachmentService
+	presence                websocket.PresenceProvider
+	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -88,6 +91,101 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 	return &rendered
 }
 
+func formatSupportTranscriptTimestamp(ts time.Time) string {
+	return ts.UTC().Format("Jan 2, 2006 15:04 UTC")
+}
+
+func supportTranscriptSenderName(workspaceName string, msg model.SupportMessage) string {
+	switch msg.SenderType {
+	case "customer":
+		if strings.TrimSpace(derefString(msg.SenderDisplayName)) != "" {
+			return strings.TrimSpace(derefString(msg.SenderDisplayName))
+		}
+		return "You"
+	case "ai":
+		return "Helpin AI"
+	default:
+		if strings.TrimSpace(derefString(msg.SenderDisplayName)) != "" {
+			return strings.TrimSpace(derefString(msg.SenderDisplayName))
+		}
+		if strings.TrimSpace(workspaceName) != "" {
+			return workspaceName
+		}
+		return "Support"
+	}
+}
+
+func renderSupportTranscriptBodies(workspaceName string, conversation *model.SupportConversation, messages []model.SupportMessage) (string, string) {
+	subject := strings.TrimSpace(conversation.Subject)
+	if subject == "" {
+		subject = "Conversation transcript"
+	}
+
+	var text strings.Builder
+	text.WriteString(workspaceName)
+	text.WriteString(" conversation transcript\n")
+	text.WriteString("Conversation #")
+	text.WriteString(fmt.Sprintf("%d", conversation.DisplayID))
+	text.WriteString("\n")
+	text.WriteString("Subject: ")
+	text.WriteString(subject)
+	text.WriteString("\n\n")
+
+	var htmlBody strings.Builder
+	htmlBody.WriteString("<p>")
+	htmlBody.WriteString(html.EscapeString(workspaceName))
+	htmlBody.WriteString(" conversation transcript</p>")
+	htmlBody.WriteString("<p><strong>Conversation #")
+	htmlBody.WriteString(fmt.Sprintf("%d", conversation.DisplayID))
+	htmlBody.WriteString("</strong><br />Subject: ")
+	htmlBody.WriteString(html.EscapeString(subject))
+	htmlBody.WriteString("</p>")
+
+	for _, msg := range messages {
+		sender := supportTranscriptSenderName(workspaceName, msg)
+		timestamp := formatSupportTranscriptTimestamp(msg.CreatedAt)
+		content := strings.TrimSpace(msg.Content)
+
+		text.WriteString(sender)
+		text.WriteString(" — ")
+		text.WriteString(timestamp)
+		text.WriteString("\n")
+		if content != "" {
+			text.WriteString(content)
+			text.WriteString("\n")
+		}
+		for _, attachment := range msg.Attachments {
+			text.WriteString("[Attachment: ")
+			text.WriteString(strings.TrimSpace(attachment.FileName))
+			text.WriteString("]\n")
+		}
+		text.WriteString("\n")
+
+		htmlBody.WriteString("<p><strong>")
+		htmlBody.WriteString(html.EscapeString(sender))
+		htmlBody.WriteString("</strong> <span style=\"color:#6b7280\">")
+		htmlBody.WriteString(html.EscapeString(timestamp))
+		htmlBody.WriteString("</span><br />")
+		if content != "" {
+			htmlBody.WriteString(strings.ReplaceAll(html.EscapeString(content), "\n", "<br />"))
+			if len(msg.Attachments) > 0 {
+				htmlBody.WriteString("<br />")
+			}
+		}
+		for i, attachment := range msg.Attachments {
+			if i > 0 {
+				htmlBody.WriteString("<br />")
+			}
+			htmlBody.WriteString("[Attachment: ")
+			htmlBody.WriteString(html.EscapeString(strings.TrimSpace(attachment.FileName)))
+			htmlBody.WriteString("]")
+		}
+		htmlBody.WriteString("</p>")
+	}
+
+	return htmlBody.String(), text.String()
+}
+
 // SetSupportAIService injects the AI-first auto-reply service.
 func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *SupportInboxService {
 	if s == nil {
@@ -122,6 +220,33 @@ func (s *SupportInboxService) SetAttachmentService(attachmentService *SupportAtt
 		return nil
 	}
 	s.attachmentService = attachmentService
+	return s
+}
+
+// SetWorkspaceRepo injects the workspace repo for member/status lookups.
+func (s *SupportInboxService) SetWorkspaceRepo(workspaceRepo *repository.WorkspaceRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.workspaceRepo = workspaceRepo
+	return s
+}
+
+// SetPresenceProvider injects the live support presence provider.
+func (s *SupportInboxService) SetPresenceProvider(presence websocket.PresenceProvider) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.presence = presence
+	return s
+}
+
+// SetStatusOverrideRepo injects the manual teammate status override repository.
+func (s *SupportInboxService) SetStatusOverrideRepo(repo *repository.SupportTeammateStatusOverrideRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.statusOverrideRepo = repo
 	return s
 }
 
@@ -399,6 +524,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		WorkspaceID:    req.WorkspaceID,
 		Subject:        strings.TrimSpace(req.Subject),
 		Status:         "open",
+		FlowState:      strPtr(defaultConversationFlowState(&actorID, nil)),
 		Priority:       priority,
 		CustomerName:   req.CustomerName,
 		CustomerEmail:  req.CustomerEmail,
@@ -418,7 +544,9 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		}
 	}
 
-	_ = s.activitySvc.Log(ctx, ticket.WorkspaceID, "support_conversation", ticket.ID, &actorID, "created", nil, nil, &ticket.Subject, nil)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, ticket.WorkspaceID, "support_conversation", ticket.ID, &actorID, "created", nil, nil, &ticket.Subject, nil)
+	}
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
@@ -457,15 +585,26 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	switch status {
 	case "resolved":
 		ticket.ResolvedAt = &now
+		if ticket.FlowState == nil || *ticket.FlowState != model.SupportConversationFlowStateResolvedByAI {
+			ticket.FlowState = strPtr(model.SupportConversationFlowStateResolvedByHuman)
+		}
 	case "closed":
 		ticket.ClosedAt = &now
+	case "open", "in_progress":
+		if status == "open" || status == "in_progress" {
+			ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedAgentID))
+		}
+	case "waiting":
+		ticket.FlowState = strPtr(model.SupportConversationFlowStateWaitingForHuman)
 	}
 
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
+	}
 
 	// Insert a system message for status transitions visible in the thread.
 	if oldStatus != status && (status == "resolved" || status == "closed" || (oldStatus == "resolved" && status == "open")) {
@@ -628,9 +767,20 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
 		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
 			conv.OpenedByUserID = senderUserID
+			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 			if err := s.conversationRepo.Update(ctx, conv); err != nil {
 				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
 			}
+		}
+	}
+
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
+		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
+			"opened_by_user_id": conv.OpenedByUserID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
 		}
 	}
 
@@ -683,7 +833,9 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		return err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_story_id"), nil, &storyID, nil)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_story_id"), nil, &storyID, nil)
+	}
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
@@ -872,6 +1024,7 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 	}
 
 	ticket.AssignedAgentID = &agentID
+	ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}

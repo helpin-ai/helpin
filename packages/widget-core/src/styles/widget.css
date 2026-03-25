@@ -221,25 +221,47 @@
 /* Window close button (floating) */
 .helpin-window-close {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  top: 16px;
+  right: 16px;
+  width: 18px;
+  height: 18px;
   border: none;
-  background: rgba(0, 0, 0, 0.1);
+  background: transparent;
   color: var(--helpin-fg-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10;
-  transition: background 0.2s, color 0.2s;
+  padding: 0;
+  transition: opacity 0.2s, color 0.2s;
 }
 
 .helpin-window-close:hover {
-  background: rgba(0, 0, 0, 0.2);
+  opacity: 0.72;
   color: var(--helpin-fg);
+}
+
+.helpin-window-close--home {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.helpin-window-close--home:hover {
+  color: #ffffff;
+}
+
+.helpin-window-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+}
+
+.helpin-window-actions .helpin-window-close {
+  position: static;
 }
 
 /* Inline variant — same circle style, but flows in layout (not absolute) */
@@ -332,6 +354,68 @@
   color: var(--helpin-fg-muted);
   animation: helpin-fade-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: 0.08s;
+}
+
+.helpin-home-header-presence {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  animation: helpin-fade-rise 0.41s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.09s;
+}
+
+.helpin-home-teammate-avatar-wrap,
+.helpin-agent-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.helpin-home-teammate-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: var(--helpin-shadow-sm);
+}
+
+.helpin-home-teammate-avatar--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--helpin-primary), color-mix(in srgb, var(--helpin-primary) 70%, white));
+  color: var(--helpin-primary-foreground);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.helpin-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--helpin-bg);
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.05);
+}
+
+.helpin-presence-dot--online {
+  background: #22c55e;
+}
+
+.helpin-presence-dot--away {
+  background: #f59e0b;
+}
+
+.helpin-presence-dot--offline {
+  background: #94a3b8;
+}
+
+.helpin-theme-dark .helpin-home-header-presence {
+  background: transparent;
 }
 
 /* Search / Ask input */
@@ -1546,6 +1630,42 @@
   opacity: 1;
 }
 
+.helpin-avatar-tooltip[data-tooltip] {
+  position: relative;
+}
+
+.helpin-avatar-tooltip[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 30;
+}
+
+.helpin-avatar-tooltip[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+.helpin-home-header-presence.helpin-avatar-tooltip::after {
+  top: calc(100% + 8px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* Compose Wrapper */
 .helpin-compose-wrapper {
   padding: 12px 16px 10px;
@@ -1731,6 +1851,7 @@
 }
 
 .helpin-conversation-header-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1757,6 +1878,107 @@
   color: var(--helpin-fg);
 }
 
+.helpin-conversation-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--helpin-border);
+  border-radius: 12px;
+  background: var(--helpin-bg);
+  box-shadow: var(--helpin-shadow-lg);
+  z-index: 35;
+}
+
+.helpin-conversation-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--helpin-fg);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-conversation-menu-item:hover {
+  background: var(--helpin-bg-secondary);
+}
+
+.helpin-conversation-transcript {
+  padding: 8px 4px 4px;
+}
+
+.helpin-conversation-transcript-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-conversation-transcript-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--helpin-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--helpin-bg);
+  color: var(--helpin-fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.helpin-conversation-transcript-input:focus {
+  outline: none;
+  border-color: var(--helpin-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--helpin-primary) 18%, transparent);
+}
+
+.helpin-conversation-transcript-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.helpin-conversation-transcript-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: var(--helpin-primary);
+  color: var(--helpin-primary-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-conversation-transcript-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.helpin-conversation-transcript-status {
+  margin-top: 6px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.helpin-conversation-transcript-status--success {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.helpin-conversation-transcript-status--error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .helpin-conversation-title {
   font-size: 15px;
   font-weight: 600;
@@ -1780,6 +2002,28 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.helpin-human-handoff-banner {
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--helpin-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--helpin-primary) 6%, var(--helpin-bg));
+}
+
+.helpin-human-handoff-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--helpin-fg);
+}
+
+.helpin-human-handoff-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--helpin-fg-muted);
+  line-height: 1.45;
 }
 
 /* Inline Pre-Chat Form (Gleap-style, inside conversation thread) */

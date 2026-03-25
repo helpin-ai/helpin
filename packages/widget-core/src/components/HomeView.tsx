@@ -20,8 +20,16 @@ export const HomeView: FunctionComponent<HomeViewProps> = ({
   const welcomeMessage = config.branding?.welcomeMessage || 'How can we help?';
   const workspaceName = config.workspaceName || 'Support';
   const availability = config.availability;
+  const aiFirst = Boolean(config.features?.aiFirst);
   const statusText = availability?.statusText || 'Online now';
   const replyTimeText = availability?.replyTimeText || 'We typically reply in a few minutes';
+  const headerStatusText = aiFirst
+    ? 'Ask anything. Our AI assistant is here to help right away.'
+    : statusText;
+  const primaryActionTitle = aiFirst ? 'Ask a question' : 'Send us a message';
+  const primaryActionDescription = aiFirst
+    ? 'Get an instant answer from our AI assistant'
+    : replyTimeText;
 
   const handleSend = () => {
     const trimmed = query.trim();
@@ -53,7 +61,7 @@ export const HomeView: FunctionComponent<HomeViewProps> = ({
       {/* Welcome content */}
       <div className="helpin-home-content">
         <h2 className="helpin-home-welcome">{welcomeMessage}</h2>
-        <p className="helpin-home-status">{statusText}</p>
+        <p className="helpin-home-status">{headerStatusText}</p>
 
         <div className="helpin-home-search">
           <input
@@ -79,8 +87,8 @@ export const HomeView: FunctionComponent<HomeViewProps> = ({
           <button className="helpin-home-action" onClick={() => onNavigate('conversation')}>
             <MessageSquareIcon size={18} />
             <div className="helpin-home-action-text">
-              <span className="helpin-home-action-title">Send us a message</span>
-              <span className="helpin-home-action-desc">{replyTimeText}</span>
+              <span className="helpin-home-action-title">{primaryActionTitle}</span>
+              <span className="helpin-home-action-desc">{primaryActionDescription}</span>
             </div>
             <ChevronRightIcon size={16} class="helpin-home-action-arrow" />
           </button>

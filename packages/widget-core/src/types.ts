@@ -6,6 +6,8 @@ export type PendingAttachment = SharedPendingAttachment;
 
 export interface WidgetConfig extends SharedWidgetConfig {
   features: SharedWidgetConfig['features'] & {
+    aiFirst?: boolean;
+    escalationMessage?: string;
     forceIdentify?: boolean;
   };
   availability?: {
@@ -35,6 +37,13 @@ export interface Attachment {
   url?: string;
 }
 
+export interface ActiveTeammate {
+  userId: string;
+  name: string;
+  avatarUrl?: string;
+  status?: 'online' | 'away' | 'offline';
+}
+
 export interface Conversation {
   id: string;
   subject: string;
@@ -42,6 +51,7 @@ export interface Conversation {
   lastMessage?: string;
   lastMessageAt?: string;
   unreadCount?: number;
+  activeTeammate?: ActiveTeammate;
 }
 
 export interface WidgetAdapter {

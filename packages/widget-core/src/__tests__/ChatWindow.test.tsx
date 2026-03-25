@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/preact';
+import { act, fireEvent, render } from '@testing-library/preact';
 import { ChatWindow } from '../components/ChatWindow';
 
 const baseConfig = {
@@ -14,7 +14,9 @@ const baseConfig = {
   },
   features: {
     aiEnabled: false,
+    aiFirst: false,
     showTalkToHuman: false,
+    escalationMessage: 'Let me connect you with a team member who can help further.',
     fileUploads: false,
     preChatForm: false,
     requirePhone: false,
@@ -182,6 +184,53 @@ describe('ChatWindow', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
+  it('uses AI-first copy on the home view without leading with human availability', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+          },
+        }}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    expect(getByText('Ask anything. Our AI assistant is here to help right away.')).toBeTruthy();
+    expect(getByText('Ask a question')).toBeTruthy();
+    expect(getByText('Get an instant answer from our AI assistant')).toBeTruthy();
+    expect(queryByText('Online now')).toBeNull();
+  });
+
+  it('shows the active teammate on the home view when one is assigned', () => {
+    const { container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        activeTeammate={{ userId: 'user-1', name: 'CS Azhar', avatarUrl: 'https://example.com/avatar.png', status: 'online' }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('.helpin-home-teammate-presence')).toBeTruthy();
+    expect(container.querySelector('.helpin-home-teammate-avatar')).toBeTruthy();
+    expect(container.querySelector('.helpin-presence-dot--online')).toBeTruthy();
+  });
+
   it('shows talk to human when enabled and the conversation is idle', () => {
     const { getByText } = render(
       <ChatWindow
@@ -205,6 +254,61 @@ describe('ChatWindow', () => {
     );
 
     expect(getByText('Talk to a human')).toBeTruthy();
+  });
+
+  it('reveals human handoff status only after the visitor asks for a human', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+            showTalkToHuman: true,
+            escalationMessage: "I'm handing this over to a human teammate now.",
+          },
+        }}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText("I'm handing this over to a human teammate now.")).toBeNull();
+
+    fireEvent.click(getByText('Talk to a human'));
+
+    expect(getByText("I'm handing this over to a human teammate now.")).toBeTruthy();
+    expect(getByText('We typically reply in a few minutes')).toBeTruthy();
+    expect(getByText('Online now')).toBeTruthy();
+  });
+
+  it('shows the active teammate in conversation header before a human reply is sent', () => {
+    const { getByText, container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        activeTeammate={{ userId: 'user-1', name: 'CS Azhar', status: 'away' }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('CS Azhar')).toBeTruthy();
+    expect(getByText('from Acme')).toBeTruthy();
+    expect(container.querySelector('.helpin-presence-dot--away')).toBeTruthy();
   });
 
   it('hides talk to human while AI is thinking', () => {

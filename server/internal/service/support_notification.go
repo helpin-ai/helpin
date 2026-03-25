@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -74,18 +75,39 @@ func ProcessSupportCustomerReplyNotification(
 	content,
 	senderName string,
 ) {
-	if notifService == nil || conv == nil || conv.OpenedByUserID == nil || strings.TrimSpace(*conv.OpenedByUserID) == "" {
+	if notifService == nil || conv == nil {
 		return
 	}
 
-	recipientID := strings.TrimSpace(*conv.OpenedByUserID)
-	if recipientID == "" {
+	selection, err := selectSupportConversationRecipient(
+		ctx,
+		notifService.workspaceRepo,
+		notifService.installationRepo,
+		notifService.prefRepo,
+		notifService.presence,
+		notifService.statusOverrideRepo,
+		supportRecipientSelectorInput{
+			WorkspaceID:        conv.WorkspaceID,
+			OwnerUserID:        conv.OpenedByUserID,
+			EventType:          "support_conversation.customer_reply",
+			Channel:            "in_app",
+			RequirePreferences: true,
+			Now:                time.Now(),
+		},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "select support customer reply recipient", "error", err, "conversation_id", conv.ID)
 		return
 	}
+	if selection == nil {
+		return
+	}
+	recipientID := strings.TrimSpace(selection.UserID)
 
 	slog.InfoContext(ctx, "emitting support customer reply notification",
 		"conversation_id", conv.ID,
 		"recipient_id", recipientID,
+		"selection_reason", selection.Reason,
 	)
 
 	if err := notifService.Emit(ctx, model.NotificationEventInput{
@@ -101,6 +123,7 @@ func ProcessSupportCustomerReplyNotification(
 		EntitySnapshot:      buildSupportConversationEntitySnapshot(conv),
 		ExplicitRecipients:  []string{recipientID},
 		SkipFollowers:       true,
+		TeamID:              selection.TeamID,
 		DelayedEmailChannel: "support_reply_email",
 	}); err != nil {
 		slog.ErrorContext(ctx, "emit support customer reply notification", "error", err, "conversation_id", conv.ID)

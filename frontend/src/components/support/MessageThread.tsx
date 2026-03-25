@@ -14,6 +14,7 @@ import {
   useConversation,
   useConversationMessages,
   useChatSettings,
+  useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
   useMarkConversationUnread,
@@ -185,6 +186,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: installation } = useChatSettings(workspaceId);
+  const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
   const markUnread = useMarkConversationUnread(workspaceId);
@@ -194,6 +197,14 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const humanOwner = useMemo(() => {
+    if (!conversation?.opened_by_user_id) return null;
+    return members.find((member) => member.user_id === conversation.opened_by_user_id) ?? null;
+  }, [conversation?.opened_by_user_id, members]);
+  const humanOwnerPresence = useMemo(() => {
+    if (!conversation?.opened_by_user_id) return null;
+    return teammatePresence.find((entry) => entry.user_id === conversation.opened_by_user_id) ?? null;
+  }, [conversation?.opened_by_user_id, teammatePresence]);
 
   useEffect(() => {
     let cancelled = false;
@@ -410,7 +421,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
 
           <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -73,7 +74,12 @@ func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string
 
 // GetVisitorConversations returns all conversations for a visitor by anonymous_id.
 func (s *SupportInboxService) GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error) {
-	return s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)
+	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)
+	if err != nil {
+		return nil, err
+	}
+	s.enrichWidgetConversationOwners(ctx, workspaceID, conversations)
+	return conversations, nil
 }
 
 // UpgradeWidgetSession upgrades an anonymous session with email and name.
@@ -268,6 +274,80 @@ func (s *SupportInboxService) GetInstallationByWidgetKey(ctx context.Context, wi
 	return s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 }
 
+func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Context, sessionToken, conversationID, email string) (*model.WidgetTranscriptResponse, error) {
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(conversationID) == "" {
+		return nil, fmt.Errorf("conversation_id is required")
+	}
+
+	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+	if conversation.AnonymousID == nil || strings.TrimSpace(*conversation.AnonymousID) == "" || strings.TrimSpace(*conversation.AnonymousID) != strings.TrimSpace(session.AnonymousID) {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	recipientEmail := strings.TrimSpace(email)
+	if recipientEmail == "" {
+		recipientEmail = strings.TrimSpace(derefString(session.CustomerEmail))
+	}
+	if recipientEmail == "" {
+		recipientEmail = strings.TrimSpace(derefString(conversation.CustomerEmail))
+	}
+	if recipientEmail == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if _, err := mail.ParseAddress(recipientEmail); err != nil {
+		return nil, fmt.Errorf("invalid email address")
+	}
+
+	if session.IsAnonymous && strings.TrimSpace(email) != "" {
+		name := strings.TrimSpace(derefString(session.CustomerName))
+		if name == "" {
+			name = strings.TrimSpace(derefString(conversation.CustomerName))
+		}
+		if err := s.UpgradeWidgetSession(ctx, sessionToken, recipientEmail, name, "transcript_request"); err != nil {
+			slog.ErrorContext(ctx, "failed to upgrade widget session during transcript request", "error", err, "conversation_id", conversationID)
+		}
+	}
+
+	messages, err := s.ListConversationMessages(ctx, session.WorkspaceID, conversationID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	workspaceName := "Support"
+	if s.workspaceRepo != nil {
+		if workspace, err := s.workspaceRepo.GetByID(ctx, session.WorkspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
+			workspaceName = strings.TrimSpace(workspace.Name)
+		}
+	}
+
+	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
+	subject := fmt.Sprintf("Your conversation transcript with %s", workspaceName)
+
+	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
+		return nil, fmt.Errorf("email is not configured")
+	}
+	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, subject, htmlBody, textBody); err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "widget transcript sent", "workspace_id", session.WorkspaceID, "conversation_id", conversationID, "email", recipientEmail)
+	return &model.WidgetTranscriptResponse{
+		Success: true,
+		Message: fmt.Sprintf("Transcript sent to %s", recipientEmail),
+	}, nil
+}
+
 // WidgetCreateConversation eagerly creates a new conversation for a widget session
 // and returns the conversation with its server-assigned ID.
 func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sessionToken string) (*model.SupportConversation, error) {
@@ -280,6 +360,7 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		WorkspaceID:   session.WorkspaceID,
 		Subject:       "New conversation",
 		Status:        "open",
+		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 		Priority:      "medium",
 		CustomerName:  session.CustomerName,
 		CustomerEmail: session.CustomerEmail,
@@ -331,6 +412,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			WorkspaceID:   session.WorkspaceID,
 			Subject:       truncate(content, 100),
 			Status:        "open",
+			FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 			Priority:      "medium",
 			CustomerName:  session.CustomerName,
 			CustomerEmail: session.CustomerEmail,
@@ -421,6 +503,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		_ = s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
 			"ai_state":          &pending,
 			"assigned_agent_id": &agentID,
+			"flow_state":        model.SupportConversationFlowStateAIHandling,
 		})
 	} else {
 		// Manual-assist path: existing agent run (unchanged)
@@ -525,6 +608,116 @@ func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context,
 	}
 }
 
+func (s *SupportInboxService) enrichWidgetConversationOwners(ctx context.Context, workspaceID string, conversations []model.SupportConversation) {
+	if len(conversations) == 0 {
+		return
+	}
+
+	ownerIDs := make(map[string]struct{}, len(conversations))
+	for _, conversation := range conversations {
+		if conversation.OpenedByUserID == nil {
+			continue
+		}
+		ownerID := strings.TrimSpace(*conversation.OpenedByUserID)
+		if ownerID != "" {
+			ownerIDs[ownerID] = struct{}{}
+		}
+	}
+	if len(ownerIDs) == 0 {
+		return
+	}
+
+	owners := make(map[string]model.WidgetActiveTeammate, len(ownerIDs))
+	statusByUserID := make(map[string]string, len(ownerIDs))
+	statuses, err := resolveSupportTeammatePresenceStatuses(
+		ctx,
+		s.workspaceRepo,
+		s.presence,
+		s.statusOverrideRepo,
+		workspaceID,
+		time.Now(),
+	)
+	if err == nil {
+		for _, status := range statuses {
+			statusByUserID[status.UserID] = status.Status
+		}
+	}
+	if s.workspaceRepo != nil {
+		if members, err := s.workspaceRepo.ListMembers(ctx, workspaceID); err == nil {
+			for _, member := range members {
+				if member.UserID == "" || strings.TrimSpace(member.FullName) == "" {
+					continue
+				}
+				owners[member.UserID] = model.WidgetActiveTeammate{
+					UserID:    member.UserID,
+					Name:      member.FullName,
+					AvatarURL: member.AvatarURL,
+					Status:    statusByUserID[member.UserID],
+				}
+			}
+		}
+	}
+
+	if s.userRepo != nil {
+		for ownerID := range ownerIDs {
+			if _, ok := owners[ownerID]; ok {
+				continue
+			}
+			user, err := s.userRepo.GetByID(ctx, ownerID)
+			if err != nil || user == nil || strings.TrimSpace(user.FullName) == "" {
+				continue
+			}
+			owners[ownerID] = model.WidgetActiveTeammate{
+				UserID:    user.ID,
+				Name:      user.FullName,
+				AvatarURL: user.AvatarURL,
+				Status:    statusByUserID[user.ID],
+			}
+		}
+	}
+
+	for i := range conversations {
+		if conversations[i].OpenedByUserID == nil {
+			continue
+		}
+		ownerID := strings.TrimSpace(*conversations[i].OpenedByUserID)
+		if ownerID == "" {
+			continue
+		}
+		owner, ok := owners[ownerID]
+		if !ok {
+			continue
+		}
+		conversations[i].OpenedByDisplayName = strPtr(owner.Name)
+		conversations[i].OpenedByAvatarURL = owner.AvatarURL
+		if strings.TrimSpace(owner.Status) != "" {
+			conversations[i].OpenedByStatus = strPtr(owner.Status)
+		}
+	}
+}
+
+func widgetActiveTeammateFromConversation(conversation *model.SupportConversation) *model.WidgetActiveTeammate {
+	if conversation == nil || conversation.OpenedByUserID == nil || conversation.OpenedByDisplayName == nil {
+		return nil
+	}
+	userID := strings.TrimSpace(*conversation.OpenedByUserID)
+	name := strings.TrimSpace(*conversation.OpenedByDisplayName)
+	if userID == "" || name == "" {
+		return nil
+	}
+	return &model.WidgetActiveTeammate{
+		UserID:    userID,
+		Name:      name,
+		AvatarURL: conversation.OpenedByAvatarURL,
+		Status: func() string {
+			if conversation.OpenedByStatus == nil {
+				return ""
+			}
+			return strings.TrimSpace(*conversation.OpenedByStatus)
+		}(),
+	}
+}
+
 // buildWidgetConfigResponse maps installation settings to the nested WidgetConfig
 // shape expected by the widget-core TypeScript interface.
 func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, inst *model.SupportWidgetInstallation) (*model.WidgetConfigResponse, error) {
@@ -562,13 +755,15 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			ButtonIconColor: settings.ButtonIconColor,
 		},
 		Features: model.WidgetConfigFeatures{
-			AIEnabled:       settings.AIEnabled,
-			ShowTalkToHuman: settings.ShowTalkToHuman,
-			FileUploads:     settings.FileUploadsEnabled,
-			PreChatForm:     settings.RequireEmailBeforeChat,
-			RequirePhone:    settings.RequirePhoneAfterEmail,
-			CSATRating:      settings.CSATEnabled,
-			ForceIdentify:   settings.ForceVisitorIdentity,
+			AIEnabled:         settings.AIEnabled,
+			AIFirst:           settings.AIEnabled && settings.AIResponseMode == "ai_first",
+			ShowTalkToHuman:   settings.ShowTalkToHuman,
+			EscalationMessage: settings.EscalationMessage,
+			FileUploads:       settings.FileUploadsEnabled,
+			PreChatForm:       settings.RequireEmailBeforeChat,
+			RequirePhone:      settings.RequirePhoneAfterEmail,
+			CSATRating:        settings.CSATEnabled,
+			ForceIdentify:     settings.ForceVisitorIdentity,
 		},
 		Availability: buildWidgetAvailability(settings, time.Now()),
 		HelpSpaces:   helpSpaces,

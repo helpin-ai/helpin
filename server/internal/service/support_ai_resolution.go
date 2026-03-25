@@ -40,6 +40,7 @@ func (s *SupportAIService) RunAssumedResolutionScan(ctx context.Context) error {
 		result := s.db.WithContext(ctx).Exec(`
 			UPDATE support_conversations
 			SET ai_state = 'resolved',
+			    flow_state = 'resolved_by_ai',
 			    ai_resolved_at = NOW(),
 			    ai_resolution_type = 'assumed',
 			    updated_at = NOW()
