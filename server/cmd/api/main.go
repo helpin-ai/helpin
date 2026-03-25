@@ -352,7 +352,14 @@ func main() {
 	}
 
 	// Initialize S3 storage client (nil if not configured).
-	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
+	s3Client := storage.NewS3Client(
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		cfg.AWSBucket,
+		cfg.AWSRegion,
+		cfg.AWSEndpointURL,
+		cfg.AWSPublicBaseURL,
+	)
 	if s3Client != nil {
 		slog.Info("S3 storage configured")
 	} else {

@@ -21,7 +21,7 @@ const STAGE_TYPE_LABEL: Record<PipelineStageType, string> = {
   won: 'Won',
   lost: 'Lost',
 };
-const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none dark:border-transparent';
+const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
 const DEFAULT_STAGES = [
   { name: 'Qualification', stage_type: 'open' as PipelineStageType, position: 0, probability: 10 },
