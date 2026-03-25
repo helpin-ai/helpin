@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ActiveTeammate, Message, PendingAttachment, WidgetConfig } from '../types';
+import type { ActiveTeammate, Conversation, Message, PendingAttachment, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
@@ -12,6 +12,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 interface ConversationViewProps {
   config: WidgetConfig;
+  conversation?: Conversation;
   messages: Message[];
   activeTeammate?: ActiveTeammate;
   onSendMessage: (content: string, attachmentIds?: string[]) => void;
@@ -36,6 +37,7 @@ interface ConversationViewProps {
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   config,
+  conversation,
   messages,
   activeTeammate,
   onSendMessage,
@@ -77,10 +79,21 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const hasHumanReply = messages.some((message) => message.role === 'agent');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
+  const hasHumanHandoffAlready = Boolean(
+    conversation?.aiState === 'escalated' ||
+      conversation?.status === 'resolved' ||
+      conversation?.status === 'closed' ||
+      conversation?.flowState === 'waiting_for_human' ||
+      conversation?.flowState === 'queued_for_human' ||
+      conversation?.flowState === 'after_hours_queue' ||
+      conversation?.flowState === 'assigned_to_human' ||
+      conversation?.flowState === 'resolved_by_human',
+  );
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
       messages.length > 0 &&
+      !hasHumanHandoffAlready &&
       !isAIThinking &&
       !isTyping,
   );
@@ -121,7 +134,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       return;
     }
     const handlePointerDown = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      const clickedInsideMenu = menuRef.current
+        ? path.includes(menuRef.current) || menuRef.current.contains(event.target as Node)
+        : false;
+      if (!clickedInsideMenu) {
         setMenuOpen(false);
         setShowTranscriptForm(false);
       }

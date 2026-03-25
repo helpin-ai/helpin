@@ -107,9 +107,24 @@
 
 /* Dark theme — component overrides */
 .helpin-theme-dark .helpin-bottom-nav {
-  background: rgba(34, 34, 64, 0.92);
+  background: rgba(20, 23, 39, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 0 1px 1px rgba(255, 255, 255, 0.06),
     0 0 20px rgba(0, 0, 0, 0.4);
+}
+
+.helpin-theme-dark .helpin-bottom-nav-item {
+  color: rgba(232, 236, 244, 0.62);
+}
+
+.helpin-theme-dark .helpin-bottom-nav-item:hover {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.helpin-theme-dark .helpin-bottom-nav-item--active {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
 }
 
 .helpin-theme-dark .helpin-home-input:focus {
@@ -264,24 +279,24 @@
   position: static;
 }
 
-/* Inline variant — same circle style, but flows in layout (not absolute) */
+/* Inline variant — plain icon, but flows in layout (not absolute) */
 .helpin-window-close-inline {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 18px;
+  height: 18px;
   border: none;
-  background: rgba(0, 0, 0, 0.08);
+  background: transparent;
   color: var(--helpin-fg-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.2s, color 0.2s;
+  padding: 0;
+  transition: opacity 0.2s, color 0.2s;
 }
 
 .helpin-window-close-inline:hover {
-  background: rgba(0, 0, 0, 0.15);
+  opacity: 0.72;
   color: var(--helpin-fg);
 }
 
@@ -327,7 +342,22 @@
   font-weight: 700;
   font-size: 18px;
   color: var(--helpin-fg);
+  background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.helpin-theme-dark .helpin-home-logo {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.helpin-theme-dark .helpin-home-logo-placeholder {
+  color: #ffffff;
+  background: rgba(17, 24, 39, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .helpin-home-content {
@@ -365,6 +395,15 @@
   animation-delay: 0.09s;
 }
 
+.helpin-home-header-team {
+  display: inline-flex;
+  align-items: center;
+}
+
+.helpin-home-header-team .helpin-home-header-presence + .helpin-home-header-presence {
+  margin-left: -8px;
+}
+
 .helpin-home-teammate-avatar-wrap,
 .helpin-agent-avatar-wrap {
   position: relative;
@@ -379,6 +418,7 @@
   object-fit: cover;
   flex-shrink: 0;
   box-shadow: var(--helpin-shadow-sm);
+  border: 2px solid rgba(255, 255, 255, 0.72);
 }
 
 .helpin-home-teammate-avatar--placeholder {
@@ -636,13 +676,24 @@
   border-bottom: 1px solid var(--helpin-border);
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+}
+
+.helpin-help-header-spacer {
+  width: 28px;
+}
+
+.helpin-help-header-copy {
+  flex: 1;
+  text-align: center;
 }
 
 .helpin-help-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--helpin-fg);
+  text-align: center;
+  flex: 1;
 }
 
 .helpin-help-subtitle {
@@ -1215,16 +1266,18 @@
   border-width: 1.5px;
   border-style: solid;
   border-radius: 999px;
-  background-color: transparent;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background-color 0.15s;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 
 .helpin-conversations-new-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
 }
 
 /* ===== Connection Status Banner ===== */

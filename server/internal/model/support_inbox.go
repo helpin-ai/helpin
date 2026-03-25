@@ -677,17 +677,19 @@ type WidgetHelpArticle struct {
 	Excerpt     *string `json:"excerpt,omitempty"`
 	Icon        *string `json:"icon,omitempty"`
 	ContentHTML *string `json:"content_html"`
+	PublicPath  *string `json:"public_path,omitempty"`
 }
 
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WorkspaceID   string                   `json:"workspaceId"`
-	WorkspaceName string                   `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding     `json:"branding"`
-	Features      WidgetConfigFeatures     `json:"features"`
-	Availability  WidgetConfigAvailability `json:"availability"`
-	HelpSpaces    []WidgetHelpSpace        `json:"helpSpaces"`
+	WorkspaceID        string                   `json:"workspaceId"`
+	WorkspaceName      string                   `json:"workspaceName,omitempty"`
+	Branding           WidgetConfigBranding     `json:"branding"`
+	Features           WidgetConfigFeatures     `json:"features"`
+	Availability       WidgetConfigAvailability `json:"availability"`
+	AvailableTeammates []WidgetActiveTeammate   `json:"availableTeammates,omitempty"`
+	HelpSpaces         []WidgetHelpSpace        `json:"helpSpaces"`
 }
 
 // ── Visitor Context DTOs ─────────────────────────────────────────────

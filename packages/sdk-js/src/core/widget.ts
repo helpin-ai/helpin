@@ -46,6 +46,8 @@ type WidgetActiveTeammate = {
 
 type WidgetConversation = Conversation & {
   activeTeammate?: WidgetActiveTeammate;
+  flowState?: string;
+  aiState?: string;
 };
 
 const MAX_WS_RETRIES = 10;
@@ -53,6 +55,24 @@ const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection 
 const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
 const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
+
+function normalizeWidgetConfig(raw: any): WidgetConfig {
+  const teammates = Array.isArray(raw?.availableTeammates)
+    ? raw.availableTeammates
+        .map((teammate: any) => ({
+          userId: teammate.userId || teammate.user_id || '',
+          name: teammate.name || '',
+          avatarUrl: teammate.avatarUrl || teammate.avatar_url || undefined,
+          status: teammate.status || undefined,
+        }))
+        .filter((teammate: WidgetActiveTeammate) => Boolean(teammate.userId && teammate.name))
+    : [];
+
+  return {
+    ...raw,
+    availableTeammates: teammates,
+  } as WidgetConfig;
+}
 
 export class WidgetManager {
   private config: WidgetSettings | null = null;
@@ -290,7 +310,7 @@ export class WidgetManager {
     }
 
     const response = await fetch(
-      `https://${this.host}/widget/support/conversations/${encodeURIComponent(this.activeConversationId)}/transcript`,
+      `https://${this.host}/widget/conversations/${encodeURIComponent(this.activeConversationId)}/transcript`,
       {
         method: 'POST',
         headers: {
@@ -425,6 +445,7 @@ export class WidgetManager {
 
     const mountOptions: Parameters<typeof mountWidget>[1] & {
       activeTeammate?: WidgetActiveTeammate;
+      activeConversation?: WidgetConversation;
       openArticleRequest?: {
         key: number;
         articleSlug: string;
@@ -457,6 +478,9 @@ export class WidgetManager {
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
       conversations: this.conversations,
+      activeConversation: this.activeConversationId
+        ? this.conversations.find((conversation) => conversation.id === this.activeConversationId)
+        : undefined,
       onSelectConversation: (id: string) => this.handleSelectConversation(id),
       onStartNewConversation: () => this.handleStartNewConversation(),
       isConversationExpanded: this.isConversationExpanded,
@@ -572,6 +596,8 @@ export class WidgetManager {
       id: raw.id,
       subject: raw.subject || 'Untitled',
       status: raw.status || 'open',
+      flowState: raw.flow_state || undefined,
+      aiState: raw.ai_state || undefined,
       lastMessage: raw.last_message,
       lastMessageAt: raw.updated_at || raw.created_at,
       unreadCount: raw.unread_count ?? 0,
@@ -923,7 +949,7 @@ export class WidgetManager {
     // Try localStorage cache first
     const cached = getCachedConfig(this.config.key);
     if (cached) {
-      this.widgetConfig = cached;
+      this.widgetConfig = normalizeWidgetConfig(cached);
       this.ensureWidget();
       this.render();
       return;
@@ -938,7 +964,7 @@ export class WidgetManager {
         throw new Error(`Config fetch failed: ${response.status}`);
       }
 
-      this.widgetConfig = await response.json();
+      this.widgetConfig = normalizeWidgetConfig(await response.json());
 
       // Cache in localStorage
       if (this.widgetConfig && this.config.key) {
@@ -1423,10 +1449,10 @@ export class WidgetManager {
         // Admin changed widget settings — apply new config in real time
         const newConfig = data.data;
         if (newConfig && typeof newConfig === 'object') {
-          this.widgetConfig = newConfig;
+          this.widgetConfig = normalizeWidgetConfig(newConfig);
           // Update localStorage cache with fresh config
           if (this.widgetKey) {
-            cacheConfig(this.widgetKey, newConfig);
+            cacheConfig(this.widgetKey, this.widgetConfig);
           }
           this.render();
         }

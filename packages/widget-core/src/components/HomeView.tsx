@@ -52,7 +52,7 @@ export const HomeView: FunctionComponent<HomeViewProps> = ({
         {logoUrl ? (
           <img src={logoUrl} alt={workspaceName} className="helpin-home-logo" />
         ) : (
-          <div className="helpin-home-logo-placeholder" style={{ backgroundColor: '#ffffff' }}>
+          <div className="helpin-home-logo-placeholder">
             <span>{workspaceName.charAt(0).toUpperCase()}</span>
           </div>
         )}

@@ -55,10 +55,11 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
         <button className="helpin-help-back" onClick={onBack} aria-label="Back">
           <ChevronLeftIcon size={18} />
         </button>
-        <div>
+        <div className="helpin-help-header-copy">
           <span className="helpin-help-title">Articles</span>
           <p className="helpin-help-subtitle">Select an article to read</p>
         </div>
+        <div className="helpin-help-header-spacer" />
       </div>
       <div className="helpin-help-content">
         {isLoading && <p className="helpin-help-empty">Loading articles...</p>}

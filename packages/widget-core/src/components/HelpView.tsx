@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import type { WidgetConfig } from '../types';
-import { MailIcon, FileTextIcon, ChevronRightIcon } from './icons';
+import { MailIcon, FileTextIcon, ChevronRightIcon, XIcon } from './icons';
 import { HelpSpaceView } from './HelpSpaceView';
 
 interface HelpViewProps {
@@ -10,6 +10,7 @@ interface HelpViewProps {
   onContact: () => void;
   onSelectSpace: (spaceSlug: string) => void;
   onSelectCollection: (collectionSlug: string) => void;
+  onClose?: () => void;
 }
 
 export const HelpView: FunctionComponent<HelpViewProps> = ({
@@ -19,6 +20,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
   onContact,
   onSelectSpace,
   onSelectCollection,
+  onClose,
 }) => {
   const helpSpaces = config.helpSpaces ?? [];
   const canBrowseDocs = !!host && !!widgetKey && helpSpaces.length > 0;
@@ -26,7 +28,15 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
   return (
     <div className="helpin-help-view">
       <div className="helpin-help-header">
+        <div className="helpin-help-header-spacer" />
         <span className="helpin-help-title">Help</span>
+        {onClose ? (
+          <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+            <XIcon size={16} />
+          </button>
+        ) : (
+          <div className="helpin-help-header-spacer" />
+        )}
       </div>
       <div className="helpin-help-content">
         <div className="helpin-help-links">

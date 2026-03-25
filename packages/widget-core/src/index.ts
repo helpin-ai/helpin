@@ -71,6 +71,7 @@ export interface MountWidgetOptions {
   unreadCount?: number;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
   conversations?: Conversation[];
+  activeConversation?: Conversation;
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
@@ -112,6 +113,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onLauncherClick,
     unreadCount = 0,
     conversations = [],
+    activeConversation,
     onSelectConversation = () => {},
     onStartNewConversation = () => {},
     onViewChange,
@@ -149,6 +151,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       quickReplies,
       initialView,
       conversations,
+      activeConversation,
       onSelectConversation,
       onStartNewConversation,
       onViewChange,

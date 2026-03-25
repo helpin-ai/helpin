@@ -37,6 +37,7 @@ interface ChatWindowProps {
   connectionStatus?: ConnectionStatus;
   onRetryConnection?: () => void;
   conversations?: Conversation[];
+  activeConversation?: Conversation;
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
@@ -76,6 +77,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   connectionStatus = 'idle',
   onRetryConnection,
   conversations = [],
+  activeConversation,
   onSelectConversation = () => {},
   onStartNewConversation,
   onViewChange,
@@ -154,6 +156,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
+  const homeTeammates = activeTeammate?.name
+    ? [activeTeammate]
+    : (config.availableTeammates ?? []).slice(0, 4);
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';
@@ -211,25 +216,30 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     >
       {activeView === 'home' && (
         <div className="helpin-window-actions helpin-window-actions--home">
-          {activeTeammate?.name && (
-            <div
-              className="helpin-home-header-presence helpin-avatar-tooltip"
-              aria-label={`${activeTeammate.name} is ${activeTeammate.status || 'online'}`}
-              data-tooltip={activeTeammate.name}
-            >
-              <div className="helpin-home-teammate-avatar-wrap">
-                {activeTeammate.avatarUrl ? (
-                  <img src={activeTeammate.avatarUrl} alt={activeTeammate.name} className="helpin-home-teammate-avatar" />
-                ) : (
-                  <div className="helpin-home-teammate-avatar helpin-home-teammate-avatar--placeholder">
-                    <span>{activeTeammate.name.charAt(0).toUpperCase()}</span>
+          {homeTeammates.length > 0 && (
+            <div className="helpin-home-header-team">
+              {homeTeammates.map((teammate, index) => (
+                <div
+                  key={teammate.userId || `${teammate.name}-${index}`}
+                  className="helpin-home-header-presence helpin-avatar-tooltip"
+                  aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
+                  data-tooltip={teammate.name}
+                >
+                  <div className="helpin-home-teammate-avatar-wrap">
+                    {teammate.avatarUrl ? (
+                      <img src={teammate.avatarUrl} alt={teammate.name} className="helpin-home-teammate-avatar" />
+                    ) : (
+                      <div className="helpin-home-teammate-avatar helpin-home-teammate-avatar--placeholder">
+                        <span>{teammate.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                    )}
+                    <span
+                      className={`helpin-presence-dot helpin-presence-dot--${teammate.status || 'online'}`}
+                      aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
+                    />
                   </div>
-                )}
-                <span
-                  className={`helpin-presence-dot helpin-presence-dot--${activeTeammate.status || 'online'}`}
-                  aria-label={`${activeTeammate.name} is ${activeTeammate.status || 'online'}`}
-                />
-              </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -244,7 +254,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       )}
 
       {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
-      {activeView !== 'home' && activeView !== 'conversation' && !(activeView === 'messages' && conversations.length > 0) && (
+      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && !(activeView === 'messages' && conversations.length > 0) && (
         <button
           className="helpin-window-close"
           onClick={onClose}
@@ -294,6 +304,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         {activeView === 'conversation' && (
           <ConversationView
             config={config}
+            conversation={activeConversation}
             messages={messages}
             activeTeammate={activeTeammate}
             onSendMessage={onSendMessage}
@@ -350,6 +361,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             config={config}
             host={host}
             widgetKey={widgetKey}
+            onClose={onClose}
             onContact={() => handleStartConversation('help')}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}

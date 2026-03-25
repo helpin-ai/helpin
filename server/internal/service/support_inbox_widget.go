@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -696,6 +697,70 @@ func (s *SupportInboxService) enrichWidgetConversationOwners(ctx context.Context
 	}
 }
 
+func supportTeammateStatusRank(status string) int {
+	switch strings.TrimSpace(status) {
+	case model.SupportTeammateStatusOnline:
+		return 0
+	case model.SupportTeammateStatusAway:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, limit int) []model.WidgetActiveTeammate {
+	if s.workspaceRepo == nil {
+		return []model.WidgetActiveTeammate{}
+	}
+
+	statusByUserID := map[string]string{}
+	statuses, err := resolveSupportTeammatePresenceStatuses(
+		ctx,
+		s.workspaceRepo,
+		s.presence,
+		s.statusOverrideRepo,
+		workspaceID,
+		time.Now(),
+	)
+	if err == nil {
+		for _, status := range statuses {
+			statusByUserID[status.UserID] = status.Status
+		}
+	}
+
+	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	if err != nil {
+		return []model.WidgetActiveTeammate{}
+	}
+
+	teammates := make([]model.WidgetActiveTeammate, 0, len(members))
+	for _, member := range members {
+		if strings.TrimSpace(member.UserID) == "" || strings.TrimSpace(member.FullName) == "" {
+			continue
+		}
+		teammates = append(teammates, model.WidgetActiveTeammate{
+			UserID:    member.UserID,
+			Name:      member.FullName,
+			AvatarURL: member.AvatarURL,
+			Status:    statusByUserID[member.UserID],
+		})
+	}
+
+	sort.SliceStable(teammates, func(i, j int) bool {
+		left := teammates[i]
+		right := teammates[j]
+		if supportTeammateStatusRank(left.Status) != supportTeammateStatusRank(right.Status) {
+			return supportTeammateStatusRank(left.Status) < supportTeammateStatusRank(right.Status)
+		}
+		return strings.ToLower(left.Name) < strings.ToLower(right.Name)
+	})
+
+	if limit > 0 && len(teammates) > limit {
+		return teammates[:limit]
+	}
+	return teammates
+}
+
 func widgetActiveTeammateFromConversation(conversation *model.SupportConversation) *model.WidgetActiveTeammate {
 	if conversation == nil || conversation.OpenedByUserID == nil || conversation.OpenedByDisplayName == nil {
 		return nil
@@ -765,8 +830,9 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			CSATRating:        settings.CSATEnabled,
 			ForceIdentify:     settings.ForceVisitorIdentity,
 		},
-		Availability: buildWidgetAvailability(settings, time.Now()),
-		HelpSpaces:   helpSpaces,
+		Availability:       buildWidgetAvailability(settings, time.Now()),
+		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, 5),
+		HelpSpaces:         helpSpaces,
 	}, nil
 }
 
@@ -906,7 +972,7 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 
 // GetWidgetHelpArticle returns a widget-visible article with rendered HTML content.
 func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKey, articleSlug string) (*model.WidgetHelpArticle, error) {
-	_, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
+	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
 	if err != nil {
 		return nil, err
 	}
@@ -927,6 +993,11 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 		contentJSON = content.Content
 	}
 
+	publicPath, err := s.buildWidgetHelpArticlePublicPath(ctx, inst.WorkspaceID, doc)
+	if err != nil {
+		return nil, err
+	}
+
 	return &model.WidgetHelpArticle{
 		ID:          doc.ID,
 		Title:       doc.Title,
@@ -934,7 +1005,57 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 		Excerpt:     doc.Excerpt,
 		Icon:        doc.Icon,
 		ContentHTML: renderWidgetArticleHTML(contentJSON),
+		PublicPath:  publicPath,
 	}, nil
+}
+
+func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Context, workspaceID string, doc *model.DocsDocument) (*string, error) {
+	if doc == nil || s.docsHelpcenterRepo == nil {
+		return nil, nil
+	}
+
+	cfg, err := s.docsHelpcenterRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("get help center config: %w", err)
+	}
+	if cfg == nil || strings.TrimSpace(cfg.Subdomain) == "" {
+		return nil, nil
+	}
+
+	article, err := s.docsHelpcenterRepo.GetArticle(ctx, doc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get help center article: %w", err)
+	}
+	if article == nil || strings.TrimSpace(article.Slug) == "" {
+		return nil, nil
+	}
+
+	subdomain := strings.TrimSpace(cfg.Subdomain)
+	articleSlug := strings.TrimSpace(article.Slug)
+
+	if doc.CollectionID != nil && strings.TrimSpace(*doc.CollectionID) != "" && s.docsCollectionRepo != nil {
+		collection, err := s.docsCollectionRepo.GetByID(ctx, strings.TrimSpace(*doc.CollectionID))
+		if err != nil {
+			return nil, fmt.Errorf("get docs collection: %w", err)
+		}
+		if collection != nil && strings.TrimSpace(collection.Slug) != "" {
+			path := fmt.Sprintf("/hc/%s/c/%s/%s", subdomain, strings.TrimSpace(collection.Slug), articleSlug)
+			return &path, nil
+		}
+	}
+
+	if s.docsSpaceRepo != nil {
+		space, err := s.docsSpaceRepo.GetByID(ctx, doc.SpaceID)
+		if err != nil {
+			return nil, fmt.Errorf("get docs space: %w", err)
+		}
+		if space != nil && strings.TrimSpace(space.Slug) != "" {
+			path := fmt.Sprintf("/hc/%s/spaces/%s/articles/%s", subdomain, strings.TrimSpace(space.Slug), articleSlug)
+			return &path, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // ListWidgetTokens returns all active widget installations formatted as tokens

@@ -8,6 +8,12 @@ export interface HelpSpace {
 export interface WidgetConfig {
   workspaceId: string;
   workspaceName?: string;
+  availableTeammates?: Array<{
+    userId: string;
+    name: string;
+    avatarUrl?: string;
+    status?: 'online' | 'away' | 'offline';
+  }>;
   branding: {
     primaryColor: string;
     logoUrl?: string;

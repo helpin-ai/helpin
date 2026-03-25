@@ -5,6 +5,7 @@ export type Message = SharedMessage;
 export type PendingAttachment = SharedPendingAttachment;
 
 export interface WidgetConfig extends SharedWidgetConfig {
+  availableTeammates?: ActiveTeammate[];
   features: SharedWidgetConfig['features'] & {
     aiFirst?: boolean;
     escalationMessage?: string;
@@ -48,6 +49,8 @@ export interface Conversation {
   id: string;
   subject: string;
   status: string;
+  flowState?: string;
+  aiState?: string;
   lastMessage?: string;
   lastMessageAt?: string;
   unreadCount?: number;
