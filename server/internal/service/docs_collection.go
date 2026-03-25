@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -12,11 +13,16 @@ import (
 type DocsCollectionService struct {
 	collectionRepo *repository.DocsCollectionRepository
 	spaceRepo      *repository.DocsSpaceRepository
+	translationSvc *DocsHelpcenterTranslationService
 }
 
 // NewDocsCollectionService creates a new DocsCollectionService.
 func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository) *DocsCollectionService {
 	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo}
+}
+
+func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
+	s.translationSvc = translationSvc
 }
 
 // Create creates a new collection inside a space.
@@ -54,7 +60,16 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 	if req.Slug != nil && *req.Slug != "" {
 		coll.Slug = *req.Slug
 	}
-	return s.collectionRepo.Create(ctx, coll)
+	created, err := s.collectionRepo.Create(ctx, coll)
+	if err != nil {
+		return nil, err
+	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshCollectionSource(ctx, created.ID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter collection translation source after create", "collection_id", created.ID, "error", err)
+		}
+	}
+	return created, nil
 }
 
 // Get returns a collection by ID.
@@ -70,11 +85,14 @@ func (s *DocsCollectionService) List(ctx context.Context, spaceID string) ([]mod
 // Update updates a collection.
 func (s *DocsCollectionService) Update(ctx context.Context, id string, req model.UpdateDocsCollectionRequest) (*model.DocsCollection, error) {
 	updates := map[string]interface{}{}
+	shouldRefreshTranslations := false
 	if req.Name != nil {
 		updates["name"] = *req.Name
+		shouldRefreshTranslations = true
 	}
 	if req.Description != nil {
 		updates["description"] = *req.Description
+		shouldRefreshTranslations = true
 	}
 	if req.Icon != nil {
 		updates["icon"] = *req.Icon
@@ -85,7 +103,16 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 	if len(updates) == 0 {
 		return s.collectionRepo.GetByID(ctx, id)
 	}
-	return s.collectionRepo.Update(ctx, id, updates)
+	updated, err := s.collectionRepo.Update(ctx, id, updates)
+	if err != nil {
+		return nil, err
+	}
+	if shouldRefreshTranslations && s.translationSvc != nil {
+		if err := s.translationSvc.RefreshCollectionSource(ctx, id); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter collection translation source after update", "collection_id", id, "error", err)
+		}
+	}
+	return updated, nil
 }
 
 // Delete soft-deletes a collection.

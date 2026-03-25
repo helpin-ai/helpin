@@ -125,6 +125,27 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if v, ok := updates["search_placeholder"].(*string); ok {
 		cfg.SearchPlaceholder = v
 	}
+	if v, ok := updates["default_locale"].(string); ok {
+		cfg.DefaultLocale = v
+	}
+	if v, ok := updates["enabled_locales"].(model.DocsStringArray); ok {
+		cfg.EnabledLocales = v
+	}
+	if v, ok := updates["show_language_switcher"].(bool); ok {
+		cfg.ShowLanguageSwitcher = v
+	}
+	if v, ok := updates["fallback_to_default_locale"].(bool); ok {
+		cfg.FallbackToDefaultLocale = v
+	}
+	if cfg.DefaultLocale == "" {
+		cfg.DefaultLocale = "en"
+	}
+	if len(cfg.EnabledLocales) == 0 {
+		cfg.EnabledLocales = model.DocsStringArray{cfg.DefaultLocale}
+	}
+	if _, ok := updates["fallback_to_default_locale"]; !ok {
+		cfg.FallbackToDefaultLocale = true
+	}
 	if err := r.db.WithContext(ctx).Create(cfg).Error; err != nil {
 		return nil, fmt.Errorf("create helpcenter config: %w", err)
 	}

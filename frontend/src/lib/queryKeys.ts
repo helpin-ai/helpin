@@ -127,6 +127,13 @@ export const queryKeys = {
       ['docs', wsId, 'linkedDocs', objectType, objectId] as const,
     search: (wsId: string, query: string) => ['docs', wsId, 'search', query] as const,
     helpcenterConfig: (wsId: string) => ['docs', wsId, 'helpcenter', 'config'] as const,
+    helpcenterLocales: (wsId: string) => ['docs', wsId, 'helpcenter', 'locales'] as const,
+    helpcenterSpaceTranslations: (wsId: string, spaceId: string) =>
+      ['docs', wsId, 'helpcenter', 'spaces', spaceId, 'translations'] as const,
+    helpcenterCollectionTranslations: (wsId: string, collectionId: string) =>
+      ['docs', wsId, 'helpcenter', 'collections', collectionId, 'translations'] as const,
+    helpcenterArticleTranslations: (wsId: string, docId: string) =>
+      ['docs', wsId, 'helpcenter', 'documents', docId, 'translations'] as const,
   },
 
   crm: {

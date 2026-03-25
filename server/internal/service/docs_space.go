@@ -13,12 +13,17 @@ import (
 
 // DocsSpaceService handles business logic for docs spaces.
 type DocsSpaceService struct {
-	spaceRepo *repository.DocsSpaceRepository
+	spaceRepo      *repository.DocsSpaceRepository
+	translationSvc *DocsHelpcenterTranslationService
 }
 
 // NewDocsSpaceService creates a new DocsSpaceService.
 func NewDocsSpaceService(spaceRepo *repository.DocsSpaceRepository) *DocsSpaceService {
 	return &DocsSpaceService{spaceRepo: spaceRepo}
+}
+
+func (s *DocsSpaceService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
+	s.translationSvc = translationSvc
 }
 
 // withTeams enriches a space with its team IDs.
@@ -79,6 +84,12 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	if len(req.TeamIDs) > 0 {
 		if err := s.spaceRepo.SetTeamIDs(ctx, created.ID, req.TeamIDs); err != nil {
 			return nil, err
+		}
+	}
+
+	if s.translationSvc != nil && created.Type == model.SpaceTypeExternalCapable {
+		if err := s.translationSvc.RefreshSpaceSource(ctx, created.ID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter space translation source after create", "space_id", created.ID, "error", err)
 		}
 	}
 
@@ -238,11 +249,14 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 
 	updates := map[string]interface{}{}
 	originalType := space.Type
+	shouldRefreshTranslations := originalType == model.SpaceTypeExternalCapable
 	if req.Name != nil {
 		updates["name"] = *req.Name
+		shouldRefreshTranslations = true
 	}
 	if req.Slug != nil {
 		updates["slug"] = *req.Slug
+		shouldRefreshTranslations = true
 	}
 	if req.Icon != nil {
 		updates["icon"] = *req.Icon
@@ -258,6 +272,7 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 				return nil, err
 			}
 			updates["position"] = nextPos
+			shouldRefreshTranslations = true
 		}
 	}
 	if req.Visibility != nil {
@@ -275,6 +290,12 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 			if err := s.spaceRepo.NormalizeSection(ctx, space.WorkspaceID, originalType); err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	if shouldRefreshTranslations && s.translationSvc != nil {
+		if err := s.translationSvc.RefreshSpaceSource(ctx, id); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter space translation source after update", "space_id", id, "error", err)
 		}
 	}
 

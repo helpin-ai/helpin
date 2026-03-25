@@ -19,18 +19,19 @@ import (
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
-	spaceSvc      *service.DocsSpaceService
-	collectionSvc *service.DocsCollectionService
-	documentSvc   *service.DocsDocumentService
-	contentSvc    *service.DocsContentService
-	versionSvc    *service.DocsVersionService
-	linkSvc       *service.DocsLinkService
-	helpcenterSvc *service.DocsHelpcenterService
-	searchSvc     *service.DocsSearchService
-	importService *service.DocsImportService
-	embeddingSvc  *service.DocsEmbeddingService
-	agentService  *service.AgentService
-	jwtManager    *auth.JWTManager
+	spaceSvc       *service.DocsSpaceService
+	collectionSvc  *service.DocsCollectionService
+	documentSvc    *service.DocsDocumentService
+	contentSvc     *service.DocsContentService
+	versionSvc     *service.DocsVersionService
+	linkSvc        *service.DocsLinkService
+	helpcenterSvc  *service.DocsHelpcenterService
+	translationSvc *service.DocsHelpcenterTranslationService
+	searchSvc      *service.DocsSearchService
+	importService  *service.DocsImportService
+	embeddingSvc   *service.DocsEmbeddingService
+	agentService   *service.AgentService
+	jwtManager     *auth.JWTManager
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -42,6 +43,7 @@ func NewDocsHandler(
 	versionSvc *service.DocsVersionService,
 	linkSvc *service.DocsLinkService,
 	helpcenterSvc *service.DocsHelpcenterService,
+	translationSvc *service.DocsHelpcenterTranslationService,
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
 	embeddingSvc *service.DocsEmbeddingService,
@@ -49,18 +51,19 @@ func NewDocsHandler(
 	jwtManager *auth.JWTManager,
 ) *DocsHandler {
 	return &DocsHandler{
-		spaceSvc:      spaceSvc,
-		collectionSvc: collectionSvc,
-		documentSvc:   documentSvc,
-		contentSvc:    contentSvc,
-		versionSvc:    versionSvc,
-		linkSvc:       linkSvc,
-		helpcenterSvc: helpcenterSvc,
-		searchSvc:     searchSvc,
-		importService: importService,
-		embeddingSvc:  embeddingSvc,
-		agentService:  agentService,
-		jwtManager:    jwtManager,
+		spaceSvc:       spaceSvc,
+		collectionSvc:  collectionSvc,
+		documentSvc:    documentSvc,
+		contentSvc:     contentSvc,
+		versionSvc:     versionSvc,
+		linkSvc:        linkSvc,
+		helpcenterSvc:  helpcenterSvc,
+		translationSvc: translationSvc,
+		searchSvc:      searchSvc,
+		importService:  importService,
+		embeddingSvc:   embeddingSvc,
+		agentService:   agentService,
+		jwtManager:     jwtManager,
 	}
 }
 

@@ -35,6 +35,7 @@ export interface DocsCollection {
   space_id: string;
   workspace_id: string;
   name: string;
+  slug: string;
   description?: string;
   icon?: string;
   position: number;
@@ -171,6 +172,10 @@ export interface DocsHelpcenterConfig {
   homepage_config: HelpcenterHomepageConfig;
   space_nav_config: HelpcenterSpaceNavConfig;
   search_placeholder?: string;
+  default_locale: string;
+  enabled_locales: string[];
+  show_language_switcher: boolean;
+  fallback_to_default_locale: boolean;
   is_published: boolean;
   seo_title?: string;
   seo_description?: string;
@@ -190,6 +195,142 @@ export interface DocsHelpcenterArticle {
   public_published_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type DocsHelpcenterTranslationStatus = 'draft' | 'published' | 'needs_review';
+export type DocsHelpcenterTranslationState = DocsHelpcenterTranslationStatus | 'missing';
+
+export interface DocsHelpcenterSpaceTranslation {
+  id: string;
+  space_id: string;
+  workspace_id: string;
+  locale: string;
+  name: string;
+  slug: string;
+  description?: string;
+  status: DocsHelpcenterTranslationStatus;
+  source_updated_at?: string;
+  source_synced: boolean;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocsHelpcenterCollectionTranslation {
+  id: string;
+  collection_id: string;
+  workspace_id: string;
+  space_id: string;
+  locale: string;
+  name: string;
+  description?: string;
+  slug: string;
+  status: DocsHelpcenterTranslationStatus;
+  source_updated_at?: string;
+  source_synced: boolean;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocsHelpcenterArticleTranslation {
+  id: string;
+  document_id: string;
+  workspace_id: string;
+  space_id: string;
+  collection_id?: string;
+  locale: string;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content: unknown;
+  content_text: string;
+  seo_title?: string;
+  seo_description?: string;
+  status: DocsHelpcenterTranslationStatus;
+  source_updated_at?: string;
+  source_synced: boolean;
+  published_at?: string;
+  view_count: number;
+  helpful_count: number;
+  not_helpful_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocsHelpcenterLocalesConfig = Pick<
+  DocsHelpcenterConfig,
+  'default_locale' | 'enabled_locales' | 'show_language_switcher' | 'fallback_to_default_locale'
+>;
+
+export interface UpdateDocsHelpcenterLocalesRequest {
+  default_locale: string;
+  enabled_locales: string[];
+  show_language_switcher: boolean;
+  fallback_to_default_locale: boolean;
+}
+
+export interface UpsertDocsHelpcenterSpaceTranslationRequest {
+  locale: string;
+  name: string;
+  slug: string;
+  description?: string;
+  status?: DocsHelpcenterTranslationStatus;
+}
+
+export interface UpsertDocsHelpcenterCollectionTranslationRequest {
+  locale: string;
+  name: string;
+  description?: string;
+  slug: string;
+  status?: DocsHelpcenterTranslationStatus;
+}
+
+export interface UpsertDocsHelpcenterArticleTranslationRequest {
+  locale: string;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content: unknown;
+  seo_title?: string;
+  seo_description?: string;
+  status?: DocsHelpcenterTranslationStatus;
+}
+
+export interface HelpcenterLocaleOption {
+  value: string;
+  label: string;
+}
+
+export const HELP_CENTER_LOCALE_OPTIONS: HelpcenterLocaleOption[] = [
+  { value: 'en', label: 'English' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'it', label: 'Italian' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'pt-br', label: 'Portuguese (Brazil)' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'da', label: 'Danish' },
+  { value: 'no', label: 'Norwegian' },
+  { value: 'fi', label: 'Finnish' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'ro', label: 'Romanian' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'he', label: 'Hebrew' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'zh-cn', label: 'Chinese (Simplified)' },
+  { value: 'zh-tw', label: 'Chinese (Traditional)' },
+];
+
+export function getHelpcenterLocaleLabel(locale: string): string {
+  const normalized = locale.trim().toLowerCase();
+  const match = HELP_CENTER_LOCALE_OPTIONS.find((option) => option.value === normalized);
+  return match?.label ?? normalized.toUpperCase();
 }
 
 export interface DocsSlugAlias {

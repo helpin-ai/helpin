@@ -13,13 +13,18 @@ import (
 
 // DocsDocumentService handles business logic for documents.
 type DocsDocumentService struct {
-	docRepo   *repository.DocsDocumentRepository
-	spaceRepo *repository.DocsSpaceRepository
+	docRepo        *repository.DocsDocumentRepository
+	spaceRepo      *repository.DocsSpaceRepository
+	translationSvc *DocsHelpcenterTranslationService
 }
 
 // NewDocsDocumentService creates a new DocsDocumentService.
 func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRepo *repository.DocsSpaceRepository) *DocsDocumentService {
 	return &DocsDocumentService{docRepo: docRepo, spaceRepo: spaceRepo}
+}
+
+func (s *DocsDocumentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
+	s.translationSvc = translationSvc
 }
 
 // Create creates a new document.
@@ -105,6 +110,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	}
 
 	// Handle collection_id change as a move operation to preserve ordering.
+	shouldRefreshTranslations := false
 	if req.CollectionID != nil {
 		newCollID := req.CollectionID
 		if *newCollID == "" {
@@ -121,12 +127,14 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 			if err := s.docRepo.Move(ctx, id, doc.SpaceID, newCollID); err != nil {
 				return nil, fmt.Errorf("move document to collection: %w", err)
 			}
+			shouldRefreshTranslations = true
 		}
 	}
 
 	updates := map[string]interface{}{}
 	if req.Title != nil {
 		updates["title"] = *req.Title
+		shouldRefreshTranslations = true
 	}
 	// collection_id is handled above via move semantics, skip raw patch.
 	if req.OwnerID != nil {
@@ -137,6 +145,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	}
 	if req.Excerpt != nil {
 		updates["excerpt"] = *req.Excerpt
+		shouldRefreshTranslations = true
 	}
 	if req.Icon != nil {
 		updates["icon"] = *req.Icon
@@ -148,9 +157,27 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 		updates["is_pinned"] = *req.IsPinned
 	}
 	if len(updates) == 0 {
-		return s.docRepo.GetByID(ctx, id)
+		updated, err := s.docRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if shouldRefreshTranslations && s.translationSvc != nil {
+			if err := s.translationSvc.RefreshArticleSource(ctx, id); err != nil {
+				slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after document move", "document_id", id, "error", err)
+			}
+		}
+		return updated, nil
 	}
-	return s.docRepo.Update(ctx, id, updates)
+	updated, err := s.docRepo.Update(ctx, id, updates)
+	if err != nil {
+		return nil, err
+	}
+	if shouldRefreshTranslations && s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, id); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after document update", "document_id", id, "error", err)
+		}
+	}
+	return updated, nil
 }
 
 // Publish transitions a document to published status.

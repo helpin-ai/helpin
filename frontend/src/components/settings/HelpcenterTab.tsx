@@ -28,6 +28,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
+import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import {
   Plus, Trash2, GripVertical, Info,
   Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon,
@@ -184,6 +186,8 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const [spaces, setSpaces] = useState<DocsSpace[]>([]);
   const [homepageSpaceSlug, setHomepageSpaceSlug] = useState('');
   const [spaceCollections, setSpaceCollections] = useState<DocsCollection[]>([]);
+  const { data: localesConfig } = useDocsHelpcenterLocales(workspaceId);
+  const updateLocales = useUpdateDocsHelpcenterLocales(workspaceId);
 
   useEffect(() => {
     const load = async () => {
@@ -251,7 +255,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       setLoading(false);
     };
     load();
-  }, [workspaceId]);
+  }, [workspaceId, workspaceName]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -491,6 +495,22 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           />
         </div>
       </div>
+
+      {localesConfig && (
+        <HelpcenterLocalesCard
+          key={`${localesConfig.default_locale}:${localesConfig.enabled_locales.join(',')}:${String(localesConfig.show_language_switcher)}:${String(localesConfig.fallback_to_default_locale)}`}
+          config={localesConfig}
+          isSaving={updateLocales.isPending}
+          onSave={async (data) => {
+            try {
+              await updateLocales.mutateAsync(data)
+              toast.success('Locale settings saved')
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
+            }
+          }}
+        />
+      )}
 
       {/* ── Branding ── */}
       <Card className={LINEAR_CARD_CLASS}>

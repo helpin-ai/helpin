@@ -15,6 +15,10 @@ import type {
   UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
+  UpdateDocsHelpcenterLocalesRequest,
+  UpsertDocsHelpcenterSpaceTranslationRequest,
+  UpsertDocsHelpcenterCollectionTranslationRequest,
+  UpsertDocsHelpcenterArticleTranslationRequest,
   DocsArticleFeedbackRequest,
   DocsDocument,
   ReorderDocsSpacesRequest,
@@ -107,8 +111,13 @@ export function useCreateDocsCollection(wsId: string, spaceId: string) {
 export function useUpdateDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, spaceId, ...data }: UpdateDocsCollectionRequest & { id: string; spaceId: string }) =>
-      unwrap(await docsService.updateCollection(wsId, id, data)),
+    mutationFn: async (input: UpdateDocsCollectionRequest & { id: string; spaceId: string }) => {
+      const payload = { ...input }
+      const { id } = payload
+      delete (payload as { id?: string }).id
+      delete (payload as { spaceId?: string }).spaceId
+      return unwrap(await docsService.updateCollection(wsId, id, payload))
+    },
     onSuccess: (_, { spaceId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
     },
@@ -570,6 +579,182 @@ export function useDocsHelpcenterConfig(wsId: string) {
     queryKey: queryKeys.docs.helpcenterConfig(wsId),
     queryFn: async () => unwrap(await docsService.getHelpcenterConfig(wsId)),
     enabled: !!wsId,
+  })
+}
+
+export function useDocsHelpcenterLocales(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.helpcenterLocales(wsId),
+    queryFn: async () => unwrap(await docsService.getHelpcenterLocales(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useUpdateDocsHelpcenterLocales(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: UpdateDocsHelpcenterLocalesRequest) =>
+      unwrap(await docsService.updateHelpcenterLocales(wsId, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterLocales(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(wsId) })
+    },
+  })
+}
+
+export function useDocsHelpcenterSpaceTranslations(wsId: string, spaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId),
+    queryFn: async () => unwrap(await docsService.listSpaceTranslations(wsId, spaceId)),
+    enabled: !!wsId && !!spaceId,
+  })
+}
+
+export function useUpsertDocsHelpcenterSpaceTranslation(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: UpsertDocsHelpcenterSpaceTranslationRequest) =>
+      unwrap(await docsService.upsertSpaceTranslation(wsId, spaceId, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId) })
+    },
+  })
+}
+
+export function usePublishDocsHelpcenterSpaceTranslation(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.publishSpaceTranslation(wsId, spaceId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId) })
+    },
+  })
+}
+
+export function useUnpublishDocsHelpcenterSpaceTranslation(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.unpublishSpaceTranslation(wsId, spaceId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId) })
+    },
+  })
+}
+
+export function useMarkDocsHelpcenterSpaceTranslationReviewed(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.markSpaceTranslationReviewed(wsId, spaceId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId) })
+    },
+  })
+}
+
+export function useDocsHelpcenterCollectionTranslations(wsId: string, collectionId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId),
+    queryFn: async () => unwrap(await docsService.listCollectionTranslations(wsId, collectionId)),
+    enabled: !!wsId && !!collectionId,
+  })
+}
+
+export function useUpsertDocsHelpcenterCollectionTranslation(wsId: string, collectionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: UpsertDocsHelpcenterCollectionTranslationRequest) =>
+      unwrap(await docsService.upsertCollectionTranslation(wsId, collectionId, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId) })
+    },
+  })
+}
+
+export function usePublishDocsHelpcenterCollectionTranslation(wsId: string, collectionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.publishCollectionTranslation(wsId, collectionId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId) })
+    },
+  })
+}
+
+export function useUnpublishDocsHelpcenterCollectionTranslation(wsId: string, collectionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.unpublishCollectionTranslation(wsId, collectionId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId) })
+    },
+  })
+}
+
+export function useMarkDocsHelpcenterCollectionTranslationReviewed(wsId: string, collectionId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.markCollectionTranslationReviewed(wsId, collectionId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId) })
+    },
+  })
+}
+
+export function useDocsHelpcenterArticleTranslations(wsId: string, docId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId),
+    queryFn: async () => unwrap(await docsService.listArticleTranslations(wsId, docId)),
+    enabled: !!wsId && !!docId,
+  })
+}
+
+export function useUpsertDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: UpsertDocsHelpcenterArticleTranslationRequest) =>
+      unwrap(await docsService.upsertArticleTranslation(wsId, docId, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
+  })
+}
+
+export function usePublishDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.publishArticleTranslation(wsId, docId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
+  })
+}
+
+export function useUnpublishDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.unpublishArticleTranslation(wsId, docId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
+  })
+}
+
+export function useMarkDocsHelpcenterArticleTranslationReviewed(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.markArticleTranslationReviewed(wsId, docId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
   })
 }
 

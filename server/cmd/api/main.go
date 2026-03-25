@@ -211,6 +211,9 @@ func main() {
 		&model.DocsLink{},
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
+		&model.DocsHelpcenterSpaceTranslation{},
+		&model.DocsHelpcenterCollectionTranslation{},
+		&model.DocsHelpcenterArticleTranslation{},
 		&model.DocsSlugAlias{},
 		&model.DocsRedirect{},
 		&model.DocsReviewQueue{},
@@ -473,6 +476,7 @@ func main() {
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
+	docsHelpcenterTranslationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
@@ -668,8 +672,14 @@ func main() {
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
+	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
+	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
+	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
+	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
+	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
+	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -895,6 +905,7 @@ func main() {
 			docsVersionService,
 			docsLinkService,
 			docsHelpcenterService,
+			docsHelpcenterTranslationService,
 			docsSearchService,
 			docsImportService,
 			docsEmbeddingService,

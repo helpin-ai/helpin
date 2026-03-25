@@ -47,11 +47,11 @@ const (
 
 // Linked object type values.
 const (
-	LinkedObjectEpic          = "epic"
-	LinkedObjectStory         = "story"
-	LinkedObjectProject       = "project"
-	LinkedObjectObjective     = "objective"
-	LinkedObjectSprint        = "sprint"
+	LinkedObjectEpic                = "epic"
+	LinkedObjectStory               = "story"
+	LinkedObjectProject             = "project"
+	LinkedObjectObjective           = "objective"
+	LinkedObjectSprint              = "sprint"
 	LinkedObjectSupportConversation = "support_conversation"
 )
 
@@ -294,27 +294,31 @@ type HelpcenterSpaceNavConfig struct {
 
 // DocsHelpcenterConfig stores workspace-level help center configuration.
 type DocsHelpcenterConfig struct {
-	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
-	Subdomain         string          `json:"subdomain" gorm:"not null"`
-	CustomDomain      *string         `json:"custom_domain"`
-	BrandName         string          `json:"brand_name" gorm:"not null"`
-	BrandLogoURL      *string         `json:"brand_logo_url"`
-	BrandLogoDarkURL  *string         `json:"brand_logo_dark_url"`
-	BrandColor        string          `json:"brand_color" gorm:"not null;default:'#000000'"`
-	FaviconURL        *string         `json:"favicon_url"`
-	ThemeMode         string          `json:"theme_mode" gorm:"not null;default:'system'"`
-	HeaderLinks       json.RawMessage `json:"header_links" gorm:"type:jsonb;default:'[]'"`
-	FooterConfig      json.RawMessage `json:"footer_config" gorm:"type:jsonb;default:'{}'"`
-	HomepageConfig    json.RawMessage `json:"homepage_config" gorm:"type:jsonb;default:'{}'"`
-	SpaceNavConfig    json.RawMessage `json:"space_nav_config" gorm:"type:jsonb;default:'{}'"`
-	SearchPlaceholder *string         `json:"search_placeholder"`
-	IsPublished       bool            `json:"is_published" gorm:"not null;default:false"`
-	SEOTitle          *string         `json:"seo_title"`
-	SEODescription    *string         `json:"seo_description"`
-	SupportEmail      *string         `json:"support_email"`
-	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                      string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Subdomain               string          `json:"subdomain" gorm:"not null"`
+	CustomDomain            *string         `json:"custom_domain"`
+	BrandName               string          `json:"brand_name" gorm:"not null"`
+	BrandLogoURL            *string         `json:"brand_logo_url"`
+	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
+	BrandColor              string          `json:"brand_color" gorm:"not null;default:'#000000'"`
+	FaviconURL              *string         `json:"favicon_url"`
+	ThemeMode               string          `json:"theme_mode" gorm:"not null;default:'system'"`
+	HeaderLinks             json.RawMessage `json:"header_links" gorm:"type:jsonb;default:'[]'"`
+	FooterConfig            json.RawMessage `json:"footer_config" gorm:"type:jsonb;default:'{}'"`
+	HomepageConfig          json.RawMessage `json:"homepage_config" gorm:"type:jsonb;default:'{}'"`
+	SpaceNavConfig          json.RawMessage `json:"space_nav_config" gorm:"type:jsonb;default:'{}'"`
+	SearchPlaceholder       *string         `json:"search_placeholder"`
+	DefaultLocale           string          `json:"default_locale" gorm:"not null;default:'en'"`
+	EnabledLocales          DocsStringArray `json:"enabled_locales" gorm:"type:text[]"`
+	ShowLanguageSwitcher    bool            `json:"show_language_switcher" gorm:"not null;default:false"`
+	FallbackToDefaultLocale bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
+	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
+	SEOTitle                *string         `json:"seo_title"`
+	SEODescription          *string         `json:"seo_description"`
+	SupportEmail            *string         `json:"support_email"`
+	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (DocsHelpcenterConfig) TableName() string { return "docs_helpcenter_configs" }
@@ -508,23 +512,27 @@ type CreateDocsLinkRequest struct {
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.
 type UpdateDocsHelpcenterConfigRequest struct {
-	Subdomain         *string         `json:"subdomain"`
-	CustomDomain      *string         `json:"custom_domain"`
-	BrandName         *string         `json:"brand_name"`
-	BrandLogoURL      *string         `json:"brand_logo_url"`
-	BrandLogoDarkURL  *string         `json:"brand_logo_dark_url"`
-	BrandColor        *string         `json:"brand_color"`
-	FaviconURL        *string         `json:"favicon_url"`
-	ThemeMode         *string         `json:"theme_mode"`
-	HeaderLinks       json.RawMessage `json:"header_links,omitempty"`
-	FooterConfig      json.RawMessage `json:"footer_config,omitempty"`
-	HomepageConfig    json.RawMessage `json:"homepage_config,omitempty"`
-	SpaceNavConfig    json.RawMessage `json:"space_nav_config,omitempty"`
-	SearchPlaceholder *string         `json:"search_placeholder"`
-	IsPublished       *bool           `json:"is_published"`
-	SEOTitle          *string         `json:"seo_title"`
-	SEODescription    *string         `json:"seo_description"`
-	SupportEmail      *string         `json:"support_email"`
+	Subdomain               *string         `json:"subdomain"`
+	CustomDomain            *string         `json:"custom_domain"`
+	BrandName               *string         `json:"brand_name"`
+	BrandLogoURL            *string         `json:"brand_logo_url"`
+	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
+	BrandColor              *string         `json:"brand_color"`
+	FaviconURL              *string         `json:"favicon_url"`
+	ThemeMode               *string         `json:"theme_mode"`
+	HeaderLinks             json.RawMessage `json:"header_links,omitempty"`
+	FooterConfig            json.RawMessage `json:"footer_config,omitempty"`
+	HomepageConfig          json.RawMessage `json:"homepage_config,omitempty"`
+	SpaceNavConfig          json.RawMessage `json:"space_nav_config,omitempty"`
+	SearchPlaceholder       *string         `json:"search_placeholder"`
+	DefaultLocale           *string         `json:"default_locale"`
+	EnabledLocales          []string        `json:"enabled_locales"`
+	ShowLanguageSwitcher    *bool           `json:"show_language_switcher"`
+	FallbackToDefaultLocale *bool           `json:"fallback_to_default_locale"`
+	IsPublished             *bool           `json:"is_published"`
+	SEOTitle                *string         `json:"seo_title"`
+	SEODescription          *string         `json:"seo_description"`
+	SupportEmail            *string         `json:"support_email"`
 }
 
 // DocsArticleFeedbackRequest is the payload for submitting article feedback.

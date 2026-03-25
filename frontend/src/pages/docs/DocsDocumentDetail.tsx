@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO, isThisYear } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
@@ -27,6 +27,7 @@ import {
   User,
   UserCheck,
   X,
+  Languages,
 } from 'lucide-react'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
@@ -39,9 +40,17 @@ import {
   useDocsContent,
   useDocsSpace,
   useDocsCollections,
+  useDocsHelpcenterArticleTranslations,
+  useDocsHelpcenterCollectionTranslations,
+  useDocsHelpcenterLocales,
+  useDocsHelpcenterSpaceTranslations,
   useCreateDocsCollection,
+  useMarkDocsHelpcenterArticleTranslationReviewed,
+  usePublishDocsHelpcenterArticleTranslation,
   useSaveDocsContent,
   useUpdateDocsDocument,
+  useUnpublishDocsHelpcenterArticleTranslation,
+  useUpsertDocsHelpcenterArticleTranslation,
   usePublishDocsDocument,
   useUnpublishDocsDocument,
   useArchiveDocsDocument,
@@ -70,10 +79,19 @@ import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
+import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
+import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { docsService } from '@/lib/services/docsService'
 import type { DocsVersion } from '@/lib/docsTypes'
@@ -107,11 +125,13 @@ export function DocsDocumentDetail() {
   const wsSlug = workspace?.slug ?? ''
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { canEditDocs, canPublishDocs, isAdmin } = usePermissions(access)
+  const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
+  const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
   const updateDoc = useUpdateDocsDocument(wsId)
@@ -124,7 +144,13 @@ export function DocsDocumentDetail() {
   const { data: space } = useDocsSpace(wsId, doc?.space_id ?? '')
   const { data: members = [] } = useAssignableMembers(wsId)
   const { data: collections = [] } = useDocsCollections(wsId, doc?.space_id ?? '')
+  const { data: spaceTranslations = [] } = useDocsHelpcenterSpaceTranslations(wsId, doc?.space_id ?? '')
+  const { data: collectionTranslations = [] } = useDocsHelpcenterCollectionTranslations(wsId, doc?.collection_id ?? '')
   const createCollection = useCreateDocsCollection(wsId, doc?.space_id ?? '')
+  const upsertArticleTranslation = useUpsertDocsHelpcenterArticleTranslation(wsId, docId)
+  const publishArticleTranslation = usePublishDocsHelpcenterArticleTranslation(wsId, docId)
+  const unpublishArticleTranslation = useUnpublishDocsHelpcenterArticleTranslation(wsId, docId)
+  const markArticleTranslationReviewed = useMarkDocsHelpcenterArticleTranslationReviewed(wsId, docId)
 
   const toggleShare = useToggleDocShare(wsId)
   const toggleLock = useToggleDocLock(wsId)
@@ -137,6 +163,8 @@ export function DocsDocumentDetail() {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
+  const [translationsOpen, setTranslationsOpen] = useState(false)
+  const [editingTranslationLocale, setEditingTranslationLocale] = useState<string | null>(null)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
@@ -162,18 +190,10 @@ export function DocsDocumentDetail() {
     }
   }, [previewVersion, revertVersion, docId])
 
-  // Title state — local draft synced from server, debounced save
-  const [titleDraft, setTitleDraft] = useState('')
-  const titleInitRef = useRef(false)
+  // Title state — keep a local draft only for the active document.
+  const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
+  const titleDraft = titleDraftState?.docId === docId ? titleDraftState.value : (doc?.title ?? '')
   const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  // Sync title from server on first load (or when doc changes externally)
-  useEffect(() => {
-    if (doc && !titleInitRef.current) {
-      setTitleDraft(doc.title)
-      titleInitRef.current = true
-    }
-  }, [doc])
 
   useTitle(titleDraft || 'Document')
 
@@ -190,7 +210,7 @@ export function DocsDocumentDetail() {
 
   const handleTitleChange = useCallback(
     (newTitle: string) => {
-      setTitleDraft(newTitle)
+      setTitleDraftState({ docId, value: newTitle })
       if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
       titleTimerRef.current = setTimeout(() => {
         const trimmed = newTitle.trim()
@@ -199,7 +219,7 @@ export function DocsDocumentDetail() {
         }
       }, 800)
     },
-    [patchDoc, doc?.title],
+    [patchDoc, doc?.title, docId],
   )
 
   // Cleanup title timer
@@ -218,6 +238,48 @@ export function DocsDocumentDetail() {
     title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
   const isExternalHelpCenter = space?.type === 'external_capable'
+  const defaultLocale = localesConfig?.default_locale ?? 'en'
+  const enabledLocales = localesConfig?.enabled_locales?.length
+    ? localesConfig.enabled_locales
+    : [defaultLocale]
+  const articleTranslationsByLocale = useMemo(
+    () => new Map(articleTranslations.map((translation) => [translation.locale, translation])),
+    [articleTranslations],
+  )
+  const spaceTranslationsByLocale = useMemo(
+    () => new Map(spaceTranslations.map((translation) => [translation.locale, translation])),
+    [spaceTranslations],
+  )
+  const collectionTranslationsByLocale = useMemo(
+    () => new Map(collectionTranslations.map((translation) => [translation.locale, translation])),
+    [collectionTranslations],
+  )
+  const articleTranslationRows = enabledLocales.map((locale) => {
+    const translation = articleTranslationsByLocale.get(locale)
+    const isDefaultLocale = locale === defaultLocale
+    const spaceReady = spaceTranslationsByLocale.get(locale)?.status === 'published'
+    const collectionReady = doc?.collection_id
+      ? collectionTranslationsByLocale.get(locale)?.status === 'published'
+      : true
+    let publishBlockedReason: string | undefined
+    if (!isDefaultLocale && translation) {
+      if (!spaceReady) publishBlockedReason = 'Publish the parent translation first'
+      else if (!collectionReady) publishBlockedReason = 'Publish the collection translation first'
+    }
+    return {
+      locale,
+      state: translation?.status ?? 'missing',
+      updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
+      helperText: isDefaultLocale
+        ? 'Mirrored from the source article and refreshed automatically when the source document changes.'
+        : translation?.source_synced === false
+          ? 'Source content changed after this translation was last reviewed. Update and confirm the localized copy.'
+          : 'Localized article content is served on locale-specific public routes and search results.',
+      publishBlockedReason,
+      isDefaultLocale,
+      sourceMirrorLabel: 'Source mirror',
+    }
+  })
 
   const handlePublish = async () => {
     // For external help center articles, show slug confirmation first
@@ -270,6 +332,16 @@ export function DocsDocumentDetail() {
       navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete')
+    }
+  }
+
+  const handleSaveTranslation = async (data: Parameters<typeof upsertArticleTranslation.mutateAsync>[0]) => {
+    try {
+      await upsertArticleTranslation.mutateAsync(data)
+      toast.success('Article translation saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save translation')
+      throw err
     }
   }
 
@@ -384,6 +456,18 @@ export function DocsDocumentDetail() {
           >
             <Eye className="h-3.5 w-3.5" />
             Preview
+          </Button>
+        )}
+
+        {isExternalHelpCenter && canAdminDocs && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 text-xs"
+            onClick={() => setTranslationsOpen(true)}
+          >
+            <Languages className="h-3.5 w-3.5" />
+            Translations
           </Button>
         )}
 
@@ -823,6 +907,68 @@ export function DocsDocumentDetail() {
         onOpenChange={setLinksOpen}
         canEdit={canEditDocs}
       />
+
+      <Sheet open={translationsOpen} onOpenChange={setTranslationsOpen}>
+        <SheetContent className="w-full sm:max-w-2xl">
+          <SheetHeader className="border-b border-border/60">
+            <SheetTitle className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-primary" />
+              Article translations
+            </SheetTitle>
+            <SheetDescription>
+              Manage localized public variants for this article. The default locale stays mirrored from the source document.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <TranslationsPanel
+              title="Public language variants"
+              description="Publish each locale independently once its parent path and localized body are ready."
+              locales={enabledLocales}
+              rows={articleTranslationRows}
+              onAdd={setEditingTranslationLocale}
+              onEdit={setEditingTranslationLocale}
+              onPublish={(locale) => {
+                publishArticleTranslation.mutate(locale, {
+                  onSuccess: () => toast.success('Article translation published'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
+                })
+              }}
+              onUnpublish={(locale) => {
+                unpublishArticleTranslation.mutate(locale, {
+                  onSuccess: () => toast.success('Article translation reverted to draft'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unpublish translation'),
+                })
+              }}
+              onMarkReviewed={(locale) => {
+                markArticleTranslationReviewed.mutate(locale, {
+                  onSuccess: () => toast.success('Article translation marked as reviewed'),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark translation reviewed'),
+                })
+              }}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {editingTranslationLocale && (
+        <EditArticleTranslationDialog
+          key={`${editingTranslationLocale}-${articleTranslationsByLocale.get(editingTranslationLocale)?.updated_at ?? 'new'}`}
+          open={Boolean(editingTranslationLocale)}
+          onOpenChange={(open) => {
+            if (!open) setEditingTranslationLocale(null)
+          }}
+          locale={editingTranslationLocale}
+          sourceTitle={doc.title}
+          sourceSlug={doc.hc_slug}
+          sourceExcerpt={doc.excerpt}
+          sourceContent={(content?.content as JSONContent | null | undefined) ?? null}
+          translation={articleTranslationsByLocale.get(editingTranslationLocale) ?? null}
+          isSaving={upsertArticleTranslation.isPending}
+          onSave={handleSaveTranslation}
+        />
+      )}
+
       {doc && (
         <>
           <MoveDocumentDialog
