@@ -114,7 +114,11 @@ export const VideoEmbedExtension = Node.create({
   addStorage() {
     return {
       markdown: {
-        serialize(state: any, node: any) {
+        serialize(
+          this: { editor?: { storage?: { markdown?: { options?: { html?: boolean } } } } },
+          state: any,
+          node: any,
+        ) {
           const url = node.attrs.sourceUrl || node.attrs.embedUrl || '';
           const provider = node.attrs.provider || 'video';
           const embedUrl = node.attrs.embedUrl || '';

@@ -206,10 +206,9 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
   const proposedStories = Array.isArray(record?.proposed_stories) ? record.proposed_stories : [];
   if (!record || proposedStories.length === 0) return null;
 
-  const normalizedStories = proposedStories
-    .map((entry) => {
+  const normalizedStories: StoryPlanStoryPreview[] = proposedStories.flatMap((entry) => {
       const story = asRecord(entry);
-      if (!story) return null;
+      if (!story) return [];
 
       const implementationBrief = asRecord(story.implementation_brief);
       const filesToModify = Array.isArray(implementationBrief?.files_to_modify)
@@ -220,9 +219,9 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
         : [];
 
       const title = asString(story.name).trim() || asString(story.title).trim();
-      if (!title) return null;
+      if (!title) return [];
 
-      return {
+      return [{
         ref: asString(story.ref).trim() || undefined,
         title,
         type: asString(story.story_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
@@ -230,9 +229,8 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
         acceptanceCriteria: asStringArray(story.acceptance_criteria),
         dependencyRefs: asStringArray(story.dependency_refs),
         filesToModify,
-      } satisfies StoryPlanStoryPreview;
+      } satisfies StoryPlanStoryPreview];
     })
-    .filter((story): story is StoryPlanStoryPreview => story !== null);
 
   if (normalizedStories.length === 0) return null;
 

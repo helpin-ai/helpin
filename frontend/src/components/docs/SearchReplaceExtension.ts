@@ -55,7 +55,7 @@ export const SearchReplaceExtension = Extension.create({
   name: 'searchReplace',
 
   addProseMirrorPlugins() {
-    const plugin = new Plugin<SearchReplaceState>({
+    const plugin: Plugin<SearchReplaceState> = new Plugin<SearchReplaceState>({
       key: searchReplacePluginKey,
 
       state: {
@@ -101,7 +101,7 @@ export const SearchReplaceExtension = Extension.create({
       },
 
       props: {
-        decorations(state) {
+        decorations(state): DecorationSet {
           const pluginState = plugin.getState(state)
           if (!pluginState) return DecorationSet.empty
           return buildDecorations(state, pluginState)

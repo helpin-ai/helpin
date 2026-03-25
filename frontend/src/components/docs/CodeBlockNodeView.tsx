@@ -139,7 +139,7 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
         </div>
 
         <pre className="!m-0 !rounded-t-none !border-0" spellCheck={false}>
-          <NodeViewContent as="code" />
+          <NodeViewContent />
         </pre>
       </div>
     </NodeViewWrapper>
