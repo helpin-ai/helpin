@@ -127,6 +127,12 @@ func normalizeAgentRecord(agent *model.Agent) {
 		} else {
 			agent.RuntimeKind = "opencode"
 		}
+	} else if !runtimeAllowedForPreset(agent.PresetKey, agent.RuntimeKind) {
+		if hasPreset && preset.RuntimeKind != "" {
+			agent.RuntimeKind = preset.RuntimeKind
+		} else {
+			agent.RuntimeKind = "opencode"
+		}
 	}
 	if agent.Skills == nil {
 		agent.Skills = json.RawMessage("[]")
@@ -301,7 +307,7 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 		return false
 	}
 	switch strings.TrimSpace(agent.RuntimeKind) {
-	case "opencode":
+	case "opencode", "codex":
 		return false
 	case "native_sdk":
 		return true
@@ -313,6 +319,62 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 		}
 	}
 	return false
+}
+
+func validateRuntimeForAgent(agent *model.Agent) error {
+	if agent == nil {
+		return nil
+	}
+	if !runtimeAllowedForPreset(agent.PresetKey, agent.RuntimeKind) {
+		return fmt.Errorf("runtime_kind %q is not allowed for preset %q", strings.TrimSpace(agent.RuntimeKind), normalizePresetKey(agent.PresetKey))
+	}
+	if strings.TrimSpace(agent.RuntimeKind) == "codex" {
+		return validateCodexAgentPolicy(agent)
+	}
+	return nil
+}
+
+func validateCodexAgentPolicy(agent *model.Agent) error {
+	if agent == nil {
+		return nil
+	}
+	preset, ok := agentPresetDefinition(agent.PresetKey)
+	if !ok {
+		return fmt.Errorf("runtime_kind codex requires a supported preset")
+	}
+	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedTools), preset.AllowedTools) {
+		return fmt.Errorf("runtime_kind codex does not support custom allowed_tools; use the preset defaults")
+	}
+	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedCommands), preset.AllowedCommands) {
+		return fmt.Errorf("runtime_kind codex does not support custom allowed_commands; use the preset defaults")
+	}
+	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedTargets), preset.AllowedTargetTypes) {
+		return fmt.Errorf("runtime_kind codex does not support custom allowed_targets; use the preset defaults")
+	}
+	return nil
+}
+
+func stringSliceSetEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	set := make(map[string]int, len(left))
+	for _, value := range left {
+		set[strings.TrimSpace(value)]++
+	}
+	for _, value := range right {
+		normalized := strings.TrimSpace(value)
+		if set[normalized] == 0 {
+			return false
+		}
+		set[normalized]--
+	}
+	for _, remaining := range set {
+		if remaining != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func validateModelProvider(provider string) error {

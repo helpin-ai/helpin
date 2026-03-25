@@ -432,6 +432,21 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 	}
 }
 
+func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing.T) {
+	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
+
+	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	if err != nil {
+		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+	}
+	if proposal.Summary != "Breakdown" {
+		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
+	}
+	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Name != "Story A" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
+	}
+}
+
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",

@@ -60,8 +60,6 @@ func TestPMAttachmentService_PrepareAttachment_AllowsObjectiveAndSprintEntities(
 	for _, entityType := range []string{"objective", "sprint"} {
 		entityType := entityType
 		t.Run(entityType, func(t *testing.T) {
-			t.Parallel()
-
 			attachment, err := svc.prepareAttachment(ctx, model.CreateAttachmentRequest{
 				EntityType:  entityType,
 				EntityID:    entityType + "-1",

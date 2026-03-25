@@ -119,6 +119,8 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 		return "agent-native-autonomous"
 	case "opencode":
 		return "agent-opencode-autonomous"
+	case "codex":
+		return "agent-codex-autonomous"
 	default:
 		return "automation-default"
 	}

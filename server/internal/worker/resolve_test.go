@@ -31,3 +31,16 @@ func TestResolveAgentProfileUsesOpenCodeQueue(t *testing.T) {
 		t.Fatalf("expected queue %q, got %q", "agent-opencode-autonomous", resolved.Queue)
 	}
 }
+
+func TestResolveAgentProfileUsesCodexQueue(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetCodeBuilder,
+		RuntimeKind: "codex",
+	}
+
+	resolved := ResolveAgentProfile(agent, model.InvocationModeAutonomous)
+
+	if resolved.Queue != "agent-codex-autonomous" {
+		t.Fatalf("expected queue %q, got %q", "agent-codex-autonomous", resolved.Queue)
+	}
+}

@@ -396,6 +396,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		DefaultInvocationMode: stringOrDefault(req.DefaultInvocationMode, preset.DefaultInvocationMode),
 	}
 	normalizeAgentRecord(agent)
+	if err := validateRuntimeForAgent(agent); err != nil {
+		return nil, err
+	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
 		return nil, err
 	}
@@ -575,6 +578,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	normalizeAgentRecord(agent)
 	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
+		return nil, err
+	}
+	if err := validateRuntimeForAgent(agent); err != nil {
 		return nil, err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
@@ -1931,7 +1937,7 @@ func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, no
 }
 
 func shouldFailStuckPostRun(run *model.AgentRun, now time.Time) bool {
-	if run == nil || run.Status != "running" || run.RuntimeKind != "opencode" {
+	if run == nil || run.Status != "running" || !requiresPostRunReconciliation(run.RuntimeKind) {
 		return false
 	}
 	if !isStuckPostRunStage(run.ExecutionStage) {
@@ -1952,7 +1958,16 @@ func shouldInspectQueuedRun(run *model.AgentRun, now time.Time) bool {
 
 func isStuckPostRunStage(stage *string) bool {
 	switch derefString(stage) {
-	case "opencode_finished", "persisting_changes", "pushing_changes", "finalizing":
+	case "opencode_finished", "codex_finished", "persisting_changes", "pushing_changes", "finalizing":
+		return true
+	default:
+		return false
+	}
+}
+
+func requiresPostRunReconciliation(runtimeKind string) bool {
+	switch strings.TrimSpace(runtimeKind) {
+	case "opencode", "codex":
 		return true
 	default:
 		return false
@@ -1968,10 +1983,10 @@ func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.Age
 
 func validateRuntimeKind(runtimeKind string) error {
 	switch runtimeKind {
-	case "opencode", "native_sdk":
+	case "opencode", "codex", "native_sdk":
 		return nil
 	default:
-		return fmt.Errorf("runtime_kind must be one of opencode, native_sdk")
+		return fmt.Errorf("runtime_kind must be one of opencode, codex, native_sdk")
 	}
 }
 
@@ -1999,6 +2014,9 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if agent == nil {
 		return nil
 	}
+	if err := s.validateRuntimeProviderCompatibility(agent); err != nil {
+		return err
+	}
 	if agent.Provider == nil {
 		if agent.Model == nil || strings.TrimSpace(*agent.Model) == "" {
 			return nil
@@ -2022,6 +2040,36 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 			return fmt.Errorf("provider %s is not configured", provider)
 		}
 	}
+	return nil
+}
+
+func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) error {
+	if agent == nil || strings.TrimSpace(agent.RuntimeKind) != "codex" {
+		return nil
+	}
+
+	if agent.Provider == nil || strings.TrimSpace(*agent.Provider) == "" {
+		if strings.TrimSpace(s.openAIAPIKey) == "" && strings.TrimSpace(s.openRouterAPIKey) == "" {
+			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY or OPENROUTER_API_KEY to be configured")
+		}
+		return nil
+	}
+
+	switch normalizeModelProvider(*agent.Provider) {
+	case model.AgentModelProviderOpenAI:
+		if strings.TrimSpace(s.openAIAPIKey) == "" {
+			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY")
+		}
+	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
+		if strings.TrimSpace(s.openRouterAPIKey) == "" {
+			return fmt.Errorf("runtime_kind codex with provider openrouter requires OPENROUTER_API_KEY")
+		}
+	case model.AgentModelProviderAnthropic:
+		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
+	default:
+		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
+	}
+
 	return nil
 }
 

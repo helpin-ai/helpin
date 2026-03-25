@@ -167,7 +167,7 @@ func BuildUserPrompt(
 	if ticket != nil {
 		parts = append(parts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
 	} else if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
-		parts = append(parts, "\nCreate a reviewable story planning document with scope, acceptance criteria, implementation approach, dependencies, risks, and open questions. After human approval, stop; the platform will persist it to the canonical story document.")
+		// The story planner system prompt already defines the document shape and approval flow.
 	} else {
 		parts = append(parts, "\nPlease complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.")
 	}

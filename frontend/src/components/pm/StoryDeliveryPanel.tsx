@@ -595,7 +595,7 @@ function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }
 }
 
 function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: string[] }) {
-  if (agent.runtime_kind === 'opencode') {
+  if (agent.runtime_kind === 'opencode' || agent.runtime_kind === 'codex') {
     return true;
   }
   return Boolean(

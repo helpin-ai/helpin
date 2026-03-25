@@ -94,7 +94,7 @@ const STATUS_LABEL: Record<string, string> = {
   paused: 'Paused',
 };
 
-const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_sdk'];
+const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const DEFAULT_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_ORDER: AgentPresetKey[] = [
   'epic_planner',
@@ -205,6 +205,37 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   { value: 'openrouter', label: 'OpenRouter', model_placeholder: 'openai/gpt-5-mini' },
 ];
 
+function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKind[] {
+  switch (presetKey) {
+    case 'code_builder':
+      return ['opencode', 'codex', 'native_sdk'];
+    case 'review_agent':
+      return ['opencode', 'codex', 'native_sdk'];
+    default:
+      return ['native_sdk'];
+  }
+}
+
+function normalizeProviderForRuntime(
+  runtimeKind: AgentRuntimeKind,
+  provider: AgentModelProvider,
+): AgentModelProvider {
+  if (runtimeKind === 'codex' && provider === 'anthropic') {
+    return 'openai';
+  }
+  return provider;
+}
+
+function availableProvidersForRuntime(
+  runtimeKind: AgentRuntimeKind,
+  providerOptions: AgentModelProviderOption[],
+): AgentModelProviderOption[] {
+  if (runtimeKind !== 'codex') {
+    return providerOptions;
+  }
+  return providerOptions.filter((provider) => provider.value === 'openai' || provider.value === 'openrouter');
+}
+
 function fallbackPresetKey(agent?: Pick<Agent, 'preset_key' | 'is_system'> | null): AgentPresetKey {
   if (agent?.preset_key) return agent.preset_key;
   if (agent?.is_system) return 'epic_planner';
@@ -268,11 +299,12 @@ function toolListsEqual(left: string[], right: string[]): boolean {
 function createEmptyForm(presetKey: AgentPresetKey = DEFAULT_PRESET_KEY, preset?: AgentPresetDefinition | null): AgentFormData {
   const runtimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
   const defaultInvocationMode = preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
+  const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
   return {
     name: '',
     preset_key: presetKey,
     runtime_kind: runtimeKind,
-    provider: 'anthropic',
+    provider,
     model: '',
     system_prompt: preset?.system_prompt ?? '',
     monthly_token_budget: '',
@@ -319,11 +351,12 @@ function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDe
 function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): CreateAgentRequest {
   const preset = presetMetaForKey(form.preset_key, presets);
   const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
+  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
     preset_key: form.preset_key,
-    provider: form.provider,
+    provider,
     model: form.model.trim() || undefined,
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
@@ -349,11 +382,12 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
 function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): UpdateAgentRequest {
   const preset = presetMetaForKey(form.preset_key, presets);
   const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
+  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   return {
     name: form.name.trim(),
     preset_key: form.preset_key,
     trigger_mode: 'manual',
-    provider: form.provider || undefined,
+    provider: provider || undefined,
     model: form.model.trim() || undefined,
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
@@ -761,7 +795,7 @@ export function AgentsPage() {
       name: agent.name,
       preset_key: presetKey,
       runtime_kind: runtimeKind,
-      provider: agent.provider ?? 'anthropic',
+      provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
       model: agent.model ?? '',
       system_prompt: agent.system_prompt ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
@@ -824,6 +858,8 @@ export function AgentsPage() {
       ? editingAgent.allowed_targets
       : (selectedPreset?.allowed_target_types ?? []);
   const supportedModes = presetSupportedModes(form.preset_key, form.runtime_kind, presets);
+  const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
+  const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
   const toolCatalogEntries = toolCatalog?.tools ?? [];
   const availableToolEntries = toolCatalogEntries.filter((tool) => !form.allowed_tools.includes(tool.name));
   const addTool = (toolName: string) => {
@@ -997,8 +1033,10 @@ export function AgentsPage() {
                     const currentDefaultRuntime = presetRuntimeKind(current.preset_key, presets);
                     const currentPresetPrompt = presetMetaForKey(current.preset_key, presets)?.system_prompt ?? '';
                     const currentPresetTools = presetAllowedTools(current.preset_key, presets);
-                    const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime
-                      ? (nextPreset?.runtime_kind ?? PRESET_FALLBACKS[nextPresetKey].runtime_kind)
+                    const nextDefaultRuntime = nextPreset?.runtime_kind ?? PRESET_FALLBACKS[nextPresetKey].runtime_kind;
+                    const nextAllowedRuntimes = allowedRuntimeKindsForPreset(nextPresetKey);
+                    const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime || !nextAllowedRuntimes.includes(current.runtime_kind)
+                      ? nextDefaultRuntime
                       : current.runtime_kind;
                     const shouldReplacePrompt =
                       current.system_prompt.trim().length === 0 || current.system_prompt === currentPresetPrompt;
@@ -1007,6 +1045,7 @@ export function AgentsPage() {
                       ...current,
                       preset_key: nextPresetKey,
                       runtime_kind: nextRuntimeKind,
+                      provider: normalizeProviderForRuntime(nextRuntimeKind, current.provider),
                       system_prompt: shouldReplacePrompt ? (nextPreset?.system_prompt ?? '') : current.system_prompt,
                       allowed_tools: shouldReplaceTools ? presetAllowedTools(nextPresetKey, presets) : current.allowed_tools,
                       approval_mode: nextPreset?.approval_mode ?? current.approval_mode,
@@ -1112,13 +1151,13 @@ export function AgentsPage() {
                 <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
                 <Select
                   value={form.provider}
-                  onValueChange={(value) => setForm((current) => ({ ...current, provider: value as AgentModelProvider }))}
+                  onValueChange={(value) => setForm((current) => ({ ...current, provider: normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider) }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {providerOptions.map((provider) => (
+                    {visibleProviderOptions.map((provider) => (
                       <SelectItem key={provider.value} value={provider.value}>
                         {provider.label}
                       </SelectItem>
@@ -1137,7 +1176,7 @@ export function AgentsPage() {
                   id="agent-model"
                   value={form.model}
                   onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                  placeholder={providerOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
+                  placeholder={visibleProviderOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
                 />
               </div>
             </div>
@@ -1193,7 +1232,7 @@ export function AgentsPage() {
                         variant="outline"
                         size="sm"
                         className="h-8 gap-1.5 px-2 text-[11px]"
-                        disabled={toolCatalogEntries.length === 0 || editingSystemAgent}
+                        disabled={toolCatalogEntries.length === 0 || editingSystemAgent || codexUsesPresetCapabilities}
                       >
                         <Plus className="h-3.5 w-3.5" />
                         Add tool
@@ -1232,7 +1271,9 @@ export function AgentsPage() {
                   </Popover>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.
+                  {codexUsesPresetCapabilities
+                    ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
+                    : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
                 </p>
                 <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/70 p-2">
                   {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
@@ -1243,6 +1284,7 @@ export function AgentsPage() {
                           type="button"
                           className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                           onClick={() => removeTool(tool)}
+                          disabled={codexUsesPresetCapabilities}
                           aria-label={`Remove ${tool}`}
                         >
                           <X className="h-3 w-3" />
@@ -1358,9 +1400,14 @@ export function AgentsPage() {
                     onValueChange={(value) =>
                       setForm((current) => {
                         const runtimeKind = value as AgentRuntimeKind;
+                        const allowedRuntimeKinds = allowedRuntimeKindsForPreset(current.preset_key);
+                        if (!allowedRuntimeKinds.includes(runtimeKind)) {
+                          return current;
+                        }
                         return {
                           ...current,
                           runtime_kind: runtimeKind,
+                          provider: normalizeProviderForRuntime(runtimeKind, current.provider),
                           default_invocation_mode: normalizeDefaultInvocationMode(
                             current.default_invocation_mode,
                             runtimeKind,
@@ -1374,7 +1421,9 @@ export function AgentsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
+                      {RUNTIME_KIND_OPTIONS
+                        .filter((runtimeKind) => allowedRuntimeKindsForPreset(form.preset_key).includes(runtimeKind))
+                        .map((runtimeKind) => (
                         <SelectItem key={runtimeKind} value={runtimeKind}>
                           {AGENT_RUNTIME_LABELS[runtimeKind]}
                         </SelectItem>

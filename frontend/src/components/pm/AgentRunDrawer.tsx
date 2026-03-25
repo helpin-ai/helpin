@@ -91,6 +91,12 @@ const RIGHT_PANEL_MIN_WIDTH_PCT = 24;
 const RIGHT_PANEL_MAX_WIDTH_PCT = 48;
 const RIGHT_PANEL_DEFAULT_WIDTH_PCT = 34;
 
+interface AutonomousRuntimeStreamDisplay {
+  assistantText: string;
+  processingText: string;
+  errorText: string;
+}
+
 function toolEventSignature(name: string, content?: string) {
   return `${name.trim().toLowerCase()}\u0000${(content ?? '').trim()}`;
 }
@@ -392,6 +398,106 @@ export function getVisibleLiveTools(liveTools: LiveToolEvent[], messages: AgentR
   });
 }
 
+function latestArtifactContent(artifacts: AgentRunArtifact[], artifactType: string): string {
+  const latest = artifacts
+    .filter((artifact) => artifact.artifact_type === artifactType && typeof artifact.inline_content === 'string' && artifact.inline_content.trim().length > 0)
+    .sort((left, right) => {
+      if (left.sequence_no !== right.sequence_no) return right.sequence_no - left.sequence_no;
+      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+    })[0];
+  return latest?.inline_content?.trim() ?? '';
+}
+
+function parseCodexChunkLine(line: string): { assistantText?: string; eventText?: string; errorText?: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('{')) return null;
+
+  try {
+    const payload = JSON.parse(trimmed) as Record<string, unknown>;
+    const eventType = asString(payload.type) || '';
+    const item = asRecord(payload.item);
+    const itemType = asString(item?.type) || '';
+
+    if (eventType === 'error') {
+      return { errorText: asString(payload.message) || asString(asRecord(payload.error)?.message) || 'Codex reported an error.' };
+    }
+
+    if (eventType === 'turn.failed') {
+      return { errorText: asString(asRecord(payload.error)?.message) || 'Codex turn failed.' };
+    }
+
+    if (itemType === 'agent_message') {
+      const assistantText = asString(item?.text) || '';
+      return assistantText ? { assistantText } : null;
+    }
+
+    if (itemType === 'command_execution') {
+      const command =
+        asString(item?.command) ||
+        asString(item?.title) ||
+        asString(asRecord(item?.metadata)?.command) ||
+        'command';
+      if (eventType === 'item.started') {
+        return { eventText: `Running ${command}` };
+      }
+      if (eventType === 'item.completed') {
+        return { eventText: `Finished ${command}` };
+      }
+    }
+
+    if (eventType === 'turn.started') return { eventText: 'Codex started the turn.' };
+    if (eventType === 'turn.completed') return { eventText: 'Codex finished the turn.' };
+    if (eventType === 'thread.started') return { eventText: 'Codex session started.' };
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function buildAutonomousRuntimeStreamDisplay(
+  run: Pick<AgentRun, 'runtime_kind' | 'invocation_mode' | 'status'> | null,
+  artifacts: AgentRunArtifact[],
+): AutonomousRuntimeStreamDisplay | null {
+  if (!run || run.invocation_mode !== 'autonomous') return null;
+  if (run.runtime_kind !== 'opencode' && run.runtime_kind !== 'codex') return null;
+
+  const stdout = latestArtifactContent(artifacts, `${run.runtime_kind}_stdout`);
+  const stderr = latestArtifactContent(artifacts, `${run.runtime_kind}_stderr`);
+
+  if (run.runtime_kind === 'opencode') {
+    if (!stdout && !stderr) return null;
+    return {
+      assistantText: '',
+      processingText: stdout,
+      errorText: stderr,
+    };
+  }
+
+  const assistantParts: string[] = [];
+  const eventParts: string[] = [];
+  const errorParts: string[] = stderr ? [stderr] : [];
+
+  for (const line of stdout.split('\n')) {
+    const parsed = parseCodexChunkLine(line);
+    if (!parsed) continue;
+    if (parsed.assistantText) assistantParts.push(parsed.assistantText);
+    if (parsed.eventText) eventParts.push(parsed.eventText);
+    if (parsed.errorText) errorParts.push(parsed.errorText);
+  }
+
+  const unique = (values: string[]) =>
+    values.filter((value, index) => value.trim().length > 0 && values.findIndex((candidate) => candidate.trim() === value.trim()) === index);
+
+  const assistantText = unique(assistantParts).join('\n\n').trim();
+  const processingText = unique(eventParts).join('\n').trim();
+  const errorText = unique(errorParts).join('\n').trim();
+
+  if (!assistantText && !processingText && !errorText) return null;
+
+  return { assistantText, processingText, errorText };
+}
+
 function MarkdownContent({ content, className }: { content: string; className?: string }) {
   return (
     <div className={cn('text-[13px] leading-6 text-foreground', className)}>
@@ -457,53 +563,62 @@ function isInlineApprovalRun(run: AgentRun | null): boolean {
   return !!run && run.invocation_mode === 'interactive' && isPausedAgentRun(run);
 }
 
+const RUNTIME_STREAM_PREFIXES = ['opencode', 'codex'] as const;
+
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
   const displayArtifacts = artifacts.filter(
-    (artifact) => artifact.artifact_type !== 'opencode_stdout_chunk' && artifact.artifact_type !== 'opencode_stderr_chunk',
+    (artifact) =>
+      !RUNTIME_STREAM_PREFIXES.some(
+        (prefix) =>
+          artifact.artifact_type === `${prefix}_stdout_chunk` ||
+          artifact.artifact_type === `${prefix}_stderr_chunk`,
+      ),
   );
 
-  const stdoutArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === 'opencode_stdout');
-  const stderrArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === 'opencode_stderr');
+  for (const [index, prefix] of RUNTIME_STREAM_PREFIXES.entries()) {
+    const stdoutArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === `${prefix}_stdout`);
+    const stderrArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === `${prefix}_stderr`);
 
-  if (!stdoutArtifact) {
-    const stdoutContent = artifacts
-      .filter((artifact) => artifact.artifact_type === 'opencode_stdout_chunk')
-      .map((artifact) => artifact.inline_content ?? '')
-      .join('');
-    if (stdoutContent) {
-      displayArtifacts.unshift({
-        id: 'live-opencode-stdout',
-        workspace_id: artifacts[0]?.workspace_id ?? '',
-        run_id: artifacts[0]?.run_id ?? '',
-        artifact_type: 'opencode_stdout',
-        format: 'text',
-        storage_mode: 'inline',
-        inline_content: stdoutContent,
-        metadata: {},
-        sequence_no: -2,
-        created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
-      });
+    if (!stdoutArtifact) {
+      const stdoutContent = artifacts
+        .filter((artifact) => artifact.artifact_type === `${prefix}_stdout_chunk`)
+        .map((artifact) => artifact.inline_content ?? '')
+        .join('');
+      if (stdoutContent) {
+        displayArtifacts.unshift({
+          id: `live-${prefix}-stdout`,
+          workspace_id: artifacts[0]?.workspace_id ?? '',
+          run_id: artifacts[0]?.run_id ?? '',
+          artifact_type: `${prefix}_stdout`,
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: stdoutContent,
+          metadata: {},
+          sequence_no: -2 - index * 2,
+          created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
+        });
+      }
     }
-  }
 
-  if (!stderrArtifact) {
-    const stderrContent = artifacts
-      .filter((artifact) => artifact.artifact_type === 'opencode_stderr_chunk')
-      .map((artifact) => artifact.inline_content ?? '')
-      .join('');
-    if (stderrContent) {
-      displayArtifacts.unshift({
-        id: 'live-opencode-stderr',
-        workspace_id: artifacts[0]?.workspace_id ?? '',
-        run_id: artifacts[0]?.run_id ?? '',
-        artifact_type: 'opencode_stderr',
-        format: 'text',
-        storage_mode: 'inline',
-        inline_content: stderrContent,
-        metadata: {},
-        sequence_no: -1,
-        created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
-      });
+    if (!stderrArtifact) {
+      const stderrContent = artifacts
+        .filter((artifact) => artifact.artifact_type === `${prefix}_stderr_chunk`)
+        .map((artifact) => artifact.inline_content ?? '')
+        .join('');
+      if (stderrContent) {
+        displayArtifacts.unshift({
+          id: `live-${prefix}-stderr`,
+          workspace_id: artifacts[0]?.workspace_id ?? '',
+          run_id: artifacts[0]?.run_id ?? '',
+          artifact_type: `${prefix}_stderr`,
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: stderrContent,
+          metadata: {},
+          sequence_no: -1 - index * 2,
+          created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
+        });
+      }
     }
   }
 
@@ -905,14 +1020,21 @@ export function AgentRunDrawer({
 
       const eventStatus = detail.data?.status;
       // Only reload on meaningful status transitions, not heartbeats/running updates.
-      // During streaming, live events handle real-time UI — no need to refetch.
+      // Native interactive runs stream over dedicated websocket events, but
+      // autonomous runtimes surface progress through artifacts/messages and
+      // need periodic refetch while they are running.
+      const shouldReloadWhileRunning =
+        eventStatus === 'running' &&
+        runRef.current?.invocation_mode === 'autonomous' &&
+        (runRef.current?.runtime_kind === 'opencode' || runRef.current?.runtime_kind === 'codex');
       if (
+        shouldReloadWhileRunning ||
         eventStatus === 'paused' ||
         eventStatus === 'completed' ||
         eventStatus === 'failed' ||
         eventStatus === 'cancelled'
       ) {
-        scheduleReload(runId, 300);
+        scheduleReload(runId, shouldReloadWhileRunning ? 1_200 : 300);
       }
     };
     const handleMessageEvent = (event: Event) => {
@@ -1145,6 +1267,10 @@ export function AgentRunDrawer({
   }, [stopSplitDrag]);
 
   const displayArtifacts = useMemo(() => mergeArtifactsForDisplay(artifacts), [artifacts]);
+  const autonomousRuntimeStream = useMemo(
+    () => buildAutonomousRuntimeStreamDisplay(run, displayArtifacts),
+    [displayArtifacts, run],
+  );
 
   const latestQuestionPrompt = useMemo(() => {
     if (!run || getAgentRunDisplayStatus(run) !== 'awaiting_input') return null;
@@ -1447,8 +1573,19 @@ export function AgentRunDrawer({
                           </TranscriptBubble>
                         ) : null}
 
-                        {liveSegments.isThinking || liveSegments.thinkingText || trailingLiveTools.length > 0 ? (
-                          <ProcessingBox active={liveSegments.isThinking || trailingLiveTools.some((tool) => tool.status === 'running')}>
+                        {autonomousRuntimeStream?.assistantText ? (
+                          <TranscriptBubble
+                            role="assistant"
+                            timestamp={run?.status === 'running' ? 'streaming…' : formatMessageTimestamp(run?.updated_at ?? run?.created_at ?? new Date().toISOString())}
+                            isConsecutive={false}
+                            isLastInGroup
+                          >
+                            <MarkdownContent content={autonomousRuntimeStream.assistantText} />
+                          </TranscriptBubble>
+                        ) : null}
+
+                        {liveSegments.isThinking || liveSegments.thinkingText || trailingLiveTools.length > 0 || autonomousRuntimeStream?.processingText || autonomousRuntimeStream?.errorText ? (
+                          <ProcessingBox active={liveSegments.isThinking || trailingLiveTools.some((tool) => tool.status === 'running') || run?.status === 'running'}>
                             <ThinkingBlock text={liveSegments.thinkingText} active={liveSegments.isThinking} />
                             {trailingLiveTools.map((tool) => (
                               <ToolInlineBlock
@@ -1459,6 +1596,21 @@ export function AgentRunDrawer({
                                 durationMs={tool.durationMs}
                               />
                             ))}
+                            {autonomousRuntimeStream?.processingText ? (
+                              <ToolInlineBlock
+                                name={`${run?.runtime_kind === 'codex' ? 'Codex' : 'OpenCode'} stream`}
+                                content={autonomousRuntimeStream.processingText}
+                                status={run?.status === 'running' ? 'running' : 'completed'}
+                              />
+                            ) : null}
+                            {autonomousRuntimeStream?.errorText ? (
+                              <ToolInlineBlock
+                                name={`${run?.runtime_kind === 'codex' ? 'Codex' : 'OpenCode'} stderr`}
+                                content={autonomousRuntimeStream.errorText}
+                                status="completed"
+                                isError
+                              />
+                            ) : null}
                           </ProcessingBox>
                         ) : null}
                         <div ref={chatEndRef} />

@@ -1134,7 +1134,7 @@ export type AgentPresetKey =
   | 'review_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-export type AgentRuntimeKind = 'opencode' | 'native_sdk';
+export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';

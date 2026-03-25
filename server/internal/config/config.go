@@ -35,6 +35,8 @@ type Config struct {
 	OpenRouterAPIKey     string
 	OpenRouterBaseURL    string
 	OpenCodePath         string
+	CodexPath            string
+	CodexModel           string
 	BraveSearchAPIKey    string
 	CloudflareAccountID  string
 	CloudflareAPIToken   string
@@ -143,6 +145,8 @@ func Load() (*Config, error) {
 		OpenRouterAPIKey:             strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		OpenRouterBaseURL:            strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
 		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
+		CodexPath:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
+		CodexModel:                   strings.TrimSpace(os.Getenv("CODEX_MODEL")),
 		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
