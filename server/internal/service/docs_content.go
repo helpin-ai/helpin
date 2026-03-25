@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -10,12 +11,17 @@ import (
 
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
-	contentRepo *repository.DocsContentRepository
+	contentRepo    *repository.DocsContentRepository
+	translationSvc *DocsHelpcenterTranslationService
 }
 
 // NewDocsContentService creates a new DocsContentService.
 func NewDocsContentService(contentRepo *repository.DocsContentRepository) *DocsContentService {
 	return &DocsContentService{contentRepo: contentRepo}
+}
+
+func (s *DocsContentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
+	s.translationSvc = translationSvc
 }
 
 // Get returns the content for a document.
@@ -26,7 +32,16 @@ func (s *DocsContentService) Get(ctx context.Context, documentID string) (*model
 // Save creates or updates document content.
 // Automatically extracts content_text and computes word_count in the repository layer.
 func (s *DocsContentService) Save(ctx context.Context, documentID string, content json.RawMessage) (*model.DocsContent, error) {
-	return s.contentRepo.Upsert(ctx, documentID, content)
+	saved, err := s.contentRepo.Upsert(ctx, documentID, content)
+	if err != nil {
+		return nil, err
+	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after content save", "document_id", documentID, "error", err)
+		}
+	}
+	return saved, nil
 }
 
 // ListBySpaceWithImportHTML returns content records that have stored import HTML for a space.

@@ -14,6 +14,13 @@ const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   opencode_config: <FileText className="h-3.5 w-3.5" />,
   opencode_stdout: <FileText className="h-3.5 w-3.5" />,
   opencode_stderr: <FileText className="h-3.5 w-3.5" />,
+  codex_config: <FileText className="h-3.5 w-3.5" />,
+  codex_prompt: <FileText className="h-3.5 w-3.5" />,
+  codex_response: <Bot className="h-3.5 w-3.5" />,
+  codex_stdout: <FileText className="h-3.5 w-3.5" />,
+  codex_stderr: <FileText className="h-3.5 w-3.5" />,
+  git_status: <FileCode className="h-3.5 w-3.5" />,
+  git_diff_stat: <FileCode className="h-3.5 w-3.5" />,
   git_persistence_result: <FileCode className="h-3.5 w-3.5" />,
 };
 

@@ -229,21 +229,21 @@ func buildOpenCodeProviderConfig(agent *model.Agent, anthropicBaseURL, openRoute
 func openCodeAgentDescription(execCtx *ExecutionContext) string {
 	resolved := resolvedProfileFor(execCtx)
 	if execCtx == nil {
-		return "Teampulse runtime agent"
+		return "Helpin runtime agent"
 	}
 	switch {
 	case slices.Contains(resolved.TargetTypes, "support_conversation"):
-		return "Teampulse support agent for structured support triage."
+		return "Helpin support agent for structured support triage."
 	case slices.Contains(resolved.TargetTypes, "crm_deal"):
-		return "Teampulse operator agent for cross-app planning and CRM execution."
+		return "Helpin operator agent for cross-app planning and CRM execution."
 	case slices.Contains(resolved.TargetTypes, "epic"):
-		return "Teampulse planning agent for interactive product planning."
+		return "Helpin planning agent for interactive product planning."
 	case hasRepoMutationTools(resolved.Tools):
-		return "Teampulse build agent for story implementation runs."
+		return "Helpin build agent for story implementation runs."
 	case slices.Contains(resolved.TargetTypes, "story"):
-		return "Teampulse review agent for story validation and quality checks."
+		return "Helpin review agent for story validation and quality checks."
 	default:
-		return "Teampulse runtime agent"
+		return "Helpin runtime agent"
 	}
 }
 

@@ -86,6 +86,7 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	for _, snippet := range []string{
 		"Run a single interactive planning conversation for one story.",
 		"`publish_story_plan_doc`",
+		"`request_human_input`",
 		"`phase=\"story_doc\"`",
 		"platform will persist and link the approved preview",
 		"Produce a planning document, not code.",
@@ -117,5 +118,20 @@ func TestStoryPlannerPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
 	}
 	if storyPlannerPromptNeedsRefresh(currentPrompt) {
 		t.Fatal("expected current story planner prompt to remain valid")
+	}
+}
+
+func TestCodeBuilderPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
+	legacyPrompt := "You are Builder, an AI coding agent. You write clean, correct code and follow existing project conventions."
+	if !codeBuilderPromptNeedsRefresh(&legacyPrompt) {
+		t.Fatal("expected legacy code builder prompt to require refresh")
+	}
+
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+	if currentPrompt == nil {
+		t.Fatal("expected code builder prompt")
+	}
+	if codeBuilderPromptNeedsRefresh(currentPrompt) {
+		t.Fatal("expected current code builder prompt to remain valid")
 	}
 }

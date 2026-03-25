@@ -186,3 +186,67 @@ func (r *DocsSpaceRepository) AccessibleSpaceIDs(ctx context.Context, workspaceI
 	}
 	return ids, nil
 }
+
+// NextPosition returns the next position for a space in the given section.
+func (r *DocsSpaceRepository) NextPosition(ctx context.Context, workspaceID, section string) (int, error) {
+	if err := r.NormalizeSection(ctx, workspaceID, section); err != nil {
+		return 0, err
+	}
+	var maxPos *int
+	err := r.db.WithContext(ctx).
+		Model(&model.DocsSpace{}).
+		Where("workspace_id = ? AND type = ? AND deleted_at IS NULL", workspaceID, section).
+		Select("COALESCE(MAX(position), -1)").
+		Scan(&maxPos).Error
+	if err != nil {
+		return 0, fmt.Errorf("next space position: %w", err)
+	}
+	if maxPos == nil {
+		return 0, nil
+	}
+	return *maxPos + 1, nil
+}
+
+// Reorder sets contiguous positions for the given space IDs within a section.
+func (r *DocsSpaceRepository) Reorder(ctx context.Context, workspaceID, section string, orderedIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, id := range orderedIDs {
+			if err := tx.Model(&model.DocsSpace{}).
+				Where("id = ? AND workspace_id = ? AND type = ? AND deleted_at IS NULL", id, workspaceID, section).
+				UpdateColumn("position", i).Error; err != nil {
+				return fmt.Errorf("reorder space %s: %w", id, err)
+			}
+		}
+		return nil
+	})
+}
+
+// NormalizeSection re-numbers positions in a workspace/type bucket to be contiguous starting from 0.
+func (r *DocsSpaceRepository) NormalizeSection(ctx context.Context, workspaceID, section string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return normalizeSpaceSectionTx(tx, workspaceID, section)
+	})
+}
+
+func normalizeSpaceSectionTx(tx *gorm.DB, workspaceID, section string) error {
+	var spaces []model.DocsSpace
+	if err := tx.
+		Where("workspace_id = ? AND type = ? AND deleted_at IS NULL", workspaceID, section).
+		Order("position ASC, created_at ASC, id ASC").
+		Find(&spaces).Error; err != nil {
+		return fmt.Errorf("list space section for normalization: %w", err)
+	}
+
+	for i, space := range spaces {
+		if space.Position == i {
+			continue
+		}
+		if err := tx.Model(&model.DocsSpace{}).
+			Where("id = ? AND deleted_at IS NULL", space.ID).
+			UpdateColumn("position", i).Error; err != nil {
+			return fmt.Errorf("normalize space %s: %w", space.ID, err)
+		}
+	}
+
+	return nil
+}

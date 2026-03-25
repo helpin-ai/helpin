@@ -243,6 +243,58 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	}
 }
 
+func TestPublishStoryPlanToolCanonicalizesJSONStringContent(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolPublishStoryPlan: true,
+		},
+	}
+
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage("{\n"+
+		"  \"title\": \"Story Plan\",\n"+
+		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"\n"+
+		"}"))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+
+	preview := latestPublishedPreviewForContext(ctx, "story_plan")
+	if preview == nil {
+		t.Fatal("expected cached story plan preview")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(preview.Content, &payload); err != nil {
+		t.Fatalf("expected canonical story plan JSON object, got %s: %v", string(preview.Content), err)
+	}
+	if payload["summary"] != "Breakdown" {
+		t.Fatalf("expected summary Breakdown, got %#v", payload["summary"])
+	}
+}
+
+func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolPublishStoryPlan: true,
+		},
+	}
+
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+		"title": "Story Plan",
+		"content": "STORY PLAN: do the work"
+	}`))
+	if err == nil {
+		t.Fatal("expected publish_story_plan to reject non-object string content")
+	}
+	if !strings.Contains(err.Error(), "publish_story_plan content must be a JSON object with summary and proposed_stories") {
+		t.Fatalf("expected repair-oriented story plan error, got %v", err)
+	}
+}
+
 func TestPublishStoryPlanToolReusesLastPublishedContentOnMalformedRetry(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
@@ -507,7 +559,8 @@ func TestPublishPreviewToolUsesEpicPlannerContextForStoryPlan(t *testing.T) {
 		"title": "Story Plan: Kafka Streams Performance Enhancement",
 		"format": "json",
 		"content": {
-			"summary": "Slice plan"
+			"summary": "Slice plan",
+			"proposed_stories": []
 		}
 	}`))
 	if err != nil {

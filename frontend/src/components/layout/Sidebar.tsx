@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   Clock,
   ChevronRight,
+  CircleHelp,
   DollarSign,
   FileText,
   FolderKanban,
@@ -56,6 +57,7 @@ import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, 
 import type { DocsSpace } from '@/lib/docsTypes';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -376,7 +378,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       {internalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
           <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Internal Spaces
+            Team Spaces
           </SidebarGroupLabel>
           <SidebarMenu>
             {internalSpaces.map(renderSpaceItem)}
@@ -385,8 +387,11 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       )}
       {externalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center gap-1">
             External Spaces
+            <QuickTooltip label="Published to your public help center">
+              <CircleHelp className="h-2.5 w-2.5 text-muted-foreground/50" />
+            </QuickTooltip>
           </SidebarGroupLabel>
           <SidebarMenu>
             {externalSpaces.map(renderSpaceItem)}

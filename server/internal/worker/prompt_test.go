@@ -118,10 +118,17 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	for _, marker := range []string{
 		"Please draft or refine the canonical story planning document for story: **Inbox triage automation**",
 		"Operator notes:",
-		"Create a reviewable story planning document",
 	} {
 		if !strings.Contains(prompt, marker) {
 			t.Fatalf("expected prompt to contain %q\n%s", marker, prompt)
+		}
+	}
+	for _, snippet := range []string{
+		"Create a reviewable story planning document",
+		"open questions",
+	} {
+		if strings.Contains(prompt, snippet) {
+			t.Fatalf("did not expect duplicated story-plan guidance %q\n%s", snippet, prompt)
 		}
 	}
 	if strings.Contains(prompt, "Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.") {

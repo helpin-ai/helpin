@@ -19,18 +19,19 @@ import (
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
-	spaceSvc      *service.DocsSpaceService
-	collectionSvc *service.DocsCollectionService
-	documentSvc   *service.DocsDocumentService
-	contentSvc    *service.DocsContentService
-	versionSvc    *service.DocsVersionService
-	linkSvc       *service.DocsLinkService
-	helpcenterSvc *service.DocsHelpcenterService
-	searchSvc     *service.DocsSearchService
-	importService *service.DocsImportService
-	embeddingSvc  *service.DocsEmbeddingService
-	agentService  *service.AgentService
-	jwtManager    *auth.JWTManager
+	spaceSvc       *service.DocsSpaceService
+	collectionSvc  *service.DocsCollectionService
+	documentSvc    *service.DocsDocumentService
+	contentSvc     *service.DocsContentService
+	versionSvc     *service.DocsVersionService
+	linkSvc        *service.DocsLinkService
+	helpcenterSvc  *service.DocsHelpcenterService
+	translationSvc *service.DocsHelpcenterTranslationService
+	searchSvc      *service.DocsSearchService
+	importService  *service.DocsImportService
+	embeddingSvc   *service.DocsEmbeddingService
+	agentService   *service.AgentService
+	jwtManager     *auth.JWTManager
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -42,6 +43,7 @@ func NewDocsHandler(
 	versionSvc *service.DocsVersionService,
 	linkSvc *service.DocsLinkService,
 	helpcenterSvc *service.DocsHelpcenterService,
+	translationSvc *service.DocsHelpcenterTranslationService,
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
 	embeddingSvc *service.DocsEmbeddingService,
@@ -49,18 +51,19 @@ func NewDocsHandler(
 	jwtManager *auth.JWTManager,
 ) *DocsHandler {
 	return &DocsHandler{
-		spaceSvc:      spaceSvc,
-		collectionSvc: collectionSvc,
-		documentSvc:   documentSvc,
-		contentSvc:    contentSvc,
-		versionSvc:    versionSvc,
-		linkSvc:       linkSvc,
-		helpcenterSvc: helpcenterSvc,
-		searchSvc:     searchSvc,
-		importService: importService,
-		embeddingSvc:  embeddingSvc,
-		agentService:  agentService,
-		jwtManager:    jwtManager,
+		spaceSvc:       spaceSvc,
+		collectionSvc:  collectionSvc,
+		documentSvc:    documentSvc,
+		contentSvc:     contentSvc,
+		versionSvc:     versionSvc,
+		linkSvc:        linkSvc,
+		helpcenterSvc:  helpcenterSvc,
+		translationSvc: translationSvc,
+		searchSvc:      searchSvc,
+		importService:  importService,
+		embeddingSvc:   embeddingSvc,
+		agentService:   agentService,
+		jwtManager:     jwtManager,
 	}
 }
 
@@ -403,6 +406,51 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, content)
+}
+
+// ReorderSpaces reorders spaces within a section.
+func (h *DocsHandler) ReorderSpaces(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	var req model.ReorderDocsSpacesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.spaceSvc.ReorderSpaces(r.Context(), wsID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderCollections reorders collections within a space.
+func (h *DocsHandler) ReorderCollections(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsCollectionsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.collectionSvc.ReorderCollections(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderDocuments reorders documents within a bucket.
+func (h *DocsHandler) ReorderDocuments(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsDocumentsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.documentSvc.ReorderDocuments(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
 }
 
 // GeneratePreviewToken creates a short-lived JWT for previewing a document in the help center app.

@@ -24,6 +24,7 @@ type DocsHelpcenterService struct {
 	collectionRepo *repository.DocsCollectionRepository
 	redirectRepo   *repository.DocsRedirectRepository
 	s3Client       *storage.S3Client
+	translationSvc *DocsHelpcenterTranslationService
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -37,6 +38,10 @@ func NewDocsHelpcenterService(
 	s3Client *storage.S3Client,
 ) *DocsHelpcenterService {
 	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client}
+}
+
+func (s *DocsHelpcenterService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
+	s.translationSvc = translationSvc
 }
 
 // UploadAsset uploads a help center asset (logo or favicon) to S3 and returns the public URL.
@@ -123,6 +128,18 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 	if req.SearchPlaceholder != nil {
 		updates["search_placeholder"] = req.SearchPlaceholder
+	}
+	if req.DefaultLocale != nil {
+		updates["default_locale"] = *req.DefaultLocale
+	}
+	if req.EnabledLocales != nil {
+		updates["enabled_locales"] = model.DocsStringArray(req.EnabledLocales)
+	}
+	if req.ShowLanguageSwitcher != nil {
+		updates["show_language_switcher"] = *req.ShowLanguageSwitcher
+	}
+	if req.FallbackToDefaultLocale != nil {
+		updates["fallback_to_default_locale"] = *req.FallbackToDefaultLocale
 	}
 	return s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
 }
@@ -215,7 +232,15 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		return err
 	}
 	now := time.Now()
-	return s.hcRepo.SetPublicPublishedAt(ctx, documentID, &now)
+	if err := s.hcRepo.SetPublicPublishedAt(ctx, documentID, &now); err != nil {
+		return err
+	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after publish", "document_id", documentID, "error", err)
+		}
+	}
+	return nil
 }
 
 // UnpublishExternally removes a help center article from public access.
@@ -227,7 +252,15 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 	if art == nil {
 		return nil // Not published, no-op.
 	}
-	return s.hcRepo.SetPublicPublishedAt(ctx, documentID, nil)
+	if err := s.hcRepo.SetPublicPublishedAt(ctx, documentID, nil); err != nil {
+		return err
+	}
+	if s.translationSvc != nil {
+		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after unpublish", "document_id", documentID, "error", err)
+		}
+	}
+	return nil
 }
 
 // CreateSlugAlias records an old slug alias for redirect.

@@ -174,21 +174,46 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
           ))}
         </div>
       ) : !documents || documents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/40 mb-5">
-            <EmptyIcon className="h-7 w-7 text-muted-foreground/60" />
+        filterStatus && rawDocuments && rawDocuments.length > 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/40 mb-5">
+              <ListFilter className="h-7 w-7 text-muted-foreground/60" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1.5">
+              No {DOC_STATUS_LABELS[filterStatus].toLowerCase()} documents
+            </h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+              {filterStatus === 'draft'
+                ? 'There are no draft documents matching your current view.'
+                : filterStatus === 'published'
+                  ? 'There are no published documents matching your current view.'
+                  : 'There are no archived documents matching your current view.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilterStatus(null)}
+              className="text-sm text-primary hover:underline"
+            >
+              Clear filter and show all documents
+            </button>
           </div>
-          <h3 className="text-lg font-semibold mb-1.5">
-            {filterMode === 'recent' ? 'No recent documents' : filterMode === 'my' ? 'No documents yet' : 'No drafts'}
-          </h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            {filterMode === 'recent'
-              ? 'Recently updated documents will appear here.'
-              : filterMode === 'my'
-                ? 'Documents you create or own will appear here.'
-                : 'Draft documents will appear here until they are published.'}
-          </p>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 px-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/40 mb-5">
+              <EmptyIcon className="h-7 w-7 text-muted-foreground/60" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1.5">
+              {filterMode === 'recent' ? 'No recent documents' : filterMode === 'my' ? 'No documents yet' : 'No drafts'}
+            </h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md">
+              {filterMode === 'recent'
+                ? 'Recently updated documents will appear here.'
+                : filterMode === 'my'
+                  ? 'Documents you create or own will appear here.'
+                  : 'Draft documents will appear here until they are published.'}
+            </p>
+          </div>
+        )
       ) : (
         <>
           {/* Filters row */}
