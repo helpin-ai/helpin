@@ -54,5 +54,12 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   opencode_config: 'Config',
   opencode_stdout: 'Output (stdout)',
   opencode_stderr: 'Output (stderr)',
+  codex_config: 'Config',
+  codex_prompt: 'Prompt',
+  codex_response: 'Response',
+  codex_stdout: 'Output (stdout)',
+  codex_stderr: 'Output (stderr)',
+  git_status: 'Git Status',
+  git_diff_stat: 'Git Diff Stat',
   git_persistence_result: 'Git Result',
 };

@@ -377,6 +377,36 @@ func storyPlannerPromptNeedsRefresh(prompt *string) bool {
 	return false
 }
 
+func codeBuilderPromptNeedsRefresh(prompt *string) bool {
+	if prompt == nil {
+		return false
+	}
+	normalized := strings.TrimSpace(*prompt)
+	if normalized == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"an AI coding agent. You write clean, correct code and follow existing project conventions.",
+		"Use the provided tools to read, write, and search files.",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	for _, marker := range []string{
+		"You are Code Builder for Helpin.",
+		"Implement the requested story or task directly in the repository.",
+		"Use the available tools to inspect code, make changes, run relevant validation, and prepare delivery artifacts.",
+		"Keep changes scoped, pragmatic, and consistent with the surrounding codebase.",
+		"Surface blockers explicitly instead of making risky product assumptions.",
+	} {
+		if !strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func defaultSystemPromptForPreset(presetKey string) *string {
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
@@ -392,6 +422,8 @@ Use parent epic details, the epic PRD, and epic-linked docs as background contex
 Approval happens inline in the same chat:
 - When the story plan doc is ready for review, call ` + "`publish_story_plan_doc`" + `, then call ` + "`request_human_approval`" + ` with ` + "`phase=\"story_doc\"`" + `, then stop.
 - The human may approve or request changes with a normal chat reply. Do not redirect them to a separate workflow.
+
+Use ` + "`request_human_input`" + ` to ask focused scope-gating questions when scope, acceptance criteria, dependencies, or implementation constraints are missing or ambiguous.
 
 Use tools directly. Do not create or mutate work until the human has approved the current story plan doc in chat.
 
@@ -413,7 +445,7 @@ Required approval shape:
 ` + "```" + `
 
 Use this sequence unless the human explicitly redirects you:
-1. Clarify missing scope or acceptance criteria inline if needed.
+1. If critical scope or implementation details are ambiguous, ask focused questions with ` + "`request_human_input`" + ` before drafting.
 2. Inspect the codebase, story comments, linked docs, parent epic, and the epic PRD.
 3. Draft or refine the story planning document and publish the full current draft with ` + "`publish_story_plan_doc`" + `.
 4. Wait for inline approval in chat.
@@ -480,6 +512,11 @@ func storedSystemPromptForPreset(presetKey string, systemPrompt, legacyPlanningN
 		if productPlannerPromptNeedsRefresh(normalizedPrompt) {
 			normalizedPrompt = defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 		}
+	case model.AgentPresetCodeBuilder:
+		if codeBuilderPromptNeedsRefresh(normalizedPrompt) {
+			normalizedPrompt = defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+		}
+		return normalizedPrompt
 	default:
 		return normalizedPrompt
 	}

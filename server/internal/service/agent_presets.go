@@ -98,6 +98,28 @@ func supportedModesForRuntime(runtimeKind string) []string {
 	return []string{model.InvocationModeAutonomous}
 }
 
+func allowedRuntimeKindsForPresetKey(presetKey string) []string {
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetCodeBuilder:
+		// native_sdk remains available for compatibility with existing agents.
+		return []string{"opencode", "codex", "native_sdk"}
+	case model.AgentPresetReviewAgent:
+		// native_sdk remains available for compatibility with existing agents.
+		return []string{"opencode", "codex", "native_sdk"}
+	case model.AgentPresetEpicPlanner, model.AgentPresetStoryPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent:
+		return []string{"native_sdk"}
+	default:
+		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
+			return []string{preset.RuntimeKind}
+		}
+		return []string{"opencode"}
+	}
+}
+
+func runtimeAllowedForPreset(presetKey, runtimeKind string) bool {
+	return slices.Contains(allowedRuntimeKindsForPresetKey(presetKey), strings.TrimSpace(runtimeKind))
+}
+
 func agentPresetDefinitions() []model.AgentPresetDefinition {
 	productPlannerProfile := worker.GetRuntimeProfile(model.AgentPresetEpicPlanner)
 	engineerProfile := worker.GetRuntimeProfile(model.AgentPresetCodeBuilder)

@@ -117,6 +117,14 @@ func wrapPreviewToolError(toolName string, err error) error {
 		return fmt.Errorf("%s content must be a markdown string in \"content\"", toolName)
 	case message == "json content must be valid JSON":
 		return fmt.Errorf("%s content must be valid JSON in \"content\"", toolName)
+	case message == "story plan content is empty":
+		return fmt.Errorf("%s is missing content; include the story plan JSON object in \"content\"", toolName)
+	case message == "story plan content must be a JSON object with summary and proposed_stories":
+		return fmt.Errorf("%s content must be a JSON object with summary and proposed_stories", toolName)
+	case message == "story plan content must include a non-empty summary":
+		return fmt.Errorf("%s content must include a non-empty summary", toolName)
+	case message == "story plan content must include proposed_stories as an array":
+		return fmt.Errorf("%s content must include proposed_stories as an array", toolName)
 	case strings.HasPrefix(message, "format must be"):
 		return fmt.Errorf("%s format must be %q or %q", toolName, PreviewFormatMarkdown, PreviewFormatJSON)
 	default:
@@ -344,6 +352,12 @@ func normalizePublishedPreviewRequestWithContext(ctx *ExecutionContext, req *Pub
 	content, err := normalizePreviewContent(format, req.Content)
 	if err != nil {
 		return nil, err
+	}
+	if panelKey == "story_plan" && format == PreviewFormatJSON {
+		content, err = NormalizeStoryPlanPreviewContent(content)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	replace := true

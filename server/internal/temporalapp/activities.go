@@ -1516,23 +1516,11 @@ func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.Ag
 
 func decodeApprovedStoryPlanPreviewContent(raw json.RawMessage) (model.OrchestrationProposal, error) {
 	var proposal model.OrchestrationProposal
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return proposal, fmt.Errorf("approved story plan preview content is empty; publish a story plan JSON object before requesting approval")
-	}
-	if err := json.Unmarshal(raw, &proposal); err == nil {
-		return proposal, nil
-	}
-
-	var encoded string
-	if err := json.Unmarshal(raw, &encoded); err != nil {
+	normalized, err := workerpkg.NormalizeStoryPlanPreviewContent(raw)
+	if err != nil {
 		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
 	}
-	encoded = strings.TrimSpace(encoded)
-	if encoded == "" {
-		return proposal, fmt.Errorf("approved story plan preview content is empty; publish a story plan JSON object before requesting approval")
-	}
-	if err := json.Unmarshal([]byte(encoded), &proposal); err != nil {
+	if err := json.Unmarshal(normalized, &proposal); err != nil {
 		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
 	}
 	return proposal, nil
@@ -2461,7 +2449,6 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 		sections = append(sections, "Current implementation context from the live repository:\n"+repoContext)
 	}
 
-	sections = append(sections, "The planning doc should be implementation-ready. Include outcome, scope, acceptance criteria, implementation approach, dependencies, risks, and open questions. Prefer story-local specificity over epic-level restatement.")
 	return strings.Join(sections, "\n\n"), nil
 }
 

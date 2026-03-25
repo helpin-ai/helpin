@@ -61,16 +61,34 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
     : 0;
   const showQueuedWarning = run.status === 'queued' && queuedForSeconds >= 10;
 
+  const isRuntimeOutputArtifact = (artifactType: string) =>
+    artifactType === 'opencode_stdout' ||
+    artifactType === 'opencode_stderr' ||
+    artifactType === 'codex_stdout' ||
+    artifactType === 'codex_stderr';
+
   const outputArtifacts = useMemo(
-    () => artifacts.filter((a) => a.artifact_type === 'opencode_stdout' || a.artifact_type === 'opencode_stderr'),
+    () => artifacts.filter((a) => isRuntimeOutputArtifact(a.artifact_type)),
     [artifacts],
   );
   const otherArtifacts = useMemo(
-    () => artifacts.filter((a) => a.artifact_type !== 'opencode_stdout' && a.artifact_type !== 'opencode_stderr'),
+    () => artifacts.filter((a) => !isRuntimeOutputArtifact(a.artifact_type)),
     [artifacts],
   );
 
-  const defaultTab = outputArtifacts.length > 0 ? 'output' : otherArtifacts.length > 0 ? 'artifacts' : 'output';
+  const hasCodexDiagnostics = otherArtifacts.some((artifact) =>
+    artifact.artifact_type === 'codex_prompt' ||
+    artifact.artifact_type === 'codex_response' ||
+    artifact.artifact_type === 'git_status' ||
+    artifact.artifact_type === 'git_diff_stat',
+  );
+  const defaultTab = run.status === 'failed' && hasCodexDiagnostics
+    ? 'artifacts'
+    : outputArtifacts.length > 0
+      ? 'output'
+      : otherArtifacts.length > 0
+        ? 'artifacts'
+        : 'output';
 
   return (
     <div className="p-3 space-y-3">

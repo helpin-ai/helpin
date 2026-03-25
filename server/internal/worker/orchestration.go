@@ -63,6 +63,58 @@ func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID
 	return &proposal, nil
 }
 
+func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, fmt.Errorf("story plan content is empty")
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err == nil {
+		if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+			return nil, err
+		}
+		normalized, _ := json.Marshal(payload)
+		return normalized, nil
+	}
+
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+	}
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return nil, fmt.Errorf("story plan content is empty")
+	}
+
+	if err := unmarshalLatestJSON(encoded, &payload); err != nil {
+		return nil, fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+	}
+	if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+		return nil, err
+	}
+
+	normalized, _ := json.Marshal(payload)
+	return normalized, nil
+}
+
+func validateCanonicalStoryPlanPreviewPayload(payload map[string]any) error {
+	if len(payload) == 0 {
+		return fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+	}
+
+	summary, ok := payload["summary"].(string)
+	if !ok || strings.TrimSpace(summary) == "" {
+		return fmt.Errorf("story plan content must include a non-empty summary")
+	}
+
+	if _, ok := payload["proposed_stories"].([]any); !ok {
+		return fmt.Errorf("story plan content must include proposed_stories as an array")
+	}
+
+	return nil
+}
+
 func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed int) (*model.OrchestrationProposal, error) {
 	responseText := latestAssistantText(messages)
 	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)

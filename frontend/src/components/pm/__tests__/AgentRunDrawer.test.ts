@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getVisibleLiveTools, parseToolMessage } from '../AgentRunDrawer';
+import { buildAutonomousRuntimeStreamDisplay, getVisibleLiveTools, parseToolMessage } from '../AgentRunDrawer';
 
 describe('AgentRunDrawer tool parsing', () => {
   it('extracts compact tool metadata from persisted tool-result blocks', () => {
@@ -131,5 +131,81 @@ describe('AgentRunDrawer tool parsing', () => {
         status: 'completed',
       },
     ]);
+  });
+
+  it('builds autonomous OpenCode transcript content from stdout/stderr artifacts', () => {
+    const display = buildAutonomousRuntimeStreamDisplay(
+      {
+        runtime_kind: 'opencode',
+        invocation_mode: 'autonomous',
+        status: 'running',
+      },
+      [
+        {
+          id: 'artifact-1',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          artifact_type: 'opencode_stdout',
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: 'Step started: inspect repo\nTool: rg src\nImplemented the change.',
+          metadata: {},
+          sequence_no: 1,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 'artifact-2',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          artifact_type: 'opencode_stderr',
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: 'npm warn old lockfile',
+          metadata: {},
+          sequence_no: 2,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    );
+
+    expect(display).toEqual({
+      assistantText: '',
+      processingText: 'Step started: inspect repo\nTool: rg src\nImplemented the change.',
+      errorText: 'npm warn old lockfile',
+    });
+  });
+
+  it('extracts Codex assistant text and activity summaries from stdout artifacts', () => {
+    const display = buildAutonomousRuntimeStreamDisplay(
+      {
+        runtime_kind: 'codex',
+        invocation_mode: 'autonomous',
+        status: 'running',
+      },
+      [
+        {
+          id: 'artifact-1',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          artifact_type: 'codex_stdout',
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: [
+            '{"type":"thread.started"}',
+            '{"type":"item.started","item":{"type":"command_execution","command":"rg metrics"}}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":"Implemented the metrics update."}}',
+          ].join('\n'),
+          metadata: {},
+          sequence_no: 1,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    );
+
+    expect(display).toEqual({
+      assistantText: 'Implemented the metrics update.',
+      processingText: 'Codex session started.\nRunning rg metrics',
+      errorText: '',
+    });
   });
 });

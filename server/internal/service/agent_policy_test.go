@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -145,7 +146,7 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 }
 
 func TestValidateRuntimeKindAllowsOnlyImplementedRuntimes(t *testing.T) {
-	valid := []string{"opencode", "native_sdk"}
+	valid := []string{"opencode", "codex", "native_sdk"}
 	for _, runtimeKind := range valid {
 		if err := validateRuntimeKind(runtimeKind); err != nil {
 			t.Fatalf("expected runtime %q to be valid, got %v", runtimeKind, err)
@@ -183,6 +184,14 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 			supported: true,
 		},
 		{
+			name: "codex does not support interactive",
+			agent: model.Agent{
+				PresetKey:   model.AgentPresetCodeBuilder,
+				RuntimeKind: "codex",
+			},
+			supported: false,
+		},
+		{
 			name: "opencode does not support interactive",
 			agent: model.Agent{
 				PresetKey:   model.AgentPresetCodeBuilder,
@@ -200,6 +209,102 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 				t.Fatalf("expected interactive support=%v, got %v (runtime=%q)", tc.supported, got, tc.agent.RuntimeKind)
 			}
 		})
+	}
+}
+
+func TestValidateRuntimeProviderCompatibilityRejectsAnthropicForCodex(t *testing.T) {
+	anthropic := model.AgentModelProviderAnthropic
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetCodeBuilder,
+		RuntimeKind: "codex",
+		Provider:    &anthropic,
+	}
+
+	svc := &AgentService{}
+	if err := svc.validateRuntimeProviderCompatibility(agent); err == nil {
+		t.Fatal("expected codex anthropic provider to be rejected")
+	}
+}
+
+func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetReviewAgent,
+		RuntimeKind: "codex",
+		Provider:    &openAI,
+		AllowedTools: mustJSONStringSlice([]string{
+			"read_file",
+			"read_file_range",
+			"list_directory",
+			"search_files",
+			"ripgrep",
+			"grep",
+			"list_symbols",
+			"run_command",
+			"add_story_comment",
+			"list_story_checklist",
+		}),
+		AllowedCommands: mustJSONStringSlice([]string{
+			"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg",
+		}),
+		AllowedTargets:        mustJSONStringSlice([]string{"story"}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+
+	if err := validateRuntimeForAgent(agent); err != nil {
+		t.Fatalf("expected review_agent codex runtime to be allowed, got %v", err)
+	}
+}
+
+func TestValidateRuntimeForAgentRejectsCustomCodexPolicy(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:             model.AgentPresetCodeBuilder,
+		RuntimeKind:           "codex",
+		Provider:              &openAI,
+		AllowedTools:          mustJSONStringSlice([]string{"read_file"}),
+		AllowedCommands:       mustJSONStringSlice([]string{"go"}),
+		AllowedTargets:        mustJSONStringSlice([]string{"story"}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+
+	if err := validateRuntimeForAgent(agent); err == nil {
+		t.Fatal("expected custom codex tool policy to be rejected")
+	}
+}
+
+func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetReviewAgent,
+		RuntimeKind: "codex",
+		Provider:    &openAI,
+	}
+
+	normalizeAgentRecord(agent)
+
+	if agent.RuntimeKind != "codex" {
+		t.Fatalf("expected review agent runtime to preserve codex, got %q", agent.RuntimeKind)
+	}
+}
+
+func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
+	legacyPrompt := "You are Builder, an AI coding agent. You write clean, correct code and follow existing project conventions."
+	agent := &model.Agent{
+		PresetKey:    model.AgentPresetCodeBuilder,
+		RuntimeKind:  "codex",
+		SystemPrompt: &legacyPrompt,
+	}
+
+	normalizeAgentRecord(agent)
+
+	if agent.SystemPrompt == nil {
+		t.Fatal("expected normalized system prompt")
+	}
+	if !strings.Contains(*agent.SystemPrompt, "You are Code Builder for Helpin.") {
+		t.Fatalf("expected code builder prompt refresh, got:\n%s", *agent.SystemPrompt)
 	}
 }
 
