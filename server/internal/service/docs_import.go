@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -60,16 +61,25 @@ func NewDocsImportService(
 
 // s3ImageUploader adapts S3Client to the helpscout.ImageUploader interface.
 type s3ImageUploader struct {
-	s3Client *storage.S3Client
+	store docsImageObjectStore
+}
+
+type docsImageObjectStore interface {
+	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
+	PublicURL(key string) string
 }
 
 // UploadImage uploads an image to S3 and returns the public URL.
 func (u *s3ImageUploader) UploadImage(ctx context.Context, workspaceID, filename string, data io.Reader, contentType string) (string, error) {
+	payload, err := io.ReadAll(data)
+	if err != nil {
+		return "", fmt.Errorf("read image %q: %w", filename, err)
+	}
 	key := fmt.Sprintf("docs-import/%s/%s-%s", workspaceID, uuid.New().String(), filename)
-	if err := u.s3Client.PutObject(ctx, key, contentType, -1, data, true); err != nil {
+	if err := u.store.PutObject(ctx, key, contentType, int64(len(payload)), bytes.NewReader(payload), true); err != nil {
 		return "", fmt.Errorf("upload image %q: %w", filename, err)
 	}
-	return u.s3Client.PublicURL(key), nil
+	return u.store.PublicURL(key), nil
 }
 
 // ImportExternalImage downloads a remote image and stores it in our S3-backed docs storage.
@@ -77,7 +87,7 @@ func (s *DocsImportService) ImportExternalImage(ctx context.Context, workspaceID
 	if s.s3Client == nil {
 		return "", fmt.Errorf("file storage is not configured")
 	}
-	return s.importExternalImageWithUploader(ctx, workspaceID, imageURL, &s3ImageUploader{s3Client: s.s3Client})
+	return s.importExternalImageWithUploader(ctx, workspaceID, imageURL, &s3ImageUploader{store: s.s3Client})
 }
 
 func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context, workspaceID, imageURL string, uploader helpscout.ImageUploader) (string, error) {
@@ -305,7 +315,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	// Prepare image uploader.
 	var uploader helpscout.ImageUploader
 	if s.s3Client != nil {
-		uploader = &s3ImageUploader{s3Client: s.s3Client}
+		uploader = &s3ImageUploader{store: s.s3Client}
 	}
 
 	var (
@@ -664,7 +674,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 
 	var uploader helpscout.ImageUploader
 	if s.s3Client != nil {
-		uploader = &s3ImageUploader{s3Client: s.s3Client}
+		uploader = &s3ImageUploader{store: s.s3Client}
 	}
 
 	var (

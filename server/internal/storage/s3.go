@@ -124,11 +124,13 @@ func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64, 
 // PutObject uploads an object directly to S3.
 func (s *S3Client) PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error {
 	input := &s3.PutObjectInput{
-		Bucket:        aws.String(s.bucket),
-		Key:           aws.String(key),
-		ContentType:   aws.String(contentType),
-		ContentLength: aws.Int64(size),
-		Body:          body,
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+		Body:        body,
+	}
+	if size >= 0 {
+		input.ContentLength = aws.Int64(size)
 	}
 	if publicRead {
 		input.ACL = s3types.ObjectCannedACLPublicRead
