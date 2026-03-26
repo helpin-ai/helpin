@@ -279,6 +279,11 @@ func main() {
 	}
 	slog.Info("startup: AutoMigrate complete")
 
+	slog.Info("startup: running MigrateAgentSchema")
+	if err := repository.MigrateAgentSchema(db); err != nil {
+		fatalWithSentry("failed to migrate agent schema", err)
+	}
+
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_embedding_ivfflat ON docs_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,

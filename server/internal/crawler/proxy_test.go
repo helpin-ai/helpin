@@ -35,6 +35,15 @@ func TestParseProxyURLs(t *testing.T) {
 			},
 		},
 		{
+			name:  "decodo residential URLs with credentials are preserved",
+			input: "http://user:pass@isp.decodo.com:10001,http://user:pass@isp.decodo.com:10002,http://user:pass@isp.decodo.com:10003",
+			want: []string{
+				"http://user:pass@isp.decodo.com:10001",
+				"http://user:pass@isp.decodo.com:10002",
+				"http://user:pass@isp.decodo.com:10003",
+			},
+		},
+		{
 			name:  "whitespace around URLs is trimmed",
 			input: "  http://proxy1.example.com:8080 , http://proxy2.example.com:8081  ",
 			want: []string{
