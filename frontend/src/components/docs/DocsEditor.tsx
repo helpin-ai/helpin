@@ -45,6 +45,7 @@ import { InsertVideoDialog } from './InsertVideoDialog'
 import { TableControls } from './TableControls'
 import { BlockGapInserter } from './BlockGapInserter'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
+import { docsService } from '@/lib/services/docsService'
 import { toast } from 'sonner'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
@@ -778,7 +779,6 @@ export function DocsEditor({
   const persistImportedImages = useCallback(
     async (editorInstance: NonNullable<typeof editorRef.current>) => {
       const currentUploadConfig = uploadConfigRef.current
-      if (!currentUploadConfig) return
 
       const candidates: Array<{ pos: number; src: string; pendingId: string }> = []
 
@@ -786,8 +786,11 @@ export function DocsEditor({
         if (node.type.name !== 'resizableImage') return
         const src = typeof node.attrs.src === 'string' ? node.attrs.src : ''
         const attachmentId = typeof node.attrs.attachmentId === 'string' ? node.attrs.attachmentId : ''
-        if (!src.startsWith('data:image/') || attachmentId) return
+        const isEmbeddedImage = src.startsWith('data:image/')
+        const isRemoteImage = /^https?:\/\//i.test(src)
+        if ((!isEmbeddedImage && !isRemoteImage) || attachmentId) return
         if (pendingImportedImageUploadsRef.current.has(src)) return
+        if (isEmbeddedImage && !currentUploadConfig) return
 
         const pendingId = `imported-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         pendingImportedImageUploadsRef.current.add(src)
@@ -810,15 +813,31 @@ export function DocsEditor({
       await Promise.all(
         candidates.map(async ({ src, pendingId }) => {
           try {
-            const response = await fetch(src)
-            const blob = await response.blob()
-            if (!blob.type.startsWith('image/')) {
-              throw new Error('Only image files are supported')
-            }
+            let uploadedSrc = ''
+            let uploadedAttachmentId: string | null = null
 
-            const extension = blob.type.split('/')[1]?.split('+')[0] || 'png'
-            const file = new File([blob], `imported-image.${extension}`, { type: blob.type })
-            const upload = await uploadEditorImage(file, currentUploadConfig)
+            if (src.startsWith('data:image/')) {
+              const response = await fetch(src)
+              const blob = await response.blob()
+              if (!blob.type.startsWith('image/')) {
+                throw new Error('Only image files are supported')
+              }
+
+              const extension = blob.type.split('/')[1]?.split('+')[0] || 'png'
+              const file = new File([blob], `imported-image.${extension}`, { type: blob.type })
+              const upload = await uploadEditorImage(file, currentUploadConfig!)
+              uploadedSrc = upload.publicUrl
+              uploadedAttachmentId = upload.attachmentId
+            } else {
+              if (!currentUploadConfig) {
+                throw new Error('Editor upload is not configured')
+              }
+              const imported = await docsService.importExternalImage(currentUploadConfig.workspaceId, src)
+              if (imported.error || !imported.data?.url) {
+                throw new Error(imported.error || 'Failed to import external image')
+              }
+              uploadedSrc = imported.data.url
+            }
 
             let targetPos: number | null = null
             editorInstance.state.doc.descendants((node, pos) => {
@@ -834,9 +853,9 @@ export function DocsEditor({
                 editorInstance.view.dispatch(
                   editorInstance.state.tr.setNodeMarkup(targetPos, undefined, {
                     ...node.attrs,
-                    src: upload.publicUrl,
+                    src: uploadedSrc,
                     title: null,
-                    attachmentId: upload.attachmentId,
+                    attachmentId: uploadedAttachmentId,
                   }),
                 )
               }
@@ -941,7 +960,7 @@ export function DocsEditor({
           }
         }
         const html = event.clipboardData?.getData('text/html') ?? ''
-        if (html.includes('data:image/') && editorRef.current) {
+        if (html.includes('<img') && editorRef.current) {
           queuePersistImportedImages(editorRef.current)
         }
         return false
@@ -957,7 +976,7 @@ export function DocsEditor({
           }
         }
         const html = event.dataTransfer?.getData('text/html') ?? ''
-        if (html.includes('data:image/') && editorRef.current) {
+        if (html.includes('<img') && editorRef.current) {
           queuePersistImportedImages(editorRef.current)
         }
         return false

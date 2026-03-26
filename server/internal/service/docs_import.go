@@ -6,6 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +70,75 @@ func (u *s3ImageUploader) UploadImage(ctx context.Context, workspaceID, filename
 		return "", fmt.Errorf("upload image %q: %w", filename, err)
 	}
 	return u.s3Client.PublicURL(key), nil
+}
+
+// ImportExternalImage downloads a remote image and stores it in our S3-backed docs storage.
+func (s *DocsImportService) ImportExternalImage(ctx context.Context, workspaceID, imageURL string) (string, error) {
+	if s.s3Client == nil {
+		return "", fmt.Errorf("file storage is not configured")
+	}
+	return s.importExternalImageWithUploader(ctx, workspaceID, imageURL, &s3ImageUploader{s3Client: s.s3Client})
+}
+
+func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context, workspaceID, imageURL string, uploader helpscout.ImageUploader) (string, error) {
+	if strings.TrimSpace(imageURL) == "" {
+		return "", fmt.Errorf("image_url is required")
+	}
+
+	parsed, err := url.Parse(imageURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid image_url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("image_url must use http or https")
+	}
+
+	if s.s3Client != nil {
+		publicPrefix := s.s3Client.PublicURL("")
+		if publicPrefix != "" && strings.HasPrefix(imageURL, publicPrefix) {
+			return imageURL, nil
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create image request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download image: status %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if idx := strings.Index(contentType, ";"); idx >= 0 {
+		contentType = strings.TrimSpace(contentType[:idx])
+	}
+	if contentType == "" {
+		contentType = mime.TypeByExtension(path.Ext(parsed.Path))
+	}
+	if !strings.HasPrefix(contentType, "image/") {
+		return "", fmt.Errorf("remote URL is not an image")
+	}
+
+	filename := path.Base(parsed.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "image"
+		if exts, _ := mime.ExtensionsByType(contentType); len(exts) > 0 {
+			filename += exts[0]
+		}
+	}
+
+	uploadedURL, err := uploader.UploadImage(ctx, workspaceID, filename, resp.Body, contentType)
+	if err != nil {
+		return "", err
+	}
+	return uploadedURL, nil
 }
 
 // Preview fetches collection metadata from HelpScout for import preview.

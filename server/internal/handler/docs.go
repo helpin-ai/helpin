@@ -880,6 +880,25 @@ func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"url": publicURL})
 }
 
+// ImportExternalImage handles POST /docs/images/import.
+func (h *DocsHandler) ImportExternalImage(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+
+	var req model.ImportDocsExternalImageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	publicURL, err := h.importService.ImportExternalImage(r.Context(), wsID, strings.TrimSpace(req.ImageURL))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.ImportDocsExternalImageResponse{URL: publicURL})
+}
+
 // ─── Article Feedback ───────────────────────────────────────────────────────
 
 func (h *DocsHandler) SubmitArticleFeedback(w http.ResponseWriter, r *http.Request) {
