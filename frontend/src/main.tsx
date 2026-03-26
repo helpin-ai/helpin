@@ -4,10 +4,24 @@ import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { queryClient } from '@/lib/queryClient'
-import { useAuthStore } from '@/stores/authStore'
+import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
 import { routeTree } from './routeTree.gen'
 import './index.css'
+
+function normalizePathname(pathname: string) {
+  if (!pathname) return '/'
+  const normalized = pathname.replace(/\/+$/, '')
+  return normalized === '' ? '/' : normalized
+}
+
+const isLogoutPath =
+  typeof window !== 'undefined' && normalizePathname(window.location.pathname) === '/logout'
+
+if (isLogoutPath) {
+  clearClientSession()
+  window.location.replace('/login')
+}
 
 const router = createRouter({
   routeTree,
@@ -64,8 +78,10 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+if (!isLogoutPath) {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}

@@ -144,6 +144,52 @@ jobs:
             --push \
             build-prod-helpcenter/help-center/
 
+  build-worker-deb:
+    name: Build Temporal Worker Debian Package
+    runs-on: ubuntu-latest
+    needs: version
+    if: needs.version.outputs.release_tag != ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: build-prod-worker
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Add Go bin to PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.1
+
+      - name: Build worker binary
+        working-directory: build-prod-worker/server
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-w -s" -o dist/temporal-worker ./cmd/temporal-worker
+
+      - name: Package worker .deb
+        working-directory: build-prod-worker/server
+        run: |
+          VERSION="${{ needs.version.outputs.release_tag }}"
+          VERSION="${VERSION#v}"
+          export VERSION
+          nfpm package --packager deb --target "dist/helpin-temporal-worker_${VERSION}_amd64.deb"
+
+      - name: Upload worker package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helpin-temporal-worker-deb
+          path: build-prod-worker/server/dist/helpin-temporal-worker_*_amd64.deb
+
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
     runs-on: ubuntu-latest
@@ -195,7 +241,7 @@ jobs:
   release:
     name: Create Official Release
     runs-on: ubuntu-latest
-    needs: [version, build-server, build-helpcenter]
+    needs: [version, build-server, build-helpcenter, build-worker-deb]
     if: needs.version.outputs.release_tag != ''
     steps:
       - name: Checkout code
@@ -204,6 +250,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           path: prod-release
+
+      - name: Download worker package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helpin-temporal-worker-deb
+          path: prod-release/dist
 
       - name: Configure git
         working-directory: prod-release
@@ -224,6 +276,7 @@ jobs:
         run: |
           PREV_TAG="${{ needs.version.outputs.prev_tag }}"
           RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
 
           echo "## What's Changed" > release_notes.md
           echo "" >> release_notes.md
@@ -246,6 +299,9 @@ jobs:
           echo "- \`${{ env.IMAGE_PREFIX }}/server:$RELEASE_TAG\`" >> release_notes.md
           echo "- \`${{ env.IMAGE_PREFIX }}/helpcenter:$RELEASE_TAG\`" >> release_notes.md
           echo "" >> release_notes.md
+          echo "### Packages" >> release_notes.md
+          echo "- \`helpin-temporal-worker_${RELEASE_VERSION}_amd64.deb\`" >> release_notes.md
+          echo "" >> release_notes.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$RELEASE_TAG" >> release_notes.md
 
       - name: Create GitHub release
@@ -257,6 +313,12 @@ jobs:
             --title "Release ${{ needs.version.outputs.release_tag }}" \
             --notes-file release_notes.md \
             --latest
+
+      - name: Upload worker package to release
+        working-directory: prod-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.version.outputs.release_tag }}" dist/*.deb --clobber
 
       - name: Update K8s manifests
         working-directory: prod-release

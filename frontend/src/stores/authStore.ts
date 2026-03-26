@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { User } from '@/lib/types';
 import { authService } from '@/lib/services/authService';
 import { stopTokenRefreshTimer } from '@/lib/api';
+import { queryClient } from '@/lib/queryClient';
 
 interface AuthState {
   user: User | null;
@@ -15,6 +16,23 @@ interface AuthState {
 }
 
 let _initializing = false;
+
+export function clearClientSession() {
+  stopTokenRefreshTimer();
+  queryClient.clear();
+
+  try {
+    localStorage.clear();
+  } catch {
+    // Ignore storage access failures during logout.
+  }
+
+  try {
+    sessionStorage.clear();
+  } catch {
+    // Ignore storage access failures during logout.
+  }
+}
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
@@ -67,12 +85,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('remember_me');
-    stopTokenRefreshTimer();
+    clearClientSession();
     set({ user: null });
-    window.location.href = '/login';
+    window.location.replace('/login');
   },
 
   updateUser: async (data: { full_name?: string }) => {
