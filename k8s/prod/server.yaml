@@ -30,7 +30,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:v0.89.1
+          image: ghcr.io/helpin-ai/helpin/server:v0.89.2
           envFrom:
             - secretRef:
                 name: helpin-secrets
