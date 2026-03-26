@@ -6,6 +6,34 @@ import (
 	"gorm.io/gorm"
 )
 
+// MigrateAgentSchema drops legacy agent columns that AutoMigrate leaves behind.
+// Older databases can still have a NOT NULL agent_kind column, which breaks
+// inserts because the current Agent model no longer writes to it.
+func MigrateAgentSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable("agents") {
+		return nil
+	}
+
+	for _, column := range []string{
+		"agent_kind",
+		"user_id",
+		"tools",
+		"target_selector",
+		"trigger_events",
+		"agent_class",
+		"capability_profile",
+	} {
+		if db.Migrator().HasColumn("agents", column) {
+			stmt := fmt.Sprintf("ALTER TABLE agents DROP COLUMN %s", column)
+			if err := db.Exec(stmt).Error; err != nil {
+				return fmt.Errorf("drop legacy agents.%s column: %w", column, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // MigrateAgentRunTargets backfills agent_runs.target_type and target_id from
 // the legacy story_id / ticket_id columns so that the NOT NULL constraint
 // added by AutoMigrate succeeds.
