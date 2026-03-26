@@ -68,6 +68,12 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		if err := s.translationSvc.RefreshCollectionSource(ctx, created.ID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter collection translation source after create", "collection_id", created.ID, "error", err)
 		}
+		// Auto-generate translations for all enabled locales if space is external
+		go func() {
+			if err := s.translationSvc.AutoGenerateCollectionTranslations(ctx, created.ID); err != nil {
+				slog.WarnContext(ctx, "failed to auto-generate collection translations", "collection_id", created.ID, "error", err)
+			}
+		}()
 	}
 	return created, nil
 }

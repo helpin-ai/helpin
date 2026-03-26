@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO, isThisYear } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
@@ -101,6 +102,7 @@ import {
 } from '@/components/ui/sheet'
 import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { docsService } from '@/lib/services/docsService'
+import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
@@ -171,6 +173,7 @@ function translationDraftKey(docId: string, locale: string): string {
 export function DocsDocumentDetail() {
   const navigate = useNavigate()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { docId } = useParams({ strict: false }) as { docId: string }
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
@@ -221,6 +224,7 @@ export function DocsDocumentDetail() {
   const [pendingTranslationLocale, setPendingTranslationLocale] = useState<string | null>(null)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [generatingParents, setGeneratingParents] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
@@ -537,6 +541,32 @@ export function DocsDocumentDetail() {
     }
   }, [activeLocale, docId, generateArticleTranslation, isSourceLocaleActive])
 
+  const handleGenerateAndPublishParents = useCallback(async () => {
+    if (!doc || isSourceLocaleActive) return
+    setGeneratingParents(true)
+    try {
+      // Generate + publish space translation if needed
+      const spaceRow = spaceTranslationsByLocale.get(activeLocale)
+      if (!spaceRow || spaceRow.status !== 'published') {
+        await docsService.generateSpaceTranslation(wsId, doc.space_id, activeLocale)
+      }
+      // Generate + publish collection translation if needed
+      if (doc.collection_id) {
+        const collRow = collectionTranslationsByLocale.get(activeLocale)
+        if (!collRow || collRow.status !== 'published') {
+          await docsService.generateCollectionTranslation(wsId, doc.collection_id, activeLocale)
+        }
+      }
+      toast.success('Parent translations generated and published')
+      // Refetch translations so the blocked reason clears
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate parent translations')
+    } finally {
+      setGeneratingParents(false)
+    }
+  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale])
+
   const activeLocaleShortLabel = activeLocale.toUpperCase()
   const activeContextTitle = isSourceLocaleActive
     ? 'Editing source article'
@@ -737,6 +767,20 @@ export function DocsDocumentDetail() {
               {activePublishLabel}
             </Button>
           </QuickTooltip>
+          {!isSourceLocaleActive && activeLocaleRow?.publishBlockedReason && (
+            <QuickTooltip label="Auto-generate and publish the required space and collection translations using AI">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 text-xs"
+                disabled={generatingParents}
+                onClick={() => void handleGenerateAndPublishParents()}
+              >
+                <WandSparkles className="h-3 w-3" />
+                {generatingParents ? 'Generating...' : 'Fix with AI'}
+              </Button>
+            </QuickTooltip>
+          )}
         )}
 
         <QuickTooltip label="Document details">

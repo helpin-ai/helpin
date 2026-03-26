@@ -983,6 +983,68 @@ func (s *DocsHelpcenterTranslationService) GenerateAllSpaceAndCollectionTranslat
 	return nil
 }
 
+// AutoGenerateSpaceTranslations generates translations for all enabled non-default locales for a space.
+// Called when a new external space is created with locales enabled.
+func (s *DocsHelpcenterTranslationService) AutoGenerateSpaceTranslations(ctx context.Context, spaceID string) error {
+	if s.llmProvider == nil {
+		return nil
+	}
+	space, err := s.spaceRepo.GetByID(ctx, spaceID)
+	if err != nil || space == nil || space.Type != model.SpaceTypeExternalCapable {
+		return nil
+	}
+	cfg, err := s.hcRepo.GetConfig(ctx, space.WorkspaceID)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	for _, locale := range cfg.EnabledLocales {
+		if locale == cfg.DefaultLocale {
+			continue
+		}
+		existing, _ := s.translationRepo.GetSpaceTranslation(ctx, spaceID, locale)
+		if existing != nil {
+			continue
+		}
+		if _, err := s.GenerateSpaceTranslation(ctx, spaceID, locale); err != nil {
+			slog.ErrorContext(ctx, "auto-generate space translation failed", "space_id", spaceID, "locale", locale, "error", err)
+		}
+	}
+	return nil
+}
+
+// AutoGenerateCollectionTranslations generates translations for all enabled non-default locales for a collection.
+// Called when a new collection is created in an external space with locales enabled.
+func (s *DocsHelpcenterTranslationService) AutoGenerateCollectionTranslations(ctx context.Context, collectionID string) error {
+	if s.llmProvider == nil {
+		return nil
+	}
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil || collection == nil {
+		return nil
+	}
+	space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID)
+	if err != nil || space == nil || space.Type != model.SpaceTypeExternalCapable {
+		return nil
+	}
+	cfg, err := s.hcRepo.GetConfig(ctx, space.WorkspaceID)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	for _, locale := range cfg.EnabledLocales {
+		if locale == cfg.DefaultLocale {
+			continue
+		}
+		existing, _ := s.translationRepo.GetCollectionTranslation(ctx, collectionID, locale)
+		if existing != nil {
+			continue
+		}
+		if _, err := s.GenerateCollectionTranslation(ctx, collectionID, locale); err != nil {
+			slog.ErrorContext(ctx, "auto-generate collection translation failed", "collection_id", collectionID, "locale", locale, "error", err)
+		}
+	}
+	return nil
+}
+
 func (s *DocsHelpcenterTranslationService) MarkArticleTranslationsForSourceChange(ctx context.Context, documentID string) error {
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {

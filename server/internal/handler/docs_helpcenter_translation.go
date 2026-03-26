@@ -218,3 +218,27 @@ func (h *DocsHandler) GenerateArticleTranslationDraft(w http.ResponseWriter, r *
 	}
 	writeJSON(w, http.StatusOK, translation)
 }
+
+// GenerateSpaceTranslation generates an AI translation for a space's metadata.
+func (h *DocsHandler) GenerateSpaceTranslation(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	locale := chi.URLParam(r, "locale")
+	translation, err := h.translationSvc.GenerateSpaceTranslation(r.Context(), spaceID, locale)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, translation)
+}
+
+// GenerateCollectionTranslation generates an AI translation for a collection's metadata.
+func (h *DocsHandler) GenerateCollectionTranslation(w http.ResponseWriter, r *http.Request) {
+	collectionID := chi.URLParam(r, "collectionId")
+	locale := chi.URLParam(r, "locale")
+	translation, err := h.translationSvc.GenerateCollectionTranslation(r.Context(), collectionID, locale)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, translation)
+}
