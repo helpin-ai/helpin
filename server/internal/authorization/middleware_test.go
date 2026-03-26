@@ -190,6 +190,42 @@ func TestRequireWorkspaceAccess_WorkspaceIDFromContext(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceSlug_NotFoundWhenResolverReturnsEmptyID(t *testing.T) {
+	router := chi.NewRouter()
+	router.Route("/workspaces/by-slug/{slug}", func(r chi.Router) {
+		r.With(ResolveWorkspaceSlug(func(ctx context.Context, slug string) (string, error) {
+			return "", nil
+		})).Get("/", func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("handler should not be called")
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/by-slug/missing/", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestResolveWorkspaceSlug_InternalServerErrorWhenResolverMissing(t *testing.T) {
+	router := chi.NewRouter()
+	router.Route("/workspaces/by-slug/{slug}", func(r chi.Router) {
+		r.With(ResolveWorkspaceSlug(nil)).Get("/", func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("handler should not be called")
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/by-slug/missing/", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rr.Code)
+	}
+}
+
 func TestRequirePermission_Allowed(t *testing.T) {
 	authz, _ := setupAuthzService()
 

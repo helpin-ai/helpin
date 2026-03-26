@@ -25,7 +25,7 @@ export function SupportKnowledgeSourcesField({
   reindexingSpaceId,
   disabled = false,
 }: {
-  agentId: string;
+  agentId?: string;
   spaces: DocsSpace[];
   knowledgeSources: AgentKnowledgeSource[];
   onToggle: (spaceId: string) => void;
@@ -98,7 +98,9 @@ export function SupportKnowledgeSourcesField({
                 <p className="text-xs text-muted-foreground">
                   {selected
                     ? indexedSummary(source)
-                    : 'Select to chunk published public docs, generate embeddings, and make this space searchable by the support agent.'}
+                    : agentId
+                      ? 'Select to chunk published public docs, generate embeddings, and make this space searchable by the support agent.'
+                      : 'Published help center space. Assign a support agent in Chat Widget to attach it to support AI.'}
                 </p>
               </div>
             </div>

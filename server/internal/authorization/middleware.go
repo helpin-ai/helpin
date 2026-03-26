@@ -56,8 +56,16 @@ func ResolveWorkspaceSlug(resolver SlugResolver) func(http.Handler) http.Handler
 				http.Error(w, "workspace slug required", http.StatusBadRequest)
 				return
 			}
+			if resolver == nil {
+				http.Error(w, "workspace resolver unavailable", http.StatusInternalServerError)
+				return
+			}
 			wsID, err := resolver(r.Context(), slug)
 			if err != nil {
+				http.Error(w, "workspace not found", http.StatusNotFound)
+				return
+			}
+			if wsID == "" {
 				http.Error(w, "workspace not found", http.StatusNotFound)
 				return
 			}
