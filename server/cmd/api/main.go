@@ -662,6 +662,7 @@ func main() {
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	agentService.SetRuleEngine(ruleEngine)
+	agentService.SetWorkflowService(pmWorkflowService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
 	// Log orchestration availability.

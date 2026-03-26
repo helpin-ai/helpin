@@ -53,6 +53,7 @@ type AgentService struct {
 	runEngine        *temporalapp.RunEngine
 	gitService       *GitService
 	storyService     *PMStoryService
+	workflowService  *PMWorkflowService
 	activitySvc      *PMActivityService
 	wsPublisher      *websocket.Publisher
 	ruleEngine       *AutomationRuleEngine
@@ -120,6 +121,11 @@ func (s *AgentService) SetModelProviderConfig(anthropicAPIKey, openAIAPIKey, ope
 // SetRuleEngine sets the automation rule engine (breaks circular dependency).
 func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService {
 	s.ruleEngine = engine
+	return s
+}
+
+func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
+	s.workflowService = workflowService
 	return s
 }
 
