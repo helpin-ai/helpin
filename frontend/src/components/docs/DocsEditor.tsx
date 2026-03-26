@@ -631,6 +631,8 @@ interface DocsEditorProps {
   autoSaveMs?: number
   readOnly?: boolean
   uploadConfig?: EditorUploadConfig
+  topBanner?: React.ReactNode
+  generatingOverlay?: string | null
 }
 
 export function DocsEditor({
@@ -642,6 +644,8 @@ export function DocsEditor({
   autoSaveMs = 2000,
   readOnly = false,
   uploadConfig,
+  topBanner,
+  generatingOverlay,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -650,6 +654,7 @@ export function DocsEditor({
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
   const skipNextSaveRef = useRef(false)
+  const editorReadyRef = useRef(false)
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -836,6 +841,8 @@ export function DocsEditor({
       },
     },
     onUpdate: ({ editor: e }) => {
+      // Skip saves during initial mount — TipTap fires onUpdate when normalizing content
+      if (!editorReadyRef.current) return
       if (skipNextSaveRef.current) {
         skipNextSaveRef.current = false
         return
@@ -846,6 +853,11 @@ export function DocsEditor({
       if (!readOnly) {
         scheduleSave(e.getJSON())
       }
+    },
+    onCreate: () => {
+      // Mark editor ready after initialization is complete
+      // Use requestAnimationFrame to ensure all mount-time updates have settled
+      requestAnimationFrame(() => { editorReadyRef.current = true })
     },
   })
 
@@ -858,16 +870,21 @@ export function DocsEditor({
     }
   }, [editor, readOnly])
 
-  // Update content if initial content changes (e.g. after revert)
+  // Update content if initial content changes AFTER mount (e.g. after revert).
+  // Skip the first run — useEditor already sets initial content on mount.
+  const initialContentMountedRef = useRef(false)
   useEffect(() => {
-    if (editor && initialContent) {
-      const currentJson = JSON.stringify(editor.getJSON())
-      const newJson = JSON.stringify(initialContent)
-      if (currentJson !== newJson) {
-        skipNextSaveRef.current = true
-        editor.commands.setContent(initialContent)
-        setSaveStatus('idle')
-      }
+    if (!editor || !initialContent) return
+    if (!initialContentMountedRef.current) {
+      initialContentMountedRef.current = true
+      return
+    }
+    const currentJson = JSON.stringify(editor.getJSON())
+    const newJson = JSON.stringify(initialContent)
+    if (currentJson !== newJson) {
+      skipNextSaveRef.current = true
+      editor.commands.setContent(initialContent)
+      setSaveStatus('idle')
     }
   }, [editor, initialContent])
 
@@ -1065,6 +1082,12 @@ img { max-width: 100%; }
 
       {/* Editor content with title */}
       <div className={`relative flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+        {generatingOverlay && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
+            <p className="text-sm font-medium text-foreground">{generatingOverlay}</p>
+          </div>
+        )}
         {/* Markdown menu (left) + Save indicator (right) — floating */}
         {!readOnly && (
           <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
@@ -1085,6 +1108,8 @@ img { max-width: 100%; }
             </div>
           </div>
         )}
+
+        {topBanner}
 
         {sourceView ? (
           /* Source view — full width, fills remaining height */

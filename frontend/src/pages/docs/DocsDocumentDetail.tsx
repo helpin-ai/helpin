@@ -28,6 +28,8 @@ import {
   UserCheck,
   X,
   Languages,
+  Settings2,
+  WandSparkles,
 } from 'lucide-react'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
@@ -45,6 +47,7 @@ import {
   useDocsHelpcenterLocales,
   useDocsHelpcenterSpaceTranslations,
   useCreateDocsCollection,
+  useGenerateDocsHelpcenterArticleTranslation,
   useMarkDocsHelpcenterArticleTranslationReviewed,
   usePublishDocsHelpcenterArticleTranslation,
   useSaveDocsContent,
@@ -65,6 +68,7 @@ import {
 } from '@/hooks/queries'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
+import { timeAgo } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -79,7 +83,11 @@ import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
+import { Badge } from '@/components/ui/badge'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
+import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
+import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
+import { TranslationStatusBadge } from '@/components/docs/helpcenter/TranslationStatusBadge'
 import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -92,7 +100,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { docsService } from '@/lib/services/docsService'
 import type { DocsVersion } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
@@ -114,6 +122,51 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
     if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
   }
   return <FolderOpen className="h-3 w-3 shrink-0" />;
+}
+
+interface ArticleTranslationDraftState {
+  locale: string
+  title: string
+  slug: string
+  excerpt: string
+  seoTitle: string
+  seoDescription: string
+  content: JSONContent | null
+}
+
+function emptyTranslationDraft(locale: string): ArticleTranslationDraftState {
+  return {
+    locale,
+    title: '',
+    slug: '',
+    excerpt: '',
+    seoTitle: '',
+    seoDescription: '',
+    content: null,
+  }
+}
+
+function translationDraftFromTranslation(locale: string, translation?: {
+  title?: string
+  slug?: string
+  excerpt?: string | null
+  seo_title?: string | null
+  seo_description?: string | null
+  content?: unknown
+} | null): ArticleTranslationDraftState {
+  return {
+    locale,
+    title: translation?.title ?? '',
+    slug: translation?.slug ?? '',
+    excerpt: translation?.excerpt ?? '',
+    seoTitle: translation?.seo_title ?? '',
+    seoDescription: translation?.seo_description ?? '',
+    content: (translation?.content as JSONContent | null | undefined) ?? null,
+  }
+}
+
+function translationDraftKey(docId: string, locale: string): string {
+  return `${docId}:${locale}`
 }
 
 export function DocsDocumentDetail() {
@@ -148,6 +201,7 @@ export function DocsDocumentDetail() {
   const { data: collectionTranslations = [] } = useDocsHelpcenterCollectionTranslations(wsId, doc?.collection_id ?? '')
   const createCollection = useCreateDocsCollection(wsId, doc?.space_id ?? '')
   const upsertArticleTranslation = useUpsertDocsHelpcenterArticleTranslation(wsId, docId)
+  const generateArticleTranslation = useGenerateDocsHelpcenterArticleTranslation(wsId, docId)
   const publishArticleTranslation = usePublishDocsHelpcenterArticleTranslation(wsId, docId)
   const unpublishArticleTranslation = useUnpublishDocsHelpcenterArticleTranslation(wsId, docId)
   const markArticleTranslationReviewed = useMarkDocsHelpcenterArticleTranslationReviewed(wsId, docId)
@@ -165,6 +219,9 @@ export function DocsDocumentDetail() {
   const [linksOpen, setLinksOpen] = useState(false)
   const [translationsOpen, setTranslationsOpen] = useState(false)
   const [editingTranslationLocale, setEditingTranslationLocale] = useState<string | null>(null)
+  const [pendingTranslationLocale, setPendingTranslationLocale] = useState<string | null>(null)
+  const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
@@ -194,8 +251,9 @@ export function DocsDocumentDetail() {
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
   const titleDraft = titleDraftState?.docId === docId ? titleDraftState.value : (doc?.title ?? '')
   const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  useTitle(titleDraft || 'Document')
+  const [selectedLocaleState, setSelectedLocaleState] = useState<{ docId: string; locale: string } | null>(null)
+  const [translationDrafts, setTranslationDrafts] = useState<Record<string, ArticleTranslationDraftState>>({})
+  const translationSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const patchDoc = useCallback(
     async (patch: Record<string, unknown>) => {
@@ -280,6 +338,23 @@ export function DocsDocumentDetail() {
       sourceMirrorLabel: 'Source mirror',
     }
   })
+  const localeRowsByLocale = useMemo(
+    () => new Map(articleTranslationRows.map((row) => [row.locale, row])),
+    [articleTranslationRows],
+  )
+  const showLocalePills = isExternalHelpCenter && canAdminDocs && enabledLocales.length > 1
+  const activeLocaleCandidate = selectedLocaleState?.docId === docId ? selectedLocaleState.locale : defaultLocale
+  const activeLocale = enabledLocales.includes(activeLocaleCandidate) ? activeLocaleCandidate : defaultLocale
+  const isSourceLocaleActive = activeLocale === defaultLocale
+  const activeLocaleRow = localeRowsByLocale.get(activeLocale)
+  const activeTranslation = !isSourceLocaleActive ? articleTranslationsByLocale.get(activeLocale) ?? null : null
+  const activeTranslationStatus = activeLocaleRow?.state ?? 'missing'
+  const activeTranslationDraft = isSourceLocaleActive
+    ? emptyTranslationDraft(activeLocale)
+    : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
+  const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
+
+  useTitle(displayedTitle || 'Document')
 
   const handlePublish = async () => {
     // For external help center articles, show slug confirmation first
@@ -335,15 +410,187 @@ export function DocsDocumentDetail() {
     }
   }
 
-  const handleSaveTranslation = async (data: Parameters<typeof upsertArticleTranslation.mutateAsync>[0]) => {
+  const handleSaveTranslation = useCallback(async (data: Parameters<typeof upsertArticleTranslation.mutateAsync>[0]) => {
     try {
       await upsertArticleTranslation.mutateAsync(data)
-      toast.success('Article translation saved')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save translation')
       throw err
     }
-  }
+  }, [upsertArticleTranslation])
+
+  const buildTranslationPayload = useCallback((draft: ArticleTranslationDraftState) => {
+    const title = draft.title.trim()
+    if (!title) return null
+
+    const fallbackBase = doc?.hc_slug || slugifyTitle(doc?.title ?? '') || 'article'
+    const slug = draft.slug.trim() || slugifyTitle(title) || `${fallbackBase}-${draft.locale}`
+
+    return {
+      locale: draft.locale,
+      title,
+      slug,
+      excerpt: draft.excerpt.trim() || undefined,
+      content: (draft.content as JSONContent | null) ?? { type: 'doc', content: [] },
+      seo_title: draft.seoTitle.trim() || undefined,
+      seo_description: draft.seoDescription.trim() || undefined,
+    }
+  }, [doc?.hc_slug, doc?.title])
+
+  const persistTranslationDraft = useCallback(async (draft: ArticleTranslationDraftState) => {
+    const payload = buildTranslationPayload(draft)
+    if (!payload) return
+    await handleSaveTranslation(payload)
+  }, [buildTranslationPayload, handleSaveTranslation])
+
+  const scheduleTranslationDraftSave = useCallback((draft: ArticleTranslationDraftState) => {
+    if (translationSaveTimerRef.current) clearTimeout(translationSaveTimerRef.current)
+    translationSaveTimerRef.current = setTimeout(() => {
+      void persistTranslationDraft(draft)
+    }, 700)
+  }, [persistTranslationDraft])
+
+  useEffect(() => {
+    return () => {
+      if (translationSaveTimerRef.current) clearTimeout(translationSaveTimerRef.current)
+    }
+  }, [activeLocale])
+
+  const handleTranslationTitleChange = useCallback((newTitle: string) => {
+    setTranslationDrafts((current) => {
+      const key = translationDraftKey(docId, activeLocale)
+      const base = current[key] ?? translationDraftFromTranslation(activeLocale, articleTranslationsByLocale.get(activeLocale) ?? null)
+      const next = {
+        ...base,
+        title: newTitle,
+        slug: base.slug || slugifyTitle(newTitle),
+      }
+      scheduleTranslationDraftSave(next)
+      return { ...current, [key]: next }
+    })
+  }, [activeLocale, articleTranslationsByLocale, docId, scheduleTranslationDraftSave])
+
+  const handleTranslationContentSave = useCallback(async (json: JSONContent) => {
+    let next: ArticleTranslationDraftState = emptyTranslationDraft(activeLocale)
+    setTranslationDrafts((current) => {
+      const key = translationDraftKey(docId, activeLocale)
+      const base = current[key] ?? translationDraftFromTranslation(activeLocale, articleTranslationsByLocale.get(activeLocale) ?? null)
+      next = { ...base, content: json }
+      return { ...current, [key]: next }
+    })
+    await persistTranslationDraft(next)
+  }, [activeLocale, articleTranslationsByLocale, docId, persistTranslationDraft])
+
+  const handleSelectLocale = useCallback((locale: string) => {
+    setPreviewVersion(null)
+    setPendingTranslationLocale(null)
+    if (locale === defaultLocale || articleTranslationsByLocale.has(locale)) {
+      setSelectedLocaleState({ docId, locale })
+      return
+    }
+    setPendingTranslationLocale(locale)
+  }, [articleTranslationsByLocale, defaultLocale, docId])
+
+  const handleCreateTranslationManually = useCallback(() => {
+    if (!pendingTranslationLocale) return
+    setTranslationDrafts((current) => ({
+      ...current,
+      [translationDraftKey(docId, pendingTranslationLocale)]: emptyTranslationDraft(pendingTranslationLocale),
+    }))
+    setSelectedLocaleState({ docId, locale: pendingTranslationLocale })
+    setPendingTranslationLocale(null)
+  }, [docId, pendingTranslationLocale])
+
+  const handleGenerateTranslationWithAI = useCallback(async () => {
+    if (!pendingTranslationLocale) return
+    try {
+      const generated = await generateArticleTranslation.mutateAsync(pendingTranslationLocale)
+      setTranslationDrafts((current) => ({
+        ...current,
+        [translationDraftKey(docId, pendingTranslationLocale)]: translationDraftFromTranslation(
+          pendingTranslationLocale,
+          generated,
+        ),
+      }))
+      setSelectedLocaleState({ docId, locale: pendingTranslationLocale })
+      setPendingTranslationLocale(null)
+      toast.success(`${getHelpcenterLocaleLabel(pendingTranslationLocale)} translation draft created`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate translation')
+    }
+  }, [docId, generateArticleTranslation, pendingTranslationLocale])
+
+  const handleRegenerateTranslation = useCallback(async () => {
+    if (isSourceLocaleActive) return
+    setRegenerating(true)
+    try {
+      const generated = await generateArticleTranslation.mutateAsync(activeLocale)
+      setTranslationDrafts((current) => ({
+        ...current,
+        [translationDraftKey(docId, activeLocale)]: translationDraftFromTranslation(activeLocale, generated),
+      }))
+      toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation regenerated from source`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to regenerate translation')
+    } finally {
+      setRegenerating(false)
+      setRegenerateConfirmOpen(false)
+    }
+  }, [activeLocale, docId, generateArticleTranslation, isSourceLocaleActive])
+
+  const activeLocaleShortLabel = activeLocale.toUpperCase()
+  const activeContextTitle = isSourceLocaleActive
+    ? 'Editing source article'
+    : `Editing ${getHelpcenterLocaleLabel(activeLocale)} translation`
+  const activeContextHelper = isSourceLocaleActive
+    ? 'This internal article remains the source of truth for public locale variants.'
+    : activeTranslation?.source_synced === false
+      ? 'The source article changed after this locale was last reviewed. Update the translation before publishing.'
+      : 'This locale draft is served independently in the public help center once it is published.'
+  const activePublishLabel = (isSourceLocaleActive
+    ? doc?.status === 'published'
+    : activeTranslationStatus === 'published')
+    ? `Published (${activeLocaleShortLabel})`
+    : `Publish (${activeLocaleShortLabel})`
+  const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
+  const publishDisabled = isSourceLocaleActive
+    ? publishDoc.isPending || doc?.is_locked
+    : !activeTranslation || Boolean(activeLocaleRow?.publishBlockedReason) || publishArticleTranslation.isPending || doc?.is_locked
+  const publishAlreadyDone = isSourceLocaleActive ? doc?.status === 'published' : activeTranslationStatus === 'published'
+  const activeDialogTranslation = editingTranslationLocale === activeLocale && !isSourceLocaleActive
+    ? {
+        ...(activeTranslation ?? {
+          id: '',
+          document_id: docId,
+          workspace_id: wsId,
+          space_id: doc?.space_id ?? '',
+          collection_id: doc?.collection_id,
+          locale: activeLocale,
+          title: '',
+          slug: '',
+          excerpt: undefined,
+          content: null,
+          content_text: '',
+          seo_title: undefined,
+          seo_description: undefined,
+          status: 'draft' as const,
+          source_updated_at: undefined,
+          source_synced: true,
+          published_at: undefined,
+          view_count: 0,
+          helpful_count: 0,
+          not_helpful_count: 0,
+          created_at: '',
+          updated_at: '',
+        }),
+        title: activeTranslationDraft.title,
+        slug: activeTranslationDraft.slug,
+        excerpt: activeTranslationDraft.excerpt || undefined,
+        seo_title: activeTranslationDraft.seoTitle || undefined,
+        seo_description: activeTranslationDraft.seoDescription || undefined,
+        content: activeTranslationDraft.content,
+      }
+    : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
 
   if (docLoading || contentLoading) {
     return (
@@ -471,15 +718,27 @@ export function DocsDocumentDetail() {
           </Button>
         )}
 
-        {canPublishDocs && doc.status === 'draft' && (
+        {showContextualPublish && (
           <Button
             size="sm"
+            variant={publishAlreadyDone ? 'outline' : 'default'}
             className="h-7 gap-1.5 text-xs"
-            onClick={handlePublish}
-            disabled={publishDoc.isPending || doc.is_locked}
+            onClick={() => {
+              if (publishAlreadyDone) return
+              if (isSourceLocaleActive) {
+                void handlePublish()
+                return
+              }
+              publishArticleTranslation.mutate(activeLocale, {
+                onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
+                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
+              })
+            }}
+            disabled={publishAlreadyDone || publishDisabled}
+            title={!isSourceLocaleActive ? activeLocaleRow?.publishBlockedReason : undefined}
           >
             <Send className="h-3 w-3" />
-            Publish
+            {activePublishLabel}
           </Button>
         )}
 
@@ -494,6 +753,38 @@ export function DocsDocumentDetail() {
           </Button>
         </QuickTooltip>
       </div>
+
+      {showLocalePills && (
+        <div className="border-b border-border/60 bg-muted/10 px-3 py-2.5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <ArticleLocalePillRail
+                items={enabledLocales.map((locale) => ({
+                  locale,
+                  shortLabel: locale.toUpperCase(),
+                  isActive: activeLocale === locale,
+                  isSource: locale === defaultLocale,
+                  sourceStatus: doc.status,
+                  translationState: localeRowsByLocale.get(locale)?.state ?? 'missing',
+                }))}
+                onSelectLocale={handleSelectLocale}
+              />
+            </div>
+            {!isSourceLocaleActive && (
+              <QuickTooltip label={`${getHelpcenterLocaleLabel(activeLocale)} translation settings`}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setEditingTranslationLocale(activeLocale)}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </Button>
+              </QuickTooltip>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Archive banner */}
       {doc.status === 'archived' && (
@@ -605,16 +896,40 @@ export function DocsDocumentDetail() {
             />
           ) : (
             <DocsEditor
-              title={titleDraft}
-              onTitleChange={!effectiveReadOnly ? handleTitleChange : undefined}
-              slug={doc?.hc_slug}
-              initialContent={content?.content as JSONContent | null}
-              onSave={handleSave}
+              key={isSourceLocaleActive ? 'source-editor' : `translation-${activeLocale}`}
+              title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
+              onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
+              slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug || undefined}
+              initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
+              onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
               uploadConfig={
                 !effectiveReadOnly
                   ? { workspaceId: wsId, entityType: 'editor_upload', entityId: docId }
                   : undefined
+              }
+              topBanner={showLocalePills && !isSourceLocaleActive && activeTranslation ? (
+                <div className="flex items-center justify-center gap-2 bg-muted/20 px-4 py-2 mx-6 mt-3 rounded-lg">
+                  <WandSparkles className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground">
+                    Regenerate this translation from the latest source article using AI.
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs shrink-0"
+                    disabled={regenerating}
+                    onClick={() => setRegenerateConfirmOpen(true)}
+                  >
+                    <WandSparkles className="h-3 w-3" />
+                    {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
+                  </Button>
+                </div>
+              ) : undefined}
+              generatingOverlay={
+                (regenerating || generateArticleTranslation.isPending) && !isSourceLocaleActive
+                  ? 'Generating translation with AI...'
+                  : null
               }
             />
           )}
@@ -963,11 +1278,39 @@ export function DocsDocumentDetail() {
           sourceSlug={doc.hc_slug}
           sourceExcerpt={doc.excerpt}
           sourceContent={(content?.content as JSONContent | null | undefined) ?? null}
-          translation={articleTranslationsByLocale.get(editingTranslationLocale) ?? null}
+          translation={activeDialogTranslation}
           isSaving={upsertArticleTranslation.isPending}
-          onSave={handleSaveTranslation}
+          mode={editingTranslationLocale === activeLocale && !isSourceLocaleActive ? 'details_only' : 'full'}
+          onSave={async (data) => {
+            await handleSaveTranslation(data)
+            if (editingTranslationLocale === activeLocale) {
+              setTranslationDrafts((current) => ({
+                ...current,
+                [translationDraftKey(docId, data.locale)]: {
+                  locale: data.locale,
+                  title: data.title,
+                  slug: data.slug,
+                  excerpt: data.excerpt ?? '',
+                  seoTitle: data.seo_title ?? '',
+                  seoDescription: data.seo_description ?? '',
+                  content: (data.content as JSONContent | null | undefined) ?? null,
+                },
+              }))
+            }
+          }}
         />
       )}
+
+      <MissingArticleTranslationDialog
+        open={Boolean(pendingTranslationLocale)}
+        locale={pendingTranslationLocale ?? defaultLocale}
+        onOpenChange={(open) => {
+          if (!open) setPendingTranslationLocale(null)
+        }}
+        onCreateManually={handleCreateTranslationManually}
+        onGenerateWithAI={handleGenerateTranslationWithAI}
+        isGenerating={generateArticleTranslation.isPending}
+      />
 
       {doc && (
         <>
@@ -989,6 +1332,15 @@ export function DocsDocumentDetail() {
             confirmLabel="Delete"
             variant="destructive"
             onConfirm={handleDelete}
+          />
+
+          <ConfirmDialog
+            open={regenerateConfirmOpen}
+            onOpenChange={setRegenerateConfirmOpen}
+            title="Regenerate translation"
+            description="This will replace the current translation content with a new AI-generated version from the source article. Your existing translation edits will be overwritten."
+            confirmLabel={regenerating ? 'Regenerating...' : 'Regenerate'}
+            onConfirm={handleRegenerateTranslation}
           />
         </>
       )}

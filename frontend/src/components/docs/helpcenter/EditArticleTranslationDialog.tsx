@@ -30,6 +30,7 @@ interface EditArticleTranslationDialogProps {
   sourceContent?: JSONContent | null
   translation?: DocsHelpcenterArticleTranslation | null
   isSaving: boolean
+  mode?: 'full' | 'details_only'
   onSave: (data: UpsertDocsHelpcenterArticleTranslationRequest) => Promise<void> | void
 }
 
@@ -43,6 +44,7 @@ export function EditArticleTranslationDialog({
   sourceContent,
   translation,
   isSaving,
+  mode = 'full',
   onSave,
 }: EditArticleTranslationDialogProps) {
   const [title, setTitle] = useState(translation?.title ?? sourceTitle)
@@ -74,36 +76,40 @@ export function EditArticleTranslationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-6xl flex-col overflow-hidden p-0">
+      <DialogContent className={`flex max-h-[92vh] flex-col overflow-hidden p-0 ${mode === 'details_only' ? 'max-w-lg' : 'max-w-6xl'}`}>
         <DialogHeader className="border-b border-border/60 px-6 py-5">
           <DialogTitle className="flex items-center gap-2">
             <Globe2 className="h-4 w-4 text-primary" />
-            {getHelpcenterLocaleLabel(locale)} article translation
+            {mode === 'details_only' ? `${getHelpcenterLocaleLabel(locale)} translation details` : `${getHelpcenterLocaleLabel(locale)} article translation`}
           </DialogTitle>
           <DialogDescription>
-            Translate the public article title, slug, summary, and body while keeping the source article as the default-locale mirror.
+            {mode === 'details_only'
+              ? 'Adjust localized metadata while continuing to edit the translation directly on the article page.'
+              : 'Translate the public article title, slug, summary, and body while keeping the source article as the default-locale mirror.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="border-b border-border/60 bg-muted/20 px-6 py-5 lg:border-r lg:border-b-0">
-            <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Source article</p>
-              <div className="mt-3 space-y-3">
-                <div className="flex items-start gap-2">
-                  <FileText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">{sourceTitle}</p>
-                    {sourceSlug && <p className="text-xs text-muted-foreground">/{sourceSlug}</p>}
+        <div className={`grid min-h-0 flex-1 gap-0 ${mode === 'details_only' ? '' : 'lg:grid-cols-[280px_minmax(0,1fr)]'}`}>
+          {mode !== 'details_only' && (
+            <aside className="border-b border-border/60 bg-muted/20 px-6 py-5 lg:border-r lg:border-b-0">
+              <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Source article</p>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <FileText className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">{sourceTitle}</p>
+                      {sourceSlug && <p className="text-xs text-muted-foreground">/{sourceSlug}</p>}
+                    </div>
                   </div>
+                  {sourceExcerpt && <p className="text-xs text-muted-foreground">{sourceExcerpt}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    Keep terminology and product names aligned with the source article, then adapt examples and phrasing for the locale.
+                  </p>
                 </div>
-                {sourceExcerpt && <p className="text-xs text-muted-foreground">{sourceExcerpt}</p>}
-                <p className="text-xs text-muted-foreground">
-                  Keep terminology and product names aligned with the source article, then adapt examples and phrasing for the locale.
-                </p>
               </div>
-            </div>
-          </aside>
+            </aside>
+          )}
 
           <div className="flex min-h-0 flex-col overflow-hidden">
             <div className="grid gap-4 border-b border-border/60 px-6 py-5 lg:grid-cols-2">
@@ -141,16 +147,18 @@ export function EditArticleTranslationDialog({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <DocsEditor
-                key={editorKey}
-                initialContent={contentDraft}
-                onSave={async (json) => {
-                  setContentDraft(json)
-                }}
-                autoSaveMs={700}
-              />
-            </div>
+            {mode === 'full' && (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <DocsEditor
+                  key={editorKey}
+                  initialContent={contentDraft}
+                  onSave={async (json) => {
+                    setContentDraft(json)
+                  }}
+                  autoSaveMs={700}
+                />
+              </div>
+            )}
           </div>
         </div>
 
