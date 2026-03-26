@@ -1,0 +1,51 @@
+name: helpin-temporal-worker
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: default
+priority: optional
+maintainer: Helpin Engineering
+description: |
+  Helpin Temporal worker packaged for bare-metal systemd deployments.
+depends:
+  - systemd
+recommends:
+  - doppler
+  - gh
+contents:
+  - dst: /etc/helpin
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/lib/helpin
+    type: dir
+    file_info:
+      mode: 0755
+  - src: dist/temporal-worker
+    dst: /usr/bin/helpin-temporal-worker
+    file_info:
+      mode: 0755
+  - src: packaging/helpin-temporal-worker.service
+    dst: /lib/systemd/system/helpin-temporal-worker.service
+    file_info:
+      mode: 0644
+  - src: packaging/temporal-worker.conf
+    dst: /etc/helpin/temporal-worker.conf
+    type: config|noreplace
+    file_info:
+      mode: 0600
+  - src: packaging/helpin-temporal-worker-update.sh
+    dst: /usr/lib/helpin/temporal-worker-update.sh
+    file_info:
+      mode: 0755
+  - src: packaging/helpin-temporal-worker-updater.service
+    dst: /lib/systemd/system/helpin-temporal-worker-updater.service
+    file_info:
+      mode: 0644
+  - src: packaging/helpin-temporal-worker-updater.timer
+    dst: /lib/systemd/system/helpin-temporal-worker-updater.timer
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh

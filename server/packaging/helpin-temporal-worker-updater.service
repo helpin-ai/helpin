@@ -1,0 +1,9 @@
+[Unit]
+Description=Helpin Temporal Worker Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/helpin/temporal-worker.conf
+ExecStart=/usr/lib/helpin/temporal-worker-update.sh
