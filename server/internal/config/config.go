@@ -11,6 +11,7 @@ type Config struct {
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
+	LogLevel              string
 	CORSOrigins           []string
 	TemporalAddress       string
 	TemporalNamespace     string
@@ -78,6 +79,9 @@ type Config struct {
 
 	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
 	RedisURL string
+
+	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
+	AgentPreviewDebug bool
 }
 
 // Load reads configuration from environment variables.
@@ -126,6 +130,7 @@ func Load() (*Config, error) {
 		DatabaseURL:                  dbURL,
 		JWTSecret:                    jwtSecret,
 		Port:                         port,
+		LogLevel:                     strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
 		CORSOrigins:                  corsOrigins,
 		TemporalAddress:              temporalAddress,
 		TemporalNamespace:            temporalNamespace,
@@ -174,6 +179,7 @@ func Load() (*Config, error) {
 		QueryExpansionModel:          strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
 		QueryExpansionProvider:       strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		RedisURL:                     os.Getenv("REDIS_URL"),
+		AgentPreviewDebug:            parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 	}, nil
 }
 

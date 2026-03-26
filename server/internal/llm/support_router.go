@@ -14,6 +14,10 @@ func NewSupportRouter(
 ) (*Router, EmbeddingProvider) {
 	anthropicProvider := NewClaudeProvider(strings.TrimSpace(anthropicAPIKey))
 	openAIProvider := NewOpenAIProvider(strings.TrimSpace(openAIAPIKey), strings.TrimSpace(openAIBaseURL), "")
+	var embeddingProvider EmbeddingProvider
+	if openAIProvider != nil {
+		embeddingProvider = openAIProvider
+	}
 
 	openRouterBaseURL = strings.TrimSpace(openRouterBaseURL)
 	if openRouterBaseURL == "" {
@@ -32,7 +36,7 @@ func NewSupportRouter(
 		chatProviders["openrouter"] = openRouterProvider
 	}
 	if len(chatProviders) == 0 {
-		return nil, openAIProvider
+		return nil, embeddingProvider
 	}
 
 	defaultChatProvider := "anthropic"
@@ -51,5 +55,5 @@ func NewSupportRouter(
 		defaultEmbeddingProvider = "openai"
 	}
 
-	return NewRouter(defaultChatProvider, chatProviders, defaultEmbeddingProvider, embeddingProviders), openAIProvider
+	return NewRouter(defaultChatProvider, chatProviders, defaultEmbeddingProvider, embeddingProviders), embeddingProvider
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Search, Users, Building2, DollarSign } from 'lucide-react';
+import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,7 +77,16 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
                     className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                     onClick={() => onSelectCompany?.(c.id)}
                   >
-                    <span className="font-medium">{c.name}</span>
+                    <span className="flex min-w-0 items-center gap-2 font-medium">
+                      <Favicon
+                        url={c.domain}
+                        name={c.name}
+                        size={16}
+                        className="h-4 w-4 rounded-sm border-none bg-transparent"
+                        fallbackClassName="text-[8px]"
+                      />
+                      <span className="truncate">{c.name}</span>
+                    </span>
                     {c.domain && <span className="text-xs text-muted-foreground">{c.domain}</span>}
                   </button>
                 ))}

@@ -193,7 +193,6 @@ function isStoryRunnableAgent(agent: Agent) {
     return true;
   }
   return agent.preset_key === 'story_planner' ||
-    agent.preset_key === 'epic_planner' ||
     agent.preset_key === 'code_builder' ||
     agent.preset_key === 'review_agent';
 }

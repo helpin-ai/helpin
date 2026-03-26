@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Hash,
   Heart,
+  Layers,
   Loader2,
   User,
   Users,
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
@@ -33,17 +35,19 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { EpicHealth, GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember } from '@/lib/assignableMembers';
+import { normalizeTeamType } from '@/lib/teamPresets';
 import {
   dismissSprintAutomationPrompt,
   shouldPromptSprintAutomation,
@@ -118,16 +122,40 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     health: 'no_health' as EpicHealth,
     teamId: storeTeamId ?? teams[0]?.id ?? '',
     ownerMemberId: '',
+    planningRepositoryId: '',
     startDate: '',
     targetDate: '',
   });
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const selectedTeam = useMemo(
+    () => teams.find((team) => team.id === form.teamId),
+    [teams, form.teamId],
+  );
+  const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, form.teamId ? [form.teamId] : []),
     [teams, form.teamId],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRepositories() {
+      const { data } = await gitService.listRepositories(workspaceId);
+      if (!cancelled) {
+        setRepositories(data ?? []);
+      }
+    }
+
+    void loadRepositories();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+
   const cleanupInlineDraftUploads = useCallback(async () => {
     const attachmentIds = extractInlineAttachmentIds(form.description);
     if (attachmentIds.length === 0) return;
@@ -149,6 +177,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       health: form.health,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
+      planning_repository_id: showPlanningRepository ? (form.planningRepositoryId || undefined) : undefined,
     });
     setSubmitting(false);
     if (createError) {
@@ -307,6 +336,29 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   placeholder="Pick a date"
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
+
+                {showPlanningRepository ? (
+                  <>
+                    <Separator className="col-span-3 my-1" />
+
+                    <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                    <span className="text-xs text-muted-foreground self-center">Plan repo</span>
+                    <Select
+                      value={form.planningRepositoryId || '__none__'}
+                      onValueChange={(v) => setForm((f) => ({ ...f, planningRepositoryId: v === '__none__' ? '' : v }))}
+                    >
+                      <SelectTrigger className="min-h-8 h-auto border-0 bg-transparent px-1.5 py-1 shadow-none text-xs hover:bg-accent [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:break-words [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:leading-tight">
+                        <SelectValue placeholder="Not configured" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Not configured</SelectItem>
+                        {repositories.map((repo) => (
+                          <SelectItem key={repo.id} value={repo.id}>{repo.full_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                ) : null}
               </div>
             </aside>
           </div>

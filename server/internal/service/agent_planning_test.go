@@ -179,15 +179,21 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 	workspaceID := "ws-planner-team"
 	userID := "user-planner-team"
 	memberID := "member-planner-team"
-	workflowID := "wf-planner-team"
-	stateID := "state-planner-team"
+	defaultWorkflowID := "wf-planner-default"
+	defaultStateID := "state-planner-default"
+	teamWorkflowID := "wf-planner-team"
+	teamStateID := "state-planner-team"
 	epicID := "epic-planner-team"
 	teamID := "team-planner-team"
 
 	seedUser(t, db, userID, "planner@test.com", "Planner User", "hash")
 	seedWorkspace(t, db, workspaceID, "Planner Workspace", "planner-workspace", userID)
 	seedWorkspaceMember(t, db, memberID, workspaceID, userID, "planner@test.com", "Planner User", model.RoleAdmin)
-	seedWorkflow(t, db, workflowID, workspaceID, stateID)
+	seedWorkflow(t, db, defaultWorkflowID, workspaceID, defaultStateID)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		teamWorkflowID, workspaceID, "Engineering Workflow", teamID, teamStateID)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		teamStateID, teamWorkflowID, "To Do", "unstarted", 0, true)
 
 	epicRepo := repository.NewPMEpicRepository(db)
 	if err := epicRepo.Create(ctx, &model.PMEpic{
@@ -241,6 +247,12 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 	}
 	if stories[0].TeamID == nil || *stories[0].TeamID != teamID {
 		t.Fatalf("expected story team_id to inherit epic team %q, got %#v", teamID, stories[0].TeamID)
+	}
+	if stories[0].WorkflowID != teamWorkflowID {
+		t.Fatalf("expected story workflow_id %q, got %q", teamWorkflowID, stories[0].WorkflowID)
+	}
+	if stories[0].WorkflowStateID != teamStateID {
+		t.Fatalf("expected story workflow_state_id %q, got %q", teamStateID, stories[0].WorkflowStateID)
 	}
 }
 

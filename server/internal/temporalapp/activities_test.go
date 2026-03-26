@@ -505,8 +505,99 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 	}
 }
 
+func TestNextUnappliedApprovedPreviewPrefersNewestArtifact(t *testing.T) {
+	olderPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "stories",
+		Format:   workerpkg.PreviewFormatJSON,
+		PanelKey: "story_plan",
+		Content:  json.RawMessage(`{"summary":"older","proposed_stories":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal older preview: %v", err)
+	}
+	newerPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "stories",
+		Format:   workerpkg.PreviewFormatJSON,
+		PanelKey: "story_plan",
+		Content:  json.RawMessage(`{"summary":"newer","proposed_stories":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal newer preview: %v", err)
+	}
+
+	artifacts := []model.AgentRunArtifact{
+		{
+			ID:            "approved-older",
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			InlineContent: strPtr(string(olderPreviewJSON)),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "approved-newer",
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			InlineContent: strPtr(string(newerPreviewJSON)),
+			SequenceNo:    2,
+		},
+	}
+
+	artifact, preview, err := nextUnappliedApprovedPreview(artifacts)
+	if err != nil {
+		t.Fatalf("nextUnappliedApprovedPreview returned error: %v", err)
+	}
+	if artifact == nil || preview == nil {
+		t.Fatal("expected newest approved preview")
+	}
+	if artifact.ID != "approved-newer" {
+		t.Fatalf("expected newest artifact, got %q", artifact.ID)
+	}
+	var content map[string]any
+	if err := json.Unmarshal(preview.Content, &content); err != nil {
+		t.Fatalf("unmarshal preview content: %v", err)
+	}
+	if got, _ := content["summary"].(string); got != "newer" {
+		t.Fatalf("expected newest preview content, got %#v", content)
+	}
+}
+
+func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatches(t *testing.T) {
+	raw := json.RawMessage(`{
+		"summary":"Breakdown",
+		"proposed_stories":[{
+			"ref":"story_1",
+			"name":"Story A",
+			"description":"Do A",
+			"story_type":"feature",
+			"estimate":"3",
+			"acceptance_criteria":["works"],
+			"implementation_brief":{
+				"approach":"Add the metric helper",
+				"files_to_modify":[{"path":"a.go","action":"modify","description":"update helper"}],
+				"test_strategy":{"kind":"regression","owner":"qa"}
+			}
+		}]
+	}`)
+
+	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	if err != nil {
+		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+	}
+	if len(proposal.ProposedStories) != 1 {
+		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
+	}
+	if proposal.ProposedStories[0].Estimate == nil || *proposal.ProposedStories[0].Estimate != 3 {
+		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedStories[0].Estimate)
+	}
+	brief := proposal.ProposedStories[0].ImplementationBrief
+	if brief == nil {
+		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedStories[0])
+	}
+	if brief.TestStrategy != `{"kind":"regression","owner":"qa"}` {
+		t.Fatalf("expected compact JSON test strategy, got %q", brief.TestStrategy)
+	}
+}
+
 func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *testing.T) {
-	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"acceptance_criteria\":[\"works\"],\"implementation_brief\":{\"approach\":\"x\",\"files_to_modify\":[],\"test_strategy\":123}}]}"`)
+	raw := json.RawMessage(`{"summary":"Breakdown"}`)
 
 	_, err := decodeApprovedStoryPlanPreviewContent(raw)
 	if err == nil {

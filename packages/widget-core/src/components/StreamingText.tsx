@@ -22,11 +22,15 @@ export const StreamingText: FunctionComponent<StreamingTextProps> = ({
         setDisplayedText(text.slice(0, displayedText.length + 1));
       }, charDelayMs);
       return () => clearTimeout(timeout);
-    } else if (!isStreaming && text !== displayedText) {
+    }
+
+    if (!isStreaming && text !== displayedText) {
       setDisplayedText(text);
       onComplete?.();
     }
-  }, [text, isStreaming, displayedText, onComplete]);
+
+    return undefined;
+  }, [text, isStreaming, displayedText, onComplete, charDelayMs]);
 
   return (
     <div className="helpin-streaming-text">

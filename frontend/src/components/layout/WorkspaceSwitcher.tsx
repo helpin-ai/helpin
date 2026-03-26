@@ -6,11 +6,11 @@ import { useOrganizationStore } from '@/stores/organizationStore';
 import { useWorkspaces } from '@/hooks/queries';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { UserAvatar } from '@/components/pm/UserAvatar';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
@@ -52,11 +52,13 @@ export function WorkspaceSwitcher() {
               size="lg"
               className="h-10 rounded-md border border-transparent px-2 data-[state=open]:bg-sidebar-accent/80 data-[state=open]:text-sidebar-accent-foreground hover:border-border/70"
             >
-              <UserAvatar
+              <Favicon
+                src={currentWorkspace.logo_url}
+                url={currentWorkspace.website_url}
                 name={currentWorkspace.name}
-                avatarUrl={currentWorkspace.logo_url}
+                size={128}
                 className="h-8 w-8 rounded-md"
-                fallbackClassName="text-xs rounded-md"
+                fallbackClassName="text-xs"
               />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
@@ -96,11 +98,13 @@ export function WorkspaceSwitcher() {
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <UserAvatar
+                        <Favicon
+                          src={workspace.logo_url}
+                          url={workspace.website_url}
                           name={workspace.name}
-                          avatarUrl={workspace.logo_url}
+                          size={32}
                           className="h-5 w-5 shrink-0 rounded"
-                          fallbackClassName="text-[8px] rounded"
+                          fallbackClassName="text-[8px]"
                         />
                         <span className="truncate">{workspace.name}</span>
                       </div>

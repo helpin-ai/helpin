@@ -878,23 +878,51 @@ func (s *AgentService) resolvePlanningStoryWorkflow(ctx context.Context, workspa
 		return "", "", fmt.Errorf("workspace_id is required")
 	}
 
-	if s.workflowService != nil && teamID != nil && strings.TrimSpace(*teamID) != "" {
-		workflow, err := s.workflowService.ResolveTeamWorkflow(ctx, workspaceID, strings.TrimSpace(*teamID))
-		if err != nil {
-			return "", "", fmt.Errorf("resolve team workflow: %w", err)
+	if teamID != nil && strings.TrimSpace(*teamID) != "" {
+		normalizedTeamID := strings.TrimSpace(*teamID)
+		if s.workflowService != nil {
+			workflow, err := s.workflowService.ResolveTeamWorkflow(ctx, workspaceID, normalizedTeamID)
+			if err != nil {
+				return "", "", fmt.Errorf("resolve team workflow: %w", err)
+			}
+			if workflow != nil {
+				stateID := ""
+				if workflow.Workflow.DefaultStateID != nil {
+					stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+				}
+				if stateID == "" && len(workflow.States) > 0 {
+					stateID = workflow.States[0].ID
+				}
+				if strings.TrimSpace(workflow.Workflow.ID) == "" || stateID == "" {
+					return "", "", fmt.Errorf("resolved team workflow is missing a default state")
+				}
+				return workflow.Workflow.ID, stateID, nil
+			}
 		}
-		if workflow != nil {
-			stateID := ""
-			if workflow.Workflow.DefaultStateID != nil {
-				stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+
+		// Defensive fallback for worker paths that forgot to inject PMWorkflowService.
+		if s.storyService != nil && s.storyService.workflowRepo != nil {
+			workflow, err := s.storyService.workflowRepo.GetByTeamID(ctx, workspaceID, normalizedTeamID)
+			if err != nil {
+				return "", "", fmt.Errorf("lookup team workflow: %w", err)
 			}
-			if stateID == "" && len(workflow.States) > 0 {
-				stateID = workflow.States[0].ID
+			if workflow != nil {
+				stateID := ""
+				if workflow.Workflow.DefaultStateID != nil {
+					stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+				}
+				if stateID == "" && len(workflow.States) > 0 {
+					stateID = workflow.States[0].ID
+				}
+				if strings.TrimSpace(workflow.Workflow.ID) == "" || stateID == "" {
+					return "", "", fmt.Errorf("team workflow is missing a default state")
+				}
+				slog.WarnContext(ctx, "resolved planning workflow via repository fallback",
+					"workspace_id", workspaceID,
+					"team_id", normalizedTeamID,
+					"workflow_id", workflow.Workflow.ID)
+				return workflow.Workflow.ID, stateID, nil
 			}
-			if strings.TrimSpace(workflow.Workflow.ID) == "" || stateID == "" {
-				return "", "", fmt.Errorf("resolved team workflow is missing a default state")
-			}
-			return workflow.Workflow.ID, stateID, nil
 		}
 	}
 

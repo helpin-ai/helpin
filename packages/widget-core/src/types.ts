@@ -11,7 +11,7 @@ export interface WidgetConfig extends SharedWidgetConfig {
     escalationMessage?: string;
     forceIdentify?: boolean;
   };
-  availability?: {
+  availability: {
     isOnline: boolean;
     statusText: string;
     replyTimeText: string;

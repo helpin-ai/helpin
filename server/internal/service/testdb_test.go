@@ -56,6 +56,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			website_url TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL DEFAULT 'UTC',
 			created_at DATETIME,

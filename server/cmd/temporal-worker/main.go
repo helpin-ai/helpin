@@ -54,6 +54,9 @@ func main() {
 		fatalWithSentry("failed to load config", err)
 	}
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	slog.SetDefault(logger)
+
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
 		PreferSimpleProtocol: true,
@@ -185,7 +188,11 @@ func main() {
 	var llmProvider llm.Provider
 	switch cfg.CRMLLMProvider {
 	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+		if provider := llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel); provider != nil {
+			llmProvider = provider
+		} else {
+			slog.Warn("CRM OpenAI provider not configured; CRM_LLM_API_KEY is empty")
+		}
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
@@ -249,6 +256,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
+	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
 		workspaceRepo,
@@ -303,6 +311,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	agentService.SetWorkflowService(pmWorkflowService)
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
 	contentCrawler := crawler.NewSmartCrawler(
@@ -423,6 +432,19 @@ func main() {
 
 	if err := sqlDB.Close(); err != nil {
 		log.Printf("close database: %v", err)
+	}
+}
+
+func parseLogLevel(value string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
 

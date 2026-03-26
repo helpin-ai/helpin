@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *testing.T) {
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
@@ -65,5 +68,36 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 	}
 	if content[1]["type"] != "image_url" {
 		t.Fatalf("expected second part image_url, got %#v", content[1])
+	}
+}
+
+func TestOpenAIProviderChatCompletionNilReceiver(t *testing.T) {
+	var provider *OpenAIProvider
+
+	_, err := provider.ChatCompletion(context.Background(), ChatRequest{})
+	if err == nil {
+		t.Fatal("expected nil provider error")
+	}
+}
+
+func TestOpenAIProviderCreateEmbeddingsNilReceiver(t *testing.T) {
+	var provider *OpenAIProvider
+
+	_, err := provider.CreateEmbeddings(context.Background(), EmbeddingRequest{
+		Inputs: []string{"hello"},
+	})
+	if err == nil {
+		t.Fatal("expected nil provider error")
+	}
+}
+
+func TestNewSupportRouterReturnsNilEmbeddingProviderWithoutOpenAIKey(t *testing.T) {
+	router, embedder := NewSupportRouter("", "", "", "", "")
+
+	if router != nil {
+		t.Fatalf("expected nil router when no providers are configured, got %#v", router)
+	}
+	if embedder != nil {
+		t.Fatalf("expected nil embedding provider when OpenAI is not configured, got %#v", embedder)
 	}
 }

@@ -126,8 +126,7 @@ export function EpicPlannerPanel({
   const plannerAgents = useMemo(() => {
     let filtered = agents.filter((agent) =>
       agent.allowed_targets?.includes('epic') ||
-      agent.preset_key === 'epic_planner' ||
-      agent.preset_key === 'story_planner',
+      agent.preset_key === 'epic_planner',
     );
     const preferredId = selectedAgentId;
     if (preferredId && !filtered.some((agent) => agent.id === preferredId)) {

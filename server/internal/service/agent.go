@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -1226,6 +1228,37 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		return nil
 	}
 
+	content := append(json.RawMessage(nil), preview.Content...)
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "stories") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+		normalizedContent, err := worker.NormalizeStoryPlanPreviewContent(content)
+		if err != nil {
+			if approvedPreviewDebugEnabled() {
+				slog.ErrorContext(ctx, "approved story plan preview normalization failed during approval persistence",
+					"run_id", run.ID,
+					"workspace_id", run.WorkspaceID,
+					"phase", strings.TrimSpace(approval.Phase),
+					"panel_key", strings.TrimSpace(preview.PanelKey),
+					"format", strings.TrimSpace(preview.Format),
+					"content_preview", previewDebugSnippet(content, 1600),
+					"error", err,
+				)
+			}
+			return fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+		}
+		content = normalizedContent
+	}
+	if approvedPreviewDebugEnabled() {
+		slog.InfoContext(ctx, "persisting approved interactive preview",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"phase", strings.TrimSpace(approval.Phase),
+			"panel_key", strings.TrimSpace(preview.PanelKey),
+			"format", strings.TrimSpace(preview.Format),
+			"source_message_id", sourceMessage.ID,
+			"content_preview", previewDebugSnippet(content, 1600),
+		)
+	}
+
 	payload := model.ApprovedRunPreview{
 		Phase:           strings.TrimSpace(approval.Phase),
 		ApprovalTitle:   strings.TrimSpace(approval.Title),
@@ -1233,7 +1266,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		PanelKey:        strings.TrimSpace(preview.PanelKey),
 		PreviewTitle:    strings.TrimSpace(preview.Title),
 		Format:          strings.TrimSpace(preview.Format),
-		Content:         append(json.RawMessage(nil), preview.Content...),
+		Content:         content,
 		SourceMessageID: sourceMessage.ID,
 		ApprovedBy:      strings.TrimSpace(actorID),
 		ApprovedAt:      time.Now().UTC(),
@@ -1365,6 +1398,30 @@ func findAssistantMessageBySequence(messages []model.AgentRunMessage, sequenceNo
 		}
 	}
 	return nil
+}
+
+func approvedPreviewDebugEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_PREVIEW_DEBUG"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func previewDebugSnippet(raw json.RawMessage, max int) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err == nil {
+		trimmed = compact.String()
+	}
+	if max > 0 && len(trimmed) > max {
+		return trimmed[:max] + "...(truncated)"
+	}
+	return trimmed
 }
 
 func isExplicitInteractiveApprovalReply(reply string) bool {

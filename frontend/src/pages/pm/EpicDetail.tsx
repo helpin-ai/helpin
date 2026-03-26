@@ -46,6 +46,7 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import { normalizeTeamType } from '@/lib/teamPresets';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -76,7 +77,7 @@ function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex w-full items-center justify-start gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>
@@ -361,6 +362,11 @@ export function EpicDetailPage() {
     () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
     [form?.team_id, findTeamName],
   );
+  const selectedTeam = useMemo(
+    () => teams.find((team) => team.id === form?.team_id),
+    [teams, form?.team_id],
+  );
+  const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
   const noHealthSuggestionMessage = useMemo(() => getNoHealthSuggestionMessage(epic), [epic]);
   const currentOwnerName = useMemo(() => {
     if (!form?.owner_member_id) return 'Nobody';
@@ -671,7 +677,19 @@ export function EpicDetailPage() {
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('team_id', val, { team_id: val || undefined });
+                  const nextTeam = teams.find((team) => team.id === val);
+                  const nextIsEngineering = normalizeTeamType(nextTeam?.team_type) === 'engineering';
+                  const nextPlanningRepositoryId = nextIsEngineering ? form.planning_repository_id : '';
+
+                  setForm((current) => current ? {
+                    ...current,
+                    team_id: val,
+                    planning_repository_id: nextPlanningRepositoryId,
+                  } : current);
+                  queuePatch({
+                    team_id: val || undefined,
+                    planning_repository_id: nextIsEngineering ? (form.planning_repository_id || undefined) : undefined,
+                  });
                 }}
                 renderTrigger={() => <span>{currentTeamName}</span>}
               />
@@ -706,22 +724,6 @@ export function EpicDetailPage() {
               />
             </MetadataRow>
 
-            {/* Planning Repo */}
-            <MetadataRow icon={Layers} label="Plan repo">
-              <SidebarPopoverSelect
-                value={form.planning_repository_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'Not configured' },
-                  ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
-                ]}
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('planning_repository_id', val, { planning_repository_id: val || undefined });
-                }}
-                renderTrigger={() => <span>{currentPlanningRepositoryName}</span>}
-              />
-            </MetadataRow>
-
             {/* Start Date */}
             <MetadataRow icon={CalendarDays} label="Start date">
               <DatePicker
@@ -741,6 +743,32 @@ export function EpicDetailPage() {
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
+
+            {showPlanningRepository ? (
+              <>
+                <Separator className="col-span-3 my-1" />
+
+                {/* Planning Repo */}
+                <MetadataRow icon={Layers} label="Plan repo">
+                  <SidebarPopoverSelect
+                    value={form.planning_repository_id || '__none__'}
+                    options={[
+                      { value: '__none__', label: 'Not configured' },
+                      ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                    ]}
+                    onChange={(v) => {
+                      const val = v === '__none__' ? '' : v;
+                      updateField('planning_repository_id', val, { planning_repository_id: val || undefined });
+                    }}
+                    renderTrigger={() => (
+                      <span className="block whitespace-normal break-words text-left leading-tight">
+                        {currentPlanningRepositoryName}
+                      </span>
+                    )}
+                  />
+                </MetadataRow>
+              </>
+            ) : null}
           </div>
 
           {/* Labels */}
@@ -758,7 +786,10 @@ export function EpicDetailPage() {
           )}
 
           {workspaceId ? (
-            <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} />
+            <>
+              <Separator className="my-6" />
+              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} />
+            </>
           ) : null}
         </aside>
       </div>

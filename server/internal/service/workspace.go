@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -49,12 +51,20 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
+	websiteURL, err := normalizeWorkspaceWebsiteURL(req.WebsiteURL)
+	if err != nil {
+		return nil, err
+	}
+	if websiteURL != nil && *websiteURL == "" {
+		websiteURL = nil
+	}
+
 	var orgID *string
 	if req.OrganizationID != "" {
 		orgID = &req.OrganizationID
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, orgID, req.Description, req.Timezone)
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, orgID, req.Description, websiteURL, req.Timezone)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create workspace", "error", err, "slug", req.Slug)
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -112,13 +122,45 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 
 // Update modifies a workspace.
 func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
-	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.LogoURL, req.Timezone)
+	websiteURL, err := normalizeWorkspaceWebsiteURL(req.WebsiteURL)
+	if err != nil {
+		return nil, err
+	}
+
+	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, websiteURL, req.LogoURL, req.Timezone)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to update workspace", "error", err, "workspace_id", id)
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "workspace updated", "workspace_id", id)
 	return ws, nil
+}
+
+func normalizeWorkspaceWebsiteURL(raw *string) (*string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		empty := ""
+		return &empty, nil
+	}
+	if !strings.Contains(trimmed, "://") {
+		trimmed = "https://" + trimmed
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return nil, fmt.Errorf("invalid website URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("website URL must use http or https")
+	}
+
+	parsed.Host = strings.ToLower(parsed.Host)
+	normalized := parsed.String()
+	return &normalized, nil
 }
 
 // UploadLogo uploads a workspace logo to S3 and saves the public URL.
@@ -143,7 +185,7 @@ func (s *WorkspaceService) UploadLogo(ctx context.Context, id string, body io.Re
 	}
 
 	logoURL := s.s3Client.PublicURL(key)
-	return s.workspaceRepo.Update(ctx, id, nil, nil, &logoURL, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, &logoURL, nil)
 }
 
 // DeleteLogo removes the workspace logo.
@@ -164,7 +206,7 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 	}
 
 	empty := ""
-	return s.workspaceRepo.Update(ctx, id, nil, nil, &empty, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, &empty, nil)
 }
 
 // Delete removes a workspace and all associated data including S3 attachments.
