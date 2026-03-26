@@ -13,6 +13,7 @@ import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/components/ui/email-chip-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -93,7 +94,8 @@ export default function Workspaces() {
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
   const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string } | null>(null);
   const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
-  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [sendingInvites, setSendingInvites] = useState(false);
   const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
@@ -150,7 +152,8 @@ export default function Workspaces() {
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
     setCreatedTeamIds([]);
-    setInviteEmails('');
+    setInviteEmails([]);
+    setInviteEmailInput('');
     setInviteRole('member');
   };
 
@@ -306,16 +309,15 @@ export default function Workspaces() {
     }
   };
 
-  const parseInviteEmails = (raw: string): string[] =>
-    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
-
   const handleSendInvites = async () => {
     if (!createdWorkspace) return;
-    const emails = parseInviteEmails(inviteEmails);
+    const emails = mergeEmailChips(inviteEmails, inviteEmailInput);
     if (emails.length === 0) {
       finishWorkspaceSetup();
       return;
     }
+    setInviteEmails(emails);
+    setInviteEmailInput('');
     setSendingInvites(true);
     let sent = 0;
     const failedEmails: string[] = [];
@@ -382,6 +384,14 @@ export default function Workspaces() {
     [teamDrafts],
   );
   const hasSelectedTeamWithoutName = teamDrafts.some((team) => team.selected && !team.name.trim());
+  const hasInviteRecipients = useMemo(
+    () => mergeEmailChips(inviteEmails, inviteEmailInput).length > 0,
+    [inviteEmailInput, inviteEmails],
+  );
+  const hasInvalidInviteInput = useMemo(
+    () => classifyEmailChipInput(inviteEmailInput).invalid.length > 0,
+    [inviteEmailInput],
+  );
 
   // Auto-create org if user has none (edge case — signup normally handles this).
   useEffect(() => {
@@ -569,20 +579,14 @@ export default function Workspaces() {
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <Label>Emails</Label>
-                      <Textarea
+                      <EmailChipInput
                         placeholder="name@example.com, name2@example.com"
                         value={inviteEmails}
-                        onChange={(e) => {
-                          setInviteEmails(e.target.value);
-                          const el = e.target;
-                          el.style.height = 'auto';
-                          el.style.height = `${el.scrollHeight}px`;
-                        }}
-                        rows={1}
-                        className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
-                        autoComplete="off"
+                        onValueChange={setInviteEmails}
+                        inputValue={inviteEmailInput}
+                        onInputValueChange={setInviteEmailInput}
                       />
-                      <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
+                      <p className="text-xs text-muted-foreground">Press comma, Enter, or Tab to turn each email into a chip. You can also paste a list.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Role</Label>
@@ -649,7 +653,7 @@ export default function Workspaces() {
                       <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites}>
                         Skip
                       </Button>
-                      <Button type="submit" disabled={sendingInvites || !inviteEmails.trim()}>
+                      <Button type="submit" disabled={sendingInvites || !hasInviteRecipients || hasInvalidInviteInput}>
                         {sendingInvites ? 'Sending...' : 'Send Invites'}
                       </Button>
                     </>

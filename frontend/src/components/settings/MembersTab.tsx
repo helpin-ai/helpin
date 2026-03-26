@@ -9,8 +9,8 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/components/ui/email-chip-input';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -31,7 +31,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [invEmail, setInvEmail] = useState('');
+  const [invEmails, setInvEmails] = useState<string[]>([]);
+  const [invEmailInput, setInvEmailInput] = useState('');
   const [invRole, setInvRole] = useState('member');
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
@@ -101,7 +102,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
 
   const openInviteDialog = () => {
     setCreatedJoinUrl(null);
-    setInvEmail('');
+    setInvEmails([]);
+    setInvEmailInput('');
     setInvRole('member');
     setSelectedTeamIds([]);
     setInviteOpen(true);
@@ -112,16 +114,24 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     if (createdJoinUrl) loadData();
   };
 
-  const parseEmails = (raw: string): string[] =>
-    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
+  const pendingInviteEmails = useMemo(
+    () => mergeEmailChips(invEmails, invEmailInput),
+    [invEmailInput, invEmails],
+  );
+  const hasInvalidInviteInput = useMemo(
+    () => classifyEmailChipInput(invEmailInput).invalid.length > 0,
+    [invEmailInput],
+  );
 
   const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
-    const emails = parseEmails(invEmail);
+    const emails = pendingInviteEmails;
     if (emails.length === 0) {
       toast.error('Enter at least one valid email address');
       return;
     }
+    setInvEmails(emails);
+    setInvEmailInput('');
     setSending(true);
     let sent = 0;
     const failedEmails: string[] = [];
@@ -365,7 +375,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 <DialogTitle>Invitation Sent</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{invEmail}</span> to join the workspace.</p>
+                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{pendingInviteEmails[0]}</span> to join the workspace.</p>
                 <div className="flex gap-2">
                   <Input value={createdJoinUrl} readOnly className="bg-muted text-xs" />
                   <Button type="button" variant="outline" size="icon" onClick={() => handleCopyLink(createdJoinUrl)}>
@@ -397,17 +407,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                         <PopoverContent align="end" className="w-64 p-0">
                           <div className="max-h-56 overflow-y-auto">
                             {availableOrgMembers.map((m) => {
-                              const alreadyAdded = parseEmails(invEmail).includes(m.email.toLowerCase());
+                              const alreadyAdded = pendingInviteEmails.includes(m.email.toLowerCase());
                               return (
                                 <button
                                   key={m.user_id}
                                   type="button"
                                   disabled={alreadyAdded}
                                   onClick={() => {
-                                    setInvEmail((prev) => {
-                                      const trimmed = prev.trim();
-                                      return trimmed ? `${trimmed}\n${m.email}` : m.email;
-                                    });
+                                    setInvEmails((prev) => mergeEmailChips(prev, [m.email]));
                                   }}
                                   className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                                     alreadyAdded
@@ -434,21 +441,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                       </Popover>
                     )}
                   </div>
-                  <Textarea
+                  <EmailChipInput
                     placeholder="name@example.com, name2@example.com"
-                    value={invEmail}
-                    onChange={(e) => {
-                      setInvEmail(e.target.value);
-                      const el = e.target;
-                      el.style.height = 'auto';
-                      el.style.height = `${el.scrollHeight}px`;
-                    }}
-                    rows={1}
-                    className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
-                    required
-                    autoComplete="off"
+                    value={invEmails}
+                    onValueChange={setInvEmails}
+                    inputValue={invEmailInput}
+                    onInputValueChange={setInvEmailInput}
                   />
-                  <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
+                  <p className="text-xs text-muted-foreground">Press comma, Enter, or Tab to turn each email into a chip. You can also paste a list.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
@@ -523,7 +523,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeInviteDialog}>Cancel</Button>
-                <Button type="submit" disabled={sending}>{sending ? 'Sending invites...' : 'Send Invites'}</Button>
+                <Button type="submit" disabled={sending || hasInvalidInviteInput}>{sending ? 'Sending invites...' : 'Send Invites'}</Button>
               </DialogFooter>
             </form>
           )}
