@@ -144,6 +144,40 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		})
 	}
 
+	// ---- Public Help Center API (no JWT, open CORS for custom domains) ----
+	r.Route("/api/hc", func(r chi.Router) {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   []string{"*"},
+			AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Content-Type"},
+			AllowCredentials: false,
+			MaxAge:           3600,
+		}))
+
+		// Help Center domain verification (Caddy on_demand_tls)
+		r.Get("/verify-domain", h.Docs.VerifyDomain)
+
+		// Public Help Center routes
+		r.Route("/{subdomain}", func(r chi.Router) {
+			r.Get("/config", h.Docs.PublicGetConfig)
+			r.Get("/spaces", h.Docs.PublicGetSpaces)
+			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/search", h.Docs.PublicSearchArticles)
+
+			// Canonical collection + article routes
+			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
+
+			// Document preview (token-authenticated)
+			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
+
+			// Legacy/redirect resolver
+			r.Get("/resolve/*", h.Docs.PublicResolvePath)
+		})
+	})
+
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiCORS)
 
@@ -166,29 +200,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
-
-		// ---- Help Center domain verification (Caddy on_demand_tls) ----
-		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
-
-		// ---- Public Help Center routes (no JWT) ----
-		r.Route("/hc/{subdomain}", func(r chi.Router) {
-			r.Get("/config", h.Docs.PublicGetConfig)
-			r.Get("/spaces", h.Docs.PublicGetSpaces)
-			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
-			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
-			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
-			r.Get("/search", h.Docs.PublicSearchArticles)
-
-			// Canonical collection + article routes
-			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
-			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
-
-			// Document preview (token-authenticated)
-			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
-
-			// Legacy/redirect resolver
-			r.Get("/resolve/*", h.Docs.PublicResolvePath)
-		})
 
 		// ---- Public shared document route (no JWT) ----
 		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
