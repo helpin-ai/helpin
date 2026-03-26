@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 
-const LIGHT_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-light-mode-logo.png';
-const DARK_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-dark-mode-logo.png';
+const LIGHT_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-light-mode-logo.svg';
+const DARK_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-dark-mode-logo.svg';
 
 interface HelpinLogoProps {
   className?: string;

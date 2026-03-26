@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -23,6 +25,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
@@ -34,9 +37,21 @@ import (
 func main() {
 	_ = godotenv.Load()
 
+	if err := observability.InitSentry("temporal-worker"); err != nil {
+		log.Fatalf("sentry.Init: %v", err)
+	}
+	defer observability.Flush(2 * time.Second)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			observability.CaptureRecovered(recovered)
+			observability.Flush(2 * time.Second)
+			panic(recovered)
+		}
+	}()
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		fatalWithSentry("failed to load config", err)
 	}
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
@@ -44,35 +59,35 @@ func main() {
 		PreferSimpleProtocol: true,
 	}), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		fatalWithSentry("failed to connect to database", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("failed to get sql.DB: %v", err)
+		fatalWithSentry("failed to get sql.DB", err)
 	}
 	defer sqlDB.Close()
 
 	if err := sqlDB.Ping(); err != nil {
-		log.Fatalf("failed to ping database: %v", err)
+		fatalWithSentry("failed to ping database", err)
 	}
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
-		log.Fatalf("failed to enable vector extension: %v", err)
+		fatalWithSentry("failed to enable vector extension", err)
 	}
 
 	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
 	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-temporal-worker-"+realtimeInstanceID)
 	if err != nil {
-		log.Fatalf("failed to connect to NATS: %v", err)
+		fatalWithSentry("failed to connect to NATS", err)
 	}
 	defer natsConn.Close()
 	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
-		log.Fatalf("failed to ensure JetStream infrastructure: %v", err)
+		fatalWithSentry("failed to ensure JetStream infrastructure", err)
 	}
 
 	temporalClient, err := tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
-		log.Fatalf("failed to connect to Temporal: %v", err)
+		fatalWithSentry("failed to connect to Temporal", err)
 	}
 	defer temporalClient.Close()
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
@@ -158,7 +173,7 @@ func main() {
 	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
-		log.Fatalf("failed to initialize github app client: %v", err)
+		fatalWithSentry("failed to initialize github app client", err)
 	}
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	var activities *temporalapp.AgentRunActivities
@@ -185,11 +200,11 @@ func main() {
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
-			log.Fatalf("invalid REDIS_URL: %v", err)
+			fatalWithSentry("invalid REDIS_URL", err)
 		}
 		redisClient = redis.NewClient(redisOpts)
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
-			log.Fatalf("redis unreachable: %v", err)
+			fatalWithSentry("redis unreachable", err)
 		}
 		defer redisClient.Close()
 	}
@@ -391,7 +406,7 @@ func main() {
 
 	for _, sharedWorker := range workers {
 		if err := sharedWorker.Start(); err != nil {
-			log.Fatalf("failed to start temporal worker: %v", err)
+			fatalWithSentry("failed to start temporal worker", err)
 		}
 	}
 	log.Printf("temporal workers started for namespace=%s queues=%v", cfg.TemporalNamespace, queueNames(queueConfigs))
@@ -532,12 +547,12 @@ func selectedQueues() []temporalapp.QueueConfig {
 		}
 		queue, ok := lookup[name]
 		if !ok {
-			log.Fatalf("unknown TEMPORAL_WORKER_QUEUES entry %q", name)
+			fatalMessageWithSentry("unknown TEMPORAL_WORKER_QUEUES entry " + strconv.Quote(name))
 		}
 		selected = append(selected, queue)
 	}
 	if len(selected) == 0 {
-		log.Fatal("TEMPORAL_WORKER_QUEUES did not contain any valid queues")
+		fatalMessageWithSentry("TEMPORAL_WORKER_QUEUES did not contain any valid queues")
 	}
 	return selected
 }
@@ -548,4 +563,22 @@ func queueNames(queues []temporalapp.QueueConfig) []string {
 		names = append(names, queue.Name)
 	}
 	return names
+}
+
+func fatalWithSentry(message string, err error) {
+	if err != nil {
+		observability.CaptureException(err)
+		log.Printf("%s: %v", message, err)
+	} else {
+		log.Print(message)
+	}
+	observability.Flush(2 * time.Second)
+	os.Exit(1)
+}
+
+func fatalMessageWithSentry(message string) {
+	observability.CaptureMessage(message)
+	log.Print(message)
+	observability.Flush(2 * time.Second)
+	os.Exit(1)
 }
