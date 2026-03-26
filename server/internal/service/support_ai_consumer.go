@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -105,13 +106,16 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 		return
 	}
 
-	// Build a SupportMessage for the handler.
-	supportMsg := &model.SupportMessage{
-		ID:             event.MessageID,
-		WorkspaceID:    event.WorkspaceID,
-		ConversationID: event.ConversationID,
-		Content:        event.Content,
-		SenderType:     "customer",
+	supportMsg, loadErr := s.loadIncomingSupportMessage(ctx, event)
+	if loadErr != nil {
+		slog.ErrorContext(ctx, "support AI consumer: load incoming support message failed",
+			"workspace_id", event.WorkspaceID,
+			"conversation_id", event.ConversationID,
+			"message_id", event.MessageID,
+			"error", loadErr,
+		)
+		_ = msg.NakWithDelay(5 * time.Second)
+		return
 	}
 
 	if err := s.HandleIncomingMessage(ctx, event.WorkspaceID, event.ConversationID, supportMsg); err != nil {
@@ -126,4 +130,80 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 	}
 
 	_ = msg.Ack()
+}
+
+func (s *SupportAIService) loadIncomingSupportMessage(ctx context.Context, event AIRequestEvent) (*model.SupportMessage, error) {
+	supportMsg := &model.SupportMessage{
+		ID:             event.MessageID,
+		WorkspaceID:    event.WorkspaceID,
+		ConversationID: event.ConversationID,
+		Content:        event.Content,
+		SenderType:     "customer",
+	}
+	if s == nil || s.messageRepo == nil {
+		return supportMsg, nil
+	}
+
+	saved, err := s.messageRepo.GetByID(ctx, event.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	if saved == nil {
+		return supportMsg, nil
+	}
+	if strings.TrimSpace(saved.Content) == "" && strings.TrimSpace(event.Content) != "" {
+		saved.Content = event.Content
+	}
+	if s.attachmentRepo != nil {
+		msgs := []model.SupportMessage{*saved}
+		if err := s.hydrateSupportMessageAttachments(ctx, msgs); err != nil {
+			return nil, err
+		}
+		*saved = msgs[0]
+	}
+	return saved, nil
+}
+
+func (s *SupportAIService) hydrateSupportMessageAttachments(ctx context.Context, messages []model.SupportMessage) error {
+	if s == nil || s.attachmentRepo == nil || len(messages) == 0 {
+		return nil
+	}
+
+	messageIDs := make([]string, 0, len(messages))
+	for _, message := range messages {
+		if strings.TrimSpace(message.ID) != "" {
+			messageIDs = append(messageIDs, message.ID)
+		}
+	}
+	if len(messageIDs) == 0 {
+		return nil
+	}
+
+	attachments, err := s.attachmentRepo.ListByMessageIDs(ctx, messageIDs)
+	if err != nil {
+		return err
+	}
+	if len(attachments) == 0 {
+		return nil
+	}
+
+	byMessageID := make(map[string][]model.SupportAttachmentPayload, len(attachments))
+	for _, attachment := range attachments {
+		if attachment.MessageID == nil {
+			continue
+		}
+		byMessageID[*attachment.MessageID] = append(byMessageID[*attachment.MessageID], model.SupportAttachmentPayload{
+			ID:       attachment.ID,
+			FileKey:  attachment.StorageKey,
+			FileName: attachment.FileName,
+			FileType: attachment.ContentType,
+			FileSize: attachment.FileSize,
+			URL:      attachment.PublicURL,
+		})
+	}
+
+	for i := range messages {
+		messages[i].Attachments = byMessageID[messages[i].ID]
+	}
+	return nil
 }

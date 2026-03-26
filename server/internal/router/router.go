@@ -82,6 +82,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(middleware.SentryHTTP)
+	r.Use(middleware.SentryRequestContext)
 
 	// API-scoped CORS — restricted to configured origins (dashboard, frontend).
 	// Widget/SDK routes have their own open CORS (AllowedOrigins: *).
@@ -419,6 +421,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/messages", h.SupportInbox.CreateConversationMessage)
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)
+				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-story", h.SupportInbox.LinkConversationStory)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)

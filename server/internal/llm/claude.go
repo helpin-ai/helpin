@@ -47,10 +47,7 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 	messages := make([]workerpkg.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, workerpkg.Message{
-			Role:    m.Role,
-			Content: m.Content,
-		})
+		messages = append(messages, workerpkg.Message{Role: m.Role, Content: buildClaudeMessageContent(m)})
 	}
 
 	maxTokens := req.MaxTokens
@@ -70,8 +67,26 @@ func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 				Name:        claudeJSONToolName,
 				Description: "Return the final response as a single JSON object that matches the schema requested in the prompt. Do not emit free-form text outside the tool input.",
 				InputSchema: map[string]any{
-					"type":                 "object",
-					"additionalProperties": true,
+					"type": "object",
+					"properties": map[string]any{
+						"content": map[string]any{
+							"type": "string",
+						},
+						"can_answer": map[string]any{
+							"type": "boolean",
+						},
+						"source_doc_ids": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "string",
+							},
+						},
+						"confidence": map[string]any{
+							"type": "number",
+						},
+					},
+					"required":             []string{"content", "can_answer", "source_doc_ids", "confidence"},
+					"additionalProperties": false,
 				},
 			},
 		}
@@ -82,6 +97,43 @@ func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 	}
 
 	return apiReq
+}
+
+func buildClaudeMessageContent(message Message) any {
+	if len(message.ContentParts) == 0 {
+		return message.Content
+	}
+
+	blocks := make([]workerpkg.ContentBlock, 0, len(message.ContentParts))
+	for _, part := range message.ContentParts {
+		switch part.Type {
+		case "image_url":
+			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
+				continue
+			}
+			blocks = append(blocks, workerpkg.ContentBlock{
+				Type: "image",
+				Source: map[string]any{
+					"type": "url",
+					"url":  strings.TrimSpace(part.ImageURL.URL),
+				},
+			})
+		default:
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				continue
+			}
+			blocks = append(blocks, workerpkg.ContentBlock{
+				Type: "text",
+				Text: text,
+			})
+		}
+	}
+
+	if len(blocks) == 0 {
+		return message.Content
+	}
+	return blocks
 }
 
 func extractClaudeResponseContent(resp *workerpkg.CreateMessageResponse, jsonMode bool) string {

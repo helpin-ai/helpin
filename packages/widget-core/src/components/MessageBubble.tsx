@@ -167,8 +167,10 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasTextContent = message.content.trim().length > 0;
   const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
-  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || (message.sources && message.sources.length > 0) || message.aiConfidence !== undefined;
-  const hasMeta = (message.sources && message.sources.length > 0) || message.aiConfidence !== undefined;
+  const hasSources = Boolean(message.sources && message.sources.length > 0);
+  const showConfidence = hasSources && message.aiConfidence !== undefined;
+  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources;
+  const hasMeta = hasSources || showConfidence;
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
@@ -214,12 +216,12 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
                 {hasMeta && (
                   <div className="helpin-message-meta">
-                    {message.sources && message.sources.length > 0 && (
-                      <SourcePopover sources={message.sources} />
+                    {hasSources && (
+                      <SourcePopover sources={message.sources!} />
                     )}
-                    {message.aiConfidence !== undefined && (
+                    {showConfidence && (
                       <div className="helpin-message-confidence">
-                        Confidence: {Math.round(message.aiConfidence * 100)}%
+                        Confidence: {Math.round(message.aiConfidence! * 100)}%
                       </div>
                     )}
                   </div>

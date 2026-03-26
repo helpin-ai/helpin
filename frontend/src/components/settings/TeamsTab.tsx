@@ -1052,7 +1052,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
                         return (
                           <div key={membership.id} className="group/member flex items-center gap-2.5 px-4 py-2.5">
-                            <UserAvatar name={user?.full_name || user?.email || membership.user_id} className="h-7 w-7" fallbackClassName="text-[10px]" />
+                            <UserAvatar
+                              name={user?.full_name || user?.email || membership.user_id}
+                              avatarUrl={user?.avatar_url ?? undefined}
+                              className="h-7 w-7"
+                              fallbackClassName="text-[10px]"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <p className="truncate text-sm font-medium">{user?.full_name || 'Unknown user'}</p>
@@ -1178,7 +1183,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                   await onRefresh(true);
                                 }}
                               >
-                                <UserAvatar name={member.full_name || member.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                                <UserAvatar
+                                  name={member.full_name || member.email}
+                                  avatarUrl={member.avatar_url}
+                                  className="h-6 w-6"
+                                  fallbackClassName="text-[9px]"
+                                />
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm">{member.full_name || member.email}</p>
                                   {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}

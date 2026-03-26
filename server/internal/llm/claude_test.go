@@ -30,6 +30,20 @@ func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
 	if req.Tools[0].Name != claudeJSONToolName {
 		t.Fatalf("unexpected tool name: %#v", req.Tools[0])
 	}
+	schema, ok := req.Tools[0].InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object schema, got %#v", req.Tools[0].InputSchema)
+	}
+	required, ok := schema["required"].([]string)
+	if !ok {
+		t.Fatalf("expected required fields, got %#v", schema["required"])
+	}
+	if len(required) != 4 {
+		t.Fatalf("expected 4 required fields, got %#v", required)
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected additionalProperties=false, got %#v", schema["additionalProperties"])
+	}
 	if req.MaxTokens != 512 {
 		t.Fatalf("expected max tokens to be preserved, got %d", req.MaxTokens)
 	}
@@ -88,5 +102,29 @@ func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *test
 	got := extractClaudeResponseContent(resp, true)
 	if got != "Hello world" {
 		t.Fatalf("expected text fallback, got %q", got)
+	}
+}
+
+func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
+	content := buildClaudeMessageContent(Message{
+		Role: "user",
+		ContentParts: []ContentPart{
+			{Type: "text", Text: "Inspect this screenshot"},
+			{Type: "image_url", ImageURL: &ImageURLPart{URL: "https://assets.example.com/example.png"}},
+		},
+	})
+
+	blocks, ok := content.([]workerpkg.ContentBlock)
+	if !ok {
+		t.Fatalf("expected content blocks, got %#v", content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %#v", blocks)
+	}
+	if blocks[0].Type != "text" {
+		t.Fatalf("expected first block text, got %#v", blocks[0])
+	}
+	if blocks[1].Type != "image" {
+		t.Fatalf("expected second block image, got %#v", blocks[1])
 	}
 }

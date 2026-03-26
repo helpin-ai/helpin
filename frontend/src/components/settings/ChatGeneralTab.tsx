@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,7 @@ import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
-import type { BusinessHoursDay } from '@/lib/pmTypes';
+import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin/widget-core';
 
 const ICON_OPTIONS = [
@@ -62,6 +62,11 @@ const COMMON_TIMEZONES = [
 
 const NO_AGENT_VALUE = '__none__';
 const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
+const DEFAULT_BUSINESS_HOURS_DAY: BusinessHoursDay = { start: '09:00', end: '17:00', enabled: false };
+
+type ChatSettingsDraft = Omit<SupportInboxSettings, 'ai_agent_id'> & {
+  ai_agent_id: string;
+};
 
 function parseTimeToMinutes(value: string): number {
   const [hours = '0', minutes = '0'] = value.split(':');
@@ -131,6 +136,40 @@ function buildPreviewAvailability(
       replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
     };
   }
+}
+
+function normalizeBusinessHoursDay(day?: Partial<BusinessHoursDay> | null): BusinessHoursDay {
+  return {
+    start: day?.start ?? DEFAULT_BUSINESS_HOURS_DAY.start,
+    end: day?.end ?? DEFAULT_BUSINESS_HOURS_DAY.end,
+    enabled: day?.enabled ?? DEFAULT_BUSINESS_HOURS_DAY.enabled,
+  };
+}
+
+function normalizeBusinessHoursSchedule(
+  schedule?: Record<string, BusinessHoursDay> | null,
+): Record<string, BusinessHoursDay> {
+  return DAYS.reduce<Record<string, BusinessHoursDay>>((acc, day) => {
+    acc[day.key] = normalizeBusinessHoursDay(schedule?.[day.key]);
+    return acc;
+  }, {});
+}
+
+function sortHelpSpaceIds(ids?: string[] | null): string[] {
+  return [...(ids ?? [])].sort();
+}
+
+function buildSettingsDraftFromServer(settings: SupportInboxSettings): ChatSettingsDraft {
+  return {
+    ...settings,
+    ai_agent_id: settings.ai_agent_id ?? '',
+    business_hours_schedule: normalizeBusinessHoursSchedule(settings.business_hours_schedule),
+    widget_help_space_ids: sortHelpSpaceIds(settings.widget_help_space_ids),
+  };
+}
+
+function serializeSettingsDraft(draft: ChatSettingsDraft): string {
+  return JSON.stringify(draft);
 }
 
 /* ── Two-column layout shell ─────────────────────────────────────────── */
@@ -215,6 +254,12 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (data?.settings) {
       const s = data.settings;
+      const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
+      const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
+
+      lastSyncedDraftRef.current = serializeSettingsDraft(buildSettingsDraftFromServer(s));
+      initializedRef.current = true;
+
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
@@ -228,7 +273,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setLogoUrl(s.logo_url || '');
       setWidgetName(s.widget_name || '');
       setWidgetAvatarUrl(s.widget_avatar_url || '');
-      setWidgetHelpSpaceIds(s.widget_help_space_ids || []);
+      setWidgetHelpSpaceIds(sortedHelpSpaceIds);
       setAiEnabled(s.ai_enabled);
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
@@ -240,7 +285,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setHandoffTeamId(s.handoff_team_id);
       setBusinessHoursEnabled(s.business_hours_enabled);
       setTimezone(s.business_hours_timezone);
-      setSchedule(s.business_hours_schedule);
+      setSchedule(normalizedSchedule);
       setOutsideMessage(s.outside_hours_message);
       setEmailFallbackEnabled(s.email_fallback_enabled);
       setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
@@ -255,72 +300,80 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const initializedRef = useRef(false);
+  const lastSyncedDraftRef = useRef<string>('');
 
-  const doSave = useCallback(() => {
-    setSaveStatus('saving');
-    updateMutation.mutate({
-      require_email_before_chat: requireEmail,
-      require_phone_after_email: requirePhone,
-      welcome_message: welcomeMessage,
-      widget_name: widgetName,
-      widget_avatar_url: widgetAvatarUrl,
-      widget_help_space_ids: widgetHelpSpaceIds,
-      brand_color: brandColor,
-      show_branding: showBranding,
-      launcher_position: launcherPosition,
-      launcher_icon: launcherIcon,
-      color_scheme: colorScheme,
-      button_color: buttonColor,
-      button_icon_color: buttonIconColor,
-      logo_url: logoUrl,
-      ai_enabled: aiEnabled,
-      ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
-      ai_confidence_threshold: parseFloat(confidenceThreshold),
-      ai_response_mode: aiResponseMode,
-      ai_max_followups: aiMaxFollowups,
-      show_talk_to_human: showTalkToHuman,
-      escalation_message: escalationMessage,
-      handoff_behavior: handoffBehavior,
-      handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
-      business_hours_enabled: businessHoursEnabled,
-      business_hours_timezone: timezone,
-      business_hours_schedule: schedule,
-      outside_hours_message: outsideMessage,
-      email_fallback_enabled: emailFallbackEnabled,
-      email_fallback_delay_secs: emailFallbackDelaySecs,
-      email_fallback_from_name: emailFallbackFromName,
-      csat_enabled: csatEnabled,
-      file_uploads_enabled: fileUploadsEnabled,
-      force_visitor_identity: forceVisitorIdentity,
-    }, {
-      onSuccess: () => {
-        setSaveStatus('saved');
-        clearTimeout(savedTimerRef.current);
-        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-      },
-      onError: (err: unknown) => {
-        setSaveStatus('idle');
-        toast.error(err instanceof Error ? err.message : 'Failed to save');
-      },
-    });
-  }, [requireEmail, requirePhone, welcomeMessage, widgetName, widgetAvatarUrl, widgetHelpSpaceIds, brandColor, showBranding, launcherPosition, launcherIcon, colorScheme, buttonColor, buttonIconColor, logoUrl, aiEnabled, aiAgentId, confidenceThreshold, aiResponseMode, aiMaxFollowups, showTalkToHuman, escalationMessage, handoffBehavior, handoffTeamId, businessHoursEnabled, timezone, schedule, outsideMessage, emailFallbackEnabled, emailFallbackDelaySecs, emailFallbackFromName, csatEnabled, fileUploadsEnabled, forceVisitorIdentity, updateMutation]);
+  const settingsDraft: ChatSettingsDraft = {
+    require_email_before_chat: requireEmail,
+    require_phone_after_email: requirePhone,
+    welcome_message: welcomeMessage,
+    widget_name: widgetName,
+    widget_avatar_url: widgetAvatarUrl,
+    widget_help_space_ids: sortHelpSpaceIds(widgetHelpSpaceIds),
+    brand_color: brandColor,
+    show_branding: showBranding,
+    launcher_position: launcherPosition,
+    launcher_icon: launcherIcon,
+    color_scheme: colorScheme,
+    button_color: buttonColor,
+    button_icon_color: buttonIconColor,
+    logo_url: logoUrl,
+    ai_enabled: aiEnabled,
+    ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
+    ai_confidence_threshold: parseFloat(confidenceThreshold),
+    ai_response_mode: aiResponseMode,
+    ai_max_followups: aiMaxFollowups,
+    ai_auto_resolve_timeout: data?.settings.ai_auto_resolve_timeout ?? 24,
+    show_talk_to_human: showTalkToHuman,
+    escalation_message: escalationMessage,
+    handoff_behavior: handoffBehavior,
+    handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
+    business_hours_enabled: businessHoursEnabled,
+    business_hours_timezone: timezone,
+    business_hours_schedule: normalizeBusinessHoursSchedule(schedule),
+    outside_hours_message: outsideMessage,
+    email_fallback_enabled: emailFallbackEnabled,
+    email_fallback_delay_secs: emailFallbackDelaySecs,
+    email_fallback_from_name: emailFallbackFromName,
+    csat_enabled: csatEnabled,
+    file_uploads_enabled: fileUploadsEnabled,
+    force_visitor_identity: forceVisitorIdentity,
+  };
+  const settingsDraftKey = serializeSettingsDraft(settingsDraft);
+  const settingsDraftRef = useRef(settingsDraft);
+  settingsDraftRef.current = settingsDraft;
+  const mutateSettingsRef = useRef(updateMutation.mutate);
+  mutateSettingsRef.current = updateMutation.mutate;
 
   // Auto-save with debounce when any setting changes
   useEffect(() => {
-    // Skip the initial render + the first hydration from server data
-    if (!initializedRef.current) {
-      if (data?.settings) initializedRef.current = true;
+    if (!initializedRef.current || settingsDraftKey === lastSyncedDraftRef.current) {
       return;
     }
+
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(doSave, 800);
+    debounceRef.current = setTimeout(() => {
+      setSaveStatus('saving');
+      mutateSettingsRef.current(settingsDraftRef.current, {
+        onSuccess: () => {
+          lastSyncedDraftRef.current = settingsDraftKey;
+          setSaveStatus('saved');
+          clearTimeout(savedTimerRef.current);
+          savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+        },
+        onError: (err: unknown) => {
+          setSaveStatus('idle');
+          toast.error(err instanceof Error ? err.message : 'Failed to save');
+        },
+      });
+    }, 800);
+
     return () => clearTimeout(debounceRef.current);
-  }, [doSave]);
+  }, [settingsDraftKey]);
 
   const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
     setSchedule(prev => ({
       ...prev,
-      [dayKey]: { ...prev[dayKey], ...patch },
+      [dayKey]: { ...normalizeBusinessHoursDay(prev[dayKey]), ...patch },
     }));
   };
 
@@ -1141,7 +1194,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                       <Label className="text-sm">Schedule</Label>
                       <div className="space-y-1.5">
                         {DAYS.map(({ key, label }) => {
-                          const day = schedule[key] ?? { start: '09:00', end: '17:00', enabled: false };
+                          const day = normalizeBusinessHoursDay(schedule[key]);
                           return (
                             <div key={key} className="flex items-center gap-3">
                               <div className="w-24">

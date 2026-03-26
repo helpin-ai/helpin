@@ -215,9 +215,10 @@ export function NotificationCenter() {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[400px] p-0"
+        className="flex w-[400px] flex-col overflow-hidden p-0"
         align="end"
         sideOffset={8}
+        style={{ maxHeight: 'min(80vh, var(--radix-popover-content-available-height))' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -255,7 +256,7 @@ export function NotificationCenter() {
         </div>
 
         {/* Notification list */}
-        <ScrollArea className="max-h-[420px]">
+        <ScrollArea className="min-h-0 flex-1">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Bell className="h-8 w-8 mb-2 opacity-40" />

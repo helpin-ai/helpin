@@ -365,24 +365,31 @@
   border-top: 1px solid var(--border);
   margin: 0.5em 0;
 }
-.prose-chat table {
-  width: 100%;
-  border-collapse: collapse;
+.prose-chat .chat-markdown-table-wrap {
   margin: 0.5em 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.prose-chat table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
   font-size: 0.85em;
 }
 .prose-chat th,
 .prose-chat td {
-  border: 1px solid currentColor/15%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   padding: 0.35em 0.6em;
   text-align: left;
+  vertical-align: top;
 }
 .prose-chat th {
   font-weight: 600;
-  background: currentColor/8%;
+  background: rgba(15, 23, 42, 0.05);
 }
 .prose-chat tr:nth-child(even) {
-  background: currentColor/5%;
+  background: rgba(15, 23, 42, 0.03);
 }
 
 .accordion-animate {

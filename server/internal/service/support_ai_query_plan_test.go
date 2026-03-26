@@ -84,7 +84,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 		{SenderType: "ai", MessageType: "reply", Content: "ContentStudio is stronger for agencies and richer analytics."},
 	}
 
-	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, "features")
+	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"})
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -137,7 +137,7 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 		{SenderType: "customer", MessageType: "reply", Content: "Which one is better?"},
 	}
 
-	plan, _, err := svc.planSupportQuery(context.Background(), history, "pricing")
+	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"})
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -149,6 +149,50 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 	}
 	if plan.Reason != "needs_clarification" {
 		t.Fatalf("reason = %q, want needs_clarification", plan.Reason)
+	}
+}
+
+func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
+	provider := &scriptedSupportPlannerLLM{
+		responses: []llm.ChatResponse{
+			{
+				Content: `{"decision":"answer","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"clarifying_question":"","reason":"resolved_from_context"}`,
+			},
+		},
+	}
+	svc := &SupportAIService{
+		llmProvider:            provider,
+		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionProvider: "openai",
+	}
+
+	_, _, err := svc.planSupportQuery(context.Background(), nil, model.SupportMessage{
+		SenderType: "customer",
+		Attachments: []model.SupportAttachmentPayload{
+			{FileName: "Screenshot.png", FileType: "image/png", URL: "https://assets.example.com/screenshot.png"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("planSupportQuery() error = %v", err)
+	}
+	if len(provider.requests) != 1 {
+		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
+	}
+	if len(provider.requests[0].Messages) != 1 {
+		t.Fatalf("planner messages = %#v", provider.requests[0].Messages)
+	}
+	if len(provider.requests[0].Messages[0].ContentParts) < 2 {
+		t.Fatalf("expected planner content parts with image, got %#v", provider.requests[0].Messages[0].ContentParts)
+	}
+	foundImage := false
+	for _, part := range provider.requests[0].Messages[0].ContentParts {
+		if part.Type == "image_url" && part.ImageURL != nil && part.ImageURL.URL == "https://assets.example.com/screenshot.png" {
+			foundImage = true
+			break
+		}
+	}
+	if !foundImage {
+		t.Fatalf("expected image_url content part, got %#v", provider.requests[0].Messages[0].ContentParts)
 	}
 }
 

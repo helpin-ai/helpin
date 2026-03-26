@@ -6,7 +6,7 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
 	body := provider.buildChatCompletionBody(
 		"gpt-5.4-mini",
-		[]map[string]string{{"role": "user", "content": "hello"}},
+		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,
 		true,
@@ -27,7 +27,7 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
 	body := provider.buildChatCompletionBody(
 		"gpt-4o-mini",
-		[]map[string]string{{"role": "user", "content": "hello"}},
+		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,
 		false,
@@ -41,5 +41,29 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 	}
 	if _, ok := body["response_format"]; ok {
 		t.Fatalf("did not expect response_format when JSON mode is off, got %#v", body)
+	}
+}
+
+func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
+	message := buildOpenAIMessage(Message{
+		Role: "user",
+		ContentParts: []ContentPart{
+			{Type: "text", Text: "Inspect this screenshot"},
+			{Type: "image_url", ImageURL: &ImageURLPart{URL: "https://assets.example.com/example.png", Detail: "auto"}},
+		},
+	})
+
+	content, ok := message["content"].([]map[string]any)
+	if !ok {
+		t.Fatalf("expected content parts array, got %#v", message["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %#v", content)
+	}
+	if content[0]["type"] != "text" {
+		t.Fatalf("expected first part text, got %#v", content[0])
+	}
+	if content[1]["type"] != "image_url" {
+		t.Fatalf("expected second part image_url, got %#v", content[1])
 	}
 }

@@ -59,6 +59,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onPreChatSubmit,
   onImageClick: externalImageClick,
 }) => {
+  const conversationKey = conversation?.id || '__new__';
   const [introCreatedAt] = useState(() => new Date().toISOString());
   const [preChatDone, setPreChatDone] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -68,7 +69,10 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const [transcriptEmailInput, setTranscriptEmailInput] = useState(transcriptEmail || '');
   const [transcriptStatus, setTranscriptStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSendingTranscript, setIsSendingTranscript] = useState(false);
+  const [autoExpandDismissed, setAutoExpandDismissed] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const autoExpandedConversationRef = useRef<string | null>(null);
 
   const workspaceName = config.workspaceName || 'Support';
   const logoUrl = config.branding?.logoUrl;
@@ -130,6 +134,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   }, [transcriptEmail]);
 
   useEffect(() => {
+    setAutoExpandDismissed(false);
+    autoExpandedConversationRef.current = null;
+  }, [conversationKey]);
+
+  useEffect(() => {
     if (!menuOpen) {
       return;
     }
@@ -165,6 +174,40 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       ? [introMessage]
       : messages
     : [introMessage, ...messages];
+
+  useEffect(() => {
+    if (!onToggleExpanded || isExpanded || autoExpandDismissed || typeof window === 'undefined') {
+      return;
+    }
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      return;
+    }
+
+    let frameId = 0;
+    frameId = window.requestAnimationFrame(() => {
+      const tableWraps = Array.from(
+        threadRef.current?.querySelectorAll<HTMLElement>('.helpin-message-content .helpin-table-wrap') ?? [],
+      );
+      const hasWideTable = tableWraps.some((wrap) => {
+        const table = wrap.querySelector<HTMLTableElement>('table');
+        if (!table) {
+          return false;
+        }
+        const rows = Array.from(table.rows);
+        const columnCount = rows.reduce((max, row) => Math.max(max, row.cells.length), 0);
+        return columnCount >= 3 && table.scrollWidth > wrap.clientWidth + 32;
+      });
+
+      if (hasWideTable) {
+        autoExpandedConversationRef.current = conversationKey;
+        onToggleExpanded();
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [autoExpandDismissed, conversationKey, displayMessages, isExpanded, onToggleExpanded]);
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     if (!onUploadAttachment) return;
@@ -343,6 +386,10 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                   type="button"
                   className="helpin-conversation-menu-item"
                   onClick={() => {
+                    if (isExpanded && autoExpandedConversationRef.current === conversationKey) {
+                      setAutoExpandDismissed(true);
+                      autoExpandedConversationRef.current = null;
+                    }
                     onToggleExpanded();
                     setMenuOpen(false);
                   }}
@@ -412,7 +459,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         </div>
       </div>
 
-      <div className="helpin-conversation-thread">
+      <div className="helpin-conversation-thread" ref={threadRef}>
         {showHumanHandoffState && (
           <div className="helpin-human-handoff-banner">
             <p className="helpin-human-handoff-title">

@@ -324,6 +324,42 @@ func (h *SupportAIHandler) PreviewSupportReply(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// RewriteSupportDraft rewrites the current support draft with a targeted AI operation.
+// POST /api/support/inbox/conversations/{id}/rewrite-draft
+func (h *SupportAIHandler) RewriteSupportDraft(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.aiService == nil {
+		writeError(w, http.StatusServiceUnavailable, "support ai service unavailable")
+		return
+	}
+
+	var req model.SupportAIRewriteDraftRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.aiService.RewriteSupportDraft(r.Context(), workspaceID, chi.URLParam(r, "id"), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrSupportRewriteInvalidInput):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, service.ErrSupportRewriteConversationNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			slog.ErrorContext(r.Context(), "support draft rewrite failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to rewrite support draft")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // EscalateToHuman handles the widget "Talk to a human" button.
 // POST /api/widget/support/{conversationId}/escalate
 func (h *SupportAIHandler) EscalateToHuman(w http.ResponseWriter, r *http.Request) {

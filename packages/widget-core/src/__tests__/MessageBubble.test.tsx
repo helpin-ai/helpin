@@ -58,10 +58,23 @@ describe('MessageBubble', () => {
   it('displays confidence score', () => {
     const message = createMessage({
       role: 'ai',
+      sources: [
+        { docId: 'doc-1', title: 'Test Doc', snippet: 'Test snippet', confidence: 0.85, language: 'en' },
+      ],
       aiConfidence: 0.85,
     });
     const { container } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('85%');
+  });
+
+  it('does not display confidence without sources', () => {
+    const message = createMessage({
+      role: 'ai',
+      aiConfidence: 0.85,
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.textContent).not.toContain('85%');
+    expect(container.querySelector('.helpin-message-confidence')).toBeNull();
   });
 
   it('displays email channel badge', () => {

@@ -226,7 +226,11 @@ export default function AccountSettings() {
                     <TableRow key={member.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <UserAvatar name={member.full_name} className="h-7 w-7" />
+                          <UserAvatar
+                            name={member.full_name || member.email}
+                            avatarUrl={member.avatar_url}
+                            className="h-7 w-7"
+                          />
                           <span className="text-sm font-medium">{member.full_name}</span>
                           {isSelf && <Badge variant="outline" className="text-[10px]">You</Badge>}
                         </div>

@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2, Mail } from 'lucide-react';
+import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2, Mail, Sparkles, ChevronUp, ArrowUpDown, RefreshCw, CheckCheck, Smile, Briefcase } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,12 +16,19 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useSendMessage, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
+import { useRewriteSupportDraft, useSendMessage, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
@@ -31,6 +38,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
+import type { SupportAIRewriteOperation } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
@@ -59,6 +67,23 @@ function saveSkipOfflineEmailConfirm(storageKey: string, skip: boolean) {
       localStorage.removeItem(storageKey);
     }
   } catch {}
+}
+
+function escapeHTML(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function plainTextToEditorHTML(text: string): string {
+  if (!text.trim()) return '<p><br></p>';
+  return text
+    .split('\n')
+    .map((line) => `<p>${line ? escapeHTML(line) : '<br>'}</p>`)
+    .join('');
 }
 
 function detectMentions(
@@ -95,6 +120,7 @@ function detectMentions(
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
+  const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
   const { data: members = [] } = useQuery({
@@ -347,8 +373,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     if (!editor) return;
     const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
     if (saved) {
-      const html = saved.split('\n').map(line => `<p>${line || '<br>'}</p>`).join('');
-      editor.commands.setContent(html);
+      editor.commands.setContent(plainTextToEditorHTML(saved));
     } else {
       editor.commands.clearContent();
     }
@@ -408,6 +433,20 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     await sendReply();
   }, [editor, emailFallbackHint, isNote, pendingAttachments, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
 
+  const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
+    if (!editor) return;
+    const text = editor.getText().trim();
+    if (!text || rewriteMutation.isPending) return;
+
+    const rewritten = await rewriteMutation.mutateAsync({
+      content: text,
+      operation,
+    });
+
+    editor.commands.setContent(plainTextToEditorHTML(rewritten.content));
+    editor.commands.focus('end');
+  }, [editor, rewriteMutation]);
+
   const handleConfirmOfflineEmailSend = useCallback(async () => {
     if (doNotAskAgain) {
       saveSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey, true);
@@ -422,6 +461,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   if (!editor) return null;
 
   const content = editor.getText();
+  const canUseAITools = content.trim().length > 0 && !rewriteMutation.isPending;
+  const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDown }> = [
+    { operation: 'expand', label: 'Expand', icon: ArrowUpDown },
+    { operation: 'rephrase', label: 'Rephrase', icon: RefreshCw },
+    { operation: 'fix_grammar', label: 'Fix grammar', icon: CheckCheck },
+    { operation: 'more_friendly', label: 'More friendly', icon: Smile },
+    { operation: 'more_formal', label: 'More formal', icon: Briefcase },
+  ];
 
   return (
     <div
@@ -537,7 +584,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
       {/* Bottom toolbar */}
       <div className="flex items-center justify-between px-3 pb-2.5">
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1">
           <EmojiPicker
             onEmojiSelect={(emoji) => {
               if (editorRef.current) {
@@ -561,6 +608,45 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canUseAITools}
+                className="ml-1 h-7 gap-1.5 rounded-md px-2 text-xs"
+              >
+                {rewriteMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                AI Tools
+                <ChevronUp className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {aiTools.slice(0, 3).map((tool) => {
+                const Icon = tool.icon;
+                return (
+                  <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
+                    <Icon className="h-4 w-4" />
+                    <span>{tool.label}</span>
+                  </DropdownMenuItem>
+                );
+              })}
+              <DropdownMenuSeparator />
+              {aiTools.slice(3).map((tool) => {
+                const Icon = tool.icon;
+                return (
+                  <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
+                    <Icon className="h-4 w-4" />
+                    <span>{tool.label}</span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {members.length > 0 && (
             <span className="ml-1 text-[10px] text-muted-foreground">
               Type @ to mention

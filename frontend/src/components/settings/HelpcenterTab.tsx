@@ -473,7 +473,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Publish Status Bar ── */}
-      <div className="flex items-center justify-between rounded-lg border bg-card p-4">
+      <div className="flex items-center justify-between rounded-none border border-border bg-card p-4">
         <div>
           <p className="text-sm font-medium">Help Center</p>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -556,9 +556,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             <div className="space-y-2">
               <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logo (Dark)</Label>
               {config.brand_logo_dark_url ? (
-                <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-zinc-900 transition-colors hover:bg-zinc-800">
+                <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-secondary transition-colors hover:bg-secondary/80">
                   <img src={config.brand_logo_dark_url} alt="Logo (dark)" className="max-h-16 max-w-[160px] object-contain" />
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-zinc-900/80 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-secondary/80 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button type="button" variant="outline" size="sm" disabled={uploadingLogoDark} onClick={() => logoDarkInputRef.current?.click()}>
                       {uploadingLogoDark ? 'Uploading...' : 'Replace'}
                     </Button>
@@ -572,7 +572,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   type="button"
                   disabled={uploadingLogoDark}
                   onClick={() => logoDarkInputRef.current?.click()}
-                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-zinc-900 text-zinc-400 transition-colors hover:border-primary/30 hover:bg-zinc-800 hover:text-zinc-200"
+                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-secondary text-muted-foreground transition-colors hover:border-primary/30 hover:bg-secondary/80 hover:text-foreground"
                 >
                   <ImageIcon className="h-6 w-6" />
                   <span className="text-xs">{uploadingLogoDark ? 'Uploading...' : '200 × 50 px · SVG or PNG'}</span>

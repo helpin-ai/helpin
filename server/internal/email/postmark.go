@@ -149,6 +149,7 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Workspace Invitation</title>
+  %s
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
   <!-- Preheader text (hidden) -->
@@ -156,21 +157,16 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
     %s has invited you to collaborate on %s &mdash; click to join the workspace.
   </div>
 
-  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
-    <tr>
-      <td align="center" style="padding: 48px 16px;">
-        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+	    <tr>
+	      <td align="center" style="padding: 48px 16px;">
+	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
 
-          <!-- Logo -->
-          <tr>
-            <td align="center" style="padding-bottom: 32px;">
-              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
-            </td>
-          </tr>
+	          %s
 
-          <!-- Main Card -->
-          <tr>
-            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+	          <!-- Main Card -->
+	          <tr>
+	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
               <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
 
                 <!-- Top accent bar -->
@@ -255,9 +251,9 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
         </table>
       </td>
     </tr>
-  </table>
+	  </table>
 </body>
-</html>`, inviterName, workspaceName, wsInitial, workspaceName, inviterName, joinURL)
+</html>`, BrandHeaderCSS(), inviterName, workspaceName, BrandHeaderHTML(), wsInitial, workspaceName, inviterName, joinURL)
 
 	textBody := fmt.Sprintf(`%s invited you to join %s on Helpin.
 

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -35,6 +35,17 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+const markdownComponents = {
+  a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+  ),
+  table: ({ children }: ComponentPropsWithoutRef<'table'>) => (
+    <div className="chat-markdown-table-wrap">
+      <table>{children}</table>
+    </div>
+  ),
+};
 
 const SOURCE_LABELS: Record<string, string> = {
   widget: 'Chat Widget',
@@ -223,7 +234,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   {mentionParts ? (
                     <p className="whitespace-pre-wrap">{mentionParts}</p>
                   ) : (
-                    <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
                   )}
                 </div>
               </div>
@@ -302,7 +313,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 >
                   {displayContent && (
                     <div className="prose-chat">
-                      <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                      <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
                     </div>
                   )}
                   {fileAttachments.length > 0 && (
