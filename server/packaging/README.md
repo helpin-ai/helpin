@@ -63,12 +63,27 @@ sudo vim /etc/helpin/temporal-worker.conf
 sudo systemctl edit helpin-temporal-worker
 ```
 
-Typical `systemctl edit` override:
+Default package config:
+
+```env
+DOPPLER_PROJECT=backend
+DOPPLER_CONFIG=prd
+TEMPORAL_WORKER_QUEUES=agent-opencode-autonomous,agent-codex-autonomous
+```
+
+Recommended `systemctl edit` override for hosts running the service with the `prov` user's home directory:
 
 ```ini
 [Service]
+Environment=HOME=/home/prov
 Environment=DOPPLER_TOKEN=dp.st.xxxxx
 ```
+
+Notes:
+
+- Doppler needs a valid `HOME` in the service environment. For your current host setup, use `HOME=/home/prov`.
+- The Doppler credential to provide is `DOPPLER_TOKEN`. If you see `DOPPLER_SECRET` in notes or conversations, treat that as a mistake; the service expects `DOPPLER_TOKEN`.
+- This override lives in `/etc/systemd/system/helpin-temporal-worker.service.d/override.conf` and survives package upgrades.
 
 Start the worker only after Doppler and runtime binaries are ready:
 

@@ -27,10 +27,14 @@ cat <<'EOF'
 Helpin Temporal Worker package installed.
 
 Next steps:
-  1. Edit /etc/helpin/temporal-worker.conf and set DOPPLER_PROJECT, DOPPLER_CONFIG, and GH_TOKEN.
+  1. Edit /etc/helpin/temporal-worker.conf and confirm the Doppler defaults:
+       DOPPLER_PROJECT=backend
+       DOPPLER_CONFIG=prd
+     Then set GH_TOKEN.
   2. Add DOPPLER_TOKEN via: systemctl edit helpin-temporal-worker
      Example:
        [Service]
+       Environment=HOME=/root
        Environment=DOPPLER_TOKEN=dp.st.xxxxx
   3. Ensure both runtimes are installed when both queues are enabled:
        codex

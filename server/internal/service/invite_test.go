@@ -870,6 +870,9 @@ func TestGetInviteInfo(t *testing.T) {
 	if info.Email != "info@example.com" {
 		t.Errorf("Email = %q, want %q", info.Email, "info@example.com")
 	}
+	if info.AccountExists {
+		t.Error("AccountExists should be false for an invitee without an account")
+	}
 	if info.Role != "admin" {
 		t.Errorf("Role = %q, want %q", info.Role, "admin")
 	}
@@ -1089,6 +1092,17 @@ func TestAcceptInvitationWithSignup_ExistingUser(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error = %q, want it to contain %q", err.Error(), "already exists")
+	}
+
+	info, err := svc.GetInviteInfo(ctx, token)
+	if err != nil {
+		t.Fatalf("GetInviteInfo() error = %v", err)
+	}
+	if info == nil {
+		t.Fatal("GetInviteInfo() returned nil")
+	}
+	if !info.AccountExists {
+		t.Error("AccountExists should be true for an invitee with an existing account")
 	}
 }
 

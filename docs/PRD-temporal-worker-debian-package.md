@@ -144,8 +144,8 @@ Create `server/packaging/temporal-worker.conf` as the package-installed template
 
 Required contents:
 
-- `DOPPLER_PROJECT=helpin`
-- `DOPPLER_CONFIG=prod`
+- `DOPPLER_PROJECT=backend`
+- `DOPPLER_CONFIG=prd`
 - `TEMPORAL_WORKER_QUEUES=agent-opencode-autonomous,agent-codex-autonomous`
 - `GH_TOKEN=` placeholder
 

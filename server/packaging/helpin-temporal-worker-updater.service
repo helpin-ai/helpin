@@ -5,5 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 EnvironmentFile=-/etc/helpin/temporal-worker.conf
 ExecStart=/usr/lib/helpin/temporal-worker-update.sh
