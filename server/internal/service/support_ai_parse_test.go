@@ -107,6 +107,18 @@ func TestParseAIResponse(t *testing.T) {
 			wantContent: "",
 		},
 		{
+			name:        "partial JSON contract is rejected",
+			raw:         `{"can_answer": false}`,
+			wantOK:      false,
+			wantContent: `{"can_answer": false}`,
+		},
+		{
+			name:        "empty JSON object is rejected",
+			raw:         `{}`,
+			wantOK:      false,
+			wantContent: `{}`,
+		},
+		{
 			name:        "only whitespace",
 			raw:         "   \n\n  ",
 			wantOK:      false,

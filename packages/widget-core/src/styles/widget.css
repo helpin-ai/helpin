@@ -1451,6 +1451,8 @@
   font-size: 14px;
   line-height: 1.5;
   width: fit-content;
+  max-width: min(100%, 720px);
+  min-width: 0;
 }
 
 .helpin-message--customer {
@@ -1475,6 +1477,8 @@
 .helpin-message-content {
   word-wrap: break-word;
   overflow-wrap: break-word;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* Markdown styles for chat messages */
@@ -1534,6 +1538,10 @@
   margin: 0.45em 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
 }
 .helpin-message-content table {
   width: max-content;
@@ -1555,6 +1563,10 @@
 .helpin-message--customer .helpin-message-content th,
 .helpin-message--customer .helpin-message-content td {
   border-color: rgba(255, 255, 255, 0.28);
+}
+.helpin-message--customer .helpin-message-content .helpin-table-wrap {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
 }
 .helpin-message--customer .helpin-message-content th {
   background: rgba(255, 255, 255, 0.12);
@@ -2266,6 +2278,7 @@
 .helpin-message-agent-bubble-wrap {
   padding-left: 40px; /* 32px avatar + 8px gap */
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 }
 
