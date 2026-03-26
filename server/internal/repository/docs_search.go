@@ -77,8 +77,8 @@ func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query st
 	return results, nil
 }
 
-// PublicSearch searches published help center articles by subdomain, optionally filtered by space.
-func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, query, spaceID string, limit int) ([]DocsSearchResult, error) {
+// PublicSearch searches published help center article translations for a single locale.
+func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, locale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
 	if query == "" {
 		return nil, nil
 	}
@@ -86,39 +86,60 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, qu
 		limit = 50
 	}
 
-	tsQuery := toTSQuery(query)
+	needle := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
+	dbQuery := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_translations hat").
+		Select(`
+			hat.document_id AS id,
+			hat.title AS title,
+			hat.slug AS slug,
+			hat.locale AS locale,
+			hat.excerpt AS excerpt,
+			ct.name AS collection_name,
+			ct.slug AS collection_slug,
+			st.slug AS space_slug,
+			st.name AS space_name
+		`).
+		Joins("JOIN docs_documents d ON d.id = hat.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins(`
+			JOIN docs_helpcenter_space_translations st
+				ON st.space_id = hat.space_id
+				AND st.locale = hat.locale
+				AND st.status = ?
+				AND st.published_at IS NOT NULL
+		`, model.DocsHelpcenterTranslationStatusPublished).
+		Joins(`
+			LEFT JOIN docs_helpcenter_collection_translations ct
+				ON ct.collection_id = hat.collection_id
+				AND ct.locale = hat.locale
+				AND ct.status = ?
+				AND ct.published_at IS NOT NULL
+		`, model.DocsHelpcenterTranslationStatusPublished).
+		Where(`
+			hat.workspace_id = ?
+			AND hat.locale = ?
+			AND hat.status = ?
+			AND hat.published_at IS NOT NULL
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+			AND (
+				LOWER(COALESCE(hat.title, '')) LIKE ?
+				OR LOWER(COALESCE(hat.content_text, '')) LIKE ?
+			)
+		`, workspaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished, needle, needle)
 
-	sql := `
-		SELECT d.*, ts_rank(
-			setweight(to_tsvector('english', COALESCE(d.title, '')), 'A') ||
-			setweight(to_tsvector('english', COALESCE(c.content_text, '')), 'B'),
-			to_tsquery('english', ?)
-		) AS rank
-		FROM docs_documents d
-		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
-		LEFT JOIN docs_contents c ON c.document_id = d.id
-		WHERE d.workspace_id = ?
-		  AND d.deleted_at IS NULL
-		  AND d.status = 'published'
-		  AND ha.public_published_at IS NOT NULL
-		  AND ha.slug != ''
-		  AND (
-			to_tsvector('english', COALESCE(d.title, '')) ||
-			to_tsvector('english', COALESCE(c.content_text, ''))
-		  ) @@ to_tsquery('english', ?)
-	`
-	args := []interface{}{tsQuery, workspaceID, tsQuery}
-
-	if spaceID != "" {
-		sql += " AND d.space_id = ?"
-		args = append(args, spaceID)
+	if spaceSlug != "" {
+		dbQuery = dbQuery.Where("st.slug = ?", spaceSlug)
 	}
 
-	sql += " ORDER BY rank DESC LIMIT ?"
-	args = append(args, limit)
+	dbQuery = dbQuery.
+		Order("hat.updated_at DESC").
+		Limit(limit)
 
-	var results []DocsSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
+	var results []model.PublicSearchResultResponse
+	if err := dbQuery.Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
 	return results, nil

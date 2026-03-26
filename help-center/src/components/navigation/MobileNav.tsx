@@ -5,12 +5,13 @@ import { NavTree } from './NavTree'
 import type { NavItem } from '@/lib/types'
 
 interface MobileNavProps {
+  locale: string
   navigation: NavItem[]
   spaceSlug: string
   onClose: () => void
 }
 
-export function MobileNav({ navigation, spaceSlug, onClose }: MobileNavProps) {
+export function MobileNav({ locale, navigation, spaceSlug, onClose }: MobileNavProps) {
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => {
@@ -38,6 +39,7 @@ export function MobileNav({ navigation, spaceSlug, onClose }: MobileNavProps) {
         </div>
         <ScrollArea className="h-[calc(100vh-49px)]">
           <NavTree
+            locale={locale}
             navigation={navigation}
             spaceSlug={spaceSlug}
             onArticleClick={onClose}

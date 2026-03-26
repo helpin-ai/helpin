@@ -15,6 +15,8 @@ interface SpaceContextValue {
   getPager: (articleSlug: string) => { prev?: ArticlePagerLink; next?: ArticlePagerLink }
   /** Find the collection name for a given article slug */
   getCollectionName: (articleSlug: string) => string | undefined
+  /** Find the collection slug for a given article slug */
+  getCollectionSlug: (articleSlug: string) => string | undefined
 }
 
 const SpaceContext = createContext<SpaceContextValue | null>(null)
@@ -28,8 +30,12 @@ export function SpaceProvider({
   spaceSlug: string
   children: ReactNode
 }) {
-  const { subdomain, spaces } = useDocsContext()
-  const { data: navigation, isLoading } = useSpaceNavigation(subdomain, spaceSlug)
+  const { subdomain, locale, spaces } = useDocsContext()
+  const { data: navigation, isLoading } = useSpaceNavigation(
+    subdomain,
+    locale,
+    spaceSlug,
+  )
 
   const space = spaces.find((s) => s.slug === spaceSlug)
   const nav = navigation ?? []
@@ -45,6 +51,14 @@ export function SpaceProvider({
         for (const collection of nav) {
           if (collection.articles.some((a) => a.slug === articleSlug)) {
             return collection.name
+          }
+        }
+        return undefined
+      },
+      getCollectionSlug: (articleSlug: string) => {
+        for (const collection of nav) {
+          if (collection.articles.some((a) => a.slug === articleSlug)) {
+            return collection.slug
           }
         }
         return undefined

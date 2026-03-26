@@ -15,37 +15,81 @@ export function useHelpCenterConfig(subdomain: string) {
   })
 }
 
-export function useSpaces(subdomain: string) {
+export function useSpaces(subdomain: string, locale: string) {
   return useQuery({
-    queryKey: queryKeys.helpCenter.spaces(subdomain),
-    queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain)),
-    enabled: !!subdomain,
+    queryKey: queryKeys.helpCenter.spaces(subdomain, locale),
+    queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, locale)),
+    enabled: !!subdomain && !!locale,
   })
 }
 
-export function useSpaceNavigation(subdomain: string, spaceSlug: string) {
+export function useSpaceNavigation(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+) {
   return useQuery({
-    queryKey: queryKeys.spaces.navigation(subdomain, spaceSlug),
+    queryKey: queryKeys.spaces.navigation(subdomain, locale, spaceSlug),
     queryFn: async () =>
       unwrap(
-        await helpCenterService.getSpaceNavigation(subdomain, spaceSlug),
+        await helpCenterService.getSpaceNavigation(subdomain, locale, spaceSlug),
       ),
-    enabled: !!subdomain && !!spaceSlug,
+    enabled: !!subdomain && !!locale && !!spaceSlug,
+  })
+}
+
+export function useCollection(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  collectionSlug: string,
+) {
+  return useQuery({
+    queryKey: queryKeys.collections.bySlug(
+      subdomain,
+      locale,
+      spaceSlug,
+      collectionSlug,
+    ),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getCollection(
+          subdomain,
+          locale,
+          spaceSlug,
+          collectionSlug,
+        ),
+      ),
+    enabled: !!subdomain && !!locale && !!spaceSlug && !!collectionSlug,
   })
 }
 
 export function useArticle(
   subdomain: string,
+  locale: string,
   spaceSlug: string,
+  collectionSlug: string,
   articleSlug: string,
 ) {
   return useQuery({
-    queryKey: queryKeys.articles.bySlug(subdomain, spaceSlug, articleSlug),
+    queryKey: queryKeys.articles.bySlug(
+      subdomain,
+      locale,
+      spaceSlug,
+      collectionSlug,
+      articleSlug,
+    ),
     queryFn: async () =>
       unwrap(
-        await helpCenterService.getArticle(subdomain, spaceSlug, articleSlug),
+        await helpCenterService.getArticle(
+          subdomain,
+          locale,
+          spaceSlug,
+          collectionSlug,
+          articleSlug,
+        ),
       ),
-    enabled: !!subdomain && !!spaceSlug && !!articleSlug,
+    enabled: !!subdomain && !!locale && !!spaceSlug && !!collectionSlug && !!articleSlug,
   })
 }
 
@@ -61,13 +105,14 @@ export function usePreviewArticle(subdomain: string, docId: string, token: strin
 
 export function useSearchArticles(
   subdomain: string,
+  locale: string,
   query: string,
   spaceSlug?: string,
 ) {
   return useQuery({
-    queryKey: queryKeys.articles.search(subdomain, query, spaceSlug),
+    queryKey: queryKeys.articles.search(subdomain, locale, query, spaceSlug),
     queryFn: async () =>
-      unwrap(await helpCenterService.search(subdomain, query, spaceSlug)),
-    enabled: !!subdomain && query.length >= 2,
+      unwrap(await helpCenterService.search(subdomain, locale, query, spaceSlug)),
+    enabled: !!subdomain && !!locale && query.length >= 2,
   })
 }

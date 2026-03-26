@@ -1,28 +1,246 @@
+import { useMemo } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
-import { Link, useParams } from '@tanstack/react-router'
+import {
+  Link,
+  useParams,
+  useRouterState,
+  useSearch,
+} from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { useSpaceNavigation } from '@/hooks/queries'
 import { useTheme } from '@/hooks/useTheme'
+import { queryKeys } from '@/lib/queryKeys'
+import { helpCenterService } from '@/lib/services'
+import type { LocaleRouteState } from '@/lib/locale'
+import { resolveLocaleSwitchPath } from '@/lib/locale'
+import { LocaleSwitcher } from './LocaleSwitcher'
+import type { NavItem, Space } from '@/lib/types'
 
 interface TopBarProps {
   onSearchClick: () => void
 }
 
+function unwrap<T>(res: { data: T | null; error: string | null }) {
+  if (res.error) throw new Error(res.error)
+  return res.data as T
+}
+
+function getLocaleLabel(code: string) {
+  try {
+    return (
+      new Intl.DisplayNames([code, 'en'], { type: 'language' }).of(code) ??
+      code.toUpperCase()
+    )
+  } catch {
+    return code.toUpperCase()
+  }
+}
+
+function findCollectionId(navigation: NavItem[], collectionSlug?: string) {
+  if (!collectionSlug) return undefined
+  return navigation.find((collection) => collection.slug === collectionSlug)?.id
+}
+
+function findArticleId(navigation: NavItem[], articleSlug?: string) {
+  if (!articleSlug) return undefined
+  for (const collection of navigation) {
+    const article = collection.articles.find((candidate) => candidate.slug === articleSlug)
+    if (article) return article.id
+  }
+  return undefined
+}
+
+function findSpaceId(spaces: Space[], spaceSlug?: string) {
+  if (!spaceSlug) return undefined
+  return spaces.find((space) => space.slug === spaceSlug)?.id
+}
+
 export function TopBar({ onSearchClick }: TopBarProps) {
-  const { config, spaces } = useDocsContext()
-  const params = useParams({ strict: false }) as { spaceSlug?: string }
+  const { config, subdomain, locale, defaultLocale, enabledLocales, spaces } =
+    useDocsContext()
+  const params = useParams({ strict: false }) as {
+    locale?: string
+    spaceSlug?: string
+    collectionSlug?: string
+    articleSlug?: string
+  }
+  const search = useSearch({ strict: false }) as { q?: string; space?: string }
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const activeSpaceSlug = params.spaceSlug
   const { theme, toggleTheme, canToggle } = useTheme(config.theme_mode)
+  const currentSpaceId = findSpaceId(spaces, activeSpaceSlug)
+  const { data: currentNavigation = [] } = useSpaceNavigation(
+    subdomain,
+    locale,
+    activeSpaceSlug ?? '',
+  )
 
   const sortedLinks = [...(config.header_links ?? [])].sort(
     (a, b) => (a.position ?? 0) - (b.position ?? 0),
   )
 
+  const currentRouteState = useMemo<LocaleRouteState>(() => {
+    if (pathname.endsWith('/search')) {
+      return {
+        kind: 'search',
+        spaceId: findSpaceId(spaces, search.space),
+        searchQuery: search.q,
+      }
+    }
+
+    if (params.articleSlug) {
+      return {
+        kind: 'article',
+        spaceId: currentSpaceId,
+        collectionId: findCollectionId(currentNavigation, params.collectionSlug),
+        articleId: findArticleId(currentNavigation, params.articleSlug),
+      }
+    }
+
+    if (params.collectionSlug) {
+      return {
+        kind: 'collection',
+        spaceId: currentSpaceId,
+        collectionId: findCollectionId(currentNavigation, params.collectionSlug),
+      }
+    }
+
+    if (params.spaceSlug) {
+      return {
+        kind: 'space',
+        spaceId: currentSpaceId,
+      }
+    }
+
+    return { kind: 'home' }
+  }, [
+    currentNavigation,
+    currentSpaceId,
+    params.articleSlug,
+    params.collectionSlug,
+    params.spaceSlug,
+    pathname,
+    search.q,
+    search.space,
+    spaces,
+  ])
+
+  const needsNavigationLookup =
+    currentRouteState.kind === 'collection' || currentRouteState.kind === 'article'
+
+  const localeSpaceQueries = useQueries({
+    queries: enabledLocales.map((code) => ({
+      queryKey: queryKeys.helpCenter.spaces(subdomain, code),
+      queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, code)),
+      enabled:
+        config.show_language_switcher &&
+        enabledLocales.length > 1 &&
+        !!subdomain &&
+        !!code,
+      staleTime: 60_000,
+    })),
+  })
+
+  const localeNavigationQueries = useQueries({
+    queries: enabledLocales.map((code, index) => {
+      const localeSpaces = code === locale ? spaces : localeSpaceQueries[index]?.data ?? []
+      const targetSpace = currentSpaceId
+        ? localeSpaces.find((space) => space.id === currentSpaceId)
+        : undefined
+
+      return {
+        queryKey: queryKeys.spaces.navigation(
+          subdomain,
+          code,
+          targetSpace?.slug ?? '',
+        ),
+        queryFn: async () =>
+          unwrap(
+            await helpCenterService.getSpaceNavigation(
+              subdomain,
+              code,
+              targetSpace!.slug,
+            ),
+          ),
+        enabled:
+          config.show_language_switcher &&
+          needsNavigationLookup &&
+          !!subdomain &&
+          !!targetSpace?.slug,
+        staleTime: 60_000,
+      }
+    }),
+  })
+
+  const localeOptions = useMemo(() => {
+    if (!config.show_language_switcher || enabledLocales.length <= 1) {
+      return []
+    }
+
+    const defaultIndex = enabledLocales.indexOf(defaultLocale)
+    const fallbackSpaces =
+      defaultLocale === locale
+        ? spaces
+        : defaultIndex >= 0
+          ? localeSpaceQueries[defaultIndex]?.data ?? []
+          : []
+    const fallbackNavigation =
+      !needsNavigationLookup
+        ? []
+        : defaultLocale === locale
+          ? currentNavigation
+          : defaultIndex >= 0
+            ? localeNavigationQueries[defaultIndex]?.data ?? []
+            : []
+
+    return enabledLocales.map((code, index) => {
+      const targetSpaces = code === locale ? spaces : localeSpaceQueries[index]?.data ?? []
+      const targetNavigation =
+        !needsNavigationLookup
+          ? []
+          : code === locale
+            ? currentNavigation
+            : localeNavigationQueries[index]?.data ?? []
+
+      return {
+        code,
+        label: getLocaleLabel(code),
+        href: resolveLocaleSwitchPath({
+          targetLocale: code,
+          defaultLocale,
+          current: currentRouteState,
+          targetSpaces,
+          targetNavigation,
+          fallbackSpaces,
+          fallbackNavigation,
+        }),
+        active: code === locale,
+      }
+    })
+  }, [
+    config.show_language_switcher,
+    currentNavigation,
+    currentRouteState,
+    defaultLocale,
+    enabledLocales,
+    locale,
+    localeNavigationQueries,
+    localeSpaceQueries,
+    needsNavigationLookup,
+    spaces,
+  ])
+
   return (
     <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
       {/* Left: Brand + Space tabs */}
       <div className="flex items-center min-w-0">
-        <Link to="/" className="flex items-center gap-2.5 shrink-0">
+        <Link
+          to="/$locale"
+          params={{ locale }}
+          className="flex items-center gap-2.5 shrink-0"
+        >
           {config.brand_logo_url ? (
             <>
               <img
@@ -57,8 +275,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               return (
                 <Link
                   key={space.id}
-                  to="/$spaceSlug"
-                  params={{ spaceSlug: space.slug }}
+                  to="/$locale/$spaceSlug"
+                  params={{ locale, spaceSlug: space.slug }}
                   className={cn(
                     'px-3 py-1.5 text-[13.5px] rounded-md transition-colors',
                     isActive
@@ -120,6 +338,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
             )}
           </nav>
         )}
+
+        <LocaleSwitcher currentLocale={locale} options={localeOptions} />
 
         {canToggle && (
           <div className="relative group ml-2">

@@ -1,75 +1,55 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
-import { useArticle } from '@/hooks/queries'
+import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { useSpaceContext } from '@/contexts/SpaceContext'
-import { useScrollSpy } from '@/hooks/useScrollSpy'
-import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { extractTocFromHtml } from '@/lib/toc'
-import { ArticleShell } from '@/components/article/ArticleShell'
-import { ArticleContent } from '@/components/ArticleContent'
-import { TableOfContents } from '@/components/layout/TableOfContents'
 import { LoadingState } from '@/components/LoadingState'
-import { ErrorState } from '@/components/ErrorState'
+import { useNavigate } from '@tanstack/react-router'
+import { useSpaceNavigation } from '@/hooks/queries'
 
 export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
-  component: ArticlePage,
+  component: LegacyArticleRedirect,
 })
 
-function ArticlePage() {
+function LegacyArticleRedirect() {
   const { spaceSlug, articleSlug } = Route.useParams()
-  const { subdomain } = useDocsContext()
-  const { space, getPager, getCollectionName } = useSpaceContext()
-
-  const { data: article, isLoading, error } = useArticle(subdomain, spaceSlug, articleSlug)
-
-  // Document title
-  useDocumentTitle(article?.title)
-
-  // Extract TOC headings from HTML content
-  const tocItems = useMemo(
-    () => (article?.content_html ? extractTocFromHtml(article.content_html) : []),
-    [article?.content_html],
+  const { subdomain, defaultLocale } = useDocsContext()
+  const navigate = useNavigate()
+  const { data: navigation, isLoading } = useSpaceNavigation(
+    subdomain,
+    defaultLocale,
+    spaceSlug,
   )
 
-  // Scroll spy for active TOC heading
-  const tocIds = useMemo(() => tocItems.map((item) => item.id), [tocItems])
-  const activeHeadingId = useScrollSpy(tocIds)
+  useEffect(() => {
+    if (!navigation) return
 
-  // Prev/next from space context (no duplicate query)
-  const pager = useMemo(() => getPager(articleSlug), [getPager, articleSlug])
-
-  // Collection name from space context (fallback to article data)
-  const collectionName = getCollectionName(articleSlug) ?? article?.collection_name
-
-  if (isLoading) return <LoadingState />
-  if (error || !article) {
-    return (
-      <ErrorState
-        title="Article not found"
-        message="This article does not exist or is not published."
-        statusCode={404}
-      />
+    const collection = navigation.find((item) =>
+      item.articles.some((article) => article.slug === articleSlug),
     )
+
+    if (collection) {
+      navigate({
+        to: '/$locale/$spaceSlug/$collectionSlug/$articleSlug',
+        params: {
+          locale: defaultLocale,
+          spaceSlug,
+          collectionSlug: collection.slug,
+          articleSlug,
+        },
+        replace: true,
+      })
+      return
+    }
+
+    navigate({
+      to: '/$locale/$spaceSlug',
+      params: { locale: defaultLocale, spaceSlug },
+      replace: true,
+    })
+  }, [articleSlug, defaultLocale, navigate, navigation, spaceSlug])
+
+  if (isLoading) {
+    return <LoadingState message="Redirecting..." />
   }
 
-  return (
-    <div className="flex">
-      <div className="flex-1 min-w-0">
-        <ArticleShell
-          title={article.seo_title || article.title}
-          excerpt={article.excerpt}
-          spaceSlug={spaceSlug}
-          spaceName={space?.name}
-          collectionName={collectionName}
-          articleSlug={articleSlug}
-          pager={pager}
-        >
-          <ArticleContent html={article.content_html} />
-        </ArticleShell>
-      </div>
-
-      <TableOfContents items={tocItems} activeId={activeHeadingId} />
-    </div>
-  )
+  return <LoadingState message="Redirecting..." />
 }

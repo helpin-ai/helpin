@@ -172,6 +172,8 @@ export const docsService = {
     api.get<DocsHelpcenterArticleTranslation[]>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`),
   upsertArticleTranslation: (wsId: string, docId: string, payload: UpsertDocsHelpcenterArticleTranslationRequest) =>
     api.put<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`, payload),
+  generateArticleTranslation: (wsId: string, docId: string, locale: string) =>
+    api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/generate${qs(wsId)}`),
   publishArticleTranslation: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
   unpublishArticleTranslation: (wsId: string, docId: string, locale: string) =>

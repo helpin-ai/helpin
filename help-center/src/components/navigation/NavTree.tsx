@@ -4,12 +4,14 @@ import { PhIcon } from '@/components/PhIcon'
 import type { NavItem } from '@/lib/types'
 
 interface NavTreeProps {
+  locale: string
   navigation: NavItem[]
   spaceSlug: string
   onArticleClick?: () => void
 }
 
 export function NavTree({
+  locale,
   navigation,
   spaceSlug,
   onArticleClick,
@@ -19,6 +21,7 @@ export function NavTree({
       {navigation.map((collection, idx) => (
         <CollectionGroup
           key={collection.id}
+          locale={locale}
           collection={collection}
           spaceSlug={spaceSlug}
           onArticleClick={onArticleClick}
@@ -31,11 +34,13 @@ export function NavTree({
 
 function CollectionGroup({
   collection,
+  locale,
   spaceSlug,
   onArticleClick,
   isFirst,
 }: {
   collection: NavItem
+  locale: string
   spaceSlug: string
   onArticleClick?: () => void
   isFirst: boolean
@@ -54,15 +59,25 @@ function CollectionGroup({
       <div className="mt-0.5">
         {collection.articles.map((article) => {
           const isActive = !!matchRoute({
-            to: '/$spaceSlug/$articleSlug',
-            params: { spaceSlug, articleSlug: article.slug },
+            to: '/$locale/$spaceSlug/$collectionSlug/$articleSlug',
+            params: {
+              locale,
+              spaceSlug,
+              collectionSlug: collection.slug,
+              articleSlug: article.slug,
+            },
           })
 
           return (
             <Link
               key={article.id}
-              to="/$spaceSlug/$articleSlug"
-              params={{ spaceSlug, articleSlug: article.slug }}
+              to="/$locale/$spaceSlug/$collectionSlug/$articleSlug"
+              params={{
+                locale,
+                spaceSlug,
+                collectionSlug: collection.slug,
+                articleSlug: article.slug,
+              }}
               onClick={onArticleClick}
               className={cn(
                 'block rounded-lg px-3 py-[7px] text-[13px] transition-colors',

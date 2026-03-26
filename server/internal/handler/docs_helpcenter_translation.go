@@ -207,3 +207,14 @@ func (h *DocsHandler) MarkArticleTranslationReviewed(w http.ResponseWriter, r *h
 	}
 	writeJSON(w, http.StatusOK, translation)
 }
+
+func (h *DocsHandler) GenerateArticleTranslationDraft(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+	locale := chi.URLParam(r, "locale")
+	translation, err := h.translationSvc.GenerateArticleTranslationDraft(r.Context(), docID, locale)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, translation)
+}

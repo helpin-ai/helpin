@@ -4,15 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+type scriptedDocsTranslationLLM struct {
+	response string
+	err      error
+	requests []llm.ChatRequest
+}
+
+func (f *scriptedDocsTranslationLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	f.requests = append(f.requests, req)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &llm.ChatResponse{Content: f.response}, nil
+}
 
 func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -271,6 +287,10 @@ func seedDocsHelpcenterTranslationServiceArticleTranslation(t *testing.T, db *go
 }
 
 func newDocsHelpcenterTranslationServiceForTest(db *gorm.DB) *DocsHelpcenterTranslationService {
+	return newDocsHelpcenterTranslationServiceForTestWithLLM(db, nil)
+}
+
+func newDocsHelpcenterTranslationServiceForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHelpcenterTranslationService {
 	return NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
 		repository.NewDocsHelpcenterRepository(db),
@@ -278,7 +298,22 @@ func newDocsHelpcenterTranslationServiceForTest(db *gorm.DB) *DocsHelpcenterTran
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
 		repository.NewDocsCollectionRepository(db),
+		llmProvider,
 	)
+}
+
+func newDocsHelpcenterPublicServiceForTest(db *gorm.DB) *DocsHelpcenterService {
+	svc := NewDocsHelpcenterService(
+		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsContentRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		nil,
+		nil,
+	)
+	svc.SetTranslationService(newDocsHelpcenterTranslationServiceForTest(db))
+	return svc
 }
 
 func TestDocsHelpcenterTranslationService(t *testing.T) {
@@ -544,4 +579,296 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			t.Fatalf("resolved translation = %+v, want default locale mirror", translation)
 		}
 	})
+
+	t.Run("GenerateArticleTranslationDraft creates a draft translation from AI output", func(t *testing.T) {
+		db, _, ctx := setupBase(t)
+		provider := &scriptedDocsTranslationLLM{
+			response: `{"title":"Commencer ici","slug":"commencer-ici","excerpt":"Guide de demarrage rapide","seo_title":"Commencer ici","seo_description":"Guide d'aide en francais","body":"Bonjour\n\nBienvenue dans Helpin."}`,
+		}
+		svc := newDocsHelpcenterTranslationServiceForTestWithLLM(db, provider)
+
+		translation, err := svc.GenerateArticleTranslationDraft(ctx, documentID, "fr")
+		if err != nil {
+			t.Fatalf("GenerateArticleTranslationDraft: %v", err)
+		}
+		if translation.Locale != "fr" || translation.Title != "Commencer ici" || translation.Slug != "commencer-ici" {
+			t.Fatalf("unexpected generated translation: %+v", translation)
+		}
+		if translation.Status != model.DocsHelpcenterTranslationStatusDraft {
+			t.Fatalf("generated translation status = %q, want draft", translation.Status)
+		}
+		if !translation.SourceSynced {
+			t.Fatal("generated translation source_synced = false, want true")
+		}
+		if len(translation.Content) == 0 || !strings.Contains(string(translation.Content), "Bienvenue dans Helpin.") {
+			t.Fatalf("generated translation content = %s, want translated body", string(translation.Content))
+		}
+		if len(provider.requests) != 1 {
+			t.Fatalf("llm requests = %d, want 1", len(provider.requests))
+		}
+	})
+}
+
+func TestDocsHelpcenterPublicLocale_ListSpacesUsesLocaleTranslations(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-hc-public-spaces"
+		userID      = "user-hc-public-spaces"
+		spaceID     = "space-hc-public-spaces"
+	)
+
+	now := time.Date(2026, 3, 25, 19, 0, 0, 0, time.UTC)
+	jsonEmptyArray := json.RawMessage(`[]`)
+	jsonEmptyObject := json.RawMessage(`{}`)
+
+	db := setupDocsHelpcenterTranslationServiceTestDB(t)
+	ctx := context.Background()
+
+	seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-hc-public-spaces",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "hc-public-spaces",
+		BrandName:               "HC Public Spaces",
+		BrandColor:              "#000000",
+		ThemeMode:               "system",
+		HeaderLinks:             jsonEmptyArray,
+		FooterConfig:            jsonEmptyObject,
+		HomepageConfig:          jsonEmptyObject,
+		SpaceNavConfig:          jsonEmptyObject,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en", "fr"},
+		ShowLanguageSwitcher:    true,
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		Slug:        "getting-started",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
+		ID:              "en-space-public-spaces",
+		SpaceID:         spaceID,
+		WorkspaceID:     workspaceID,
+		Locale:          "en",
+		Name:            "Getting Started",
+		Slug:            "getting-started",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
+		ID:              "fr-space-public-spaces",
+		SpaceID:         spaceID,
+		WorkspaceID:     workspaceID,
+		Locale:          "fr",
+		Name:            "Demarrage",
+		Slug:            "demarrage",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+
+	svc := newDocsHelpcenterPublicServiceForTest(db)
+	spaces, err := svc.ListPublicSpaces(ctx, workspaceID, "fr")
+	if err != nil {
+		t.Fatalf("ListPublicSpaces: %v", err)
+	}
+	if len(spaces) != 1 {
+		t.Fatalf("len(spaces) = %d, want 1", len(spaces))
+	}
+	if spaces[0].Name != "Demarrage" || spaces[0].Slug != "demarrage" {
+		t.Fatalf("space = %+v, want French translation", spaces[0])
+	}
+}
+
+func TestDocsHelpcenterPublicLocale_GetArticleFallsBackToDefaultLocale(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID  = "ws-hc-public-article"
+		userID       = "user-hc-public-article"
+		spaceID      = "space-hc-public-article"
+		collectionID = "collection-hc-public-article"
+		documentID   = "document-hc-public-article"
+	)
+
+	ptr := func(value string) *string { return &value }
+	now := time.Date(2026, 3, 25, 19, 30, 0, 0, time.UTC)
+	jsonEmptyArray := json.RawMessage(`[]`)
+	jsonEmptyObject := json.RawMessage(`{}`)
+
+	db := setupDocsHelpcenterTranslationServiceTestDB(t)
+	ctx := context.Background()
+
+	seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-hc-public-article",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "hc-public-article",
+		BrandName:               "HC Public Article",
+		BrandColor:              "#000000",
+		ThemeMode:               "system",
+		HeaderLinks:             jsonEmptyArray,
+		FooterConfig:            jsonEmptyObject,
+		HomepageConfig:          jsonEmptyObject,
+		SpaceNavConfig:          jsonEmptyObject,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en", "fr"},
+		ShowLanguageSwitcher:    true,
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		Slug:        "getting-started",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:          collectionID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Basics",
+		Slug:        "basics",
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+		ID:           documentID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Title:        "Start Here",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		Excerpt:      ptr("How to begin"),
+		Position:     0,
+		PublishedAt:  &now,
+		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "article-hc-public-article",
+		DocumentID:        documentID,
+		Slug:              "start-here",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
+		ID:              "en-space-public-article",
+		SpaceID:         spaceID,
+		WorkspaceID:     workspaceID,
+		Locale:          "en",
+		Name:            "Getting Started",
+		Slug:            "getting-started",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	seedDocsHelpcenterTranslationServiceCollectionTranslation(t, db, model.DocsHelpcenterCollectionTranslation{
+		ID:              "en-collection-public-article",
+		CollectionID:    collectionID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		Locale:          "en",
+		Name:            "Basics",
+		Slug:            "basics",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	seedDocsHelpcenterTranslationServiceArticleTranslation(t, db, model.DocsHelpcenterArticleTranslation{
+		ID:              "en-article-public-article",
+		DocumentID:      documentID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptr(collectionID),
+		Locale:          "en",
+		Title:           "Start Here",
+		Slug:            "start-here",
+		Excerpt:         ptr("How to begin"),
+		Content:         json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Welcome"}]}]}`),
+		ContentText:     "Welcome",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
+		ID:              "fr-space-public-article",
+		SpaceID:         spaceID,
+		WorkspaceID:     workspaceID,
+		Locale:          "fr",
+		Name:            "Demarrage",
+		Slug:            "demarrage",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	seedDocsHelpcenterTranslationServiceCollectionTranslation(t, db, model.DocsHelpcenterCollectionTranslation{
+		ID:              "fr-collection-public-article",
+		CollectionID:    collectionID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		Locale:          "fr",
+		Name:            "Bases",
+		Slug:            "bases",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+
+	svc := newDocsHelpcenterPublicServiceForTest(db)
+	article, err := svc.GetPublicArticle(ctx, workspaceID, "fr", "demarrage", "bases", "start-here")
+	if err != nil {
+		t.Fatalf("GetPublicArticle: %v", err)
+	}
+	if article == nil {
+		t.Fatal("article = nil, want fallback article")
+	}
+	if article.Title != "Start Here" || article.Slug != "start-here" {
+		t.Fatalf("article = %+v, want default-locale fallback article", article)
+	}
 }

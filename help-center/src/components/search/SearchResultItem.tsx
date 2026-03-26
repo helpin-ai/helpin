@@ -3,29 +3,24 @@ import { FileText, ArrowRight } from 'lucide-react'
 import type { SearchResult } from '@/lib/types'
 
 interface SearchResultItemProps {
+  locale: string
   result: SearchResult
   variant?: 'compact' | 'full'
   onClick?: () => void
 }
 
 export function SearchResultItem({
+  locale,
   result,
   variant = 'full',
   onClick,
 }: SearchResultItemProps) {
   const isCompact = variant === 'compact'
+  const targetLocale = result.locale || locale
+  const collectionSlug = result.collection_slug
 
-  return (
-    <Link
-      to="/$spaceSlug/$articleSlug"
-      params={{ spaceSlug: result.space_slug, articleSlug: result.slug }}
-      onClick={onClick}
-      className={
-        isCompact
-          ? 'flex items-center gap-3 px-4 py-2.5 mx-1 rounded-md transition-colors hover:bg-muted/60 group'
-          : 'block rounded-lg border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02] group'
-      }
-    >
+  const content = (
+    <>
       <FileText
         size={isCompact ? 15 : 18}
         className="shrink-0 text-primary/70"
@@ -53,6 +48,39 @@ export function SearchResultItem({
           className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50"
         />
       )}
+    </>
+  )
+
+  const className = isCompact
+    ? 'flex items-center gap-3 px-4 py-2.5 mx-1 rounded-md transition-colors hover:bg-muted/60 group'
+    : 'block rounded-lg border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02] group'
+
+  if (!collectionSlug) {
+    return (
+      <Link
+        to="/$locale/$spaceSlug"
+        params={{ locale: targetLocale, spaceSlug: result.space_slug }}
+        onClick={onClick}
+        className={className}
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <Link
+      to="/$locale/$spaceSlug/$collectionSlug/$articleSlug"
+      params={{
+        locale: targetLocale,
+        spaceSlug: result.space_slug,
+        collectionSlug,
+        articleSlug: result.slug,
+      }}
+      onClick={onClick}
+      className={className}
+    >
+      {content}
     </Link>
   )
 }

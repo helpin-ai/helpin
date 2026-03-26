@@ -5,22 +5,26 @@ import { ArticleFeedback } from './ArticleFeedback'
 import type { ArticlePagerLink } from '@/lib/navigation'
 
 interface ArticleShellProps {
+  locale: string
   title: string
   excerpt?: string | null
   spaceSlug: string
   spaceName?: string
   collectionName?: string | null
+  collectionSlug?: string | null
   articleSlug: string
   pager: { prev?: ArticlePagerLink; next?: ArticlePagerLink }
   children: ReactNode
 }
 
 export function ArticleShell({
+  locale,
   title,
   excerpt,
   spaceSlug,
   spaceName: _spaceName,
   collectionName,
+  collectionSlug,
   articleSlug,
   pager,
   children,
@@ -33,8 +37,10 @@ export function ArticleShell({
       {collectionName && (
         <div className="mb-2.5">
           <Breadcrumbs
+            locale={locale}
             spaceSlug={spaceSlug}
             collectionName={collectionName}
+            collectionSlug={collectionSlug}
           />
         </div>
       )}
@@ -52,8 +58,13 @@ export function ArticleShell({
 
       {children}
 
-      <ArticleFeedback spaceSlug={spaceSlug} articleSlug={articleSlug} />
-      <ArticlePager spaceSlug={spaceSlug} prev={pager.prev} next={pager.next} />
+      <ArticleFeedback
+        locale={locale}
+        spaceSlug={spaceSlug}
+        collectionSlug={collectionSlug}
+        articleSlug={articleSlug}
+      />
+      <ArticlePager locale={locale} spaceSlug={spaceSlug} prev={pager.prev} next={pager.next} />
     </article>
   )
 }

@@ -1,5 +1,9 @@
 import { useEffect } from 'react'
-import { createRootRouteWithContext, useRouterState } from '@tanstack/react-router'
+import {
+  createRootRouteWithContext,
+  useParams,
+  useRouterState,
+} from '@tanstack/react-router'
 import { Eye } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/LoadingState'
@@ -14,6 +18,7 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
 
 function RootLayout() {
   const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
+  const params = useParams({ strict: false }) as { locale?: string }
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPreview = pathname.startsWith('/preview/')
 
@@ -23,7 +28,11 @@ function RootLayout() {
     error: configError,
   } = useHelpCenterConfig(subdomain)
 
-  const { data: spaces, isLoading: spacesLoading } = useSpaces(subdomain)
+  const activeLocale = params.locale || config?.default_locale || ''
+  const { data: spaces, isLoading: spacesLoading } = useSpaces(
+    subdomain,
+    activeLocale,
+  )
 
   // Inject brand color as CSS custom property overrides
   useEffect(() => {
@@ -106,7 +115,14 @@ function RootLayout() {
   }
 
   return (
-    <DocsProvider subdomain={subdomain} config={config!} spaces={spaces ?? []}>
+    <DocsProvider
+      subdomain={subdomain}
+      locale={activeLocale}
+      defaultLocale={config!.default_locale}
+      enabledLocales={config!.enabled_locales ?? [config!.default_locale]}
+      config={config!}
+      spaces={spaces ?? []}
+    >
       {isPreview && (
         <div className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-center">
           <Eye size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />

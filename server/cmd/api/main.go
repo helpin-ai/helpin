@@ -665,6 +665,18 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
+	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
+	var llmProvider llm.Provider
+	switch cfg.CRMLLMProvider {
+	case "openai":
+		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+	default:
+		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
+	}
+	if llmProvider != nil {
+		slog.Info("LLM provider configured for signal detection")
+	}
+
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo)
@@ -672,7 +684,7 @@ func main() {
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
-	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo)
+	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
@@ -749,18 +761,6 @@ func main() {
 		slog.Info("Gmail OAuth configured")
 	} else {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
-	}
-
-	// Initialize LLM provider for signal detection and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
 	}
 
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)

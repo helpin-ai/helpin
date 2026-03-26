@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -18,6 +21,7 @@ type DocsHelpcenterTranslationService struct {
 	contentRepo     *repository.DocsContentRepository
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
+	llmProvider     llm.Provider
 }
 
 // NewDocsHelpcenterTranslationService creates a new multilingual help-center service.
@@ -28,6 +32,7 @@ func NewDocsHelpcenterTranslationService(
 	contentRepo *repository.DocsContentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
 	collectionRepo *repository.DocsCollectionRepository,
+	llmProvider llm.Provider,
 ) *DocsHelpcenterTranslationService {
 	return &DocsHelpcenterTranslationService{
 		translationRepo: translationRepo,
@@ -36,7 +41,17 @@ func NewDocsHelpcenterTranslationService(
 		contentRepo:     contentRepo,
 		spaceRepo:       spaceRepo,
 		collectionRepo:  collectionRepo,
+		llmProvider:     llmProvider,
 	}
+}
+
+type generatedArticleTranslationDraft struct {
+	Title          string `json:"title"`
+	Slug           string `json:"slug"`
+	Excerpt        string `json:"excerpt"`
+	SEOTitle       string `json:"seo_title"`
+	SEODescription string `json:"seo_description"`
+	Body           string `json:"body"`
 }
 
 func (s *DocsHelpcenterTranslationService) GetLocales(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
@@ -278,6 +293,101 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 	}
 
 	return s.translationRepo.UpsertArticleTranslation(ctx, translation)
+}
+
+func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx context.Context, documentID, locale string) (*model.DocsHelpcenterArticleTranslation, error) {
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("AI translation generation is unavailable")
+	}
+
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("help center config not found")
+	}
+
+	locale, err = validateEditableLocale(cfg, locale)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+
+	article, err := s.hcRepo.GetArticle(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+
+	sourcePayload := map[string]any{
+		"locale":           locale,
+		"source_title":     doc.Title,
+		"source_excerpt":   strings.TrimSpace(stringPtrValue(doc.Excerpt)),
+		"source_slug":      strings.TrimSpace(articleSlug(article)),
+		"source_seo_title": strings.TrimSpace(stringPtrValue(articleSEOTitle(article))),
+		"source_seo_desc":  strings.TrimSpace(stringPtrValue(articleSEODescription(article))),
+		"source_body":      strings.TrimSpace(contentText(content)),
+	}
+	sourceJSON, err := json.Marshal(sourcePayload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal translation source payload: %w", err)
+	}
+
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: `You generate high-quality help center article drafts for a requested locale.
+Return strict JSON with keys: title, slug, excerpt, seo_title, seo_description, body.
+Rules:
+- Translate the article naturally for the requested locale.
+- Keep product names like Helpin unchanged.
+- body must be plain text with paragraphs separated by blank lines.
+- slug must be URL-safe ASCII; if you cannot produce one, return an empty string.
+- Do not include markdown fences or extra commentary.`,
+		Messages: []llm.Message{
+			{Role: "user", Content: string(sourceJSON)},
+		},
+		Temperature: 0.2,
+		JSONMode:    true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate article translation draft: %w", err)
+	}
+
+	var generated generatedArticleTranslationDraft
+	if err := llm.UnmarshalResponse(resp.Content, &generated); err != nil {
+		return nil, fmt.Errorf("parse generated translation draft: %w", err)
+	}
+
+	title := strings.TrimSpace(generated.Title)
+	if title == "" {
+		return nil, fmt.Errorf("generated translation draft is missing a title")
+	}
+
+	body := strings.TrimSpace(generated.Body)
+	slug := normalizedSlugOrFallback(generated.Slug, articleSlug(article), title, locale)
+
+	req := model.UpsertDocsHelpcenterArticleTranslationRequest{
+		Locale:         locale,
+		Title:          title,
+		Slug:           slug,
+		Excerpt:        trimmedStringPointer(generated.Excerpt),
+		Content:        plainTextToTipTapDoc(body),
+		SEOTitle:       trimmedStringPointer(generated.SEOTitle),
+		SEODescription: trimmedStringPointer(generated.SEODescription),
+		Status:         model.DocsHelpcenterTranslationStatusDraft,
+	}
+	return s.UpsertArticleTranslation(ctx, documentID, req)
 }
 
 func (s *DocsHelpcenterTranslationService) UnpublishArticleTranslation(ctx context.Context, documentID, locale string) (*model.DocsHelpcenterArticleTranslation, error) {
@@ -774,4 +884,111 @@ func validateEditableLocale(cfg *model.DocsHelpcenterConfig, locale string) (str
 		return "", fmt.Errorf("locale %s is not enabled for this help center", normalized)
 	}
 	return normalized, nil
+}
+
+var nonSlugChars = regexp.MustCompile(`[^a-z0-9-]+`)
+
+func normalizedSlugOrFallback(candidate, sourceSlug, title, locale string) string {
+	if normalized := normalizeSlug(candidate); normalized != "" {
+		return normalized
+	}
+	if normalized := normalizeSlug(title); normalized != "" {
+		return normalized
+	}
+	base := normalizeSlug(sourceSlug)
+	if base == "" {
+		base = "article"
+	}
+	return fmt.Sprintf("%s-%s", base, normalizeSlug(locale))
+}
+
+func normalizeSlug(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "_", "-")
+	trimmed = nonSlugChars.ReplaceAllString(trimmed, "-")
+	trimmed = strings.Trim(trimmed, "-")
+	for strings.Contains(trimmed, "--") {
+		trimmed = strings.ReplaceAll(trimmed, "--", "-")
+	}
+	return trimmed
+}
+
+func plainTextToTipTapDoc(body string) json.RawMessage {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return json.RawMessage(`{"type":"doc","content":[]}`)
+	}
+
+	parts := strings.Split(body, "\n\n")
+	content := make([]map[string]any, 0, len(parts))
+	for _, part := range parts {
+		paragraph := strings.TrimSpace(part)
+		if paragraph == "" {
+			continue
+		}
+		content = append(content, map[string]any{
+			"type": "paragraph",
+			"content": []map[string]any{
+				{
+					"type": "text",
+					"text": paragraph,
+				},
+			},
+		})
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"type":    "doc",
+		"content": content,
+	})
+	if err != nil {
+		return json.RawMessage(`{"type":"doc","content":[]}`)
+	}
+	return payload
+}
+
+func trimmedStringPointer(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func stringPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func articleSlug(article *model.DocsHelpcenterArticle) string {
+	if article == nil {
+		return ""
+	}
+	return article.Slug
+}
+
+func articleSEOTitle(article *model.DocsHelpcenterArticle) *string {
+	if article == nil {
+		return nil
+	}
+	return article.SEOTitle
+}
+
+func articleSEODescription(article *model.DocsHelpcenterArticle) *string {
+	if article == nil {
+		return nil
+	}
+	return article.SEODescription
+}
+
+func contentText(content *model.DocsContent) string {
+	if content == nil {
+		return ""
+	}
+	return content.ContentText
 }

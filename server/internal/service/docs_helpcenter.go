@@ -381,99 +381,441 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 	}
 }
 
+func defaultHelpcenterLocale(cfg *model.DocsHelpcenterConfig) string {
+	if cfg != nil && cfg.DefaultLocale != "" {
+		return cfg.DefaultLocale
+	}
+	return "en"
+}
+
+func (s *DocsHelpcenterService) getPublicLocaleConfig(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, string, error) {
+	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, "", err
+	}
+	if cfg == nil {
+		return nil, "", fmt.Errorf("help center config not found")
+	}
+	return cfg, defaultHelpcenterLocale(cfg), nil
+}
+
+func (s *DocsHelpcenterService) resolvePublicSpaceTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterSpaceTranslation, string, bool, error) {
+	translation, err := s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	defaultLocale := defaultHelpcenterLocale(cfg)
+	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
+		return nil, "", false, fmt.Errorf("space not found")
+	}
+
+	fallback, err := s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, defaultLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if fallback == nil {
+		return nil, "", false, fmt.Errorf("space not found")
+	}
+	return fallback, defaultLocale, true, nil
+}
+
+func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, spaceID, requestedLocale, slug string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
+	translation, err := s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	defaultLocale := defaultHelpcenterLocale(cfg)
+	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
+		return nil, "", false, fmt.Errorf("collection not found")
+	}
+
+	fallback, err := s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, defaultLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if fallback == nil {
+		return nil, "", false, fmt.Errorf("collection not found")
+	}
+	return fallback, defaultLocale, true, nil
+}
+
+func (s *DocsHelpcenterService) resolvePublicArticleTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, spaceID string, collectionID *string, requestedLocale, slug string) (*model.DocsHelpcenterArticleTranslation, string, bool, error) {
+	translation, err := s.hcRepo.GetPublicArticleTranslationBySlug(ctx, spaceID, collectionID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	defaultLocale := defaultHelpcenterLocale(cfg)
+	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
+		return nil, "", false, fmt.Errorf("article not found")
+	}
+
+	fallback, err := s.hcRepo.GetPublicArticleTranslationBySlug(ctx, spaceID, collectionID, defaultLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if fallback == nil {
+		return nil, "", false, fmt.Errorf("article not found")
+	}
+	return fallback, defaultLocale, true, nil
+}
+
 // ListPublicSpaces returns external-capable spaces for the public help center.
-func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceID string) ([]model.PublicSpaceResponse, error) {
+func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceID, requestedLocale string) ([]model.PublicSpaceResponse, error) {
+	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
 	spaces, err := s.spaceRepo.ListPublicByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]model.PublicSpaceResponse, len(spaces))
-	for i, sp := range spaces {
-		result[i] = model.PublicSpaceResponse{
-			ID:          sp.ID,
-			Name:        sp.Name,
-			Slug:        sp.Slug,
-			Icon:        sp.Icon,
-			Description: nil, // DocsSpace doesn't have Description — omit
+
+	requestedTranslations, err := s.hcRepo.ListPublicSpaceTranslations(ctx, workspaceID, requestedLocale)
+	if err != nil {
+		return nil, err
+	}
+	requestedBySpaceID := make(map[string]model.DocsHelpcenterSpaceTranslation, len(requestedTranslations))
+	for _, translation := range requestedTranslations {
+		requestedBySpaceID[translation.SpaceID] = translation
+	}
+
+	fallbackBySpaceID := map[string]model.DocsHelpcenterSpaceTranslation{}
+	if cfg.FallbackToDefaultLocale && requestedLocale != defaultLocale {
+		fallbackTranslations, err := s.hcRepo.ListPublicSpaceTranslations(ctx, workspaceID, defaultLocale)
+		if err != nil {
+			return nil, err
 		}
+		for _, translation := range fallbackTranslations {
+			fallbackBySpaceID[translation.SpaceID] = translation
+		}
+	}
+
+	result := make([]model.PublicSpaceResponse, 0, len(spaces))
+	for _, sp := range spaces {
+		translation, ok := requestedBySpaceID[sp.ID]
+		if !ok {
+			translation, ok = fallbackBySpaceID[sp.ID]
+			if !ok {
+				continue
+			}
+		}
+		result = append(result, model.PublicSpaceResponse{
+			ID:          sp.ID,
+			Name:        translation.Name,
+			Slug:        translation.Slug,
+			Icon:        sp.Icon,
+			Description: translation.Description,
+		})
 	}
 	return result, nil
 }
 
 // GetSpaceNavigation returns the sidebar navigation tree for a space.
-func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspaceID, spaceSlug string) ([]model.PublicNavCollection, error) {
-	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, spaceSlug)
+func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspaceID, requestedLocale, spaceSlug string) ([]model.PublicNavCollection, error) {
+	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if space == nil {
-		return nil, fmt.Errorf("space not found")
+
+	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
+	if err != nil {
+		return nil, err
 	}
-	return s.hcRepo.ListSpaceNavigation(ctx, space.ID)
+
+	requestedCollections, err := s.hcRepo.ListPublicCollectionTranslations(ctx, spaceTranslation.SpaceID, requestedLocale)
+	if err != nil {
+		return nil, err
+	}
+	requestedCollectionByID := make(map[string]model.DocsHelpcenterCollectionTranslation, len(requestedCollections))
+	for _, translation := range requestedCollections {
+		requestedCollectionByID[translation.CollectionID] = translation
+	}
+
+	requestedArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, requestedLocale)
+	if err != nil {
+		return nil, err
+	}
+	requestedArticleByID := make(map[string]model.DocsHelpcenterArticleTranslation, len(requestedArticles))
+	for _, translation := range requestedArticles {
+		requestedArticleByID[translation.DocumentID] = translation
+	}
+
+	fallbackCollectionByID := map[string]model.DocsHelpcenterCollectionTranslation{}
+	fallbackArticleByID := map[string]model.DocsHelpcenterArticleTranslation{}
+	if cfg.FallbackToDefaultLocale && requestedLocale != defaultLocale {
+		fallbackCollections, err := s.hcRepo.ListPublicCollectionTranslations(ctx, spaceTranslation.SpaceID, defaultLocale)
+		if err != nil {
+			return nil, err
+		}
+		for _, translation := range fallbackCollections {
+			fallbackCollectionByID[translation.CollectionID] = translation
+		}
+
+		fallbackArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, defaultLocale)
+		if err != nil {
+			return nil, err
+		}
+		for _, translation := range fallbackArticles {
+			fallbackArticleByID[translation.DocumentID] = translation
+		}
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, spaceTranslation.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	status := model.DocStatusPublished
+	spaceID := spaceTranslation.SpaceID
+	docs, err := s.docRepo.List(ctx, workspaceID, &spaceID, nil, &status, nil, "", false)
+	if err != nil {
+		return nil, err
+	}
+
+	articlesByCollection := map[string][]model.PublicNavArticle{}
+	uncategorized := make([]model.PublicNavArticle, 0)
+	for _, doc := range docs {
+		translation, ok := requestedArticleByID[doc.ID]
+		if !ok {
+			translation, ok = fallbackArticleByID[doc.ID]
+			if !ok {
+				continue
+			}
+		}
+
+		article := model.PublicNavArticle{ID: doc.ID, Title: translation.Title, Slug: translation.Slug}
+		if doc.CollectionID == nil {
+			uncategorized = append(uncategorized, article)
+			continue
+		}
+
+		if _, ok := requestedCollectionByID[*doc.CollectionID]; !ok {
+			if _, ok := fallbackCollectionByID[*doc.CollectionID]; !ok {
+				continue
+			}
+		}
+		articlesByCollection[*doc.CollectionID] = append(articlesByCollection[*doc.CollectionID], article)
+	}
+
+	result := make([]model.PublicNavCollection, 0, len(collections)+1)
+	for _, collection := range collections {
+		articles, ok := articlesByCollection[collection.ID]
+		if !ok || len(articles) == 0 {
+			continue
+		}
+
+		translation, ok := requestedCollectionByID[collection.ID]
+		if !ok {
+			translation, ok = fallbackCollectionByID[collection.ID]
+			if !ok {
+				continue
+			}
+		}
+
+		result = append(result, model.PublicNavCollection{
+			ID:       collection.ID,
+			Name:     translation.Name,
+			Slug:     translation.Slug,
+			Icon:     collection.Icon,
+			Articles: articles,
+		})
+	}
+
+	if len(uncategorized) > 0 {
+		result = append(result, model.PublicNavCollection{
+			ID:       "uncategorized",
+			Name:     "General",
+			Slug:     "uncategorized",
+			Articles: uncategorized,
+		})
+	}
+
+	return result, nil
 }
 
-// GetPublicArticle returns the full article detail for the help center.
-func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceID, spaceSlug, articleSlug string) (*model.PublicArticleResponse, error) {
-	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, spaceSlug)
+// GetPublicArticle returns the full article detail for the locale-aware public help center.
+func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
-	}
-	if space == nil {
-		return nil, fmt.Errorf("space not found")
 	}
 
-	doc, ha, content, err := s.hcRepo.GetPublicArticleBySlug(ctx, space.ID, articleSlug)
+	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
 		return nil, err
 	}
-	if doc == nil || ha == nil {
+
+	var (
+		collectionName *string
+		collectionID   *string
+		resolvedColl   *model.DocsHelpcenterCollectionTranslation
+	)
+	if collectionSlug != "" {
+		resolvedColl, _, _, err = s.resolvePublicCollectionTranslationBySlug(ctx, cfg, spaceTranslation.SpaceID, requestedLocale, collectionSlug)
+		if err != nil {
+			return nil, err
+		}
+		collectionID = &resolvedColl.CollectionID
+		collectionName = &resolvedColl.Name
+	}
+
+	translation, resolvedLocale, fellBack, err := s.resolvePublicArticleTranslationBySlug(ctx, cfg, spaceTranslation.SpaceID, collectionID, requestedLocale, articleSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := s.docRepo.GetByID(ctx, translation.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
 		return nil, fmt.Errorf("article not found")
 	}
 
-	// Resolve collection name if present.
-	var collectionName *string
-	if doc.CollectionID != nil {
+	if collectionName == nil && doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
 		if err == nil && coll != nil {
 			collectionName = &coll.Name
 		}
 	}
 
-	// Render TipTap JSON → HTML for public display.
 	var contentHTML *string
-	if content != nil && len(content.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(content.Content)
+	if len(translation.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
 	}
 
 	var publishedAt *string
-	if ha.PublicPublishedAt != nil {
-		s := ha.PublicPublishedAt.Format(time.RFC3339)
-		publishedAt = &s
+	if translation.PublishedAt != nil {
+		formatted := translation.PublishedAt.Format(time.RFC3339)
+		publishedAt = &formatted
 	}
 
-	// Increment view count asynchronously.
-	go func() { _ = s.hcRepo.IncrementViewCount(ctx, doc.ID) }()
+	go func() {
+		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
+	}()
+
+	var collectionSlugValue *string
+	if resolvedColl != nil {
+		collectionSlugValue = &resolvedColl.Slug
+	}
 
 	return &model.PublicArticleResponse{
 		ID:              doc.ID,
-		Title:           doc.Title,
-		Slug:            ha.Slug,
-		Excerpt:         doc.Excerpt,
+		Title:           translation.Title,
+		Slug:            translation.Slug,
+		Locale:          resolvedLocale,
+		RequestedLocale: requestedLocale,
+		IsFallback:      fellBack,
+		Excerpt:         translation.Excerpt,
 		Icon:            doc.Icon,
 		Status:          doc.Status,
+		SpaceSlug:       spaceTranslation.Slug,
 		CollectionID:    doc.CollectionID,
 		CollectionName:  collectionName,
+		CollectionSlug:  collectionSlugValue,
 		PublishedAt:     publishedAt,
-		SEOTitle:        ha.SEOTitle,
-		SEODescription:  ha.SEODescription,
-		HelpfulCount:    ha.HelpfulCount,
-		NotHelpfulCount: ha.NotHelpfulCount,
-		ViewCount:       ha.ViewCount,
+		SEOTitle:        translation.SEOTitle,
+		SEODescription:  translation.SEODescription,
+		HelpfulCount:    translation.HelpfulCount,
+		NotHelpfulCount: translation.NotHelpfulCount,
+		ViewCount:       translation.ViewCount,
 		ContentHTML:     contentHTML,
 	}, nil
+}
+
+// GetPublicLocalizedCollection returns a translated collection page and its translated articles.
+func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
+	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	collectionTranslation, _, _, err := s.resolvePublicCollectionTranslationBySlug(ctx, cfg, spaceTranslation.SpaceID, requestedLocale, collectionSlug)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	requestedArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, requestedLocale)
+	if err != nil {
+		return nil, nil, err
+	}
+	requestedArticleByID := make(map[string]model.DocsHelpcenterArticleTranslation, len(requestedArticles))
+	for _, translation := range requestedArticles {
+		requestedArticleByID[translation.DocumentID] = translation
+	}
+
+	fallbackArticleByID := map[string]model.DocsHelpcenterArticleTranslation{}
+	if cfg.FallbackToDefaultLocale && requestedLocale != defaultLocale {
+		fallbackArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, defaultLocale)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, translation := range fallbackArticles {
+			fallbackArticleByID[translation.DocumentID] = translation
+		}
+	}
+
+	status := model.DocStatusPublished
+	spaceID := spaceTranslation.SpaceID
+	collectionID := collectionTranslation.CollectionID
+	docs, err := s.docRepo.List(ctx, workspaceID, &spaceID, &collectionID, &status, nil, "", false)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	articles := make([]model.PublicNavArticle, 0, len(docs))
+	for _, doc := range docs {
+		translation, ok := requestedArticleByID[doc.ID]
+		if !ok {
+			translation, ok = fallbackArticleByID[doc.ID]
+			if !ok {
+				continue
+			}
+		}
+		articles = append(articles, model.PublicNavArticle{
+			ID:    doc.ID,
+			Title: translation.Title,
+			Slug:  translation.Slug,
+		})
+	}
+
+	collection, err := s.collectionRepo.GetByID(ctx, collectionTranslation.CollectionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var icon *string
+	if collection != nil {
+		icon = collection.Icon
+	}
+
+	return &model.PublicNavCollection{
+		ID:       collectionTranslation.CollectionID,
+		Name:     collectionTranslation.Name,
+		Slug:     collectionTranslation.Slug,
+		Icon:     icon,
+		Articles: articles,
+	}, articles, nil
 }
 
 // GetPublicArticleByCanonicalPath returns a public article by collection slug and article slug.
@@ -672,4 +1014,14 @@ func (s *DocsHelpcenterService) SubmitFeedback(ctx context.Context, documentID s
 		return err
 	}
 	return s.hcRepo.IncrementFeedbackCount(ctx, documentID, req.IsHelpful)
+}
+
+func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, documentID, locale string, req model.DocsArticleFeedbackRequest) error {
+	if err := s.SubmitFeedback(ctx, documentID, req); err != nil {
+		return err
+	}
+	if locale == "" {
+		return nil
+	}
+	return s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful)
 }

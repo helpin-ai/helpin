@@ -169,6 +169,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
+			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
+			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/{locale}/search", h.Docs.PublicSearchArticles)
+
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
@@ -773,6 +780,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkCollectionTranslationReviewed)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/helpcenter/translations", h.Docs.ListArticleTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/documents/{docId}/helpcenter/translations", h.Docs.UpsertArticleTranslation)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateArticleTranslationDraft)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/publish", h.Docs.PublishArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkArticleTranslationReviewed)

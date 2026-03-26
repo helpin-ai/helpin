@@ -1,16 +1,36 @@
 export const queryKeys = {
   helpCenter: {
     config: (subdomain: string) => ['helpCenter', 'config', subdomain] as const,
-    spaces: (subdomain: string) => ['helpCenter', 'spaces', subdomain] as const,
+    spaces: (subdomain: string, locale: string) =>
+      ['helpCenter', 'spaces', subdomain, locale] as const,
   },
   spaces: {
-    navigation: (subdomain: string, spaceSlug: string) =>
-      ['spaces', subdomain, spaceSlug, 'navigation'] as const,
+    navigation: (subdomain: string, locale: string, spaceSlug: string) =>
+      ['spaces', subdomain, locale, spaceSlug, 'navigation'] as const,
+  },
+  collections: {
+    bySlug: (
+      subdomain: string,
+      locale: string,
+      spaceSlug: string,
+      collectionSlug: string,
+    ) =>
+      ['collections', subdomain, locale, spaceSlug, collectionSlug] as const,
   },
   articles: {
-    bySlug: (subdomain: string, spaceSlug: string, articleSlug: string) =>
-      ['articles', subdomain, spaceSlug, articleSlug] as const,
-    search: (subdomain: string, query: string, spaceSlug?: string) =>
-      ['articles', 'search', subdomain, query, spaceSlug] as const,
+    bySlug: (
+      subdomain: string,
+      locale: string,
+      spaceSlug: string,
+      collectionSlug: string,
+      articleSlug: string,
+    ) =>
+      ['articles', subdomain, locale, spaceSlug, collectionSlug, articleSlug] as const,
+    search: (
+      subdomain: string,
+      locale: string,
+      query: string,
+      spaceSlug?: string,
+    ) => ['articles', 'search', subdomain, locale, query, spaceSlug] as const,
   },
 }

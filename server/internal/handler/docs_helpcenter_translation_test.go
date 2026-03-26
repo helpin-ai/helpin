@@ -14,11 +14,20 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+type scriptedDocsTranslationHandlerLLM struct {
+	response string
+}
+
+func (f *scriptedDocsTranslationHandlerLLM) ChatCompletion(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return &llm.ChatResponse{Content: f.response}, nil
+}
 
 func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -304,6 +313,10 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 }
 
 func newDocsHelpcenterTranslationHandlerForTest(db *gorm.DB) *DocsHandler {
+	return newDocsHelpcenterTranslationHandlerForTestWithLLM(db, nil)
+}
+
+func newDocsHelpcenterTranslationHandlerForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHandler {
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
 		repository.NewDocsHelpcenterRepository(db),
@@ -311,6 +324,7 @@ func newDocsHelpcenterTranslationHandlerForTest(db *gorm.DB) *DocsHandler {
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
 		repository.NewDocsCollectionRepository(db),
+		llmProvider,
 	)
 	return &DocsHandler{translationSvc: translationSvc}
 }
@@ -348,6 +362,35 @@ func TestDocsHelpcenterTranslationHandler_UpdateLocales(t *testing.T) {
 	}
 	if body := rec.Body.String(); !strings.Contains(body, `"fallback_to_default_locale":false`) {
 		t.Fatalf("body = %s, want updated fallback flag", body)
+	}
+}
+
+func TestDocsHelpcenterTranslationHandler_GetLocalesNormalizesEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 18, 0, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	h := newDocsHelpcenterTranslationHandlerForTest(db)
+
+	if err := db.Exec(`UPDATE docs_helpcenter_configs SET enabled_locales = NULL WHERE workspace_id = ?`, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("null enabled_locales: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/docs/helpcenter/locales", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", nil)
+	rec := httptest.NewRecorder()
+
+	h.GetHelpcenterLocales(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if body := rec.Body.String(); strings.Contains(body, `"enabled_locales":null`) {
+		t.Fatalf("body = %s, want normalized enabled locales array", body)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"enabled_locales":["en"]`) {
+		t.Fatalf("body = %s, want default locale fallback", body)
 	}
 }
 
@@ -410,5 +453,29 @@ func TestDocsHelpcenterTranslationHandler_PublishArticleTranslationRejectsMissin
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "published space translation is required") {
 		t.Fatalf("body = %s, want missing parent error", body)
+	}
+}
+
+func TestDocsHelpcenterTranslationHandler_GenerateArticleTranslationDraft(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 18, 0, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	h := newDocsHelpcenterTranslationHandlerForTestWithLLM(db, &scriptedDocsTranslationHandlerLLM{
+		response: `{"title":"Commencer ici","slug":"commencer-ici","excerpt":"Guide rapide","seo_title":"Commencer ici","seo_description":"Guide FR","body":"Bonjour\n\nBienvenue dans Helpin."}`,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/docs/documents/document-handler-i18n/helpcenter/translations/fr/generate", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{"docId": "document-handler-i18n", "locale": "fr"})
+	rec := httptest.NewRecorder()
+
+	h.GenerateArticleTranslationDraft(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"locale":"fr"`) || !strings.Contains(body, `"slug":"commencer-ici"`) {
+		t.Fatalf("body = %s, want generated article translation draft", body)
 	}
 }

@@ -4,9 +4,10 @@ import type { SearchResult } from '@/lib/types'
 interface SearchResultsProps {
   results: SearchResult[]
   query: string
+  locale: string
 }
 
-export function SearchResultsList({ results, query }: SearchResultsProps) {
+export function SearchResultsList({ results, query, locale }: SearchResultsProps) {
   if (results.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -20,7 +21,12 @@ export function SearchResultsList({ results, query }: SearchResultsProps) {
   return (
     <div className="space-y-2">
       {results.map((result) => (
-        <SearchResultItem key={result.id} result={result} variant="full" />
+        <SearchResultItem
+          key={result.id}
+          locale={locale}
+          result={result}
+          variant="full"
+        />
       ))}
     </div>
   )

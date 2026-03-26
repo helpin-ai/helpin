@@ -590,11 +590,16 @@ type PublicArticleResponse struct {
 	ID              string  `json:"id"`
 	Title           string  `json:"title"`
 	Slug            string  `json:"slug"`
+	Locale          string  `json:"locale,omitempty"`
+	RequestedLocale string  `json:"requested_locale,omitempty"`
+	IsFallback      bool    `json:"is_fallback,omitempty"`
 	Excerpt         *string `json:"excerpt"`
 	Icon            *string `json:"icon"`
 	Status          string  `json:"status"`
+	SpaceSlug       string  `json:"space_slug,omitempty"`
 	CollectionID    *string `json:"collection_id"`
 	CollectionName  *string `json:"collection_name"`
+	CollectionSlug  *string `json:"collection_slug,omitempty"`
 	PublishedAt     *string `json:"published_at"`
 	SEOTitle        *string `json:"seo_title"`
 	SEODescription  *string `json:"seo_description"`
@@ -620,11 +625,15 @@ type PreviewArticleResponse struct {
 
 // PublicSearchResultResponse is a search result with space context.
 type PublicSearchResultResponse struct {
-	ID             string  `json:"id"`
-	Title          string  `json:"title"`
-	Slug           string  `json:"slug"`
-	Excerpt        *string `json:"excerpt"`
-	CollectionName *string `json:"collection_name"`
-	SpaceSlug      string  `json:"space_slug"`
-	SpaceName      string  `json:"space_name"`
+	ID              string  `json:"id"`
+	Title           string  `json:"title"`
+	Slug            string  `json:"slug"`
+	Locale          string  `json:"locale,omitempty"`
+	RequestedLocale string  `json:"requested_locale,omitempty"`
+	IsFallback      bool    `json:"is_fallback,omitempty"`
+	Excerpt         *string `json:"excerpt"`
+	CollectionName  *string `json:"collection_name"`
+	CollectionSlug  *string `json:"collection_slug,omitempty"`
+	SpaceSlug       string  `json:"space_slug"`
+	SpaceName       string  `json:"space_name"`
 }

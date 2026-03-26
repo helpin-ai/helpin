@@ -736,6 +736,17 @@ export function usePublishDocsHelpcenterArticleTranslation(wsId: string, docId: 
   })
 }
 
+export function useGenerateDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locale: string) =>
+      unwrap(await docsService.generateArticleTranslation(wsId, docId, locale)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
+  })
+}
+
 export function useUnpublishDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
   const qc = useQueryClient()
   return useMutation({

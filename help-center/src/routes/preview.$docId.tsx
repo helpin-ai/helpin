@@ -21,13 +21,17 @@ export const Route = createFileRoute('/preview/$docId')({
 function PreviewPage() {
   const { docId } = Route.useParams()
   const { token } = Route.useSearch()
-  const { subdomain } = useDocsContext()
+  const { subdomain, defaultLocale } = useDocsContext()
 
   const { data: article, isLoading, error } = usePreviewArticle(subdomain, docId, token)
 
   // Fetch space navigation for the sidebar once we know the space slug
   const spaceSlug = article?.space_slug ?? ''
-  const { data: navigation } = useSpaceNavigation(subdomain, spaceSlug)
+  const { data: navigation } = useSpaceNavigation(
+    subdomain,
+    defaultLocale,
+    spaceSlug,
+  )
 
   useDocumentTitle(article ? `Preview: ${article.title}` : 'Article Preview')
 
@@ -64,7 +68,11 @@ function PreviewPage() {
     <div className="flex">
         {/* Space sidebar */}
         {navigation && spaceSlug && (
-          <Sidebar navigation={navigation} spaceSlug={spaceSlug} />
+          <Sidebar
+            locale={defaultLocale}
+            navigation={navigation}
+            spaceSlug={spaceSlug}
+          />
         )}
 
         <div className="flex-1 min-w-0">
