@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,11 +31,20 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
 
-	if created.PresetKey != model.AgentPresetCodeBuilder {
-		t.Fatalf("expected code builder preset, got %q", created.PresetKey)
+	if created.PresetKey != "" {
+		t.Fatalf("expected custom agent preset_key to remain empty, got %q", created.PresetKey)
 	}
-	if created.Role != "Code Builder" {
-		t.Fatalf("expected default role Code Builder, got %q", created.Role)
+	if created.PresetVersionKey != "" {
+		t.Fatalf("expected custom agent preset_version_key to remain empty, got %q", created.PresetVersionKey)
+	}
+	if created.SourcePresetKey != "" {
+		t.Fatalf("expected custom agent source preset to remain empty, got %q", created.SourcePresetKey)
+	}
+	if created.SourcePresetVersionKey != "" {
+		t.Fatalf("expected custom agent source preset version to remain empty, got %q", created.SourcePresetVersionKey)
+	}
+	if created.Role != "Custom Agent" {
+		t.Fatalf("expected default role Custom Agent, got %q", created.Role)
 	}
 	if created.RuntimeKind != "opencode" {
 		t.Fatalf("expected default runtime opencode, got %q", created.RuntimeKind)
@@ -51,20 +61,30 @@ func TestCreatePlannerPersistsDefaultSystemPrompt(t *testing.T) {
 		wsPublisher: nil,
 	}
 
-	presetKey := model.AgentPresetEpicPlanner
-	created, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest(&presetKey), "user-1")
+	req := modelCreateAgentRequest(nil)
+	req.SystemPrompt = agentTestStringPtr("Plan carefully and ask follow-up questions when needed.")
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
 	if err != nil {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
 
-	if created.SystemPrompt == nil || *created.SystemPrompt == "" {
-		t.Fatal("expected planner default system prompt to be persisted")
+	if created.SystemPrompt == nil || *created.SystemPrompt != "Plan carefully and ask follow-up questions when needed." {
+		t.Fatalf("expected custom system prompt to be persisted, got %+v", created.SystemPrompt)
 	}
 	if created.PlanningNotes != nil {
 		t.Fatalf("expected planner planning notes to be empty after create, got %+v", created.PlanningNotes)
 	}
-	if created.PresetKey != model.AgentPresetEpicPlanner {
-		t.Fatalf("expected epic planner preset, got %q", created.PresetKey)
+	if created.PresetKey != "" {
+		t.Fatalf("expected custom agent preset_key to remain empty, got %q", created.PresetKey)
+	}
+	if created.PresetVersionKey != "" {
+		t.Fatalf("expected custom agent preset_version_key to remain empty, got %q", created.PresetVersionKey)
+	}
+	if created.SourcePresetKey != "" {
+		t.Fatalf("expected custom agent source preset to remain empty, got %q", created.SourcePresetKey)
+	}
+	if created.SourcePresetVersionKey != "" {
+		t.Fatalf("expected custom agent source preset version to remain empty, got %q", created.SourcePresetVersionKey)
 	}
 }
 
@@ -80,7 +100,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
 		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"agent-system", "ws-test", true, defaultSystemProductPlannerName, model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		"agent-system", "ws-test", true, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
 		[]byte("[]"), "manual", legacyPrompt, []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
 	).Error; err != nil {
 		t.Fatalf("insert system agent: %v", err)
@@ -99,6 +119,9 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	if !strings.Contains(*updated.SystemPrompt, "There is no hidden planner phase machine deciding the next step for you.") {
 		t.Fatalf("expected refreshed prompt to include inline approval guidance, got %q", *updated.SystemPrompt)
 	}
+	if updated.Name != defaultSystemEpicPlannerName {
+		t.Fatalf("expected renamed system planner %q, got %q", defaultSystemEpicPlannerName, updated.Name)
+	}
 }
 
 func TestCreateAgentRejectsUnknownPreset(t *testing.T) {
@@ -113,7 +136,288 @@ func TestCreateAgentRejectsUnknownPreset(t *testing.T) {
 
 	badPreset := "human"
 	if _, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest(&badPreset), "user-1"); err == nil {
-		t.Fatal("expected unknown preset to be rejected")
+		t.Fatal("expected custom agent preset input to be rejected")
+	}
+}
+
+func TestUpdateAgentRejectsPresetFieldsForCustomAgents(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+
+	created, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest(nil), "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+
+	presetKey := model.AgentPresetStoryPlanner
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		PresetKey: &presetKey,
+	}, "user-1"); err == nil {
+		t.Fatal("expected preset update on custom agent to be rejected")
+	}
+}
+
+func TestListAgents_DoesNotMutateWorkspaceAgents(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	now := time.Now().UTC()
+	defaultPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+	if defaultPrompt == nil {
+		t.Fatal("expected code builder default prompt")
+	}
+	preset, ok := agentPresetDefinition(model.AgentPresetCodeBuilder)
+	if !ok {
+		t.Fatal("expected code builder preset definition")
+	}
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-legacy-code-builder", "ws-test", false, "Code Builder", model.AgentPresetCodeBuilder, "",
+		"Code Builder", "idle", "opencode", []byte("[]"), "manual", *defaultPrompt,
+		mustJSONStringSlice(preset.AllowedTools),
+		mustJSONStringSlice(preset.AllowedCommands),
+		mustJSONStringSlice(preset.AllowedTargetTypes),
+		"never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert legacy built-in candidate: %v", err)
+	}
+
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+
+	agents, err := svc.ListAgents(context.Background(), "ws-test")
+	if err != nil {
+		t.Fatalf("ListAgents returned error: %v", err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected read-only list to return 1 existing agent, got %d", len(agents))
+	}
+
+	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-legacy-code-builder")
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if custom == nil {
+		t.Fatal("expected custom agent to remain present")
+	}
+	if custom.IsSystem {
+		t.Fatal("expected list path to avoid promoting custom agent to system")
+	}
+	if custom.Name != "Code Builder" {
+		t.Fatalf("expected list path to preserve custom agent name, got %q", custom.Name)
+	}
+}
+
+func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomAgents(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	now := time.Now().UTC()
+	defaultPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+	if defaultPrompt == nil {
+		t.Fatal("expected code builder default prompt")
+	}
+	preset, ok := agentPresetDefinition(model.AgentPresetCodeBuilder)
+	if !ok {
+		t.Fatal("expected code builder preset definition")
+	}
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-custom-code-builder", "ws-test", false, "Code Builder", model.AgentPresetCodeBuilder, "",
+		"Code Builder", "idle", "opencode", []byte("[]"), "manual", *defaultPrompt,
+		mustJSONStringSlice(preset.AllowedTools),
+		mustJSONStringSlice(preset.AllowedCommands),
+		mustJSONStringSlice(preset.AllowedTargetTypes),
+		"never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert default-looking custom agent: %v", err)
+	}
+
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
+		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
+	}
+
+	agents, err := agentRepo.List(context.Background(), "ws-test")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	systemPresets := make([]string, 0)
+	for _, agent := range agents {
+		if agent.IsSystem {
+			systemPresets = append(systemPresets, agent.PresetKey)
+		}
+	}
+	for _, presetKey := range builtInPresetKeys() {
+		if !slices.Contains(systemPresets, presetKey) {
+			t.Fatalf("expected seeded system agent for preset %q", presetKey)
+		}
+	}
+
+	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if custom == nil {
+		t.Fatal("expected custom code builder to remain present")
+	}
+	if custom.IsSystem {
+		t.Fatal("expected custom code builder to remain non-system")
+	}
+	if custom.Name != "Code Builder" {
+		t.Fatalf("expected custom agent name to remain unchanged, got %q", custom.Name)
+	}
+}
+
+func TestSeedWorkspaceDefaults_ReconcilesAndDedupesExistingSystemPresetAgents(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-system-old", "ws-test", true, "Epic Planner", model.AgentPresetEpicPlanner, defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner),
+		"Epic Planner", "idle", "native_sdk", []byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now.Add(-time.Hour), now.Add(-time.Hour),
+		"agent-system-new", "ws-test", true, "Epic Planner", model.AgentPresetEpicPlanner, defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner),
+		"Epic Planner", "idle", "native_sdk", []byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert duplicate system agents: %v", err)
+	}
+
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
+		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
+	}
+
+	agents, err := agentRepo.List(context.Background(), "ws-test")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	var epicSystemAgents []model.Agent
+	for _, agent := range agents {
+		if agent.IsSystem && agent.PresetKey == model.AgentPresetEpicPlanner {
+			epicSystemAgents = append(epicSystemAgents, agent)
+		}
+	}
+	if len(epicSystemAgents) != 1 {
+		t.Fatalf("expected exactly one epic planner system agent after reconciliation, got %d", len(epicSystemAgents))
+	}
+	if epicSystemAgents[0].Name != defaultSystemEpicPlannerName {
+		t.Fatalf("expected reconciled system agent name %q, got %q", defaultSystemEpicPlannerName, epicSystemAgents[0].Name)
+	}
+
+	deleted, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-system-new")
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if deleted != nil {
+		t.Fatal("expected duplicate system agent to be deleted")
+	}
+}
+
+func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+
+	newName := "Forge Prime"
+	newModel := "gpt-5-mini"
+	runtime := defaultRuntimeKindForPresetKey(model.AgentPresetCodeBuilder)
+	presetKey := model.AgentPresetCodeBuilder
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		Name:        &newName,
+		Model:       &newModel,
+		RuntimeKind: &runtime,
+		PresetKey:   &presetKey,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.PresetKey != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected system agent preset to remain %q, got %q", model.AgentPresetCodeBuilder, updated.PresetKey)
+	}
+	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
+		t.Fatalf("expected system agent preset version to remain default %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder), updated.PresetVersionKey)
+	}
+	if updated.Name != newName {
+		t.Fatalf("expected updated name %q, got %q", newName, updated.Name)
+	}
+	if updated.Model == nil || *updated.Model != newModel {
+		t.Fatalf("expected updated model %q, got %+v", newModel, updated.Model)
+	}
+}
+
+func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if err := workspacePresetVersionRepo.Create(context.Background(), &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetCodeBuilder,
+		VersionKey:            "code_builder_workspace_v2",
+		Label:                 "Workspace v2",
+		RuntimeKind:           "opencode",
+		SystemPrompt:          agentTestStringPtr("Workspace tuned code builder."),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}); err != nil {
+		t.Fatalf("Create workspace preset version returned error: %v", err)
+	}
+
+	versionKey := "code_builder_workspace_v2"
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &versionKey,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.PresetVersionKey != versionKey {
+		t.Fatalf("expected selected preset version %q, got %q", versionKey, updated.PresetVersionKey)
 	}
 }
 
@@ -133,7 +437,7 @@ func TestDeleteAgentRejectsSystemAgent(t *testing.T) {
 		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
 		max_concurrent_runs, default_invocation_mode, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"agent-system", "ws-test", true, defaultSystemProductPlannerName, model.AgentPresetEpicPlanner, "Epic Planner", "idle", "native_sdk",
+		"agent-system", "ws-test", true, "Epic Planner", model.AgentPresetEpicPlanner, "Epic Planner", "idle", "native_sdk",
 		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
 	).Error; err != nil {
 		t.Fatalf("insert system agent: %v", err)
@@ -144,12 +448,104 @@ func TestDeleteAgentRejectsSystemAgent(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspacePresetVersion(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+
+	req := model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Engineering v2",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		Model:            agentTestStringPtr("gpt-5-mini"),
+		SystemPrompt:     agentTestStringPtr("Use the repo conventions and keep changes incremental."),
+		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+	}
+
+	version, err := svc.CreateWorkspacePresetVersion(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if version.Scope != "workspace" {
+		t.Fatalf("expected workspace scope, got %q", version.Scope)
+	}
+	if version.FamilyKey != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected family key %q, got %q", model.AgentPresetCodeBuilder, version.FamilyKey)
+	}
+	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
+		t.Fatalf("expected a new workspace version key, got %q", version.VersionKey)
+	}
+	if version.Model == nil || *version.Model != "gpt-5-mini" {
+		t.Fatalf("expected persisted model override, got %+v", version.Model)
+	}
+	if version.SystemPrompt == nil || *version.SystemPrompt != "Use the repo conventions and keep changes incremental." {
+		t.Fatalf("expected persisted system prompt override, got %+v", version.SystemPrompt)
+	}
+	if !slices.Equal(version.AllowedTools, []string{"read_file", "run_command"}) {
+		t.Fatalf("expected allowed tools override, got %v", version.AllowedTools)
+	}
+}
+
+func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+
+	if err := workspacePresetVersionRepo.Create(context.Background(), &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetEpicPlanner,
+		VersionKey:            "epic_planner_workspace_v2",
+		Label:                 "Ops Variant",
+		RuntimeKind:           "native_sdk",
+		SystemPrompt:          agentTestStringPtr("Plan with explicit operational checkpoints."),
+		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_human_input"}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeInteractive,
+	}); err != nil {
+		t.Fatalf("Create workspace preset version returned error: %v", err)
+	}
+
+	presets := svc.ListAgentPresets(context.Background(), "ws-test")
+	found := false
+	for _, preset := range presets {
+		if preset.VersionKey != "epic_planner_workspace_v2" {
+			continue
+		}
+		found = true
+		if preset.Scope != "workspace" {
+			t.Fatalf("expected workspace scope, got %q", preset.Scope)
+		}
+		if preset.WorkspaceID == nil || *preset.WorkspaceID != "ws-test" {
+			t.Fatalf("expected workspace id ws-test, got %+v", preset.WorkspaceID)
+		}
+		if preset.SystemPrompt == nil || *preset.SystemPrompt != "Plan with explicit operational checkpoints." {
+			t.Fatalf("expected workspace system prompt, got %+v", preset.SystemPrompt)
+		}
+	}
+	if !found {
+		t.Fatal("expected workspace preset version in catalog")
+	}
+}
+
 func modelCreateAgentRequest(presetKey *string) model.CreateAgentRequest {
 	return model.CreateAgentRequest{
 		WorkspaceID: "ws-test",
 		Name:        "Example",
 		PresetKey:   presetKey,
 	}
+}
+
+func agentTestStringPtr(value string) *string {
+	return &value
 }
 
 func newAgentServiceTestDB(t *testing.T) *gorm.DB {
@@ -169,6 +565,9 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			preset_key TEXT,
+			preset_version_key TEXT,
+			source_preset_key TEXT,
+			source_preset_version_key TEXT,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -192,6 +591,25 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			approval_mode TEXT NOT NULL DEFAULT 'never',
 			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspace_agent_preset_versions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			family_key TEXT NOT NULL,
+			version_key TEXT NOT NULL,
+			label TEXT NOT NULL,
+			description TEXT,
+			source_version_key TEXT,
+			runtime_kind TEXT NOT NULL,
+			provider TEXT,
+			model TEXT,
+			system_prompt TEXT,
+			allowed_tools BLOB NOT NULL DEFAULT '[]',
+			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			created_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

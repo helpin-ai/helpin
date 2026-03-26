@@ -70,7 +70,7 @@ func validateTriggerModeForAgent(triggerMode string, agent *model.Agent) error {
 	}
 	presetKey := ""
 	if agent != nil {
-		presetKey = agent.PresetKey
+		presetKey = agent.EffectivePresetKey()
 	}
 	allowed := allowedTriggerModesForPresetKey(presetKey)
 	if len(allowed) == 0 {
@@ -90,13 +90,29 @@ func normalizeAgentRecord(agent *model.Agent) {
 		return
 	}
 
-	presetKey := normalizePresetKey(agent.PresetKey)
-	if presetKey == "" {
-		presetKey = defaultPresetKeyForAgent(agent.IsSystem)
+	presetKey := ""
+	presetVersionKey := ""
+	if agent.IsSystem {
+		presetKey = normalizePresetKey(agent.PresetKey)
+		if presetKey == "" {
+			presetKey = defaultPresetKeyForAgent(true)
+		}
+		agent.PresetKey = presetKey
+		presetVersionKey = normalizePresetVersionKey(agent.PresetVersionKey)
+		if presetVersionKey == "" {
+			presetVersionKey = defaultPresetVersionKeyForPresetKey(presetKey)
+		}
+		agent.PresetVersionKey = presetVersionKey
+	} else {
+		agent.PresetKey = ""
+		agent.PresetVersionKey = ""
+		agent.SourcePresetKey = ""
+		agent.SourcePresetVersionKey = ""
 	}
-	agent.PresetKey = presetKey
-
-	preset, hasPreset := agentPresetDefinition(presetKey)
+	preset, hasPreset := agentPresetVersionDefinition(presetKey, presetVersionKey)
+	if agent.IsSystem && !hasPreset {
+		preset, hasPreset = agentPresetVersionDefinition(presetKey, defaultPresetVersionKeyForPresetKey(presetKey))
+	}
 	if hasPreset {
 		agent.SystemPrompt = storedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes)
 		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
@@ -113,6 +129,8 @@ func normalizeAgentRecord(agent *model.Agent) {
 		if strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default" {
 			agent.ApprovalMode = preset.ApprovalMode
 		}
+	} else if strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default" {
+		agent.ApprovalMode = "never"
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
@@ -127,7 +145,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 		} else {
 			agent.RuntimeKind = "opencode"
 		}
-	} else if !runtimeAllowedForPreset(agent.PresetKey, agent.RuntimeKind) {
+	} else if hasPreset && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
 		if hasPreset && preset.RuntimeKind != "" {
 			agent.RuntimeKind = preset.RuntimeKind
 		} else {
@@ -155,7 +173,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 			agent.TriggerMode = "manual"
 		}
 	}
-	if normalizePresetKey(agent.PresetKey) != model.AgentPresetEpicPlanner {
+	if normalizePresetKey(presetKey) != model.AgentPresetEpicPlanner {
 		agent.PlanningNotes = nil
 	}
 	agent.SupportedModes = supportedModesForAgent(agent)
@@ -265,7 +283,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 func normalizeDefaultInvocationMode(value string, agent *model.Agent) string {
 	presetKey := ""
 	if agent != nil {
-		presetKey = normalizePresetKey(agent.PresetKey)
+		presetKey = normalizePresetKey(agent.EffectivePresetKey())
 	}
 	switch strings.TrimSpace(value) {
 	case model.InvocationModeInteractive:
@@ -325,10 +343,14 @@ func validateRuntimeForAgent(agent *model.Agent) error {
 	if agent == nil {
 		return nil
 	}
-	if !runtimeAllowedForPreset(agent.PresetKey, agent.RuntimeKind) {
-		return fmt.Errorf("runtime_kind %q is not allowed for preset %q", strings.TrimSpace(agent.RuntimeKind), normalizePresetKey(agent.PresetKey))
+	presetKey := normalizePresetKey(agent.EffectivePresetKey())
+	if presetKey != "" && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
+		return fmt.Errorf("runtime_kind %q is not allowed for preset %q", strings.TrimSpace(agent.RuntimeKind), presetKey)
 	}
 	if strings.TrimSpace(agent.RuntimeKind) == "codex" {
+		if presetKey == "" {
+			return fmt.Errorf("runtime_kind codex requires a system preset agent")
+		}
 		return validateCodexAgentPolicy(agent)
 	}
 	return nil
@@ -338,7 +360,7 @@ func validateCodexAgentPolicy(agent *model.Agent) error {
 	if agent == nil {
 		return nil
 	}
-	preset, ok := agentPresetDefinition(agent.PresetKey)
+	preset, ok := agentPresetDefinition(agent.EffectivePresetKey())
 	if !ok {
 		return fmt.Errorf("runtime_kind codex requires a supported preset")
 	}
@@ -388,7 +410,7 @@ func validateModelProvider(provider string) error {
 
 func validateAgentTarget(agent *model.Agent, targetType string) error {
 	normalizeAgentRecord(agent)
-	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
+	if err := validateAgentPresetKey(agent.EffectivePresetKey()); err != nil {
 		return err
 	}
 	resolved := worker.ResolveAgentProfile(agent, agent.DefaultInvocationMode)

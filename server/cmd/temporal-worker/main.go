@@ -98,6 +98,7 @@ func main() {
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
 	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
@@ -290,6 +291,7 @@ func main() {
 	)
 	agentService := service.NewAgentService(
 		agentRepo,
+		workspacePresetVersionRepo,
 		runRepo,
 		runMessageRepo,
 		artifactRepo,

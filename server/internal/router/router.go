@@ -625,6 +625,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-presets", h.Agent.ListAgentPresets)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-preset-versions", h.Agent.CreateWorkspacePresetVersion)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)

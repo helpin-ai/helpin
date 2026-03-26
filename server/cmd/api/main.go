@@ -183,6 +183,7 @@ func main() {
 		&model.PMTeamEstimateSettings{},
 		&model.PMTeamFieldVisibility{},
 		&model.Agent{},
+		&model.WorkspaceAgentPresetVersion{},
 		&model.AgentRun{},
 		&model.AgentRunMessage{},
 		&model.AgentRunArtifact{},
@@ -456,6 +457,7 @@ func main() {
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
@@ -620,6 +622,7 @@ func main() {
 	)
 	agentService := service.NewAgentService(
 		agentRepo,
+		workspacePresetVersionRepo,
 		agentRunRepo,
 		agentRunMessageRepo,
 		agentRunArtifactRepo,

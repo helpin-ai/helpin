@@ -3,6 +3,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareMore, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -124,19 +125,8 @@ export function EpicPlannerPanel({
   }, [loadRuns, runs]);
 
   const plannerAgents = useMemo(() => {
-    let filtered = agents.filter((agent) =>
-      agent.allowed_targets?.includes('epic') ||
-      agent.preset_key === 'epic_planner',
-    );
-    const preferredId = selectedAgentId;
-    if (preferredId && !filtered.some((agent) => agent.id === preferredId)) {
-      const preferredAgent = agents.find((agent) => agent.id === preferredId);
-      if (preferredAgent) {
-        filtered = [preferredAgent, ...filtered];
-      }
-    }
-    return filtered;
-  }, [agents, selectedAgentId]);
+    return agents.filter((agent) => agent.preset_key === 'epic_planner');
+  }, [agents]);
 
   const selectedPlanner = useMemo(
     () => plannerAgents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.id === selectedAgentId) ?? null,
@@ -204,7 +194,7 @@ export function EpicPlannerPanel({
   return (
     <div className="space-y-3 rounded-lg border border-border/60 p-3">
       <div className="flex items-center gap-2">
-        <Bot className="h-4 w-4 text-muted-foreground" />
+        {selectedPlanner ? <AgentAvatar agent={selectedPlanner} className="h-6 w-6" /> : <Bot className="h-4 w-4 text-muted-foreground" />}
         <span className="text-sm font-medium">Epic Agent Runs</span>
       </div>
 
@@ -221,7 +211,10 @@ export function EpicPlannerPanel({
                   <SelectItem value="__none__">No planner selected</SelectItem>
                   {plannerAgents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
-                      {agent.is_system ? `${agent.name} (System)` : agent.name}
+                      <div className="flex items-center gap-2">
+                        <AgentAvatar agent={agent} className="h-5 w-5" />
+                        <span>{agent.is_system ? `${agent.name} (System)` : agent.name}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -299,6 +292,7 @@ export function EpicPlannerPanel({
           <div className="space-y-2">
             {runs.map((run) => {
               const agentName = agentNameById[run.agent_id] ?? 'Agent';
+              const agent = agents.find((candidate) => candidate.id === run.agent_id) ?? null;
               return (
                 <button
                   key={run.id}
@@ -312,6 +306,7 @@ export function EpicPlannerPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
+                        {agent ? <AgentAvatar agent={agent} className="h-6 w-6" /> : null}
                         <p className="truncate text-sm font-medium">{agentName}</p>
                         {run.invocation_mode === 'interactive' ? (
                           <Badge variant="secondary" className="gap-1">

@@ -39,6 +39,7 @@ import {
   STORY_TYPE_CONFIG,
   StoryTypeIcon,
 } from '@/lib/pmConstants';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
@@ -1295,7 +1296,7 @@ function StoryDetailPanelBody({
                     }}
                     renderTrigger={() => (
                       <>
-                        {delivery.selectedAgent && <Bot className="h-3.5 w-3.5 text-muted-foreground" />}
+                        {delivery.selectedAgent && <AgentAvatar agent={delivery.selectedAgent} className="h-5 w-5" />}
                         <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
                         {delivery.savingAssignment && <Loader2 className="h-3 w-3 animate-spin" />}
                       </>
@@ -1303,7 +1304,7 @@ function StoryDetailPanelBody({
                     renderOption={(v) => {
                       const a = delivery.agents.find((ag) => ag.id === v);
                       if (!a) return null;
-                      return <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+                      return <AgentAvatar agent={a} className="h-5 w-5" />;
                     }}
                   />
                 </MetadataRow>

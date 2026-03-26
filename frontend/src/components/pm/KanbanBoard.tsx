@@ -17,8 +17,9 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { Agent, CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
+import { agentService } from '@/lib/services/agentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -57,6 +58,7 @@ interface ColumnProps {
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
+  agentById: Map<string, Agent>;
   onOwnerChanged: (story: Story) => void;
   onPriorityChanged: (story: Story) => void;
   onSeverityChanged: (story: Story) => void;
@@ -66,7 +68,7 @@ interface ColumnProps {
   isLoadingMore: boolean;
 }
 
-const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
+const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, agentById, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -213,6 +215,7 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
                     workspaceId={workspaceId}
                     assignableMembers={assignableMembers}
                     ownerNameMap={ownerNameMap}
+                    assignedAgent={story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null}
                     onOwnerChanged={onOwnerChanged}
                     onPriorityChanged={onPriorityChanged}
                     onSeverityChanged={onSeverityChanged}
@@ -231,6 +234,7 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
                 workspaceId={workspaceId}
                 assignableMembers={assignableMembers}
                 ownerNameMap={ownerNameMap}
+                assignedAgent={story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null}
                 onOwnerChanged={onOwnerChanged}
                 onPriorityChanged={onPriorityChanged}
                 onSeverityChanged={onSeverityChanged}
@@ -505,12 +509,18 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
   const [refSprints, setRefSprints] = useState<SprintWithStats[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setRefLabels(r.data); });
     pmEpicService.list(workspaceId).then((r) => { if (r.data) setRefEpics(r.data); });
     pmSprintService.list(workspaceId).then((r) => { if (r.data) setRefSprints(r.data); });
+    agentService.list(workspaceId).then((r) => { if (r.data) setAgents(r.data); });
   }, [workspaceId]);
+  const agentById = useMemo(
+    () => new Map(agents.map((agent) => [agent.id, agent])),
+    [agents],
+  );
 
   const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [dragPreviewColumns, setDragPreviewColumns] = useState<StoryStateColumn[] | null>(null);
@@ -1131,6 +1141,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                     workspaceId={workspaceId}
                     assignableMembers={assignableMembers}
                     ownerNameMap={ownerNameMap}
+                    agentById={agentById}
                     onOwnerChanged={handleStoryPatched}
                     onPriorityChanged={handleStoryPatched}
                     onSeverityChanged={handleStoryPatched}
@@ -1145,7 +1156,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={resolveTeamName(activeStory.team_id)} ownerNameMap={ownerNameMap} showStateBadge={groupBy === 'members'} /> : null}
+            {activeStory ? (
+              <StoryCard
+                story={activeStory}
+                onOpen={() => {}}
+                isOverlay
+                teamName={resolveTeamName(activeStory.team_id)}
+                ownerNameMap={ownerNameMap}
+                assignedAgent={activeStory.assigned_agent_id ? agentById.get(activeStory.assigned_agent_id) ?? null : null}
+                showStateBadge={groupBy === 'members'}
+              />
+            ) : null}
           </DragOverlay>
         </DndContext>
       ) : null}

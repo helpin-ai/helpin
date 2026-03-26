@@ -12,13 +12,40 @@ func ListAgentPresets() []model.AgentPresetDefinition {
 	presets := agentPresetDefinitions()
 	out := make([]model.AgentPresetDefinition, len(presets))
 	copy(out, presets)
+	for idx := range out {
+		if strings.TrimSpace(out[idx].Scope) == "" {
+			out[idx].Scope = "product"
+		}
+	}
 	return out
 }
 
+func builtInPresetKeys() []string {
+	return []string{
+		model.AgentPresetEpicPlanner,
+		model.AgentPresetStoryPlanner,
+		model.AgentPresetCRMOperator,
+		model.AgentPresetSupportAgent,
+		model.AgentPresetCodeBuilder,
+		model.AgentPresetReviewAgent,
+	}
+}
+
 func agentPresetDefinition(key string) (model.AgentPresetDefinition, bool) {
-	normalized := normalizePresetKey(key)
+	return agentPresetVersionDefinition(key, "")
+}
+
+func agentPresetVersionDefinition(key, versionKey string) (model.AgentPresetDefinition, bool) {
+	familyKey := normalizePresetKey(key)
+	if familyKey == "" {
+		return model.AgentPresetDefinition{}, false
+	}
+	effectiveVersionKey := normalizePresetVersionKey(versionKey)
+	if effectiveVersionKey == "" {
+		effectiveVersionKey = defaultPresetVersionKeyForPresetKey(familyKey)
+	}
 	for _, preset := range agentPresetDefinitions() {
-		if preset.Key == normalized {
+		if preset.Key == familyKey && preset.VersionKey == effectiveVersionKey {
 			return preset, true
 		}
 	}
@@ -46,6 +73,10 @@ func normalizePresetKey(key string) string {
 	}
 }
 
+func normalizePresetVersionKey(versionKey string) string {
+	return strings.TrimSpace(versionKey)
+}
+
 func defaultPresetKeyForAgent(isSystem bool) string {
 	if isSystem {
 		return model.AgentPresetEpicPlanner
@@ -53,14 +84,73 @@ func defaultPresetKeyForAgent(isSystem bool) string {
 	return model.AgentPresetCodeBuilder
 }
 
+func defaultPresetVersionKeyForPresetKey(presetKey string) string {
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		return "epic_planner_default"
+	case model.AgentPresetStoryPlanner:
+		return "story_planner_default"
+	case model.AgentPresetCRMOperator:
+		return "crm_operator_default"
+	case model.AgentPresetSupportAgent:
+		return "support_agent_default"
+	case model.AgentPresetCodeBuilder:
+		return "code_builder_default"
+	case model.AgentPresetReviewAgent:
+		return "review_agent_default"
+	default:
+		return ""
+	}
+}
+
 func presetDefinitionForAgent(agent *model.Agent) (model.AgentPresetDefinition, bool) {
 	if agent == nil {
 		return model.AgentPresetDefinition{}, false
 	}
-	if preset, ok := agentPresetDefinition(agent.PresetKey); ok {
+	if preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey()); ok {
 		return preset, true
 	}
-	return agentPresetDefinition(defaultPresetKeyForAgent(agent.IsSystem))
+	familyKey := normalizePresetKey(agent.EffectivePresetKey())
+	if familyKey == "" {
+		familyKey = defaultPresetKeyForAgent(agent.IsSystem)
+	}
+	if preset, ok := agentPresetVersionDefinition(familyKey, defaultPresetVersionKeyForPresetKey(familyKey)); ok {
+		return preset, true
+	}
+	defaultPresetKey := defaultPresetKeyForAgent(agent.IsSystem)
+	return agentPresetVersionDefinition(defaultPresetKey, defaultPresetVersionKeyForPresetKey(defaultPresetKey))
+}
+
+func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
+	definition := base
+	definition.Key = normalizePresetKey(version.FamilyKey)
+	definition.FamilyKey = normalizePresetKey(version.FamilyKey)
+	definition.VersionKey = strings.TrimSpace(version.VersionKey)
+	definition.VersionLabel = strings.TrimSpace(version.Label)
+	definition.IsDefaultVersion = false
+	definition.Scope = "workspace"
+	definition.WorkspaceID = &version.WorkspaceID
+	definition.SourceVersionKey = version.SourceVersionKey
+	definition.Provider = trimPtr(version.Provider)
+	definition.Model = trimPtr(version.Model)
+	definition.SystemPrompt = trimPtr(version.SystemPrompt)
+	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
+		definition.Description = description
+	}
+	if runtime := strings.TrimSpace(version.RuntimeKind); runtime != "" {
+		definition.RuntimeKind = runtime
+	}
+	if len(version.AllowedTools) > 0 {
+		definition.AllowedTools = parseJSONStringSlice(version.AllowedTools)
+	}
+	if approvalMode := strings.TrimSpace(version.ApprovalMode); approvalMode != "" {
+		definition.ApprovalMode = approvalMode
+	}
+	if mode := strings.TrimSpace(version.DefaultInvocationMode); mode != "" {
+		definition.DefaultInvocationMode = mode
+		definition.SupportedModes = supportedModesForRuntime(definition.RuntimeKind)
+	}
+	return definition
 }
 
 func defaultRoleForPresetKey(presetKey string) string {
@@ -147,6 +237,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	return []model.AgentPresetDefinition{
 		{
 			Key:                   model.AgentPresetEpicPlanner,
+			FamilyKey:             model.AgentPresetEpicPlanner,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "Epic Planner",
 			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
 			DefaultRole:           "Epic Planner",
@@ -163,6 +257,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		},
 		{
 			Key:                   model.AgentPresetStoryPlanner,
+			FamilyKey:             model.AgentPresetStoryPlanner,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "Story Planner",
 			Description:           "Interactive decomposition and story refinement across existing specs and code context.",
 			DefaultRole:           "Story Planner",
@@ -179,6 +277,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		},
 		{
 			Key:                   model.AgentPresetCRMOperator,
+			FamilyKey:             model.AgentPresetCRMOperator,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCRMOperator),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "CRM Operator",
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
@@ -195,6 +297,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		},
 		{
 			Key:                   model.AgentPresetSupportAgent,
+			FamilyKey:             model.AgentPresetSupportAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetSupportAgent),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "Support Agent",
 			Description:           "Support conversation triage and reply drafting with review by default.",
 			DefaultRole:           "Support Agent",
@@ -211,6 +317,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		},
 		{
 			Key:                   model.AgentPresetCodeBuilder,
+			FamilyKey:             model.AgentPresetCodeBuilder,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for story execution.",
 			DefaultRole:           "Code Builder",
@@ -227,6 +337,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		},
 		{
 			Key:                   model.AgentPresetReviewAgent,
+			FamilyKey:             model.AgentPresetReviewAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
 			Label:                 "Review Agent",
 			Description:           "Validation and review agent for story quality checks without repo mutation.",
 			DefaultRole:           "Review Agent",

@@ -54,7 +54,28 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 
 // ListAgentPresets handles GET /api/pm/agent-presets.
 func (h *AgentHandler) ListAgentPresets(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListAgentPresets())
+	workspaceID := getWorkspaceID(r)
+	writeJSON(w, http.StatusOK, h.agentService.ListAgentPresets(r.Context(), workspaceID))
+}
+
+// CreateWorkspacePresetVersion handles POST /api/pm/agent-preset-versions.
+func (h *AgentHandler) CreateWorkspacePresetVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateWorkspaceAgentPresetVersionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.WorkspaceID = workspaceID
+
+	preset, err := h.agentService.CreateWorkspacePresetVersion(r.Context(), req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, preset)
 }
 
 // ListModelProviders handles GET /api/pm/agent-model-providers.

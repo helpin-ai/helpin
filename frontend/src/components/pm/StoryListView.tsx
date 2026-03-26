@@ -14,13 +14,15 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bot, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { format, parseISO } from 'date-fns';
+import { agentService } from '@/lib/services/agentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import {
@@ -34,6 +36,7 @@ import {
 } from '@/lib/pmConstants';
 import { UserAvatar } from './UserAvatar';
 import type {
+  Agent,
   Label,
   Priority,
   Severity,
@@ -167,6 +170,7 @@ export function StoryListView({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [allLabels, setAllLabels] = useState<Label[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
 
   // Per-group pagination state (for workflow_state grouping)
   const [groupHasMore, setGroupHasMore] = useState<Map<string, { hasMore: boolean; total: number; loaded: number }>>(new Map());
@@ -176,6 +180,7 @@ export function StoryListView({
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
+    agentService.list(workspaceId).then((r) => { if (r.data) setAgents(r.data); });
   }, [workspaceId]);
 
   // Build lookup maps
@@ -205,6 +210,10 @@ export function StoryListView({
     [assignableMembers],
   );
   const ownerNameMap = assignableMemberMap;
+  const agentById = useMemo(
+    () => new Map(agents.map((agent) => [agent.id, agent])),
+    [agents],
+  );
 
   const teamMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -469,7 +478,10 @@ export function StoryListView({
             ) : null}
             <span className="min-w-0 truncate">{info.getValue()}</span>
             {info.row.original.assigned_agent_id && (
-              <Bot className="h-3 w-3 shrink-0 text-violet-500" />
+              <AgentAvatar
+                agent={agentById.get(info.row.original.assigned_agent_id) ?? null}
+                className="h-4 w-4 border-violet-200/80 dark:border-violet-800"
+              />
             )}
           </button>
         ),
