@@ -651,6 +651,10 @@ export function DocsEditor({
   const pendingContentRef = useRef<JSONContent | null>(null)
   const skipNextSaveRef = useRef(false)
   const pendingImportedImageUploadsRef = useRef(new Set<string>())
+  const importedImagePersistTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastSavedSnapshotRef = useRef<string | null>(
+    initialContent ? JSON.stringify(initialContent) : null,
+  )
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -666,6 +670,12 @@ export function DocsEditor({
 
   const doSave = useCallback(
     async (json: JSONContent) => {
+      const snapshot = JSON.stringify(json)
+      if (lastSavedSnapshotRef.current === snapshot) {
+        setSaveStatus('idle')
+        return
+      }
+
       if (savingRef.current) {
         pendingContentRef.current = json
         return
@@ -674,6 +684,7 @@ export function DocsEditor({
       setSaveStatus('saving')
       try {
         await onSave(json)
+        lastSavedSnapshotRef.current = snapshot
         setSaveStatus('saved')
         setLastSavedAt(new Date())
         if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
@@ -705,6 +716,7 @@ export function DocsEditor({
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
+    if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
   }, [])
 
   const uploadConfigRef = useRef(uploadConfig)
@@ -840,6 +852,36 @@ export function DocsEditor({
     [],
   )
 
+  const queuePersistImportedImages = useCallback(
+    (editorInstance: NonNullable<typeof editorRef.current>) => {
+      if (importedImagePersistTimerRef.current) {
+        clearTimeout(importedImagePersistTimerRef.current)
+      }
+      importedImagePersistTimerRef.current = setTimeout(() => {
+        void persistImportedImages(editorInstance)
+      }, 0)
+    },
+    [persistImportedImages],
+  )
+
+  const flushSave = useCallback(async () => {
+    if (!editorRef.current || readOnly) return
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = undefined
+    }
+
+    const editorInstance = editorRef.current
+    if (sourceView) {
+      skipNextSaveRef.current = true
+      editorInstance.commands.setContent(sourceMarkdown)
+      void persistImportedImages(editorInstance)
+    }
+
+    await doSave(editorInstance.getJSON())
+  }, [doSave, persistImportedImages, readOnly, sourceMarkdown, sourceView])
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -898,6 +940,10 @@ export function DocsEditor({
             return true
           }
         }
+        const html = event.clipboardData?.getData('text/html') ?? ''
+        if (html.includes('data:image/') && editorRef.current) {
+          queuePersistImportedImages(editorRef.current)
+        }
         return false
       },
       handleDrop(_view, event) {
@@ -909,6 +955,10 @@ export function DocsEditor({
             if (editorRef.current) handleImageUpload(file, editorRef.current)
             return true
           }
+        }
+        const html = event.dataTransfer?.getData('text/html') ?? ''
+        if (html.includes('data:image/') && editorRef.current) {
+          queuePersistImportedImages(editorRef.current)
         }
         return false
       },
@@ -923,7 +973,6 @@ export function DocsEditor({
       if (slashState?.open) return
       if (!readOnly) {
         scheduleSave(e.getJSON())
-        void persistImportedImages(e)
       }
     },
   })
@@ -954,6 +1003,7 @@ export function DocsEditor({
             to: Math.min(to, maxPos),
           }).run()
         }
+        lastSavedSnapshotRef.current = newJson
         setSaveStatus('idle')
       }
     }
@@ -1110,17 +1160,25 @@ img { max-width: 100%; }
   useEffect(() => {
     if (readOnly) return
     const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+
+      if ((e.ctrlKey || e.metaKey) && key === 's') {
+        e.preventDefault()
+        void flushSave()
+        return
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
         e.preventDefault()
         toggleSourceView()
       }
       // Ctrl+F → search, Ctrl+H → search & replace
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && key === 'f') {
         e.preventDefault()
         setShowSearch(true)
         setShowSearchReplace(false)
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+      if ((e.ctrlKey || e.metaKey) && key === 'h') {
         e.preventDefault()
         setShowSearch(true)
         setShowSearchReplace(true)
@@ -1128,7 +1186,7 @@ img { max-width: 100%; }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [readOnly, toggleSourceView])
+  }, [flushSave, readOnly, toggleSourceView])
 
   // ── Detect _markdown_source from backend AI import ─────────────────────────
 
