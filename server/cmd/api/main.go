@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,8 +30,10 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -44,11 +47,22 @@ func main() {
 	// Load .env file if present (ignored in production).
 	_ = godotenv.Load()
 
+	if err := observability.InitSentry("api"); err != nil {
+		log.Fatalf("sentry.Init: %v", err)
+	}
+	defer observability.Flush(2 * time.Second)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			observability.CaptureRecovered(recovered)
+			observability.Flush(2 * time.Second)
+			panic(recovered)
+		}
+	}()
+
 	// Load configuration.
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to load config", err)
 	}
 
 	// Initialize structured logger.
@@ -72,64 +86,54 @@ func main() {
 		),
 	})
 	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to connect to database", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		slog.Error("failed to get underlying sql.DB", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to get underlying sql.DB", err)
 	}
 	defer sqlDB.Close()
 
 	if err := sqlDB.Ping(); err != nil {
-		slog.Error("failed to ping database", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to ping database", err)
 	}
 	slog.Info("connected to database")
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	slog.Info("startup: enabling pgcrypto extension")
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`).Error; err != nil {
-		slog.Error("failed to enable pgcrypto extension", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to enable pgcrypto extension", err)
 	}
 	slog.Info("startup: enabling vector extension")
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
-		slog.Error("failed to enable vector extension", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to enable vector extension", err)
 	}
 
 	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
-		slog.Error("failed to migrate agent run targets", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate agent run targets", err)
 	}
 
 	slog.Info("startup: running MigratePMImportSchema")
 	if err := repository.MigratePMImportSchema(db); err != nil {
-		slog.Error("failed to migrate pm import schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate pm import schema", err)
 	}
 
 	slog.Info("startup: running MigrateDropDocType")
 	if err := repository.MigrateDropDocType(db); err != nil {
-		slog.Error("failed to migrate drop doc_type", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate drop doc_type", err)
 	}
 
 	slog.Info("startup: running MigrateDropRestrictToOwners")
 	if err := repository.MigrateDropRestrictToOwners(db); err != nil {
-		slog.Error("failed to migrate drop restrict_to_owners", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate drop restrict_to_owners", err)
 	}
 
 	// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
 	// index on user_id only. Drop it so AutoMigrate recreates it as composite (workspace_id, user_id).
 	if err := db.Exec("DROP INDEX IF EXISTS idx_ws_member_ws_user").Error; err != nil {
-		slog.Error("failed to drop incorrect ws member index", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to drop incorrect ws member index", err)
 	}
 
 	// Auto-migrate all models.
@@ -271,8 +275,7 @@ func main() {
 		&model.SupportContentPage{},
 		&model.SupportContentChunk{},
 	); err != nil {
-		slog.Error("failed to auto-migrate", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to auto-migrate", err)
 	}
 	slog.Info("startup: AutoMigrate complete")
 
@@ -289,8 +292,7 @@ func main() {
 
 	slog.Info("startup: running MigrateEmailFallbackSchema")
 	if err := repository.MigrateEmailFallbackSchema(db); err != nil {
-		slog.Error("failed to migrate email fallback schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate email fallback schema", err)
 	}
 
 	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
@@ -306,40 +308,33 @@ func main() {
 	// Post-AutoMigrate schema migrations that reference tables created above.
 	slog.Info("startup: running MigrateWorkspaceMemberSchema")
 	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
-		slog.Error("failed to migrate workspace member schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate workspace member schema", err)
 	}
 	slog.Info("startup: running DropLegacyWorkspaceIdentitySchema")
 	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
-		slog.Error("failed to drop legacy workspace identity schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to drop legacy workspace identity schema", err)
 	}
 	slog.Info("startup: running MigrateCRMEmailAssociations")
 	if err := repository.MigrateCRMEmailAssociations(db); err != nil {
-		slog.Error("failed to migrate crm email associations", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate crm email associations", err)
 	}
 	slog.Info("startup: running MigrateCRMSignalSchema")
 	if err := repository.MigrateCRMSignalSchema(db); err != nil {
-		slog.Error("failed to migrate crm signal schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate crm signal schema", err)
 	}
 	slog.Info("startup: running MigrateCRMSummarySchema")
 	if err := repository.MigrateCRMSummarySchema(db); err != nil {
-		slog.Error("failed to migrate crm summary schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate crm summary schema", err)
 	}
 	slog.Info("startup: running MigrateAutomationHealthSchema")
 	if err := repository.MigrateAutomationHealthSchema(db); err != nil {
-		slog.Error("failed to migrate automation health schema", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate automation health schema", err)
 	}
 
 	// Migrate existing workspaces to organizations (one-time, idempotent).
 	slog.Info("startup: running MigrateWorkspacesToOrganizations")
 	if err := repository.MigrateWorkspacesToOrganizations(db); err != nil {
-		slog.Error("failed to migrate workspaces to organizations", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to migrate workspaces to organizations", err)
 	}
 	slog.Info("startup: all migrations complete")
 
@@ -382,13 +377,11 @@ func main() {
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
-			slog.Error("invalid REDIS_URL", "error", err)
-			os.Exit(1)
+			fatalWithSentry("invalid REDIS_URL", err)
 		}
 		redisClient = redis.NewClient(redisOpts)
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
-			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
-			os.Exit(1)
+			fatalWithSentry("Redis unreachable at startup — cannot run multi-pod", err)
 		}
 		redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
 		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
@@ -418,19 +411,16 @@ func main() {
 	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
 	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-api-"+realtimeInstanceID)
 	if err != nil {
-		slog.Error("failed to connect to NATS", "error", err, "url", cfg.NatsURL)
-		os.Exit(1)
+		fatalWithSentry("failed to connect to NATS", err, "url", cfg.NatsURL)
 	}
 	defer natsConn.Close()
 	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
-		slog.Error("failed to ensure JetStream infrastructure", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to ensure JetStream infrastructure", err)
 	}
 	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
 	go func() {
 		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
-			slog.Error("jetstream bridge stopped", "error", err)
-			os.Exit(1)
+			fatalWithSentry("jetstream bridge stopped", err)
 		}
 	}()
 
@@ -594,8 +584,7 @@ func main() {
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
-		slog.Error("failed to initialize github app client", "error", err)
-		os.Exit(1)
+		fatalWithSentry("failed to initialize github app client", err)
 	}
 
 	var temporalClient tclient.Client
@@ -1034,14 +1023,22 @@ func main() {
 	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
 	// http.Hijacker which WebSocket upgrade requires).
 	var topHandler http.Handler = r
-	if wsHandler != nil {
+	if wsHandler != nil || widgetWsHandler != nil {
+		var sentryWSHandler http.Handler
+		if wsHandler != nil {
+			sentryWSHandler = middleware.SentryHTTP(wsHandler)
+		}
+		var sentryWidgetWSHandler http.Handler
+		if widgetWsHandler != nil {
+			sentryWidgetWSHandler = middleware.SentryHTTP(widgetWsHandler)
+		}
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if req.URL.Path == "/api/ws" {
-				wsHandler.ServeHTTP(w, req)
+			if req.URL.Path == "/api/ws" && sentryWSHandler != nil {
+				sentryWSHandler.ServeHTTP(w, req)
 				return
 			}
-			if req.URL.Path == "/widget/ws" {
-				widgetWsHandler.ServeHTTP(w, req)
+			if req.URL.Path == "/widget/ws" && sentryWidgetWSHandler != nil {
+				sentryWidgetWSHandler.ServeHTTP(w, req)
 				return
 			}
 			r.ServeHTTP(w, req)
@@ -1067,8 +1064,7 @@ func main() {
 	go func() {
 		slog.Info("server starting", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
+			fatalWithSentry("server error", err)
 		}
 	}()
 
@@ -1086,8 +1082,7 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("server forced to shutdown", "error", err)
-		os.Exit(1)
+		fatalWithSentry("server forced to shutdown", err)
 	}
 
 	slog.Info("server stopped")
@@ -1113,4 +1108,18 @@ func ensureSprintCronWorkflow(client tclient.Client) error {
 	}
 	slog.Info("sprint automation cron workflow started")
 	return nil
+}
+
+func fatalWithSentry(message string, err error, attrs ...any) {
+	if err != nil {
+		observability.CaptureException(err)
+	}
+	logAttrs := make([]any, 0, len(attrs)+2)
+	if err != nil {
+		logAttrs = append(logAttrs, "error", err)
+	}
+	logAttrs = append(logAttrs, attrs...)
+	slog.Error(message, logAttrs...)
+	observability.Flush(2 * time.Second)
+	os.Exit(1)
 }
