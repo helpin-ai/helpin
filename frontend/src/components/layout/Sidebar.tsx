@@ -117,6 +117,7 @@ type RailItem = {
   icon: LucideIcon;
   defaultLink: string;
   badge?: number;
+  indicator?: boolean;
 };
 
 function deriveActiveRail(pathname: string): RailId {
@@ -555,7 +556,7 @@ export function Sidebar() {
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
-    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, badge: unreadStats?.total || undefined },
+    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(unreadStats?.total) },
     { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -731,6 +732,9 @@ export function Sidebar() {
                   >
                     <div className="relative">
                       <item.icon className="h-3.5 w-3.5" />
+                      {item.indicator && (
+                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-blue-600" />
+                      )}
                       {!!item.badge && (
                         <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold leading-none text-white">
                           {item.badge > 99 ? '99+' : item.badge}

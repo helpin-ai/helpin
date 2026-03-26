@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	emailtpl "github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
@@ -587,6 +588,7 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Notification</title>
+  %s
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
   <!-- Preheader text (hidden) -->
@@ -594,21 +596,16 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
     %s in %s: %s
   </div>
 
-  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
-    <tr>
-      <td align="center" style="padding: 48px 16px;">
-        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+	    <tr>
+	      <td align="center" style="padding: 48px 16px;">
+	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
 
-          <!-- Logo -->
-          <tr>
-            <td align="center" style="padding-bottom: 32px;">
-              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
-            </td>
-          </tr>
+	          %s
 
-          <!-- Main Card -->
-          <tr>
-            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+	          <!-- Main Card -->
+	          <tr>
+	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
               <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
 
                 <!-- Top accent bar -->
@@ -666,12 +663,14 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
         </table>
       </td>
     </tr>
-  </table>
+	  </table>
 </body>
 </html>`,
+		emailtpl.BrandHeaderCSS(),
 		html.EscapeString(actorName),
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
+		emailtpl.BrandHeaderHTML(),
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
 		bodyHTML,
@@ -1179,6 +1178,7 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Notification Digest</title>
+  %s
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
   <!-- Preheader text (hidden) -->
@@ -1186,21 +1186,16 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
     You have %d unread notifications
   </div>
 
-  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
-    <tr>
-      <td align="center" style="padding: 48px 16px;">
-        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+	    <tr>
+	      <td align="center" style="padding: 48px 16px;">
+	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
 
-          <!-- Logo -->
-          <tr>
-            <td align="center" style="padding-bottom: 32px;">
-              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
-            </td>
-          </tr>
+	          %s
 
-          <!-- Main Card -->
-          <tr>
-            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+	          <!-- Main Card -->
+	          <tr>
+	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
               <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
 
                 <!-- Top accent bar -->
@@ -1252,9 +1247,9 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
         </table>
       </td>
     </tr>
-  </table>
+	  </table>
 </body>
-</html>`, len(items), len(items), wsSections.String(), ctaHTML)
+</html>`, emailtpl.BrandHeaderCSS(), len(items), emailtpl.BrandHeaderHTML(), len(items), wsSections.String(), ctaHTML)
 
 	return subject, htmlBody, strings.TrimSpace(textBody.String())
 }

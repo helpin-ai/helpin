@@ -67,8 +67,26 @@ func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 				Name:        claudeJSONToolName,
 				Description: "Return the final response as a single JSON object that matches the schema requested in the prompt. Do not emit free-form text outside the tool input.",
 				InputSchema: map[string]any{
-					"type":                 "object",
-					"additionalProperties": true,
+					"type": "object",
+					"properties": map[string]any{
+						"content": map[string]any{
+							"type": "string",
+						},
+						"can_answer": map[string]any{
+							"type": "boolean",
+						},
+						"source_doc_ids": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "string",
+							},
+						},
+						"confidence": map[string]any{
+							"type": "number",
+						},
+					},
+					"required":             []string{"content", "can_answer", "source_doc_ids", "confidence"},
+					"additionalProperties": false,
 				},
 			},
 		}

@@ -30,6 +30,20 @@ func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
 	if req.Tools[0].Name != claudeJSONToolName {
 		t.Fatalf("unexpected tool name: %#v", req.Tools[0])
 	}
+	schema, ok := req.Tools[0].InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object schema, got %#v", req.Tools[0].InputSchema)
+	}
+	required, ok := schema["required"].([]string)
+	if !ok {
+		t.Fatalf("expected required fields, got %#v", schema["required"])
+	}
+	if len(required) != 4 {
+		t.Fatalf("expected 4 required fields, got %#v", required)
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected additionalProperties=false, got %#v", schema["additionalProperties"])
+	}
 	if req.MaxTokens != 512 {
 		t.Fatalf("expected max tokens to be preserved, got %d", req.MaxTokens)
 	}

@@ -84,7 +84,9 @@ func parseAIResponse(raw string) (contract AIResponseContract, cleanedContent st
 	}
 
 	if err := json.Unmarshal([]byte(jsonCandidate), &contract); err == nil {
-		return contract, contract.Content, true
+		if isAIContract(jsonCandidate) {
+			return contract, contract.Content, true
+		}
 	}
 
 	// Case 3: Readable text followed by an embedded ```json block.

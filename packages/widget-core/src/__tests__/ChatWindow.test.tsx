@@ -231,6 +231,71 @@ describe('ChatWindow', () => {
     expect(container.querySelector('.helpin-presence-dot--online')).toBeTruthy();
   });
 
+  it('starts a fresh conversation from the home CTA', () => {
+    const handleStartNewConversation = vi.fn();
+    const { getByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onStartNewConversation={handleStartNewConversation}
+      />,
+    );
+
+    fireEvent.click(getByText('Send us a message'));
+
+    expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a fresh conversation from Help contact us', () => {
+    const handleStartNewConversation = vi.fn();
+    const { getByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onStartNewConversation={handleStartNewConversation}
+      />,
+    );
+
+    fireEvent.click(getByText('Help center'));
+    fireEvent.click(getByText('Contact us'));
+
+    expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a fresh conversation from empty Messages view', () => {
+    const handleStartNewConversation = vi.fn();
+    const { getByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onStartNewConversation={handleStartNewConversation}
+        initialView="messages"
+      />,
+    );
+
+    fireEvent.click(getByText('Ask a question'));
+
+    expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
+  });
+
   it('shows talk to human when enabled and the conversation is idle', () => {
     const { getByText } = render(
       <ChatWindow
