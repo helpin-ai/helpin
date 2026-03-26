@@ -493,6 +493,14 @@ type SaveDocsMarkdownRequest struct {
 	Markdown string `json:"markdown"`
 }
 
+type ImportDocsExternalImageRequest struct {
+	ImageURL string `json:"image_url"`
+}
+
+type ImportDocsExternalImageResponse struct {
+	URL string `json:"url"`
+}
+
 // CreateDocsVersionRequest is the payload for manually creating a version snapshot.
 type CreateDocsVersionRequest struct {
 	SnapshotLabel *string `json:"snapshot_label"`

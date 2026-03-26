@@ -782,6 +782,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/locales", h.Docs.GetHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/locales", h.Docs.UpdateHelpcenterLocales)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/upload", h.Docs.UploadHelpcenterAsset)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/images/import", h.Docs.ImportExternalImage)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/helpcenter/translations", h.Docs.ListSpaceTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/spaces/{spaceId}/helpcenter/translations", h.Docs.UpsertSpaceTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/helpcenter/translations/{locale}/publish", h.Docs.PublishSpaceTranslation)

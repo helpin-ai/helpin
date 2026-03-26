@@ -9,6 +9,7 @@ const testState = vi.hoisted(() => ({
   editorBundle: null as MockEditorBundle | null,
   editorOptions: null as Record<string, any> | null,
   uploadEditorImage: vi.fn(),
+  importExternalImage: vi.fn(),
   slashMenuGetState: vi.fn(() => null),
 }))
 
@@ -138,6 +139,12 @@ vi.mock('@/hooks/useEditorImageUpload', () => ({
   uploadEditorImage: (...args: unknown[]) => testState.uploadEditorImage(...args),
 }))
 
+vi.mock('@/lib/services/docsService', () => ({
+  docsService: {
+    importExternalImage: (...args: unknown[]) => testState.importExternalImage(...args),
+  },
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -231,6 +238,8 @@ describe('DocsEditor', () => {
     testState.editorBundle = createMockEditor()
     testState.editorOptions = null
     testState.uploadEditorImage.mockReset()
+    testState.importExternalImage.mockReset()
+    testState.importExternalImage.mockResolvedValue({ data: { url: 'https://cdn.helpin.ai/imported.png' }, error: null })
     testState.slashMenuGetState.mockReset()
     testState.slashMenuGetState.mockReturnValue(null)
     container = document.createElement('div')
@@ -312,7 +321,7 @@ describe('DocsEditor', () => {
     expect(testState.editorBundle?.doc.descendants).not.toHaveBeenCalled()
   })
 
-  it('queues imported-image persistence only when pasted HTML contains embedded data images', async () => {
+  it('queues imported-image persistence only when pasted HTML contains images', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const content = { type: 'doc', content: [{ type: 'paragraph' }] }
 
@@ -346,15 +355,26 @@ describe('DocsEditor', () => {
       clipboardData: {
         items: [],
         getData: vi.fn((type: string) =>
-          type === 'text/html' ? '<img src="data:image/png;base64,abc123" />' : ''),
+          type === 'text/html' ? '<img src="https://cdn.example.com/shot.png" />' : ''),
       },
     } as unknown as ClipboardEvent
+
+    testState.editorBundle?.doc.descendants.mockImplementation((visitor: (node: any, pos: number) => void) => {
+      visitor({
+        type: { name: 'resizableImage' },
+        attrs: { src: 'https://cdn.example.com/shot.png', attachmentId: '', title: null },
+      }, 5)
+    })
+    testState.editorBundle?.doc.nodeAt.mockReturnValue({
+      attrs: { src: 'https://cdn.example.com/shot.png', attachmentId: '', title: 'imported-1' },
+    })
 
     await act(async () => {
       testState.editorOptions?.editorProps?.handlePaste?.(null, embeddedImagePaste)
       vi.runAllTimers()
     })
 
-    expect(testState.editorBundle?.doc.descendants).toHaveBeenCalledTimes(1)
+    expect(testState.editorBundle?.doc.descendants).toHaveBeenCalled()
+    expect(testState.importExternalImage).toHaveBeenCalledWith('ws_1', 'https://cdn.example.com/shot.png')
   })
 })

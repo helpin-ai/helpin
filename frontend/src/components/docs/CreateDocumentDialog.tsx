@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -46,10 +46,17 @@ export function CreateDocumentDialog({
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, spaceId || '')
 
-  // Set defaults when spaces load
-  useMemo(() => {
-    if (!spaceId && spaces?.length) setSpaceId(spaces[0].id)
-  }, [spaces, spaceId])
+  useEffect(() => {
+    if (!open) return
+    setTitle('')
+    setSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
+    setCollectionId(defaultCollectionId ?? '')
+  }, [defaultCollectionId, defaultSpaceId, open, spaces])
+
+  useEffect(() => {
+    if (!open || spaceId || !spaces?.length) return
+    setSpaceId(defaultSpaceId ?? spaces[0].id)
+  }, [defaultSpaceId, open, spaceId, spaces])
 
   const reset = () => {
     setTitle('')

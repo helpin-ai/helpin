@@ -222,6 +222,8 @@ export const docsService = {
   // ── Preview ────────────────────────────────────────────────────────────
   getPreviewToken: (wsId: string, docId: string) =>
     api.post<{ token: string; subdomain: string }>(`/docs/documents/${docId}/preview-token${qs(wsId)}`),
+  importExternalImage: (wsId: string, imageUrl: string) =>
+    api.post<{ url: string }>(`/docs/images/import${qs(wsId)}`, { image_url: imageUrl }),
 
   // ── Help Center Article ─────────────────────────────────────────────────
   submitArticleFeedback: (wsId: string, docId: string, payload: DocsArticleFeedbackRequest) =>

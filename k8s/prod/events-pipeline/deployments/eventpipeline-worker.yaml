@@ -6,7 +6,7 @@ metadata:
     app: helpin-eventpipeline-worker
   namespace: helpin
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: helpin-eventpipeline-worker
