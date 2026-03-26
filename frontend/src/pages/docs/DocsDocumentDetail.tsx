@@ -109,6 +109,32 @@ function docStatusColor(status: string): string {
   }
 }
 
+function resolveHelpcenterPreviewBaseUrl(): string {
+  const explicit = import.meta.env.VITE_HELPCENTER_URL?.trim()
+  if (explicit) return explicit.replace(/\/+$/, '')
+
+  const appBase = import.meta.env.VITE_APP_BASE_URL?.trim()
+  const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const candidate = appBase || fallbackOrigin
+
+  if (candidate) {
+    try {
+      const url = new URL(candidate)
+      if (url.hostname === 'app.helpin.ai') return 'https://helpcenter.helpin.ai'
+      if (url.hostname === 'client.stage.helpin.ai' || url.hostname === 'stage.helpin.ai') {
+        return 'https://helpcenter-stage.helpin.ai'
+      }
+      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        return 'http://localhost:5174'
+      }
+    } catch {
+      // Fall through to the local dev default below.
+    }
+  }
+
+  return 'http://localhost:5174'
+}
+
 function DocCollectionIcon({ name }: { name?: string | null }) {
   if (name) {
     const Icon = ICON_MAP[name];
@@ -443,7 +469,7 @@ export function DocsDocumentDetail() {
                   toast.error(res.error || 'Failed to generate preview')
                   return
                 }
-                const hcUrl = import.meta.env.VITE_HELPCENTER_URL || 'http://localhost:5174'
+                const hcUrl = resolveHelpcenterPreviewBaseUrl()
                 const { token, subdomain } = res.data
                 window.open(
                   `${hcUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`,

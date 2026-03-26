@@ -838,13 +838,13 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|favicon}.
+// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon}.
 func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 
 	assetType := r.URL.Query().Get("type")
-	if assetType != "logo" && assetType != "favicon" {
-		writeError(w, http.StatusBadRequest, "type must be 'logo' or 'favicon'")
+	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" {
+		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', or 'favicon'")
 		return
 	}
 
