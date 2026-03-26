@@ -31,9 +31,10 @@ import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import {
-  Plus, Trash2, GripVertical, Info,
-  Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon,
+  Plus, Trash2, GripVertical, Info, ChevronDown,
+  Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon, Languages,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
@@ -184,10 +185,30 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
   const [spaces, setSpaces] = useState<DocsSpace[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const isExpanded = (key: string) => expandedSections.has(key);
   const [homepageSpaceSlug, setHomepageSpaceSlug] = useState('');
   const [spaceCollections, setSpaceCollections] = useState<DocsCollection[]>([]);
   const { data: localesConfig } = useDocsHelpcenterLocales(workspaceId);
   const updateLocales = useUpdateDocsHelpcenterLocales(workspaceId);
+  const normalizedLocalesConfig = localesConfig
+    ? {
+        ...localesConfig,
+        default_locale: localesConfig.default_locale || 'en',
+        enabled_locales:
+          Array.isArray(localesConfig.enabled_locales) && localesConfig.enabled_locales.length > 0
+            ? localesConfig.enabled_locales
+            : [localesConfig.default_locale || 'en'],
+        fallback_to_default_locale: localesConfig.fallback_to_default_locale !== false,
+      }
+    : null;
 
   useEffect(() => {
     const load = async () => {
@@ -460,7 +481,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-8">
+    <form onSubmit={handleSave} className="space-y-5">
       {/* ── Top Actions ── */}
       <div className="flex items-center justify-between">
         <div>
@@ -496,32 +517,21 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </div>
       </div>
 
-      {localesConfig && (
-        <HelpcenterLocalesCard
-          key={`${localesConfig.default_locale}:${localesConfig.enabled_locales.join(',')}:${String(localesConfig.show_language_switcher)}:${String(localesConfig.fallback_to_default_locale)}`}
-          config={localesConfig}
-          isSaving={updateLocales.isPending}
-          onSave={async (data) => {
-            try {
-              await updateLocales.mutateAsync(data)
-              toast.success('Locale settings saved')
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
-            }
-          }}
-        />
-      )}
-
-      {/* ── Branding ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <Palette className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Branding</CardTitle>
+      {/* ── Section: Branding ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('branding') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('branding')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Palette className="h-4 w-4" />
           </div>
-          <CardDescription>Customize your help center&apos;s visual identity.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Branding</p>
+            <p className="text-xs text-muted-foreground">Logo, colors, and theme for your help center</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('branding') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('branding')}>
+          <div>
+          <div className="border-t border-border p-4 space-y-6">
           {/* Upload zones */}
           <div className="grid gap-6 sm:grid-cols-3">
             {/* Logo (light) upload zone */}
@@ -678,20 +688,28 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          </div>
+          </div>
+        </div>
+      </div>
 
-      {/* ── Domain & SEO ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Domain</CardTitle>
-            </div>
-            <CardDescription>Configure your help center URL.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      {/* ── Section: Domain & SEO ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Globe className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Domain & SEO</p>
+            <p className="text-xs text-muted-foreground">URL configuration and search engine optimization</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('domain-seo') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('domain-seo')}>
+          <div>
+          <div className="border-t border-border p-4 space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-subdomain">Subdomain</Label>
               <div className="flex items-center">
@@ -724,18 +742,8 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 placeholder="support@yourcompany.com"
               />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">SEO</CardTitle>
-            </div>
-            <CardDescription>Optimize for search engines.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          </div>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-seo-title">Meta Title</Label>
               <Input
@@ -757,20 +765,28 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               />
               <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          </div>
+          </div>
+          </div>
+        </div>
       </div>
 
-      {/* ── Homepage ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Homepage</CardTitle>
+      {/* ── Section: Homepage ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('homepage') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('homepage')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <LayoutGrid className="h-4 w-4" />
           </div>
-          <CardDescription>Configure the hero section and featured content visitors see first.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Homepage</p>
+            <p className="text-xs text-muted-foreground">Hero section and featured content visitors see first</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('homepage') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('homepage')}>
+          <div>
+          <div className="border-t border-border p-4 space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="hc-hero-title">Hero Title</Label>
@@ -861,20 +877,30 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+          </div>
+          </div>
+        </div>
+      </div>
 
-      {/* ── Navigation ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Header Links</CardTitle>
-            </div>
-            <CardDescription>Navigation links displayed in the top bar.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      {/* ── Section: Navigation ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('navigation') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('navigation')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <LinkIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Navigation</p>
+            <p className="text-xs text-muted-foreground">Header links and footer configuration</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('navigation') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('navigation')}>
+          <div>
+          <div className="border-t border-border p-4 space-y-6">
+          {/* Header Links */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Header Links</Label>
+            <p className="text-xs text-muted-foreground">Navigation links displayed in the top bar.</p>
             {config.header_links.length === 0 && (
               <p className="text-xs text-muted-foreground py-3 text-center">No header links yet. Add one below.</p>
             )}
@@ -898,18 +924,16 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Footer</CardTitle>
+          <Separator />
+
+          {/* Footer */}
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Footer</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Copyright text and footer navigation.</p>
             </div>
-            <CardDescription>Copyright text and footer navigation.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
               <Input
@@ -950,9 +974,46 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          </div>
+          </div>
+        </div>
       </div>
+
+      {/* ── Section: Locales ── */}
+      {normalizedLocalesConfig && (
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
+          <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Languages className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Languages</p>
+              <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
+            </div>
+            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
+          </button>
+          <div className="accordion-animate" data-open={isExpanded('locales')}>
+            <div>
+            <div className="border-t border-border p-4">
+              <HelpcenterLocalesCard
+                key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
+                config={normalizedLocalesConfig}
+                isSaving={updateLocales.isPending}
+                onSave={async (data) => {
+                  try {
+                    await updateLocales.mutateAsync(data)
+                    toast.success('Locale settings saved')
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
+                  }
+                }}
+              />
+            </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </form>
   );

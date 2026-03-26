@@ -491,7 +491,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         )}
         {/* Widget Installation */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
@@ -588,7 +588,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Identity Capture */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('identity-capture')}
@@ -645,7 +645,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Appearance */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('appearance')}
@@ -890,7 +890,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Help Center */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('help-center')}
@@ -944,7 +944,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
           {/* AI Auto-Reply */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('ai-auto-reply')}
@@ -1092,7 +1092,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Availability */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('business-hours')}
@@ -1187,7 +1187,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Chat Features — merged CSAT, File Uploads, Email */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('chat-features')}

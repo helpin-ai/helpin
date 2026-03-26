@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Globe2, Languages } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -137,14 +138,11 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Globe2 className="h-4 w-4 text-primary" />
-            <div>
-              <h3 className="text-sm font-medium">Enabled locales</h3>
-              <p className="text-xs text-muted-foreground">
-                Choose the languages translators can work in. Default locale is always kept enabled.
-              </p>
-            </div>
+          <div>
+            <h3 className="text-sm font-medium">Enabled locales</h3>
+            <p className="text-xs text-muted-foreground">
+              Select which languages your help center will be available in.
+            </p>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -163,12 +161,19 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
                     <p className="font-medium text-foreground">{option.label}</p>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{option.value}</p>
                   </div>
-                  <Checkbox
-                    id={`locale-${option.value}`}
-                    checked={checked}
-                    disabled={isDefault}
-                    onCheckedChange={(value) => toggleLocale(option.value, Boolean(value))}
-                  />
+                  <div className="flex items-center gap-2">
+                    {isDefault && (
+                      <Badge variant="secondary" className="rounded-full px-1.5 py-0 text-[10px]">
+                        Default
+                      </Badge>
+                    )}
+                    <Checkbox
+                      id={`locale-${option.value}`}
+                      checked={checked}
+                      disabled={isDefault}
+                      onCheckedChange={(value) => toggleLocale(option.value, Boolean(value))}
+                    />
+                  </div>
                 </label>
               )
             })}
