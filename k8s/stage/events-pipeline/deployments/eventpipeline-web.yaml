@@ -6,7 +6,7 @@ metadata:
     app: helpin-eventpipeline-web
   namespace: helpin
 spec:
-  replicas: 3
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
