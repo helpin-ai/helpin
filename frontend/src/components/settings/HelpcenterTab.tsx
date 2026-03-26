@@ -31,8 +31,8 @@ import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import {
-  Plus, Trash2, GripVertical, Info, ChevronDown,
-  Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon, Languages,
+  Plus, Trash2, GripVertical, Info, ChevronDown, X,
+  Globe, Palette, LayoutGrid, LinkIcon, ImageIcon, Languages,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { IconPicker } from '@/components/ui/icon-picker';
@@ -72,6 +72,7 @@ interface ConfigState {
   homepage_hero_subtitle: string;
   homepage_featured_cards: HomepageFeaturedCard[];
   search_placeholder: string;
+  protected_terms: string[];
   is_published: boolean;
   seo_title: string;
   seo_description: string;
@@ -94,6 +95,7 @@ const DEFAULT_CONFIG: ConfigState = {
   homepage_hero_subtitle: '',
   homepage_featured_cards: [],
   search_placeholder: '',
+  protected_terms: [],
   is_published: false,
   seo_title: '',
   seo_description: '',
@@ -233,6 +235,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           homepage_hero_subtitle: d.homepage_config?.hero_subtitle ?? '',
           homepage_featured_cards: d.homepage_config?.featured_cards ?? [],
           search_placeholder: d.search_placeholder ?? '',
+          protected_terms: d.protected_terms ?? [],
           is_published: d.is_published ?? false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
@@ -302,6 +305,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         featured_cards: config.homepage_featured_cards,
       },
       search_placeholder: config.search_placeholder || undefined,
+      protected_terms: config.protected_terms.filter(Boolean),
       is_published: config.is_published,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
@@ -996,19 +1000,61 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           <div className="accordion-animate" data-open={isExpanded('locales')}>
             <div>
             <div className="border-t border-border p-4">
-              <HelpcenterLocalesCard
-                key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
-                config={normalizedLocalesConfig}
-                isSaving={updateLocales.isPending}
-                onSave={async (data) => {
-                  try {
-                    await updateLocales.mutateAsync(data)
-                    toast.success('Locale settings saved')
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
-                  }
-                }}
-              />
+              <div className="space-y-4">
+                <HelpcenterLocalesCard
+                  key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
+                  config={normalizedLocalesConfig}
+                  isSaving={updateLocales.isPending}
+                  onSave={async (data) => {
+                    try {
+                      await updateLocales.mutateAsync(data)
+                      toast.success('Locale settings saved')
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
+                    }
+                  }}
+                />
+
+                <Card className={LINEAR_CARD_CLASS}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Protected terms</CardTitle>
+                    <CardDescription>
+                      Terms that AI will not translate — product names, features, and technical language.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {config.protected_terms.map((term, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-sm">
+                            {term}
+                            <button
+                              type="button"
+                              onClick={() => setConfig({ ...config, protected_terms: config.protected_terms.filter((_, j) => j !== i) })}
+                              className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <Input
+                        placeholder="Type a term and press Enter..."
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const val = (e.target as HTMLInputElement).value.trim()
+                            if (val && !config.protected_terms.includes(val)) {
+                              setConfig({ ...config, protected_terms: [...config.protected_terms, val] })
+                              ;(e.target as HTMLInputElement).value = ''
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
             </div>
           </div>

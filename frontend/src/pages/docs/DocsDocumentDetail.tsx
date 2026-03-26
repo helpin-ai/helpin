@@ -83,7 +83,6 @@ import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
-import { Badge } from '@/components/ui/badge'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
@@ -547,16 +546,14 @@ export function DocsDocumentDetail() {
     : activeTranslation?.source_synced === false
       ? 'The source article changed after this locale was last reviewed. Update the translation before publishing.'
       : 'This locale draft is served independently in the public help center once it is published.'
-  const activePublishLabel = (isSourceLocaleActive
-    ? doc?.status === 'published'
-    : activeTranslationStatus === 'published')
-    ? `Published (${activeLocaleShortLabel})`
+  const isPublished = isSourceLocaleActive ? doc?.status === 'published' : activeTranslationStatus === 'published'
+  const activePublishLabel = isPublished
+    ? `Update (${activeLocaleShortLabel})`
     : `Publish (${activeLocaleShortLabel})`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const publishDisabled = isSourceLocaleActive
     ? publishDoc.isPending || doc?.is_locked
     : !activeTranslation || Boolean(activeLocaleRow?.publishBlockedReason) || publishArticleTranslation.isPending || doc?.is_locked
-  const publishAlreadyDone = isSourceLocaleActive ? doc?.status === 'published' : activeTranslationStatus === 'published'
   const activeDialogTranslation = editingTranslationLocale === activeLocale && !isSourceLocaleActive
     ? {
         ...(activeTranslation ?? {
@@ -719,27 +716,27 @@ export function DocsDocumentDetail() {
         )}
 
         {showContextualPublish && (
-          <Button
-            size="sm"
-            variant={publishAlreadyDone ? 'outline' : 'default'}
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => {
-              if (publishAlreadyDone) return
-              if (isSourceLocaleActive) {
-                void handlePublish()
-                return
-              }
-              publishArticleTranslation.mutate(activeLocale, {
-                onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
-                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
-              })
-            }}
-            disabled={publishAlreadyDone || publishDisabled}
-            title={!isSourceLocaleActive ? activeLocaleRow?.publishBlockedReason : undefined}
-          >
-            <Send className="h-3 w-3" />
-            {activePublishLabel}
-          </Button>
+          <QuickTooltip label={activeLocaleRow?.publishBlockedReason || (publishDisabled ? 'Cannot publish' : activePublishLabel)}>
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => {
+                if (isSourceLocaleActive) {
+                  void handlePublish()
+                  return
+                }
+                publishArticleTranslation.mutate(activeLocale, {
+                  onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
+                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
+                })
+              }}
+              disabled={publishDisabled}
+            >
+              <Send className="h-3 w-3" />
+              {activePublishLabel}
+            </Button>
+          </QuickTooltip>
         )}
 
         <QuickTooltip label="Document details">
@@ -757,31 +754,18 @@ export function DocsDocumentDetail() {
       {showLocalePills && (
         <div className="border-b border-border/60 bg-muted/10 px-3 py-2.5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <ArticleLocalePillRail
-                items={enabledLocales.map((locale) => ({
-                  locale,
-                  shortLabel: locale.toUpperCase(),
-                  isActive: activeLocale === locale,
-                  isSource: locale === defaultLocale,
-                  sourceStatus: doc.status,
-                  translationState: localeRowsByLocale.get(locale)?.state ?? 'missing',
-                }))}
-                onSelectLocale={handleSelectLocale}
-              />
-            </div>
-            {!isSourceLocaleActive && (
-              <QuickTooltip label={`${getHelpcenterLocaleLabel(activeLocale)} translation settings`}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => setEditingTranslationLocale(activeLocale)}
-                >
-                  <Settings2 className="h-4 w-4" />
-                </Button>
-              </QuickTooltip>
-            )}
+            <ArticleLocalePillRail
+              items={enabledLocales.map((locale) => ({
+                locale,
+                shortLabel: locale.toUpperCase(),
+                isActive: activeLocale === locale,
+                isSource: locale === defaultLocale,
+                sourceStatus: doc.status,
+                translationState: localeRowsByLocale.get(locale)?.state ?? 'missing',
+              }))}
+              onSelectLocale={handleSelectLocale}
+              onOpenSettings={(locale) => setEditingTranslationLocale(locale)}
+            />
           </div>
         </div>
       )}
@@ -912,7 +896,7 @@ export function DocsDocumentDetail() {
                 <div className="flex items-center justify-center gap-2 bg-muted/20 px-4 py-2 mx-6 mt-3 rounded-lg">
                   <WandSparkles className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="text-xs text-muted-foreground">
-                    Regenerate this translation from the latest source article using AI.
+                    Regenerate this translation from the latest source article using AI. Protected terms from your settings will be preserved.
                   </span>
                   <Button
                     variant="outline"
@@ -1338,7 +1322,7 @@ export function DocsDocumentDetail() {
             open={regenerateConfirmOpen}
             onOpenChange={setRegenerateConfirmOpen}
             title="Regenerate translation"
-            description="This will replace the current translation content with a new AI-generated version from the source article. Your existing translation edits will be overwritten."
+            description={<div className="space-y-2"><p>This will replace the current translation content with a new AI-generated version from the source article.</p><p>Protected terms from your settings will be preserved.</p></div>}
             confirmLabel={regenerating ? 'Regenerating...' : 'Regenerate'}
             onConfirm={handleRegenerateTranslation}
           />

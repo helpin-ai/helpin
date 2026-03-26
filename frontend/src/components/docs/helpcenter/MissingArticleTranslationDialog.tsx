@@ -36,22 +36,22 @@ export function MissingArticleTranslationDialog({
         </DialogHeader>
 
         <div className="grid gap-3 py-2">
+          <button type="button" onClick={onGenerateWithAI} disabled={isGenerating} className="w-full rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/60 disabled:opacity-50">
+            <div className="flex items-start gap-3">
+              <WandSparkles className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{isGenerating ? 'Generating…' : 'Generate with AI'}</div>
+                <div className="text-xs text-muted-foreground">Create a translated draft from the current source article. Protected terms from your settings will be preserved.</div>
+              </div>
+            </div>
+          </button>
+
           <button type="button" onClick={onCreateManually} className="w-full rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/60">
             <div className="flex items-start gap-3">
               <PenLine className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="space-y-1">
                 <div className="text-sm font-medium">Create manually</div>
                 <div className="text-xs text-muted-foreground">Start with an empty localized draft and edit it directly on the article page.</div>
-              </div>
-            </div>
-          </button>
-
-          <button type="button" onClick={onGenerateWithAI} disabled={isGenerating} className="w-full rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/60 disabled:opacity-50">
-            <div className="flex items-start gap-3">
-              <WandSparkles className="mt-0.5 h-4 w-4 shrink-0" />
-              <div className="space-y-1">
-                <div className="text-sm font-medium">{isGenerating ? 'Generating…' : 'Generate with AI'}</div>
-                <div className="text-xs text-muted-foreground">Create a translated draft from the current source article, then refine it in the editor.</div>
               </div>
             </div>
           </button>

@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/docsi18n"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsHelpcenterTranslationService handles translation-specific business rules.
@@ -43,15 +46,6 @@ func NewDocsHelpcenterTranslationService(
 		collectionRepo:  collectionRepo,
 		llmProvider:     llmProvider,
 	}
-}
-
-type generatedArticleTranslationDraft struct {
-	Title          string `json:"title"`
-	Slug           string `json:"slug"`
-	Excerpt        string `json:"excerpt"`
-	SEOTitle       string `json:"seo_title"`
-	SEODescription string `json:"seo_description"`
-	Body           string `json:"body"`
 }
 
 func (s *DocsHelpcenterTranslationService) GetLocales(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
@@ -325,35 +319,56 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 	if err != nil {
 		return nil, err
 	}
+	if content == nil {
+		return nil, fmt.Errorf("document content not found")
+	}
 
 	article, err := s.hcRepo.GetArticle(ctx, documentID)
 	if err != nil {
 		return nil, err
 	}
 
-	sourcePayload := map[string]any{
-		"locale":           locale,
-		"source_title":     doc.Title,
-		"source_excerpt":   strings.TrimSpace(stringPtrValue(doc.Excerpt)),
-		"source_slug":      strings.TrimSpace(articleSlug(article)),
-		"source_seo_title": strings.TrimSpace(stringPtrValue(articleSEOTitle(article))),
-		"source_seo_desc":  strings.TrimSpace(stringPtrValue(articleSEODescription(article))),
-		"source_body":      strings.TrimSpace(contentText(content)),
+	var sourceNode tiptap.Node
+	if err := json.Unmarshal(content.Content, &sourceNode); err != nil {
+		return nil, fmt.Errorf("parse source tiptap content: %w", err)
 	}
-	sourceJSON, err := json.Marshal(sourcePayload)
+
+	defaultLocale := cfg.DefaultLocale
+	if defaultLocale == "" {
+		defaultLocale = "en"
+	}
+
+	plan, err := docsi18n.PrepareArticleTranslationPlan(docsi18n.ArticleSource{
+		SourceLocale:   defaultLocale,
+		TargetLocale:   locale,
+		Title:          doc.Title,
+		Excerpt:        doc.Excerpt,
+		SEOTitle:       articleSEOTitle(article),
+		SEODescription: articleSEODescription(article),
+		Content:        sourceNode,
+	}, docsi18n.PrepareOptions{
+		ProtectedTerms: []string(cfg.ProtectedTerms),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal translation source payload: %w", err)
+		return nil, fmt.Errorf("prepare article translation plan: %w", err)
+	}
+
+	sourceJSON, err := json.Marshal(plan.Request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal translation segment payload: %w", err)
 	}
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: `You generate high-quality help center article drafts for a requested locale.
-Return strict JSON with keys: title, slug, excerpt, seo_title, seo_description, body.
+		SystemPrompt: `You translate structured help-center article segments for a requested locale.
+Return strict JSON with shape {"segments":[{"id":"...","translated_text":"..."}]}.
 Rules:
-- Translate the article naturally for the requested locale.
-- Keep product names like Helpin unchanged.
-- body must be plain text with paragraphs separated by blank lines.
-- slug must be URL-safe ASCII; if you cannot produce one, return an empty string.
-- Do not include markdown fences or extra commentary.`,
+- Preserve every segment id exactly.
+- Translate only the text provided for each segment.
+- Do not add or remove segments.
+- Preserve placeholders like __TERM_001__ exactly.
+- Keep URLs, code-like tokens, and technical placeholders untouched.
+- Do not translate proper nouns, brand names, product names, or widely recognized technical terms (e.g., API, webhook, OAuth, SDK, JSON, REST, URL, HTTP).
+- Do not include markdown fences or commentary.`,
 		Messages: []llm.Message{
 			{Role: "user", Content: string(sourceJSON)},
 		},
@@ -364,27 +379,35 @@ Rules:
 		return nil, fmt.Errorf("generate article translation draft: %w", err)
 	}
 
-	var generated generatedArticleTranslationDraft
+	var generated docsi18n.TranslationResponse
 	if err := llm.UnmarshalResponse(resp.Content, &generated); err != nil {
 		return nil, fmt.Errorf("parse generated translation draft: %w", err)
 	}
 
-	title := strings.TrimSpace(generated.Title)
+	draft, err := plan.Apply(generated)
+	if err != nil {
+		return nil, fmt.Errorf("apply structured translation draft: %w", err)
+	}
+
+	title := strings.TrimSpace(draft.Title)
 	if title == "" {
 		return nil, fmt.Errorf("generated translation draft is missing a title")
 	}
 
-	body := strings.TrimSpace(generated.Body)
-	slug := normalizedSlugOrFallback(generated.Slug, articleSlug(article), title, locale)
+	contentJSON, err := json.Marshal(draft.Content)
+	if err != nil {
+		return nil, fmt.Errorf("marshal translated tiptap content: %w", err)
+	}
+	slug := normalizedSlugOrFallback("", articleSlug(article), title, locale)
 
 	req := model.UpsertDocsHelpcenterArticleTranslationRequest{
 		Locale:         locale,
 		Title:          title,
 		Slug:           slug,
-		Excerpt:        trimmedStringPointer(generated.Excerpt),
-		Content:        plainTextToTipTapDoc(body),
-		SEOTitle:       trimmedStringPointer(generated.SEOTitle),
-		SEODescription: trimmedStringPointer(generated.SEODescription),
+		Excerpt:        draft.Excerpt,
+		Content:        json.RawMessage(contentJSON),
+		SEOTitle:       draft.SEOTitle,
+		SEODescription: draft.SEODescription,
 		Status:         model.DocsHelpcenterTranslationStatusDraft,
 	}
 	return s.UpsertArticleTranslation(ctx, documentID, req)
@@ -729,6 +752,237 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 	return err
 }
 
+// GenerateSpaceTranslation uses AI to translate a space's name, slug, and description for a locale.
+// If the space has no description, the LLM will generate one from the space name.
+// The result is saved as a published translation ready to unblock article publishing.
+func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.Context, spaceID, locale string) (*model.DocsHelpcenterSpaceTranslation, error) {
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("AI translation generation is unavailable")
+	}
+
+	space, err := s.spaceRepo.GetByID(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+
+	cfg, err := s.hcRepo.GetConfig(ctx, space.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("help center config not found")
+	}
+
+	locale, err = validateEditableLocale(cfg, locale)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"source_locale": cfg.DefaultLocale,
+		"target_locale": locale,
+		"entity_type":   "help_center_space",
+		"name":          space.Name,
+		"slug":          space.Slug,
+	})
+
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: `You translate metadata for a public help center / knowledge base.
+Return strict JSON with shape {"name":"...","slug":"...","description":"..."}.
+Rules:
+- Translate the name and description into the target locale.
+- If description is empty, generate a short helpful description (1-2 sentences) based on the name, suitable for a public help center space.
+- The slug must be URL-safe: lowercase, hyphens only, no special characters. Translate it to match the localized name.
+- Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
+- Do not include markdown fences or commentary.`,
+		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
+		Temperature: 0.2,
+		JSONMode:    true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate space translation: %w", err)
+	}
+
+	var result struct {
+		Name        string `json:"name"`
+		Slug        string `json:"slug"`
+		Description string `json:"description"`
+	}
+	if err := llm.UnmarshalResponse(resp.Content, &result); err != nil {
+		return nil, fmt.Errorf("parse generated space translation: %w", err)
+	}
+
+	desc := strings.TrimSpace(result.Description)
+	var descPtr *string
+	if desc != "" {
+		descPtr = &desc
+	}
+
+	now := time.Now().UTC()
+	translation := &model.DocsHelpcenterSpaceTranslation{
+		SpaceID:         space.ID,
+		WorkspaceID:     space.WorkspaceID,
+		Locale:          locale,
+		Name:            strings.TrimSpace(result.Name),
+		Slug:            normalizedSlugOrFallback(strings.TrimSpace(result.Slug), space.Slug, result.Name, locale),
+		Description:     descPtr,
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &space.UpdatedAt,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+	}
+	return s.translationRepo.UpsertSpaceTranslation(ctx, translation)
+}
+
+// GenerateCollectionTranslation uses AI to translate a collection's name, slug, and description for a locale.
+// If the collection has no description, the LLM will generate one from the collection name.
+// The result is saved as a published translation ready to unblock article publishing.
+func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx context.Context, collectionID, locale string) (*model.DocsHelpcenterCollectionTranslation, error) {
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("AI translation generation is unavailable")
+	}
+
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil {
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil || space.Type != model.SpaceTypeExternalCapable {
+		return nil, fmt.Errorf("collection is not in an external-capable space")
+	}
+
+	cfg, err := s.hcRepo.GetConfig(ctx, space.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("help center config not found")
+	}
+
+	locale, err = validateEditableLocale(cfg, locale)
+	if err != nil {
+		return nil, err
+	}
+
+	description := ""
+	if collection.Description != nil {
+		description = *collection.Description
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"source_locale": cfg.DefaultLocale,
+		"target_locale": locale,
+		"entity_type":   "help_center_collection",
+		"name":          collection.Name,
+		"slug":          collection.Slug,
+		"description":   description,
+		"space_name":    space.Name,
+	})
+
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: `You translate metadata for a public help center / knowledge base.
+Return strict JSON with shape {"name":"...","slug":"...","description":"..."}.
+Rules:
+- Translate the name and description into the target locale.
+- If description is empty, generate a short helpful description (1-2 sentences) based on the name and parent space name, suitable for a public help center collection.
+- The slug must be URL-safe: lowercase, hyphens only, no special characters. Translate it to match the localized name.
+- Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
+- Do not include markdown fences or commentary.`,
+		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
+		Temperature: 0.2,
+		JSONMode:    true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate collection translation: %w", err)
+	}
+
+	var result struct {
+		Name        string `json:"name"`
+		Slug        string `json:"slug"`
+		Description string `json:"description"`
+	}
+	if err := llm.UnmarshalResponse(resp.Content, &result); err != nil {
+		return nil, fmt.Errorf("parse generated collection translation: %w", err)
+	}
+
+	desc := strings.TrimSpace(result.Description)
+	var descPtr *string
+	if desc != "" {
+		descPtr = &desc
+	}
+
+	now := time.Now().UTC()
+	translation := &model.DocsHelpcenterCollectionTranslation{
+		CollectionID:    collection.ID,
+		WorkspaceID:     space.WorkspaceID,
+		SpaceID:         collection.SpaceID,
+		Locale:          locale,
+		Name:            strings.TrimSpace(result.Name),
+		Slug:            normalizedSlugOrFallback(strings.TrimSpace(result.Slug), collection.Slug, result.Name, locale),
+		Description:     descPtr,
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &collection.UpdatedAt,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+	}
+	return s.translationRepo.UpsertCollectionTranslation(ctx, translation)
+}
+
+// GenerateAllSpaceAndCollectionTranslations generates translations for all external spaces
+// and their collections for a given locale. Called when a locale is first enabled or
+// when a new external space/collection is created.
+func (s *DocsHelpcenterTranslationService) GenerateAllSpaceAndCollectionTranslations(ctx context.Context, workspaceID, locale string) error {
+	if s.llmProvider == nil {
+		return nil
+	}
+
+	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	for _, space := range spaces {
+		if space.Type != model.SpaceTypeExternalCapable {
+			continue
+		}
+
+		// Generate space translation if missing
+		existing, _ := s.translationRepo.GetSpaceTranslation(ctx, space.ID, locale)
+		if existing == nil {
+			if _, err := s.GenerateSpaceTranslation(ctx, space.ID, locale); err != nil {
+				slog.ErrorContext(ctx, "failed to generate space translation", "space_id", space.ID, "locale", locale, "error", err)
+				continue
+			}
+		}
+
+		// Generate collection translations
+		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to list collections for translation", "space_id", space.ID, "error", err)
+			continue
+		}
+		for _, coll := range collections {
+			existingColl, _ := s.translationRepo.GetCollectionTranslation(ctx, coll.ID, locale)
+			if existingColl == nil {
+				if _, err := s.GenerateCollectionTranslation(ctx, coll.ID, locale); err != nil {
+					slog.ErrorContext(ctx, "failed to generate collection translation", "collection_id", coll.ID, "locale", locale, "error", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (s *DocsHelpcenterTranslationService) MarkArticleTranslationsForSourceChange(ctx context.Context, documentID string) error {
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {
@@ -916,40 +1170,6 @@ func normalizeSlug(value string) string {
 	return trimmed
 }
 
-func plainTextToTipTapDoc(body string) json.RawMessage {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return json.RawMessage(`{"type":"doc","content":[]}`)
-	}
-
-	parts := strings.Split(body, "\n\n")
-	content := make([]map[string]any, 0, len(parts))
-	for _, part := range parts {
-		paragraph := strings.TrimSpace(part)
-		if paragraph == "" {
-			continue
-		}
-		content = append(content, map[string]any{
-			"type": "paragraph",
-			"content": []map[string]any{
-				{
-					"type": "text",
-					"text": paragraph,
-				},
-			},
-		})
-	}
-
-	payload, err := json.Marshal(map[string]any{
-		"type":    "doc",
-		"content": content,
-	})
-	if err != nil {
-		return json.RawMessage(`{"type":"doc","content":[]}`)
-	}
-	return payload
-}
-
 func trimmedStringPointer(value string) *string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -984,11 +1204,4 @@ func articleSEODescription(article *model.DocsHelpcenterArticle) *string {
 		return nil
 	}
 	return article.SEODescription
-}
-
-func contentText(content *model.DocsContent) string {
-	if content == nil {
-		return ""
-	}
-	return content.ContentText
 }
