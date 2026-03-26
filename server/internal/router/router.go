@@ -83,6 +83,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.SentryHTTP)
+	r.Use(middleware.SentryRequestContext)
 
 	// API-scoped CORS — restricted to configured origins (dashboard, frontend).
 	// Widget/SDK routes have their own open CORS (AllowedOrigins: *).

@@ -1026,11 +1026,11 @@ func main() {
 	if wsHandler != nil || widgetWsHandler != nil {
 		var sentryWSHandler http.Handler
 		if wsHandler != nil {
-			sentryWSHandler = middleware.SentryHTTP(wsHandler)
+			sentryWSHandler = middleware.SentryHTTP(middleware.SentryRequestContext(wsHandler))
 		}
 		var sentryWidgetWSHandler http.Handler
 		if widgetWsHandler != nil {
-			sentryWidgetWSHandler = middleware.SentryHTTP(widgetWsHandler)
+			sentryWidgetWSHandler = middleware.SentryHTTP(middleware.SentryRequestContext(widgetWsHandler))
 		}
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.URL.Path == "/api/ws" && sentryWSHandler != nil {
