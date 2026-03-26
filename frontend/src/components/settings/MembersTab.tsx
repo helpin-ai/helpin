@@ -251,7 +251,12 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                     <TableRow key={m.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <UserAvatar name={m.full_name || m.email} className="h-8 w-8" fallbackClassName="text-[10px]" />
+                          <UserAvatar
+                            name={m.full_name || m.email}
+                            avatarUrl={m.avatar_url}
+                            className="h-8 w-8"
+                            fallbackClassName="text-[10px]"
+                          />
                           <div className="min-w-0">
                             <p className="truncate font-medium">{m.full_name || '—'}</p>
                             {!m.full_name && (
@@ -410,7 +415,12 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                                       : 'hover:bg-accent'
                                   }`}
                                 >
-                                  <UserAvatar name={m.full_name || m.email} className="h-6 w-6" fallbackClassName="text-[10px]" />
+                                  <UserAvatar
+                                    name={m.full_name || m.email}
+                                    avatarUrl={m.avatar_url}
+                                    className="h-6 w-6"
+                                    fallbackClassName="text-[10px]"
+                                  />
                                   <div className="min-w-0 flex-1">
                                     {m.full_name && <p className="truncate text-sm font-medium">{m.full_name}</p>}
                                     <p className="truncate text-xs text-muted-foreground">{m.email}</p>

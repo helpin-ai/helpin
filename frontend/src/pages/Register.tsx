@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 
 export default function Register() {
@@ -36,8 +37,8 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Create your account</CardTitle>
           <CardDescription>Get started with Helpin</CardDescription>
@@ -67,6 +68,6 @@ export default function Register() {
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

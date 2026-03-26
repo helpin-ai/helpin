@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 
 export default function ForgotPassword() {
@@ -28,8 +29,8 @@ export default function ForgotPassword() {
 
   if (sent) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Check your email</CardTitle>
             <CardDescription>
@@ -45,13 +46,13 @@ export default function ForgotPassword() {
             </p>
           </CardFooter>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Forgot your password?</CardTitle>
           <CardDescription>Enter your email and we'll send you a reset link</CardDescription>
@@ -73,6 +74,6 @@ export default function ForgotPassword() {
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

@@ -4,6 +4,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { authService } from '@/lib/services/authService';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { Loader2 } from 'lucide-react';
 
 export default function VerifyEmail() {
@@ -30,15 +31,17 @@ export default function VerifyEmail() {
   }, [token]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         {status === 'loading' && (
-          <CardHeader className="text-center">
-            <div className="flex justify-center mb-4">
+          <CardHeader className="space-y-4 text-center">
+            <div className="flex justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-            <CardTitle className="text-2xl">Verifying your email...</CardTitle>
-            <CardDescription>Please wait while we verify your email address.</CardDescription>
+            <div className="space-y-1">
+              <CardTitle className="text-2xl">Verifying your email...</CardTitle>
+              <CardDescription>Please wait while we verify your email address.</CardDescription>
+            </div>
           </CardHeader>
         )}
 
@@ -70,6 +73,6 @@ export default function VerifyEmail() {
           </>
         )}
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

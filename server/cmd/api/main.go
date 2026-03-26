@@ -807,7 +807,7 @@ func main() {
 	supportAIService := service.NewSupportAIService(
 		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
 		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
-		supportConversationRepo, supportMessageRepo,
+		supportConversationRepo, supportMessageRepo, supportAttachmentRepo,
 		agentRepo, agentHandoffRepo, supportInstallRepo,
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 
 export default function ResetPassword() {
@@ -18,8 +19,8 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Invalid link</CardTitle>
             <CardDescription>This password reset link is invalid or has expired.</CardDescription>
@@ -30,7 +31,7 @@ export default function ResetPassword() {
             </Link>
           </CardFooter>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -56,8 +57,8 @@ export default function ResetPassword() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Password reset</CardTitle>
             <CardDescription>Your password has been reset successfully. You can now sign in with your new password.</CardDescription>
@@ -68,13 +69,13 @@ export default function ResetPassword() {
             </Link>
           </CardFooter>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Set a new password</CardTitle>
           <CardDescription>Choose a new password for your account</CardDescription>
@@ -97,6 +98,6 @@ export default function ResetPassword() {
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

@@ -535,6 +535,20 @@ type SupportAIPreviewRequest struct {
 	MaxResults     *int                          `json:"max_results,omitempty"`
 }
 
+// SupportAIRewriteDraftRequest rewrites a human-authored support draft with a targeted transform.
+type SupportAIRewriteDraftRequest struct {
+	Content   string `json:"content"`
+	Operation string `json:"operation"`
+}
+
+// SupportAIRewriteDraftResponse returns the rewritten draft plus model metadata.
+type SupportAIRewriteDraftResponse struct {
+	Content   string `json:"content"`
+	Operation string `json:"operation"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+}
+
 // SupportAIPreviewHistoryTurn is a simplified conversation turn used for preview requests.
 type SupportAIPreviewHistoryTurn struct {
 	SenderType  string `json:"sender_type"`

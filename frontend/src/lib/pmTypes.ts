@@ -1572,6 +1572,25 @@ export interface SupportAIPreviewRequest {
   max_results?: number;
 }
 
+export type SupportAIRewriteOperation =
+  | 'expand'
+  | 'rephrase'
+  | 'fix_grammar'
+  | 'more_friendly'
+  | 'more_formal';
+
+export interface SupportAIRewriteDraftRequest {
+  content: string;
+  operation: SupportAIRewriteOperation;
+}
+
+export interface SupportAIRewriteDraftResponse {
+  content: string;
+  operation: SupportAIRewriteOperation;
+  provider: string;
+  model: string;
+}
+
 export interface SupportAIPreviewQueryPlan {
   decision: string;
   standalone_query: string;

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 
 export default function JoinWorkspace() {
@@ -56,8 +57,8 @@ export default function JoinWorkspace() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <Skeleton className="h-8 w-48 mx-auto" />
             <Skeleton className="h-4 w-64 mx-auto mt-2" />
@@ -66,7 +67,7 @@ export default function JoinWorkspace() {
             <Skeleton className="h-10 w-full" />
           </CardContent>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -79,8 +80,8 @@ export default function JoinWorkspace() {
       || 'This invitation is no longer valid.';
 
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Invalid Invitation</CardTitle>
             <CardDescription>{message}</CardDescription>
@@ -91,7 +92,7 @@ export default function JoinWorkspace() {
             </Button>
           </CardFooter>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -119,8 +120,8 @@ export default function JoinWorkspace() {
     };
 
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
+      <PublicPageShell>
+        <Card className="w-full">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Join {info.workspace_name}</CardTitle>
             <CardDescription>
@@ -173,14 +174,14 @@ export default function JoinWorkspace() {
             </CardFooter>
           </form>
         </Card>
-      </div>
+      </PublicPageShell>
     );
   }
 
   // Logged in — show join button
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Join {info.workspace_name}</CardTitle>
           <CardDescription>
@@ -196,6 +197,6 @@ export default function JoinWorkspace() {
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

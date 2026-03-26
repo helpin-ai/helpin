@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 
 export default function Login() {
@@ -52,11 +53,11 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
+    <PublicPageShell>
+      <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Sign in to Helpin</CardTitle>
-          <CardDescription>Enter your credentials to continue</CardDescription>
+          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <CardDescription>Enter your email and password.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -86,6 +87,6 @@ export default function Login() {
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </PublicPageShell>
   );
 }

@@ -39,12 +39,12 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 }
 
 func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	var messages []map[string]string
+	var messages []map[string]any
 	if req.SystemPrompt != "" {
-		messages = append(messages, map[string]string{"role": "system", "content": req.SystemPrompt})
+		messages = append(messages, map[string]any{"role": "system", "content": req.SystemPrompt})
 	}
 	for _, m := range req.Messages {
-		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
+		messages = append(messages, buildOpenAIMessage(m))
 	}
 
 	maxTokens := req.MaxTokens
@@ -117,7 +117,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 
 func (p *OpenAIProvider) buildChatCompletionBody(
 	modelName string,
-	messages []map[string]string,
+	messages []map[string]any,
 	maxTokens int,
 	temperature float64,
 	jsonMode bool,
@@ -136,6 +136,54 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
 	return body
+}
+
+func buildOpenAIMessage(message Message) map[string]any {
+	if len(message.ContentParts) == 0 {
+		return map[string]any{
+			"role":    message.Role,
+			"content": message.Content,
+		}
+	}
+
+	parts := make([]map[string]any, 0, len(message.ContentParts))
+	for _, part := range message.ContentParts {
+		switch part.Type {
+		case "image_url":
+			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
+				continue
+			}
+			image := map[string]any{"url": strings.TrimSpace(part.ImageURL.URL)}
+			if detail := strings.TrimSpace(part.ImageURL.Detail); detail != "" {
+				image["detail"] = detail
+			}
+			parts = append(parts, map[string]any{
+				"type":      "image_url",
+				"image_url": image,
+			})
+		default:
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				continue
+			}
+			parts = append(parts, map[string]any{
+				"type": "text",
+				"text": text,
+			})
+		}
+	}
+
+	if len(parts) == 0 {
+		return map[string]any{
+			"role":    message.Role,
+			"content": message.Content,
+		}
+	}
+
+	return map[string]any{
+		"role":    message.Role,
+		"content": parts,
+	}
 }
 
 func (p *OpenAIProvider) usesMaxCompletionTokens(modelName string) bool {

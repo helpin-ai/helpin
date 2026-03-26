@@ -96,6 +96,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                           <div>
                             <UserAvatar
                               name={member.full_name}
+                              avatarUrl={member.avatar_url}
                               className="h-7 w-7 ring-2 ring-background"
                             />
                           </div>

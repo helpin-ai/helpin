@@ -25,8 +25,22 @@ type ChatRequest struct {
 
 // Message represents a conversation message.
 type Message struct {
-	Role    string
-	Content string
+	Role         string
+	Content      string
+	ContentParts []ContentPart
+}
+
+// ContentPart represents a multimodal chat content part.
+type ContentPart struct {
+	Type     string
+	Text     string
+	ImageURL *ImageURLPart
+}
+
+// ImageURLPart references an image the model can inspect.
+type ImageURLPart struct {
+	URL    string
+	Detail string
 }
 
 // ChatResponse is a model-agnostic chat response.

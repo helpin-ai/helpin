@@ -90,3 +90,27 @@ func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *test
 		t.Fatalf("expected text fallback, got %q", got)
 	}
 }
+
+func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
+	content := buildClaudeMessageContent(Message{
+		Role: "user",
+		ContentParts: []ContentPart{
+			{Type: "text", Text: "Inspect this screenshot"},
+			{Type: "image_url", ImageURL: &ImageURLPart{URL: "https://assets.example.com/example.png"}},
+		},
+	})
+
+	blocks, ok := content.([]workerpkg.ContentBlock)
+	if !ok {
+		t.Fatalf("expected content blocks, got %#v", content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %#v", blocks)
+	}
+	if blocks[0].Type != "text" {
+		t.Fatalf("expected first block text, got %#v", blocks[0])
+	}
+	if blocks[1].Type != "image" {
+		t.Fatalf("expected second block image, got %#v", blocks[1])
+	}
+}
