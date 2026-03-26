@@ -156,6 +156,78 @@ function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedA
   }
 }
 
+// ── Slug display / editor ───────────────────────────────────────────────────
+
+function SlugDisplay({ slug, onSlugChange, readOnly }: { slug: string; onSlugChange?: (slug: string) => Promise<void>; readOnly?: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(slug)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const canEdit = !!onSlugChange && !readOnly
+
+  const handleStartEdit = () => {
+    if (!canEdit) return
+    setDraft(slug)
+    setEditing(true)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  const handleSave = async () => {
+    const cleaned = draft.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '').replace(/-+/g, '-')
+    if (!cleaned || cleaned === slug) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onSlugChange!(cleaned)
+      setEditing(false)
+    } catch {
+      // error handled by caller
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 mb-3">
+        <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="text-[13px] font-mono text-muted-foreground">/</span>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void handleSave()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          className="text-[13px] font-mono bg-muted/40 border border-border/60 rounded px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 min-w-[120px]"
+          disabled={saving}
+        />
+        <button type="button" disabled={saving} onClick={() => void handleSave()} className="rounded p-0.5 text-emerald-600 hover:bg-emerald-500/10 transition-colors disabled:opacity-50">
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button type="button" onClick={() => setEditing(false)} className="rounded p-0.5 text-muted-foreground hover:bg-muted/60 transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={canEdit ? handleStartEdit : undefined}
+      className={`text-[13px] text-muted-foreground/60 font-mono mb-3 opacity-0 group-hover/title:opacity-100 transition-opacity flex items-center gap-1.5 ${canEdit ? 'hover:text-muted-foreground cursor-pointer' : ''}`}
+    >
+      <Link2 className="h-3.5 w-3.5" />
+      /{slug}
+    </button>
+  )
+}
+
 // ── Floating toolbar ────────────────────────────────────────────────────────
 
 function FloatingToolbar({ editor }: {
@@ -626,6 +698,7 @@ interface DocsEditorProps {
   title?: string
   onTitleChange?: (title: string) => void
   slug?: string
+  onSlugChange?: (slug: string) => Promise<void>
   initialContent?: JSONContent | null
   onSave: (content: JSONContent) => Promise<void>
   autoSaveMs?: number
@@ -646,6 +719,7 @@ export function DocsEditor({
   uploadConfig,
   topBanner,
   generatingOverlay,
+  onSlugChange,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -1168,12 +1242,7 @@ img { max-width: 100%; }
             {/* Title */}
             {title !== undefined && (
               <div className="group/title px-6 pt-10 pb-1">
-                {slug && (
-                  <p className="text-[13px] text-muted-foreground/60 font-mono mb-3 opacity-0 group-hover/title:opacity-100 transition-opacity flex items-center gap-1.5">
-                    <Link2 className="h-3.5 w-3.5" />
-                    /{slug}
-                  </p>
-                )}
+                {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} />}
                 {onTitleChange && !readOnly ? (
                   <input
                     value={title}

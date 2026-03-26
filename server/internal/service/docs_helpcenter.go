@@ -135,6 +135,9 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.EnabledLocales != nil {
 		updates["enabled_locales"] = model.DocsStringArray(req.EnabledLocales)
 	}
+	if req.ProtectedTerms != nil {
+		updates["protected_terms"] = model.DocsStringArray(req.ProtectedTerms)
+	}
 	if req.ShowLanguageSwitcher != nil {
 		updates["show_language_switcher"] = *req.ShowLanguageSwitcher
 	}
@@ -240,6 +243,58 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after publish", "document_id", documentID, "error", err)
 		}
 	}
+	return nil
+}
+
+// UpdateArticleSlug changes the slug of a help center article and creates a redirect from the old slug.
+func (s *DocsHelpcenterService) UpdateArticleSlug(ctx context.Context, workspaceID, documentID, newSlug string) error {
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return err
+	}
+	if doc == nil || doc.WorkspaceID != workspaceID {
+		return fmt.Errorf("document not found")
+	}
+
+	art, err := s.hcRepo.GetArticle(ctx, documentID)
+	if err != nil {
+		return err
+	}
+	if art == nil || art.Slug == "" {
+		return fmt.Errorf("article has no help center slug")
+	}
+
+	oldSlug := art.Slug
+	if oldSlug == newSlug {
+		return nil
+	}
+
+	// Resolve collection slug for redirect target.
+	var collectionSlug string
+	if doc.CollectionID != nil {
+		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err == nil && coll != nil {
+			collectionSlug = coll.Slug
+		}
+	}
+
+	// Update the slug.
+	if err := s.hcRepo.SetSlug(ctx, documentID, newSlug); err != nil {
+		return err
+	}
+
+	// Create a redirect from old slug to new slug.
+	if collectionSlug != "" {
+		redirect := &model.DocsRedirect{
+			WorkspaceID:          workspaceID,
+			SourcePath:           "/" + collectionSlug + "/" + oldSlug,
+			TargetCollectionSlug: collectionSlug,
+			TargetArticleSlug:    &newSlug,
+			Type:                 "slug_change",
+		}
+		_ = s.redirectRepo.Create(ctx, redirect)
+	}
+
 	return nil
 }
 

@@ -128,6 +128,8 @@ export const docsService = {
     api.post(`/docs/documents/${docId}/publish-external${qs(wsId)}`, slug ? { slug } : {}),
   unpublishExternally: (wsId: string, docId: string) =>
     api.post(`/docs/documents/${docId}/unpublish-external${qs(wsId)}`),
+  updateArticleSlug: (wsId: string, docId: string, slug: string) =>
+    api.patch(`/docs/documents/${docId}/slug${qs(wsId)}`, { slug }),
 
   // ── Search ──────────────────────────────────────────────────────────────
   search: (wsId: string, query: string, filters?: { status?: string; limit?: number }) => {

@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
+import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import {
   Plus, Trash2, GripVertical, Info, ChevronDown, X,
   Globe, Palette, LayoutGrid, LinkIcon, ImageIcon, Languages,
@@ -175,6 +176,48 @@ function SortableHeaderLinkRow({
           <SelectItem value="button">Button</SelectItem>
         </SelectContent>
       </Select>
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
+        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+      </Button>
+    </div>
+  );
+}
+
+function SortableFooterLinkRow({
+  id,
+  link,
+  onUpdate,
+  onRemove,
+}: {
+  id: number;
+  link: HelpcenterFooterLink;
+  onUpdate: (patch: Partial<HelpcenterFooterLink>) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group">
+      <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/50 hover:text-muted-foreground">
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <Input
+        value={link.label}
+        onChange={(e) => onUpdate({ label: e.target.value })}
+        placeholder="Label"
+        className="w-28 h-8 text-sm"
+      />
+      <Input
+        value={link.url}
+        onChange={(e) => onUpdate({ url: e.target.value })}
+        placeholder="https://..."
+        className="flex-1 h-8 text-sm"
+      />
       <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
         <Trash2 className="h-3.5 w-3.5 text-destructive" />
       </Button>
@@ -383,6 +426,16 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
+  const handleFooterDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setConfig(prev => {
+      const oldIndex = Number(active.id);
+      const newIndex = Number(over.id);
+      return { ...prev, footer_links: arrayMove(prev.footer_links, oldIndex, newIndex) };
+    });
+  }, []);
+
   // ── Featured card helpers (space-driven) ──
   const handleHomepageSpaceChange = async (slug: string) => {
     setHomepageSpaceSlug(slug);
@@ -535,7 +588,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </button>
         <div className="accordion-animate" data-open={isExpanded('branding')}>
           <div>
-          <div className="border-t border-border p-4 space-y-6">
+          <div className="border-t border-border px-6 py-6 space-y-6">
           {/* Upload zones */}
           <div className="grid gap-6 sm:grid-cols-3">
             {/* Logo (light) upload zone */}
@@ -711,7 +764,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </button>
         <div className="accordion-animate" data-open={isExpanded('domain-seo')}>
           <div>
-          <div className="border-t border-border p-4 space-y-6">
+          <div className="border-t border-border px-6 py-6 space-y-6">
           <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="space-y-2">
@@ -790,7 +843,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </button>
         <div className="accordion-animate" data-open={isExpanded('homepage')}>
           <div>
-          <div className="border-t border-border p-4 space-y-5">
+          <div className="border-t border-border px-6 py-6 space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="hc-hero-title">Hero Title</Label>
@@ -900,82 +953,79 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </button>
         <div className="accordion-animate" data-open={isExpanded('navigation')}>
           <div>
-          <div className="border-t border-border p-4 space-y-6">
-          {/* Header Links */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Header Links</Label>
-            <p className="text-xs text-muted-foreground">Navigation links displayed in the top bar.</p>
-            {config.header_links.length === 0 && (
-              <p className="text-xs text-muted-foreground py-3 text-center">No header links yet. Add one below.</p>
-            )}
-            {config.header_links.length > 0 && (
-              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleHeaderDragEnd}>
-                <SortableContext items={headerLinkIds} strategy={verticalListSortingStrategy}>
-                  {config.header_links.map((link, i) => (
-                    <SortableHeaderLinkRow
-                      key={headerLinkIds[i]}
-                      id={headerLinkIds[i]}
-                      link={link}
-                      onUpdate={(patch) => updateHeaderLink(i, patch)}
-                      onRemove={() => removeHeaderLink(i)}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            )}
-            <div className="flex justify-center">
-              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
-              </Button>
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Footer */}
-          <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium">Footer</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Copyright text and footer navigation.</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
-              <Input
-                id="hc-footer-copyright"
-                value={config.footer_copyright_text}
-                onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
-                placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
-              />
-            </div>
-            <Separator />
-            <div className="space-y-3">
-              <Label className="text-sm">Footer Links</Label>
-              {config.footer_links.length === 0 && (
-                <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+          <div className="border-t border-border px-6 py-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Header Links */}
+            <div className="space-y-3 rounded-lg border border-border/60 p-4">
+              <div>
+                <Label className="text-sm font-medium">Header Links</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Navigation links in the top bar.</p>
+              </div>
+              {config.header_links.length === 0 && (
+                <p className="text-xs text-muted-foreground py-3 text-center">No header links yet.</p>
               )}
-              {config.footer_links.map((link, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <Input
-                    value={link.label}
-                    onChange={(e) => updateFooterLink(i, { label: e.target.value })}
-                    placeholder="Label"
-                    className="w-28 h-8 text-sm"
-                  />
-                  <Input
-                    value={link.url}
-                    onChange={(e) => updateFooterLink(i, { url: e.target.value })}
-                    placeholder="https://..."
-                    className="flex-1 h-8 text-sm"
-                  />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeFooterLink(i)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
-                </div>
-              ))}
+              {config.header_links.length > 0 && (
+                <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleHeaderDragEnd}>
+                  <SortableContext items={headerLinkIds} strategy={verticalListSortingStrategy}>
+                    {config.header_links.map((link, i) => (
+                      <SortableHeaderLinkRow
+                        key={headerLinkIds[i]}
+                        id={headerLinkIds[i]}
+                        link={link}
+                        onUpdate={(patch) => updateHeaderLink(i, patch)}
+                        onRemove={() => removeHeaderLink(i)}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              )}
               <div className="flex justify-center">
-                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
                   <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
                 </Button>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="space-y-4 rounded-lg border border-border/60 p-4">
+              <div>
+                <Label className="text-sm font-medium">Footer</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Copyright text and footer links.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
+                <Input
+                  id="hc-footer-copyright"
+                  value={config.footer_copyright_text}
+                  onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
+                  placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-sm">Footer Links</Label>
+                {config.footer_links.length === 0 && (
+                  <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+                )}
+                {config.footer_links.length > 0 && (
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFooterDragEnd}>
+                    <SortableContext items={config.footer_links.map((_, i) => i)} strategy={verticalListSortingStrategy}>
+                      {config.footer_links.map((link, i) => (
+                        <SortableFooterLinkRow
+                          key={i}
+                          id={i}
+                          link={link}
+                          onUpdate={(patch) => updateFooterLink(i, patch)}
+                          onRemove={() => removeFooterLink(i)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                )}
+                <div className="flex justify-center">
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -992,15 +1042,15 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               <Languages className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Languages</p>
+              <p className="text-sm font-medium">Languages & Translation</p>
               <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
             </div>
             <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('locales')}>
             <div>
-            <div className="border-t border-border p-4">
-              <div className="space-y-4">
+            <div className="border-t border-border px-6 py-6">
+              <div className="space-y-6">
                 <HelpcenterLocalesCard
                   key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
                   config={normalizedLocalesConfig}
@@ -1015,14 +1065,14 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   }}
                 />
 
-                <Card className={LINEAR_CARD_CLASS}>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Protected terms</CardTitle>
-                    <CardDescription>
-                      Terms that AI will not translate — product names, features, and technical language.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
+                <Separator />
+
+                <div>
+                  <h3 className="text-sm font-medium">Protected terms</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Terms that AI will not translate — product names, features, and technical language.
+                  </p>
+                  <div className="mt-3">
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2">
                         {config.protected_terms.map((term, i) => (
@@ -1052,8 +1102,16 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                         }}
                       />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <HelpcenterTranslationsTable
+                  workspaceId={workspaceId}
+                  defaultLocale={normalizedLocalesConfig.default_locale}
+                  enabledLocales={normalizedLocalesConfig.enabled_locales}
+                />
               </div>
             </div>
             </div>

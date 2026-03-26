@@ -508,7 +508,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('widget-installation')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               {!widgetKey ? (
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
@@ -605,7 +605,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm">Require email before chat</Label>
@@ -662,7 +662,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('appearance')}>
             <div>
-            <div className="border-t border-border p-4 space-y-6">
+            <div className="border-t border-border px-6 py-6 space-y-6">
               {/* Widget Identity */}
               <div className="space-y-3">
                 <div>
@@ -907,7 +907,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('help-center')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               {docsSpacesLoading && (
                 <p className="text-sm text-muted-foreground">Loading available spaces...</p>
               )}
@@ -961,7 +961,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Enable AI auto-reply</Label>
@@ -1109,7 +1109,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('business-hours')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Enable availability schedule</Label>
@@ -1204,7 +1204,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('chat-features')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">File uploads</Label>

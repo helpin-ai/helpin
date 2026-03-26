@@ -29,6 +29,7 @@ import {
   UserCheck,
   X,
   Languages,
+  Loader2,
   Settings2,
   WandSparkles,
 } from 'lucide-react'
@@ -225,6 +226,7 @@ export function DocsDocumentDetail() {
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [generatingParents, setGeneratingParents] = useState(false)
+  const [parentPublishConfirmOpen, setParentPublishConfirmOpen] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
@@ -567,6 +569,31 @@ export function DocsDocumentDetail() {
     }
   }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale])
 
+  const handleGenerateParentsAndPublish = useCallback(async () => {
+    if (!doc || isSourceLocaleActive) return
+    setGeneratingParents(true)
+    try {
+      const spaceRow = spaceTranslationsByLocale.get(activeLocale)
+      if (!spaceRow || spaceRow.status !== 'published') {
+        await docsService.generateSpaceTranslation(wsId, doc.space_id, activeLocale)
+      }
+      if (doc.collection_id) {
+        const collRow = collectionTranslationsByLocale.get(activeLocale)
+        if (!collRow || collRow.status !== 'published') {
+          await docsService.generateCollectionTranslation(wsId, doc.collection_id, activeLocale)
+        }
+      }
+      await publishArticleTranslation.mutateAsync(activeLocale)
+      toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+      setParentPublishConfirmOpen(false)
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+    } finally {
+      setGeneratingParents(false)
+    }
+  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, publishArticleTranslation, queryClient])
+
   const activeLocaleShortLabel = activeLocale.toUpperCase()
   const activeContextTitle = isSourceLocaleActive
     ? 'Editing source article'
@@ -581,9 +608,10 @@ export function DocsDocumentDetail() {
     ? `Update (${activeLocaleShortLabel})`
     : `Publish (${activeLocaleShortLabel})`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
+  const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
   const publishDisabled = isSourceLocaleActive
     ? publishDoc.isPending || doc?.is_locked
-    : !activeTranslation || Boolean(activeLocaleRow?.publishBlockedReason) || publishArticleTranslation.isPending || doc?.is_locked
+    : !activeTranslation || publishArticleTranslation.isPending || doc?.is_locked
   const activeDialogTranslation = editingTranslationLocale === activeLocale && !isSourceLocaleActive
     ? {
         ...(activeTranslation ?? {
@@ -746,7 +774,7 @@ export function DocsDocumentDetail() {
         )}
 
         {showContextualPublish && (
-          <QuickTooltip label={activeLocaleRow?.publishBlockedReason || (publishDisabled ? 'Cannot publish' : activePublishLabel)}>
+          <>
             <Button
               size="sm"
               variant="default"
@@ -754,6 +782,10 @@ export function DocsDocumentDetail() {
               onClick={() => {
                 if (isSourceLocaleActive) {
                   void handlePublish()
+                  return
+                }
+                if (parentTranslationsMissing) {
+                  setParentPublishConfirmOpen(true)
                   return
                 }
                 publishArticleTranslation.mutate(activeLocale, {
@@ -766,21 +798,7 @@ export function DocsDocumentDetail() {
               <Send className="h-3 w-3" />
               {activePublishLabel}
             </Button>
-          </QuickTooltip>
-          {!isSourceLocaleActive && activeLocaleRow?.publishBlockedReason && (
-            <QuickTooltip label="Auto-generate and publish the required space and collection translations using AI">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5 text-xs"
-                disabled={generatingParents}
-                onClick={() => void handleGenerateAndPublishParents()}
-              >
-                <WandSparkles className="h-3 w-3" />
-                {generatingParents ? 'Generating...' : 'Fix with AI'}
-              </Button>
-            </QuickTooltip>
-          )}
+          </>
         )}
 
         <QuickTooltip label="Document details">
@@ -928,6 +946,12 @@ export function DocsDocumentDetail() {
               title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
               onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
               slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug || undefined}
+              onSlugChange={isSourceLocaleActive && doc?.hc_slug && !effectiveReadOnly ? async (newSlug) => {
+                const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
+                if (res.error) throw new Error(res.error)
+                toast.success('Slug updated. A redirect from the old URL has been created.')
+                queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+              } : undefined}
               initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
@@ -1370,6 +1394,30 @@ export function DocsDocumentDetail() {
             confirmLabel={regenerating ? 'Regenerating...' : 'Regenerate'}
             onConfirm={handleRegenerateTranslation}
           />
+
+          <Dialog open={parentPublishConfirmOpen} onOpenChange={(open) => { if (!generatingParents) setParentPublishConfirmOpen(open) }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Translate and publish</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>The space and collection names for <strong className="text-foreground">{getHelpcenterLocaleLabel(activeLocale)}</strong> have not been translated yet.</p>
+                <p>Our AI will automatically translate them and then publish this article translation.</p>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={generatingParents} onClick={() => setParentPublishConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" disabled={generatingParents} onClick={() => void handleGenerateParentsAndPublish()}>
+                  {generatingParents ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...</>
+                  ) : (
+                    'Proceed'
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       )}
       {/* Slug confirmation dialog for external help center articles */}

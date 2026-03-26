@@ -408,6 +408,24 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, content)
 }
 
+// UpdateArticleSlug changes a help center article's slug and creates a redirect.
+func (h *DocsHandler) UpdateArticleSlug(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	docID := chi.URLParam(r, "docId")
+	var body struct {
+		Slug string `json:"slug"`
+	}
+	if err := decodeJSON(r, &body); err != nil || body.Slug == "" {
+		writeError(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+	if err := h.helpcenterSvc.UpdateArticleSlug(r.Context(), wsID, docID, body.Slug); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "slug updated"})
+}
+
 // ReorderSpaces reorders spaces within a section.
 func (h *DocsHandler) ReorderSpaces(w http.ResponseWriter, r *http.Request) {
 	wsID := r.URL.Query().Get("workspace_id")
