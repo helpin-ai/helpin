@@ -89,7 +89,7 @@ export function SupportContentSourcesField({
   disabled = false,
 }: {
   workspaceId: string;
-  agentId: string;
+  agentId?: string;
   disabled?: boolean;
 }) {
   const { data: sources = [], isLoading } = useSupportContentSources(workspaceId);
@@ -116,7 +116,8 @@ export function SupportContentSourcesField({
     || updateAgentSources.isPending;
 
   const selectedSet = new Set(selectedSourceIds);
-  const willUseInCurrentAgent = !editingSource || selectedSet.has(editingSource.id);
+  const hasAgent = !!agentId;
+  const willUseInCurrentAgent = !hasAgent ? null : (!editingSource || selectedSet.has(editingSource.id));
 
   const openCreateWizard = () => {
     setEditingSource(null);
@@ -152,6 +153,9 @@ export function SupportContentSourcesField({
   };
 
   const toggleSelected = async (sourceId: string, checked: boolean) => {
+    if (!agentId) {
+      return;
+    }
     const next = checked
       ? uniqueStrings([...selectedSourceIds, sourceId])
       : selectedSourceIds.filter((id) => id !== sourceId);
@@ -193,7 +197,7 @@ export function SupportContentSourcesField({
       toast.success('Website added — syncing now');
     }
 
-    if (!editingSource) {
+    if (!editingSource && agentId) {
       const nextSelected = uniqueStrings([...selectedSourceIds, sourceId]);
       await updateAgentSources.mutateAsync({ agentId, contentSourceIds: nextSelected });
     }
@@ -255,6 +259,11 @@ export function SupportContentSourcesField({
         </div>
 
         <div className="space-y-3 p-4">
+          {!hasAgent && (
+            <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+              Add, edit, and sync website content now. Attach these sources to support AI after you assign a support agent in Chat Widget.
+            </div>
+          )}
           {sources.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center">
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -267,7 +276,7 @@ export function SupportContentSourcesField({
             </div>
           ) : (
             sources.map((source) => {
-              const selected = selectedSet.has(source.id);
+              const selected = hasAgent && selectedSet.has(source.id);
               const statusMeta = STATUS_META[source.sync_status];
               const StatusIcon = statusMeta?.icon ?? Globe;
               const progress = Math.max(0, Math.min(source.sync_progress ?? 0, 100));
@@ -284,12 +293,16 @@ export function SupportContentSourcesField({
                   selected ? 'border-border bg-muted/25' : 'border-border/70 bg-background',
                 )}>
                   <div className="flex items-start gap-3">
-                    <Checkbox
-                      checked={selected}
-                      disabled={isMutating}
-                      onCheckedChange={(value) => void toggleSelected(source.id, Boolean(value))}
-                      className="mt-0.5"
-                    />
+                    {hasAgent ? (
+                      <Checkbox
+                        checked={selected}
+                        disabled={isMutating}
+                        onCheckedChange={(value) => void toggleSelected(source.id, Boolean(value))}
+                        className="mt-0.5"
+                      />
+                    ) : (
+                      <div className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border border-border/70 bg-muted/30" />
+                    )}
 
                     <div className="min-w-0 flex-1">
                       {/* Row 1: name + status badge + actions */}
@@ -570,7 +583,13 @@ export function SupportContentSourcesField({
                       <ReviewRow label="Filters" value={reviewFilters(draft)} />
                       <ReviewRow
                         label="Agent"
-                        value={willUseInCurrentAgent ? 'Will be used by the current support agent' : 'Saved but not attached to the current agent'}
+                        value={
+                          willUseInCurrentAgent === null
+                            ? 'Saved to this workspace. Attach to a support agent later.'
+                            : willUseInCurrentAgent
+                              ? 'Will be used by the current support agent'
+                              : 'Saved but not attached to the current agent'
+                        }
                       />
                     </div>
                   </div>
