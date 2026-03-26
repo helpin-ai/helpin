@@ -52,6 +52,7 @@ type InviteInfoResponse struct {
 	WorkspaceName string `json:"workspace_name"`
 	WorkspaceSlug string `json:"workspace_slug"`
 	Email         string `json:"email"`
+	AccountExists bool   `json:"account_exists"`
 	Role          string `json:"role"`
 	InvitedByName string `json:"invited_by_name"`
 	Status        string `json:"status"`

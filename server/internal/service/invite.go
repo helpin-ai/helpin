@@ -170,10 +170,16 @@ func (s *InviteService) GetInviteInfo(ctx context.Context, token string) (*model
 		return nil, fmt.Errorf("invitation not found")
 	}
 
+	existingUser, err := s.userRepo.GetByEmail(ctx, details.Email)
+	if err != nil {
+		return nil, fmt.Errorf("check existing user: %w", err)
+	}
+
 	return &model.InviteInfoResponse{
 		WorkspaceName: details.WorkspaceName,
 		WorkspaceSlug: details.WorkspaceSlug,
 		Email:         details.Email,
+		AccountExists: existingUser != nil,
 		Role:          details.Role,
 		InvitedByName: details.InviterName,
 		Status:        details.Status,
