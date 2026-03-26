@@ -137,7 +137,7 @@ jobs:
         run: |
           docker buildx build \
             -f build-prod-helpcenter/help-center/Dockerfile \
-            --build-arg VITE_API_URL=https://api.prod.helpin.ai/api \
+            --build-arg VITE_API_URL=/api \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:${{ needs.version.outputs.release_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:prod-latest \
