@@ -33,6 +33,10 @@
   /* Border colors */
   --helpin-border: #e5e7eb;
   --helpin-border-focus: var(--helpin-primary);
+  --helpin-card-bg: #ffffff;
+  --helpin-card-border: rgba(17, 24, 39, 0.08);
+  --helpin-card-shadow: 0 1px 2px rgba(17, 24, 39, 0.06), 0 6px 18px rgba(17, 24, 39, 0.04);
+  --helpin-card-shadow-hover: 0 2px 6px rgba(17, 24, 39, 0.08), 0 14px 28px rgba(17, 24, 39, 0.08);
 
   /* Semantic colors */
   --helpin-success: #10b981;
@@ -92,6 +96,10 @@
   --helpin-fg-muted: #9898ab;
   --helpin-fg-inverse: #ffffff;
   --helpin-border: #3d3d5c;
+  --helpin-card-bg: #242642;
+  --helpin-card-border: rgba(255, 255, 255, 0.08);
+  --helpin-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 10px 24px rgba(0, 0, 0, 0.2);
+  --helpin-card-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.32), 0 18px 32px rgba(0, 0, 0, 0.28);
 
   --helpin-ai-bg: #1e2540;
   --helpin-ai-fg: #c8d8f0;
@@ -518,19 +526,20 @@
 .helpin-home-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
 }
 
 .helpin-home-action {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 12px;
-  border: 1px solid var(--helpin-border);
+  padding: 15px 14px;
+  border: 1px solid var(--helpin-card-border);
   border-radius: var(--helpin-radius-lg);
-  background: var(--helpin-bg);
+  background: var(--helpin-card-bg);
+  box-shadow: var(--helpin-card-shadow);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
   text-align: left;
   font-family: inherit;
   color: var(--helpin-fg-secondary);
@@ -550,7 +559,9 @@
 
 .helpin-home-action:hover {
   background: var(--helpin-bg-secondary);
-  border-color: var(--helpin-fg-muted);
+  border-color: rgba(99, 102, 241, 0.16);
+  box-shadow: var(--helpin-card-shadow-hover);
+  transform: translateY(-1px);
 }
 
 .helpin-home-action > svg:first-child {
@@ -722,20 +733,23 @@
   align-items: center;
   gap: 14px;
   padding: 16px;
-  background: var(--helpin-bg);
+  background: var(--helpin-card-bg);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   color: var(--helpin-fg-secondary);
   font-family: inherit;
   text-align: left;
-  border: 1px solid var(--helpin-border);
+  border: 1px solid var(--helpin-card-border);
   border-radius: var(--helpin-radius-lg);
+  box-shadow: var(--helpin-card-shadow);
   width: 100%;
   text-decoration: none;
 }
 
 .helpin-help-link:hover {
   background: var(--helpin-bg-secondary);
+  border-color: rgba(99, 102, 241, 0.16);
+  box-shadow: var(--helpin-card-shadow-hover);
   transform: translateY(-1px);
 }
 
@@ -1132,6 +1146,10 @@
 .helpin-conversations-list {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
 }
 
 .helpin-conversation-item {
@@ -1140,17 +1158,21 @@
   gap: 12px;
   width: 100%;
   padding: 14px 16px;
-  border: none;
-  border-bottom: 1px solid var(--helpin-border);
-  background: var(--helpin-bg);
+  border: 1px solid var(--helpin-card-border);
+  border-radius: var(--helpin-radius-lg);
+  background: var(--helpin-card-bg);
+  box-shadow: var(--helpin-card-shadow);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
 .helpin-conversation-item:hover {
   background: var(--helpin-bg-secondary);
+  border-color: rgba(99, 102, 241, 0.16);
+  box-shadow: var(--helpin-card-shadow-hover);
+  transform: translateY(-1px);
 }
 
 .helpin-conversation-item-avatar {
@@ -2555,6 +2577,11 @@
 
   .helpin-home-action {
     padding: 14px;
+  }
+
+  .helpin-conversations-list {
+    padding: 12px 14px 14px;
+    gap: 8px;
   }
 
   .helpin-messages-header,

@@ -62,7 +62,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useUnreadStats } from '@/hooks/queries/useSupport';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { isModuleEnabled } from '@/lib/featureFlags';
@@ -759,6 +759,7 @@ export function Sidebar() {
                     aria-label="Account menu"
                   >
                     <Avatar className="size-8">
+                      <AvatarImage src={user?.avatar_url ?? undefined} alt={user?.full_name || user?.email || 'Account'} />
                       <AvatarFallback className="text-[11px]">
                         {initials}
                       </AvatarFallback>

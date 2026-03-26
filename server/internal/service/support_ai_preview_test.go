@@ -170,7 +170,7 @@ func TestGenerateResponseRejectsTemplatePlaceholder(t *testing.T) {
 		nil,
 		nil,
 		"",
-		"Does it have AI features?",
+		model.SupportMessage{SenderType: "customer", Content: "Does it have AI features?"},
 		model.AgentModelProviderAnthropic,
 		"claude-sonnet-4-6",
 	)

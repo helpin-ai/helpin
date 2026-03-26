@@ -128,6 +128,7 @@ func main() {
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
+	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -196,7 +197,7 @@ func main() {
 	supportAIService := service.NewSupportAIService(
 		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
 		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
-		conversationRepo, supportMessageRepo,
+		conversationRepo, supportMessageRepo, supportAttachmentRepo,
 		agentRepo, handoffRepo, supportInstallRepo,
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,

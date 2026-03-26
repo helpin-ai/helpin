@@ -220,12 +220,21 @@ const (
 	supportReplyKindAnswer     = "answer"
 	supportReplyKindClarify    = "clarify"
 	supportReplyKindGreeting   = "greeting"
+	supportRewriteProvider     = "anthropic"
+	supportRewriteModel        = "claude-haiku-4-5"
+	supportRewriteExpand       = "expand"
+	supportRewriteRephrase     = "rephrase"
+	supportRewriteFixGrammar   = "fix_grammar"
+	supportRewriteFriendly     = "more_friendly"
+	supportRewriteFormal       = "more_formal"
 )
 
 var (
 	ErrSupportPreviewInvalidInput         = errors.New("invalid support preview input")
 	ErrSupportPreviewAgentNotFound        = errors.New("support preview agent not found")
 	ErrSupportPreviewConversationNotFound = errors.New("support preview conversation not found")
+	ErrSupportRewriteInvalidInput         = errors.New("invalid support rewrite input")
+	ErrSupportRewriteConversationNotFound = errors.New("support rewrite conversation not found")
 )
 
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
@@ -243,6 +252,7 @@ type SupportAIService struct {
 	processingRepo         *repository.AIMessageProcessingRepository
 	conversationRepo       *repository.SupportConversationRepository
 	messageRepo            *repository.SupportMessageRepository
+	attachmentRepo         *repository.SupportAttachmentRepository
 	agentRepo              *repository.AgentRepository
 	handoffRepo            *repository.AgentHandoffRepository
 	installationRepo       *repository.SupportInboxInstallationRepository
@@ -267,6 +277,7 @@ func NewSupportAIService(
 	processingRepo *repository.AIMessageProcessingRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
+	attachmentRepo *repository.SupportAttachmentRepository,
 	agentRepo *repository.AgentRepository,
 	handoffRepo *repository.AgentHandoffRepository,
 	installationRepo *repository.SupportInboxInstallationRepository,
@@ -290,6 +301,7 @@ func NewSupportAIService(
 		processingRepo:         processingRepo,
 		conversationRepo:       conversationRepo,
 		messageRepo:            messageRepo,
+		attachmentRepo:         attachmentRepo,
 		agentRepo:              agentRepo,
 		handoffRepo:            handoffRepo,
 		installationRepo:       installationRepo,
@@ -412,8 +424,8 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"agent_id", agentID,
 		"ai_turn_count", aiTurnCount,
 		"max_followup_turn_count", maxFollowupTurnCount,
-		"customer_message_preview", safeLogPreview(msg.Content, 120),
-		"customer_message_length", len(strings.TrimSpace(msg.Content)),
+		"customer_message_preview", safeLogPreview(supportMessagePromptText(*msg), 120),
+		"customer_message_length", len(strings.TrimSpace(supportMessagePromptText(*msg))),
 	)
 
 	// 6. Confirmation detection — before generating a new reply
@@ -452,7 +464,8 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 8. Hard escalation rules check
-	if reason := checkHardEscalation(msg.Content); reason != "" {
+	customerPromptText := supportMessagePromptText(*msg)
+	if reason := checkHardEscalation(customerPromptText); reason != "" {
 		slog.InfoContext(ctx, "support AI hard escalation rule matched",
 			"workspace_id", workspaceID,
 			"conversation_id", conversationID,
@@ -468,7 +481,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 9. Smart escalation signals (pre-LLM — no cost).
-	if signal := evaluatePreLLMEscalation(msg.Content, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
+	if signal := evaluatePreLLMEscalation(customerPromptText, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
 		slog.InfoContext(ctx, "support AI smart escalation triggered",
 			"workspace_id", workspaceID,
 			"conversation_id", conversationID,
@@ -512,7 +525,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	providerName, modelName := resolveSupportLLMConfig(agent)
 
 	// 13. Plan how to handle the message: answer, clarify, or hand off.
-	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, msg.Content)
+	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, *msg)
 	if err != nil {
 		slog.WarnContext(ctx, "support query planning failed; using direct retrieval fallback",
 			"error", err,
@@ -521,7 +534,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"message_id", msg.ID,
 			"customer_message_preview", safeLogPreview(msg.Content, 120),
 		)
-		queryPlan = defaultSupportQueryPlan(msg.Content)
+		queryPlan = defaultSupportQueryPlan(customerPromptText)
 	}
 	slog.InfoContext(ctx, "support AI query plan ready",
 		"workspace_id", workspaceID,
@@ -589,7 +602,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	knowledgeContext := buildKnowledgeContext(searchResults)
 
 	// 15. Generate AI response
-	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, historyForPrompt, knowledgeContext, msg.Content, providerName, modelName)
+	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, historyForPrompt, knowledgeContext, *msg, providerName, modelName)
 	if err != nil {
 		slog.ErrorContext(ctx, "AI response generation failed",
 			"workspace_id", workspaceID,
@@ -889,6 +902,67 @@ func (s *SupportAIService) PreviewSupportReply(
 	)
 }
 
+// RewriteSupportDraft rewrites a human-authored support draft for a specific conversation.
+func (s *SupportAIService) RewriteSupportDraft(
+	ctx context.Context,
+	workspaceID, conversationID string,
+	req model.SupportAIRewriteDraftRequest,
+) (*model.SupportAIRewriteDraftResponse, error) {
+	if s == nil {
+		return nil, fmt.Errorf("support AI service not initialized")
+	}
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrSupportRewriteInvalidInput)
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil, fmt.Errorf("%w: conversation_id is required", ErrSupportRewriteInvalidInput)
+	}
+
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, fmt.Errorf("%w: content is required", ErrSupportRewriteInvalidInput)
+	}
+
+	operation := normalizeSupportRewriteOperation(req.Operation)
+	if operation == "" {
+		return nil, fmt.Errorf("%w: unsupported operation %q", ErrSupportRewriteInvalidInput, strings.TrimSpace(req.Operation))
+	}
+
+	history, err := s.loadRewriteHistory(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: buildSupportRewriteSystemPrompt(operation),
+		Messages:     buildSupportRewriteMessages(history, content),
+		Provider:     supportRewriteProvider,
+		Model:        supportRewriteModel,
+		Temperature:  0.2,
+		MaxTokens:    900,
+		JSONMode:     true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rewrite support draft: %w", err)
+	}
+
+	rewritten, ok := parseSupportRewriteResponse(resp.Content)
+	if !ok || strings.TrimSpace(rewritten) == "" {
+		return nil, fmt.Errorf("rewrite support draft: empty response")
+	}
+
+	return &model.SupportAIRewriteDraftResponse{
+		Content:   rewritten,
+		Operation: operation,
+		Provider:  supportRewriteProvider,
+		Model:     supportRewriteModel,
+	}, nil
+}
+
 func (s *SupportAIService) resolvePreviewHistory(
 	ctx context.Context,
 	workspaceID string,
@@ -937,7 +1011,8 @@ func (s *SupportAIService) previewSupportReply(
 		return nil, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
-	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, customerMessage)
+	currentMessage := model.SupportMessage{SenderType: "customer", Content: customerMessage}
+	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, currentMessage)
 	fallbackUsed := false
 	plannerError := ""
 	if plannerErr != nil {
@@ -989,7 +1064,10 @@ func (s *SupportAIService) previewSupportReply(
 	}
 
 	providerName, modelName := resolveSupportLLMConfig(agent)
-	answer, answerTokens, err := s.generateResponse(ctx, agent, nil, history, buildKnowledgeContext(searchResults), customerMessage, providerName, modelName)
+	answer, answerTokens, err := s.generateResponse(ctx, agent, nil, history, buildKnowledgeContext(searchResults), model.SupportMessage{
+		SenderType: "customer",
+		Content:    customerMessage,
+	}, providerName, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("generate preview response: %w", err)
 	}
@@ -1025,7 +1103,7 @@ func (s *SupportAIService) generateResponse(
 	conv *model.SupportConversation,
 	history []model.SupportMessage,
 	knowledgeContext string,
-	customerMessage string,
+	customerMessage model.SupportMessage,
 	providerName string,
 	modelName string,
 ) (*AIResponseContract, int, error) {
@@ -1038,8 +1116,9 @@ func (s *SupportAIService) generateResponse(
 	messages := make([]llm.Message, 0, len(history)+1)
 	messages = append(messages, buildConversationMessages(history)...)
 	messages = append(messages, llm.Message{
-		Role:    "user",
-		Content: "<customer_message>\n" + customerMessage + "\n</customer_message>",
+		Role:         "user",
+		Content:      "<customer_message>\n" + supportMessagePromptText(customerMessage) + "\n</customer_message>",
+		ContentParts: buildSupportCustomerContentParts(customerMessage),
 	})
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
@@ -1106,7 +1185,7 @@ func sanitizeConversationHistory(history []model.SupportMessage, currentMessageI
 		if msg.MessageType == "system" {
 			continue
 		}
-		if strings.TrimSpace(msg.Content) == "" {
+		if strings.TrimSpace(msg.Content) == "" && len(msg.Attachments) == 0 {
 			continue
 		}
 		sanitized = append(sanitized, msg)
@@ -1126,7 +1205,7 @@ func buildConversationMessages(history []model.SupportMessage) []llm.Message {
 		case "agent", "user", "ai":
 			role = "assistant"
 		}
-		messages = append(messages, llm.Message{Role: role, Content: msg.Content})
+		messages = append(messages, llm.Message{Role: role, Content: supportMessagePromptText(msg)})
 	}
 	return messages
 }
@@ -1165,6 +1244,143 @@ func normalizePreviewMaxResults(raw *int) int {
 	return value
 }
 
+func (s *SupportAIService) loadRewriteHistory(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error) {
+	if conversationID == "" {
+		return nil, nil
+	}
+	if s.conversationRepo != nil {
+		conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+		if err != nil {
+			return nil, fmt.Errorf("get conversation: %w", err)
+		}
+		if conv == nil {
+			return nil, fmt.Errorf("%w: %s", ErrSupportRewriteConversationNotFound, conversationID)
+		}
+	}
+	if s.messageRepo == nil {
+		return nil, nil
+	}
+	history, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		return nil, fmt.Errorf("list conversation history: %w", err)
+	}
+	history = sanitizeConversationHistory(history, "")
+	filtered := history[:0]
+	for _, msg := range history {
+		if msg.IsInternal {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered, nil
+}
+
+func normalizeSupportRewriteOperation(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case supportRewriteExpand:
+		return supportRewriteExpand
+	case supportRewriteRephrase:
+		return supportRewriteRephrase
+	case supportRewriteFixGrammar:
+		return supportRewriteFixGrammar
+	case supportRewriteFriendly:
+		return supportRewriteFriendly
+	case supportRewriteFormal:
+		return supportRewriteFormal
+	default:
+		return ""
+	}
+}
+
+func buildSupportRewriteSystemPrompt(operation string) string {
+	var instruction string
+	switch operation {
+	case supportRewriteExpand:
+		instruction = "Make the draft more complete and helpful. Add useful detail, but stay concise and avoid fluff."
+	case supportRewriteRephrase:
+		instruction = "Rewrite the draft for clarity and flow without materially changing its meaning or overall length."
+	case supportRewriteFixGrammar:
+		instruction = "Fix grammar, spelling, punctuation, and readability issues only. Preserve meaning, tone, and structure as much as possible."
+	case supportRewriteFriendly:
+		instruction = "Make the draft warmer, more empathetic, and more customer-friendly while staying professional."
+	case supportRewriteFormal:
+		instruction = "Make the draft more formal, polished, and professional while keeping it natural and helpful."
+	default:
+		instruction = "Improve the draft while preserving intent."
+	}
+
+	return strings.TrimSpace(`You rewrite support replies for human agents.
+
+Return a JSON object with a single "content" field containing only the rewritten draft text.
+Do not mention AI, model choice, or that you edited the text.
+Do not invent policies, refunds, timelines, or product facts that are not already supported by the draft or the conversation context.
+Preserve markdown-style bullets and links when present.
+Preserve the language of the original draft unless the draft itself mixes languages.
+` + "\n\n" + instruction)
+}
+
+func buildSupportRewriteMessages(history []model.SupportMessage, draft string) []llm.Message {
+	messages := make([]llm.Message, 0, len(history)+1)
+	if len(history) > 0 {
+		history = trimSupportRewriteHistory(history, 8)
+		messages = append(messages, llm.Message{
+			Role:    "user",
+			Content: buildSupportRewriteHistoryPrompt(history),
+		})
+	}
+	messages = append(messages, llm.Message{
+		Role: "user",
+		Content: "<draft_reply>\n" + strings.TrimSpace(draft) + "\n</draft_reply>\n\n" +
+			"Rewrite the draft now and return valid JSON.",
+	})
+	return messages
+}
+
+func trimSupportRewriteHistory(history []model.SupportMessage, limit int) []model.SupportMessage {
+	if limit <= 0 || len(history) <= limit {
+		return history
+	}
+	return history[len(history)-limit:]
+}
+
+func buildSupportRewriteHistoryPrompt(history []model.SupportMessage) string {
+	var b strings.Builder
+	b.WriteString("Here is the recent conversation context. Use it only to preserve factual consistency.\n\n<conversation_history>\n")
+	for _, msg := range history {
+		role := strings.TrimSpace(msg.SenderType)
+		if role == "" {
+			role = "unknown"
+		}
+		b.WriteString("[")
+		b.WriteString(role)
+		b.WriteString("]\n")
+		b.WriteString(strings.TrimSpace(supportMessagePromptText(msg)))
+		b.WriteString("\n\n")
+	}
+	b.WriteString("</conversation_history>")
+	return b.String()
+}
+
+func parseSupportRewriteResponse(raw string) (string, bool) {
+	type contract struct {
+		Content string `json:"content"`
+	}
+
+	var parsed contract
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &parsed); err == nil {
+		content := strings.TrimSpace(parsed.Content)
+		if content != "" {
+			return content, true
+		}
+	}
+
+	content := strings.TrimSpace(raw)
+	if content == "" {
+		return "", false
+	}
+	return content, true
+}
+
 func previewSearchResults(results []KnowledgeSearchResult) []model.SupportAIPreviewSearchResult {
 	if len(results) == 0 {
 		return []model.SupportAIPreviewSearchResult{}
@@ -1185,6 +1401,69 @@ func previewSearchResults(results []KnowledgeSearchResult) []model.SupportAIPrev
 		})
 	}
 	return preview
+}
+
+func supportMessagePromptText(msg model.SupportMessage) string {
+	base := strings.TrimSpace(msg.Content)
+	if len(msg.Attachments) == 0 {
+		return base
+	}
+
+	imageNames := make([]string, 0, len(msg.Attachments))
+	fileNames := make([]string, 0, len(msg.Attachments))
+	for _, attachment := range msg.Attachments {
+		name := strings.TrimSpace(attachment.FileName)
+		if name == "" {
+			name = "unnamed file"
+		}
+		if isImageAttachmentPayload(attachment) {
+			imageNames = append(imageNames, name)
+		} else {
+			fileNames = append(fileNames, name)
+		}
+	}
+
+	var extras []string
+	if len(imageNames) > 0 {
+		extras = append(extras, fmt.Sprintf("Customer attached image%s: %s.", supportPluralSuffix(len(imageNames)), strings.Join(imageNames, ", ")))
+	}
+	if len(fileNames) > 0 {
+		extras = append(extras, fmt.Sprintf("Customer attached file%s: %s.", supportPluralSuffix(len(fileNames)), strings.Join(fileNames, ", ")))
+	}
+	if base == "" {
+		return strings.Join(extras, "\n")
+	}
+	return base + "\n\n" + strings.Join(extras, "\n")
+}
+
+func buildSupportCustomerContentParts(msg model.SupportMessage) []llm.ContentPart {
+	text := "<customer_message>\n" + supportMessagePromptText(msg) + "\n</customer_message>"
+	parts := []llm.ContentPart{{Type: "text", Text: text}}
+	for _, attachment := range msg.Attachments {
+		if !isImageAttachmentPayload(attachment) || strings.TrimSpace(attachment.URL) == "" {
+			continue
+		}
+		parts = append(parts, llm.ContentPart{
+			Type: "image_url",
+			ImageURL: &llm.ImageURLPart{
+				URL:    strings.TrimSpace(attachment.URL),
+				Detail: "auto",
+			},
+		})
+	}
+	return parts
+}
+
+func isImageAttachmentPayload(attachment model.SupportAttachmentPayload) bool {
+	fileType := strings.ToLower(strings.TrimSpace(attachment.FileType))
+	return strings.HasPrefix(fileType, "image/")
+}
+
+func supportPluralSuffix(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func (s *SupportAIService) publishAIReply(
@@ -1295,8 +1574,8 @@ RESPONSE FORMAT (respond with valid JSON only):
 	return sb.String()
 }
 
-func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model.SupportMessage, customerMessage string) (SupportQueryPlanContract, int, error) {
-	current := strings.TrimSpace(customerMessage)
+func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model.SupportMessage, customerMessage model.SupportMessage) (SupportQueryPlanContract, int, error) {
+	current := supportMessagePromptText(customerMessage)
 	fallback := defaultSupportQueryPlan(current)
 	if current == "" {
 		return fallback, 0, nil
@@ -1336,9 +1615,14 @@ Return valid JSON only in this shape:
 }`,
 		Messages: []llm.Message{
 			{
-				Role: "user",
-				Content: "<recent_conversation>\n" + transcript + "\n</recent_conversation>\n\n" +
-					"<latest_customer_message>\n" + current + "\n</latest_customer_message>",
+				Role:    "user",
+				Content: "<recent_conversation>\n" + transcript + "\n</recent_conversation>\n\n" + current,
+				ContentParts: append([]llm.ContentPart{
+					{
+						Type: "text",
+						Text: "<recent_conversation>\n" + transcript + "\n</recent_conversation>",
+					},
+				}, buildSupportCustomerContentParts(customerMessage)...),
 			},
 		},
 		Temperature: 0.1,

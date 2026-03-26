@@ -6,7 +6,7 @@ import { supportAttachmentService } from '@/lib/services/supportAttachmentServic
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import type { AgentKnowledgeSource, SupportContentSource, SupportContentPage, CreateSupportContentSourceRequest, UpdateSupportContentSourceRequest, SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
+import type { AgentKnowledgeSource, SupportContentSource, SupportContentPage, CreateSupportContentSourceRequest, UpdateSupportContentSourceRequest, SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse, SupportAIRewriteDraftRequest } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -144,6 +144,16 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     },
     onError: (error: Error) => {
       toast.error('Failed to send message', { description: error.message });
+    },
+  });
+}
+
+export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
+  return useMutation({
+    mutationFn: (payload: SupportAIRewriteDraftRequest) =>
+      supportService.rewriteConversationDraft(workspaceId, conversationId!, payload).then(unwrap),
+    onError: (error: Error) => {
+      toast.error('Failed to rewrite draft', { description: error.message });
     },
   });
 }
