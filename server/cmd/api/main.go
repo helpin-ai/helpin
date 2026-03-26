@@ -923,6 +923,9 @@ func main() {
 		if err != nil {
 			return "", err
 		}
+		if ws == nil {
+			return "", errors.New("workspace not found")
+		}
 		return ws.ID, nil
 	})
 
