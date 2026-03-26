@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-native-interactive
+  namespace: helpin
+  labels:
+    app: helpin-temporal-native-interactive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-native-interactive
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-native-interactive
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:v0.87.2
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-native-interactive
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-native-autonomous
+  namespace: helpin
+  labels:
+    app: helpin-temporal-native-autonomous
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-native-autonomous
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-native-autonomous
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:v0.87.2
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-native-autonomous
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-automation
+  namespace: helpin
+  labels:
+    app: helpin-temporal-automation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-automation
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-automation
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:v0.87.2
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: automation-default
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

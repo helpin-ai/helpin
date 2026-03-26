@@ -183,6 +183,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     setActiveView('conversation');
   };
 
+  const handleStartNewConversation = (fromView: WidgetBaseView) => {
+    handleStartConversation(fromView);
+    onStartNewConversation?.();
+  };
+
   const handleSendFromHome = (content: string) => {
     (onSendMessageFromHome ?? onSendMessage)(content);
     handleStartConversation('home');
@@ -289,12 +294,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onSendMessage={handleSendFromHome}
             onNavigate={(view) => {
               if (view === 'conversation') {
-                setPreviousView('home');
-                setActiveView('conversation');
-                // Start a fresh conversation (reset active conversation in SDK)
-                if (onStartNewConversation) {
-                  onStartNewConversation();
-                }
+                handleStartNewConversation('home');
                 return;
               }
               handleNavigate(view);
@@ -340,7 +340,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
                 setPreviousView('messages');
                 setActiveView('conversation');
               }}
-              onStartConversation={onStartNewConversation || (() => handleStartConversation('messages'))}
+              onStartConversation={() => handleStartNewConversation('messages')}
               onClose={onClose}
             />
           ) : (
@@ -349,7 +349,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               messages={messages}
               onSendMessage={onSendMessage}
               onQuickReply={onQuickReply}
-              onStartConversation={() => handleStartConversation('messages')}
+              onStartConversation={() => handleStartNewConversation('messages')}
               isTyping={isTyping}
               quickReplies={quickReplies}
               hasConversation={messages.length > 0}
@@ -362,7 +362,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             host={host}
             widgetKey={widgetKey}
             onClose={onClose}
-            onContact={() => handleStartConversation('help')}
+            onContact={() => handleStartNewConversation('help')}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}
           />
