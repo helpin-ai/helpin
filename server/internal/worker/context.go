@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -52,6 +53,7 @@ type ExecutionContext struct {
 	ConversationHistory    []ExecutionMessage
 	LastExecutionResult    *ExecutionResult
 	ToolFileState          *ToolFileState
+	toolFileStateMu        sync.Mutex
 	PublishedPreviews      map[string]PublishedPreview
 	CurrentAssistantText   string
 }
@@ -103,6 +105,8 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 
 // ServiceBridge provides access to Helpin services from within tool execution.
 type ServiceBridge struct {
+	ExecuteInternalCommand func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error)
+
 	// PM / Stories
 	AddComment           func(ctx context.Context, workspaceID, storyID, agentID, content string) error
 	UpdateStoryState     func(ctx context.Context, workspaceID, storyID, stateID string) error

@@ -29,6 +29,10 @@ func ensureToolFileState(ctx *ExecutionContext) *ToolFileState {
 	if ctx == nil {
 		return nil
 	}
+
+	ctx.toolFileStateMu.Lock()
+	defer ctx.toolFileStateMu.Unlock()
+
 	if ctx.ToolFileState == nil {
 		ctx.ToolFileState = NewToolFileState()
 	}

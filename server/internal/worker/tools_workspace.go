@@ -21,6 +21,5 @@ func toolListWorkspaceTeams(ctx *ExecutionContext, input json.RawMessage) (strin
 		return "No workspace teams found.", nil
 	}
 
-	payload, _ := json.MarshalIndent(teams, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(teams), nil
 }

@@ -67,8 +67,7 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 		result["approved_spec_version_id"] = strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID)
 	}
 
-	payload, _ := json.MarshalIndent(result, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(result), nil
 }
 
 func toolEnsureStoryPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -100,16 +99,12 @@ func toolEnsureStoryPlanDoc(ctx *ExecutionContext, input json.RawMessage) (strin
 		"status":            doc.Status,
 		"has_draft_content": hasDraftContent,
 	}
-	payload, _ := json.MarshalIndent(result, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(result), nil
 }
 
 func toolApproveEpicSpec(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
 		return "", fmt.Errorf("approve_epic_spec is only available for epic runs")
-	}
-	if ctx.Services == nil || ctx.Services.ApproveEpicSpec == nil {
-		return "", fmt.Errorf("epic spec approval is not available")
 	}
 
 	var params struct {
@@ -120,21 +115,26 @@ func toolApproveEpicSpec(ctx *ExecutionContext, input json.RawMessage) (string, 
 			return "", plannerToolInputError("approve_epic_spec", err)
 		}
 	}
+	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.approve_epic_spec", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("approve epic spec: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.ApproveEpicSpec == nil {
+		return "", fmt.Errorf("epic spec approval is not available")
+	}
 
 	summary, err := ctx.Services.ApproveEpicSpec(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.VersionID)
 	if err != nil {
 		return "", fmt.Errorf("approve epic spec: %w", err)
 	}
-	payload, _ := json.MarshalIndent(summary, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(summary), nil
 }
 
 func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
 		return "", fmt.Errorf("create_story_batch is only available for epic runs")
-	}
-	if ctx.Services == nil || ctx.Services.CreateStoryBatch == nil {
-		return "", fmt.Errorf("story batch creation is not available")
 	}
 
 	var params struct {
@@ -158,19 +158,27 @@ func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string,
 	if ctx.Epic == nil || ctx.Epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) == "" {
 		return "", fmt.Errorf("create_story_batch requires an approved PRD first; call approve_epic_spec before creating stories")
 	}
+	commandInput, _ := json.Marshal(map[string]any{
+		"stories": params.Stories,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.create_story_batch", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("create story batch: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.CreateStoryBatch == nil {
+		return "", fmt.Errorf("story batch creation is not available")
+	}
 
 	result, err := ctx.Services.CreateStoryBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
 	if err != nil {
 		return "", fmt.Errorf("create story batch: %w", err)
 	}
-	payload, _ := json.MarshalIndent(result, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(result), nil
 }
 
 func toolAssignStoryAgent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.AssignStoryAgent == nil {
-		return "", fmt.Errorf("story assignment is not available")
-	}
 	var params struct {
 		StoryID string `json:"story_id"`
 		AgentID string `json:"agent_id"`
@@ -181,6 +189,15 @@ func toolAssignStoryAgent(ctx *ExecutionContext, input json.RawMessage) (string,
 	if strings.TrimSpace(params.StoryID) == "" || strings.TrimSpace(params.AgentID) == "" {
 		return "", fmt.Errorf("assign_story_agent requires \"story_id\" and \"agent_id\"")
 	}
+	if output, ok, err := executeInternalCommand(ctx, "story", params.StoryID, "pm.assign_story_agent", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("assign story agent: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.AssignStoryAgent == nil {
+		return "", fmt.Errorf("story assignment is not available")
+	}
 	if err := ctx.Services.AssignStoryAgent(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.StoryID, params.AgentID); err != nil {
 		return "", fmt.Errorf("assign story agent: %w", err)
 	}
@@ -188,9 +205,6 @@ func toolAssignStoryAgent(ctx *ExecutionContext, input json.RawMessage) (string,
 }
 
 func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.SetStoryDependencies == nil {
-		return "", fmt.Errorf("story dependency updates are not available")
-	}
 	var params struct {
 		Dependencies []StoryDependencyLink `json:"dependencies"`
 	}
@@ -204,6 +218,15 @@ func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (str
 		if strings.TrimSpace(link.SourceStoryID) == "" || strings.TrimSpace(link.TargetStoryID) == "" {
 			return "", fmt.Errorf("set_story_dependencies dependencies[%d] must include \"source_story_id\" and \"target_story_id\"", idx)
 		}
+	}
+	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.set_story_dependencies", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("set story dependencies: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.SetStoryDependencies == nil {
+		return "", fmt.Errorf("story dependency updates are not available")
 	}
 	if err := ctx.Services.SetStoryDependencies(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.Dependencies); err != nil {
 		return "", fmt.Errorf("set story dependencies: %w", err)
@@ -224,10 +247,9 @@ func toolListEpicStories(ctx *ExecutionContext, input json.RawMessage) (string, 
 		return "", fmt.Errorf("list epic stories: %w", err)
 	}
 
-	payload, _ := json.MarshalIndent(map[string]any{
+	return toCompactJSONString(map[string]any{
 		"epic_id":     ctx.TargetID,
 		"story_count": len(stories),
 		"stories":     stories,
-	}, "", "  ")
-	return string(payload), nil
+	}), nil
 }

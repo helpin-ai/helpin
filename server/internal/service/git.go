@@ -230,28 +230,43 @@ func (s *GitService) UpdateRepositorySelection(ctx context.Context, workspaceID,
 	return repo, nil
 }
 
-// GetGitHubInstallURL returns the install URL for the configured GitHub App.
-func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string) (string, error) {
+// GetGitHubInstallURL returns the install or manage URL for the configured GitHub App.
+func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string) (string, string, error) {
 	if workspaceID == "" {
-		return "", fmt.Errorf("workspace_id is required")
+		return "", "", fmt.Errorf("workspace_id is required")
 	}
 	if s.githubApp == nil || s.githubAppSlug == "" {
-		return "", fmt.Errorf("github app onboarding is not configured")
+		return "", "", fmt.Errorf("github app onboarding is not configured")
 	}
 	if s.workspaceRepo == nil {
-		return "", fmt.Errorf("workspace repository is not configured")
+		return "", "", fmt.Errorf("workspace repository is not configured")
 	}
 	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if workspace == nil {
-		return "", fmt.Errorf("workspace not found")
+		return "", "", fmt.Errorf("workspace not found")
+	}
+
+	integrations, err := s.integrationRepo.List(ctx, workspaceID)
+	if err != nil {
+		return "", "", err
+	}
+	for _, integration := range integrations {
+		if integration.Provider != "github" || integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+			continue
+		}
+
+		installation, installErr := s.githubApp.GetInstallation(ctx, *integration.InstallationID)
+		if installErr == nil && strings.TrimSpace(installation.HTMLURL) != "" {
+			return installation.HTMLURL, "manage", nil
+		}
 	}
 
 	state, err := s.signGitHubInstallState(workspaceID, actorID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	installURL := url.URL{
@@ -262,7 +277,7 @@ func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actor
 	query := installURL.Query()
 	query.Set("state", state)
 	installURL.RawQuery = query.Encode()
-	return installURL.String(), nil
+	return installURL.String(), "install", nil
 }
 
 // CompleteGitHubInstall creates or updates the workspace integration after GitHub redirects back.

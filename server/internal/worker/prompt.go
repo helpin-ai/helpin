@@ -70,6 +70,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
 		parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
 		parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_story_plan, or publish_story_plan_doc.")
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")

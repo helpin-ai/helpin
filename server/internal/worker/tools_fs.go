@@ -18,9 +18,41 @@ import (
 )
 
 const (
-	defaultReadFileLimitLines = 200
-	maxReadFileLimitLines     = 400
+	defaultReadFileLimitLines  = 200
+	maxReadFileLimitLines      = 400
+	defaultReadFilesLimitLines = 120
+	maxReadFilesPerCall        = 8
+	maxReadFilesLimitLines     = 250
+	maxReadFilesTotalLines     = 1_000
 )
+
+func requireRepositoryWorkspace(ctx *ExecutionContext, toolName string) error {
+	if ctx == nil || strings.TrimSpace(ctx.WorkDir) == "" {
+		return fmt.Errorf("%s requires a checked-out repository workspace for this run", toolName)
+	}
+
+	info, err := os.Stat(ctx.WorkDir)
+	if err != nil {
+		return fmt.Errorf("%s workspace is unavailable: %w", toolName, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s workspace path is not a directory", toolName)
+	}
+
+	if strings.TrimSpace(ctx.Repo) != "" || ctx.GitIntegration != nil {
+		return nil
+	}
+
+	entries, err := os.ReadDir(ctx.WorkDir)
+	if err != nil {
+		return fmt.Errorf("%s workspace is unavailable: %w", toolName, err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("%s requires a checked-out repository workspace for this run", toolName)
+	}
+
+	return nil
+}
 
 func toolReadFile(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
@@ -39,68 +71,11 @@ func toolReadFile(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 		return "", err
 	}
 
-	absPath, err := safePath(ctx.WorkDir, params.Path)
+	window, err := readTextFileWindow(ctx, params.Path, startLine, limitLines, "read_file")
 	if err != nil {
 		return "", err
 	}
-
-	f, err := os.Open(absPath)
-	if err != nil {
-		return "", fmt.Errorf("open file: %w", err)
-	}
-	defer f.Close()
-
-	preview := make([]byte, 512)
-	n, readErr := f.Read(preview)
-	if readErr != nil && readErr != io.EOF {
-		return "", fmt.Errorf("read file preview: %w", readErr)
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return "", fmt.Errorf("reset file cursor: %w", err)
-	}
-
-	if isBinaryContent(preview[:n]) {
-		return "", fmt.Errorf("file appears to be binary, cannot read: %s", params.Path)
-	}
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-
-	currentLine := 0
-	collected := make([]string, 0, limitLines)
-	for currentLine < startLine-1 && scanner.Scan() {
-		currentLine++
-	}
-
-	for scanner.Scan() && len(collected) < limitLines {
-		currentLine++
-		collected = append(collected, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read file: %w", err)
-	}
-
-	if info, statErr := os.Stat(absPath); statErr == nil {
-		recordToolFileRead(ctx, absPath, info.ModTime(), "read_file")
-	}
-
-	if len(collected) == 0 {
-		return fmt.Sprintf("No lines available starting at line %d in %s", startLine, params.Path), nil
-	}
-
-	var out strings.Builder
-	out.WriteString(fmt.Sprintf("<file path=\"%s\" start_line=\"%d\" returned_lines=\"%d\">\n", params.Path, startLine, len(collected)))
-	out.WriteString(strings.Join(collected, "\n"))
-	out.WriteString("\n</file>")
-	if scanner.Scan() {
-		nextLine := startLine + len(collected)
-		out.WriteString(fmt.Sprintf("\n\nFile has more lines. Use read_file with {\"path\":\"%s\",\"offset_line\":%d} to continue, or use read_file_range for a specific span.", params.Path, nextLine))
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read file: %w", err)
-	}
-
-	return out.String(), nil
+	return formatReadFileWindow(window), nil
 }
 
 func normalizeReadFileWindow(offsetLine, limitLines, offset, limit int) (int, int, error) {
@@ -126,6 +101,153 @@ func normalizeReadFileWindow(offsetLine, limitLines, offset, limit int) (int, in
 		return 0, 0, fmt.Errorf("limit_lines too large: max %d lines per call (requested %d)", maxReadFileLimitLines, limitLines)
 	}
 	return startLine, limitLines, nil
+}
+
+type readFileWindow struct {
+	Path           string
+	StartLine      int
+	ReturnedLines  int
+	Lines          []string
+	HasMore        bool
+	NextOffsetLine int
+}
+
+func readTextFileWindow(ctx *ExecutionContext, path string, startLine, limitLines int, via string) (*readFileWindow, error) {
+	absPath, err := safePath(ctx.WorkDir, path)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	preview := make([]byte, 512)
+	n, readErr := f.Read(preview)
+	if readErr != nil && readErr != io.EOF {
+		return nil, fmt.Errorf("read file preview: %w", readErr)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("reset file cursor: %w", err)
+	}
+
+	if isBinaryContent(preview[:n]) {
+		return nil, fmt.Errorf("file appears to be binary, cannot read: %s", path)
+	}
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+
+	currentLine := 0
+	collected := make([]string, 0, limitLines)
+	for currentLine < startLine-1 && scanner.Scan() {
+		currentLine++
+	}
+
+	for scanner.Scan() && len(collected) < limitLines {
+		currentLine++
+		collected = append(collected, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		recordToolFileRead(ctx, absPath, info.ModTime(), via)
+	}
+
+	window := &readFileWindow{
+		Path:           path,
+		StartLine:      startLine,
+		ReturnedLines:  len(collected),
+		Lines:          collected,
+		HasMore:        scanner.Scan(),
+		NextOffsetLine: startLine + len(collected),
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	return window, nil
+}
+
+func formatReadFileWindow(window *readFileWindow) string {
+	if window == nil {
+		return ""
+	}
+	if len(window.Lines) == 0 {
+		return fmt.Sprintf("No lines available starting at line %d in %s", window.StartLine, window.Path)
+	}
+
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("<file path=\"%s\" start_line=\"%d\" returned_lines=\"%d\">\n", window.Path, window.StartLine, len(window.Lines)))
+	out.WriteString(strings.Join(window.Lines, "\n"))
+	out.WriteString("\n</file>")
+	if window.HasMore {
+		out.WriteString(fmt.Sprintf("\n\nFile has more lines. Use read_file with {\"path\":\"%s\",\"offset_line\":%d} to continue, or use read_file_range for a specific span.", window.Path, window.NextOffsetLine))
+	}
+	return out.String()
+}
+
+func toolReadFiles(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		Files []struct {
+			Path       string `json:"path"`
+			OffsetLine int    `json:"offset_line"`
+			LimitLines int    `json:"limit_lines"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if len(params.Files) == 0 {
+		return "", fmt.Errorf("files is required")
+	}
+	if len(params.Files) > maxReadFilesPerCall {
+		return "", fmt.Errorf("too many files: max %d per call", maxReadFilesPerCall)
+	}
+
+	totalLines := 0
+	windows := make([]*readFileWindow, 0, len(params.Files))
+	for _, file := range params.Files {
+		if strings.TrimSpace(file.Path) == "" {
+			return "", fmt.Errorf("each file entry must include path")
+		}
+		startLine := 1
+		if file.OffsetLine > 0 {
+			startLine = file.OffsetLine
+		}
+		if startLine < 1 {
+			return "", fmt.Errorf("offset_line must be >= 1 for %s", file.Path)
+		}
+		limitLines := file.LimitLines
+		if limitLines <= 0 {
+			limitLines = defaultReadFilesLimitLines
+		}
+		if limitLines > maxReadFilesLimitLines {
+			return "", fmt.Errorf("limit_lines too large for %s: max %d lines per file", file.Path, maxReadFilesLimitLines)
+		}
+		totalLines += limitLines
+		if totalLines > maxReadFilesTotalLines {
+			return "", fmt.Errorf("requested too many total lines across files: max %d", maxReadFilesTotalLines)
+		}
+
+		window, err := readTextFileWindow(ctx, file.Path, startLine, limitLines, "read_files")
+		if err != nil {
+			return "", err
+		}
+		windows = append(windows, window)
+	}
+
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("<files count=\"%d\">", len(windows)))
+	for _, window := range windows {
+		out.WriteString("\n")
+		out.WriteString(formatReadFileWindow(window))
+	}
+	out.WriteString("\n</files>")
+	return out.String(), nil
 }
 
 func toolWriteFile(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -244,6 +366,9 @@ func toolListDirectory(ctx *ExecutionContext, input json.RawMessage) (string, er
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
+	if err := requireRepositoryWorkspace(ctx, "list_directory"); err != nil {
+		return "", err
+	}
 
 	dirPath := ctx.WorkDir
 	if params.Path != "" {
@@ -267,6 +392,9 @@ func toolListDirectory(ctx *ExecutionContext, input json.RawMessage) (string, er
 		}
 		lines = append(lines, name)
 	}
+	if len(lines) == 0 {
+		return "Directory is empty.", nil
+	}
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -277,6 +405,9 @@ func toolSearchFiles(ctx *ExecutionContext, input json.RawMessage) (string, erro
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if err := requireRepositoryWorkspace(ctx, "search_files"); err != nil {
+		return "", err
 	}
 
 	matches, err := filepath.Glob(filepath.Join(ctx.WorkDir, params.Pattern))
@@ -293,6 +424,9 @@ func toolSearchFiles(ctx *ExecutionContext, input json.RawMessage) (string, erro
 		if len(results) > 200 {
 			results = results[:200]
 			results = append(results, "... (truncated)")
+		}
+		if len(results) == 0 {
+			return "No matches found.", nil
 		}
 		return strings.Join(results, "\n"), nil
 	}
@@ -432,6 +566,9 @@ func toolRipgrep(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if params.Pattern == "" {
 		return "", fmt.Errorf("pattern is required")
 	}
+	if err := requireRepositoryWorkspace(ctx, "ripgrep"); err != nil {
+		return "", err
+	}
 
 	// Defaults and caps.
 	if params.MaxResults <= 0 {
@@ -543,6 +680,9 @@ func toolGrep(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	}
 	if params.Pattern == "" {
 		return "", fmt.Errorf("pattern is required")
+	}
+	if err := requireRepositoryWorkspace(ctx, "grep"); err != nil {
+		return "", err
 	}
 	if params.MaxResults <= 0 {
 		params.MaxResults = 50
@@ -687,6 +827,9 @@ func toolListSymbols(ctx *ExecutionContext, input json.RawMessage) (string, erro
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if err := requireRepositoryWorkspace(ctx, "list_symbols"); err != nil {
+		return "", err
 	}
 
 	absPath, err := safePath(ctx.WorkDir, params.Path)
