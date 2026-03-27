@@ -220,9 +220,41 @@ func (r *SupportInboxSessionRepository) GetByToken(ctx context.Context, token st
 
 // Create creates a new session.
 func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *model.SupportWidgetSession) error {
-	if err := r.db.WithContext(ctx).Create(session).Error; err != nil {
+	values := map[string]interface{}{
+		"workspace_id":    session.WorkspaceID,
+		"conversation_id": session.ConversationID,
+		"session_token":   session.SessionToken,
+		"anonymous_id":    session.AnonymousID,
+		"is_anonymous":    session.IsAnonymous,
+		"customer_name":   session.CustomerName,
+		"customer_email":  session.CustomerEmail,
+		"customer_phone":  session.CustomerPhone,
+		"user_agent":      session.UserAgent,
+		"last_page_url":   session.LastPageURL,
+		"timezone":        session.Timezone,
+		"locale":          session.Locale,
+		"revoked_at":      session.RevokedAt,
+		"expires_at":      session.ExpiresAt,
+	}
+	if session.ID != "" {
+		values["id"] = session.ID
+	}
+	if !session.CreatedAt.IsZero() {
+		values["created_at"] = session.CreatedAt
+	}
+
+	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).Create(values).Error; err != nil {
 		return fmt.Errorf("create widget session: %w", err)
 	}
+
+	created, err := r.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		return err
+	}
+	if created == nil {
+		return fmt.Errorf("create widget session: session not found after insert")
+	}
+	*session = *created
 	return nil
 }
 

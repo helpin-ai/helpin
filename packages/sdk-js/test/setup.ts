@@ -8,7 +8,14 @@ global.XMLHttpRequest = vi.fn(() => ({
   setRequestHeader: vi.fn(),
 })) as any;
 
-global.fetch = vi.fn() as any;
+global.fetch = vi.fn(() =>
+  Promise.resolve({
+    ok: true,
+    status: 200,
+    text: async () => '',
+    json: async () => ({}),
+  })
+) as any;
 
 // Mock localStorage
 const localStorageMock = {

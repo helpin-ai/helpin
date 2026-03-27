@@ -681,13 +681,14 @@ function StoryDetailPanelBody({
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && workspace && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.objective_name}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: storyDetail.objective_id! } });
@@ -703,7 +704,8 @@ function StoryDetailPanelBody({
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.epic_name}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.story.epic_id! } });
@@ -719,7 +721,8 @@ function StoryDetailPanelBody({
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={currentSprintName}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: form.sprint_id! } });
@@ -740,7 +743,7 @@ function StoryDetailPanelBody({
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-2 flex shrink-0 items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
