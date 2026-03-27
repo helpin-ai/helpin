@@ -13,12 +13,14 @@ import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/compo
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { Copy, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
 
 export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
   workspaceId: string;
@@ -38,6 +40,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
 
@@ -86,6 +90,13 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     invitations.filter((inv) => inv.status === 'pending'),
     [invitations],
   );
+
+  const actorMember = useMemo(
+    () => members.find((member) => member.user_id === user?.id) ?? null,
+    [members, user?.id],
+  );
+
+  const actorRole = actorMember?.role ?? '';
 
   const loadData = async () => {
     setLoading(true);
@@ -195,14 +206,47 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     }
   };
 
+  const canEditMemberRole = (member: MemberWithUser) => {
+    if (!editable || !user) return false;
+    if (member.user_id === user.id) return false;
+    if (actorRole !== 'owner' && actorRole !== 'admin') return false;
+    if (actorRole !== 'owner' && (member.role === 'owner' || member.role === 'admin')) return false;
+    return true;
+  };
+
+  const roleOptions = (member: MemberWithUser): Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> => {
+    const options: Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> = [
+      { value: 'admin', label: 'Admin' },
+      { value: 'member', label: 'Member' },
+      { value: 'viewer', label: 'Viewer' },
+    ];
+    if (actorRole === 'owner') {
+      options.unshift({ value: 'owner', label: 'Owner' });
+    }
+    if (actorRole !== 'owner' && member.role === 'admin') {
+      return [{ value: 'admin', label: 'Admin' }];
+    }
+    return options;
+  };
+
+  const handleUpdateRole = async (member: MemberWithUser, role: 'owner' | 'admin' | 'member' | 'viewer') => {
+    if (role === member.role) return;
+    setUpdatingMemberId(member.id);
+    const { error } = await workspacesService.updateMemberRole(workspaceId, member.id, { role });
+    setUpdatingMemberId(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setMembers((prev) => prev.map((current) => current.id === member.id ? { ...current, role } : current));
+    toast.success('Member role updated');
+  };
+
   if (loading) return <Skeleton className="h-96" />;
 
   return (
     <>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold">Members</h2>
-        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
           <div className="flex items-center gap-3">
@@ -294,7 +338,26 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                        {canEditMemberRole(m) ? (
+                          <Select
+                            value={m.role}
+                            onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
+                            disabled={updatingMemberId === m.id}
+                          >
+                            <SelectTrigger className="h-8 w-[132px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {roleOptions(m).map((option) => (
+                                <SelectItem key={`${m.id}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

@@ -86,6 +86,26 @@ func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ws)
 }
 
+// UpdateMember handles PUT /api/workspaces/{id}/members/{memberId}.
+func (h *WorkspaceHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	memberID := chi.URLParam(r, "memberId")
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateWorkspaceMemberRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.workspaceService.UpdateMember(r.Context(), workspaceID, userID, memberID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "member updated"})
+}
+
 // UploadLogo handles POST /api/workspaces/{id}/logo.
 func (h *WorkspaceHandler) UploadLogo(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
