@@ -16,6 +16,8 @@ import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithSta
 import type { AssignableMember } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { UserAvatar } from './UserAvatar';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -52,6 +54,7 @@ function filterStateToQueryParams(state: FilterState): BoardFilters {
 interface FilterContextValue {
   filterState: FilterState;
   definitions: FilterDefinition[];
+  assignableMembers: AssignableMember[];
   activeKeys: Set<FilterKey>;
   activeCount: number;
   handleAdd: (key: FilterKey) => void;
@@ -312,13 +315,14 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
   const value = useMemo<FilterContextValue>(() => ({
     filterState,
     definitions,
+    assignableMembers,
     activeKeys,
     activeCount: activeKeys.size,
     handleAdd,
     handleToggle,
     handleRemove,
     handleClearAll,
-  }), [filterState, definitions, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+  }), [filterState, definitions, assignableMembers, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }
@@ -335,14 +339,17 @@ export function StoryFilterTrigger() {
       {available.length > 0 ? (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
-              <ListFilter className="h-3.5 w-3.5" />
-              Filters
-              {activeCount > 0 ? (
-                <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
-                  {activeCount}
-                </Badge>
-              ) : null}
+            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <ListFilter className="h-3.5 w-3.5" />
+                Filters
+              </span>
+              <Badge
+                variant="secondary"
+                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
+              >
+                {activeCount || 0}
+              </Badge>
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-48 p-0" align="start">
@@ -369,9 +376,11 @@ export function StoryFilterTrigger() {
           </PopoverContent>
         </Popover>
       ) : (
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" disabled>
-          <ListFilter className="h-3.5 w-3.5" />
-          Filters
+        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
+          <span className="inline-flex items-center gap-1">
+            <ListFilter className="h-3.5 w-3.5" />
+            Filters
+          </span>
           <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
             {activeCount}
           </Badge>
@@ -409,6 +418,53 @@ export function StoryFilterBar() {
       >
         Clear all
       </Button>
+    </div>
+  );
+}
+
+export function StoryOwnerAvatarFilterRow() {
+  const { assignableMembers, filterState, handleToggle } = useFilterContext();
+  const ownerFilters = filterState.owner_member_id ?? [];
+  const members = useMemo(
+    () => assignableMembers.filter((member) => member.status === 'active'),
+    [assignableMembers],
+  );
+
+  if (members.length === 0) return null;
+
+  return (
+    <div className="ml-3 flex min-w-0 items-center gap-1">
+      {members.map((member) => {
+        const isSelected = ownerFilters.includes(member.id);
+        const label = member.display_name?.trim() || member.email;
+        return (
+          <QuickTooltip key={member.id} label={label}>
+            <button
+              type="button"
+              onClick={() => handleToggle('owner_member_id', member.id)}
+              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all ${
+                isSelected
+                  ? 'ring-foreground'
+                  : 'ring-transparent opacity-70 hover:opacity-100'
+              }`}
+              aria-pressed={isSelected}
+              aria-label={`Filter by owner ${label}`}
+            >
+              <UserAvatar
+                name={label}
+                avatarUrl={member.avatar_url}
+                className="h-6 w-6"
+                fallbackClassName="text-[8px]"
+              />
+              {isSelected ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-background bg-primary text-primary-foreground">
+                  <Check className="h-1.5 w-1.5" />
+                </span>
+              ) : null}
+            </button>
+          </QuickTooltip>
+        );
+      })}
     </div>
   );
 }

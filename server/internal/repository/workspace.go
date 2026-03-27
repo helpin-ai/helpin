@@ -56,6 +56,18 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	return results, nil
 }
 
+// ListIDs returns all workspace IDs in creation order.
+func (r *WorkspaceRepository) ListIDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.Workspace{}).
+		Order("created_at ASC").
+		Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list workspace ids: %w", err)
+	}
+	return ids, nil
+}
+
 // GetByID returns a workspace by its ID.
 func (r *WorkspaceRepository) GetByID(ctx context.Context, id string) (*model.Workspace, error) {
 	ws := &model.Workspace{}

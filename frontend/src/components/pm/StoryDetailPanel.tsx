@@ -98,6 +98,8 @@ import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSec
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -229,7 +231,7 @@ function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>
@@ -393,6 +395,7 @@ function StoryDetailPanelBody({
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
   const delivery = useStoryDelivery(workspaceId, storyDetail, onStoryUpdated);
+  const { checkRef: checkDeliveryTruncation, isTruncated: isDeliveryTruncated } = useTruncationDetection();
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
@@ -1048,7 +1051,7 @@ function StoryDetailPanelBody({
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('team_id', val, { team_id: val || undefined });
+                  updateField('team_id', val, { team_id: val });
                 }}
                 renderTrigger={() => <span>{currentTeamName}</span>}
               />
@@ -1223,7 +1226,7 @@ function StoryDetailPanelBody({
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('epic_id', val, { epic_id: val || undefined });
+                  updateField('epic_id', val, { epic_id: val });
                 }}
                 renderTrigger={() => <span>{currentEpicName}</span>}
               />
@@ -1241,7 +1244,7 @@ function StoryDetailPanelBody({
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('sprint_id', val, { sprint_id: val || undefined });
+                  updateField('sprint_id', val, { sprint_id: val });
                 }}
                 renderTrigger={() => <span>{currentSprintName}</span>}
               />
@@ -1321,21 +1324,33 @@ function StoryDetailPanelBody({
                       delivery.handleRepoChange(val);
                     }}
                     renderTrigger={() => (
-                      <span className="truncate">{delivery.selectedRepository?.full_name ?? 'None'}</span>
+                      <span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+                        {delivery.selectedRepository?.full_name ?? 'None'}
+                      </span>
                     )}
                   />
                 </MetadataRow>
 
                 <MetadataRow icon={GitBranch} label="Base">
                   <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                      >
-                        <span className="truncate font-mono">{delivery.resolvedBaseBranch}</span>
-                      </button>
-                    </PopoverTrigger>
+                    <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
+                      <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
+                          >
+                            <span
+                              ref={(el) => checkDeliveryTruncation('delivery-base', el)}
+                              className="block min-w-0 truncate font-mono"
+                            >
+                              {delivery.resolvedBaseBranch}
+                            </span>
+                          </button>
+                        </PopoverTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent align="start">{delivery.resolvedBaseBranch}</TooltipContent>
+                    </Tooltip>
                     <PopoverContent className="w-56 p-2" align="start">
                       <Input
                         value={delivery.baseBranch}
@@ -1358,7 +1373,17 @@ function StoryDetailPanelBody({
                 </MetadataRow>
 
                 <MetadataRow icon={GitBranch} label="Branch">
-                  <span className="truncate font-mono text-xs px-1.5 py-0.5">{delivery.branchPreview}</span>
+                  <Tooltip open={isDeliveryTruncated('delivery-branch') ? undefined : false}>
+                    <TooltipTrigger asChild>
+                      <span
+                        ref={(el) => checkDeliveryTruncation('delivery-branch', el)}
+                        className="block min-w-0 truncate font-mono text-xs px-1.5 py-0.5"
+                      >
+                        {delivery.branchPreview}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent align="start">{delivery.branchPreview}</TooltipContent>
+                  </Tooltip>
                 </MetadataRow>
 
                 {delivery.deliveryStateCfg && (
@@ -1372,6 +1397,8 @@ function StoryDetailPanelBody({
             )}
 
           </div>
+
+          <Separator className="my-4" />
 
           <AssociationsPanel
             objectType="story"

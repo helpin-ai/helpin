@@ -670,6 +670,24 @@ func main() {
 	agentService.SetWorkflowService(pmWorkflowService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
+	go func() {
+		slog.Info("startup: backfilling built-in agents for existing workspaces")
+		workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+		if err != nil {
+			slog.Error("failed to list workspaces for built-in agent backfill", "error", err)
+			return
+		}
+		seeded := 0
+		for _, workspaceID := range workspaceIDs {
+			if err := agentService.SeedWorkspaceDefaults(context.Background(), workspaceID, ""); err != nil {
+				slog.Error("failed to backfill built-in agents", "workspace_id", workspaceID, "error", err)
+				continue
+			}
+			seeded++
+		}
+		slog.Info("startup: built-in agent backfill complete", "workspaces_processed", seeded)
+	}()
+
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
 		slog.Info("Anthropic API configured — orchestration enabled")

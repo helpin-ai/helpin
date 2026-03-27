@@ -443,6 +443,31 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	if label == "" {
 		return nil, fmt.Errorf("label is required")
 	}
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, basePreset.RuntimeKind))
+	if runtimeKind == "" {
+		runtimeKind = basePreset.RuntimeKind
+	}
+	if err := validateRuntimeKind(runtimeKind); err != nil {
+		return nil, err
+	}
+	if !runtimeAllowedForPreset(familyKey, runtimeKind) {
+		return nil, fmt.Errorf("runtime_kind %q is not supported for family %q", runtimeKind, familyKey)
+	}
+	supportedModes := supportedModesForRuntime(runtimeKind)
+	if len(req.SupportedModes) > 0 {
+		supportedModes = parseJSONStringSlice(req.SupportedModes)
+	}
+	normalizedSupportedModes, err := validateSupportedModes(runtimeKind, supportedModes)
+	if err != nil {
+		return nil, err
+	}
+	defaultInvocationMode := strings.TrimSpace(stringOrDefault(req.DefaultInvocationMode, basePreset.DefaultInvocationMode))
+	if defaultInvocationMode == "" {
+		defaultInvocationMode = basePreset.DefaultInvocationMode
+	}
+	if !slices.Contains(normalizedSupportedModes, defaultInvocationMode) {
+		return nil, fmt.Errorf("default_invocation_mode %q must be included in supported_modes", defaultInvocationMode)
+	}
 	versionKey := fmt.Sprintf("%s_workspace_%d", familyKey, time.Now().UTC().UnixNano())
 	version := &model.WorkspaceAgentPresetVersion{
 		WorkspaceID:           workspaceID,
@@ -451,13 +476,14 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Label:                 label,
 		Description:           trimPtr(req.Description),
 		SourceVersionKey:      trimPtr(req.SourceVersionKey),
-		RuntimeKind:           basePreset.RuntimeKind,
+		RuntimeKind:           runtimeKind,
 		Provider:              trimPtr(req.Provider),
 		Model:                 trimPtr(req.Model),
 		SystemPrompt:          trimPtr(req.SystemPrompt),
 		AllowedTools:          mustJSONStringSlice(basePreset.AllowedTools),
-		ApprovalMode:          stringOrDefault(req.ApprovalMode, basePreset.ApprovalMode),
-		DefaultInvocationMode: stringOrDefault(req.DefaultInvocationMode, basePreset.DefaultInvocationMode),
+		SupportedModes:        mustJSONStringSlice(normalizedSupportedModes),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: defaultInvocationMode,
 		CreatedBy:             trimPtr(&actorID),
 	}
 	if len(req.AllowedTools) > 0 {
@@ -634,6 +660,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
 	}
+	previousSchedule := ""
+	if agent.Schedule != nil {
+		previousSchedule = *agent.Schedule
+	}
 	if agent.IsSystem {
 		systemPresetKey := normalizePresetKey(agent.PresetKey)
 		if systemPresetKey == "" {
@@ -764,18 +794,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	} else if presetChanged && hasPreset {
 		agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 	}
-	scheduleChanged := false
 	if req.Schedule != nil {
-		oldSchedule := ""
-		if agent.Schedule != nil {
-			oldSchedule = *agent.Schedule
-		}
 		agent.Schedule = trimPtr(req.Schedule)
-		newSchedule := ""
-		if agent.Schedule != nil {
-			newSchedule = *agent.Schedule
-		}
-		scheduleChanged = oldSchedule != newSchedule
 	}
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		agent.ApprovalMode = *req.ApprovalMode
@@ -815,6 +835,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
 		}
 		agent.TeamID = nil
+		agent.Schedule = nil
+		agent.ApprovalMode = "never"
 		agent.SystemPrompt = storedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes)
 		agent.PlanningNotes = nil
 	} else {
@@ -846,6 +868,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
 
 	// Sync cron schedule if it changed.
+	finalSchedule := ""
+	if agent.Schedule != nil {
+		finalSchedule = *agent.Schedule
+	}
+	scheduleChanged := previousSchedule != finalSchedule
 	if scheduleChanged && s.runEngine != nil {
 		_ = s.runEngine.StopSchedule(ctx, agent.ID)
 		if agent.Schedule != nil && *agent.Schedule != "" {
@@ -2290,6 +2317,33 @@ func validateRuntimeKind(runtimeKind string) error {
 	default:
 		return fmt.Errorf("runtime_kind must be one of opencode, codex, native_sdk")
 	}
+}
+
+func validateSupportedModes(runtimeKind string, modes []string) ([]string, error) {
+	allowed := supportedModesForRuntime(runtimeKind)
+	if len(modes) == 0 {
+		return allowed, nil
+	}
+	seen := make(map[string]struct{}, len(modes))
+	normalized := make([]string, 0, len(modes))
+	for _, mode := range modes {
+		trimmed := strings.TrimSpace(mode)
+		if trimmed == "" {
+			continue
+		}
+		if !slices.Contains(allowed, trimmed) {
+			return nil, fmt.Errorf("supported_mode %q is not valid for runtime_kind %q", trimmed, runtimeKind)
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil, fmt.Errorf("supported_modes must include at least one mode")
+	}
+	return normalized, nil
 }
 
 func validateTriggerMode(triggerMode string) error {
