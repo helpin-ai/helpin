@@ -17,6 +17,7 @@ type Workspace struct {
 	OwnerID        string    `json:"owner_id" gorm:"type:uuid;not null"`
 	OrganizationID *string   `json:"organization_id" gorm:"type:uuid"`
 	Description    *string   `json:"description"`
+	WebsiteURL     *string   `json:"website_url"`
 	LogoURL        *string   `json:"logo_url"`
 	Timezone       string    `json:"timezone" gorm:"not null;default:'UTC'"`
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -79,6 +80,7 @@ type CreateWorkspaceRequest struct {
 	Slug           string  `json:"slug"`
 	OrganizationID string  `json:"organization_id"`
 	Description    *string `json:"description"`
+	WebsiteURL     *string `json:"website_url"`
 	Timezone       string  `json:"timezone"`
 }
 
@@ -86,6 +88,7 @@ type CreateWorkspaceRequest struct {
 type UpdateWorkspaceRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
+	WebsiteURL  *string `json:"website_url"`
 	LogoURL     *string `json:"logo_url"`
 	Timezone    *string `json:"timezone"`
 }

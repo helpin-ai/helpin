@@ -20,6 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
+import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
 import { crmCompanyService } from '@/lib/services/crmService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -167,7 +168,14 @@ export function CompaniesTable({
               onRowClick(info.row.original.id);
             }}
           >
-            <UserAvatar name={info.getValue()} className="h-6 w-6 shrink-0" />
+            <Favicon
+              src={info.row.original.logo_url}
+              url={info.row.original.domain}
+              name={info.getValue()}
+              size={32}
+              className="h-6 w-6 shrink-0 rounded-md"
+              fallbackClassName="text-[9px]"
+            />
             <span className="truncate">{info.getValue()}</span>
           </button>
         ),

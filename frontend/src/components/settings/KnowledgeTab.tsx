@@ -1,23 +1,33 @@
 import { BookOpen, Globe } from 'lucide-react';
 import { useDocsSpaces } from '@/hooks/queries';
-import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource } from '@/hooks/queries/useSupport';
+import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource, useSupportContentSources, useCreateSupportContentSource } from '@/hooks/queries/useSupport';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { findWorkspaceWebsiteContentSource, buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Favicon } from '@/components/ui/favicon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SupportContentSourcesField } from './SupportContentSourcesField';
 import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
+import { toast } from 'sonner';
 
 export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data: chatSettings, isLoading: chatSettingsLoading } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
+  const { data: contentSources = [] } = useSupportContentSources(workspaceId);
   const chatWidgetAgentId = chatSettings?.settings?.ai_agent_id ?? '';
   const { data: knowledgeSources = [], isLoading: knowledgeSourcesLoading } = useAgentKnowledgeSources(workspaceId, chatWidgetAgentId || undefined);
   const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
   const reindexKnowledgeSource = useReindexAgentKnowledgeSource(workspaceId);
+  const createWebsiteSource = useCreateSupportContentSource(workspaceId);
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
   const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
   const externalKnowledgeSources = knowledgeSources.filter((source) => externalDocsSpaceIds.has(source.space_id));
+  const websiteContentSource = findWorkspaceWebsiteContentSource(workspace?.website_url, contentSources);
 
   const toggleSpace = (spaceId: string) => {
     if (!chatWidgetAgentId) {
@@ -31,6 +41,36 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
 
     updateKnowledgeSources.mutate({ agentId: chatWidgetAgentId, spaceIds: next });
   };
+
+  const handleAddWorkspaceWebsiteSource = async () => {
+    if (!workspace?.website_url) {
+      return;
+    }
+
+    await createWebsiteSource.mutateAsync(
+      buildWorkspaceWebsiteContentSourcePayload(workspace.name, workspace.website_url),
+    );
+    toast.success('Website source added and syncing');
+  };
+
+  const websiteSourceStatusLabel = (() => {
+    switch (websiteContentSource?.sync_status) {
+      case 'queued':
+        return 'Queued';
+      case 'running':
+        return 'Syncing';
+      case 'ready':
+        return 'Ready';
+      case 'failed':
+        return 'Failed';
+      case 'stale':
+        return 'Outdated';
+      case 'disabled':
+        return 'Disabled';
+      default:
+        return null;
+    }
+  })();
 
   if (chatSettingsLoading) {
     return (
@@ -115,6 +155,47 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </CardHeader>
         <CardContent>
+          {workspace?.website_url && (
+            <div className="mb-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Favicon
+                      url={workspace.website_url}
+                      name={workspace.name}
+                      size={32}
+                      className="h-5 w-5 rounded-md"
+                      fallbackClassName="text-[8px]"
+                    />
+                    <p className="text-sm font-medium">Workspace website</p>
+                    {websiteSourceStatusLabel && <Badge variant="secondary">{websiteSourceStatusLabel}</Badge>}
+                  </div>
+                  <p className="text-sm">{workspace.website_url}</p>
+                  {websiteContentSource ? (
+                    <p className="text-xs text-muted-foreground">
+                      This URL is already connected as a Website Content Source for Support AI.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      This URL is saved on the workspace. Add it here to crawl the site and make it available for Support AI.
+                    </p>
+                  )}
+                </div>
+                {!websiteContentSource && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleAddWorkspaceWebsiteSource()}
+                      disabled={createWebsiteSource.isPending}
+                    >
+                      {createWebsiteSource.isPending ? 'Adding...' : 'Add as Source'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <SupportContentSourcesField
             workspaceId={workspaceId}
             agentId={chatWidgetAgentId || undefined}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserPlus } from 'lucide-react';
+import { AlertCircle, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -408,13 +409,20 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                 </label>
                 <Select value={d.selectedAgentId || undefined} onValueChange={d.setSelectedAgentId}>
                   <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Choose agent" />
+                    {d.selectedAgent ? (
+                      <div className="flex items-center gap-2">
+                        <AgentAvatar agent={d.selectedAgent} className="h-5 w-5" />
+                        <span>{d.selectedAgent.name}</span>
+                      </div>
+                    ) : (
+                      <SelectValue placeholder="Choose agent" />
+                    )}
                   </SelectTrigger>
                   <SelectContent>
                     {d.agents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
                         <div className="flex items-center gap-2">
-                          <Bot className="h-3 w-3 text-muted-foreground" />
+                          <AgentAvatar agent={agent} className="h-5 w-5" />
                           <span>{agent.name}</span>
                           <span className="text-muted-foreground">· {agentSummaryLabel(agent)}</span>
                         </div>
@@ -568,10 +576,8 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
 }
 
 function isStoryDeliveryAgent(agent: { preset_key?: string; allowed_targets?: string[] }) {
-  if (agent.allowed_targets?.includes('story')) {
-    return true;
-  }
-  return agent.preset_key === 'code_builder' ||
+  return agent.preset_key === 'story_planner' ||
+    agent.preset_key === 'code_builder' ||
     agent.preset_key === 'review_agent';
 }
 

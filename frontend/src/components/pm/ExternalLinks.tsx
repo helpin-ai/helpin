@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink as ExternalLinkIcon, Link2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Favicon } from '@/components/ui/favicon';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import type { ExternalLink } from '@/lib/pmTypes';
 
@@ -9,18 +10,9 @@ interface ExternalLinksProps {
   storyId: string;
 }
 
-function getFaviconUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=16`;
-  } catch {
-    return '';
-  }
-}
-
 function getHostname(url: string): string {
   try {
-    return new URL(url).hostname;
+    return new URL(url).hostname.replace(/^www\./, '');
   } catch {
     return url;
   }
@@ -84,13 +76,12 @@ export function ExternalLinks({ workspaceId, storyId }: ExternalLinksProps) {
               key={link.id}
               className="group flex items-center gap-2 rounded-md px-1 py-1.5 hover:bg-accent/50 transition-colors"
             >
-              <img
-                src={getFaviconUrl(link.url)}
-                alt=""
-                className="h-4 w-4 shrink-0 rounded-sm"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
+              <Favicon
+                url={link.url}
+                name={link.title || getHostname(link.url)}
+                size={16}
+                className="h-4 w-4 rounded-sm border-none bg-transparent"
+                fallbackClassName="text-[8px]"
               />
               <div className="min-w-0 flex-1">
                 <span className="text-sm font-medium text-foreground truncate block">

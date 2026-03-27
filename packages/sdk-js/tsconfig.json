@@ -4,6 +4,8 @@
     "module": "ESNext",
     "lib": ["DOM", "ESNext"],
     "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "strict": true,
     "noImplicitAny": false,
     "noPropertyAccessFromIndexSignature": false,
@@ -22,7 +24,9 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@helpin/widget-core": ["../widget-core/src/index.ts"],
+      "@helpin/shared": ["../shared/src/index.ts"]
     },
     "types": ["vite/client", "vitest/globals", "node"]
   },

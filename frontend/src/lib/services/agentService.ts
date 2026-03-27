@@ -8,6 +8,7 @@ import type {
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
+  CreateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
   ResumeAgentRunRequest,
@@ -34,6 +35,8 @@ export const agentService = {
     api.del(`/pm/agents/${id}${qs(workspaceId)}`),
   listPresets: (workspaceId: string) =>
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
+  createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>
+    api.post<AgentPresetDefinition>(`/pm/agent-preset-versions${qs(workspaceId)}`, payload),
   listModelProviders: (workspaceId: string) =>
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>

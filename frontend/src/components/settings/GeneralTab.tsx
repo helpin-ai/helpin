@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { workspacesService } from '@/lib/services/workspacesService';
-import { UserAvatar } from '@/components/pm/UserAvatar';
+import { findWorkspaceWebsiteContentSource, buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +16,7 @@ import { Camera, ChevronRight, Globe, Loader2, Search, Trash2 } from 'lucide-rea
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useCreateSupportContentSource, useSupportContentSources } from '@/hooks/queries/useSupport';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
 const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() => {
@@ -33,10 +36,13 @@ export function GeneralTab({ workspaceId, editable }: {
   editable: boolean;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const { data: contentSources = [] } = useSupportContentSources(workspaceId);
+  const createWebsiteSource = useCreateSupportContentSource(workspaceId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
+  const [websiteUrl, setWebsiteUrl] = useState(workspace?.website_url ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
   const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -49,9 +55,16 @@ export function GeneralTab({ workspaceId, editable }: {
   useEffect(() => {
     setName(workspace?.name ?? '');
     setDescription(workspace?.description ?? '');
+    setWebsiteUrl(workspace?.website_url ?? '');
     setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
   }, [workspace?.id, workspace?.updated_at]);
+
+  const savedWebsiteUrl = workspace?.website_url;
+  const websiteContentSource = useMemo(
+    () => findWorkspaceWebsiteContentSource(savedWebsiteUrl, contentSources),
+    [savedWebsiteUrl, contentSources],
+  );
 
   const selectedTz = useMemo(() => TIMEZONE_LIST.find((tz) => tz.id === timezone), [timezone]);
 
@@ -123,6 +136,7 @@ export function GeneralTab({ workspaceId, editable }: {
     const { data, error } = await workspacesService.update(workspaceId, {
       name: name.trim(),
       description: description.trim() || undefined,
+      website_url: websiteUrl.trim(),
       timezone,
     });
     setSaving(false);
@@ -149,6 +163,46 @@ export function GeneralTab({ workspaceId, editable }: {
     navigate({ to: '/workspaces' });
   };
 
+  const handleAddWebsiteSource = async () => {
+    if (!workspace || !workspace.website_url) {
+      return;
+    }
+
+    await createWebsiteSource.mutateAsync(
+      buildWorkspaceWebsiteContentSourcePayload(workspace.name, workspace.website_url),
+    );
+    toast.success('Website source added and syncing');
+  };
+
+  const openKnowledgeSettings = () => {
+    if (!workspace || !workspace.slug) {
+      return;
+    }
+    navigate({
+      to: '/w/$slug/settings/$section',
+      params: { slug: workspace.slug, section: 'knowledge' },
+    });
+  };
+
+  const websiteSourceStatusLabel = useMemo(() => {
+    switch (websiteContentSource?.sync_status) {
+      case 'queued':
+        return 'Queued';
+      case 'running':
+        return 'Syncing';
+      case 'ready':
+        return 'Ready';
+      case 'failed':
+        return 'Failed';
+      case 'stale':
+        return 'Outdated';
+      case 'disabled':
+        return 'Disabled';
+      default:
+        return null;
+    }
+  }, [websiteContentSource?.sync_status]);
+
   return (
     <div className="space-y-6">
       <Card className={LINEAR_CARD_CLASS}>
@@ -160,11 +214,13 @@ export function GeneralTab({ workspaceId, editable }: {
             <Label>Logo</Label>
             <div className="flex items-center gap-4">
               <div className="relative group">
-                <UserAvatar
+                <Favicon
+                  src={logoUrl || undefined}
+                  url={websiteUrl || workspace?.website_url}
                   name={name || workspace?.name}
-                  avatarUrl={logoUrl || undefined}
+                  size={128}
                   className="h-16 w-16 rounded-lg"
-                  fallbackClassName="text-xl rounded-lg"
+                  fallbackClassName="text-xl"
                 />
                 {editable && (
                   <label className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
@@ -217,6 +273,59 @@ export function GeneralTab({ workspaceId, editable }: {
               placeholder="A brief description of this workspace"
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-website">Website</Label>
+            <Input
+              id="ws-website"
+              type="url"
+              value={websiteUrl}
+              onChange={(e) => setWebsiteUrl(e.target.value)}
+              disabled={!editable}
+              placeholder="https://acme.com"
+            />
+            {!savedWebsiteUrl && (
+              <p className="text-xs text-muted-foreground">
+                Optional public website for this workspace. We normalize bare domains to `https://...`.
+              </p>
+            )}
+            {savedWebsiteUrl && (
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">Workspace website</p>
+                      {websiteSourceStatusLabel && <Badge variant="secondary">{websiteSourceStatusLabel}</Badge>}
+                    </div>
+                    {websiteContentSource ? (
+                      <p className="text-xs text-muted-foreground">
+                        This website is connected as a Website Content Source. You can manage sync and Support AI access from Knowledge.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        This website is saved for workspace identity, but it is not yet connected as a Website Content Source for Support AI.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!websiteContentSource && editable && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleAddWebsiteSource()}
+                        disabled={createWebsiteSource.isPending}
+                      >
+                        {createWebsiteSource.isPending ? 'Adding...' : 'Add as Source'}
+                      </Button>
+                    )}
+                    <Button type="button" size="sm" variant="outline" onClick={openKnowledgeSettings}>
+                      Open Knowledge
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

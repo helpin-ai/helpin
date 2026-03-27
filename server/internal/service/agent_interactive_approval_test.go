@@ -1029,6 +1029,139 @@ func TestApproveRunRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) 
 	}
 }
 
+func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-approve-story-plan",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		WorkspaceID: "ws-1",
+		RunID:       run.ID,
+		Role:        "assistant",
+		Content:     "Please review the latest story plan.",
+		MessageType: "assistant_turn",
+		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
+			{
+				ToolName: worker.ToolRequestHumanApproval,
+				Input:    json.RawMessage(`{"phase":"stories","title":"Approve story plan","summary":"Review the current breakdown"}`),
+			},
+		}),
+		SequenceNo: 2,
+	}); err != nil {
+		t.Fatalf("create approval message: %v", err)
+	}
+
+	runPreviewContent := "{\n" +
+		"  \"panel_key\": \"story_plan\",\n" +
+		"  \"title\": \"Story Plan\",\n" +
+		"  \"format\": \"json\",\n" +
+		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\",\n" +
+		"  \"replace\": true\n" +
+		"}"
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview-story-plan",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  worker.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &runPreviewContent,
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create run preview artifact: %v", err)
+	}
+	approvalContent := `{"phase":"stories","title":"Approve story plan","summary":"Review the current breakdown"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-approval-story-plan",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":2}`),
+		SequenceNo:    2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
+		Content: "I approve",
+	}); err != nil {
+		t.Fatalf("SendRunMessage returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	var approvedArtifact *model.AgentRunArtifact
+	for i := range artifacts {
+		if artifacts[i].ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			approvedArtifact = &artifacts[i]
+			break
+		}
+	}
+	if approvedArtifact == nil {
+		t.Fatalf("expected approved_preview artifact, got %#v", artifacts)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview: %v", err)
+	}
+	var approvedContent map[string]any
+	if err := json.Unmarshal(approved.Content, &approvedContent); err != nil {
+		t.Fatalf("unmarshal approved preview content: %v", err)
+	}
+	if got, _ := approvedContent["summary"].(string); got != "Breakdown" {
+		t.Fatalf("expected normalized summary, got %#v", approvedContent)
+	}
+	if _, ok := approvedContent["proposed_stories"].([]any); !ok {
+		t.Fatalf("expected normalized proposed_stories array, got %#v", approvedContent)
+	}
+}
+
 func TestRequestRunChangesRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1102,6 +1235,9 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			preset_key TEXT,
+			preset_version_key TEXT,
+			source_preset_key TEXT,
+			source_preset_version_key TEXT,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,

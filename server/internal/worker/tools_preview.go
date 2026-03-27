@@ -565,7 +565,7 @@ func inferPreviewPanelKeyFromContext(ctx *ExecutionContext, req *PublishedPrevie
 
 	presetKey := ""
 	if ctx.Agent != nil {
-		presetKey = strings.TrimSpace(ctx.Agent.PresetKey)
+		presetKey = strings.TrimSpace(ctx.Agent.EffectivePresetKey())
 	}
 
 	switch {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
 import { Button } from '@/components/ui/button';
@@ -71,12 +72,15 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       return storyRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
     }
     return storyRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
-      ?? storyRunnableAgents.find((agent) => agent.is_system)
-      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'epic_planner')
       ?? storyRunnableAgents.find((agent) => agent.preset_key === 'code_builder')
+      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
       ?? storyRunnableAgents[0]
       ?? null;
   }, [assignedAgentId, storyRunnableAgents]);
+  const selectedAgent = useMemo(
+    () => storyRunnableAgents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [selectedAgentId, storyRunnableAgents],
+  );
 
   useEffect(() => {
     if (!selectedAgentId && preferredAgent) {
@@ -128,7 +132,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     <div className="mt-6">
       <div className="mb-3 space-y-3">
         <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-muted-foreground" />
+          {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-6 w-6" /> : <Bot className="h-4 w-4 text-muted-foreground" />}
           <h3 className="text-sm font-semibold">Agent Runs</h3>
         </div>
 
@@ -143,7 +147,10 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
                 <SelectItem value="__none__">No agent selected</SelectItem>
                 {storyRunnableAgents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id}>
-                    {agent.is_system ? `${agent.name} (System)` : agent.name}
+                    <div className="flex items-center gap-2">
+                      <AgentAvatar agent={agent} className="h-5 w-5" />
+                      <span>{agent.is_system ? `${agent.name} (System)` : agent.name}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -189,11 +196,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
 }
 
 function isStoryRunnableAgent(agent: Agent) {
-  if (agent.allowed_targets?.includes('story')) {
-    return true;
-  }
   return agent.preset_key === 'story_planner' ||
-    agent.preset_key === 'epic_planner' ||
     agent.preset_key === 'code_builder' ||
     agent.preset_key === 'review_agent';
 }

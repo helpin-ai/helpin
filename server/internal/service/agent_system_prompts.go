@@ -326,33 +326,6 @@ func productPlannerPromptNeedsRefresh(prompt *string) bool {
 			return true
 		}
 	}
-	for _, marker := range []string{
-		"There is no hidden planner phase machine deciding the next step for you.",
-		"call `request_human_approval` with `phase=\"stories\"`",
-		"call `publish_prd_draft`",
-		"call `publish_story_plan`",
-		"Inside `proposed_stories`, use the canonical field names `name` and `story_type`.",
-		"Ask questions with the `request_human_input` tool.",
-		"Each question must be single-select.",
-		"`files_to_modify` must be an array of objects",
-		"Stories must not be created without a team.",
-		"platform will persist the approved PRD artifact",
-		"platform will apply the approved story plan artifact and create the stories",
-		"## Current Facts And Next-Step Rules",
-		"If an approved spec exists and stories already exist:",
-		"If no approved spec exists but a draft PRD already exists:",
-		"If approved PRD persistence is already complete:",
-		"### Vertical Slicing (Critical)",
-		"### Blocker & Enabler Consolidation",
-		"### Story Separation & Scoping",
-		"### Implementation Briefs (Required)",
-		"### Acceptance Criteria (Required)",
-		"GIVEN/WHEN/THEN",
-	} {
-		if !strings.Contains(normalized, marker) {
-			return true
-		}
-	}
 	return false
 }
 
@@ -365,12 +338,11 @@ func storyPlannerPromptNeedsRefresh(prompt *string) bool {
 		return false
 	}
 	for _, marker := range []string{
-		"`publish_story_plan_doc`",
-		"`phase=\"story_doc\"`",
-		"platform will persist and link the approved preview",
-		"Produce a planning document, not code.",
+		"`publish_preview`",
+		"formal approval action is taken through the UI",
+		"The runtime will tell you the current planner phase.",
 	} {
-		if !strings.Contains(normalized, marker) {
+		if strings.Contains(normalized, marker) {
 			return true
 		}
 	}
@@ -390,17 +362,6 @@ func codeBuilderPromptNeedsRefresh(prompt *string) bool {
 		"Use the provided tools to read, write, and search files.",
 	} {
 		if strings.Contains(normalized, marker) {
-			return true
-		}
-	}
-	for _, marker := range []string{
-		"You are Code Builder for Helpin.",
-		"Implement the requested story or task directly in the repository.",
-		"Use the available tools to inspect code, make changes, run relevant validation, and prepare delivery artifacts.",
-		"Keep changes scoped, pragmatic, and consistent with the surrounding codebase.",
-		"Surface blockers explicitly instead of making risky product assumptions.",
-	} {
-		if !strings.Contains(normalized, marker) {
 			return true
 		}
 	}

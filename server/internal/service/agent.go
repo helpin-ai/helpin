@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -30,40 +32,62 @@ type supportDraftReply struct {
 
 const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
-const defaultSystemProductPlannerName = "Epic Planner"
+const defaultSystemEpicPlannerName = "Atlas"
+
+func defaultSystemAgentNameForPresetKey(presetKey string) string {
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		return defaultSystemEpicPlannerName
+	case model.AgentPresetStoryPlanner:
+		return "Scribe"
+	case model.AgentPresetCRMOperator:
+		return "CRM Operator"
+	case model.AgentPresetSupportAgent:
+		return "Echo"
+	case model.AgentPresetCodeBuilder:
+		return "Forge"
+	case model.AgentPresetReviewAgent:
+		return "Lens"
+	default:
+		return "Agent"
+	}
+}
 
 // AgentService contains agent business logic.
 type AgentService struct {
-	agentRepo        *repository.AgentRepository
-	runRepo          *repository.AgentRunRepository
-	runMessageRepo   *repository.AgentRunMessageRepository
-	artifactRepo     *repository.AgentRunArtifactRepository
-	storyRepo        *repository.PMStoryRepository
-	storyLinkRepo    *repository.PMStoryLinkRepository
-	epicRepo         *repository.PMEpicRepository
-	conversationRepo *repository.SupportConversationRepository
-	messageRepo      *repository.SupportMessageRepository
-	handoffRepo      *repository.AgentHandoffRepository
-	settingsRepo     *repository.SettingsRepository
-	docsSpaceRepo    *repository.DocsSpaceRepository
-	docsDocumentRepo *repository.DocsDocumentRepository
-	docsContentRepo  *repository.DocsContentRepository
-	docsVersionRepo  *repository.DocsVersionRepository
-	docsLinkRepo     *repository.DocsLinkRepository
-	runEngine        *temporalapp.RunEngine
-	gitService       *GitService
-	storyService     *PMStoryService
-	activitySvc      *PMActivityService
-	wsPublisher      *websocket.Publisher
-	ruleEngine       *AutomationRuleEngine
-	anthropicAPIKey  string
-	openAIAPIKey     string
-	openRouterAPIKey string
+	agentRepo                  *repository.AgentRepository
+	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
+	runRepo                    *repository.AgentRunRepository
+	runMessageRepo             *repository.AgentRunMessageRepository
+	artifactRepo               *repository.AgentRunArtifactRepository
+	storyRepo                  *repository.PMStoryRepository
+	storyLinkRepo              *repository.PMStoryLinkRepository
+	epicRepo                   *repository.PMEpicRepository
+	conversationRepo           *repository.SupportConversationRepository
+	messageRepo                *repository.SupportMessageRepository
+	handoffRepo                *repository.AgentHandoffRepository
+	settingsRepo               *repository.SettingsRepository
+	docsSpaceRepo              *repository.DocsSpaceRepository
+	docsDocumentRepo           *repository.DocsDocumentRepository
+	docsContentRepo            *repository.DocsContentRepository
+	docsVersionRepo            *repository.DocsVersionRepository
+	docsLinkRepo               *repository.DocsLinkRepository
+	runEngine                  *temporalapp.RunEngine
+	gitService                 *GitService
+	storyService               *PMStoryService
+	workflowService            *PMWorkflowService
+	activitySvc                *PMActivityService
+	wsPublisher                *websocket.Publisher
+	ruleEngine                 *AutomationRuleEngine
+	anthropicAPIKey            string
+	openAIAPIKey               string
+	openRouterAPIKey           string
 }
 
 // NewAgentService creates a new AgentService.
 func NewAgentService(
 	agentRepo *repository.AgentRepository,
+	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository,
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
@@ -86,27 +110,28 @@ func NewAgentService(
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
 	return &AgentService{
-		agentRepo:        agentRepo,
-		runRepo:          runRepo,
-		runMessageRepo:   runMessageRepo,
-		artifactRepo:     artifactRepo,
-		storyRepo:        storyRepo,
-		storyLinkRepo:    storyLinkRepo,
-		epicRepo:         epicRepo,
-		conversationRepo: conversationRepo,
-		messageRepo:      messageRepo,
-		handoffRepo:      handoffRepo,
-		settingsRepo:     settingsRepo,
-		docsSpaceRepo:    docsSpaceRepo,
-		docsDocumentRepo: docsDocumentRepo,
-		docsContentRepo:  docsContentRepo,
-		docsVersionRepo:  docsVersionRepo,
-		docsLinkRepo:     docsLinkRepo,
-		runEngine:        runEngine,
-		gitService:       gitService,
-		storyService:     storyService,
-		activitySvc:      activitySvc,
-		wsPublisher:      wsPublisher,
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		runRepo:                    runRepo,
+		runMessageRepo:             runMessageRepo,
+		artifactRepo:               artifactRepo,
+		storyRepo:                  storyRepo,
+		storyLinkRepo:              storyLinkRepo,
+		epicRepo:                   epicRepo,
+		conversationRepo:           conversationRepo,
+		messageRepo:                messageRepo,
+		handoffRepo:                handoffRepo,
+		settingsRepo:               settingsRepo,
+		docsSpaceRepo:              docsSpaceRepo,
+		docsDocumentRepo:           docsDocumentRepo,
+		docsContentRepo:            docsContentRepo,
+		docsVersionRepo:            docsVersionRepo,
+		docsLinkRepo:               docsLinkRepo,
+		runEngine:                  runEngine,
+		gitService:                 gitService,
+		storyService:               storyService,
+		activitySvc:                activitySvc,
+		wsPublisher:                wsPublisher,
 	}
 }
 
@@ -123,14 +148,30 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 	return s
 }
 
+func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
+	s.workflowService = workflowService
+	return s
+}
+
 // SeedWorkspaceDefaults creates workspace-scoped built-in agents.
 func (s *AgentService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
-	_, err := s.ensureBuiltInAgent(ctx, workspaceID, actorID, model.AgentPresetEpicPlanner)
-	return err
+	return s.ensureWorkspaceBuiltInAgents(ctx, workspaceID, actorID)
 }
 
 func (s *AgentService) ensureSystemProductPlannerAgent(ctx context.Context, workspaceID, actorID string) (*model.Agent, error) {
 	return s.ensureBuiltInAgent(ctx, workspaceID, actorID, model.AgentPresetEpicPlanner)
+}
+
+func (s *AgentService) ensureWorkspaceBuiltInAgents(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	for _, presetKey := range builtInPresetKeys() {
+		if err := s.reconcileBuiltInPresetAgent(ctx, workspaceID, actorID, presetKey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, actorID, presetKey string) (*model.Agent, error) {
@@ -139,7 +180,8 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 
 	presetKey = normalizePresetKey(presetKey)
-	preset, ok := agentPresetDefinition(presetKey)
+	presetVersionKey := defaultPresetVersionKeyForPresetKey(presetKey)
+	preset, ok := s.resolvePresetDefinition(ctx, workspaceID, presetKey, presetVersionKey)
 	if !ok {
 		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
@@ -167,6 +209,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		}
 		if existing.PresetKey != presetKey {
 			existing.PresetKey = presetKey
+			changed = true
+		}
+		expectedName := defaultSystemAgentNameForPresetKey(presetKey)
+		if strings.TrimSpace(existing.Name) != expectedName {
+			existing.Name = expectedName
+			changed = true
+		}
+		if existing.PresetVersionKey != presetVersionKey {
+			existing.PresetVersionKey = presetVersionKey
 			changed = true
 		}
 		expectedAllowedTools := mustJSONStringSlice(preset.AllowedTools)
@@ -217,8 +268,9 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	agent := &model.Agent{
 		WorkspaceID:           workspaceID,
 		IsSystem:              true,
-		Name:                  defaultSystemProductPlannerName,
+		Name:                  defaultSystemAgentNameForPresetKey(presetKey),
 		PresetKey:             presetKey,
+		PresetVersionKey:      presetVersionKey,
 		Role:                  preset.DefaultRole,
 		Status:                "idle",
 		RuntimeKind:           preset.RuntimeKind,
@@ -240,12 +292,58 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	if err := s.agentRepo.Create(ctx, agent); err != nil {
 		return nil, err
 	}
-	if s.activitySvc != nil {
+	if s.activitySvc != nil && strings.TrimSpace(actorID) != "" {
 		newValue := agent.Name
 		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
 	}
-	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
+	if strings.TrimSpace(actorID) != "" {
+		s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
+	}
 	return agent, nil
+}
+
+func (s *AgentService) reconcileBuiltInPresetAgent(ctx context.Context, workspaceID, actorID, presetKey string) error {
+	presetKey = normalizePresetKey(presetKey)
+	if presetKey == "" {
+		return nil
+	}
+	if _, ok := agentPresetDefinition(presetKey); !ok {
+		return fmt.Errorf("unsupported built-in preset %q", presetKey)
+	}
+
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	systemCandidates := make([]model.Agent, 0)
+	for _, agent := range agents {
+		if normalizePresetKey(agent.PresetKey) != presetKey {
+			continue
+		}
+		if agent.IsSystem {
+			systemCandidates = append(systemCandidates, agent)
+		}
+	}
+
+	systemAgent, err := s.ensureBuiltInAgent(ctx, workspaceID, actorID, presetKey)
+	if err != nil {
+		return err
+	}
+
+	for _, candidate := range systemCandidates {
+		if systemAgent != nil && candidate.ID == systemAgent.ID {
+			continue
+		}
+		if err := s.agentRepo.Delete(ctx, workspaceID, candidate.ID); err != nil {
+			return err
+		}
+		if s.activitySvc != nil && strings.TrimSpace(actorID) != "" {
+			_ = s.activitySvc.Log(ctx, workspaceID, "agent", candidate.ID, &actorID, "deleted", nil, nil, nil, nil)
+		}
+	}
+
+	return nil
 }
 
 // ListAgents returns all agents in a workspace.
@@ -276,8 +374,109 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 	return agent, nil
 }
 
-func (s *AgentService) ListAgentPresets() []model.AgentPresetDefinition {
-	return ListAgentPresets()
+func (s *AgentService) ListAgentPresets(ctx context.Context, workspaceID string) []model.AgentPresetDefinition {
+	productPresets := ListAgentPresets()
+	if strings.TrimSpace(workspaceID) == "" || s.workspacePresetVersionRepo == nil {
+		return productPresets
+	}
+	workspaceVersions, err := s.workspacePresetVersionRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list workspace preset versions", "workspace_id", workspaceID, "error", err)
+		return productPresets
+	}
+	if len(workspaceVersions) == 0 {
+		return productPresets
+	}
+	byFamily := make(map[string]model.AgentPresetDefinition, len(productPresets))
+	for _, preset := range productPresets {
+		if preset.IsDefaultVersion {
+			byFamily[preset.FamilyKey] = preset
+		}
+	}
+	out := make([]model.AgentPresetDefinition, 0, len(productPresets)+len(workspaceVersions))
+	out = append(out, productPresets...)
+	for _, version := range workspaceVersions {
+		base, ok := byFamily[normalizePresetKey(version.FamilyKey)]
+		if !ok {
+			continue
+		}
+		out = append(out, workspacePresetDefinition(base, version))
+	}
+	return out
+}
+
+func (s *AgentService) resolvePresetDefinition(ctx context.Context, workspaceID, presetKey, presetVersionKey string) (model.AgentPresetDefinition, bool) {
+	familyKey := normalizePresetKey(presetKey)
+	if familyKey == "" {
+		return model.AgentPresetDefinition{}, false
+	}
+	if s.workspacePresetVersionRepo != nil && strings.TrimSpace(workspaceID) != "" && strings.TrimSpace(presetVersionKey) != "" {
+		version, err := s.workspacePresetVersionRepo.GetByVersionKey(ctx, workspaceID, familyKey, presetVersionKey)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to resolve workspace preset version", "workspace_id", workspaceID, "family_key", familyKey, "version_key", presetVersionKey, "error", err)
+		} else if version != nil {
+			base, ok := agentPresetVersionDefinition(familyKey, defaultPresetVersionKeyForPresetKey(familyKey))
+			if !ok {
+				return model.AgentPresetDefinition{}, false
+			}
+			return workspacePresetDefinition(base, *version), true
+		}
+	}
+	return agentPresetVersionDefinition(familyKey, presetVersionKey)
+}
+
+func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req model.CreateWorkspaceAgentPresetVersionRequest, actorID string) (*model.AgentPresetDefinition, error) {
+	if s.workspacePresetVersionRepo == nil {
+		return nil, fmt.Errorf("workspace preset version repository is not configured")
+	}
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	familyKey := normalizePresetKey(req.FamilyKey)
+	if workspaceID == "" || familyKey == "" {
+		return nil, fmt.Errorf("workspace_id and family_key are required")
+	}
+	baseVersionKey := strings.TrimSpace(stringOrDefault(req.SourceVersionKey, ""))
+	basePreset, ok := s.resolvePresetDefinition(ctx, workspaceID, familyKey, baseVersionKey)
+	if !ok {
+		return nil, fmt.Errorf("source preset version %q is not supported for family %q", baseVersionKey, familyKey)
+	}
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		return nil, fmt.Errorf("label is required")
+	}
+	versionKey := fmt.Sprintf("%s_workspace_%d", familyKey, time.Now().UTC().UnixNano())
+	version := &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           workspaceID,
+		FamilyKey:             familyKey,
+		VersionKey:            versionKey,
+		Label:                 label,
+		Description:           trimPtr(req.Description),
+		SourceVersionKey:      trimPtr(req.SourceVersionKey),
+		RuntimeKind:           basePreset.RuntimeKind,
+		Provider:              trimPtr(req.Provider),
+		Model:                 trimPtr(req.Model),
+		SystemPrompt:          trimPtr(req.SystemPrompt),
+		AllowedTools:          mustJSONStringSlice(basePreset.AllowedTools),
+		ApprovalMode:          stringOrDefault(req.ApprovalMode, basePreset.ApprovalMode),
+		DefaultInvocationMode: stringOrDefault(req.DefaultInvocationMode, basePreset.DefaultInvocationMode),
+		CreatedBy:             trimPtr(&actorID),
+	}
+	if len(req.AllowedTools) > 0 {
+		version.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+	}
+	if version.SystemPrompt == nil {
+		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
+	}
+	if version.Provider == nil {
+		version.Provider = trimPtr(basePreset.Provider)
+	}
+	if version.Model == nil {
+		version.Model = trimPtr(basePreset.Model)
+	}
+	if err := s.workspacePresetVersionRepo.Create(ctx, version); err != nil {
+		return nil, err
+	}
+	definition := workspacePresetDefinition(basePreset, *version)
+	return &definition, nil
 }
 
 // ListToolCatalog returns the tool catalog with categories and preset mappings.
@@ -286,9 +485,14 @@ func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
 	presets := ListAgentPresets()
 	for idx := range catalog.Tools {
 		tool := &catalog.Tools[idx]
+		presetSet := make(map[string]struct{}, len(presets))
 		presetKeys := make([]string, 0, len(presets))
 		for _, preset := range presets {
 			if slices.Contains(preset.AllowedTools, tool.Name) {
+				if _, exists := presetSet[preset.Key]; exists {
+					continue
+				}
+				presetSet[preset.Key] = struct{}{}
 				presetKeys = append(presetKeys, preset.Key)
 			}
 		}
@@ -328,34 +532,27 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
+		return nil, fmt.Errorf("custom agents cannot specify preset_key")
+	}
+	if req.PresetVersionKey != nil && strings.TrimSpace(*req.PresetVersionKey) != "" {
+		return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
+	}
 
 	skills := req.Skills
 	if skills == nil {
 		skills = json.RawMessage("[]")
 	}
 
-	presetKey := normalizePresetKey(stringOrDefault(req.PresetKey, ""))
-	if presetKey == "" {
-		presetKey = defaultPresetKeyForAgent(false)
-	}
-	if err := validateAgentPresetKey(presetKey); err != nil {
-		return nil, err
-	}
-	preset, _ := agentPresetDefinition(presetKey)
-
 	role := strings.TrimSpace(req.Role)
 	if role == "" {
-		if preset.DefaultRole != "" {
-			role = preset.DefaultRole
-		} else {
-			role = "Agent"
-		}
+		role = "Custom Agent"
 	}
-	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, preset.RuntimeKind))
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "opencode"))
 	if runtimeKind == "" {
 		runtimeKind = "opencode"
 	}
-	triggerMode := stringOrDefault(req.TriggerMode, preset.DefaultTriggerMode)
+	triggerMode := stringOrDefault(req.TriggerMode, "manual")
 	if triggerMode == "" {
 		triggerMode = "manual"
 	}
@@ -363,7 +560,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		return nil, err
 	}
 
-	approvalMode := preset.ApprovalMode
+	approvalMode := "never"
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		approvalMode = *req.ApprovalMode
 	}
@@ -373,27 +570,30 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	}
 
 	agent := &model.Agent{
-		WorkspaceID:           req.WorkspaceID,
-		Name:                  strings.TrimSpace(req.Name),
-		PresetKey:             presetKey,
-		Role:                  role,
-		Status:                "idle",
-		RuntimeKind:           runtimeKind,
-		Skills:                skills,
-		TriggerMode:           triggerMode,
-		Provider:              trimPtr(req.Provider),
-		Model:                 trimPtr(req.Model),
-		SystemPrompt:          storedSystemPromptForPreset(presetKey, req.SystemPrompt, req.PlanningNotes),
-		PlanningNotes:         nil,
-		MonthlyTokenBudget:    normalizeTokenBudget(req.MonthlyTokenBudget),
-		TeamID:                trimPtr(req.TeamID),
-		AllowedTools:          sliceOrPresetJSON(req.AllowedTools, preset.AllowedTools),
-		AllowedCommands:       sliceOrPresetJSON(req.AllowedCommands, preset.AllowedCommands),
-		AllowedTargets:        sliceOrPresetJSON(req.AllowedTargets, preset.AllowedTargetTypes),
-		Schedule:              trimPtr(req.Schedule),
-		ApprovalMode:          approvalMode,
-		MaxConcurrentRuns:     maxConcurrentRuns,
-		DefaultInvocationMode: stringOrDefault(req.DefaultInvocationMode, preset.DefaultInvocationMode),
+		WorkspaceID:            req.WorkspaceID,
+		Name:                   strings.TrimSpace(req.Name),
+		PresetKey:              "",
+		PresetVersionKey:       "",
+		SourcePresetKey:        "",
+		SourcePresetVersionKey: "",
+		Role:                   role,
+		Status:                 "idle",
+		RuntimeKind:            runtimeKind,
+		Skills:                 skills,
+		TriggerMode:            triggerMode,
+		Provider:               trimPtr(req.Provider),
+		Model:                  trimPtr(req.Model),
+		SystemPrompt:           trimPtr(req.SystemPrompt),
+		PlanningNotes:          nil,
+		MonthlyTokenBudget:     normalizeTokenBudget(req.MonthlyTokenBudget),
+		TeamID:                 trimPtr(req.TeamID),
+		AllowedTools:           normalizeJSONSlice(req.AllowedTools),
+		AllowedCommands:        normalizeJSONSlice(req.AllowedCommands),
+		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"story"}),
+		Schedule:               trimPtr(req.Schedule),
+		ApprovalMode:           approvalMode,
+		MaxConcurrentRuns:      maxConcurrentRuns,
+		DefaultInvocationMode:  stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
 	}
 	normalizeAgentRecord(agent)
 	if err := validateRuntimeForAgent(agent); err != nil {
@@ -435,24 +635,45 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, fmt.Errorf("agent not found")
 	}
 	if agent.IsSystem {
-		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != model.AgentPresetEpicPlanner {
-			return nil, fmt.Errorf("system planner preset cannot be changed")
+		systemPresetKey := normalizePresetKey(agent.PresetKey)
+		if systemPresetKey == "" {
+			systemPresetKey = model.AgentPresetEpicPlanner
 		}
-		if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" && strings.TrimSpace(*req.RuntimeKind) != defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner) {
-			return nil, fmt.Errorf("system planner runtime cannot be changed")
+		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != systemPresetKey {
+			return nil, fmt.Errorf("system agent preset cannot be changed")
+		}
+		if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" && strings.TrimSpace(*req.RuntimeKind) != defaultRuntimeKindForPresetKey(systemPresetKey) {
+			return nil, fmt.Errorf("system agent runtime cannot be changed")
 		}
 		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
-			return nil, fmt.Errorf("system planner cannot be restricted to a team")
+			return nil, fmt.Errorf("system agent cannot be restricted to a team")
+		}
+	} else {
+		if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
+			return nil, fmt.Errorf("custom agents cannot specify preset_key")
+		}
+		if req.PresetVersionKey != nil && strings.TrimSpace(*req.PresetVersionKey) != "" {
+			return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 		}
 	}
 
 	presetChanged := false
-	previousPresetKey := normalizePresetKey(agent.PresetKey)
+	previousPresetKey := normalizePresetKey(agent.EffectivePresetKey())
+	if previousPresetKey == "" {
+		previousPresetKey = defaultPresetKeyForAgent(agent.IsSystem)
+	}
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
 	}
-	if req.PresetKey != nil {
+	if req.PresetKey != nil && agent.IsSystem {
 		agent.PresetKey = normalizePresetKey(*req.PresetKey)
+		presetChanged = true
+	}
+	if req.PresetVersionKey != nil && agent.IsSystem {
+		agent.PresetVersionKey = normalizePresetVersionKey(*req.PresetVersionKey)
+		presetChanged = true
+	} else if req.PresetKey != nil && agent.IsSystem {
+		agent.PresetVersionKey = defaultPresetVersionKeyForPresetKey(agent.PresetKey)
 		presetChanged = true
 	}
 	if req.Role != nil {
@@ -461,7 +682,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.Status != nil {
 		agent.Status = *req.Status
 	}
-	preset, hasPreset := presetDefinitionForAgent(agent)
+	resolvedPresetKey := normalizePresetKey(agent.EffectivePresetKey())
+	if resolvedPresetKey == "" {
+		resolvedPresetKey = defaultPresetKeyForAgent(agent.IsSystem)
+	}
+	resolvedPresetVersionKey := normalizePresetVersionKey(agent.EffectivePresetVersionKey())
+	if resolvedPresetVersionKey == "" {
+		resolvedPresetVersionKey = defaultPresetVersionKeyForPresetKey(resolvedPresetKey)
+	}
+	preset, hasPreset := s.resolvePresetDefinition(ctx, workspaceID, resolvedPresetKey, resolvedPresetVersionKey)
 	if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		if err := validateRuntimeKind(*req.RuntimeKind); err != nil {
 			return nil, err
@@ -506,8 +735,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 				agent.SystemPrompt = nil
 			}
 		}
-		agent.SystemPrompt = storedSystemPromptForPreset(agent.PresetKey, agent.SystemPrompt, legacyPlanningNotes)
-		if req.PlanningNotes != nil || normalizePresetKey(agent.PresetKey) != model.AgentPresetEpicPlanner {
+		agent.SystemPrompt = storedSystemPromptForPreset(resolvedPresetKey, agent.SystemPrompt, legacyPlanningNotes)
+		if req.PlanningNotes != nil || resolvedPresetKey != model.AgentPresetEpicPlanner {
 			agent.PlanningNotes = nil
 		}
 	}
@@ -569,12 +798,30 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		}
 	}
 	if agent.IsSystem {
-		agent.PresetKey = model.AgentPresetEpicPlanner
-		agent.RuntimeKind = defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner)
-		agent.TriggerMode = defaultTriggerModeForPresetKey(model.AgentPresetEpicPlanner)
+		systemPresetKey := normalizePresetKey(agent.PresetKey)
+		if systemPresetKey == "" {
+			systemPresetKey = model.AgentPresetEpicPlanner
+		}
+		agent.PresetKey = systemPresetKey
+		agent.PresetVersionKey = resolvedPresetVersionKey
+		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
+			agent.RuntimeKind = preset.RuntimeKind
+		} else {
+			agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
+		}
+		if hasPreset && strings.TrimSpace(preset.DefaultTriggerMode) != "" {
+			agent.TriggerMode = preset.DefaultTriggerMode
+		} else {
+			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
+		}
 		agent.TeamID = nil
-		agent.SystemPrompt = storedSystemPromptForPreset(model.AgentPresetEpicPlanner, agent.SystemPrompt, agent.PlanningNotes)
+		agent.SystemPrompt = storedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes)
 		agent.PlanningNotes = nil
+	} else {
+		agent.SourcePresetKey = ""
+		agent.SourcePresetVersionKey = ""
+		agent.PresetKey = ""
+		agent.PresetVersionKey = ""
 	}
 	normalizeAgentRecord(agent)
 	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
@@ -1220,6 +1467,37 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		return nil
 	}
 
+	content := append(json.RawMessage(nil), preview.Content...)
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "stories") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+		normalizedContent, err := worker.NormalizeStoryPlanPreviewContent(content)
+		if err != nil {
+			if approvedPreviewDebugEnabled() {
+				slog.ErrorContext(ctx, "approved story plan preview normalization failed during approval persistence",
+					"run_id", run.ID,
+					"workspace_id", run.WorkspaceID,
+					"phase", strings.TrimSpace(approval.Phase),
+					"panel_key", strings.TrimSpace(preview.PanelKey),
+					"format", strings.TrimSpace(preview.Format),
+					"content_preview", previewDebugSnippet(content, 1600),
+					"error", err,
+				)
+			}
+			return fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+		}
+		content = normalizedContent
+	}
+	if approvedPreviewDebugEnabled() {
+		slog.InfoContext(ctx, "persisting approved interactive preview",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"phase", strings.TrimSpace(approval.Phase),
+			"panel_key", strings.TrimSpace(preview.PanelKey),
+			"format", strings.TrimSpace(preview.Format),
+			"source_message_id", sourceMessage.ID,
+			"content_preview", previewDebugSnippet(content, 1600),
+		)
+	}
+
 	payload := model.ApprovedRunPreview{
 		Phase:           strings.TrimSpace(approval.Phase),
 		ApprovalTitle:   strings.TrimSpace(approval.Title),
@@ -1227,7 +1505,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		PanelKey:        strings.TrimSpace(preview.PanelKey),
 		PreviewTitle:    strings.TrimSpace(preview.Title),
 		Format:          strings.TrimSpace(preview.Format),
-		Content:         append(json.RawMessage(nil), preview.Content...),
+		Content:         content,
 		SourceMessageID: sourceMessage.ID,
 		ApprovedBy:      strings.TrimSpace(actorID),
 		ApprovedAt:      time.Now().UTC(),
@@ -1359,6 +1637,30 @@ func findAssistantMessageBySequence(messages []model.AgentRunMessage, sequenceNo
 		}
 	}
 	return nil
+}
+
+func approvedPreviewDebugEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_PREVIEW_DEBUG"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func previewDebugSnippet(raw json.RawMessage, max int) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err == nil {
+		trimmed = compact.String()
+	}
+	if max > 0 && len(trimmed) > max {
+		return trimmed[:max] + "...(truncated)"
+	}
+	return trimmed
 }
 
 func isExplicitInteractiveApprovalReply(reply string) bool {

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { CompactChip } from '@/components/ui/compact-chip';
@@ -258,7 +259,18 @@ export function AssociationsList({
                   onClick={() => handleAdd(r.type as CRMObjectType, r.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <PickerIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    {r.type === 'company' ? (
+                      <Favicon
+                        src={'logo_url' in r.object ? r.object.logo_url : undefined}
+                        url={'domain' in r.object ? r.object.domain : undefined}
+                        name={r.name}
+                        size={16}
+                        className="h-3.5 w-3.5 rounded-sm border-none bg-transparent"
+                        fallbackClassName="text-[7px]"
+                      />
+                    ) : (
+                      <PickerIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
                     <span className="font-medium truncate">{r.name}</span>
                   </div>
                 </button>

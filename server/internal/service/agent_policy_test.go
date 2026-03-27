@@ -81,8 +81,17 @@ func TestNormalizeAgentRecordDefaultsToPreset(t *testing.T) {
 
 	normalizeAgentRecord(agent)
 
-	if agent.PresetKey != model.AgentPresetCodeBuilder {
-		t.Fatalf("expected blank agent to default to %q, got %q", model.AgentPresetCodeBuilder, agent.PresetKey)
+	if agent.PresetKey != "" {
+		t.Fatalf("expected blank custom agent preset_key to remain empty, got %q", agent.PresetKey)
+	}
+	if agent.PresetVersionKey != "" {
+		t.Fatalf("expected blank custom agent preset_version_key to remain empty, got %q", agent.PresetVersionKey)
+	}
+	if agent.SourcePresetKey != "" {
+		t.Fatalf("expected blank custom agent source preset to remain empty, got %q", agent.SourcePresetKey)
+	}
+	if agent.SourcePresetVersionKey != "" {
+		t.Fatalf("expected blank custom agent source preset version to remain empty, got %q", agent.SourcePresetVersionKey)
 	}
 	if agent.RuntimeKind != "opencode" {
 		t.Fatalf("expected default runtime opencode, got %q", agent.RuntimeKind)
@@ -121,6 +130,24 @@ func TestPresetDefinitionForAgentDefaultsFromSystemFlag(t *testing.T) {
 	}
 }
 
+func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:        model.AgentPresetStoryPlanner,
+		PresetVersionKey: "missing_version",
+	}
+
+	preset, ok := presetDefinitionForAgent(agent)
+	if !ok {
+		t.Fatal("expected preset resolution for invalid version")
+	}
+	if preset.Key != model.AgentPresetStoryPlanner {
+		t.Fatalf("expected story planner preset, got %q", preset.Key)
+	}
+	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner) {
+		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner), preset.VersionKey)
+	}
+}
+
 func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 	presets := ListAgentPresets()
 	if len(presets) == 0 {
@@ -133,6 +160,12 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 			continue
 		}
 		found = true
+		if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner) {
+			t.Fatalf("expected epic planner default version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner), preset.VersionKey)
+		}
+		if !preset.IsDefaultVersion {
+			t.Fatal("expected epic planner catalog entry to be marked as default version")
+		}
 		if preset.RuntimeKind != "native_sdk" {
 			t.Fatalf("expected epic planner runtime native_sdk, got %q", preset.RuntimeKind)
 		}

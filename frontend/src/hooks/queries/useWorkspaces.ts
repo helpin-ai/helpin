@@ -39,7 +39,7 @@ export function useAssignableMembers(wsId: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: { name: string; slug: string; organization_id: string; description?: string; timezone?: string }) =>
+    mutationFn: async (data: { name: string; slug: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
       unwrap(await workspacesService.create(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })
@@ -50,7 +50,7 @@ export function useCreateWorkspace() {
 export function useUpdateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ wsId, ...data }: { wsId: string; name?: string; slug?: string }) =>
+    mutationFn: async ({ wsId, ...data }: { wsId: string; name?: string; slug?: string; website_url?: string }) =>
       unwrap(await workspacesService.update(wsId, data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })

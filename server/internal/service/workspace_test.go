@@ -79,6 +79,9 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			preset_key TEXT,
+			preset_version_key TEXT,
+			source_preset_key TEXT,
+			source_preset_version_key TEXT,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -132,10 +135,12 @@ func TestWorkspaceService_Create(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
+	websiteURL := "example.com"
 	req := model.CreateWorkspaceRequest{
-		Name:     "My Workspace",
-		Slug:     "my-workspace",
-		Timezone: "America/New_York",
+		Name:       "My Workspace",
+		Slug:       "my-workspace",
+		WebsiteURL: &websiteURL,
+		Timezone:   "America/New_York",
 	}
 	ws, err := svc.Create(ctx, req, "owner-1")
 	if err != nil {
@@ -153,6 +158,9 @@ func TestWorkspaceService_Create(t *testing.T) {
 	}
 	if ws.Timezone != "America/New_York" {
 		t.Errorf("Timezone = %q, want %q", ws.Timezone, "America/New_York")
+	}
+	if ws.WebsiteURL == nil || *ws.WebsiteURL != "https://example.com" {
+		t.Errorf("WebsiteURL = %v, want %q", ws.WebsiteURL, "https://example.com")
 	}
 	if ws.Role != "owner" {
 		t.Errorf("Role = %q, want %q", ws.Role, "owner")
@@ -225,7 +233,7 @@ func TestWorkspaceService_Create_SeedsDefaultEpicAutomations(t *testing.T) {
 	}
 }
 
-func TestWorkspaceService_Create_SeedsSystemPlannerAgent(t *testing.T) {
+func TestWorkspaceService_Create_SeedsSystemPresetAgents(t *testing.T) {
 	db, svc, _, _ := newWorkspaceDefaultsTestHarness(t)
 	ctx := context.Background()
 
@@ -246,24 +254,32 @@ func TestWorkspaceService_Create_SeedsSystemPlannerAgent(t *testing.T) {
 		t.Fatal("expected at least one seeded agent")
 	}
 
-	planner := agents[0]
-	if !planner.IsSystem {
-		t.Fatal("expected seeded planner to be marked as system")
+	systemByPreset := map[string]model.Agent{}
+	for _, agent := range agents {
+		if !agent.IsSystem {
+			continue
+		}
+		systemByPreset[agent.PresetKey] = agent
 	}
-	if planner.PresetKey != model.AgentPresetEpicPlanner {
-		t.Fatalf("preset_key = %q, want %q", planner.PresetKey, model.AgentPresetEpicPlanner)
+	if len(systemByPreset) != len(builtInPresetKeys()) {
+		t.Fatalf("expected %d system preset agents, got %d", len(builtInPresetKeys()), len(systemByPreset))
 	}
-	if planner.PresetKey != model.AgentPresetEpicPlanner {
-		t.Fatalf("preset_key = %q, want %q", planner.PresetKey, model.AgentPresetEpicPlanner)
+
+	planner, ok := systemByPreset[model.AgentPresetEpicPlanner]
+	if !ok {
+		t.Fatal("expected epic planner system agent")
 	}
-	if planner.Name != defaultSystemProductPlannerName {
-		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemProductPlannerName)
+	if planner.Name != defaultSystemEpicPlannerName {
+		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemEpicPlannerName)
 	}
 	if planner.SystemPrompt == nil || *planner.SystemPrompt == "" {
 		t.Fatal("expected seeded planner to persist a system prompt")
 	}
 	if planner.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("default_invocation_mode = %q, want %q", planner.DefaultInvocationMode, model.InvocationModeInteractive)
+	}
+	if planner.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner) {
+		t.Fatalf("preset_version_key = %q, want %q", planner.PresetVersionKey, defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner))
 	}
 }
 
@@ -474,6 +490,38 @@ func TestWorkspaceService_Update_Description(t *testing.T) {
 	}
 	if updated.Description == nil || *updated.Description != "A new description" {
 		t.Errorf("updated Description = %v, want %q", updated.Description, "A new description")
+	}
+}
+
+func TestWorkspaceService_Update_WebsiteURL(t *testing.T) {
+	_, svc := newWorkspaceTestHarness(t)
+	ctx := context.Background()
+
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Website Test", Slug: "website-test"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	websiteURL := "helpin.ai"
+	updated, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
+		WebsiteURL: &websiteURL,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.WebsiteURL == nil || *updated.WebsiteURL != "https://helpin.ai" {
+		t.Errorf("updated WebsiteURL = %v, want %q", updated.WebsiteURL, "https://helpin.ai")
+	}
+
+	clearWebsite := ""
+	cleared, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
+		WebsiteURL: &clearWebsite,
+	})
+	if err != nil {
+		t.Fatalf("Clear website URL: %v", err)
+	}
+	if cleared.WebsiteURL != nil {
+		t.Errorf("cleared WebsiteURL = %v, want nil", cleared.WebsiteURL)
 	}
 }
 

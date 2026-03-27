@@ -23,13 +23,14 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, organizationID *string, description *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, organizationID *string, description, websiteURL *string, timezone string) (*model.Workspace, error) {
 	ws := &model.Workspace{
 		Name:           name,
 		Slug:           slug,
 		OwnerID:        ownerID,
 		OrganizationID: organizationID,
 		Description:    description,
+		WebsiteURL:     websiteURL,
 		Timezone:       timezone,
 	}
 	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
@@ -43,7 +44,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	var results []model.WorkspaceWithRole
 	q := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.logo_url, w.timezone, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.website_url, w.logo_url, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
 		Where("wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive)
 	if organizationID != "" {
@@ -82,13 +83,20 @@ func (r *WorkspaceRepository) GetBySlug(ctx context.Context, slug string) (*mode
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, logoURL, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if websiteURL != nil {
+		if *websiteURL == "" {
+			updates["website_url"] = nil
+		} else {
+			updates["website_url"] = *websiteURL
+		}
 	}
 	if logoURL != nil {
 		updates["logo_url"] = *logoURL

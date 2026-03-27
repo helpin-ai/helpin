@@ -4,7 +4,7 @@ import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, Pend
 export type Message = SharedMessage;
 export type PendingAttachment = SharedPendingAttachment;
 
-export interface WidgetConfig extends SharedWidgetConfig {
+export interface WidgetConfig extends Omit<SharedWidgetConfig, 'availableTeammates' | 'features' | 'availability'> {
   availableTeammates?: ActiveTeammate[];
   features: SharedWidgetConfig['features'] & {
     aiFirst?: boolean;

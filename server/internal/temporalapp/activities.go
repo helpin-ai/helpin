@@ -1,6 +1,7 @@
 package temporalapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -1498,7 +1499,8 @@ func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.Ag
 		}
 	}
 
-	for _, artifact := range artifacts {
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
 			continue
 		}
@@ -1509,6 +1511,17 @@ func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.Ag
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
 			return nil, nil, fmt.Errorf("parse approved preview artifact: %w", err)
 		}
+		if approvedPreviewDebugEnabled() {
+			slog.Info("selected approved preview for application",
+				"artifact_id", artifact.ID,
+				"sequence_no", artifact.SequenceNo,
+				"phase", strings.TrimSpace(preview.Phase),
+				"panel_key", strings.TrimSpace(preview.PanelKey),
+				"format", strings.TrimSpace(preview.Format),
+				"source_message_id", strings.TrimSpace(preview.SourceMessageID),
+				"content_preview", previewDebugSnippet(preview.Content, 1600),
+			)
+		}
 		return &artifact, &preview, nil
 	}
 	return nil, nil, nil
@@ -1518,12 +1531,295 @@ func decodeApprovedStoryPlanPreviewContent(raw json.RawMessage) (model.Orchestra
 	var proposal model.OrchestrationProposal
 	normalized, err := workerpkg.NormalizeStoryPlanPreviewContent(raw)
 	if err != nil {
+		if approvedPreviewDebugEnabled() {
+			slog.Error("approved story plan preview normalization failed during apply",
+				"raw_preview", previewDebugSnippet(raw, 1600),
+				"error", err,
+			)
+		}
 		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
 	}
-	if err := json.Unmarshal(normalized, &proposal); err != nil {
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(normalized, &payload); err != nil {
+		if approvedPreviewDebugEnabled() {
+			slog.Error("approved story plan preview payload unmarshal failed during apply",
+				"normalized_preview", previewDebugSnippet(normalized, 1600),
+				"error", err,
+			)
+		}
 		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+	}
+
+	proposal.EpicID = decodeLooseJSONString(payload["epic_id"])
+	proposal.Summary = decodeLooseJSONString(payload["summary"])
+	proposal.SpecVersionID = decodeLooseJSONString(payload["spec_version_id"])
+	proposal.OpenQuestions = decodeLooseJSONStringArray(payload["open_questions"])
+	proposal.Risks = decodeLooseJSONStringArray(payload["risks"])
+	if verticalCoverage, ok := decodeLooseVerticalCoverage(payload["vertical_coverage"]); ok {
+		proposal.VerticalCoverage = verticalCoverage
+	}
+
+	var storyItems []json.RawMessage
+	if err := json.Unmarshal(payload["proposed_stories"], &storyItems); err != nil {
+		if approvedPreviewDebugEnabled() {
+			slog.Error("approved story plan preview proposed_stories decode failed during apply",
+				"normalized_preview", previewDebugSnippet(normalized, 1600),
+				"error", err,
+			)
+		}
+		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+	}
+	proposal.ProposedStories = make([]model.ProposedStory, 0, len(storyItems))
+	for index, item := range storyItems {
+		story, ok := decodeLooseApprovedProposedStory(item)
+		if !ok {
+			if approvedPreviewDebugEnabled() {
+				slog.Error("approved story plan preview story decode failed during apply",
+					"story_index", index,
+					"story_preview", previewDebugSnippet(item, 1200),
+				)
+			}
+			return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+		}
+		proposal.ProposedStories = append(proposal.ProposedStories, story)
+	}
+	if approvedPreviewDebugEnabled() {
+		slog.Info("decoded approved story plan preview",
+			"summary_preview", truncateString(strings.TrimSpace(proposal.Summary), 240),
+			"story_count", len(proposal.ProposedStories),
+		)
 	}
 	return proposal, nil
+}
+
+func decodeLooseApprovedProposedStory(raw json.RawMessage) (model.ProposedStory, bool) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return model.ProposedStory{}, false
+	}
+
+	story := model.ProposedStory{
+		Ref:                decodeLooseJSONString(payload["ref"]),
+		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
+		Description:        decodeLooseJSONString(payload["description"]),
+		StoryType:          firstNonEmptyString(decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
+		SliceType:          decodeLooseJSONString(payload["slice_type"]),
+		AcceptanceCriteria: decodeLooseJSONStringArray(payload["acceptance_criteria"]),
+		DependencyRefs:     decodeLooseJSONStringArray(payload["dependency_refs"]),
+	}
+	if estimate, ok := decodeLooseJSONInt(payload["estimate"]); ok {
+		story.Estimate = &estimate
+	}
+	if priority := decodeLooseJSONString(payload["priority"]); priority != "" {
+		story.Priority = &priority
+	}
+	if assignAgentID := decodeLooseJSONString(payload["assign_agent_id"]); assignAgentID != "" {
+		story.AssignAgentID = &assignAgentID
+	}
+	if sourceRefs, ok := decodeLoosePlanningSourceRefs(payload["source_refs"]); ok {
+		story.SourceRefs = sourceRefs
+	}
+	if brief, ok := decodeLooseStoryImplementationBrief(payload["implementation_brief"]); ok {
+		story.ImplementationBrief = brief
+	}
+	return story, true
+}
+
+func decodeLooseJSONString(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
+func decodeLooseJSONStringArray(raw json.RawMessage) []string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var items []string
+	if err := json.Unmarshal(raw, &items); err == nil {
+		filtered := make([]string, 0, len(items))
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				filtered = append(filtered, item)
+			}
+		}
+		return filtered
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		single = strings.TrimSpace(single)
+		if single == "" {
+			return nil
+		}
+		return []string{single}
+	}
+	var mixed []any
+	if err := json.Unmarshal(raw, &mixed); err == nil {
+		filtered := make([]string, 0, len(mixed))
+		for _, item := range mixed {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if text != "" {
+				filtered = append(filtered, text)
+			}
+		}
+		return filtered
+	}
+	return nil
+}
+
+func decodeLooseJSONInt(raw json.RawMessage) (int, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value, true
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return 0, false
+		}
+		var parsed int
+		if _, err := fmt.Sscanf(text, "%d", &parsed); err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func decodeLoosePlanningSourceRefs(raw json.RawMessage) ([]model.PlanningSourceRef, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false
+	}
+	var refs []model.PlanningSourceRef
+	if err := json.Unmarshal(raw, &refs); err == nil {
+		return refs, true
+	}
+	return nil, false
+}
+
+func decodeLooseStoryImplementationBrief(raw json.RawMessage) (*model.StoryImplementationBrief, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, false
+	}
+
+	brief := &model.StoryImplementationBrief{
+		Approach:       decodeLooseJSONString(payload["approach"]),
+		FilesToModify:  decodeLooseFileChanges(payload["files_to_modify"]),
+		TestStrategy:   decodeLooseJSONText(payload["test_strategy"]),
+		VerticalLayers: decodeLooseJSONStringArray(payload["vertical_layers"]),
+		DependsOnFiles: decodeLooseJSONStringArray(payload["depends_on_files"]),
+	}
+	return brief, true
+}
+
+func decodeLooseFileChanges(raw json.RawMessage) []model.FileChange {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	changes := make([]model.FileChange, 0, len(items))
+	for _, item := range items {
+		var change model.FileChange
+		if err := json.Unmarshal(item, &change); err != nil {
+			continue
+		}
+		if strings.TrimSpace(change.Path) == "" {
+			continue
+		}
+		changes = append(changes, change)
+	}
+	return changes
+}
+
+func decodeLooseJSONText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	var items []string
+	if err := json.Unmarshal(raw, &items); err == nil {
+		filtered := make([]string, 0, len(items))
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				filtered = append(filtered, item)
+			}
+		}
+		return strings.Join(filtered, "\n")
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err == nil {
+		return compact.String()
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func decodeLooseVerticalCoverage(raw json.RawMessage) ([]model.VerticalCoverageEntry, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false
+	}
+	var entries []model.VerticalCoverageEntry
+	if err := json.Unmarshal(raw, &entries); err == nil {
+		return entries, true
+	}
+	return nil, false
+}
+
+func approvedPreviewDebugEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_PREVIEW_DEBUG"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func previewDebugSnippet(raw json.RawMessage, max int) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err == nil {
+		trimmed = compact.String()
+	}
+	if max > 0 && len(trimmed) > max {
+		return trimmed[:max] + "...(truncated)"
+	}
+	return trimmed
+}
+
+func truncateString(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if max > 0 && len(value) > max {
+		return value[:max] + "...(truncated)"
+	}
+	return value
 }
 
 func decodeApprovedMarkdownPreviewContent(raw json.RawMessage, previewLabel string) (string, error) {
