@@ -84,6 +84,7 @@ type WorkspaceAgentPresetVersion struct {
 	Model                 *string         `json:"model"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	AllowedTools          json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
+	SupportedModes        json.RawMessage `json:"supported_modes" gorm:"type:jsonb;not null;default:'[]'"`
 	ApprovalMode          string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	DefaultInvocationMode string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
 	CreatedBy             *string         `json:"created_by" gorm:"type:uuid"`
@@ -207,10 +208,12 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	Label                 string          `json:"label"`
 	Description           *string         `json:"description"`
 	SourceVersionKey      *string         `json:"source_version_key"`
+	RuntimeKind           *string         `json:"runtime_kind"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
+	SupportedModes        json.RawMessage `json:"supported_modes"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
 }

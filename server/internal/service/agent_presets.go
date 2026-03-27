@@ -143,11 +143,19 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	if len(version.AllowedTools) > 0 {
 		definition.AllowedTools = parseJSONStringSlice(version.AllowedTools)
 	}
+	if len(version.SupportedModes) > 0 {
+		definition.SupportedModes = parseJSONStringSlice(version.SupportedModes)
+	}
 	if approvalMode := strings.TrimSpace(version.ApprovalMode); approvalMode != "" {
 		definition.ApprovalMode = approvalMode
 	}
 	if mode := strings.TrimSpace(version.DefaultInvocationMode); mode != "" {
 		definition.DefaultInvocationMode = mode
+		if len(definition.SupportedModes) == 0 {
+			definition.SupportedModes = supportedModesForRuntime(definition.RuntimeKind)
+		}
+	}
+	if len(definition.SupportedModes) == 0 {
 		definition.SupportedModes = supportedModesForRuntime(definition.RuntimeKind)
 	}
 	return definition

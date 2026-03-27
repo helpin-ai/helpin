@@ -34,7 +34,7 @@ import { UserAvatar } from './UserAvatar';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { useStoryPanelStore } from '@/stores/storyPanelStore';
-import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
+import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar, StoryOwnerAvatarFilterRow } from './StoryFilters';
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
@@ -1018,6 +1018,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       )}
       <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <StoryFilterTrigger />
+        <StoryOwnerAvatarFilterRow />
 
         {/* Team selector — only shown when no team is pre-selected via URL */}
         {!teamId && teams.length > 0 && (

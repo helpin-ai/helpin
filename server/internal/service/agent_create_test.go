@@ -403,6 +403,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 		RuntimeKind:           "opencode",
 		SystemPrompt:          agentTestStringPtr("Workspace tuned code builder."),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeAutonomous,
 	}); err != nil {
@@ -418,6 +419,9 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	}
 	if updated.PresetVersionKey != versionKey {
 		t.Fatalf("expected selected preset version %q, got %q", versionKey, updated.PresetVersionKey)
+	}
+	if updated.ApprovalMode != "never" {
+		t.Fatalf("expected system agent approval mode never, got %q", updated.ApprovalMode)
 	}
 }
 
@@ -462,9 +466,12 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		FamilyKey:        model.AgentPresetCodeBuilder,
 		Label:            "Engineering v2",
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
 		Model:            agentTestStringPtr("gpt-5-mini"),
 		SystemPrompt:     agentTestStringPtr("Use the repo conventions and keep changes incremental."),
 		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+		ApprovalMode:     agentTestStringPtr("always"),
 	}
 
 	version, err := svc.CreateWorkspacePresetVersion(context.Background(), req, "user-1")
@@ -483,11 +490,20 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.Model == nil || *version.Model != "gpt-5-mini" {
 		t.Fatalf("expected persisted model override, got %+v", version.Model)
 	}
+	if version.RuntimeKind != "codex" {
+		t.Fatalf("expected persisted runtime override, got %q", version.RuntimeKind)
+	}
+	if !slices.Equal(version.SupportedModes, []string{model.InvocationModeAutonomous}) {
+		t.Fatalf("expected persisted supported modes override, got %v", version.SupportedModes)
+	}
 	if version.SystemPrompt == nil || *version.SystemPrompt != "Use the repo conventions and keep changes incremental." {
 		t.Fatalf("expected persisted system prompt override, got %+v", version.SystemPrompt)
 	}
 	if !slices.Equal(version.AllowedTools, []string{"read_file", "run_command"}) {
 		t.Fatalf("expected allowed tools override, got %v", version.AllowedTools)
+	}
+	if version.ApprovalMode != "never" {
+		t.Fatalf("expected workspace preset version approval mode to be forced to never, got %q", version.ApprovalMode)
 	}
 }
 
@@ -508,6 +524,7 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 		RuntimeKind:           "native_sdk",
 		SystemPrompt:          agentTestStringPtr("Plan with explicit operational checkpoints."),
 		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_human_input"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeInteractive,
 	}); err != nil {
@@ -607,6 +624,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			system_prompt TEXT,
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
+			supported_modes BLOB NOT NULL DEFAULT '[]',
 			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			created_by TEXT,

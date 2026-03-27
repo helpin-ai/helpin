@@ -1441,10 +1441,12 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   label: string;
   description?: string;
   source_version_key?: string;
+  runtime_kind?: AgentRuntimeKind;
   provider?: AgentModelProvider;
   model?: string;
   system_prompt?: string;
   allowed_tools?: string[];
+  supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;
   default_invocation_mode?: AgentInvocationMode;
 }

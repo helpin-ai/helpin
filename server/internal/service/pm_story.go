@@ -518,13 +518,13 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	current.WorkflowStateID = stateID
 
 	if req.EpicID != nil {
-		current.EpicID = req.EpicID
+		current.EpicID = nullableString(req.EpicID)
 	}
 	if req.SprintID != nil {
-		current.SprintID = req.SprintID
+		current.SprintID = nullableString(req.SprintID)
 	}
 	if req.TeamID != nil {
-		current.TeamID = req.TeamID
+		current.TeamID = nullableString(req.TeamID)
 	}
 	if req.OwnerID != nil {
 		// Handled below via workspace member resolution.
@@ -780,6 +780,17 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 
 	s.logger.InfoContext(ctx, "story updated", "story_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return s.storyRepo.GetByID(ctx, current.ID)
+}
+
+func nullableString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // Delete archives a story.

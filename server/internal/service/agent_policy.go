@@ -126,11 +126,15 @@ func normalizeAgentRecord(agent *model.Agent) {
 		if jsonSliceIsEmpty(agent.AllowedTargets) {
 			agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 		}
-		if strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default" {
+		if !agent.IsSystem && (strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default") {
 			agent.ApprovalMode = preset.ApprovalMode
 		}
 	} else if strings.TrimSpace(agent.ApprovalMode) == "" || strings.TrimSpace(agent.ApprovalMode) == "preset_default" {
 		agent.ApprovalMode = "never"
+	}
+	if agent.IsSystem {
+		agent.ApprovalMode = "never"
+		agent.Schedule = nil
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
