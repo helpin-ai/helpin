@@ -787,8 +787,7 @@ export function EpicDetailPage() {
 
           {workspaceId ? (
             <>
-              <Separator className="my-6" />
-              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} />
+              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} className="-mx-4 mt-4 border-t border-border/60" />
             </>
           ) : null}
         </aside>

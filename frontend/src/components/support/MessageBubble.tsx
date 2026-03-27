@@ -239,7 +239,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 </div>
               </div>
             </TooltipTrigger>
-            <TooltipContent side="left">{tooltipContent}</TooltipContent>
+            <TooltipContent side="top" align="start">{tooltipContent}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -338,7 +338,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   )}
                 </div>
               </TooltipTrigger>
-              <TooltipContent side={isCustomer ? 'right' : 'left'}>
+              <TooltipContent side="top" align={isCustomer ? 'start' : 'end'}>
                 {tooltipContent}
               </TooltipContent>
             </Tooltip>

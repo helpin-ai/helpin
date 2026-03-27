@@ -92,6 +92,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { buildStoryCopyUrl } from '@/lib/pmStoryLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
@@ -609,7 +610,16 @@ function StoryDetailPanelBody({
   };
 
   // ── Copy link ──────────────────────────────────────────────────
-  const copyLink = () => copyText(window.location.href);
+  const copyLink = () =>
+    copyText(
+      buildStoryCopyUrl({
+        currentHref: window.location.href,
+        displayId: storyDetail.story.display_id,
+        origin: window.location.origin,
+        slug: workspace?.slug,
+        storyId: storyDetail.story.id,
+      }),
+    );
 
   // ── Pipeline automation rules ──────────────────────────────────
   const workflowId = states[0]?.workflow_id;
@@ -1401,13 +1411,12 @@ function StoryDetailPanelBody({
 
           </div>
 
-          <Separator className="my-4" />
-
           <AssociationsPanel
             objectType="story"
             objectId={storyDetail.story.id}
             workspaceId={workspaceId}
             includeStoryRelationships={false}
+            className="-mx-4 mt-4 border-t border-border/60"
           />
         </aside>
       </div>
