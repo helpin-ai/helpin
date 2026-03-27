@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,7 +67,7 @@ func main() {
 	}
 
 	// Initialize structured logger.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
 	// Connect to PostgreSQL via GORM.
@@ -182,6 +183,7 @@ func main() {
 		&model.PMTeamEstimateSettings{},
 		&model.PMTeamFieldVisibility{},
 		&model.Agent{},
+		&model.WorkspaceAgentPresetVersion{},
 		&model.AgentRun{},
 		&model.AgentRunMessage{},
 		&model.AgentRunArtifact{},
@@ -455,6 +457,7 @@ func main() {
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
@@ -619,6 +622,7 @@ func main() {
 	)
 	agentService := service.NewAgentService(
 		agentRepo,
+		workspacePresetVersionRepo,
 		agentRunRepo,
 		agentRunMessageRepo,
 		agentRunArtifactRepo,
@@ -663,6 +667,7 @@ func main() {
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	agentService.SetRuleEngine(ruleEngine)
+	agentService.SetWorkflowService(pmWorkflowService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
 	// Log orchestration availability.
@@ -762,7 +767,11 @@ func main() {
 	var llmProvider llm.Provider
 	switch cfg.CRMLLMProvider {
 	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+		if provider := llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel); provider != nil {
+			llmProvider = provider
+		} else {
+			slog.Warn("CRM OpenAI provider not configured; CRM_LLM_API_KEY is empty")
+		}
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
@@ -1094,6 +1103,19 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+func parseLogLevel(value string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // ensureSprintCronWorkflow starts the sprint automation cron workflow if not already running.

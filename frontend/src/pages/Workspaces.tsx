@@ -9,6 +9,7 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import { settingsService } from '@/lib/services/settingsService';
 import { inviteService } from '@/lib/services/inviteService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
+import { buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Plus, X } from 'lucide-react';
+import { useCreateSupportContentSource } from '@/hooks/queries/useSupport';
+import { Favicon } from '@/components/ui/favicon';
+import { CheckCircle2, Loader2, Plus, X } from 'lucide-react';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
   buildPresetFieldVisibility,
@@ -90,15 +93,18 @@ export default function Workspaces() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
-  const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string } | null>(null);
+  const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string; name: string; website_url?: string } | null>(null);
   const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
   const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [sendingInvites, setSendingInvites] = useState(false);
+  const [websiteSourceAdded, setWebsiteSourceAdded] = useState(false);
   const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
+  const createWebsiteSourceMutation = useCreateSupportContentSource(createdWorkspace?.id ?? '');
 
   // Org creation state — pre-fill from user's first name for first-time users
   const firstName = user?.full_name?.split(' ')[0] ?? '';
@@ -149,12 +155,14 @@ export default function Workspaces() {
     setName('');
     setSlug('');
     setDescription('');
+    setWebsiteUrl('');
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
     setCreatedTeamIds([]);
     setInviteEmails([]);
     setInviteEmailInput('');
     setInviteRole('member');
+    setWebsiteSourceAdded(false);
   };
 
   const openWorkspaceDialog = () => {
@@ -239,6 +247,7 @@ export default function Workspaces() {
       slug,
       organization_id: currentOrganization.id,
       description: description || undefined,
+      website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
     if (error) {
@@ -304,11 +313,27 @@ export default function Workspaces() {
     }
 
     if (workspace) {
-      setCreatedWorkspace({ id: workspace.id, slug: workspace.slug });
+      setCreatedWorkspace({
+        id: workspace.id,
+        slug: workspace.slug,
+        name: workspace.name,
+        website_url: workspace.website_url,
+      });
       setWorkspaceStep('invite');
     }
   };
 
+  const handleAddWebsiteSource = async () => {
+    if (!createdWorkspace || !createdWorkspace.website_url || websiteSourceAdded || createWebsiteSourceMutation.isPending) {
+      return;
+    }
+
+    await createWebsiteSourceMutation.mutateAsync(
+      buildWorkspaceWebsiteContentSourcePayload(createdWorkspace.name, createdWorkspace.website_url),
+    );
+    setWebsiteSourceAdded(true);
+    toast.success('Website source added and syncing');
+  };
   const handleSendInvites = async () => {
     if (!createdWorkspace) return;
     const emails = mergeEmailChips(inviteEmails, inviteEmailInput);
@@ -502,6 +527,17 @@ export default function Workspaces() {
                       <Label htmlFor="ws-desc">Description (optional)</Label>
                       <Textarea id="ws-desc" placeholder="A brief description of this workspace" value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ws-website">Website (optional)</Label>
+                      <Input
+                        id="ws-website"
+                        type="url"
+                        placeholder="https://acme.com"
+                        value={websiteUrl}
+                        onChange={e => setWebsiteUrl(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">Used for workspace identity and future website-aware features.</p>
+                    </div>
                   </div>
                 )}
                 {workspaceStep === 'teams' && (
@@ -577,6 +613,52 @@ export default function Workspaces() {
                 )}
                 {workspaceStep === 'invite' && (
                   <div className="space-y-4 py-4">
+                    {createdWorkspace?.website_url && (
+                      <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+                            {websiteSourceAdded ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : createWebsiteSourceMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Favicon
+                                url={createdWorkspace.website_url}
+                                name={createdWorkspace.name}
+                                size={32}
+                                className="h-5 w-5 rounded-md border-none bg-transparent"
+                                fallbackClassName="text-[8px]"
+                              />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="text-sm font-medium">Use your website for Support AI?</p>
+                            <p className="text-xs text-muted-foreground">
+                              Add <span className="font-medium text-foreground">{createdWorkspace.website_url}</span> as a Website Content Source.
+                              We&apos;ll save it at the workspace level and start syncing now. You can manage agent access later in Settings → Knowledge.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={websiteSourceAdded ? 'outline' : 'default'}
+                                onClick={() => void handleAddWebsiteSource()}
+                                disabled={websiteSourceAdded || createWebsiteSourceMutation.isPending}
+                              >
+                                {createWebsiteSourceMutation.isPending
+                                  ? 'Adding...'
+                                  : websiteSourceAdded
+                                  ? 'Added'
+                                  : 'Add and sync'}
+                              </Button>
+                              {websiteSourceAdded && (
+                                <span className="text-xs text-muted-foreground">The first sync is now queued.</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label>Emails</Label>
                       <EmailChipInput
@@ -650,7 +732,7 @@ export default function Workspaces() {
                   {workspaceStep === 'invite' && (
                     <>
                       <div className="flex-1" />
-                      <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites}>
+                      <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites || createWebsiteSourceMutation.isPending}>
                         Skip
                       </Button>
                       <Button type="submit" disabled={sendingInvites || !hasInviteRecipients || hasInvalidInviteInput}>

@@ -182,6 +182,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if err != nil {
 		return nil, err
 	}
+	workflowID, workflowStateID, err := s.resolvePlanningStoryWorkflow(ctx, workspaceID, teamID)
+	if err != nil {
+		return nil, err
+	}
 
 	var proposal model.OrchestrationProposal
 	if existingSummary.Proposal != nil {
@@ -272,15 +276,17 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		} else {
 			desc := renderPlannedStoryDescription(ps)
 			detail, err = s.storyService.Create(ctx, model.CreateStoryRequest{
-				WorkspaceID: workspaceID,
-				Name:        strings.TrimSpace(ps.Name),
-				Description: strPtr(desc),
-				StoryType:   storyType,
-				EpicID:      &epicID,
-				TeamID:      teamID,
-				Estimate:    ps.Estimate,
-				Priority:    ps.Priority,
-				ExternalID:  strPtr(externalID),
+				WorkspaceID:     workspaceID,
+				Name:            strings.TrimSpace(ps.Name),
+				Description:     strPtr(desc),
+				StoryType:       storyType,
+				WorkflowID:      workflowID,
+				WorkflowStateID: workflowStateID,
+				EpicID:          &epicID,
+				TeamID:          teamID,
+				Estimate:        ps.Estimate,
+				Priority:        ps.Priority,
+				ExternalID:      strPtr(externalID),
 			}, actorID)
 			if err != nil {
 				return nil, fmt.Errorf("create story %d: %w", idx+1, err)
@@ -446,6 +452,10 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	if err != nil {
 		return nil, err
 	}
+	workflowID, workflowStateID, err := s.resolvePlanningStoryWorkflow(ctx, workspaceID, teamID)
+	if err != nil {
+		return nil, err
+	}
 
 	// Use a stable key for external IDs in the interactive path.
 	syntheticRunID := "interactive-" + epicID
@@ -485,15 +495,17 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		} else {
 			desc := renderPlannedStoryDescription(ps)
 			detail, err = s.storyService.Create(ctx, model.CreateStoryRequest{
-				WorkspaceID: workspaceID,
-				Name:        strings.TrimSpace(ps.Name),
-				Description: strPtr(desc),
-				StoryType:   storyType,
-				EpicID:      &epicID,
-				TeamID:      teamID,
-				Estimate:    ps.Estimate,
-				Priority:    ps.Priority,
-				ExternalID:  strPtr(externalID),
+				WorkspaceID:     workspaceID,
+				Name:            strings.TrimSpace(ps.Name),
+				Description:     strPtr(desc),
+				StoryType:       storyType,
+				WorkflowID:      workflowID,
+				WorkflowStateID: workflowStateID,
+				EpicID:          &epicID,
+				TeamID:          teamID,
+				Estimate:        ps.Estimate,
+				Priority:        ps.Priority,
+				ExternalID:      strPtr(externalID),
 			}, actorID)
 			if err != nil {
 				return nil, fmt.Errorf("create story %d: %w", idx+1, err)
@@ -859,6 +871,90 @@ func plannerStoryTeamID(epic *model.PMEpic) (*string, error) {
 	}
 	teamID := strings.TrimSpace(*epic.TeamID)
 	return &teamID, nil
+}
+
+func (s *AgentService) resolvePlanningStoryWorkflow(ctx context.Context, workspaceID string, teamID *string) (string, string, error) {
+	if workspaceID == "" {
+		return "", "", fmt.Errorf("workspace_id is required")
+	}
+
+	if teamID != nil && strings.TrimSpace(*teamID) != "" {
+		normalizedTeamID := strings.TrimSpace(*teamID)
+		if s.workflowService != nil {
+			workflow, err := s.workflowService.ResolveTeamWorkflow(ctx, workspaceID, normalizedTeamID)
+			if err != nil {
+				return "", "", fmt.Errorf("resolve team workflow: %w", err)
+			}
+			if workflow != nil {
+				stateID := ""
+				if workflow.Workflow.DefaultStateID != nil {
+					stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+				}
+				if stateID == "" && len(workflow.States) > 0 {
+					stateID = workflow.States[0].ID
+				}
+				if strings.TrimSpace(workflow.Workflow.ID) == "" || stateID == "" {
+					return "", "", fmt.Errorf("resolved team workflow is missing a default state")
+				}
+				return workflow.Workflow.ID, stateID, nil
+			}
+		}
+
+		// Defensive fallback for worker paths that forgot to inject PMWorkflowService.
+		if s.storyService != nil && s.storyService.workflowRepo != nil {
+			workflow, err := s.storyService.workflowRepo.GetByTeamID(ctx, workspaceID, normalizedTeamID)
+			if err != nil {
+				return "", "", fmt.Errorf("lookup team workflow: %w", err)
+			}
+			if workflow != nil {
+				stateID := ""
+				if workflow.Workflow.DefaultStateID != nil {
+					stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+				}
+				if stateID == "" && len(workflow.States) > 0 {
+					stateID = workflow.States[0].ID
+				}
+				if strings.TrimSpace(workflow.Workflow.ID) == "" || stateID == "" {
+					return "", "", fmt.Errorf("team workflow is missing a default state")
+				}
+				slog.WarnContext(ctx, "resolved planning workflow via repository fallback",
+					"workspace_id", workspaceID,
+					"team_id", normalizedTeamID,
+					"workflow_id", workflow.Workflow.ID)
+				return workflow.Workflow.ID, stateID, nil
+			}
+		}
+	}
+
+	if s.storyService == nil || s.storyService.workflowRepo == nil {
+		return "", "", fmt.Errorf("workflow service is not configured")
+	}
+
+	defaultWorkflow, err := s.storyService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve default workflow: %w", err)
+	}
+	if defaultWorkflow == nil {
+		defaultWorkflow, err = s.storyService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
+		if err != nil {
+			return "", "", fmt.Errorf("seed default workflow: %w", err)
+		}
+	}
+	if defaultWorkflow == nil {
+		return "", "", fmt.Errorf("default workflow not found")
+	}
+
+	stateID := ""
+	if defaultWorkflow.Workflow.DefaultStateID != nil {
+		stateID = strings.TrimSpace(*defaultWorkflow.Workflow.DefaultStateID)
+	}
+	if stateID == "" && len(defaultWorkflow.States) > 0 {
+		stateID = defaultWorkflow.States[0].ID
+	}
+	if strings.TrimSpace(defaultWorkflow.Workflow.ID) == "" || stateID == "" {
+		return "", "", fmt.Errorf("default workflow is missing a default state")
+	}
+	return defaultWorkflow.Workflow.ID, stateID, nil
 }
 
 func normalizePlannedStoryType(value string) string {

@@ -15,6 +15,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -32,6 +33,7 @@ import type {
   AgentModelProviderOption,
   AgentRun,
   AgentRuntimeKind,
+  CreateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
   ToolCatalogResponse,
   UpdateAgentRequest,
@@ -95,16 +97,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
-const DEFAULT_PRESET_KEY: AgentPresetKey = 'code_builder';
-const PRESET_ORDER: AgentPresetKey[] = [
-  'epic_planner',
-  'story_planner',
-  'crm_operator',
-  'support_agent',
-  'code_builder',
-  'review_agent',
-];
-
+const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: string; runtime_kind: AgentRuntimeKind; default_invocation_mode: AgentInvocationMode; supported_modes: AgentInvocationMode[] }> = {
   epic_planner: {
     label: 'Epic Planner',
@@ -186,6 +179,7 @@ const EMPTY_STATE_CARDS = [
 interface AgentFormData {
   name: string;
   preset_key: AgentPresetKey;
+  preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
   provider: AgentModelProvider;
   model: string;
@@ -239,35 +233,86 @@ function availableProvidersForRuntime(
 function fallbackPresetKey(agent?: Pick<Agent, 'preset_key' | 'is_system'> | null): AgentPresetKey {
   if (agent?.preset_key) return agent.preset_key;
   if (agent?.is_system) return 'epic_planner';
-  return DEFAULT_PRESET_KEY;
+  return DEFAULT_SYSTEM_PRESET_KEY;
+}
+
+function fallbackPresetVersionKey(presetKey: AgentPresetKey): string {
+  return `${presetKey}_default`;
+}
+
+function presetVersionsForKey(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentPresetDefinition[] {
+  return presets
+    .filter((preset) => (preset.family_key || preset.key) === presetKey)
+    .sort((left, right) => {
+      if (left.is_default_version === right.is_default_version) {
+        return left.version_label.localeCompare(right.version_label);
+      }
+      return left.is_default_version ? -1 : 1;
+    });
+}
+
+function defaultPresetForKey(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentPresetDefinition | null {
+  const matching = presetVersionsForKey(presetKey, presets);
+  return matching.find((preset) => preset.is_default_version) ?? matching[0] ?? null;
+}
+
+function presetMetaForSelection(
+  presetKey: AgentPresetKey,
+  presetVersionKey: string | undefined,
+  presets: AgentPresetDefinition[],
+): AgentPresetDefinition | null {
+  const matching = presetVersionsForKey(presetKey, presets);
+  if (matching.length === 0) {
+    return null;
+  }
+  if (presetVersionKey) {
+    const exact = matching.find((preset) => preset.version_key === presetVersionKey);
+    if (exact) {
+      return exact;
+    }
+  }
+  return defaultPresetForKey(presetKey, presets);
 }
 
 function presetMetaForKey(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentPresetDefinition | null {
-  return presets.find((preset) => preset.key === presetKey) ?? null;
+  return defaultPresetForKey(presetKey, presets);
 }
 
 function presetLabel(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string {
   return presetMetaForKey(presetKey, presets)?.label ?? PRESET_FALLBACKS[presetKey].label;
 }
 
-function presetDescription(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string {
-  return presetMetaForKey(presetKey, presets)?.description ?? PRESET_FALLBACKS[presetKey].description;
+function presetRuntimeKindForSelection(
+  presetKey: AgentPresetKey,
+  presetVersionKey: string,
+  presets: AgentPresetDefinition[],
+): AgentRuntimeKind {
+  return presetMetaForSelection(presetKey, presetVersionKey, presets)?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
 }
 
-function presetRuntimeKind(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentRuntimeKind {
-  return presetMetaForKey(presetKey, presets)?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
+function presetDefaultInvocationModeForSelection(
+  presetKey: AgentPresetKey,
+  presetVersionKey: string,
+  presets: AgentPresetDefinition[],
+): AgentInvocationMode {
+  return presetMetaForSelection(presetKey, presetVersionKey, presets)?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
 }
 
-function presetDefaultInvocationMode(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): AgentInvocationMode {
-  return presetMetaForKey(presetKey, presets)?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
+function presetAllowedToolsForSelection(
+  presetKey: AgentPresetKey,
+  presetVersionKey: string,
+  presets: AgentPresetDefinition[],
+): string[] {
+  return normalizeToolList(presetMetaForSelection(presetKey, presetVersionKey, presets)?.allowed_tools ?? []);
 }
 
-function presetAllowedTools(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string[] {
-  return normalizeToolList(presetMetaForKey(presetKey, presets)?.allowed_tools ?? []);
-}
-
-function presetSupportedModes(presetKey: AgentPresetKey, runtimeKind: AgentRuntimeKind, presets: AgentPresetDefinition[]): AgentInvocationMode[] {
-  const preset = presetMetaForKey(presetKey, presets);
+function presetSupportedModes(
+  presetKey: AgentPresetKey,
+  presetVersionKey: string,
+  runtimeKind: AgentRuntimeKind,
+  presets: AgentPresetDefinition[],
+): AgentInvocationMode[] {
+  const preset = presetMetaForSelection(presetKey, presetVersionKey, presets);
   if (preset && preset.runtime_kind === runtimeKind && preset.supported_modes.length > 0) {
     return preset.supported_modes;
   }
@@ -296,24 +341,22 @@ function toolListsEqual(left: string[], right: string[]): boolean {
   return normalizedLeft.every((tool, index) => tool === normalizedRight[index]);
 }
 
-function createEmptyForm(presetKey: AgentPresetKey = DEFAULT_PRESET_KEY, preset?: AgentPresetDefinition | null): AgentFormData {
-  const runtimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
-  const defaultInvocationMode = preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode;
-  const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
+function createEmptyCustomForm(): AgentFormData {
   return {
     name: '',
-    preset_key: presetKey,
-    runtime_kind: runtimeKind,
-    provider,
+    preset_key: DEFAULT_SYSTEM_PRESET_KEY,
+    preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
+    runtime_kind: 'opencode',
+    provider: 'anthropic',
     model: '',
-    system_prompt: preset?.system_prompt ?? '',
+    system_prompt: '',
     monthly_token_budget: '',
     team_id: '',
-    allowed_tools: normalizeToolList(preset?.allowed_tools ?? []),
+    allowed_tools: [],
     schedule: '',
-    approval_mode: preset?.approval_mode ?? 'preset_default',
+    approval_mode: 'never',
     max_concurrent_runs: '1',
-    default_invocation_mode: normalizeDefaultInvocationMode(defaultInvocationMode, runtimeKind),
+    default_invocation_mode: 'autonomous',
   };
 }
 
@@ -341,27 +384,30 @@ function normalizeDefaultInvocationMode(
 
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
+  if (!agent.is_system) {
+    return agent.runtime_kind !== 'opencode' || Boolean(agent.monthly_token_budget);
+  }
   const presetKey = fallbackPresetKey(agent);
+  const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
   return (
-    agent.runtime_kind !== presetRuntimeKind(presetKey, presets) ||
+    agent.runtime_kind !== presetRuntimeKindForSelection(presetKey, presetVersionKey, presets) ||
     Boolean(agent.monthly_token_budget)
   );
 }
 
-function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): CreateAgentRequest {
-  const preset = presetMetaForKey(form.preset_key, presets);
-  const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
+function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
+  const defaultRuntimeKind: AgentRuntimeKind = 'opencode';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
-    preset_key: form.preset_key,
     provider,
     model: form.model.trim() || undefined,
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
+    allowed_targets: ['story'],
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -379,13 +425,19 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
   };
 }
 
-function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean, presets: AgentPresetDefinition[]): UpdateAgentRequest {
-  const preset = presetMetaForKey(form.preset_key, presets);
-  const defaultRuntimeKind = preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind;
+function buildUpdatePayload(
+  form: AgentFormData,
+  advancedOpen: boolean,
+  presets: AgentPresetDefinition[],
+  agent: Agent | null,
+): UpdateAgentRequest {
+  const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
+  const defaultRuntimeKind = agent?.is_system
+    ? (preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind)
+    : 'opencode';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
-  return {
+  const payload: UpdateAgentRequest = {
     name: form.name.trim(),
-    preset_key: form.preset_key,
     trigger_mode: 'manual',
     provider: provider || undefined,
     model: form.model.trim() || undefined,
@@ -407,6 +459,11 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean, presets:
         ? { runtime_kind: form.runtime_kind }
         : {}),
   };
+  if (agent?.is_system) {
+    payload.preset_key = form.preset_key;
+    payload.preset_version_key = form.preset_version_key;
+  }
+  return payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +495,21 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
 interface AgentRunStats {
   total: number;
   lastRun?: AgentRun;
+}
+
+interface AgentCollectionSection {
+  key: string;
+  title: string;
+  description: string;
+  agents: Agent[];
+  empty?: string;
+}
+
+function agentClassLabel(agent: Agent, presets: AgentPresetDefinition[]): string {
+  if (!agent.is_system) {
+    return 'Custom';
+  }
+  return presetLabel(fallbackPresetKey(agent), presets);
 }
 
 function formatLastRun(run?: AgentRun): string {
@@ -488,7 +560,15 @@ function AgentCard({
     <Card className="group cursor-pointer transition-shadow hover:shadow-md relative">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
-          <span className="truncate font-semibold text-sm">{agent.name}</span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <AgentAvatar agent={agent} className="h-9 w-9" />
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{agent.name}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                {presetLabel}
+              </span>
+            </div>
+          </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-[11px] text-muted-foreground group-hover:hidden">{STATUS_LABEL[agent.status] ?? agent.status}</span>
             <span
@@ -511,9 +591,6 @@ function AgentCard({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="secondary" className="text-[11px]">
-            {presetLabel}
-          </Badge>
           {agent.is_system && (
             <Badge variant="outline" className="text-[11px]">
               System
@@ -602,6 +679,7 @@ function AgentRow({
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
         />
+        <AgentAvatar agent={agent} className="h-8 w-8" />
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-sm font-medium truncate">{agent.name}</span>
           {agent.is_system && (
@@ -698,12 +776,17 @@ export function AgentsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-  const [form, setForm] = useState<AgentFormData>(createEmptyForm());
+  const [form, setForm] = useState<AgentFormData>(createEmptyCustomForm());
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false);
+  const [versionLabelDraft, setVersionLabelDraft] = useState('');
+  const [versionDescriptionDraft, setVersionDescriptionDraft] = useState('');
+  const [creatingVersion, setCreatingVersion] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -777,23 +860,32 @@ export function AgentsPage() {
   const openCreateDialog = () => {
     setEditingAgent(null);
     setAdvancedOpen(false);
+    setVersionsOpen(false);
     setAutomationOpen(false);
     setToolPickerOpen(false);
-    setForm(createEmptyForm(DEFAULT_PRESET_KEY, presetMetaForKey(DEFAULT_PRESET_KEY, presets)));
+    setVersionDialogOpen(false);
+    setVersionLabelDraft('');
+    setVersionDescriptionDraft('');
+    setForm(createEmptyCustomForm());
     setDialogOpen(true);
   };
 
   const openEditDialog = (agent: Agent) => {
     setEditingAgent(agent);
     const presetKey = fallbackPresetKey(agent);
-    const preset = presetMetaForKey(presetKey, presets);
+    const preset = agent.is_system ? presetMetaForSelection(presetKey, agent.preset_version_key, presets) : null;
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
+    setVersionsOpen(false);
     setAutomationOpen(Boolean(agent.schedule || agent.approval_mode !== 'preset_default'));
     setToolPickerOpen(false);
+    setVersionDialogOpen(false);
+    setVersionLabelDraft('');
+    setVersionDescriptionDraft('');
     const runtimeKind = agent.runtime_kind;
     setForm({
       name: agent.name,
       preset_key: presetKey,
+      preset_version_key: preset?.version_key ?? fallbackPresetVersionKey(presetKey),
       runtime_kind: runtimeKind,
       provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
       model: agent.model ?? '',
@@ -818,14 +910,14 @@ export function AgentsPage() {
     setSaving(true);
 
     if (editingAgent) {
-      const payload = buildUpdatePayload(form, advancedOpen, presets);
+      const payload = buildUpdatePayload(form, advancedOpen, presets, editingAgent);
       const res = await agentService.update(workspaceId, editingAgent.id, payload);
       if (!res.error) {
         setDialogOpen(false);
         await loadAgents();
       }
     } else {
-      const payload = buildCreatePayload(workspaceId, form, advancedOpen, presets);
+      const payload = buildCreatePayload(workspaceId, form, advancedOpen);
       const res = await agentService.create(workspaceId, payload);
       if (!res.error) {
         setDialogOpen(false);
@@ -833,6 +925,37 @@ export function AgentsPage() {
       }
     }
     setSaving(false);
+  };
+
+  const handleCreatePresetVersion = async () => {
+    if (!workspaceId || !editingAgent?.is_system || !versionLabelDraft.trim()) return;
+    setCreatingVersion(true);
+    const payload: CreateWorkspaceAgentPresetVersionRequest = {
+      workspace_id: workspaceId,
+      family_key: form.preset_key,
+      label: versionLabelDraft.trim(),
+      description: versionDescriptionDraft.trim() || undefined,
+      source_version_key: form.preset_version_key,
+      provider: form.provider,
+      model: form.model.trim() || undefined,
+      system_prompt: form.system_prompt.trim() || undefined,
+      allowed_tools: normalizeToolList(form.allowed_tools),
+      approval_mode: form.approval_mode,
+      default_invocation_mode: form.default_invocation_mode,
+    };
+    const res = await agentService.createPresetVersion(workspaceId, payload);
+    if (!res.error && res.data) {
+      await loadPresets();
+      setForm((current) => ({
+        ...current,
+        preset_version_key: res.data?.version_key ?? current.preset_version_key,
+      }));
+      setVersionsOpen(true);
+      setVersionDialogOpen(false);
+      setVersionLabelDraft('');
+      setVersionDescriptionDraft('');
+    }
+    setCreatingVersion(false);
   };
 
   const handleDelete = async () => {
@@ -850,14 +973,49 @@ export function AgentsPage() {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
+  const builtInAgents = (() => {
+    const byPreset = new Map<string, Agent>();
+    for (const agent of agents) {
+      if (!agent.is_system) {
+        continue;
+      }
+      const presetKey = fallbackPresetKey(agent);
+      if (!byPreset.has(presetKey)) {
+        byPreset.set(presetKey, agent);
+      }
+    }
+    return Array.from(byPreset.values());
+  })();
+  const customAgents = agents.filter((agent) => !agent.is_system);
+  const agentSections: AgentCollectionSection[] = [
+    {
+      key: 'built-in',
+      title: 'Built-in Presets',
+      description: 'One workspace default agent per built-in preset family. Versions stay inside the agent config, not as separate rows.',
+      agents: builtInAgents,
+      empty: 'No built-in preset agents are provisioned in this workspace yet.',
+    },
+    {
+      key: 'custom',
+      title: 'Custom Agents',
+      description: 'User-created agents with fully custom prompts, tools, runtime, approval, and scheduling.',
+      agents: customAgents,
+      empty: 'No custom agents yet.',
+    },
+  ].filter((section) => section.agents.length > 0 || section.key === 'built-in');
+
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
-  const selectedPreset = presetMetaForKey(form.preset_key, presets);
+  const selectedPreset = editingSystemAgent ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
+  const selectedPresetVersions = editingSystemAgent ? presetVersionsForKey(form.preset_key, presets) : [];
   const effectiveTargets =
-    editingAgent && fallbackPresetKey(editingAgent) === form.preset_key && editingAgent.allowed_targets.length > 0
+    editingAgent && editingAgent.allowed_targets.length > 0
       ? editingAgent.allowed_targets
-      : (selectedPreset?.allowed_target_types ?? []);
-  const supportedModes = presetSupportedModes(form.preset_key, form.runtime_kind, presets);
+      : (editingSystemAgent ? (selectedPreset?.allowed_target_types ?? []) : ['story']);
+  const supportedModes = editingSystemAgent
+    ? presetSupportedModes(form.preset_key, form.preset_version_key, form.runtime_kind, presets)
+    : supportedModesForForm(form.runtime_kind);
+  const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
   const toolCatalogEntries = toolCatalog?.tools ?? [];
@@ -901,7 +1059,7 @@ export function AgentsPage() {
             {canEdit && (
               <Button size="sm" onClick={openCreateDialog}>
                 <Plus className="mr-1.5 h-4 w-4" />
-                New Agent
+                New Custom Agent
               </Button>
             )}
           </div>
@@ -924,7 +1082,7 @@ export function AgentsPage() {
           {canEdit && (
             <Button className="gap-2 mb-8" onClick={openCreateDialog}>
               <Plus className="h-4 w-4" />
-              New Agent
+              New Custom Agent
             </Button>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
@@ -941,44 +1099,81 @@ export function AgentsPage() {
 
       {/* ---- Agent list / grid ---- */}
       {agents.length > 0 && viewMode === 'list' && (
-        <div className="rounded-lg border border-border overflow-hidden">
-          {/* List header */}
-          <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-            <div className="flex-1 min-w-[120px]">Name</div>
-            <div className="w-20 shrink-0">Preset</div>
-            <div className="w-28 shrink-0 hidden md:block">Team</div>
-            <div className="w-28 shrink-0 hidden lg:block">Provider</div>
-            <div className="w-24 shrink-0 hidden lg:block">Mode</div>
-            <div className="w-12 shrink-0 hidden sm:block">Runs</div>
-            <div className="w-28 shrink-0 hidden sm:block">Last run</div>
-            <div className="w-8 shrink-0" />
-          </div>
-          {agents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              presetLabel={presetLabel(fallbackPresetKey(agent), presets)}
-              teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-              stats={runStats[agent.id]}
-              onEdit={openEditDialog}
-              canEdit={canEdit}
-            />
+        <div className="space-y-5">
+          {agentSections.map((section) => (
+            <div key={section.key} className="space-y-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">{section.title}</h2>
+                  <Badge variant="outline" className="text-[10px]">
+                    {section.agents.length}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">{section.description}</p>
+              </div>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                  <div className="flex-1 min-w-[120px]">Name</div>
+                  <div className="w-20 shrink-0">Preset</div>
+                  <div className="w-28 shrink-0 hidden md:block">Team</div>
+                  <div className="w-28 shrink-0 hidden lg:block">Provider</div>
+                  <div className="w-24 shrink-0 hidden lg:block">Mode</div>
+                  <div className="w-12 shrink-0 hidden sm:block">Runs</div>
+                  <div className="w-28 shrink-0 hidden sm:block">Last run</div>
+                  <div className="w-8 shrink-0" />
+                </div>
+                {section.agents.length > 0 ? section.agents.map((agent) => (
+                    <AgentRow
+                      key={agent.id}
+                      agent={agent}
+                      presetLabel={agentClassLabel(agent, presets)}
+                    teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
+                    stats={runStats[agent.id]}
+                    onEdit={openEditDialog}
+                    canEdit={canEdit}
+                  />
+                )) : (
+                  <div className="px-4 py-6 text-sm text-muted-foreground">{section.empty}</div>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
 
       {agents.length > 0 && viewMode === 'cards' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              presetLabel={presetLabel(fallbackPresetKey(agent), presets)}
-              teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-              stats={runStats[agent.id]}
-              onEdit={openEditDialog}
-              canEdit={canEdit}
-            />
+        <div className="space-y-5">
+          {agentSections.map((section) => (
+            <div key={section.key} className="space-y-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">{section.title}</h2>
+                  <Badge variant="outline" className="text-[10px]">
+                    {section.agents.length}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">{section.description}</p>
+              </div>
+              {section.agents.length > 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {section.agents.map((agent) => (
+                    <AgentCard
+                      key={agent.id}
+                      agent={agent}
+                      presetLabel={agentClassLabel(agent, presets)}
+                      teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
+                      stats={runStats[agent.id]}
+                      onEdit={openEditDialog}
+                      canEdit={canEdit}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
+                  {section.empty}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -990,12 +1185,19 @@ export function AgentsPage() {
           setDialogOpen(open);
           if (!open) {
             setToolPickerOpen(false);
+            setVersionDialogOpen(false);
           }
         }}
       >
         <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingAgent ? 'Edit Agent' : 'New Agent'}</DialogTitle>
+            <DialogTitle>
+              {editingSystemAgent
+                ? 'Edit Built-in Agent'
+                : editingAgent
+                  ? 'Edit Custom Agent'
+                  : 'New Custom Agent'}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -1007,6 +1209,14 @@ export function AgentsPage() {
                 </p>
               </div>
             )}
+            {!editingSystemAgent && (
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="text-sm font-medium">Custom agent</p>
+                <p className="text-xs text-muted-foreground">
+                  This is a fully custom agent. It does not inherit or track any preset family or preset version.
+                </p>
+              </div>
+            )}
 
             {/* ---- Basics ---- */}
             <div className="space-y-2">
@@ -1015,64 +1225,119 @@ export function AgentsPage() {
                 id="agent-name"
                 value={form.name}
                 onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+                disabled={editingSystemAgent}
                 placeholder="e.g. Code Reviewer, Sales Assistant"
               />
+              {editingSystemAgent && (
+                <p className="text-xs text-muted-foreground">
+                  Built-in agent names are fixed by the product roster.
+                </p>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <FieldLabel tooltip="Presets provide sensible defaults for prompt, tools, targets, runtime, and default run mode.">
-                Preset
-              </FieldLabel>
-              <Select
-                value={form.preset_key}
-                disabled={editingSystemAgent}
-                onValueChange={(value) => {
-                  const nextPresetKey = value as AgentPresetKey;
-                  const nextPreset = presetMetaForKey(nextPresetKey, presets);
-                  setForm((current) => {
-                    const currentDefaultRuntime = presetRuntimeKind(current.preset_key, presets);
-                    const currentPresetPrompt = presetMetaForKey(current.preset_key, presets)?.system_prompt ?? '';
-                    const currentPresetTools = presetAllowedTools(current.preset_key, presets);
-                    const nextDefaultRuntime = nextPreset?.runtime_kind ?? PRESET_FALLBACKS[nextPresetKey].runtime_kind;
-                    const nextAllowedRuntimes = allowedRuntimeKindsForPreset(nextPresetKey);
-                    const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime || !nextAllowedRuntimes.includes(current.runtime_kind)
-                      ? nextDefaultRuntime
-                      : current.runtime_kind;
-                    const shouldReplacePrompt =
-                      current.system_prompt.trim().length === 0 || current.system_prompt === currentPresetPrompt;
-                    const shouldReplaceTools = toolListsEqual(current.allowed_tools, currentPresetTools);
-                    return {
-                      ...current,
-                      preset_key: nextPresetKey,
-                      runtime_kind: nextRuntimeKind,
-                      provider: normalizeProviderForRuntime(nextRuntimeKind, current.provider),
-                      system_prompt: shouldReplacePrompt ? (nextPreset?.system_prompt ?? '') : current.system_prompt,
-                      allowed_tools: shouldReplaceTools ? presetAllowedTools(nextPresetKey, presets) : current.allowed_tools,
-                      approval_mode: nextPreset?.approval_mode ?? current.approval_mode,
-                      default_invocation_mode: normalizeDefaultInvocationMode(
-                        current.default_invocation_mode,
-                        nextRuntimeKind,
-                        nextPreset?.default_invocation_mode ?? PRESET_FALLBACKS[nextPresetKey].default_invocation_mode,
-                      ),
-                    };
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRESET_ORDER.map((presetKey) => (
-                    <SelectItem key={presetKey} value={presetKey}>
-                      <span className="flex flex-col">
-                        <span>{presetLabel(presetKey, presets)}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{presetDescription(form.preset_key, presets)}</p>
-            </div>
+            {editingSystemAgent && (
+              <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium">Preset family</p>
+                    <p className="text-sm">{presetLabel(form.preset_key, presets)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Built-in agents stay pinned to a preset family. Saving after a version change pins this built-in agent to that selected version.
+                    </p>
+                  </div>
+                  {selectedPresetVersions.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setVersionsOpen((current) => !current)}
+                    >
+                      {versionsOpen ? 'Hide versions' : 'Show all versions'}
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-background/70 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-medium">Selected version</p>
+                    <p className="text-xs text-muted-foreground">{selectedPreset?.version_label ?? 'Default'}</p>
+                  </div>
+                  {editingSystemAgent && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Default'} Copy`);
+                        setVersionDescriptionDraft('');
+                        setVersionDialogOpen(true);
+                      }}
+                    >
+                      Save as new version
+                    </Button>
+                  )}
+                </div>
+                {versionsOpen && selectedPresetVersions.length > 1 && (
+                  <div className="space-y-2">
+                    <FieldLabel tooltip="Preset versions can come from Helpin or from workspace-local saved variants.">
+                      Preset version
+                    </FieldLabel>
+                    <Select
+                      value={form.preset_version_key}
+                      onValueChange={(value) => {
+                        const nextPreset = presetMetaForSelection(form.preset_key, value, presets);
+                        setForm((current) => {
+                          const currentPreset = presetMetaForSelection(current.preset_key, current.preset_version_key, presets);
+                          const currentDefaultRuntime = presetRuntimeKindForSelection(current.preset_key, current.preset_version_key, presets);
+                          const currentPresetPrompt = currentPreset?.system_prompt ?? '';
+                          const currentPresetTools = presetAllowedToolsForSelection(current.preset_key, current.preset_version_key, presets);
+                          const nextDefaultRuntime = nextPreset?.runtime_kind ?? PRESET_FALLBACKS[current.preset_key].runtime_kind;
+                          const nextAllowedRuntimes = allowedRuntimeKindsForPreset(current.preset_key);
+                          const nextRuntimeKind = current.runtime_kind === currentDefaultRuntime || !nextAllowedRuntimes.includes(current.runtime_kind)
+                            ? nextDefaultRuntime
+                            : current.runtime_kind;
+                          const shouldReplacePrompt =
+                            current.system_prompt.trim().length === 0 || current.system_prompt === currentPresetPrompt;
+                          const shouldReplaceTools = toolListsEqual(current.allowed_tools, currentPresetTools);
+                          return {
+                            ...current,
+                            preset_version_key: value,
+                            runtime_kind: nextRuntimeKind,
+                            provider: normalizeProviderForRuntime(nextRuntimeKind, current.provider),
+                            system_prompt: shouldReplacePrompt ? (nextPreset?.system_prompt ?? '') : current.system_prompt,
+                            allowed_tools: shouldReplaceTools ? presetAllowedToolsForSelection(current.preset_key, value, presets) : current.allowed_tools,
+                            approval_mode: nextPreset?.approval_mode ?? current.approval_mode,
+                            default_invocation_mode: normalizeDefaultInvocationMode(
+                              current.default_invocation_mode,
+                              nextRuntimeKind,
+                              nextPreset?.default_invocation_mode ?? PRESET_FALLBACKS[current.preset_key].default_invocation_mode,
+                            ),
+                          };
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedPresetVersions.map((presetVersion) => (
+                          <SelectItem key={presetVersion.version_key} value={presetVersion.version_key}>
+                            <span className="flex flex-col">
+                              <span>
+                                {presetVersion.version_label}
+                                {presetVersion.scope === 'workspace' ? ' · Workspace' : ''}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">{presetVersion.description}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <FieldLabel
@@ -1400,8 +1665,7 @@ export function AgentsPage() {
                     onValueChange={(value) =>
                       setForm((current) => {
                         const runtimeKind = value as AgentRuntimeKind;
-                        const allowedRuntimeKinds = allowedRuntimeKindsForPreset(current.preset_key);
-                        if (!allowedRuntimeKinds.includes(runtimeKind)) {
+                        if (!availableRuntimeKinds.includes(runtimeKind)) {
                           return current;
                         }
                         return {
@@ -1411,7 +1675,9 @@ export function AgentsPage() {
                           default_invocation_mode: normalizeDefaultInvocationMode(
                             current.default_invocation_mode,
                             runtimeKind,
-                            presetDefaultInvocationMode(current.preset_key, presets),
+                            editingSystemAgent
+                              ? presetDefaultInvocationModeForSelection(current.preset_key, current.preset_version_key, presets)
+                              : 'autonomous',
                           ),
                         };
                       })
@@ -1422,7 +1688,7 @@ export function AgentsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {RUNTIME_KIND_OPTIONS
-                        .filter((runtimeKind) => allowedRuntimeKindsForPreset(form.preset_key).includes(runtimeKind))
+                        .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
                         .map((runtimeKind) => (
                         <SelectItem key={runtimeKind} value={runtimeKind}>
                           {AGENT_RUNTIME_LABELS[runtimeKind]}
@@ -1474,9 +1740,53 @@ export function AgentsPage() {
                 disabled={saving || !form.name.trim()}
                 onClick={handleSave}
               >
-                {saving ? 'Saving...' : editingAgent ? 'Save Changes' : 'Create Agent'}
+                {saving ? 'Saving...' : editingAgent ? 'Save Changes' : 'Create Custom Agent'}
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save Workspace Version</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
+              <Input
+                id="preset-version-label"
+                value={versionLabelDraft}
+                onChange={(e) => setVersionLabelDraft(e.target.value)}
+                placeholder="e.g. Engineering v2"
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
+              <Textarea
+                id="preset-version-description"
+                value={versionDescriptionDraft}
+                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
+                placeholder="What changed in this version?"
+                rows={3}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This stores the current built-in agent settings as a workspace-local preset version. Save the agent afterwards to pin the built-in agent to that version.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setVersionDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={creatingVersion || !versionLabelDraft.trim()}
+              onClick={handleCreatePresetVersion}
+            >
+              {creatingVersion ? 'Saving...' : 'Create Version'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

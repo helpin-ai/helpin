@@ -1149,6 +1149,7 @@ export interface Agent {
   is_system: boolean;
   name: string;
   preset_key?: AgentPresetKey;
+  preset_version_key?: string;
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
@@ -1341,6 +1342,7 @@ export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
   preset_key?: AgentPresetKey;
+  preset_version_key?: string;
   role?: string;
   runtime_kind?: AgentRuntimeKind;
   skills?: string[];
@@ -1366,6 +1368,7 @@ export interface CreateAgentRequest {
 export interface UpdateAgentRequest {
   name?: string;
   preset_key?: AgentPresetKey;
+  preset_version_key?: string;
   role?: string;
   status?: AgentStatus;
   runtime_kind?: AgentRuntimeKind;
@@ -1408,6 +1411,15 @@ export interface HandoffAgentRunRequest {
 
 export interface AgentPresetDefinition {
   key: AgentPresetKey;
+  family_key: AgentPresetKey;
+  version_key: string;
+  version_label: string;
+  is_default_version: boolean;
+  scope?: 'product' | 'workspace';
+  workspace_id?: string;
+  source_version_key?: string;
+  provider?: AgentModelProvider;
+  model?: string;
   label: string;
   description: string;
   default_role: string;
@@ -1421,6 +1433,20 @@ export interface AgentPresetDefinition {
   default_invocation_mode: AgentInvocationMode;
   supported_modes: AgentInvocationMode[];
   system_prompt?: string;
+}
+
+export interface CreateWorkspaceAgentPresetVersionRequest {
+  workspace_id: string;
+  family_key: AgentPresetKey;
+  label: string;
+  description?: string;
+  source_version_key?: string;
+  provider?: AgentModelProvider;
+  model?: string;
+  system_prompt?: string;
+  allowed_tools?: string[];
+  approval_mode?: AgentApprovalMode;
+  default_invocation_mode?: AgentInvocationMode;
 }
 
 export interface AgentModelProviderOption {

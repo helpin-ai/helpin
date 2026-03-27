@@ -39,6 +39,10 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 }
 
 func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	if p == nil {
+		return nil, fmt.Errorf("openai provider is not configured")
+	}
+
 	var messages []map[string]any
 	if req.SystemPrompt != "" {
 		messages = append(messages, map[string]any{"role": "system", "content": req.SystemPrompt})
@@ -192,6 +196,9 @@ func (p *OpenAIProvider) usesMaxCompletionTokens(modelName string) bool {
 }
 
 func (p *OpenAIProvider) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
+	if p == nil {
+		return nil, fmt.Errorf("openai provider is not configured")
+	}
 	if len(req.Inputs) == 0 {
 		return &EmbeddingResponse{Vectors: [][]float32{}}, nil
 	}

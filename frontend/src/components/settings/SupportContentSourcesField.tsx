@@ -34,6 +34,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -308,6 +309,13 @@ export function SupportContentSourcesField({
                       {/* Row 1: name + status badge + actions */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
+                          <Favicon
+                            url={source.start_url}
+                            name={source.name}
+                            size={32}
+                            className="h-5 w-5 rounded-md"
+                            fallbackClassName="text-[8px]"
+                          />
                           <span className="truncate text-sm font-medium">{source.name}</span>
                           {statusMeta && (
                             <Badge variant="outline" className={cn('shrink-0', statusMeta.className)}>
@@ -572,7 +580,13 @@ export function SupportContentSourcesField({
                         value={(
                           <div className="space-y-1">
                             <div className="inline-flex items-center gap-2 font-medium">
-                              <Globe className="h-4 w-4" />
+                              <Favicon
+                                url={draft.startUrl}
+                                name={draft.name}
+                                size={32}
+                                className="h-4 w-4 rounded-sm border-none bg-transparent"
+                                fallbackClassName="text-[8px]"
+                              />
                               {draft.name}
                             </div>
                             <div className="text-xs text-muted-foreground">{draft.startUrl}</div>
@@ -735,6 +749,13 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
         <div className="divide-y divide-border/70">
           {filteredPages.map((page) => (
             <div key={page.id} className="flex items-start gap-3 px-6 py-3">
+              <Favicon
+                url={page.url}
+                name={page.title || page.url}
+                size={16}
+                className="mt-0.5 h-4 w-4 rounded-sm border-none bg-transparent"
+                fallbackClassName="text-[8px]"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{page.title || 'Untitled'}</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
@@ -809,7 +830,16 @@ function PageContentPreview({
           <X className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{page?.title || 'Loading…'}</p>
+          <div className="flex items-center gap-2">
+            <Favicon
+              url={page?.url}
+              name={page?.title || page?.url}
+              size={16}
+              className="h-4 w-4 rounded-sm border-none bg-transparent"
+              fallbackClassName="text-[8px]"
+            />
+            <p className="truncate text-sm font-medium">{page?.title || 'Loading…'}</p>
+          </div>
           {page?.url && (
             <a
               href={page.url}

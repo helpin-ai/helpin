@@ -6,6 +6,7 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import type { MemberWithUser, Workspace } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Favicon } from '@/components/ui/favicon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Star, Users } from 'lucide-react';
@@ -66,11 +67,13 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  <UserAvatar
+                  <Favicon
+                    src={ws.logo_url}
+                    url={ws.website_url}
                     name={ws.name}
-                    avatarUrl={ws.logo_url}
+                    size={128}
                     className="h-11 w-11 shrink-0 rounded-lg"
-                    fallbackClassName="text-sm rounded-lg"
+                    fallbackClassName="text-sm"
                   />
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-base truncate">{ws.name}</CardTitle>

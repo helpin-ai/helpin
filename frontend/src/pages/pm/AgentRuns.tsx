@@ -11,6 +11,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { Badge } from '@/components/ui/badge';
@@ -78,13 +79,14 @@ function statusVariant(status: AgentRun['status']): 'default' | 'secondary' | 'd
 
 function AgentRunRow({
   run,
-  agentName,
+  agent,
   onOpen,
 }: {
   run: AgentRun;
-  agentName: string;
+  agent?: Agent | null;
   onOpen: (run: AgentRun) => void;
 }) {
+  const agentName = agent?.name ?? 'Agent';
   const displayStatus = getAgentRunDisplayStatus(run);
   const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus;
 
@@ -97,6 +99,7 @@ function AgentRunRow({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
+            {agent ? <AgentAvatar agent={agent} className="h-7 w-7" /> : null}
             <p className="text-sm font-medium">{agentName}</p>
             <Badge variant={statusVariant(run.status)} className="gap-1 px-1.5 py-0 text-[10px]">
               {STATUS_ICONS[displayStatus]}
@@ -193,6 +196,10 @@ export function AgentRunsPage() {
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const agentById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.id, agent])),
+    [agents],
+  );
 
   const activeRuns = useMemo(
     () => runs.filter((run) => ACTIVE_RUN_STATUSES.has(run.status)),
@@ -269,7 +276,7 @@ export function AgentRunsPage() {
                   <AgentRunRow
                     key={run.id}
                     run={run}
-                    agentName={agentNameById[run.agent_id] ?? 'Agent'}
+                    agent={agentById[run.agent_id] ?? null}
                     onOpen={(nextRun) => {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);
@@ -295,7 +302,7 @@ export function AgentRunsPage() {
                   <AgentRunRow
                     key={run.id}
                     run={run}
-                    agentName={agentNameById[run.agent_id] ?? 'Agent'}
+                    agent={agentById[run.agent_id] ?? null}
                     onOpen={(nextRun) => {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);

@@ -2,12 +2,12 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
   AlertTriangle,
-  Bot,
   CalendarDays,
   Check,
   Layers,
   UserPlus,
 } from 'lucide-react';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -19,7 +19,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import { getSortableStoryCardStyle } from './StoryCard.sortable';
-import type { Priority, Severity, Story } from '@/lib/pmTypes';
+import type { Agent, Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
@@ -50,6 +50,7 @@ interface StoryCardProps {
   onSeverityChanged?: (story: Story) => void;
   onEstimateChanged?: (story: Story) => void;
   showStateBadge?: boolean;
+  assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key'> | null;
 }
 
 function StoryCardComponent({
@@ -65,6 +66,7 @@ function StoryCardComponent({
   onSeverityChanged,
   onEstimateChanged,
   showStateBadge = false,
+  assignedAgent,
 }: StoryCardProps) {
   const {
     attributes,
@@ -481,11 +483,11 @@ function StoryCardComponent({
         {story.assigned_agent_id && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className={cn(pillBase, 'border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400')}>
-                <Bot className="h-3 w-3" />
+              <span className={cn(pillBase, 'border-violet-300 bg-violet-50 px-1 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400')}>
+                <AgentAvatar agent={assignedAgent} className="h-4 w-4 border-violet-200/80 shadow-none dark:border-violet-800" />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top">Agent assigned</TooltipContent>
+            <TooltipContent side="top">{assignedAgent?.name ?? 'Agent assigned'}</TooltipContent>
           </Tooltip>
         )}
         <span className="flex-1" />

@@ -42,7 +42,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 	} else if agent != nil && agent.DefaultInvocationMode != "" {
 		mode = agent.DefaultInvocationMode
 	}
-	defaultProfile := GetRuntimeProfile(defaultProfileNameForPreset(agent.PresetKey, agent.IsSystem))
+	defaultProfile := GetRuntimeProfile(defaultProfileNameForPreset(agent.EffectivePresetKey(), agent.IsSystem))
 
 	resolved := ResolvedProfile{
 		Tools:            defaultProfile.AllowedTools,

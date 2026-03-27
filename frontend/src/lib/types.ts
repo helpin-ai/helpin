@@ -35,6 +35,7 @@ export interface Workspace {
   owner_id: string;
   organization_id?: string;
   description?: string;
+  website_url?: string;
   logo_url?: string;
   timezone: string;
   created_at: string;

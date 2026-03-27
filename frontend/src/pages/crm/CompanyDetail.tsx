@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Favicon } from '@/components/ui/favicon';
 import { Separator } from '@/components/ui/separator';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -141,7 +142,14 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <Building2 className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <Favicon
+            src={company.logo_url}
+            url={form.domain}
+            name={form.name}
+            size={32}
+            className="h-4 w-4 rounded-sm border-none bg-transparent"
+            fallbackClassName="text-[8px]"
+          />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Companies
           </button>
@@ -162,12 +170,22 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
         {/* Left column */}
         <div className="min-h-0 overflow-y-auto px-8 py-6">
           {/* Name */}
-          <input
-            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            placeholder="Company name"
-          />
+          <div className="flex items-start gap-3">
+            <Favicon
+              src={company.logo_url}
+              url={form.domain}
+              name={form.name}
+              size={64}
+              className="mt-0.5 h-10 w-10 rounded-xl"
+              fallbackClassName="text-sm"
+            />
+            <input
+              className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+              placeholder="Company name"
+            />
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">{company.display_id}</p>
 
           <Separator className="my-6" />
@@ -208,8 +226,18 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
 
           <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
             <MetadataRow icon={Globe} label="Domain">
-              <input className="w-full bg-transparent text-xs outline-none" value={form.domain}
-                onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="—" />
+              <div className="flex items-center gap-2">
+                <Favicon
+                  src={company.logo_url}
+                  url={form.domain}
+                  name={form.name}
+                  size={16}
+                  className="h-4 w-4 rounded-sm border-none bg-transparent"
+                  fallbackClassName="text-[8px]"
+                />
+                <input className="w-full bg-transparent text-xs outline-none" value={form.domain}
+                  onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="—" />
+              </div>
             </MetadataRow>
             <MetadataRow icon={Building2} label="Industry">
               <input className="w-full bg-transparent text-xs outline-none" value={form.industry}
