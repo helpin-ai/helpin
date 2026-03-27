@@ -551,7 +551,11 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 	for _, msg := range history {
 		switch msg.Role {
 		case "user":
-			messages = append(messages, schema.UserMessage(nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))))
+			content := nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+			messages = append(messages, schema.UserMessage(content))
 		case "assistant":
 			assistant := &schema.Message{
 				Role:    schema.Assistant,
@@ -578,14 +582,23 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 					})
 				}
 			}
+			if strings.TrimSpace(assistant.Content) == "" && len(assistant.AssistantGenMultiContent) == 0 && len(assistant.ToolCalls) == 0 {
+				continue
+			}
 			messages = append(messages, assistant)
 		case "tool":
 			if len(msg.Blocks) == 0 {
+				if strings.TrimSpace(msg.Content) == "" {
+					continue
+				}
 				messages = append(messages, schema.ToolMessage(msg.Content, "", schema.WithToolName("")))
 				continue
 			}
 			for _, block := range msg.Blocks {
 				if block.Type != ExecutionBlockTypeToolResult {
+					continue
+				}
+				if strings.TrimSpace(block.Output) == "" {
 					continue
 				}
 				messages = append(messages, schema.ToolMessage(block.Output, block.ToolCallID, schema.WithToolName(block.ToolName)))
@@ -605,7 +618,11 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 	for _, msg := range history {
 		switch msg.Role {
 		case "user":
-			messages = append(messages, schema.UserAgenticMessage(nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))))
+			content := nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+			messages = append(messages, schema.UserAgenticMessage(content))
 		case "assistant":
 			assistant := &schema.AgenticMessage{
 				Role:          schema.AgenticRoleTypeAssistant,
@@ -629,6 +646,9 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 					}))
 				}
 			}
+			if len(assistant.ContentBlocks) == 0 {
+				continue
+			}
 			messages = append(messages, assistant)
 		case "tool":
 			if len(msg.Blocks) == 0 {
@@ -636,6 +656,9 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 			}
 			for _, block := range msg.Blocks {
 				if block.Type != ExecutionBlockTypeToolResult {
+					continue
+				}
+				if strings.TrimSpace(block.Output) == "" {
 					continue
 				}
 				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, block.Output))

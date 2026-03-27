@@ -129,6 +129,46 @@ func TestToAgenticMessagesAllowsUserSummaryFirst(t *testing.T) {
 	}
 }
 
+func TestToSchemaMessagesSkipsEmptyHistoryMessages(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user"},
+		{Role: "assistant"},
+		{Role: "tool"},
+		{Role: "assistant", Blocks: []ExecutionBlock{{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)}}},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus one non-empty assistant message, got %#v", msgs)
+	}
+	if len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].Function.Name != "read_file" {
+		t.Fatalf("expected non-empty assistant tool call to remain, got %#v", msgs[1])
+	}
+}
+
+func TestToAgenticMessagesSkipsEmptyHistoryMessages(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user"},
+		{Role: "assistant"},
+		{Role: "tool"},
+		{Role: "assistant", Blocks: []ExecutionBlock{{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)}}},
+	}
+
+	msgs, err := toAgenticMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toAgenticMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus one non-empty assistant message, got %#v", msgs)
+	}
+	if len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolCall == nil || msgs[1].ContentBlocks[0].FunctionToolCall.Name != "read_file" {
+		t.Fatalf("expected non-empty assistant tool call to remain, got %#v", msgs[1])
+	}
+}
+
 func TestToSchemaMessagesNormalizesEmptyToolCallInput(t *testing.T) {
 	history := []ExecutionMessage{
 		{
