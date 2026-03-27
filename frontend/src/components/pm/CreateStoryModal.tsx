@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Editor } from "@tiptap/react";
 import {
   AlertTriangle,
   CalendarDays,
   Check,
   CheckSquare,
+  Code2,
   ExternalLink as ExternalLinkIcon,
   FileText,
   Gauge,
@@ -66,6 +68,7 @@ import { buildAssignableMemberNameMap, findAssignableMember } from "@/lib/assign
 import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
 import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
+import { htmlToMarkdown, markdownToHtml } from "@/lib/tiptapMarkdown";
 import { toast } from "sonner";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
 import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
@@ -212,6 +215,8 @@ export function CreateStoryModal({
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
+  const [descriptionMode, setDescriptionMode] = useState<'rich' | 'markdown'>('rich');
+  const [sourceMarkdown, setSourceMarkdown] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [storyTypeDirty, setStoryTypeDirty] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -224,6 +229,7 @@ export function CreateStoryModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
+  const descriptionEditorRef = useRef<Editor | null>(null);
   const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
@@ -293,6 +299,8 @@ export function CreateStoryModal({
     setStateId(initialStateId ?? '');
     setError(null);
     setPendingFiles([]);
+    setDescriptionMode('rich');
+    setSourceMarkdown('');
     setShowChecklist(isTemplateMode);
     setShowExternalLinks(isTemplateMode);
     setShowAttachments(false);
@@ -335,6 +343,11 @@ export function CreateStoryModal({
       }
     })();
   }, [open, workspaceId, isTemplateMode]);
+
+  useEffect(() => {
+    if (descriptionMode !== 'markdown') return;
+    setSourceMarkdown(htmlToMarkdown(form.description));
+  }, [descriptionMode, form.description]);
 
   useEffect(() => {
     setForm((current) => {
@@ -396,6 +409,25 @@ export function CreateStoryModal({
     return formatRecurringRuleSummary(recurringDraft.config);
   }, [recurringDraft]);
 
+  const openMarkdownMode = useCallback(() => {
+    const editor = descriptionEditorRef.current;
+    const markdown =
+      ((editor?.storage as Record<string, unknown> | undefined)?.markdown as { getMarkdown?: () => string } | undefined)?.getMarkdown?.() ??
+      htmlToMarkdown(form.description);
+    setSourceMarkdown(markdown);
+    setDescriptionMode('markdown');
+  }, [form.description]);
+
+  const applyMarkdownSource = useCallback(() => {
+    setForm((prev) => ({ ...prev, description: markdownToHtml(sourceMarkdown) }));
+    setDescriptionMode('rich');
+  }, [sourceMarkdown]);
+
+  const discardMarkdownSource = useCallback(() => {
+    setSourceMarkdown(htmlToMarkdown(form.description));
+    setDescriptionMode('rich');
+  }, [form.description]);
+
   const resolveSubmitWorkflow = useCallback(async () => {
     if (!workflow) {
       throw new Error('Workflow is required');
@@ -438,6 +470,9 @@ export function CreateStoryModal({
     setSubmitting(true);
     setError(null);
     try {
+      const descriptionForSubmit =
+        descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
+
       if (isTemplateMode) {
         const labelIds = form.label_ids.length > 0 ? JSON.stringify(form.label_ids) : undefined;
         const filteredChecklist = form.checklist_items.filter((i) => i.text.trim());
@@ -446,7 +481,7 @@ export function CreateStoryModal({
         const externalLinksJson = filteredLinks.length > 0 ? JSON.stringify(filteredLinks) : undefined;
         const templatePayload = {
           name: form.name.trim(),
-          description: form.description.trim() || undefined,
+          description: descriptionForSubmit.trim() || undefined,
           story_type: form.story_type !== 'feature' ? form.story_type : undefined,
           priority: form.priority !== 'none' ? form.priority : undefined,
           severity: form.severity !== 'none' ? form.severity : undefined,
@@ -477,7 +512,7 @@ export function CreateStoryModal({
         const result = await onCreate!({
           workspace_id: workspaceId,
           name: form.name.trim(),
-          description: form.description.trim() || undefined,
+          description: descriptionForSubmit.trim() || undefined,
           story_type: form.story_type,
           workflow_id: workflowId,
           workflow_state_id: workflowStateId,
@@ -540,6 +575,8 @@ export function CreateStoryModal({
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
+          setDescriptionMode('rich');
+          setSourceMarkdown('');
           setForm({
             ...defaultState,
             story_type: (resetTeam?.default_story_type as StoryType | undefined) ?? 'feature',
@@ -565,6 +602,7 @@ export function CreateStoryModal({
     submitting,
     form,
     stateId,
+    descriptionMode,
     createMore,
     workspaceId,
     workflow,
@@ -580,11 +618,15 @@ export function CreateStoryModal({
     onSaveTemplate,
     pendingFiles,
     recurringDraft,
+    sourceMarkdown,
     teams,
   ]);
 
   const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
-  const hasUnsavedChanges = form.name.trim() !== '' || stripHtml(form.description) !== stripHtml(initialDescRef.current);
+  const currentDescriptionForCompare =
+    descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
+  const hasUnsavedChanges =
+    form.name.trim() !== '' || stripHtml(currentDescriptionForCompare) !== stripHtml(initialDescRef.current);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
@@ -639,75 +681,142 @@ export function CreateStoryModal({
 
               {/* Description — Tiptap rich text editor */}
               <div className="relative flex flex-col min-h-0 flex-1">
-                <TiptapEditor
-                  key={descriptionEditorKey}
-                  content={form.description}
-                  onChange={(html) =>
-                    setForm((prev) => ({ ...prev, description: html }))
-                  }
-                  placeholder="Add a description..."
-                  className="min-h-0 flex-1 flex flex-col"
-                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-                  onUploadStateChange={setDescriptionPendingUploads}
-                  teams={mentionTeams}
-                />
-                <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-                  <div className="pointer-events-none inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground">
-                    <Sparkles className="h-3 w-3" />
-                    AI
+                {descriptionMode === 'markdown' ? (
+                  <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/60 bg-muted/20">
+                    <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Markdown Source
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs"
+                          onClick={discardMarkdownSource}
+                        >
+                          <X className="h-3 w-3" />
+                          Discard
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs"
+                          onClick={applyMarkdownSource}
+                        >
+                          <Check className="h-3 w-3" />
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={sourceMarkdown}
+                      onChange={(event) => setSourceMarkdown(event.target.value)}
+                      className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+                      placeholder="## Write the story in Markdown"
+                      spellCheck={false}
+                    />
                   </div>
-                </div>
+                ) : (
+                  <TiptapEditor
+                    key={descriptionEditorKey}
+                    content={form.description}
+                    onChange={(html) =>
+                      setForm((prev) => ({ ...prev, description: html }))
+                    }
+                    placeholder="Add a description..."
+                    className="min-h-0 flex-1 flex flex-col"
+                    uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                    onUploadStateChange={setDescriptionPendingUploads}
+                    teams={mentionTeams}
+                    onEditorReady={(editor) => {
+                      descriptionEditorRef.current = editor;
+                    }}
+                  />
+                )}
               </div>
 
               {/* ── Action bar — toggle pills ─────────────────────── */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                    showChecklist
-                      ? 'border-primary/30 bg-primary/10 text-primary'
-                      : 'border-border/60 text-muted-foreground hover:bg-accent'
-                  }`}
-                  onClick={() => setShowChecklist((v) => !v)}
-                >
-                  <CheckSquare className="h-3 w-3" />
-                  Checklist
-                  {form.checklist_items.length > 0 && (
-                    <span className="text-[10px] opacity-70">({form.checklist_items.length})</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                    showExternalLinks
-                      ? 'border-primary/30 bg-primary/10 text-primary'
-                      : 'border-border/60 text-muted-foreground hover:bg-accent'
-                  }`}
-                  onClick={() => setShowExternalLinks((v) => !v)}
-                >
-                  <Link2 className="h-3 w-3" />
-                  External Links
-                  {form.external_links.length > 0 && (
-                    <span className="text-[10px] opacity-70">({form.external_links.length})</span>
-                  )}
-                </button>
-                {!isTemplateMode && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showAttachments
+                      showChecklist
                         ? 'border-primary/30 bg-primary/10 text-primary'
                         : 'border-border/60 text-muted-foreground hover:bg-accent'
                     }`}
-                    onClick={() => setShowAttachments((v) => !v)}
+                    onClick={() => setShowChecklist((v) => !v)}
                   >
-                    <Paperclip className="h-3 w-3" />
-                    Attach Files
-                    {pendingFiles.length > 0 && (
-                      <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
+                    <CheckSquare className="h-3 w-3" />
+                    Checklist
+                    {form.checklist_items.length > 0 && (
+                      <span className="text-[10px] opacity-70">({form.checklist_items.length})</span>
                     )}
                   </button>
-                )}
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      showExternalLinks
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border/60 text-muted-foreground hover:bg-accent'
+                    }`}
+                    onClick={() => setShowExternalLinks((v) => !v)}
+                  >
+                    <Link2 className="h-3 w-3" />
+                    External Links
+                    {form.external_links.length > 0 && (
+                      <span className="text-[10px] opacity-70">({form.external_links.length})</span>
+                    )}
+                  </button>
+                  {!isTemplateMode && (
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                        showAttachments
+                          ? 'border-primary/30 bg-primary/10 text-primary'
+                          : 'border-border/60 text-muted-foreground hover:bg-accent'
+                      }`}
+                      onClick={() => setShowAttachments((v) => !v)}
+                    >
+                      <Paperclip className="h-3 w-3" />
+                      Attach Files
+                      {pendingFiles.length > 0 && (
+                        <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
+                      )}
+                    </button>
+                  )}
+                </div>
+                <div className="ml-auto inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5">
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      descriptionMode === 'rich'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    onClick={() => {
+                      if (descriptionMode === 'markdown') {
+                        applyMarkdownSource();
+                      }
+                    }}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Rich
+                  </button>
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      descriptionMode === 'markdown'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    onClick={openMarkdownMode}
+                  >
+                    <Code2 className="h-3 w-3" />
+                    Markdown
+                  </button>
+                </div>
               </div>
 
               {/* Checklist */}

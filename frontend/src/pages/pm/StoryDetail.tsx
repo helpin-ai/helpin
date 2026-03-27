@@ -87,6 +87,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { buildStoryUrl } from '@/lib/pmStoryLinks';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -609,7 +610,17 @@ export function StoryDetailPage() {
   };
 
   // ── Copy link ───────────────────────────────────────────────────
-  const copyLink = () => copyText(window.location.href);
+  const copyLink = () => {
+    if (!storyDetail) return Promise.resolve(false);
+
+    return copyText(
+      buildStoryUrl({
+        origin: window.location.origin,
+        slug,
+        storyId: storyDetail.story.id,
+      }),
+    );
+  };
 
   // ── Derived data ────────────────────────────────────────────────
   const currentState = useMemo(
@@ -1287,7 +1298,7 @@ export function StoryDetailPage() {
             objectId={storyDetail.story.id}
             workspaceId={workspaceId!}
             includeStoryRelationships={false}
-            className="mt-6"
+            className="-mx-4 mt-4 border-t border-border/60"
           />
 
           {/* Delivery */}

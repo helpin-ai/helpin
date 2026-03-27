@@ -3,11 +3,9 @@ import { ZoomIn, ZoomOut } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
-  AVATAR_EDITOR_VIEWPORT_SIZE,
   clampAvatarTransform,
   canvasToFile,
   drawAvatarCropToCanvas,
-  getAvatarBaseScale,
   getAvatarCropGeometry,
 } from '@/lib/avatarCrop';
 import type { AvatarTransform } from '@/lib/avatarCrop';
@@ -27,6 +25,7 @@ type LoadedImage = {
   height: number;
 };
 
+const CROP_VIEWPORT = 280;
 const PREVIEW_SIZE = 96;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
@@ -79,7 +78,7 @@ export function AvatarCropDialog({
     if (!loadedImage) {
       return null;
     }
-    return getAvatarCropGeometry(loadedImage.width, loadedImage.height, transform, AVATAR_EDITOR_VIEWPORT_SIZE);
+    return getAvatarCropGeometry(loadedImage.width, loadedImage.height, transform, CROP_VIEWPORT);
   }, [loadedImage, transform]);
 
   useEffect(() => {
@@ -92,7 +91,7 @@ export function AvatarCropDialog({
       loadedImage.height,
       transform,
       previewCanvasRef.current,
-      AVATAR_EDITOR_VIEWPORT_SIZE,
+      CROP_VIEWPORT,
       PREVIEW_SIZE,
     );
   }, [loadedImage, transform]);
@@ -104,7 +103,7 @@ export function AvatarCropDialog({
       loadedImage.width,
       loadedImage.height,
       { ...current, zoom: normalizedZoom },
-      AVATAR_EDITOR_VIEWPORT_SIZE,
+      CROP_VIEWPORT,
     ));
   };
 
@@ -135,7 +134,7 @@ export function AvatarCropDialog({
         offsetX: dragOriginRef.current.offsetX + deltaX,
         offsetY: dragOriginRef.current.offsetY + deltaY,
       },
-      AVATAR_EDITOR_VIEWPORT_SIZE,
+      CROP_VIEWPORT,
     ));
   };
 
@@ -163,30 +162,32 @@ export function AvatarCropDialog({
       loadedImage.height,
       transform,
       canvas,
-      AVATAR_EDITOR_VIEWPORT_SIZE,
+      CROP_VIEWPORT,
     );
     const croppedFile = await canvasToFile(canvas, normalizeAvatarFileName(fileName));
     await onSave(croppedFile);
   };
 
   const zoomPercent = Math.round(transform.zoom * 100);
-  const minRenderedScale = loadedImage ? Math.round(getAvatarBaseScale(loadedImage.width, loadedImage.height) * 100) : 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl gap-0 overflow-hidden p-0">
-        <div className="grid min-h-[32rem] grid-cols-1 lg:grid-cols-[minmax(0,1fr)_19rem]">
-          <div className="border-b border-border/60 bg-[#0b1020] p-6 text-white lg:border-r lg:border-b-0">
-            <DialogHeader className="mb-5 text-left">
-              <DialogTitle className="text-white">Adjust profile photo</DialogTitle>
-              <DialogDescription className="text-white/70">
-                Drag to reposition and zoom until the avatar feels balanced.
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0">
+        <div className="p-6 pb-0">
+          <DialogHeader className="text-left">
+            <DialogTitle>Adjust profile photo</DialogTitle>
+            <DialogDescription>
+              Drag to reposition and zoom until the avatar feels balanced.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-            <div className="flex flex-col items-center gap-5">
+        <div className="flex flex-col items-center gap-6 p-6">
+          <div className="flex w-full items-start justify-center gap-8">
+            {/* Crop viewport */}
+            <div className="flex flex-col items-center gap-4">
               <div
-                className="relative h-[320px] w-[320px] overflow-hidden rounded-[28px] bg-black/60 touch-none"
+                className="relative h-[280px] w-[280px] overflow-hidden rounded-full bg-muted touch-none ring-1 ring-border"
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
@@ -207,89 +208,64 @@ export function AvatarCropDialog({
                         top: `${geometry.imageTop}px`,
                       }}
                     />
-                    <div
-                      className="pointer-events-none absolute inset-0 rounded-full border border-white/90 shadow-[0_0_0_9999px_rgba(3,7,18,0.56)]"
-                      style={{ inset: '24px' }}
-                    />
-                    <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/10" />
                   </>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-white/70">
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     {loadError ?? 'Loading image…'}
                   </div>
                 )}
               </div>
+            </div>
 
-              <div className="w-full max-w-md space-y-3">
-                <div className="flex items-center justify-between text-xs text-white/70">
-                  <span>Zoom</span>
-                  <span>{zoomPercent}%</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <ZoomOut className="h-4 w-4 shrink-0 text-white/60" />
-                  <input
-                    type="range"
-                    min={MIN_ZOOM}
-                    max={MAX_ZOOM}
-                    step={ZOOM_STEP}
-                    value={transform.zoom}
-                    onChange={(event) => setZoom(Number(event.target.value))}
-                    disabled={!loadedImage || saving}
-                    className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-white"
-                  />
-                  <ZoomIn className="h-4 w-4 shrink-0 text-white/60" />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-white/45">
-                  <span>Fit: {minRenderedScale}%</span>
-                  <button
-                    type="button"
-                    className="font-medium text-white/80 transition-colors hover:text-white disabled:cursor-not-allowed disabled:text-white/35"
-                    onClick={handleReset}
-                    disabled={!loadedImage || saving}
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
+            {/* Preview */}
+            <div className="flex flex-col items-center gap-4 pt-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+              <canvas
+                ref={previewCanvasRef}
+                className="h-20 w-20 rounded-full border border-border bg-muted object-cover shadow-sm"
+              />
+              <p className="text-[11px] text-muted-foreground/70">How others see you</p>
             </div>
           </div>
 
-          <div className="flex flex-col bg-background">
-            <div className="flex-1 space-y-6 p-6">
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">Preview</p>
-                <p className="text-xs text-muted-foreground">
-                  This is how your avatar will appear around Helpin.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-center rounded-2xl border border-border/70 bg-muted/30 p-8">
-                <canvas
-                  ref={previewCanvasRef}
-                  className="h-24 w-24 rounded-full border border-border/80 bg-muted object-cover shadow-sm"
-                />
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-muted/25 p-4 text-sm">
-                <p className="font-medium text-foreground">Tips</p>
-                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  <li>Drag the image to center your face.</li>
-                  <li>Use zoom to tighten the crop without losing quality.</li>
-                  <li>The uploaded avatar is exported as a square high-res image.</li>
-                </ul>
-              </div>
+          {/* Zoom controls */}
+          <div className="w-full max-w-sm space-y-2">
+            <div className="flex items-center gap-3">
+              <ZoomOut className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                type="range"
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                step={ZOOM_STEP}
+                value={transform.zoom}
+                onChange={(event) => setZoom(Number(event.target.value))}
+                disabled={!loadedImage || saving}
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+              />
+              <ZoomIn className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
-
-            <DialogFooter className="border-t border-border/60 px-6 py-4 sm:justify-between">
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button onClick={() => void handleSave()} disabled={!loadedImage || !!loadError || saving}>
-                {saving ? 'Saving…' : 'Save photo'}
-              </Button>
-            </DialogFooter>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{zoomPercent}%</span>
+              <button
+                type="button"
+                className="font-medium text-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50"
+                onClick={handleReset}
+                disabled={!loadedImage || saving}
+              >
+                Reset
+              </button>
+            </div>
           </div>
         </div>
+
+        <DialogFooter className="border-t border-border/60 px-6 py-4 sm:justify-between">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleSave()} disabled={!loadedImage || !!loadError || saving}>
+            {saving ? 'Saving…' : 'Save photo'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
