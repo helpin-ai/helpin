@@ -10,6 +10,7 @@ import {
   Layers,
   Loader2,
   Pencil,
+  Target as TargetIcon,
   User,
   Users,
 } from 'lucide-react';
@@ -36,7 +37,7 @@ import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from 
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -46,7 +47,9 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
+import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -191,6 +194,7 @@ export function EpicDetailPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
+  const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -225,11 +229,12 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     if (showLoading) setLoading(true);
     setError(null);
-    const [epicRes, storiesRes, epicsRes, sprintsRes, reposRes] = await Promise.all([
+    const [epicRes, storiesRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
       pmEpicService.listStories(workspaceId, epicId),
       pmEpicService.list(workspaceId, { archived: false }),
       pmSprintService.list(workspaceId, { archived: false }),
+      pmObjectiveService.list(workspaceId, { archived: false }),
       gitService.listRepositories(workspaceId),
     ]);
     if (epicRes.error || !epicRes.data) {
@@ -243,6 +248,7 @@ export function EpicDetailPage() {
     setStories(storiesRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
+    setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
     setRepositories(reposRes.data ?? []);
     setLoading(false);
   }, [workspaceId, epicId]);
@@ -412,6 +418,50 @@ export function EpicDetailPage() {
     (story: Story) => openStoryPanel(story.id),
     [openStoryPanel],
   );
+
+  const selectedObjectives = useMemo<ObjectivePickerSelection[]>(
+    () => (epic?.objectives ?? []).map((objective) => ({
+      id: objective.id,
+      name: objective.name,
+      archived: !allObjectives.some((candidate) => candidate.id === objective.id),
+    })),
+    [allObjectives, epic?.objectives],
+  );
+
+  const updateObjectives = useCallback(async (nextObjectiveIds: string[]) => {
+    if (!workspaceId || !epic) return;
+
+    setSaveError(null);
+    setSaving(true);
+
+    const currentObjectiveIds = (epic.objectives ?? []).map((objective) => objective.id);
+    const currentSet = new Set(currentObjectiveIds);
+    const nextSet = new Set(nextObjectiveIds);
+    const toAdd = nextObjectiveIds.filter((id) => !currentSet.has(id));
+    const toRemove = currentObjectiveIds.filter((id) => !nextSet.has(id));
+
+    setEpic((current) => current ? {
+      ...current,
+      objectives: allObjectives
+        .filter((objective) => nextSet.has(objective.id))
+        .map((objective) => ({ id: objective.id, name: objective.name })),
+    } : current);
+
+    const results = await Promise.all([
+      ...toAdd.map((objectiveId) => pmObjectiveService.addEpic(workspaceId, objectiveId, epic.epic.id)),
+      ...toRemove.map((objectiveId) => pmObjectiveService.removeEpic(workspaceId, objectiveId, epic.epic.id)),
+    ]);
+
+    const failed = results.find((result) => result.error);
+    await fetchData(false);
+    if (failed) {
+      setSaveError(failed.error ?? 'Failed to update objectives');
+      setSaving(false);
+      return;
+    }
+
+    setSaving(false);
+  }, [allObjectives, epic, fetchData, workspaceId]);
 
   // Refresh stories when global panel updates/archives a story
   useEffect(() => {
@@ -692,6 +742,19 @@ export function EpicDetailPage() {
                   });
                 }}
                 renderTrigger={() => <span>{currentTeamName}</span>}
+              />
+            </MetadataRow>
+
+            {/* Objectives */}
+            <MetadataRow icon={TargetIcon} label="Objective">
+              <ObjectivePicker
+                objectives={allObjectives}
+                selectedObjectiveIds={(epic.objectives ?? []).map((objective) => objective.id)}
+                selectedObjectives={selectedObjectives}
+                onChange={updateObjectives}
+                addLabel="Add objective"
+                emptyLabel="No objectives"
+                className="min-h-6"
               />
             </MetadataRow>
 

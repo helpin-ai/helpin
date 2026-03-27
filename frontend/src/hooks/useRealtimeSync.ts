@@ -112,6 +112,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
     } else if (event.entity === 'agent_run') {
       queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) })
       if (event.parent_type === 'story' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
       }

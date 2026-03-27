@@ -51,6 +51,96 @@ func memberBoardStoryOrderClause() string {
 	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_stories.position ASC, pm_stories.updated_at DESC"
 }
 
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func splitFilterValues(value *string) []string {
+	if value == nil || *value == "" {
+		return nil
+	}
+
+	parts := strings.Split(*value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		values = append(values, trimmed)
+	}
+	return values
+}
+
+func applyStoryStringFilter(q *gorm.DB, column string, value *string) *gorm.DB {
+	values := splitFilterValues(value)
+	if len(values) == 0 {
+		return q
+	}
+	if len(values) == 1 {
+		return q.Where(column+" = ?", values[0])
+	}
+	return q.Where(column+" IN ?", values)
+}
+
+func applyStoryAssociationFilter(q *gorm.DB, objectType string, value *string) *gorm.DB {
+	values := splitFilterValues(value)
+	if len(values) == 0 {
+		return q
+	}
+
+	return q.Where(
+		`EXISTS (
+			SELECT 1
+			FROM crm_associations ca
+			WHERE ca.workspace_id = pm_stories.workspace_id
+			  AND (
+			    (ca.from_object_type = ? AND ca.from_object_id = pm_stories.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
+			    OR
+			    (ca.to_object_type = ? AND ca.to_object_id = pm_stories.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
+			  )
+		)`,
+		model.CRMObjectStory, objectType, values,
+		model.CRMObjectStory, objectType, values,
+	)
+}
+
+func applyStorySupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
+	values := splitFilterValues(value)
+	if len(values) == 0 {
+		return q
+	}
+
+	return q.Where(
+		`(
+			EXISTS (
+				SELECT 1
+				FROM crm_associations ca
+				WHERE ca.workspace_id = pm_stories.workspace_id
+				  AND (
+				    (ca.from_object_type = ? AND ca.from_object_id = pm_stories.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
+				    OR
+				    (ca.to_object_type = ? AND ca.to_object_id = pm_stories.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
+				  )
+			)
+			OR
+			EXISTS (
+				SELECT 1
+				FROM support_conversations sc
+				WHERE sc.workspace_id = pm_stories.workspace_id
+				  AND sc.id IN ?
+				  AND sc.linked_story_id = pm_stories.id
+			)
+		)`,
+		model.CRMObjectStory, model.CRMObjectSupportConversation, values,
+		model.CRMObjectStory, model.CRMObjectSupportConversation, values,
+		values,
+	)
+}
+
 func normalizeStateStoryPositions(tx *gorm.DB, workspaceID, stateID string) error {
 	stateType, err := loadWorkflowStateType(tx, stateID)
 	if err != nil {
@@ -114,6 +204,13 @@ type pmDnDStorySnapshot struct {
 	UpdatedAt   time.Time
 	CompletedAt *time.Time
 	MovedAt     *time.Time
+}
+
+type storyEnrichOptions struct {
+	includeContacts  bool
+	includeCompanies bool
+	includeDeals     bool
+	includeSupport   bool
 }
 
 func summarizePMDnDStateSnapshot(tx *gorm.DB, workspaceID, stateID string) ([]string, error) {
@@ -199,42 +296,22 @@ func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.Sto
 func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("workspace_id = ?", workspaceID)
 
-	if filters.TeamID != nil && *filters.TeamID != "" {
-		query = query.Where("team_id = ?", *filters.TeamID)
-	}
-	if filters.EpicID != nil && *filters.EpicID != "" {
-		query = query.Where("epic_id = ?", *filters.EpicID)
-	}
-	if filters.SprintID != nil && *filters.SprintID != "" {
-		query = query.Where("sprint_id = ?", *filters.SprintID)
-	}
-	if filters.WorkflowID != nil && *filters.WorkflowID != "" {
-		query = query.Where("workflow_id = ?", *filters.WorkflowID)
-	}
-	if filters.WorkflowStateID != nil && *filters.WorkflowStateID != "" {
-		query = query.Where("workflow_state_id = ?", *filters.WorkflowStateID)
-	}
-	if filters.StoryType != nil && *filters.StoryType != "" {
-		query = query.Where("story_type = ?", *filters.StoryType)
-	}
-	if filters.OwnerID != nil && *filters.OwnerID != "" {
-		query = query.Where("owner_id = ?", *filters.OwnerID)
-	}
-	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
-		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
-	}
-	if filters.Priority != nil && *filters.Priority != "" {
-		query = query.Where("priority = ?", *filters.Priority)
-	}
-	if filters.RequesterID != nil && *filters.RequesterID != "" {
-		query = query.Where("requester_id = ?", *filters.RequesterID)
-	}
-	if filters.RequesterMemberID != nil && *filters.RequesterMemberID != "" {
-		query = query.Where("requester_member_id = ?", *filters.RequesterMemberID)
-	}
-	if filters.Severity != nil && *filters.Severity != "" {
-		query = query.Where("severity = ?", *filters.Severity)
-	}
+	query = applyStoryStringFilter(query, "pm_stories.team_id", filters.TeamID)
+	query = applyStoryStringFilter(query, "pm_stories.epic_id", filters.EpicID)
+	query = applyStoryStringFilter(query, "pm_stories.sprint_id", filters.SprintID)
+	query = applyStoryAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
+	query = applyStoryAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
+	query = applyStoryAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
+	query = applyStorySupportConversationFilter(query, filters.SupportConversationID)
+	query = applyStoryStringFilter(query, "pm_stories.workflow_id", filters.WorkflowID)
+	query = applyStoryStringFilter(query, "pm_stories.workflow_state_id", filters.WorkflowStateID)
+	query = applyStoryStringFilter(query, "pm_stories.story_type", filters.StoryType)
+	query = applyStoryStringFilter(query, "pm_stories.owner_id", filters.OwnerID)
+	query = applyStoryStringFilter(query, "pm_stories.owner_member_id", filters.OwnerMemberID)
+	query = applyStoryStringFilter(query, "pm_stories.priority", filters.Priority)
+	query = applyStoryStringFilter(query, "pm_stories.requester_id", filters.RequesterID)
+	query = applyStoryStringFilter(query, "pm_stories.requester_member_id", filters.RequesterMemberID)
+	query = applyStoryStringFilter(query, "pm_stories.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}
@@ -244,8 +321,16 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.Archived != nil {
 		query = query.Where("archived = ?", *filters.Archived)
 	}
-	if filters.LabelID != nil && *filters.LabelID != "" {
-		query = query.Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").Where("psl.label_id = ?", *filters.LabelID)
+	if labelValues := splitFilterValues(filters.LabelID); len(labelValues) > 0 {
+		query = query.Where(
+			`EXISTS (
+				SELECT 1
+				FROM pm_story_labels psl
+				WHERE psl.story_id = pm_stories.id
+				  AND psl.label_id IN ?
+			)`,
+			labelValues,
+		)
 	}
 	if filters.AccessibleTeamIDs != nil {
 		if len(filters.AccessibleTeamIDs) == 0 {
@@ -274,7 +359,12 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 		return nil, 0, fmt.Errorf("list stories: %w", err)
 	}
 
-	return r.collectAndEnrich(ctx, stories), total, nil
+	return r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+		includeContacts:  filters.IncludeContacts,
+		includeCompanies: filters.IncludeCompanies,
+		includeDeals:     filters.IncludeDeals,
+		includeSupport:   filters.IncludeSupport,
+	}), total, nil
 }
 
 // GetByID returns a story detail payload.
@@ -750,7 +840,12 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		}
 	}
 
-	enriched := r.collectAndEnrich(ctx, allStories)
+	enriched := r.collectAndEnrich(ctx, allStories, storyEnrichOptions{
+		includeContacts:  filters.IncludeContacts,
+		includeCompanies: filters.IncludeCompanies,
+		includeDeals:     filters.IncludeDeals,
+		includeSupport:   filters.IncludeSupport,
+	})
 	// Build a map from story ID → BoardStory for column assembly
 	enrichedMap := make(map[string]model.BoardStory, len(enriched))
 	for _, bs := range enriched {
@@ -807,7 +902,12 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 		return nil, nil, 0, fmt.Errorf("list column stories: %w", err)
 	}
 
-	enriched := r.collectAndEnrich(ctx, stories)
+	enriched := r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+		includeContacts:  filters.IncludeContacts,
+		includeCompanies: filters.IncludeCompanies,
+		includeDeals:     filters.IncludeDeals,
+		includeSupport:   filters.IncludeSupport,
+	})
 	var storyGroups []model.StoryGroup
 	if state.StateType == "done" {
 		storyGroups = buildDoneStoryGroups(enriched, time.Now().UTC())
@@ -816,7 +916,7 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 }
 
 // collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.
-func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory) []model.BoardStory {
+func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory, options storyEnrichOptions) []model.BoardStory {
 	stories = r.applyDependencySummaries(ctx, stories)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
@@ -846,7 +946,14 @@ func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []mode
 	legacyOwnerNameMap := r.batchOwnerNames(ctx, ownerIDs)
 	labelMap := r.batchStoryLabels(ctx, storyIDs)
 	stateInfoMap := r.batchStateInfo(ctx, stateIDs)
-	return r.enrichBoardStories(stories, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap)
+	contactsMap := map[string][]model.AssociationObjectSummary{}
+	companiesMap := map[string][]model.AssociationObjectSummary{}
+	dealsMap := map[string][]model.AssociationObjectSummary{}
+	supportMap := map[string][]model.AssociationObjectSummary{}
+	if options.includeContacts || options.includeCompanies || options.includeDeals || options.includeSupport {
+		contactsMap, companiesMap, dealsMap, supportMap = r.batchStoryAssociations(ctx, storyIDs, options)
+	}
+	return r.enrichBoardStories(stories, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
 }
 
 // stateInfo holds denormalized workflow state metadata for board stories.
@@ -857,10 +964,23 @@ type stateInfo struct {
 }
 
 // enrichBoardStories maps epic/owner names, state info, and labels onto raw stories for board display.
-func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap map[string]string, labelMap map[string][]model.PMLabel, stateInfoMap map[string]stateInfo) []model.BoardStory {
+func (r *PMStoryRepository) enrichBoardStories(
+	stories []model.PMStory,
+	epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap map[string]string,
+	labelMap map[string][]model.PMLabel,
+	stateInfoMap map[string]stateInfo,
+	contactsMap, companiesMap, dealsMap, supportMap map[string][]model.AssociationObjectSummary,
+) []model.BoardStory {
 	result := make([]model.BoardStory, 0, len(stories))
 	for _, story := range stories {
-		bs := model.BoardStory{PMStory: story, Labels: []model.PMLabel{}}
+		bs := model.BoardStory{
+			PMStory:              story,
+			Labels:               []model.PMLabel{},
+			Contacts:             contactsMap[story.ID],
+			Companies:            companiesMap[story.ID],
+			Deals:                dealsMap[story.ID],
+			SupportConversations: supportMap[story.ID],
+		}
 		if story.EpicID != nil {
 			if name, ok := epicNameMap[*story.EpicID]; ok {
 				bs.EpicName = &name
@@ -893,47 +1013,262 @@ func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicName
 	return result
 }
 
+type storyAssociationLinkRow struct {
+	StoryID  string `gorm:"column:story_id"`
+	ObjectID string `gorm:"column:object_id"`
+}
+
+func (r *PMStoryRepository) batchStoryAssociations(ctx context.Context, storyIDs []string, options storyEnrichOptions) (
+	map[string][]model.AssociationObjectSummary,
+	map[string][]model.AssociationObjectSummary,
+	map[string][]model.AssociationObjectSummary,
+	map[string][]model.AssociationObjectSummary,
+) {
+	contacts := map[string][]model.AssociationObjectSummary{}
+	companies := map[string][]model.AssociationObjectSummary{}
+	deals := map[string][]model.AssociationObjectSummary{}
+	support := map[string][]model.AssociationObjectSummary{}
+	if len(storyIDs) == 0 {
+		return contacts, companies, deals, support
+	}
+
+	if options.includeContacts {
+		contacts = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectContact)
+	}
+	if options.includeCompanies {
+		companies = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectCompany)
+	}
+	if options.includeDeals {
+		deals = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectDeal)
+	}
+	if options.includeSupport {
+		support = r.batchSupportConversationAssociations(ctx, storyIDs)
+	}
+	return contacts, companies, deals, support
+}
+
+func (r *PMStoryRepository) batchCRMObjectAssociations(ctx context.Context, storyIDs []string, objectType string) map[string][]model.AssociationObjectSummary {
+	result := map[string][]model.AssociationObjectSummary{}
+	var links []storyAssociationLinkRow
+	if err := r.db.WithContext(ctx).
+		Table("crm_associations ca").
+		Select(`
+			CASE
+				WHEN ca.from_object_type = ? THEN ca.from_object_id
+				ELSE ca.to_object_id
+			END AS story_id,
+			CASE
+				WHEN ca.from_object_type = ? THEN ca.to_object_id
+				ELSE ca.from_object_id
+			END AS object_id
+		`, model.CRMObjectStory, model.CRMObjectStory).
+		Where(`
+			(ca.from_object_type = ? AND ca.from_object_id IN ? AND ca.to_object_type = ?)
+			OR
+			(ca.to_object_type = ? AND ca.to_object_id IN ? AND ca.from_object_type = ?)
+		`, model.CRMObjectStory, storyIDs, objectType, model.CRMObjectStory, storyIDs, objectType).
+		Scan(&links).Error; err != nil {
+		return result
+	}
+	if len(links) == 0 {
+		return result
+	}
+
+	objectIDs := make([]string, 0, len(links))
+	seen := make(map[string]struct{}, len(links))
+	for _, link := range links {
+		if _, ok := seen[link.ObjectID]; ok {
+			continue
+		}
+		seen[link.ObjectID] = struct{}{}
+		objectIDs = append(objectIDs, link.ObjectID)
+	}
+
+	summaryByID := r.loadAssociationObjectSummaries(ctx, objectType, objectIDs)
+	for _, link := range links {
+		summary, ok := summaryByID[link.ObjectID]
+		if !ok {
+			continue
+		}
+		result[link.StoryID] = append(result[link.StoryID], summary)
+	}
+	return result
+}
+
+func (r *PMStoryRepository) batchSupportConversationAssociations(ctx context.Context, storyIDs []string) map[string][]model.AssociationObjectSummary {
+	result := r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectSupportConversation)
+
+	var rows []struct {
+		ID            string `gorm:"column:id"`
+		LinkedStoryID string `gorm:"column:linked_story_id"`
+		DisplayID     int    `gorm:"column:display_id"`
+		Subject       string `gorm:"column:subject"`
+		Status        string `gorm:"column:status"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Select("id, linked_story_id, display_id, subject, status").
+		Where("linked_story_id IN ?", storyIDs).
+		Order("display_id ASC").
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+
+	seen := map[string]map[string]struct{}{}
+	for storyID, summaries := range result {
+		seen[storyID] = map[string]struct{}{}
+		for _, summary := range summaries {
+			seen[storyID][summary.ObjectID] = struct{}{}
+		}
+	}
+
+	for _, row := range rows {
+		if _, ok := seen[row.LinkedStoryID]; !ok {
+			seen[row.LinkedStoryID] = map[string]struct{}{}
+		}
+		if _, ok := seen[row.LinkedStoryID][row.ID]; ok {
+			continue
+		}
+		displayID := fmt.Sprintf("%d", row.DisplayID)
+		status := row.Status
+		result[row.LinkedStoryID] = append(result[row.LinkedStoryID], model.AssociationObjectSummary{
+			ObjectType: model.CRMObjectSupportConversation,
+			ObjectID:   row.ID,
+			DisplayID:  &displayID,
+			Title:      row.Subject,
+			Status:     &status,
+		})
+		seen[row.LinkedStoryID][row.ID] = struct{}{}
+	}
+
+	return result
+}
+
+func (r *PMStoryRepository) loadAssociationObjectSummaries(ctx context.Context, objectType string, objectIDs []string) map[string]model.AssociationObjectSummary {
+	result := map[string]model.AssociationObjectSummary{}
+	if len(objectIDs) == 0 {
+		return result
+	}
+
+	switch objectType {
+	case model.CRMObjectContact:
+		var rows []struct {
+			ID        string  `gorm:"column:id"`
+			DisplayID string  `gorm:"column:display_id"`
+			FirstName string  `gorm:"column:first_name"`
+			LastName  *string `gorm:"column:last_name"`
+			Email     *string `gorm:"column:email"`
+		}
+		if err := r.db.WithContext(ctx).
+			Table("crm_contacts").
+			Select("id, display_id, first_name, last_name, email").
+			Where("id IN ?", objectIDs).
+			Scan(&rows).Error; err != nil {
+			return result
+		}
+		for _, row := range rows {
+			title := strings.TrimSpace(row.FirstName + " " + stringValue(row.LastName))
+			if title == "" {
+				title = stringValue(row.Email)
+			}
+			displayID := row.DisplayID
+			result[row.ID] = model.AssociationObjectSummary{
+				ObjectType: model.CRMObjectContact,
+				ObjectID:   row.ID,
+				DisplayID:  &displayID,
+				Title:      title,
+			}
+		}
+	case model.CRMObjectCompany:
+		var rows []struct {
+			ID        string `gorm:"column:id"`
+			DisplayID string `gorm:"column:display_id"`
+			Name      string `gorm:"column:name"`
+		}
+		if err := r.db.WithContext(ctx).
+			Table("crm_companies").
+			Select("id, display_id, name").
+			Where("id IN ?", objectIDs).
+			Scan(&rows).Error; err != nil {
+			return result
+		}
+		for _, row := range rows {
+			displayID := row.DisplayID
+			result[row.ID] = model.AssociationObjectSummary{
+				ObjectType: model.CRMObjectCompany,
+				ObjectID:   row.ID,
+				DisplayID:  &displayID,
+				Title:      row.Name,
+			}
+		}
+	case model.CRMObjectDeal:
+		var rows []struct {
+			ID        string `gorm:"column:id"`
+			DisplayID string `gorm:"column:display_id"`
+			Name      string `gorm:"column:name"`
+		}
+		if err := r.db.WithContext(ctx).
+			Table("crm_deals").
+			Select("id, display_id, name").
+			Where("id IN ?", objectIDs).
+			Scan(&rows).Error; err != nil {
+			return result
+		}
+		for _, row := range rows {
+			displayID := row.DisplayID
+			result[row.ID] = model.AssociationObjectSummary{
+				ObjectType: model.CRMObjectDeal,
+				ObjectID:   row.ID,
+				DisplayID:  &displayID,
+				Title:      row.Name,
+			}
+		}
+	case model.CRMObjectSupportConversation:
+		var rows []struct {
+			ID        string `gorm:"column:id"`
+			DisplayID int    `gorm:"column:display_id"`
+			Subject   string `gorm:"column:subject"`
+			Status    string `gorm:"column:status"`
+		}
+		if err := r.db.WithContext(ctx).
+			Table("support_conversations").
+			Select("id, display_id, subject, status").
+			Where("id IN ?", objectIDs).
+			Scan(&rows).Error; err != nil {
+			return result
+		}
+		for _, row := range rows {
+			displayID := fmt.Sprintf("%d", row.DisplayID)
+			status := row.Status
+			result[row.ID] = model.AssociationObjectSummary{
+				ObjectType: model.CRMObjectSupportConversation,
+				ObjectID:   row.ID,
+				DisplayID:  &displayID,
+				Title:      row.Subject,
+				Status:     &status,
+			}
+		}
+	}
+
+	return result
+}
+
 // applyBoardFilters adds board-specific WHERE clauses to a query (shared between ListByWorkflowState and ListColumnStories).
 func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
-	if filters.TeamID != nil && *filters.TeamID != "" {
-		q = q.Where("team_id = ?", *filters.TeamID)
-	}
-	if filters.Priority != nil && *filters.Priority != "" {
-		vals := strings.Split(*filters.Priority, ",")
-		q = q.Where("priority IN ?", vals)
-	}
-	if filters.StoryType != nil && *filters.StoryType != "" {
-		vals := strings.Split(*filters.StoryType, ",")
-		q = q.Where("story_type IN ?", vals)
-	}
-	if filters.EpicID != nil && *filters.EpicID != "" {
-		vals := strings.Split(*filters.EpicID, ",")
-		q = q.Where("epic_id IN ?", vals)
-	}
-	if filters.SprintID != nil && *filters.SprintID != "" {
-		vals := strings.Split(*filters.SprintID, ",")
-		q = q.Where("sprint_id IN ?", vals)
-	}
-	if filters.OwnerID != nil && *filters.OwnerID != "" {
-		vals := strings.Split(*filters.OwnerID, ",")
-		q = q.Where("owner_id IN ?", vals)
-	}
-	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
-		vals := strings.Split(*filters.OwnerMemberID, ",")
-		q = q.Where("owner_member_id IN ?", vals)
-	}
-	if filters.RequesterID != nil && *filters.RequesterID != "" {
-		vals := strings.Split(*filters.RequesterID, ",")
-		q = q.Where("requester_id IN ?", vals)
-	}
-	if filters.RequesterMemberID != nil && *filters.RequesterMemberID != "" {
-		vals := strings.Split(*filters.RequesterMemberID, ",")
-		q = q.Where("requester_member_id IN ?", vals)
-	}
-	if filters.Severity != nil && *filters.Severity != "" {
-		vals := strings.Split(*filters.Severity, ",")
-		q = q.Where("severity IN ?", vals)
-	}
+	q = applyStoryStringFilter(q, "pm_stories.team_id", filters.TeamID)
+	q = applyStoryStringFilter(q, "pm_stories.priority", filters.Priority)
+	q = applyStoryStringFilter(q, "pm_stories.story_type", filters.StoryType)
+	q = applyStoryStringFilter(q, "pm_stories.epic_id", filters.EpicID)
+	q = applyStoryStringFilter(q, "pm_stories.sprint_id", filters.SprintID)
+	q = applyStoryAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
+	q = applyStoryAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
+	q = applyStoryAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
+	q = applyStorySupportConversationFilter(q, filters.SupportConversationID)
+	q = applyStoryStringFilter(q, "pm_stories.owner_id", filters.OwnerID)
+	q = applyStoryStringFilter(q, "pm_stories.owner_member_id", filters.OwnerMemberID)
+	q = applyStoryStringFilter(q, "pm_stories.requester_id", filters.RequesterID)
+	q = applyStoryStringFilter(q, "pm_stories.requester_member_id", filters.RequesterMemberID)
+	q = applyStoryStringFilter(q, "pm_stories.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
 	}
@@ -946,10 +1281,16 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 			q = q.Where("pm_stories.updated_at >= ?", t)
 		}
 	}
-	if filters.LabelID != nil && *filters.LabelID != "" {
-		vals := strings.Split(*filters.LabelID, ",")
-		q = q.Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").
-			Where("psl.label_id IN ?", vals)
+	if labelValues := splitFilterValues(filters.LabelID); len(labelValues) > 0 {
+		q = q.Where(
+			`EXISTS (
+				SELECT 1
+				FROM pm_story_labels psl
+				WHERE psl.story_id = pm_stories.id
+				  AND psl.label_id IN ?
+			)`,
+			labelValues,
+		)
 	}
 	if filters.AccessibleTeamIDs != nil {
 		if len(filters.AccessibleTeamIDs) == 0 {
@@ -1204,7 +1545,12 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 	}
 
 	// Enrich all stories at once.
-	enriched := r.collectAndEnrich(ctx, allStories)
+	enriched := r.collectAndEnrich(ctx, allStories, storyEnrichOptions{
+		includeContacts:  filters.IncludeContacts,
+		includeCompanies: filters.IncludeCompanies,
+		includeDeals:     filters.IncludeDeals,
+		includeSupport:   filters.IncludeSupport,
+	})
 	enrichedMap := make(map[string]model.BoardStory, len(enriched))
 	for _, bs := range enriched {
 		enrichedMap[bs.ID] = bs
@@ -1379,7 +1725,12 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 		return nil, 0, fmt.Errorf("list member column stories: %w", err)
 	}
 
-	enriched := r.collectAndEnrich(ctx, stories)
+	enriched := r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+		includeContacts:  filters.IncludeContacts,
+		includeCompanies: filters.IncludeCompanies,
+		includeDeals:     filters.IncludeDeals,
+		includeSupport:   filters.IncludeSupport,
+	})
 	return enriched, int(total), nil
 }
 

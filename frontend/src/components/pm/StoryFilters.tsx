@@ -16,12 +16,27 @@ import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithSta
 import type { AssignableMember } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_member_id' | 'requester_member_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked' | 'blocking';
+type FilterKey =
+  | 'priority'
+  | 'severity'
+  | 'story_type'
+  | 'owner_member_id'
+  | 'requester_member_id'
+  | 'label_id'
+  | 'epic_id'
+  | 'sprint_id'
+  | 'contact_id'
+  | 'company_id'
+  | 'deal_id'
+  | 'support_conversation_id'
+  | 'blocked'
+  | 'blocking';
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
@@ -83,9 +98,9 @@ function FilterValueSelect({
   onToggle: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const selectedLabels = definition.options
-    .filter((opt) => selected.includes(opt.value))
-    .map((opt) => opt.label);
+  const selectedLabels = selected.map((value) =>
+    definition.options.find((opt) => opt.value === value)?.label ?? value,
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -155,6 +170,7 @@ function FilterPill({
 // ── Provider ───────────────────────────────────────────────────────
 
 interface StoryFilterProviderProps {
+  workspaceId: string;
   assignableMembers: AssignableMember[];
   labels: Label[];
   epics: EpicWithStats[];
@@ -164,9 +180,13 @@ interface StoryFilterProviderProps {
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({ assignableMembers, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
+export function StoryFilterProvider({ workspaceId, assignableMembers, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
   const internalChangeRef = useRef(false);
+  const { data: contactsRes } = useContacts(workspaceId, { page: 1, per_page: 100 });
+  const { data: companiesRes } = useCompanies(workspaceId, { page: 1, per_page: 100 });
+  const { data: dealsRes } = useDeals(workspaceId, { page: 1, per_page: 100 });
+  const { data: conversationsRes } = useConversations(workspaceId);
 
   // Hydrate internal filter state from external filters (e.g. when a view is applied).
   // Skip when the change originated from user interaction with filter pills.
@@ -229,6 +249,26 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
       label: i.sprint.name,
     }));
 
+    const contactOptions: FilterOption[] = (contactsRes?.data ?? []).map((contact) => ({
+      value: contact.id,
+      label: `${contact.first_name}${contact.last_name ? ` ${contact.last_name}` : ''}${contact.email ? ` (${contact.email})` : ''}`,
+    }));
+
+    const companyOptions: FilterOption[] = (companiesRes?.data ?? []).map((company) => ({
+      value: company.id,
+      label: company.name,
+    }));
+
+    const dealOptions: FilterOption[] = (dealsRes?.data ?? []).map((deal) => ({
+      value: deal.id,
+      label: deal.name,
+    }));
+
+    const supportConversationOptions: FilterOption[] = (conversationsRes?.data ?? []).map((conversation) => ({
+      value: conversation.id,
+      label: `#${conversation.display_id} ${conversation.subject || conversation.customer_name || conversation.customer_email || 'Conversation'}`,
+    }));
+
     const blockedOptions: FilterOption[] = [
       { value: 'true', label: 'Blocked' },
       { value: 'false', label: 'Not blocked' },
@@ -247,10 +287,14 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
       { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
       { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions },
+      { key: 'contact_id' as FilterKey, label: 'Contact', options: contactOptions },
+      { key: 'company_id' as FilterKey, label: 'Company', options: companyOptions },
+      { key: 'deal_id' as FilterKey, label: 'Deal', options: dealOptions },
+      { key: 'support_conversation_id' as FilterKey, label: 'Support', options: supportConversationOptions },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
       { key: 'blocking' as FilterKey, label: 'Blocking', options: blockingOptions },
     ];
-  }, [assignableMembers, labels, epics, sprints]);
+  }, [assignableMembers, labels, epics, sprints, contactsRes, companiesRes, dealsRes, conversationsRes]);
 
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();
@@ -332,7 +376,7 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
 export function StoryFilterTrigger() {
   const { definitions, activeKeys, activeCount, handleAdd } = useFilterContext();
   const [open, setOpen] = useState(false);
-  const available = definitions.filter((d) => !activeKeys.has(d.key));
+  const available = definitions.filter((d) => !activeKeys.has(d.key) && d.options.length > 0);
 
   return (
     <>

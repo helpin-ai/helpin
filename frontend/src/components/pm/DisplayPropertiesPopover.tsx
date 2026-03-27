@@ -1,17 +1,20 @@
 import { Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 interface DisplayPropertiesPopoverProps {
   allProperties: { key: string; label: string }[];
   visible: string[];
   onChange: (next: string[]) => void;
+  iconOnly?: boolean;
 }
 
 export function DisplayPropertiesPopover({
   allProperties,
   visible,
   onChange,
+  iconOnly = false,
 }: DisplayPropertiesPopoverProps) {
   const toggle = (key: string) => {
     onChange(
@@ -23,12 +26,18 @@ export function DisplayPropertiesPopover({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-          <Settings2 className="h-3.5 w-3.5" />
-          Display
-        </Button>
-      </PopoverTrigger>
+      <QuickTooltip label="Display properties">
+        <PopoverTrigger asChild>
+          <Button
+            variant={iconOnly ? 'ghost' : 'outline'}
+            size={iconOnly ? 'icon' : 'sm'}
+            className={iconOnly ? 'h-7 w-7' : 'h-8 gap-1.5 text-xs'}
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            {iconOnly ? null : 'Display'}
+          </Button>
+        </PopoverTrigger>
+      </QuickTooltip>
       <PopoverContent className="w-72 p-3" align="end">
         <p className="mb-2.5 text-xs font-medium text-muted-foreground">Display properties</p>
         <div className="flex flex-wrap gap-1.5">

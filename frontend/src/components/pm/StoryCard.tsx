@@ -50,7 +50,53 @@ interface StoryCardProps {
   onSeverityChanged?: (story: Story) => void;
   onEstimateChanged?: (story: Story) => void;
   showStateBadge?: boolean;
-  assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key'> | null;
+  assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
+}
+
+const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
+
+function StoryCardAgentBadge({
+  agent,
+}: {
+  agent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
+}) {
+  const isWorking = agent?.status === 'working';
+
+  return (
+    <span className="relative block h-6 w-6 shrink-0">
+      <svg
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+        className={cn(
+          'absolute inset-0 h-full w-full overflow-visible',
+          isWorking && 'motion-safe:animate-spin motion-safe:[animation-duration:2.4s]',
+        )}
+      >
+        <polygon
+          points={AGENT_OCTAGON_POINTS}
+          fill="none"
+          className={cn(
+            isWorking
+              ? 'stroke-foreground/80'
+              : 'stroke-muted-foreground/45 dark:stroke-muted-foreground/70',
+          )}
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray={isWorking ? undefined : '6 7'}
+        />
+      </svg>
+      <span
+        className="absolute inset-[2px] overflow-hidden bg-background/95"
+        style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
+      >
+        <AgentAvatar
+          agent={agent}
+          className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+        />
+      </span>
+    </span>
+  );
 }
 
 function StoryCardComponent({
@@ -91,6 +137,7 @@ function StoryCardComponent({
     story_type: fieldVis.story_type && displayProps.story_type,
     priority: fieldVis.priority && displayProps.priority,
     severity: fieldVis.severity && displayProps.severity,
+    agent: displayProps.agent,
     epic: fieldVis.epic && displayProps.epic,
     sprint: (fieldVis.sprint ?? true) && (displayProps.sprint ?? true),
     labels: (fieldVis.labels ?? true) && displayProps.labels,
@@ -480,60 +527,62 @@ function StoryCardComponent({
             {formatEstimateDisplay(story.estimate, story.team_id)}
           </span>
         ) : null)}
-        {story.assigned_agent_id && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(pillBase, 'border-violet-300 bg-violet-50 px-1 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400')}>
-                <AgentAvatar agent={assignedAgent} className="h-4 w-4 border-violet-200/80 shadow-none dark:border-violet-800" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{assignedAgent?.name ?? 'Agent assigned'}</TooltipContent>
-          </Tooltip>
-        )}
         <span className="flex-1" />
-        {/* Assignee avatar / assign button */}
-        {vis.assignee && (assignableMembers && workspaceId ? (
-          <MemberPickerPopover
-            value={story.owner_member_id || '__none__'}
-            members={assignableMembers}
-            noneLabel="Unassigned"
-            onChange={(value) => {
-              void handleAssignOwner(value);
-            }}
-            align="end"
-            triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
-            contentClassName="w-[220px]"
-            renderTrigger={() => {
-              const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
-              return selectedMember ? (
-                <UserAvatar
-                  name={selectedMember.display_name || selectedMember.email}
-                  avatarUrl={selectedMember.avatar_url}
-                  className="h-5 w-5"
-                />
-              ) : (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                  <UserPlus className="h-2.5 w-2.5" />
+        <div className="flex items-center gap-1.5">
+          {vis.agent && story.assigned_agent_id && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="shrink-0">
+                  <StoryCardAgentBadge agent={assignedAgent} />
                 </span>
-              );
-            }}
-          />
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="shrink-0">
-                {currentOwnerName ? (
-                  <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+              </TooltipTrigger>
+              <TooltipContent side="top">{assignedAgent?.name ?? 'Agent assigned'}</TooltipContent>
+            </Tooltip>
+          )}
+          {/* Assignee avatar / assign button */}
+          {vis.assignee && (assignableMembers && workspaceId ? (
+            <MemberPickerPopover
+              value={story.owner_member_id || '__none__'}
+              members={assignableMembers}
+              noneLabel="Unassigned"
+              onChange={(value) => {
+                void handleAssignOwner(value);
+              }}
+              align="end"
+              triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
+              contentClassName="w-[220px]"
+              renderTrigger={() => {
+                const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
+                return selectedMember ? (
+                  <UserAvatar
+                    name={selectedMember.display_name || selectedMember.email}
+                    avatarUrl={selectedMember.avatar_url}
+                    className="h-5 w-5"
+                  />
                 ) : (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
                     <UserPlus className="h-2.5 w-2.5" />
                   </span>
-                )}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{currentOwnerName || 'Unassigned'}</TooltipContent>
-          </Tooltip>
-        ))}
+                );
+              }}
+            />
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="shrink-0">
+                  {currentOwnerName ? (
+                    <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+                  ) : (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
+                      <UserPlus className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{currentOwnerName || 'Unassigned'}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
       </div>
       </div>
     </article>

@@ -47,6 +47,16 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS crm_associations (
+		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		workspace_id TEXT NOT NULL,
+		from_object_type TEXT NOT NULL,
+		from_object_id TEXT NOT NULL,
+		to_object_type TEXT NOT NULL,
+		to_object_id TEXT NOT NULL,
+		association_label TEXT,
+		created_at DATETIME
+	)`)
 
 	seedUser(t, db, userID, "storyadmin@test.com", "Story Admin", "hash")
 	seedWorkspace(t, db, wsID, "Story Workspace", "story-ws", userID)
@@ -441,6 +451,54 @@ func TestPMStoryService_ListEmptyWorkspace(t *testing.T) {
 	}
 	if len(stories) != 0 {
 		t.Errorf("len(stories) = %d, want 0", len(stories))
+	}
+}
+
+func TestPMStoryService_ListAssociationFilters(t *testing.T) {
+	t.Parallel()
+	env := newStoryTestEnv(t)
+	ctx := context.Background()
+
+	contactStory := createTestStory(t, env, "Story With Contact")
+	supportStory := createTestStory(t, env, "Story With Support")
+	now := time.Now().UTC()
+
+	mustExec(t, env.db, `INSERT INTO crm_associations (
+		id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"assoc-story-contact-1", env.wsID, model.CRMObjectStory, contactStory.Story.ID, model.CRMObjectContact, "contact-123", now,
+	)
+
+	mustExec(t, env.db, `INSERT INTO support_conversations (
+		id, workspace_id, display_id, subject, status, priority, channel, source, linked_story_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"support-conv-123", env.wsID, 9001, "Customer cannot log in", "open", "medium", "widget", "internal", supportStory.Story.ID, now, now,
+	)
+
+	stories, total, err := env.svc.List(ctx, env.wsID, model.PMStoryFilters{
+		ContactID: strPtr("contact-123"),
+	}, model.PMPagination{Page: 1, PerPage: 50})
+	if err != nil {
+		t.Fatalf("List by contact association: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("contact filter total = %d, want 1", total)
+	}
+	if len(stories) != 1 || stories[0].ID != contactStory.Story.ID {
+		t.Fatalf("contact filter returned %+v, want only %s", stories, contactStory.Story.ID)
+	}
+
+	stories, total, err = env.svc.List(ctx, env.wsID, model.PMStoryFilters{
+		SupportConversationID: strPtr("support-conv-123"),
+	}, model.PMPagination{Page: 1, PerPage: 50})
+	if err != nil {
+		t.Fatalf("List by support association: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("support filter total = %d, want 1", total)
+	}
+	if len(stories) != 1 || stories[0].ID != supportStory.Story.ID {
+		t.Fatalf("support filter returned %+v, want only %s", stories, supportStory.Story.ID)
 	}
 }
 

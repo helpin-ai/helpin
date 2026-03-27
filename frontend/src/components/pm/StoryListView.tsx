@@ -22,7 +22,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { format, parseISO } from 'date-fns';
-import { agentService } from '@/lib/services/agentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import {
@@ -36,7 +35,7 @@ import {
 } from '@/lib/pmConstants';
 import { UserAvatar } from './UserAvatar';
 import type {
-  Agent,
+  AssociationObjectSummary,
   Label,
   Priority,
   Severity,
@@ -52,7 +51,7 @@ import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildStoryCopyUrl } from '@/lib/pmStoryLinks';
-import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useAgents, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
@@ -155,6 +154,15 @@ export function StoryListView({
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
+  const includeAssociationData = useMemo(
+    () => ({
+      include_contacts: !!displayProps.contacts,
+      include_companies: !!displayProps.companies,
+      include_deals: !!displayProps.deals,
+      include_support: !!displayProps.support,
+    }),
+    [displayProps.companies, displayProps.contacts, displayProps.deals, displayProps.support],
+  );
 
   useEffect(() => { displayInit(workspaceId); }, [workspaceId, displayInit]);
 
@@ -172,8 +180,9 @@ export function StoryListView({
   const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const { data: agents = [] } = useAgents(workspaceId);
 
   // Per-group pagination state (for workflow_state grouping)
   const [groupHasMore, setGroupHasMore] = useState<Map<string, { hasMore: boolean; total: number; loaded: number }>>(new Map());
@@ -183,7 +192,6 @@ export function StoryListView({
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
-    agentService.list(workspaceId).then((r) => { if (r.data) setAgents(r.data); });
   }, [workspaceId]);
 
   // Build lookup maps
@@ -255,6 +263,7 @@ export function StoryListView({
       ...filters,
     };
     if (teamId) apiFilters.team_id = teamId;
+    Object.assign(apiFilters, includeAssociationData);
 
     const res = await pmStoryService.list(workspaceId, apiFilters as Record<string, string>);
     if (res.data) {
@@ -265,7 +274,7 @@ export function StoryListView({
     }
     setLoading(false);
     setLoadingMore(false);
-  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
+  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal, includeAssociationData]);
 
   // ── Per-state pagination (workflow_state grouping) ──
   const fetchStoriesByState = useCallback(async () => {
@@ -279,7 +288,7 @@ export function StoryListView({
     }
     if (teamId) boardFilters.team_id = teamId;
 
-    const res = await pmStoryService.listBoard(workspaceId, workflow.workflow.id, boardFilters, LIST_PAGE_SIZE);
+    const res = await pmStoryService.listBoard(workspaceId, workflow.workflow.id, boardFilters, LIST_PAGE_SIZE, includeAssociationData);
     if (res.data) {
       const allStories: Story[] = [];
       const perGroup = new Map<string, { hasMore: boolean; total: number; loaded: number }>();
@@ -296,7 +305,7 @@ export function StoryListView({
       setHasMore(false); // disable global load more
     }
     setLoading(false);
-  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
+  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal, includeAssociationData]);
 
   // Load more stories for a specific state group
   const loadMoreForGroup = useCallback(async (stateId: string) => {
@@ -313,7 +322,7 @@ export function StoryListView({
     }
     if (teamId) boardFilters.team_id = teamId;
 
-    const res = await pmStoryService.listBoardColumn(workspaceId, stateId, info.loaded, LIST_PAGE_SIZE, boardFilters);
+    const res = await pmStoryService.listBoardColumn(workspaceId, stateId, info.loaded, LIST_PAGE_SIZE, boardFilters, includeAssociationData);
     if (res.data) {
       const newStories = res.data.stories;
       const newTotal = res.data.total;
@@ -346,7 +355,7 @@ export function StoryListView({
     }
     setGroupLoadingId(null);
     groupLoadingRef.current = false;
-  }, [workspaceId, filters, teamId, groupHasMore]);
+  }, [workspaceId, filters, teamId, groupHasMore, includeAssociationData]);
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMore) {
@@ -430,7 +439,17 @@ export function StoryListView({
           : storyDetail.story.owner_name,
       };
       setStories((current) =>
-        current.map((story) => (story.id === storyId ? merged : story)),
+        current.map((story) => (
+          story.id === storyId
+            ? {
+                ...merged,
+                contacts: story.contacts,
+                companies: story.companies,
+                deals: story.deals,
+                support_conversations: story.support_conversations,
+              }
+            : story
+        )),
       );
     };
 
@@ -609,6 +628,38 @@ export function StoryListView({
           ),
         }
       ),
+      columnHelper.display({
+        id: 'contacts',
+        header: 'Contacts',
+        size: 220,
+        enableGrouping: false,
+        enableSorting: false,
+        cell: (info) => <InlineAssociationListCell items={info.row.original.contacts} emptyLabel="No contacts" />,
+      }),
+      columnHelper.display({
+        id: 'companies',
+        header: 'Companies',
+        size: 220,
+        enableGrouping: false,
+        enableSorting: false,
+        cell: (info) => <InlineAssociationListCell items={info.row.original.companies} emptyLabel="No companies" />,
+      }),
+      columnHelper.display({
+        id: 'deals',
+        header: 'Deals',
+        size: 220,
+        enableGrouping: false,
+        enableSorting: false,
+        cell: (info) => <InlineAssociationListCell items={info.row.original.deals} emptyLabel="No deals" />,
+      }),
+      columnHelper.display({
+        id: 'support',
+        header: 'Support',
+        size: 220,
+        enableGrouping: false,
+        enableSorting: false,
+        cell: (info) => <InlineAssociationListCell items={info.row.original.support_conversations} emptyLabel="No tickets" />,
+      }),
       columnHelper.accessor(
         (row) => (row.story_type ? STORY_TYPE_CONFIG[row.story_type].label : 'Unknown'),
         {
@@ -741,6 +792,10 @@ export function StoryListView({
     if (!displayProps.team && vis['teamName'] !== false) vis['teamName'] = false;
     if (!displayProps.epic && vis['epicName'] !== false) vis['epicName'] = false;
     if (!displayProps.sprint && vis['sprintName'] !== false) vis['sprintName'] = false;
+    if (!displayProps.contacts) vis['contacts'] = false;
+    if (!displayProps.companies) vis['companies'] = false;
+    if (!displayProps.deals) vis['deals'] = false;
+    if (!displayProps.support) vis['support'] = false;
     if (!displayProps.due_date && vis['deadline'] !== false) vis['deadline'] = false;
     if (!displayProps.labels && vis['labels'] !== false) vis['labels'] = false;
     if (!displayProps.updated_at) vis['updatedAt'] = false;
@@ -983,7 +1038,7 @@ export function StoryListView({
                     <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(row)} />
                   ) : (
                     <>
-                      <MemoDataRow row={row} onOpenStory={onOpenStory} />
+                      <MemoDataRow row={row} onOpenStory={onOpenStory} columnSizingVersion={columnSizingVersion} />
                       {showGroupLoadMore && (
                         <GroupLoadSentinel
                           stateId={groupStateId}
@@ -1061,9 +1116,18 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   );
 });
 
-const MemoDataRow = memo(function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: Story) => void }) {
+const MemoDataRow = memo(function DataRow({
+  row,
+  onOpenStory,
+  columnSizingVersion,
+}: {
+  row: Row<Story>;
+  onOpenStory: (story: Story) => void;
+  columnSizingVersion: string;
+}) {
   return (
     <div
+      data-column-sizing={columnSizingVersion}
       className={`group/row ${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenStory(row.original)}
     >
@@ -1588,6 +1652,32 @@ function InlineSprintCell({
         </PopoverContent>
       )}
     </Popover>
+  );
+}
+
+function InlineAssociationListCell({
+  items,
+  emptyLabel,
+}: {
+  items?: AssociationObjectSummary[];
+  emptyLabel: string;
+}) {
+  if (!items || items.length === 0) {
+    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>;
+  }
+
+  const visible = items.slice(0, 2);
+  const remaining = items.length - visible.length;
+  const label = visible.map((item) => item.title).join(', ');
+  const fullLabel = items.map((item) => item.title).join(', ');
+
+  return (
+    <span className="flex min-w-0 items-center gap-1 text-xs" title={fullLabel}>
+      <span className="truncate">{label}</span>
+      {remaining > 0 ? (
+        <span className="shrink-0 text-muted-foreground">+{remaining}</span>
+      ) : null}
+    </span>
   );
 }
 
