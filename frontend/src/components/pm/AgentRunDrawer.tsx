@@ -232,7 +232,7 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
         filesToModify,
       } satisfies StoryPlanStoryPreview;
     })
-    .filter((story): story is StoryPlanStoryPreview => story !== null);
+    .filter((story): story is NonNullable<typeof story> => story !== null) as StoryPlanStoryPreview[];
 
   if (normalizedStories.length === 0) return null;
 

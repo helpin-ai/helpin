@@ -63,7 +63,7 @@ export function ArticleLocalePillRail({
                   : 'border border-transparent opacity-60 hover:opacity-100 hover:bg-muted/40'
               }`}
             >
-              <StatusIcon className={`h-3 w-3 ${meta.className}`} strokeWidth={2.5} />
+              <StatusIcon className={`h-3 w-3 ${meta.className}`} />
               <span>{item.shortLabel}</span>
               {item.isSource && (
                 <span className="text-[9px] font-normal text-muted-foreground tracking-normal">SRC</span>

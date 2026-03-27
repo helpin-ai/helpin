@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
-import { format, parseISO, isThisYear } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import {
   ArrowLeft,
@@ -69,7 +69,6 @@ import {
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { timeAgo } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -94,7 +93,7 @@ import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { docsService } from '@/lib/services/docsService'
 import { queryKeys } from '@/lib/queryKeys'
-import type { DocsVersion } from '@/lib/docsTypes'
+import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
 function docStatusColor(status: string): string {
@@ -789,7 +788,7 @@ export function DocsDocumentDetail() {
                 isActive: activeLocale === locale,
                 isSource: locale === defaultLocale,
                 sourceStatus: doc.status,
-                translationState: localeRowsByLocale.get(locale)?.state ?? 'missing',
+                translationState: (localeRowsByLocale.get(locale)?.state ?? 'missing') as DocsHelpcenterTranslationState,
               }))}
               onSelectLocale={handleSelectLocale}
               onOpenSettings={(locale) => setEditingTranslationLocale(locale)}

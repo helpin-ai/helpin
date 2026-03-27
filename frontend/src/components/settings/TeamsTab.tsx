@@ -17,7 +17,6 @@ import type { SettingsSection } from '@/pages/Settings';
 import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

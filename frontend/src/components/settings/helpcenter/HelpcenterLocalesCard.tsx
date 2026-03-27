@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Globe2, Languages } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -43,8 +41,6 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
     }
     return Array.from(byValue.values())
   }, [draft.enabled_locales])
-
-  const enabledLocales = withDefaultFirst(draft.enabled_locales, draft.default_locale)
 
   const toggleLocale = (locale: string, checked: boolean) => {
     setDraft((current) => {

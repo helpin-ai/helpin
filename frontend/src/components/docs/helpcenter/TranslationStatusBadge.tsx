@@ -1,5 +1,4 @@
 import { Plus } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import type { DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 
 const STATUS_META: Record<DocsHelpcenterTranslationState, { label: string; className: string; icon?: boolean }> = {

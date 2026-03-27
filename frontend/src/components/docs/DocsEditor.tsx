@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { SlugDisplay } from './SlugDisplay'
+import { toast } from 'sonner'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 

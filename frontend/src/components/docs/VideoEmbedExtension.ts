@@ -118,7 +118,7 @@ export const VideoEmbedExtension = Node.create({
           const url = node.attrs.sourceUrl || node.attrs.embedUrl || '';
           const provider = node.attrs.provider || 'video';
           const embedUrl = node.attrs.embedUrl || '';
-          if (this.editor?.storage?.markdown?.options?.html) {
+          if ((this as any).editor?.storage?.markdown?.options?.html) {
             state.write(
               `<div data-video-embed="${embedUrl}" data-video-provider="${provider}" data-video-source="${url}">` +
               `<a href="${url}" target="_blank" rel="noopener noreferrer">Video (${provider})</a></div>`

@@ -73,7 +73,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
+import type { DocsCollection, DocsDocument, DocStatus, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
@@ -119,7 +119,7 @@ export function DocsSpaceDetail() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate)
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { canEditDocs, canAdminDocs } = usePermissions(access)
+  const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
   const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
@@ -262,7 +262,7 @@ export function DocsSpaceDetail() {
     const isDefaultLocale = locale === defaultLocale
     return {
       locale,
-      state: translation?.status ?? 'missing',
+      state: (translation?.status ?? 'missing') as DocsHelpcenterTranslationState,
       updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
       helperText: isDefaultLocale
         ? 'Mirrored from the source space and refreshed automatically when the source changes.'
@@ -280,7 +280,7 @@ export function DocsSpaceDetail() {
     const parentPublished = spaceTranslationsByLocale.get(locale)?.status === 'published'
     return {
       locale,
-      state: translation?.status ?? 'missing',
+      state: (translation?.status ?? 'missing') as DocsHelpcenterTranslationState,
       updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
       helperText: isDefaultLocale
         ? 'Mirrored from the source collection and kept in sync automatically.'

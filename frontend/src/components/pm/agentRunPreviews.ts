@@ -21,7 +21,7 @@ const PREVIEW_TOOL_NAMES = new Set([
 ]);
 
 export function isPublishedPreviewToolName(value: unknown): boolean {
-  return PREVIEW_TOOL_NAMES.has(asString(value));
+  return PREVIEW_TOOL_NAMES.has(asString(value) ?? '');
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
