@@ -1,8 +1,11 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	openaischema "github.com/cloudwego/eino/schema/openai"
@@ -216,5 +219,84 @@ func TestNormalizeToolArgumentsConvertsJSONStringsToObjects(t *testing.T) {
 	}
 	if got := string(normalizeToolArguments(`"read this file"`)); got != `{"raw":"read this file"}` {
 		t.Fatalf("expected JSON string args to be wrapped, got %q", got)
+	}
+}
+
+func TestExecuteToolCallsForRoundRunsSafeReadsInParallel(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	registry.tools["read_file"] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		time.Sleep(200 * time.Millisecond)
+		return "read-one", nil
+	}
+	registry.tools["list_directory"] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		time.Sleep(200 * time.Millisecond)
+		return "read-two", nil
+	}
+
+	execCtx := &ExecutionContext{Context: context.Background()}
+	toolCalls := []ExecutionBlock{
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-2", ToolName: "list_directory", Input: json.RawMessage(`{"path":"."}`)},
+	}
+
+	start := time.Now()
+	results := executeToolCallsForRound(execCtx, registry, toolCalls, nil)
+	elapsed := time.Since(start)
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if elapsed >= 350*time.Millisecond {
+		t.Fatalf("expected parallel execution, took %v", elapsed)
+	}
+}
+
+func TestCanExecuteToolCallsInParallelRejectsMutations(t *testing.T) {
+	if canExecuteToolCallsInParallel([]ExecutionBlock{
+		{ToolName: "read_file"},
+		{ToolName: "write_file"},
+	}) {
+		t.Fatal("expected mixed read/write tool calls not to run in parallel")
+	}
+}
+
+func TestExecuteToolCallsForRoundEmitsSequentialToolEventsWhenParallelDisabled(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	registry.tools["read_file"] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		time.Sleep(25 * time.Millisecond)
+		return "read-one", nil
+	}
+	registry.tools["write_file"] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return "write-one", nil
+	}
+
+	execCtx := &ExecutionContext{Context: context.Background()}
+	toolCalls := []ExecutionBlock{
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-2", ToolName: "write_file", Input: json.RawMessage(`{"path":"a.go","content":"updated"}`)},
+	}
+
+	var events []string
+	results := executeToolCallsForRound(execCtx, registry, toolCalls, func(event ExecutionEvent) {
+		events = append(events, fmt.Sprintf("%s:%s", event.Type, event.ToolCallID))
+	})
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	want := []string{
+		"tool_call_started:call-1",
+		"tool_call_finished:call-1",
+		"tool_call_started:call-2",
+		"tool_call_finished:call-2",
+	}
+	if len(events) != len(want) {
+		t.Fatalf("unexpected event count %v", events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("unexpected event order %v", events)
+		}
 	}
 }

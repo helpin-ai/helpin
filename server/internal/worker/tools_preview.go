@@ -80,14 +80,13 @@ func executePreviewToolRequest(ctx *ExecutionContext, toolName string, req Publi
 	}
 	cachePublishedPreview(ctx, *preview)
 
-	payload, _ := json.MarshalIndent(map[string]any{
+	return toCompactJSONString(map[string]any{
 		"status":    "published",
 		"panel_key": preview.PanelKey,
 		"title":     preview.Title,
 		"format":    preview.Format,
 		"replace":   preview.Replace,
-	}, "", "  ")
-	return string(payload), nil
+	}), nil
 }
 
 func wrapPreviewToolError(toolName string, err error) error {

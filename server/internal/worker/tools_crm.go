@@ -40,14 +40,10 @@ func toolListDeals(ctx *ExecutionContext, input json.RawMessage) (string, error)
 		}
 		summaries[i] = dealSummary{ID: d.ID, Name: d.Name, Stage: stageName, Amount: d.Amount}
 	}
-	result, _ := json.MarshalIndent(summaries, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(summaries), nil
 }
 
 func toolUpdateDealStage(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.UpdateDealStage == nil {
-		return "", fmt.Errorf("CRM deal access is not available for this agent")
-	}
 	var params struct {
 		DealID  string `json:"deal_id"`
 		StageID string `json:"stage_id"`
@@ -58,6 +54,15 @@ func toolUpdateDealStage(ctx *ExecutionContext, input json.RawMessage) (string, 
 	if strings.TrimSpace(params.DealID) == "" || strings.TrimSpace(params.StageID) == "" {
 		return "", fmt.Errorf("deal_id and stage_id are required")
 	}
+	if output, ok, err := executeInternalCommand(ctx, "crm_deal", params.DealID, "crm.update_deal_stage", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("update deal stage: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.UpdateDealStage == nil {
+		return "", fmt.Errorf("CRM deal access is not available for this agent")
+	}
 	if err := ctx.Services.UpdateDealStage(ctx.Context, params.DealID, params.StageID); err != nil {
 		return "", fmt.Errorf("update deal stage: %w", err)
 	}
@@ -65,9 +70,6 @@ func toolUpdateDealStage(ctx *ExecutionContext, input json.RawMessage) (string, 
 }
 
 func toolAddDealNote(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.AddDealNote == nil {
-		return "", fmt.Errorf("CRM deal access is not available for this agent")
-	}
 	var params struct {
 		DealID  string `json:"deal_id"`
 		Content string `json:"content"`
@@ -77,6 +79,15 @@ func toolAddDealNote(ctx *ExecutionContext, input json.RawMessage) (string, erro
 	}
 	if strings.TrimSpace(params.DealID) == "" || strings.TrimSpace(params.Content) == "" {
 		return "", fmt.Errorf("deal_id and content are required")
+	}
+	if output, ok, err := executeInternalCommand(ctx, "crm_deal", params.DealID, "crm.add_deal_note", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("add deal note: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.AddDealNote == nil {
+		return "", fmt.Errorf("CRM deal access is not available for this agent")
 	}
 	if err := ctx.Services.AddDealNote(ctx.Context, ctx.WorkspaceID, params.DealID, ctx.AgentID, params.Content); err != nil {
 		return "", fmt.Errorf("add deal note: %w", err)
@@ -115,8 +126,7 @@ func toolListContacts(ctx *ExecutionContext, input json.RawMessage) (string, err
 	for i, c := range contacts {
 		summaries[i] = contactSummary{ID: c.ID, FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle}
 	}
-	result, _ := json.MarshalIndent(summaries, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(summaries), nil
 }
 
 func toolListBuyerSignals(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -152,6 +162,5 @@ func toolListBuyerSignals(ctx *ExecutionContext, input json.RawMessage) (string,
 	for i, s := range signals {
 		summaries[i] = signalSummary{ID: s.ID, SignalType: s.SignalType, Summary: s.Summary, Confidence: s.Confidence, DealID: s.DealID, ContactID: s.ContactID}
 	}
-	result, _ := json.MarshalIndent(summaries, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(summaries), nil
 }

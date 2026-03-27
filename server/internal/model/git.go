@@ -142,6 +142,7 @@ type UpdateGitRepositoryRequest struct {
 // GitHubInstallURLResponse returns the install URL for the configured GitHub App.
 type GitHubInstallURLResponse struct {
 	InstallURL string `json:"install_url"`
+	Action     string `json:"action"`
 }
 
 // CreateBranchRequest is the payload for creating a branch from a story.

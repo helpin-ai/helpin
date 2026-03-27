@@ -33,7 +33,7 @@ func TestRequestHumanInputToolReturnsAwaitingInputPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status": "paused"`) || !strings.Contains(output, `"pause_reason": "human_input"`) || !strings.Contains(output, `"id": "q1"`) {
+	if !strings.Contains(output, `"status":"paused"`) || !strings.Contains(output, `"pause_reason":"human_input"`) || !strings.Contains(output, `"id":"q1"`) {
 		t.Fatalf("expected paused human_input payload, got %s", output)
 	}
 }
@@ -74,7 +74,7 @@ func TestRequestHumanApprovalToolReturnsAwaitingApprovalPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status": "paused"`) || !strings.Contains(output, `"pause_reason": "human_approval"`) || !strings.Contains(output, `"phase": "prd"`) {
+	if !strings.Contains(output, `"status":"paused"`) || !strings.Contains(output, `"pause_reason":"human_approval"`) || !strings.Contains(output, `"phase":"prd"`) {
 		t.Fatalf("expected paused human_approval payload, got %s", output)
 	}
 }
@@ -97,7 +97,7 @@ func TestPublishPreviewToolReturnsPublishedPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status": "published"`) || !strings.Contains(output, `"panel_key": "prd_draft"`) {
+	if !strings.Contains(output, `"status":"published"`) || !strings.Contains(output, `"panel_key":"prd_draft"`) {
 		t.Fatalf("expected published payload, got %s", output)
 	}
 }
@@ -119,7 +119,7 @@ func TestPreviewMarkdownToolPublishesSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan_doc"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected markdown preview payload to contain %q, got %s", snippet, output)
 		}
@@ -143,7 +143,7 @@ func TestPreviewJSONToolPublishesSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected json preview payload to contain %q, got %s", snippet, output)
 		}
@@ -165,7 +165,7 @@ func TestPublishPRDDraftToolPublishesCanonicalPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "prd_draft"`, `"title": "PRD Draft"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"prd_draft"`, `"title":"PRD Draft"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected prd draft preview payload to contain %q, got %s", snippet, output)
 		}
@@ -187,7 +187,7 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"title": "Story Plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -212,7 +212,7 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected nested story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -236,7 +236,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected raw story plan object preview payload to contain %q, got %s", snippet, output)
 		}
@@ -317,7 +317,7 @@ func TestPublishStoryPlanToolReusesLastPublishedContentOnMalformedRetry(t *testi
 	if err != nil {
 		t.Fatalf("malformed retry should have reused cached content, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected cached story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -349,7 +349,7 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 	if err != nil {
 		t.Fatalf("malformed publish_story_plan_doc retry should have reused cached markdown, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan_doc"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected cached story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -372,7 +372,7 @@ func TestPublishStoryPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t 
 	if err != nil {
 		t.Fatalf("first malformed publish_story_plan_doc call should have used assistant draft, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan_doc"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected assistant-draft story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -394,7 +394,7 @@ func TestPublishStoryPlanDocToolPublishesCanonicalPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan_doc"`, `"title": "Story Planning Document"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"title":"Story Planning Document"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -462,7 +462,7 @@ func TestPublishPreviewToolAcceptsPanelKeyAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"panel_key": "story_plan"`) {
+	if !strings.Contains(output, `"panel_key":"story_plan"`) {
 		t.Fatalf("expected alias payload to normalize panel_key, got %s", output)
 	}
 }
@@ -487,7 +487,7 @@ func TestPublishPreviewToolAcceptsNestedPreviewPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"panel_key": "prd_draft"`) {
+	if !strings.Contains(output, `"panel_key":"prd_draft"`) {
 		t.Fatalf("expected nested preview payload to normalize panel_key, got %s", output)
 	}
 }
@@ -512,7 +512,7 @@ func TestPublishPreviewToolInfersStoryPlanPanelKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"panel_key": "story_plan"`) {
+	if !strings.Contains(output, `"panel_key":"story_plan"`) {
 		t.Fatalf("expected inferred story_plan panel key, got %s", output)
 	}
 }
@@ -535,7 +535,7 @@ func TestPublishPreviewToolInfersStoryPlanFormatAndTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"title": "Story Plan"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected inferred preview payload to contain %q, got %s", snippet, output)
 		}
@@ -566,7 +566,7 @@ func TestPublishPreviewToolUsesEpicPlannerContextForStoryPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan"`, `"title": "Story Plan: Kafka Streams Performance Enhancement"`, `"format": "json"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan: Kafka Streams Performance Enhancement"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected epic planner preview payload to contain %q, got %s", snippet, output)
 		}
@@ -594,7 +594,7 @@ func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key": "story_plan_doc"`, `"title": "Story Plan"`, `"format": "markdown"`} {
+	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"title":"Story Plan"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story planner preview payload to contain %q, got %s", snippet, output)
 		}

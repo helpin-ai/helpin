@@ -1,6 +1,10 @@
 package worker
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/commandtools"
+)
 
 func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *testing.T) {
 	registry := NewToolRegistry(nil)
@@ -71,5 +75,39 @@ func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 
 	if len(anyOf) != 2 {
 		t.Fatalf("expected test_strategy anyOf schema, got %#v", testStrategy)
+	}
+}
+
+func TestToolCatalogUsesSharedCommandToolMetadataForCategories(t *testing.T) {
+	catalog := ListToolCatalog()
+
+	categories := make(map[string]string, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		categories[tool.Name] = tool.Category
+	}
+
+	for toolName, want := range map[string]string{
+		"approve_epic_spec":      "PM / Stories",
+		"write_document_content": "Docs",
+		"update_deal_stage":      "CRM",
+	} {
+		if got := categories[toolName]; got != want {
+			t.Fatalf("expected tool %q to use shared category %q, got %q", toolName, want, got)
+		}
+	}
+}
+
+func TestToolRegistryIncludesAllSharedCommandTools(t *testing.T) {
+	registry := NewToolRegistry(nil)
+
+	definitions := make(map[string]struct{}, len(registry.Definitions()))
+	for _, def := range registry.Definitions() {
+		definitions[def.Name] = struct{}{}
+	}
+
+	for _, meta := range commandtools.AllRuntimeToolMetadata() {
+		if _, ok := definitions[meta.Alias]; !ok {
+			t.Fatalf("expected shared command-backed tool %q to be registered", meta.Alias)
+		}
 	}
 }

@@ -1957,6 +1957,7 @@ export interface CreateGitIntegrationRequest {
 
 export interface GitHubInstallURLResponse {
   install_url: string;
+  action: 'install' | 'manage';
 }
 
 export interface UpdateGitRepositoryRequest {

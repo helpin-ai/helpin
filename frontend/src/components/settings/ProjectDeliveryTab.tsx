@@ -30,6 +30,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
 
   const hasIntegrations = integrations.length > 0;
   const hasRepositories = repositories.length > 0;
+  const hasGitHubAppIntegration = integrations.some((integration) => integration.provider === 'github' && Boolean(integration.installation_id));
 
   const loadGitStatus = useCallback(async () => {
     const [integrationsRes, reposRes] = await Promise.all([
@@ -125,7 +126,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                   }}
                 >
                   {installingGitHubApp ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {installingGitHubApp ? 'Opening GitHub...' : hasIntegrations ? 'Add integration' : 'Install GitHub App'}
+                  {installingGitHubApp ? 'Opening GitHub...' : hasGitHubAppIntegration ? 'Manage access' : hasIntegrations ? 'Add integration' : 'Install GitHub App'}
                 </Button>
                 <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setIntegrationDialogOpen(true)}>
                   <Plus className="h-3.5 w-3.5" />

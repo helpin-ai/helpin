@@ -28,12 +28,12 @@ func (h *GitHandler) GetGitHubInstallURL(w http.ResponseWriter, r *http.Request)
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
 
-	installURL, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID)
+	installURL, action, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL})
+	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL, Action: action})
 }
 
 // GitHubCallback handles GET /api/git/github/callback.

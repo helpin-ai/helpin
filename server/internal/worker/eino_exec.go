@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	agenticopenai "github.com/cloudwego/eino-ext/components/model/agenticopenai"
@@ -70,6 +71,15 @@ type ExecutionResult struct {
 	Usage                ExecutionUsage
 	ProviderContinuation *ProviderContinuation
 	MaxStepsReached      bool
+}
+
+type executedToolCall struct {
+	ToolCallID string
+	ToolName   string
+	Input      json.RawMessage
+	Output     string
+	Duration   time.Duration
+	IsError    bool
 }
 
 type EinoModelFactory struct {
@@ -286,58 +296,39 @@ func ExecuteWithEino(
 		}
 
 		stopAfterToolRound := false
+		toolCalls := make([]ExecutionBlock, 0, len(assistantMsg.ToolCalls))
 		for _, toolCall := range assistantMsg.ToolCalls {
-			argsJSON := normalizeToolArguments(toolCall.Function.Arguments)
-			toolName := toolCall.Function.Name
-
-			if onEvent != nil {
-				onEvent(ExecutionEvent{
-					Type:       "tool_call_started",
-					ToolCallID: toolCall.ID,
-					ToolName:   toolName,
-					ToolInput:  toolInputForEvent(toolName, argsJSON),
-				})
-			}
-
-			start := time.Now()
-			output, toolErr := registry.ExecuteAllowed(execCtx, toolName, argsJSON)
-			duration := time.Since(start)
-			isError := toolErr != nil
-			if toolErr != nil {
-				output = toolErr.Error()
-			}
-
-			summary := truncate(output, 500)
-			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
-				ToolName:      toolName,
-				Input:         argsJSON,
-				OutputSummary: summary,
-				DurationMs:    duration.Milliseconds(),
+			toolCalls = append(toolCalls, ExecutionBlock{
+				Type:       ExecutionBlockTypeToolCall,
+				ToolCallID: toolCall.ID,
+				ToolName:   toolCall.Function.Name,
+				Input:      normalizeToolArguments(toolCall.Function.Arguments),
 			})
-			if onEvent != nil {
-				onEvent(ExecutionEvent{
-					Type:          "tool_call_finished",
-					ToolCallID:    toolCall.ID,
-					ToolName:      toolName,
-					OutputSummary: summary,
-					DurationMs:    duration.Milliseconds(),
-				})
-			}
+		}
+
+		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, onEvent) {
+			summary := truncate(executed.Output, 500)
+			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
+				ToolName:      executed.ToolName,
+				Input:         executed.Input,
+				OutputSummary: summary,
+				DurationMs:    executed.Duration.Milliseconds(),
+			})
 
 			result.Messages = append(result.Messages, ExecutionMessage{
 				Role:    "tool",
-				Content: output,
+				Content: executed.Output,
 				Blocks: []ExecutionBlock{{
 					Type:       ExecutionBlockTypeToolResult,
-					ToolCallID: toolCall.ID,
-					ToolName:   toolName,
-					Input:      argsJSON,
-					Output:     output,
-					IsError:    isError,
+					ToolCallID: executed.ToolCallID,
+					ToolName:   executed.ToolName,
+					Input:      executed.Input,
+					Output:     executed.Output,
+					IsError:    executed.IsError,
 				}},
 			})
-			messages = append(messages, schema.ToolMessage(output, toolCall.ID, schema.WithToolName(toolName)))
-			if IsHumanInteractionTool(toolName) {
+			messages = append(messages, schema.ToolMessage(executed.Output, executed.ToolCallID, schema.WithToolName(executed.ToolName)))
+			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
 		}
@@ -418,58 +409,29 @@ func executeWithEinoAgentic(
 		}
 
 		stopAfterToolRound := false
-		for _, toolCall := range toolCalls {
-			argsJSON := normalizeToolArguments(string(toolCall.Input))
-			toolName := toolCall.ToolName
-
-			if onEvent != nil {
-				onEvent(ExecutionEvent{
-					Type:       "tool_call_started",
-					ToolCallID: toolCall.ToolCallID,
-					ToolName:   toolName,
-					ToolInput:  toolInputForEvent(toolName, argsJSON),
-				})
-			}
-
-			start := time.Now()
-			output, toolErr := registry.ExecuteAllowed(execCtx, toolName, argsJSON)
-			duration := time.Since(start)
-			isError := toolErr != nil
-			if toolErr != nil {
-				output = toolErr.Error()
-			}
-
-			summary := truncate(output, 500)
+		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, onEvent) {
+			summary := truncate(executed.Output, 500)
 			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
-				ToolName:      toolName,
-				Input:         argsJSON,
+				ToolName:      executed.ToolName,
+				Input:         executed.Input,
 				OutputSummary: summary,
-				DurationMs:    duration.Milliseconds(),
+				DurationMs:    executed.Duration.Milliseconds(),
 			})
-			if onEvent != nil {
-				onEvent(ExecutionEvent{
-					Type:          "tool_call_finished",
-					ToolCallID:    toolCall.ToolCallID,
-					ToolName:      toolName,
-					OutputSummary: summary,
-					DurationMs:    duration.Milliseconds(),
-				})
-			}
 
 			result.Messages = append(result.Messages, ExecutionMessage{
 				Role:    "tool",
-				Content: output,
+				Content: executed.Output,
 				Blocks: []ExecutionBlock{{
 					Type:       ExecutionBlockTypeToolResult,
-					ToolCallID: toolCall.ToolCallID,
-					ToolName:   toolName,
-					Input:      argsJSON,
-					Output:     output,
-					IsError:    isError,
+					ToolCallID: executed.ToolCallID,
+					ToolName:   executed.ToolName,
+					Input:      executed.Input,
+					Output:     executed.Output,
+					IsError:    executed.IsError,
 				}},
 			})
-			messages = append(messages, schema.FunctionToolResultAgenticMessage(toolCall.ToolCallID, toolName, output))
-			if IsHumanInteractionTool(toolName) {
+			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, executed.Output))
+			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
 		}
@@ -885,6 +847,116 @@ func providerContinuationFromAgenticMessage(msg *schema.AgenticMessage) *Provide
 		Provider:           appmodel.AgentModelProviderOpenAI,
 		ResponseID:         strings.TrimSpace(ext.ID),
 		PreviousResponseID: strings.TrimSpace(ext.PreviousResponseID),
+	}
+}
+
+func executeToolCallsForRound(
+	execCtx *ExecutionContext,
+	registry *ToolRegistry,
+	toolCalls []ExecutionBlock,
+	onEvent func(ExecutionEvent),
+) []executedToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	emitStarted := func(toolCall ExecutionBlock) {
+		if onEvent == nil {
+			return
+		}
+		onEvent(ExecutionEvent{
+			Type:       "tool_call_started",
+			ToolCallID: toolCall.ToolCallID,
+			ToolName:   toolCall.ToolName,
+			ToolInput:  toolInputForEvent(toolCall.ToolName, toolCall.Input),
+		})
+	}
+	emitFinished := func(executed executedToolCall) {
+		if onEvent == nil {
+			return
+		}
+		onEvent(ExecutionEvent{
+			Type:          "tool_call_finished",
+			ToolCallID:    executed.ToolCallID,
+			ToolName:      executed.ToolName,
+			OutputSummary: truncate(executed.Output, 500),
+			DurationMs:    executed.Duration.Milliseconds(),
+		})
+	}
+
+	results := make([]executedToolCall, len(toolCalls))
+	if !canExecuteToolCallsInParallel(toolCalls) {
+		for i, toolCall := range toolCalls {
+			emitStarted(toolCall)
+			results[i] = executeSingleToolCall(execCtx, registry, toolCall)
+			emitFinished(results[i])
+		}
+		return results
+	}
+
+	var wg sync.WaitGroup
+	var eventMu sync.Mutex
+	wg.Add(len(toolCalls))
+	for i, toolCall := range toolCalls {
+		go func(index int, pending ExecutionBlock) {
+			defer wg.Done()
+
+			eventMu.Lock()
+			emitStarted(pending)
+			eventMu.Unlock()
+
+			executed := executeSingleToolCall(execCtx, registry, pending)
+			results[index] = executed
+
+			eventMu.Lock()
+			emitFinished(executed)
+			eventMu.Unlock()
+		}(i, toolCall)
+	}
+	wg.Wait()
+	return results
+}
+
+func executeSingleToolCall(execCtx *ExecutionContext, registry *ToolRegistry, toolCall ExecutionBlock) executedToolCall {
+	start := time.Now()
+	output, toolErr := registry.ExecuteAllowed(execCtx, toolCall.ToolName, toolCall.Input)
+	duration := time.Since(start)
+	isError := toolErr != nil
+	if toolErr != nil {
+		output = toolErr.Error()
+	}
+	return executedToolCall{
+		ToolCallID: toolCall.ToolCallID,
+		ToolName:   toolCall.ToolName,
+		Input:      toolCall.Input,
+		Output:     output,
+		Duration:   duration,
+		IsError:    isError,
+	}
+}
+
+func canExecuteToolCallsInParallel(toolCalls []ExecutionBlock) bool {
+	if len(toolCalls) < 2 {
+		return false
+	}
+	for _, toolCall := range toolCalls {
+		if !isParallelSafeTool(toolCall.ToolName) {
+			return false
+		}
+	}
+	return true
+}
+
+func isParallelSafeTool(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols",
+		"web_search_brave",
+		"list_story_checklist", "list_workspace_teams", "list_conversation_messages",
+		"list_deals", "list_contacts", "list_buyer_signals",
+		"list_documents", "read_document", "search_documents", "list_epic_stories":
+		return true
+	default:
+		return false
 	}
 }
 

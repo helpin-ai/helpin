@@ -3,6 +3,8 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/helpin-ai/helpin/server/internal/commandtools"
 )
 
 // ToolRegistry holds all available tool implementations.
@@ -41,6 +43,35 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
+
+	r.register("read_files", "Read bounded windows from multiple text files in one call. Use this when you need to inspect several files without spending extra tool round-trips.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"files": map[string]interface{}{
+				"type":        "array",
+				"description": "Files to read. Max 8 files per call.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "File path relative to the workspace root",
+						},
+						"offset_line": map[string]interface{}{
+							"type":        "integer",
+							"description": "Optional 1-based line number to start reading from. Defaults to 1.",
+						},
+						"limit_lines": map[string]interface{}{
+							"type":        "integer",
+							"description": "Optional maximum number of lines to return for this file. Defaults to 120, max 250.",
+						},
+					},
+					"required": []string{"path"},
+				},
+			},
+		},
+		"required": []string{"files"},
+	}, toolReadFiles)
 
 	r.register("write_file", "Write content to a file at the given path (relative to the workspace root). Use this for new files or full rewrites after reading the current file first. Creates directories as needed.", map[string]interface{}{
 		"type": "object",
@@ -342,6 +373,31 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolRequestHumanApproval)
 
+	r.register("update_plan", "Update the current execution plan for this run. Use this for short working-step checklists, not for PRDs, story plans, or canonical planning documents.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"note": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional short note about the current state of the plan.",
+			},
+			"plan": map[string]interface{}{
+				"type":        "array",
+				"description": "Ordered execution steps. Max 12 steps, with at most one in_progress step.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"step":   map[string]interface{}{"type": "string"},
+						"status": map[string]interface{}{"type": "string", "enum": []string{PlanStepPending, PlanStepInProgress, PlanStepCompleted}},
+					},
+					"required":             []string{"step", "status"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"plan"},
+		"additionalProperties": false,
+	}, toolUpdatePlan)
+
 	r.register("preview_md", "Publish a markdown preview into a named review slot in the interactive run drawer right pane.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -455,17 +511,6 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"content"},
 	}, toolAddStoryComment)
 
-	r.register("update_story_state", "Transition the current story to a different workflow state.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"state_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The target workflow state ID",
-			},
-		},
-		"required": []string{"state_id"},
-	}, toolUpdateStoryState)
-
 	r.register("list_story_checklist", "List the checklist items for the current story.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -521,36 +566,6 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 		},
 	}, toolListDeals)
-
-	r.register("update_deal_stage", "Move a CRM deal to a different pipeline stage.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"deal_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The deal ID to update",
-			},
-			"stage_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The target pipeline stage ID",
-			},
-		},
-		"required": []string{"deal_id", "stage_id"},
-	}, toolUpdateDealStage)
-
-	r.register("add_deal_note", "Add a note or comment to a CRM deal.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"deal_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The deal ID to add a note to",
-			},
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The note content",
-			},
-		},
-		"required": []string{"deal_id", "content"},
-	}, toolAddDealNote)
 
 	r.register("list_contacts", "List CRM contacts in the workspace. Returns name, email, and job title.", map[string]interface{}{
 		"type": "object",
@@ -613,212 +628,24 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
-	r.register("write_document_content", "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"document_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The document ID to update",
-			},
-			"content": map[string]interface{}{
-				"description": "The document content to save. Use either a structured document JSON object or a markdown string.",
-				"oneOf": []map[string]interface{}{
-					{"type": "object"},
-					{"type": "string"},
-				},
-			},
-		},
-		"required": []string{"document_id", "content"},
-	}, toolWriteDocumentContent)
-
-	r.register("link_document_to_object", "Create a Helpin Docs link between a document and another internal object.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"document_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The document ID to link",
-			},
-			"linked_object_type": map[string]interface{}{
-				"type":        "string",
-				"description": "The linked object type such as epic or story",
-			},
-			"linked_object_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The linked object ID",
-			},
-			"link_context": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional link context, defaults to attached",
-			},
-		},
-		"required": []string{"document_id", "linked_object_type", "linked_object_id"},
-	}, toolLinkDocumentToObject)
-
-	r.register("ensure_epic_spec_doc", "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current story count, and a planning_hint for branching.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolEnsureEpicSpecDoc)
-
-	r.register("ensure_story_plan_doc", "Create or load the canonical planning document for the current story. Returns document metadata and whether a draft already exists.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolEnsureStoryPlanDoc)
-
-	r.register("approve_epic_spec", "Mark the current epic spec document as approved and record the approved spec version on the epic.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"version_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional existing document version ID to approve. Omit to approve the current document content.",
-			},
-		},
-	}, toolApproveEpicSpec)
-
-	fileChangeSchema := map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path":        map[string]interface{}{"type": "string"},
-			"action":      map[string]interface{}{"type": "string", "enum": []string{"create", "modify", "delete"}},
-			"description": map[string]interface{}{"type": "string"},
-		},
-		"required":             []string{"path", "action", "description"},
-		"additionalProperties": false,
-	}
-	implementationBriefSchema := map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"approach": map[string]interface{}{"type": "string"},
-			"files_to_modify": map[string]interface{}{
-				"type":  "array",
-				"items": fileChangeSchema,
-			},
-			"test_strategy": map[string]interface{}{
-				"anyOf": []map[string]interface{}{
-					{"type": "string"},
-					{
-						"type":  "array",
-						"items": map[string]interface{}{"type": "string"},
-					},
-				},
-			},
-			"vertical_layers": map[string]interface{}{
-				"type":  "array",
-				"items": map[string]interface{}{"type": "string"},
-			},
-			"depends_on_files": map[string]interface{}{
-				"type":  "array",
-				"items": map[string]interface{}{"type": "string"},
-			},
-		},
-		"required":             []string{"approach", "files_to_modify", "test_strategy"},
-		"additionalProperties": false,
-	}
-
-	r.register("create_story_batch", "Create implementation-ready stories for the current epic. Supports stable refs, direct assignment, and dependency refs.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"stories": map[string]interface{}{
-				"description": "Preferred field. The list of stories to create.",
-				"type":        "array",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"ref":         map[string]interface{}{"type": "string"},
-						"name":        map[string]interface{}{"type": "string"},
-						"description": map[string]interface{}{"type": "string"},
-						"story_type":  map[string]interface{}{"type": "string"},
-						"estimate":    map[string]interface{}{"type": "integer"},
-						"priority":    map[string]interface{}{"type": "string"},
-						"acceptance_criteria": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "string"},
-						},
-						"dependency_refs": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "string"},
-						},
-						"source_refs": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "object"},
-						},
-						"assign_agent_id":      map[string]interface{}{"type": "string"},
-						"slice_type":           map[string]interface{}{"type": "string"},
-						"implementation_brief": implementationBriefSchema,
-					},
-					"required": []string{"name", "description", "story_type"},
-				},
-			},
-			"proposed_stories": map[string]interface{}{
-				"description": "Compatibility alias for story-plan payloads. If present, it is treated the same as stories.",
-				"type":        "array",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"ref":         map[string]interface{}{"type": "string"},
-						"name":        map[string]interface{}{"type": "string"},
-						"description": map[string]interface{}{"type": "string"},
-						"story_type":  map[string]interface{}{"type": "string"},
-						"estimate":    map[string]interface{}{"type": "integer"},
-						"priority":    map[string]interface{}{"type": "string"},
-						"acceptance_criteria": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "string"},
-						},
-						"dependency_refs": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "string"},
-						},
-						"source_refs": map[string]interface{}{
-							"type":  "array",
-							"items": map[string]interface{}{"type": "object"},
-						},
-						"assign_agent_id":      map[string]interface{}{"type": "string"},
-						"slice_type":           map[string]interface{}{"type": "string"},
-						"implementation_brief": implementationBriefSchema,
-					},
-					"required": []string{"name", "description", "story_type"},
-				},
-			},
-		},
-	}, toolCreateStoryBatch)
-
-	r.register("assign_story_agent", "Assign or reassign an agent to an existing story.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"story_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The story ID to assign",
-			},
-			"agent_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The target agent ID",
-			},
-		},
-		"required": []string{"story_id", "agent_id"},
-	}, toolAssignStoryAgent)
-
 	r.register("list_epic_stories", "List all non-archived stories linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListEpicStories)
 
-	r.register("set_story_dependencies", "Create explicit story dependency links between existing stories.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"dependencies": map[string]interface{}{
-				"type": "array",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"source_story_id": map[string]interface{}{"type": "string"},
-						"target_story_id": map[string]interface{}{"type": "string"},
-					},
-					"required": []string{"source_story_id", "target_story_id"},
-				},
-			},
-		},
-		"required": []string{"dependencies"},
-	}, toolSetStoryDependencies)
+	r.registerSharedCommandTools(map[string]ToolFunc{
+		"update_story_state":      toolUpdateStoryState,
+		"update_deal_stage":       toolUpdateDealStage,
+		"add_deal_note":           toolAddDealNote,
+		"write_document_content":  toolWriteDocumentContent,
+		"link_document_to_object": toolLinkDocumentToObject,
+		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
+		"ensure_story_plan_doc":   toolEnsureStoryPlanDoc,
+		"approve_epic_spec":       toolApproveEpicSpec,
+		"create_story_batch":      toolCreateStoryBatch,
+		"assign_story_agent":      toolAssignStoryAgent,
+		"set_story_dependencies":  toolSetStoryDependencies,
+	})
 
 	return r
 }
@@ -830,6 +657,24 @@ func (r *ToolRegistry) register(name, description string, schema interface{}, fn
 		Description: description,
 		InputSchema: schema,
 	})
+}
+
+func (r *ToolRegistry) registerSharedCommandTools(fns map[string]ToolFunc) {
+	registered := make(map[string]struct{}, len(fns))
+	for _, meta := range commandtools.AllRuntimeToolMetadata() {
+		fn, ok := fns[meta.Alias]
+		if !ok {
+			panic("missing shared command tool implementation for alias " + meta.Alias)
+		}
+		r.register(meta.Alias, meta.Description, meta.InputSchema, fn)
+		registered[meta.Alias] = struct{}{}
+	}
+
+	for alias := range fns {
+		if _, ok := registered[alias]; !ok {
+			panic("missing shared command tool metadata for alias " + alias)
+		}
+	}
 }
 
 // Definitions returns all tool definitions for the Claude API.

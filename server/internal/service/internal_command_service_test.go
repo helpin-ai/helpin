@@ -45,3 +45,30 @@ func TestWriteDocumentContentCommandRejectsEmptyContent(t *testing.T) {
 		t.Fatalf("expected empty content error, got %v", err)
 	}
 }
+
+func TestCommandToolMetadataUsesExplicitAliasInsteadOfBoolean(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.write_document_content")
+	if !ok {
+		t.Fatal("expected docs.write_document_content definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected docs.write_document_content to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "write_document_content" || def.Tool.Category != "Docs" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+}
+
+func TestCreateFollowupStoriesCommandIsBackendOnlyUntilToolExists(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("pm.create_followup_stories")
+	if !ok {
+		t.Fatal("expected pm.create_followup_stories definition")
+	}
+	if def.ExposesTool() {
+		t.Fatalf("expected pm.create_followup_stories to remain backend-only, got %#v", def.Tool)
+	}
+}

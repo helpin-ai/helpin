@@ -33,8 +33,7 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	for _, d := range docs {
 		summaries = append(summaries, docSummary{ID: d.ID, Title: d.Title, Status: d.Status, TeamID: d.TeamID})
 	}
-	result, _ := json.MarshalIndent(summaries, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(summaries), nil
 }
 
 func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -74,8 +73,7 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 		}
 	}
 
-	result, _ := json.MarshalIndent(detail, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(detail), nil
 }
 
 func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -104,14 +102,10 @@ func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, 
 		return "No documents matched your query.", nil
 	}
 
-	result, _ := json.MarshalIndent(hits, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(hits), nil
 }
 
 func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.WriteDocumentContent == nil {
-		return "", fmt.Errorf("docs mutation is not available for this agent")
-	}
 	var params struct {
 		DocumentID string          `json:"document_id"`
 		Content    json.RawMessage `json:"content"`
@@ -128,6 +122,19 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 			return "", fmt.Errorf("content is required")
 		}
 		params.Content = fallbackContent
+	}
+	commandInput, _ := json.Marshal(map[string]any{
+		"document_id": params.DocumentID,
+		"content":     params.Content,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "document", params.DocumentID, "docs.write_document_content", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("write document content: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.WriteDocumentContent == nil {
+		return "", fmt.Errorf("docs mutation is not available for this agent")
 	}
 	if err := ctx.Services.WriteDocumentContent(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.Content); err != nil {
 		return "", fmt.Errorf("write document content: %w", err)
@@ -165,9 +172,6 @@ func latestApprovedMarkdownArtifactContent(ctx *ExecutionContext) (json.RawMessa
 }
 
 func toolLinkDocumentToObject(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.Services == nil || ctx.Services.LinkDocumentToObject == nil {
-		return "", fmt.Errorf("docs mutation is not available for this agent")
-	}
 	var params struct {
 		DocumentID       string  `json:"document_id"`
 		LinkedObjectType string  `json:"linked_object_type"`
@@ -183,6 +187,21 @@ func toolLinkDocumentToObject(ctx *ExecutionContext, input json.RawMessage) (str
 	linkContext := "attached"
 	if params.LinkContext != nil && strings.TrimSpace(*params.LinkContext) != "" {
 		linkContext = strings.TrimSpace(*params.LinkContext)
+	}
+	commandInput, _ := json.Marshal(map[string]any{
+		"document_id":        params.DocumentID,
+		"linked_object_type": params.LinkedObjectType,
+		"linked_object_id":   params.LinkedObjectID,
+		"link_context":       linkContext,
+	})
+	if output, ok, err := executeInternalCommand(ctx, params.LinkedObjectType, params.LinkedObjectID, "docs.link_document_to_object", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("link document: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.LinkDocumentToObject == nil {
+		return "", fmt.Errorf("docs mutation is not available for this agent")
 	}
 	if err := ctx.Services.LinkDocumentToObject(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.LinkedObjectType, params.LinkedObjectID, linkContext, ctx.AgentID); err != nil {
 		return "", fmt.Errorf("link document: %w", err)
