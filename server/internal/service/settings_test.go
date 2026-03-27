@@ -130,7 +130,7 @@ func newSettingsService(t *testing.T) (*SettingsService, *gorm.DB) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, nil)
+	svc := NewSettingsService(repo, nil, nil)
 	return svc, db
 }
 

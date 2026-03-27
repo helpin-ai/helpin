@@ -15,6 +15,7 @@ const (
 	agentConnTTL   = 90 * time.Second
 	agentSeenTTL   = 24 * time.Hour
 	viewingConnTTL = 60 * time.Second
+	docViewingTTL  = 60 * time.Second
 	typingTTL      = 15 * time.Second
 	visitorConnTTL = 90 * time.Second
 )
@@ -56,6 +57,21 @@ func viewingActiveKey(workspaceID, userID, connID string) string {
 // support:viewing:{workspaceID}:{conversationID}
 func viewingSetKey(workspaceID, conversationID string) string {
 	return fmt.Sprintf("support:viewing:%s:%s", workspaceID, conversationID)
+}
+
+// docs:viewing:conn:{workspaceID}:{documentID}:{userID}:{connID}
+func docViewingConnKey(workspaceID, documentID, userID, connID string) string {
+	return fmt.Sprintf("docs:viewing:conn:%s:%s:%s:%s", workspaceID, documentID, userID, connID)
+}
+
+// docs:viewing:active:{workspaceID}:{userID}:{connID}
+func docViewingActiveKey(workspaceID, userID, connID string) string {
+	return fmt.Sprintf("docs:viewing:active:%s:%s:%s", workspaceID, userID, connID)
+}
+
+// docs:viewing:{workspaceID}:{documentID}
+func docViewingSetKey(workspaceID, documentID string) string {
+	return fmt.Sprintf("docs:viewing:%s:%s", workspaceID, documentID)
 }
 
 // support:typing:{workspaceID}:{conversationID}:{userID}
@@ -432,6 +448,120 @@ func (p *RedisPresence) GetSnapshot(ctx context.Context, workspaceID, conversati
 	return snap, nil
 }
 
+func (p *RedisPresence) SetDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	activeKey := docViewingActiveKey(workspaceID, userID, connID)
+	prevDoc, err := p.rdb.Get(ctx, activeKey).Result()
+	if err == nil && prevDoc != "" && prevDoc != documentID {
+		if _, clearErr := p.ClearDocViewing(ctx, workspaceID, prevDoc, userID, connID); clearErr != nil {
+			slog.Warn("redis presence: clear previous doc viewing",
+				"error", clearErr, "prev_document", prevDoc)
+		}
+	}
+
+	pipe := p.rdb.Pipeline()
+	connKey := docViewingConnKey(workspaceID, documentID, userID, connID)
+	pipe.Set(ctx, connKey, "1", docViewingTTL)
+	pipe.Set(ctx, activeKey, documentID, docViewingTTL)
+	setKey := docViewingSetKey(workspaceID, documentID)
+	pipe.SAdd(ctx, setKey, userID)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return false, fmt.Errorf("redis presence SetDocViewing: %w", err)
+	}
+	return true, nil
+}
+
+func (p *RedisPresence) ClearDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	connKey := docViewingConnKey(workspaceID, documentID, userID, connID)
+	p.rdb.Del(ctx, connKey)
+
+	activeKey := docViewingActiveKey(workspaceID, userID, connID)
+	p.rdb.Del(ctx, activeKey)
+
+	pattern := docViewingConnKey(workspaceID, documentID, userID, "*")
+	keys, err := p.scanKeys(ctx, pattern, 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence ClearDocViewing scan: %w", err)
+	}
+
+	if len(keys) == 0 {
+		setKey := docViewingSetKey(workspaceID, documentID)
+		removed, err := p.rdb.SRem(ctx, setKey, userID).Result()
+		if err != nil {
+			return false, fmt.Errorf("redis presence ClearDocViewing SRem: %w", err)
+		}
+		return removed > 0, nil
+	}
+
+	return false, nil
+}
+
+func (p *RedisPresence) GetDocViewers(ctx context.Context, workspaceID, documentID string) ([]string, error) {
+	setKey := docViewingSetKey(workspaceID, documentID)
+	members, err := p.rdb.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetDocViewers: %w", err)
+	}
+	return members, nil
+}
+
+func (p *RedisPresence) GetActiveDocViewing(ctx context.Context, workspaceID, userID, connID string) (string, error) {
+	activeKey := docViewingActiveKey(workspaceID, userID, connID)
+	val, err := p.rdb.Get(ctx, activeKey).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis presence GetActiveDocViewing: %w", err)
+	}
+	return val, nil
+}
+
+func (p *RedisPresence) RefreshDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) error {
+	pipe := p.rdb.Pipeline()
+	connKey := docViewingConnKey(workspaceID, documentID, userID, connID)
+	activeKey := docViewingActiveKey(workspaceID, userID, connID)
+	pipe.Expire(ctx, connKey, docViewingTTL)
+	pipe.Expire(ctx, activeKey, docViewingTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("redis presence RefreshDocViewing: %w", err)
+	}
+	return nil
+}
+
+func (p *RedisPresence) ClearAllDocViewingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error) {
+	var viewingCleared []string
+
+	activeDoc, err := p.GetActiveDocViewing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return nil, fmt.Errorf("redis presence ClearAllDocViewingForConn GetActiveDocViewing: %w", err)
+	}
+	if activeDoc != "" {
+		changed, err := p.ClearDocViewing(ctx, workspaceID, activeDoc, userID, connID)
+		if err != nil {
+			slog.Warn("redis presence ClearAllDocViewingForConn: clear doc viewing",
+				"error", err, "document_id", activeDoc)
+		}
+		if changed {
+			viewingCleared = append(viewingCleared, activeDoc)
+		}
+	}
+
+	return viewingCleared, nil
+}
+
+func (p *RedisPresence) GetDocSnapshot(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error) {
+	snap := DocPresenceSnapshot{
+		Viewers: make([]string, 0),
+	}
+	viewers, err := p.GetDocViewers(ctx, workspaceID, documentID)
+	if err != nil {
+		return snap, err
+	}
+	snap.Viewers = viewers
+	return snap, nil
+}
+
 // --- Online visitors ---
 
 // SetVisitorOnline marks a visitor connection as online.
@@ -528,6 +658,16 @@ func (p *RedisPresence) RefreshAllForConn(ctx context.Context, workspaceID, user
 		val, err := p.rdb.Get(ctx, key).Result()
 		if err == nil && strings.HasPrefix(val, connID+"|") {
 			p.rdb.Expire(ctx, key, typingTTL)
+		}
+	}
+
+	activeDoc, err := p.GetActiveDocViewing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshAllForConn GetActiveDocViewing: %w", err)
+	}
+	if activeDoc != "" {
+		if err := p.RefreshDocViewing(ctx, workspaceID, activeDoc, userID, connID); err != nil {
+			return err
 		}
 	}
 

@@ -23,6 +23,12 @@ type PresenceState struct {
 	activeViewing map[string]map[string]map[string]string
 	// workspaceID → conversationID → userID → connID (typing ownership)
 	typingOwner map[string]map[string]map[string]string
+	// workspaceID → documentID → set of userIDs
+	docViewing map[string]map[string]map[string]struct{}
+	// workspaceID → documentID → userID → connID → struct{}
+	docViewingConns map[string]map[string]map[string]map[string]struct{}
+	// workspaceID → userID → connID → documentID
+	activeDocViewing map[string]map[string]map[string]string
 	// workspaceID → anonymousID → connID → struct{} (visitor connections)
 	visitorConns map[string]map[string]map[string]struct{}
 	// workspaceID → userID → connID → struct{} (internal agent connections)
@@ -34,14 +40,17 @@ type PresenceState struct {
 // NewPresenceState creates an empty presence registry.
 func NewPresenceState() *PresenceState {
 	return &PresenceState{
-		viewing:       make(map[string]map[string]map[string]struct{}),
-		typing:        make(map[string]map[string]map[string]string),
-		viewingConns:  make(map[string]map[string]map[string]map[string]struct{}),
-		activeViewing: make(map[string]map[string]map[string]string),
-		typingOwner:   make(map[string]map[string]map[string]string),
-		visitorConns:  make(map[string]map[string]map[string]struct{}),
-		agentConns:    make(map[string]map[string]map[string]struct{}),
-		agentLastSeen: make(map[string]map[string]time.Time),
+		viewing:          make(map[string]map[string]map[string]struct{}),
+		typing:           make(map[string]map[string]map[string]string),
+		viewingConns:     make(map[string]map[string]map[string]map[string]struct{}),
+		activeViewing:    make(map[string]map[string]map[string]string),
+		typingOwner:      make(map[string]map[string]map[string]string),
+		docViewing:       make(map[string]map[string]map[string]struct{}),
+		docViewingConns:  make(map[string]map[string]map[string]map[string]struct{}),
+		activeDocViewing: make(map[string]map[string]map[string]string),
+		visitorConns:     make(map[string]map[string]map[string]struct{}),
+		agentConns:       make(map[string]map[string]map[string]struct{}),
+		agentLastSeen:    make(map[string]map[string]time.Time),
 	}
 }
 
@@ -434,6 +443,169 @@ func (p *PresenceState) GetSnapshot(_ context.Context, workspaceID, conversation
 	if ws := p.typing[workspaceID]; ws != nil {
 		for uid, content := range ws[conversationID] {
 			snap.Typers[uid] = content
+		}
+	}
+	return snap, nil
+}
+
+type DocPresenceSnapshot struct {
+	Viewers []string `json:"viewers"`
+}
+
+func (p *PresenceState) SetDocViewing(_ context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if wsActive, ok := p.activeDocViewing[workspaceID]; ok {
+		if userActive, ok := wsActive[userID]; ok {
+			if prevDoc, ok := userActive[connID]; ok && prevDoc != documentID {
+				p.clearDocViewingLocked(workspaceID, prevDoc, userID, connID)
+			}
+		}
+	}
+
+	if p.docViewing[workspaceID] == nil {
+		p.docViewing[workspaceID] = make(map[string]map[string]struct{})
+	}
+	if p.docViewing[workspaceID][documentID] == nil {
+		p.docViewing[workspaceID][documentID] = make(map[string]struct{})
+	}
+	if p.docViewingConns[workspaceID] == nil {
+		p.docViewingConns[workspaceID] = make(map[string]map[string]map[string]struct{})
+	}
+	if p.docViewingConns[workspaceID][documentID] == nil {
+		p.docViewingConns[workspaceID][documentID] = make(map[string]map[string]struct{})
+	}
+	if p.docViewingConns[workspaceID][documentID][userID] == nil {
+		p.docViewingConns[workspaceID][documentID][userID] = make(map[string]struct{})
+	}
+	if p.activeDocViewing[workspaceID] == nil {
+		p.activeDocViewing[workspaceID] = make(map[string]map[string]string)
+	}
+	if p.activeDocViewing[workspaceID][userID] == nil {
+		p.activeDocViewing[workspaceID][userID] = make(map[string]string)
+	}
+
+	p.docViewingConns[workspaceID][documentID][userID][connID] = struct{}{}
+	p.activeDocViewing[workspaceID][userID][connID] = documentID
+
+	_, existed := p.docViewing[workspaceID][documentID][userID]
+	p.docViewing[workspaceID][documentID][userID] = struct{}{}
+	return !existed, nil
+}
+
+func (p *PresenceState) ClearDocViewing(_ context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.clearDocViewingLocked(workspaceID, documentID, userID, connID), nil
+}
+
+func (p *PresenceState) clearDocViewingLocked(workspaceID, documentID, userID, connID string) bool {
+	if ws := p.docViewingConns[workspaceID]; ws != nil {
+		if doc := ws[documentID]; doc != nil {
+			if conns := doc[userID]; conns != nil {
+				delete(conns, connID)
+				if len(conns) == 0 {
+					delete(doc, userID)
+				}
+			}
+			if len(doc) == 0 {
+				delete(ws, documentID)
+			}
+		}
+	}
+
+	if ws := p.activeDocViewing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			delete(user, connID)
+			if len(user) == 0 {
+				delete(ws, userID)
+			}
+		}
+	}
+
+	hasOtherConns := false
+	if ws := p.docViewingConns[workspaceID]; ws != nil {
+		if doc := ws[documentID]; doc != nil {
+			if conns := doc[userID]; len(conns) > 0 {
+				hasOtherConns = true
+			}
+		}
+	}
+
+	if !hasOtherConns {
+		if ws := p.docViewing[workspaceID]; ws != nil {
+			if doc := ws[documentID]; doc != nil {
+				if _, exists := doc[userID]; exists {
+					delete(doc, userID)
+					if len(doc) == 0 {
+						delete(ws, documentID)
+					}
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func (p *PresenceState) GetDocViewers(_ context.Context, workspaceID, documentID string) ([]string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	var viewers []string
+	if ws := p.docViewing[workspaceID]; ws != nil {
+		for uid := range ws[documentID] {
+			viewers = append(viewers, uid)
+		}
+	}
+	if viewers == nil {
+		viewers = []string{}
+	}
+	return viewers, nil
+}
+
+func (p *PresenceState) GetActiveDocViewing(_ context.Context, workspaceID, userID, connID string) (string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if ws := p.activeDocViewing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			return user[connID], nil
+		}
+	}
+	return "", nil
+}
+
+func (p *PresenceState) RefreshDocViewing(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+func (p *PresenceState) ClearAllDocViewingForConn(_ context.Context, workspaceID, userID, connID string) ([]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var viewingCleared []string
+	var activeDoc string
+	if ws := p.activeDocViewing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			activeDoc = user[connID]
+		}
+	}
+	if activeDoc != "" && p.clearDocViewingLocked(workspaceID, activeDoc, userID, connID) {
+		viewingCleared = append(viewingCleared, activeDoc)
+	}
+	return viewingCleared, nil
+}
+
+func (p *PresenceState) GetDocSnapshot(_ context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	snap := DocPresenceSnapshot{
+		Viewers: make([]string, 0),
+	}
+	if ws := p.docViewing[workspaceID]; ws != nil {
+		for uid := range ws[documentID] {
+			snap.Viewers = append(snap.Viewers, uid)
 		}
 	}
 	return snap, nil

@@ -28,6 +28,7 @@ func newRecurringTestEnv(t *testing.T) recurringTestEnv {
 		repository.NewPMChecklistItemRepository(storyEnv.db),
 		repository.NewPMExternalLinkRepository(storyEnv.db),
 		NewPMActivityService(repository.NewPMActivityRepository(storyEnv.db)),
+		nil,
 	)
 	recurringSvc.SetStoryService(storyEnv.svc)
 	storyEnv.svc.SetRecurringService(recurringSvc)

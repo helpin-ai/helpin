@@ -558,7 +558,7 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	content, err := h.contentSvc.Save(r.Context(), docID, req.Content)
+	content, err := h.contentSvc.Save(r.Context(), docID, req.Content, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -602,7 +602,7 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 	envelope := map[string]string{"_markdown_source": req.Markdown}
 	raw, _ := json.Marshal(envelope)
 
-	content, err := h.contentSvc.Save(r.Context(), docID, raw)
+	content, err := h.contentSvc.Save(r.Context(), docID, raw, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

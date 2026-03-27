@@ -35,12 +35,18 @@ export interface PresenceSnapshot {
   typers: Record<string, PresenceSnapshotTyper>
 }
 
+export interface DocsPresenceSnapshot {
+  document_id: string
+  viewers: PresenceSnapshotViewer[]
+}
+
 export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
 
 interface UseWebSocketOptions {
   workspaceId: string
   onEvent: (event: WSEvent) => void
   onPresenceSnapshot?: (snapshot: PresenceSnapshot) => void
+  onDocsPresenceSnapshot?: (snapshot: DocsPresenceSnapshot) => void
 }
 
 export type WSSend = (type: string, data: Record<string, unknown>) => void
@@ -54,7 +60,7 @@ function getWSUrl(workspaceId: string): string {
   return `${base}/ws?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`
 }
 
-export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWebSocketOptions) {
+export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -63,6 +69,8 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
   onEventRef.current = onEvent
   const onSnapshotRef = useRef(onPresenceSnapshot)
   onSnapshotRef.current = onPresenceSnapshot
+  const onDocsSnapshotRef = useRef(onDocsPresenceSnapshot)
+  onDocsSnapshotRef.current = onDocsPresenceSnapshot
   const [isConnected, setIsConnected] = useState(false)
 
   const send: WSSend = useCallback((type, data) => {
@@ -104,6 +112,9 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
         } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
           const snapshot = parsed.data as PresenceSnapshot
           onSnapshotRef.current?.(snapshot)
+        } else if (parsed.type === 'docs:presence_snapshot' && parsed.data) {
+          const snapshot = parsed.data as DocsPresenceSnapshot
+          onDocsSnapshotRef.current?.(snapshot)
         } else if (parsed.action && parsed.entity) {
           // Standard event (has action/entity fields)
           const event = parsed as WSEvent

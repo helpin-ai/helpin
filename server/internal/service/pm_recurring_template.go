@@ -10,6 +10,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 type PMRecurringTemplateService struct {
@@ -23,6 +24,7 @@ type PMRecurringTemplateService struct {
 	activityService  *PMActivityService
 	storyService     *PMStoryService
 	workflowRunner   recurringTemplateWorkflowRunner
+	wsPublisher      *websocket.Publisher
 	logger           *slog.Logger
 }
 
@@ -35,6 +37,7 @@ func NewPMRecurringTemplateService(
 	checklistRepo *repository.PMChecklistItemRepository,
 	externalLinkRepo *repository.PMExternalLinkRepository,
 	activityService *PMActivityService,
+	wsPublisher *websocket.Publisher,
 ) *PMRecurringTemplateService {
 	return &PMRecurringTemplateService{
 		recurringRepo:    recurringRepo,
@@ -45,6 +48,7 @@ func NewPMRecurringTemplateService(
 		checklistRepo:    checklistRepo,
 		externalLinkRepo: externalLinkRepo,
 		activityService:  activityService,
+		wsPublisher:      wsPublisher,
 		logger:           slog.Default().With("service", "pm_recurring_template"),
 	}
 }
@@ -194,21 +198,21 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 	}
 
 	tmpl := &model.PMRecurringTemplate{
-		WorkspaceID:        req.WorkspaceID,
-		TeamID:             rawStory.TeamID,
-		Title:              strings.TrimSpace(req.Title),
-		Description:        req.Description,
-		Status:             model.PMRecurringTemplateStatusActive,
-		OwnerMemberID:      rawStory.OwnerMemberID,
-		CreatedFromStoryID: &rawStory.ID,
-		SeedPayload:        seedJSON,
-		Config:             cfgJSON,
-		StartDate:          cfg.StartsOn,
-		EndDate:            cfg.EndsOn,
+		WorkspaceID:          req.WorkspaceID,
+		TeamID:               rawStory.TeamID,
+		Title:                strings.TrimSpace(req.Title),
+		Description:          req.Description,
+		Status:               model.PMRecurringTemplateStatusActive,
+		OwnerMemberID:        rawStory.OwnerMemberID,
+		CreatedFromStoryID:   &rawStory.ID,
+		SeedPayload:          seedJSON,
+		Config:               cfgJSON,
+		StartDate:            cfg.StartsOn,
+		EndDate:              cfg.EndsOn,
 		EndsAfterOccurrences: cfg.EndsAfterOccurrences,
-		CreatedByID:        optionalString(actorID),
-		UpdatedByID:        optionalString(actorID),
-		GeneratedCount:     1,
+		CreatedByID:          optionalString(actorID),
+		UpdatedByID:          optionalString(actorID),
+		GeneratedCount:       1,
 		LastGeneratedStoryID: &rawStory.ID,
 	}
 	now := time.Now().UTC()
@@ -256,6 +260,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 	if err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "created", "recurring_template", tmpl.ID, tmpl.WorkspaceID, actorID)
 	return &detail, nil
 }
 
@@ -343,6 +348,7 @@ func (s *PMRecurringTemplateService) Update(ctx context.Context, id string, req 
 	if err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "recurring_template", tmpl.ID, tmpl.WorkspaceID, actorID)
 	return &detail, nil
 }
 
@@ -451,6 +457,7 @@ func (s *PMRecurringTemplateService) Duplicate(ctx context.Context, id, actorID 
 	if err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "created", "recurring_template", clone.ID, clone.WorkspaceID, actorID)
 	return &detail, nil
 }
 

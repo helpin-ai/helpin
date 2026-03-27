@@ -7,6 +7,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsCollectionService handles business logic for docs collections.
@@ -14,11 +15,12 @@ type DocsCollectionService struct {
 	collectionRepo *repository.DocsCollectionRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	translationSvc *DocsHelpcenterTranslationService
+	wsPublisher    *websocket.Publisher
 }
 
 // NewDocsCollectionService creates a new DocsCollectionService.
-func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository) *DocsCollectionService {
-	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo}
+func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsCollectionService {
+	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher}
 }
 
 func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -76,6 +78,7 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 			}
 		}()
 	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "created", "docs_collection", created.ID, workspaceID, userID, "docs_space", spaceID, nil)
 	return created, nil
 }
 
@@ -119,17 +122,33 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 			slog.WarnContext(ctx, "failed to refresh helpcenter collection translation source after update", "collection_id", id, "error", err)
 		}
 	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 	return updated, nil
 }
 
 // Delete soft-deletes a collection.
 func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
-	return s.collectionRepo.Delete(ctx, id)
+	collection, err := s.collectionRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if collection == nil {
+		return fmt.Errorf("collection not found")
+	}
+	if err := s.collectionRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_collection", id, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
+	return nil
 }
 
 // Restore restores a soft-deleted collection.
 func (s *DocsCollectionService) Restore(ctx context.Context, id string) (*model.DocsCollection, error) {
-	return s.collectionRepo.Restore(ctx, id)
+	collection, err := s.collectionRepo.Restore(ctx, id)
+	if err == nil && collection != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
+	}
+	return collection, err
 }
 
 // ReorderCollections reorders collections within a space.
@@ -137,5 +156,11 @@ func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID 
 	if len(req.CollectionIDs) == 0 {
 		return nil
 	}
-	return s.collectionRepo.Reorder(ctx, spaceID, req.CollectionIDs)
+	if err := s.collectionRepo.Reorder(ctx, spaceID, req.CollectionIDs); err != nil {
+		return err
+	}
+	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_collection", req.CollectionIDs[0], space.WorkspaceID, "", "docs_space", spaceID, nil)
+	}
+	return nil
 }

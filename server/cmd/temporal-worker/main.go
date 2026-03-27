@@ -248,6 +248,7 @@ func main() {
 		checklistRepo,
 		externalLinkRepo,
 		pmActivityService,
+		nil,
 	)
 	pmAutomationService := service.NewPMAutomationService(
 		pmAutomationRepo,
@@ -258,7 +259,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
-	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo)
+	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
 		workspaceRepo,
@@ -315,8 +316,8 @@ func main() {
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	agentService.SetWorkflowService(pmWorkflowService)
-	docsContentService := service.NewDocsContentService(docsContentRepo)
-	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
+	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,

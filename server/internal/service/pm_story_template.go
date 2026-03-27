@@ -7,16 +7,18 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // PMStoryTemplateService contains story template business logic.
 type PMStoryTemplateService struct {
 	templateRepo *repository.PMStoryTemplateRepository
+	wsPublisher  *websocket.Publisher
 }
 
 // NewPMStoryTemplateService creates a new PMStoryTemplateService.
-func NewPMStoryTemplateService(templateRepo *repository.PMStoryTemplateRepository) *PMStoryTemplateService {
-	return &PMStoryTemplateService{templateRepo: templateRepo}
+func NewPMStoryTemplateService(templateRepo *repository.PMStoryTemplateRepository, wsPublisher *websocket.Publisher) *PMStoryTemplateService {
+	return &PMStoryTemplateService{templateRepo: templateRepo, wsPublisher: wsPublisher}
 }
 
 // ListByWorkspace lists story templates by workspace.
@@ -78,6 +80,7 @@ func (s *PMStoryTemplateService) Create(ctx context.Context, req model.CreateSto
 	if err := s.templateRepo.Create(ctx, tmpl); err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "created", "story_template", tmpl.ID, req.WorkspaceID, "")
 	return tmpl, nil
 }
 
@@ -153,10 +156,22 @@ func (s *PMStoryTemplateService) Update(ctx context.Context, id string, req mode
 	if err := s.templateRepo.Update(ctx, tmpl); err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "story_template", tmpl.ID, tmpl.WorkspaceID, "")
 	return tmpl, nil
 }
 
 // Delete deletes a story template.
 func (s *PMStoryTemplateService) Delete(ctx context.Context, id string) error {
-	return s.templateRepo.Delete(ctx, id)
+	tmpl, err := s.templateRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if tmpl == nil {
+		return fmt.Errorf("story template not found")
+	}
+	if err := s.templateRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "deleted", "story_template", id, tmpl.WorkspaceID, "")
+	return nil
 }
