@@ -608,6 +608,30 @@ func TestPMStoryService_Update(t *testing.T) {
 		}
 	})
 
+	t.Run("clear epic with empty string", func(t *testing.T) {
+		epicID := "epic-001"
+		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
+			EpicID: &epicID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("set epic: %v", err)
+		}
+		if updated.Story.EpicID == nil || *updated.Story.EpicID != epicID {
+			t.Fatalf("epic_id = %v, want %q", updated.Story.EpicID, epicID)
+		}
+
+		emptyEpicID := ""
+		cleared, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
+			EpicID: &emptyEpicID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("clear epic: %v", err)
+		}
+		if cleared.Story.EpicID != nil {
+			t.Fatalf("expected epic_id to be cleared, got %v", *cleared.Story.EpicID)
+		}
+	})
+
 	t.Run("update blocked", func(t *testing.T) {
 		blocked := true
 		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
