@@ -237,7 +237,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [timezone, setTimezone] = useState('America/New_York');
   const [schedule, setSchedule] = useState<Record<string, BusinessHoursDay>>({});
   const [outsideMessage, setOutsideMessage] = useState('');
-  const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(false);
   const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
@@ -287,7 +286,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setTimezone(s.business_hours_timezone);
       setSchedule(normalizedSchedule);
       setOutsideMessage(s.outside_hours_message);
-      setEmailFallbackEnabled(s.email_fallback_enabled);
       setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setCsatEnabled(s.csat_enabled);
@@ -331,7 +329,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     business_hours_timezone: timezone,
     business_hours_schedule: normalizeBusinessHoursSchedule(schedule),
     outside_hours_message: outsideMessage,
-    email_fallback_enabled: emailFallbackEnabled,
+    email_fallback_enabled: true,
     email_fallback_delay_secs: emailFallbackDelaySecs,
     email_fallback_from_name: emailFallbackFromName,
     csat_enabled: csatEnabled,
@@ -1254,7 +1252,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Chat Features</p>
-                <p className="text-sm text-muted-foreground">File uploads, satisfaction surveys, and email notifications</p>
+                <p className="text-sm text-muted-foreground">File uploads, satisfaction surveys, and fallback emails</p>
               </div>
               <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-features') && 'rotate-180')} />
             </button>
@@ -1271,33 +1269,35 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">CSAT surveys</Label>
-                    <p className="text-xs text-muted-foreground">Send a satisfaction survey after conversation resolution.</p>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">CSAT surveys</Label>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        Coming soon
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Satisfaction surveys after conversation resolution will be available soon.</p>
                   </div>
-                  <Switch checked={csatEnabled} onCheckedChange={setCsatEnabled} />
+                  <Switch checked={csatEnabled} onCheckedChange={setCsatEnabled} disabled />
                 </div>
 
                 <div className="border-t border-border pt-4 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div>
                     <div>
                       <Label className="text-sm">Email notifications</Label>
-                      <p className="text-xs text-muted-foreground">Queue a fallback email if the visitor disconnects before your team replies.</p>
+                      <p className="text-xs text-muted-foreground">Fallback emails are sent automatically if the visitor disconnects before your team replies.</p>
                     </div>
-                    <Switch checked={emailFallbackEnabled} onCheckedChange={setEmailFallbackEnabled} />
                   </div>
 
-                  {emailFallbackEnabled && (
-                    <div className="space-y-2">
-                      <Label htmlFor="email-fallback-from-name" className="text-sm">From name</Label>
-                      <Input
-                        id="email-fallback-from-name"
-                        value={emailFallbackFromName}
-                        onChange={(e) => setEmailFallbackFromName(e.target.value)}
-                        placeholder={workspace?.name || 'Workspace name'}
-                        className="max-w-md"
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="email-fallback-from-name" className="text-sm">From name</Label>
+                    <Input
+                      id="email-fallback-from-name"
+                      value={emailFallbackFromName}
+                      onChange={(e) => setEmailFallbackFromName(e.target.value)}
+                      placeholder={workspace?.name || 'Workspace name'}
+                      className="max-w-md"
+                    />
+                  </div>
                 </div>
               </div>
               </div>
