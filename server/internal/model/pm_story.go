@@ -102,23 +102,31 @@ func (PMStoryLabel) TableName() string { return "pm_story_labels" }
 
 // PMStoryFilters applies filter options when listing stories.
 type PMStoryFilters struct {
-	TeamID            *string
-	EpicID            *string
-	SprintID          *string
-	WorkflowID        *string
-	WorkflowStateID   *string
-	StoryType         *string
-	OwnerID           *string
-	OwnerMemberID     *string
-	RequesterID       *string
-	RequesterMemberID *string
-	LabelID           *string
-	Priority          *string
-	Severity          *string
-	Blocked           *string
-	Blocking          *string
-	UpdatedAfter      *string
-	Archived          *bool
+	TeamID                *string
+	EpicID                *string
+	SprintID              *string
+	ContactID             *string
+	CompanyID             *string
+	DealID                *string
+	SupportConversationID *string
+	IncludeContacts       bool
+	IncludeCompanies      bool
+	IncludeDeals          bool
+	IncludeSupport        bool
+	WorkflowID            *string
+	WorkflowStateID       *string
+	StoryType             *string
+	OwnerID               *string
+	OwnerMemberID         *string
+	RequesterID           *string
+	RequesterMemberID     *string
+	LabelID               *string
+	Priority              *string
+	Severity              *string
+	Blocked               *string
+	Blocking              *string
+	UpdatedAfter          *string
+	Archived              *bool
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
 	AccessibleTeamIDs []string
@@ -241,13 +249,17 @@ type StoryDependencyStory struct {
 // BoardStory is a story enriched with relation names for board display.
 type BoardStory struct {
 	PMStory
-	EpicName   *string   `json:"epic_name,omitempty"`
-	SprintName *string   `json:"sprint_name,omitempty"`
-	OwnerName  *string   `json:"owner_name,omitempty"`
-	StateName  *string   `json:"state_name,omitempty"`
-	StateType  *string   `json:"state_type,omitempty"`
-	StateColor *string   `json:"state_color,omitempty"`
-	Labels     []PMLabel `json:"labels"`
+	EpicName             *string                    `json:"epic_name,omitempty"`
+	SprintName           *string                    `json:"sprint_name,omitempty"`
+	OwnerName            *string                    `json:"owner_name,omitempty"`
+	StateName            *string                    `json:"state_name,omitempty"`
+	StateType            *string                    `json:"state_type,omitempty"`
+	StateColor           *string                    `json:"state_color,omitempty"`
+	Labels               []PMLabel                  `json:"labels"`
+	Contacts             []AssociationObjectSummary `json:"contacts,omitempty"`
+	Companies            []AssociationObjectSummary `json:"companies,omitempty"`
+	Deals                []AssociationObjectSummary `json:"deals,omitempty"`
+	SupportConversations []AssociationObjectSummary `json:"support_conversations,omitempty"`
 }
 
 // StoryGroup is a labeled bucket of stories inside a board column.

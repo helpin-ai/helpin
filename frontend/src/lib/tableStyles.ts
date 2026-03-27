@@ -4,22 +4,22 @@
 export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto';
 
 /** Sticky header bar */
-export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-background';
+export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-card';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
-  'relative px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground border-r border-border/60 last:border-r-0';
+  'relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground border-r border-border/60 last:border-r-0';
 
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted/40';
 
 /** Data row – compact h-9 (36px), `group` class for hover-reveal actions */
 export const TABLE_ROW =
-  'group flex h-9 items-center border-b border-border/50 transition-colors hover:bg-muted/50';
+  'group flex h-9 items-center border-b border-border/50 bg-card transition-colors hover:bg-[color-mix(in_oklab,var(--card)_50%,var(--muted)_50%)]';
 
 /** Data cell – right border for grid lines, cell-level hover */
 export const TABLE_CELL =
-  'flex items-center px-2.5 self-stretch border-r border-border/60 last:border-r-0 transition-colors';
+  'flex shrink-0 items-center px-2.5 self-stretch border-r border-border/60 last:border-r-0 transition-colors';
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =
@@ -43,17 +43,17 @@ export const ACTIONS_COL_SIZE = 44;
 
 /** Pinned cell (left) – sticky with background so content doesn't bleed through */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[2] bg-background group-hover:bg-muted';
+  'sticky z-[2] bg-inherit';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[2] bg-background group-hover:bg-muted';
+  'sticky right-0 z-[2] bg-inherit';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
-export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-background';
+export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card';
 
 /** Pinned header cell (right) – higher z-index, sticky right */
-export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-background';
+export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-card';
 
 /** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
 export const TABLE_CHECKBOX_HOVER =

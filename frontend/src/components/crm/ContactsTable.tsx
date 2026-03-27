@@ -123,6 +123,7 @@ export function ContactsTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalContacts(contacts); }, [contacts]);
@@ -481,7 +482,7 @@ export function ContactsTable({
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <MemoDataRow row={row} />
+                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
                   )}
                 </div>
               );
@@ -520,9 +521,15 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 
 // ── Data Row ──────────────────────────────────────────────────────
 
-const MemoDataRow = memo(function DataRow({ row }: { row: Row<CRMContact> }) {
+const MemoDataRow = memo(function DataRow({
+  row,
+  columnSizingVersion,
+}: {
+  row: Row<CRMContact>;
+  columnSizingVersion: string;
+}) {
   return (
-    <div className={TABLE_ROW}>
+    <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;

@@ -149,7 +149,13 @@ const storyMatchesFilters = (story: Story, teamId: string | null, filters: Board
   return true;
 };
 
-const hasAmbiguousPatchFilters = (filters: BoardFilters) => Boolean(filters.label_id);
+const hasAmbiguousPatchFilters = (filters: BoardFilters) => Boolean(
+	filters.label_id ||
+	filters.contact_id ||
+	filters.company_id ||
+	filters.deal_id ||
+	filters.support_conversation_id,
+);
 
 const updateColumnTotals = (column: StoryStateColumn, countDelta: number, pointDelta: number) => {
   column.story_count = Math.max(0, column.story_count + countDelta);

@@ -4,6 +4,11 @@ export const DISPLAY_PROPERTY_LABELS = {
   story_type: 'Story Type',
   priority: 'Priority',
   severity: 'Severity',
+  agent: 'Agent',
+  contacts: 'Contacts',
+  companies: 'Companies',
+  deals: 'Deals',
+  support: 'Support',
   epic: 'Epic',
   labels: 'Labels',
   estimate: 'Estimate',
@@ -18,14 +23,14 @@ export const DISPLAY_PROPERTY_LABELS = {
 
 /** Keys shown in the Kanban board display menu */
 export const BOARD_PROPERTY_KEYS: DisplayPropertyKey[] = [
-  'story_type', 'priority', 'severity', 'epic', 'sprint', 'labels',
+  'story_type', 'priority', 'severity', 'agent', 'epic', 'sprint', 'labels',
   'estimate', 'due_date', 'blocked', 'assignee',
 ];
 
 /** Keys shown in the list view display menu */
 export const LIST_PROPERTY_KEYS: DisplayPropertyKey[] = [
   'state', 'story_type', 'priority', 'severity', 'estimate',
-  'assignee', 'team', 'epic', 'sprint', 'due_date', 'labels', 'updated_at',
+  'assignee', 'team', 'epic', 'sprint', 'contacts', 'companies', 'deals', 'support', 'due_date', 'labels', 'updated_at',
 ];
 
 export type DisplayPropertyKey = keyof typeof DISPLAY_PROPERTY_LABELS;
@@ -36,6 +41,11 @@ const ALL_ON: DisplayProperties = {
   story_type: true,
   priority: true,
   severity: true,
+  agent: true,
+  contacts: false,
+  companies: false,
+  deals: false,
+  support: false,
   epic: true,
   labels: true,
   estimate: true,

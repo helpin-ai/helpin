@@ -40,6 +40,14 @@ export const pmStoryService = {
       team_id?: string;
       epic_id?: string;
       sprint_id?: string;
+      contact_id?: string;
+      company_id?: string;
+      deal_id?: string;
+      support_conversation_id?: string;
+      include_contacts?: boolean;
+      include_companies?: boolean;
+      include_deals?: boolean;
+      include_support?: boolean;
       workflow_id?: string;
       state_id?: string;
       story_type?: string;
@@ -63,7 +71,13 @@ export const pmStoryService = {
     workspaceId: string,
     workflowId: string,
     filters?: Record<string, string | undefined>,
-    perStateLimit?: number
+    perStateLimit?: number,
+    includeOptions?: {
+      include_contacts?: boolean;
+      include_companies?: boolean;
+      include_deals?: boolean;
+      include_support?: boolean;
+    }
   ) => {
     const params = new URLSearchParams();
     params.set('workspace_id', workspaceId);
@@ -76,6 +90,10 @@ export const pmStoryService = {
         if (value) params.set(key, value);
       });
     }
+    if (includeOptions?.include_contacts) params.set('include_contacts', 'true');
+    if (includeOptions?.include_companies) params.set('include_companies', 'true');
+    if (includeOptions?.include_deals) params.set('include_deals', 'true');
+    if (includeOptions?.include_support) params.set('include_support', 'true');
     return api.get<StoryStateColumn[]>(`/pm/stories/board?${params.toString()}`);
   },
   listBoardColumn: (
@@ -83,7 +101,13 @@ export const pmStoryService = {
     stateId: string,
     offset: number,
     limit: number,
-    filters?: Record<string, string | undefined>
+    filters?: Record<string, string | undefined>,
+    includeOptions?: {
+      include_contacts?: boolean;
+      include_companies?: boolean;
+      include_deals?: boolean;
+      include_support?: boolean;
+    }
   ) => {
     const params = new URLSearchParams();
     params.set('workspace_id', workspaceId);
@@ -95,6 +119,10 @@ export const pmStoryService = {
         if (value) params.set(key, value);
       });
     }
+    if (includeOptions?.include_contacts) params.set('include_contacts', 'true');
+    if (includeOptions?.include_companies) params.set('include_companies', 'true');
+    if (includeOptions?.include_deals) params.set('include_deals', 'true');
+    if (includeOptions?.include_support) params.set('include_support', 'true');
     return api.get<ColumnStoriesResponse>(`/pm/stories/board/column?${params.toString()}`);
   },
   listBoardByMember: (
