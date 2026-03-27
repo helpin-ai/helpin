@@ -1324,7 +1324,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
         {/* Workflow States Editor Dialog */}
         <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
-          <DialogContent className="max-h-[90vh] w-[min(96vw,72rem)] max-w-[min(96vw,72rem)] overflow-y-auto">
+          <DialogContent
+            className="max-h-[90vh] overflow-y-auto"
+            style={{
+              width: `min(96vw, ${Math.max(40, (activeTeamWorkflow?.states.length ?? 3) * 14.5 + 6)}rem)`,
+              maxWidth: '96vw',
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Workflow States</DialogTitle>
             </DialogHeader>

@@ -26,6 +26,7 @@ import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
@@ -187,16 +188,26 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
-  useWorkspaceMembers(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
   const markUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
+  const currentUser = useAuthStore((s) => s.user);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const memberAvatarByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      if (member.user_id && member.avatar_url) {
+        map.set(member.user_id, member.avatar_url);
+      }
+    }
+    return map;
+  }, [members]);
 
   useEffect(() => {
     let cancelled = false;
@@ -566,6 +577,12 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
                 receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                fallbackAvatarUrl={
+                  (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
+                  ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
+                    ? currentUser?.avatar_url
+                    : undefined)
+                }
               />
             );
           })}
