@@ -18,7 +18,6 @@ import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/compo
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -92,7 +91,6 @@ export default function Workspaces() {
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [description, setDescription] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
@@ -154,7 +152,6 @@ export default function Workspaces() {
     setWorkspaceStep('details');
     setName('');
     setSlug('');
-    setDescription('');
     setWebsiteUrl('');
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
@@ -246,7 +243,6 @@ export default function Workspaces() {
       name,
       slug,
       organization_id: currentOrganization.id,
-      description: description || undefined,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
@@ -522,10 +518,6 @@ export default function Workspaces() {
                       <Label htmlFor="ws-slug">Slug</Label>
                       <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
                       <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="ws-desc">Description (optional)</Label>
-                      <Textarea id="ws-desc" placeholder="A brief description of this workspace" value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ws-website">Website (optional)</Label>

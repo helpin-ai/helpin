@@ -254,3 +254,61 @@ func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) 
 func (s *WorkspaceService) ListAssignableMembers(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
 	return s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
 }
+
+// UpdateMember updates a workspace member role with owner/admin safeguards.
+func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorID, memberID string, req model.UpdateWorkspaceMemberRequest) error {
+	if actorID == "" {
+		return fmt.Errorf("actor is required")
+	}
+	if memberID == "" {
+		return fmt.Errorf("member id is required")
+	}
+	if req.Role != model.RoleOwner && req.Role != model.RoleAdmin && req.Role != model.RoleMember && req.Role != model.RoleViewer {
+		return fmt.Errorf("invalid role")
+	}
+
+	actorMember, err := s.workspaceRepo.GetMembership(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorMember == nil {
+		return fmt.Errorf("actor membership not found")
+	}
+	if actorMember.ID == memberID {
+		return fmt.Errorf("cannot change your own role")
+	}
+
+	targetMember, err := s.workspaceRepo.GetMembershipByID(ctx, workspaceID, memberID)
+	if err != nil {
+		return err
+	}
+	if targetMember == nil || targetMember.Status != model.WorkspaceMemberStatusActive {
+		return fmt.Errorf("member not found")
+	}
+
+	actorRole := actorMember.Role
+	targetRole := targetMember.Role
+	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
+		return fmt.Errorf("only owner or admin can update members")
+	}
+	if targetRole == model.RoleOwner && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can change an owner's role")
+	}
+	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can change an admin's role")
+	}
+	if req.Role == model.RoleOwner && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can grant ownership")
+	}
+	if targetRole == model.RoleOwner && req.Role != model.RoleOwner {
+		count, err := s.workspaceRepo.CountMembersByRole(ctx, workspaceID, model.RoleOwner)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return fmt.Errorf("cannot demote the last owner")
+		}
+	}
+
+	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
+}

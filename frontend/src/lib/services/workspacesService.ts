@@ -14,6 +14,8 @@ export const workspacesService = {
   getMyMembership: (id: string) => api.get<WorkspaceMember>(`/workspaces/${id}/my-membership`),
   getMe: (id: string) => api.get<WorkspaceAccess>(`/workspaces/${id}/me`),
   listMembers: (id: string) => api.get<MemberWithUser[]>(`/workspaces/${id}/members`),
+  updateMemberRole: (id: string, memberId: string, data: { role: WorkspaceMember['role'] }) =>
+    api.put(`/workspaces/${id}/members/${memberId}`, data),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {
