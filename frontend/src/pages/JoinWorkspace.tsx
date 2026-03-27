@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
-import { useAuthStore } from '@/stores/authStore';
+import { clearClientSession, useAuthStore } from '@/stores/authStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { inviteService } from '@/lib/services/inviteService';
 import type { InviteInfo } from '@/lib/types';
@@ -28,6 +28,15 @@ export default function JoinWorkspace() {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const inviteMatchesCurrentUser = user && info ? user.email.toLowerCase() === info.email.toLowerCase() : false;
+
+  const loginRedirect = `/login?redirect=/join/${token}` as string;
+
+  const handleSwitchAccount = () => {
+    clearClientSession();
+    useAuthStore.setState({ user: null, loading: false, serverUnreachable: false });
+    window.location.assign(loginRedirect);
+  };
 
   useEffect(() => {
     const fetchInfo = async () => {
@@ -96,8 +105,43 @@ export default function JoinWorkspace() {
     );
   }
 
-  // Not logged in — inline registration form
+  // Not logged in + invited email already has an account.
   if (!user) {
+    if (info.account_exists) {
+      return (
+        <PublicPageShell>
+          <Card className="w-full">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">Sign In To Join {info.workspace_name}</CardTitle>
+              <CardDescription>
+                {info.invited_by_name} invited <span className="font-medium text-foreground">{info.email}</span> to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-center text-sm text-muted-foreground">
+              <p>This invite is linked to an existing Helpin account.</p>
+              <p>Sign in with <span className="font-medium text-foreground">{info.email}</span> to accept it.</p>
+            </CardContent>
+            <CardFooter className="flex flex-col gap-3">
+              <Button className="w-full" onClick={() => navigate({ to: loginRedirect })}>
+                Sign in to continue
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                Need password help?{' '}
+                <button
+                  type="button"
+                  className="text-primary hover:underline cursor-pointer"
+                  onClick={() => navigate({ to: '/forgot-password' })}
+                >
+                  Reset password
+                </button>
+              </p>
+            </CardFooter>
+          </Card>
+        </PublicPageShell>
+      );
+    }
+
+    // Not logged in + no existing account — inline registration form.
     const handleSignupAndJoin = async (e: React.FormEvent) => {
       e.preventDefault();
       if (password.length < 8) {
@@ -178,7 +222,35 @@ export default function JoinWorkspace() {
     );
   }
 
-  // Logged in — show join button
+  // Logged in with the wrong account for this invite.
+  if (!inviteMatchesCurrentUser) {
+    return (
+      <PublicPageShell>
+        <Card className="w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Switch Account To Join</CardTitle>
+            <CardDescription>
+              {info.invited_by_name} invited <span className="font-medium text-foreground">{info.email}</span> to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-center text-sm text-muted-foreground">
+            <p>You&apos;re currently signed in as <span className="font-medium text-foreground">{user.email}</span>.</p>
+            <p>This invitation can only be accepted by <span className="font-medium text-foreground">{info.email}</span>.</p>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-3">
+            <Button className="w-full" onClick={handleSwitchAccount}>
+              Sign in with the invited email
+            </Button>
+            <Button type="button" variant="outline" className="w-full" onClick={() => navigate({ to: '/workspaces' })}>
+              Back to my workspaces
+            </Button>
+          </CardFooter>
+        </Card>
+      </PublicPageShell>
+    );
+  }
+
+  // Logged in with the invited account — show join button.
   return (
     <PublicPageShell>
       <Card className="w-full">

@@ -1,11 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,16 +61,94 @@ func NewDocsImportService(
 
 // s3ImageUploader adapts S3Client to the helpscout.ImageUploader interface.
 type s3ImageUploader struct {
-	s3Client *storage.S3Client
+	store docsImageObjectStore
+}
+
+type docsImageObjectStore interface {
+	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
+	PublicURL(key string) string
 }
 
 // UploadImage uploads an image to S3 and returns the public URL.
 func (u *s3ImageUploader) UploadImage(ctx context.Context, workspaceID, filename string, data io.Reader, contentType string) (string, error) {
+	payload, err := io.ReadAll(data)
+	if err != nil {
+		return "", fmt.Errorf("read image %q: %w", filename, err)
+	}
 	key := fmt.Sprintf("docs-import/%s/%s-%s", workspaceID, uuid.New().String(), filename)
-	if err := u.s3Client.PutObject(ctx, key, contentType, -1, data, true); err != nil {
+	if err := u.store.PutObject(ctx, key, contentType, int64(len(payload)), bytes.NewReader(payload), true); err != nil {
 		return "", fmt.Errorf("upload image %q: %w", filename, err)
 	}
-	return u.s3Client.PublicURL(key), nil
+	return u.store.PublicURL(key), nil
+}
+
+// ImportExternalImage downloads a remote image and stores it in our S3-backed docs storage.
+func (s *DocsImportService) ImportExternalImage(ctx context.Context, workspaceID, imageURL string) (string, error) {
+	if s.s3Client == nil {
+		return "", fmt.Errorf("file storage is not configured")
+	}
+	return s.importExternalImageWithUploader(ctx, workspaceID, imageURL, &s3ImageUploader{store: s.s3Client})
+}
+
+func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context, workspaceID, imageURL string, uploader helpscout.ImageUploader) (string, error) {
+	if strings.TrimSpace(imageURL) == "" {
+		return "", fmt.Errorf("image_url is required")
+	}
+
+	parsed, err := url.Parse(imageURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid image_url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("image_url must use http or https")
+	}
+
+	if s.s3Client != nil {
+		publicPrefix := s.s3Client.PublicURL("")
+		if publicPrefix != "" && strings.HasPrefix(imageURL, publicPrefix) {
+			return imageURL, nil
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create image request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download image: status %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if idx := strings.Index(contentType, ";"); idx >= 0 {
+		contentType = strings.TrimSpace(contentType[:idx])
+	}
+	if contentType == "" {
+		contentType = mime.TypeByExtension(path.Ext(parsed.Path))
+	}
+	if !strings.HasPrefix(contentType, "image/") {
+		return "", fmt.Errorf("remote URL is not an image")
+	}
+
+	filename := path.Base(parsed.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "image"
+		if exts, _ := mime.ExtensionsByType(contentType); len(exts) > 0 {
+			filename += exts[0]
+		}
+	}
+
+	uploadedURL, err := uploader.UploadImage(ctx, workspaceID, filename, resp.Body, contentType)
+	if err != nil {
+		return "", err
+	}
+	return uploadedURL, nil
 }
 
 // Preview fetches collection metadata from HelpScout for import preview.
@@ -231,7 +315,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	// Prepare image uploader.
 	var uploader helpscout.ImageUploader
 	if s.s3Client != nil {
-		uploader = &s3ImageUploader{s3Client: s.s3Client}
+		uploader = &s3ImageUploader{store: s.s3Client}
 	}
 
 	var (
@@ -590,7 +674,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 
 	var uploader helpscout.ImageUploader
 	if s.s3Client != nil {
-		uploader = &s3ImageUploader{s3Client: s.s3Client}
+		uploader = &s3ImageUploader{store: s.s3Client}
 	}
 
 	var (

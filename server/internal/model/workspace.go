@@ -92,3 +92,8 @@ type UpdateWorkspaceRequest struct {
 	LogoURL     *string `json:"logo_url"`
 	Timezone    *string `json:"timezone"`
 }
+
+// UpdateWorkspaceMemberRequest is the payload for PUT /api/workspaces/{id}/members/{memberId}.
+type UpdateWorkspaceMemberRequest struct {
+	Role string `json:"role"`
+}

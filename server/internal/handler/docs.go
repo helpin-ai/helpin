@@ -838,13 +838,13 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|favicon}.
+// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon}.
 func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 
 	assetType := r.URL.Query().Get("type")
-	if assetType != "logo" && assetType != "favicon" {
-		writeError(w, http.StatusBadRequest, "type must be 'logo' or 'favicon'")
+	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" {
+		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', or 'favicon'")
 		return
 	}
 
@@ -878,6 +878,25 @@ func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"url": publicURL})
+}
+
+// ImportExternalImage handles POST /docs/images/import.
+func (h *DocsHandler) ImportExternalImage(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+
+	var req model.ImportDocsExternalImageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	publicURL, err := h.importService.ImportExternalImage(r.Context(), wsID, strings.TrimSpace(req.ImageURL))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.ImportDocsExternalImageResponse{URL: publicURL})
 }
 
 // ─── Article Feedback ───────────────────────────────────────────────────────

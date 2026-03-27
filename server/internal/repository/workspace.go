@@ -456,6 +456,38 @@ func (r *WorkspaceRepository) GetMemberRole(ctx context.Context, workspaceID, us
 	return m.Role, nil
 }
 
+// GetMembershipByID returns a workspace membership by membership ID.
+func (r *WorkspaceRepository) GetMembershipByID(ctx context.Context, workspaceID, memberID string) (*model.WorkspaceMember, error) {
+	return r.getMembershipByIDTx(r.db.WithContext(ctx), workspaceID, memberID)
+}
+
+// UpdateMemberRole updates the role for a workspace member.
+func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID, memberID, role string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.WorkspaceMember{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, memberID).
+		Update("role", role)
+	if result.Error != nil {
+		return fmt.Errorf("update workspace member role: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("member not found")
+	}
+	return nil
+}
+
+// CountMembersByRole returns the number of workspace members with a given role.
+func (r *WorkspaceRepository) CountMembersByRole(ctx context.Context, workspaceID, role string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.WorkspaceMember{}).
+		Where("workspace_id = ? AND role = ? AND status = ?", workspaceID, role, model.WorkspaceMemberStatusActive).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count workspace members by role: %w", err)
+	}
+	return count, nil
+}
+
 // ListMembers returns all active joined members of a workspace with user details.
 func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
 	var results []model.MemberWithUser

@@ -45,6 +45,7 @@ import { InsertVideoDialog } from './InsertVideoDialog'
 import { TableControls } from './TableControls'
 import { BlockGapInserter } from './BlockGapInserter'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
+import { docsService } from '@/lib/services/docsService'
 import { toast } from 'sonner'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
@@ -87,8 +88,8 @@ function ToolbarButton({
         }}
         className={`rounded p-2 transition-colors ${
           active
-            ? 'bg-white/20 text-white'
-            : 'text-white/70 hover:bg-white/10 hover:text-white'
+            ? 'bg-accent text-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
         }`}
       >
         {children}
@@ -396,7 +397,7 @@ function FloatingToolbar({ editor }: {
       className="fixed z-50 flex flex-col items-center gap-0 animate-in fade-in zoom-in-95 duration-150"
       style={{ top: activePos?.top ?? 0, left: activePos?.left ?? 0 }}
     >
-      {!linkOnlyMode && <div className="flex items-center gap-0.5 rounded-lg bg-foreground px-1.5 py-1 shadow-xl">
+      {!linkOnlyMode && <div className="flex items-center gap-0.5 rounded-xl border border-border/70 bg-background/95 px-1.5 py-1 text-foreground shadow-xl backdrop-blur-md">
         {/* Bold, Italic, Underline */}
         <ToolbarButton title="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>
           <Bold className="h-4 w-4" />
@@ -408,7 +409,7 @@ function FloatingToolbar({ editor }: {
           <Underline className="h-4 w-4" />
         </ToolbarButton>
 
-        <div className="mx-0.5 h-4 w-px bg-white/20" />
+        <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* H2, H3 */}
         <ToolbarButton title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>
@@ -418,7 +419,7 @@ function FloatingToolbar({ editor }: {
           <Heading3 className="h-4 w-4" />
         </ToolbarButton>
 
-        <div className="mx-0.5 h-4 w-px bg-white/20" />
+        <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Lists */}
         <ToolbarButton title="Bullet list" onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>
@@ -428,14 +429,14 @@ function FloatingToolbar({ editor }: {
           <ListOrdered className="h-4 w-4" />
         </ToolbarButton>
 
-        <div className="mx-0.5 h-4 w-px bg-white/20" />
+        <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Link */}
         <ToolbarButton title="Link" onClick={openLinkPopover} active={editor.isActive('link') || showLinkPopover}>
           <Link2 className="h-4 w-4" />
         </ToolbarButton>
 
-        <div className="mx-0.5 h-4 w-px bg-white/20" />
+        <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Format dropdown */}
         <ToolbarButton title="Format" onClick={() => { setShowFormatMenu(!showFormatMenu); setShowLinkPopover(false); }} active={showFormatMenu}>
@@ -650,6 +651,11 @@ export function DocsEditor({
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
   const skipNextSaveRef = useRef(false)
+  const pendingImportedImageUploadsRef = useRef(new Set<string>())
+  const importedImagePersistTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastSavedSnapshotRef = useRef<string | null>(
+    initialContent ? JSON.stringify(initialContent) : null,
+  )
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -665,6 +671,12 @@ export function DocsEditor({
 
   const doSave = useCallback(
     async (json: JSONContent) => {
+      const snapshot = JSON.stringify(json)
+      if (lastSavedSnapshotRef.current === snapshot) {
+        setSaveStatus('idle')
+        return
+      }
+
       if (savingRef.current) {
         pendingContentRef.current = json
         return
@@ -673,6 +685,7 @@ export function DocsEditor({
       setSaveStatus('saving')
       try {
         await onSave(json)
+        lastSavedSnapshotRef.current = snapshot
         setSaveStatus('saved')
         setLastSavedAt(new Date())
         if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
@@ -704,6 +717,7 @@ export function DocsEditor({
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
+    if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
   }, [])
 
   const uploadConfigRef = useRef(uploadConfig)
@@ -761,6 +775,131 @@ export function DocsEditor({
     },
     [],
   )
+
+  const persistImportedImages = useCallback(
+    async (editorInstance: NonNullable<typeof editorRef.current>) => {
+      const currentUploadConfig = uploadConfigRef.current
+
+      const candidates: Array<{ pos: number; src: string; pendingId: string }> = []
+
+      editorInstance.state.doc.descendants((node, pos) => {
+        if (node.type.name !== 'resizableImage') return
+        const src = typeof node.attrs.src === 'string' ? node.attrs.src : ''
+        const attachmentId = typeof node.attrs.attachmentId === 'string' ? node.attrs.attachmentId : ''
+        const isEmbeddedImage = src.startsWith('data:image/')
+        const isRemoteImage = /^https?:\/\//i.test(src)
+        if ((!isEmbeddedImage && !isRemoteImage) || attachmentId) return
+        if (pendingImportedImageUploadsRef.current.has(src)) return
+        if (isEmbeddedImage && !currentUploadConfig) return
+
+        const pendingId = `imported-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        pendingImportedImageUploadsRef.current.add(src)
+        candidates.push({ pos, src, pendingId })
+      })
+
+      if (candidates.length === 0) return
+
+      candidates.forEach(({ pos, pendingId }) => {
+        const node = editorInstance.state.doc.nodeAt(pos)
+        if (!node) return
+        editorInstance.view.dispatch(
+          editorInstance.state.tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            title: pendingId,
+          }),
+        )
+      })
+
+      await Promise.all(
+        candidates.map(async ({ src, pendingId }) => {
+          try {
+            let uploadedSrc = ''
+            let uploadedAttachmentId: string | null = null
+
+            if (src.startsWith('data:image/')) {
+              const response = await fetch(src)
+              const blob = await response.blob()
+              if (!blob.type.startsWith('image/')) {
+                throw new Error('Only image files are supported')
+              }
+
+              const extension = blob.type.split('/')[1]?.split('+')[0] || 'png'
+              const file = new File([blob], `imported-image.${extension}`, { type: blob.type })
+              const upload = await uploadEditorImage(file, currentUploadConfig!)
+              uploadedSrc = upload.publicUrl
+              uploadedAttachmentId = upload.attachmentId
+            } else {
+              if (!currentUploadConfig) {
+                throw new Error('Editor upload is not configured')
+              }
+              const imported = await docsService.importExternalImage(currentUploadConfig.workspaceId, src)
+              if (imported.error || !imported.data?.url) {
+                throw new Error(imported.error || 'Failed to import external image')
+              }
+              uploadedSrc = imported.data.url
+            }
+
+            let targetPos: number | null = null
+            editorInstance.state.doc.descendants((node, pos) => {
+              if (node.type.name === 'resizableImage' && node.attrs.title === pendingId) {
+                targetPos = pos
+                return false
+              }
+            })
+
+            if (targetPos !== null) {
+              const node = editorInstance.state.doc.nodeAt(targetPos)
+              if (node) {
+                editorInstance.view.dispatch(
+                  editorInstance.state.tr.setNodeMarkup(targetPos, undefined, {
+                    ...node.attrs,
+                    src: uploadedSrc,
+                    title: null,
+                    attachmentId: uploadedAttachmentId,
+                  }),
+                )
+              }
+            }
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to upload imported image')
+          } finally {
+            pendingImportedImageUploadsRef.current.delete(src)
+          }
+        }),
+      )
+    },
+    [],
+  )
+
+  const queuePersistImportedImages = useCallback(
+    (editorInstance: NonNullable<typeof editorRef.current>) => {
+      if (importedImagePersistTimerRef.current) {
+        clearTimeout(importedImagePersistTimerRef.current)
+      }
+      importedImagePersistTimerRef.current = setTimeout(() => {
+        void persistImportedImages(editorInstance)
+      }, 0)
+    },
+    [persistImportedImages],
+  )
+
+  const flushSave = useCallback(async () => {
+    if (!editorRef.current || readOnly) return
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = undefined
+    }
+
+    const editorInstance = editorRef.current
+    if (sourceView) {
+      skipNextSaveRef.current = true
+      editorInstance.commands.setContent(sourceMarkdown)
+      void persistImportedImages(editorInstance)
+    }
+
+    await doSave(editorInstance.getJSON())
+  }, [doSave, persistImportedImages, readOnly, sourceMarkdown, sourceView])
 
   const editor = useEditor({
     extensions: [
@@ -820,6 +959,10 @@ export function DocsEditor({
             return true
           }
         }
+        const html = event.clipboardData?.getData('text/html') ?? ''
+        if (html.includes('<img') && editorRef.current) {
+          queuePersistImportedImages(editorRef.current)
+        }
         return false
       },
       handleDrop(_view, event) {
@@ -831,6 +974,10 @@ export function DocsEditor({
             if (editorRef.current) handleImageUpload(file, editorRef.current)
             return true
           }
+        }
+        const html = event.dataTransfer?.getData('text/html') ?? ''
+        if (html.includes('<img') && editorRef.current) {
+          queuePersistImportedImages(editorRef.current)
         }
         return false
       },
@@ -865,7 +1012,17 @@ export function DocsEditor({
       const newJson = JSON.stringify(initialContent)
       if (currentJson !== newJson) {
         skipNextSaveRef.current = true
+        const { from, to } = editor.state.selection
+        const wasFocused = editor.isFocused
         editor.commands.setContent(initialContent)
+        if (wasFocused) {
+          const maxPos = editor.state.doc.content.size
+          editor.chain().focus().setTextSelection({
+            from: Math.min(from, maxPos),
+            to: Math.min(to, maxPos),
+          }).run()
+        }
+        lastSavedSnapshotRef.current = newJson
         setSaveStatus('idle')
       }
     }
@@ -895,11 +1052,12 @@ export function DocsEditor({
   const handleImportMarkdown = useCallback(() => {
     if (!editor || !importText.trim()) return
     editor.commands.setContent(importText.trim())
+    void persistImportedImages(editor)
     scheduleSave(editor.getJSON())
     setImportDialogOpen(false)
     setImportText('')
     toast.success('Markdown imported')
-  }, [editor, importText, scheduleSave])
+  }, [editor, importText, persistImportedImages, scheduleSave])
 
   const toggleSourceView = useCallback(() => {
     if (!editor) return
@@ -908,10 +1066,11 @@ export function DocsEditor({
       setSourceView(true)
     } else {
       editor.commands.setContent(sourceMarkdown)
+      void persistImportedImages(editor)
       scheduleSave(editor.getJSON())
       setSourceView(false)
     }
-  }, [editor, sourceView, sourceMarkdown, getMarkdown, scheduleSave])
+  }, [editor, sourceView, sourceMarkdown, getMarkdown, persistImportedImages, scheduleSave])
 
   const discardSourceView = useCallback(() => {
     setSourceView(false)
@@ -944,6 +1103,7 @@ export function DocsEditor({
       reader.onload = () => {
         const md = reader.result as string
         editor.commands.setContent(md)
+        void persistImportedImages(editor)
         scheduleSave(editor.getJSON())
         toast.success(`Imported "${file.name}"`)
       }
@@ -951,7 +1111,7 @@ export function DocsEditor({
       reader.readAsText(file)
     }
     input.click()
-  }, [editor, scheduleSave])
+  }, [editor, persistImportedImages, scheduleSave])
 
   // ── .docx export ──────────────────────────────────────────────────────────
 
@@ -998,6 +1158,7 @@ img { max-width: 100%; }
         const arrayBuffer = await file.arrayBuffer()
         const result = await mammoth.convertToHtml({ arrayBuffer })
         editor.commands.setContent(result.value)
+        void persistImportedImages(editor)
         scheduleSave(editor.getJSON())
         toast.success(`Imported "${file.name}"`)
         if (result.messages.length > 0) {
@@ -1011,24 +1172,32 @@ img { max-width: 100%; }
       }
     }
     input.click()
-  }, [editor, scheduleSave])
+  }, [editor, persistImportedImages, scheduleSave])
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
   useEffect(() => {
     if (readOnly) return
     const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+
+      if ((e.ctrlKey || e.metaKey) && key === 's') {
+        e.preventDefault()
+        void flushSave()
+        return
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
         e.preventDefault()
         toggleSourceView()
       }
       // Ctrl+F → search, Ctrl+H → search & replace
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && key === 'f') {
         e.preventDefault()
         setShowSearch(true)
         setShowSearchReplace(false)
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+      if ((e.ctrlKey || e.metaKey) && key === 'h') {
         e.preventDefault()
         setShowSearch(true)
         setShowSearchReplace(true)
@@ -1036,7 +1205,7 @@ img { max-width: 100%; }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [readOnly, toggleSourceView])
+  }, [flushSave, readOnly, toggleSourceView])
 
   // ── Detect _markdown_source from backend AI import ─────────────────────────
 
@@ -1046,9 +1215,10 @@ img { max-width: 100%; }
     if (typeof raw._markdown_source === 'string') {
       // Backend stored raw markdown — parse it via tiptap-markdown and auto-save as JSON
       editor.commands.setContent(raw._markdown_source as string)
+      void persistImportedImages(editor)
       scheduleSave(editor.getJSON())
     }
-  }, [editor, initialContent, scheduleSave])
+  }, [editor, initialContent, persistImportedImages, scheduleSave])
 
   if (!editor) return null
 

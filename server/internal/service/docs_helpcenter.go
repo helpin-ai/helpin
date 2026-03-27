@@ -44,7 +44,7 @@ func (s *DocsHelpcenterService) SetTranslationService(translationSvc *DocsHelpce
 	s.translationSvc = translationSvc
 }
 
-// UploadAsset uploads a help center asset (logo or favicon) to S3 and returns the public URL.
+// UploadAsset uploads a help center asset (logo, dark logo, or favicon) to S3 and returns the public URL.
 func (s *DocsHelpcenterService) UploadAsset(ctx context.Context, workspaceID, assetType, contentType string, size int64, body io.Reader) (string, error) {
 	if s.s3Client == nil {
 		return "", fmt.Errorf("file storage not configured")

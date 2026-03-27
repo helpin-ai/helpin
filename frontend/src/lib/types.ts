@@ -288,6 +288,7 @@ export interface InviteInfo {
   workspace_name: string;
   workspace_slug: string;
   email: string;
+  account_exists: boolean;
   role: string;
   invited_by_name: string;
   status: string;

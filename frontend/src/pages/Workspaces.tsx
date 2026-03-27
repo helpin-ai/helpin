@@ -14,10 +14,10 @@ import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/components/ui/email-chip-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -91,13 +91,13 @@ export default function Workspaces() {
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [description, setDescription] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
   const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string; name: string; website_url?: string } | null>(null);
   const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
-  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [sendingInvites, setSendingInvites] = useState(false);
   const [websiteSourceAdded, setWebsiteSourceAdded] = useState(false);
@@ -152,12 +152,12 @@ export default function Workspaces() {
     setWorkspaceStep('details');
     setName('');
     setSlug('');
-    setDescription('');
     setWebsiteUrl('');
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
     setCreatedTeamIds([]);
-    setInviteEmails('');
+    setInviteEmails([]);
+    setInviteEmailInput('');
     setInviteRole('member');
     setWebsiteSourceAdded(false);
   };
@@ -243,7 +243,6 @@ export default function Workspaces() {
       name,
       slug,
       organization_id: currentOrganization.id,
-      description: description || undefined,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
@@ -331,17 +330,15 @@ export default function Workspaces() {
     setWebsiteSourceAdded(true);
     toast.success('Website source added and syncing');
   };
-
-  const parseInviteEmails = (raw: string): string[] =>
-    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
-
   const handleSendInvites = async () => {
     if (!createdWorkspace) return;
-    const emails = parseInviteEmails(inviteEmails);
+    const emails = mergeEmailChips(inviteEmails, inviteEmailInput);
     if (emails.length === 0) {
       finishWorkspaceSetup();
       return;
     }
+    setInviteEmails(emails);
+    setInviteEmailInput('');
     setSendingInvites(true);
     let sent = 0;
     const failedEmails: string[] = [];
@@ -408,6 +405,14 @@ export default function Workspaces() {
     [teamDrafts],
   );
   const hasSelectedTeamWithoutName = teamDrafts.some((team) => team.selected && !team.name.trim());
+  const hasInviteRecipients = useMemo(
+    () => mergeEmailChips(inviteEmails, inviteEmailInput).length > 0,
+    [inviteEmailInput, inviteEmails],
+  );
+  const hasInvalidInviteInput = useMemo(
+    () => classifyEmailChipInput(inviteEmailInput).invalid.length > 0,
+    [inviteEmailInput],
+  );
 
   // Auto-create org if user has none (edge case — signup normally handles this).
   useEffect(() => {
@@ -513,10 +518,6 @@ export default function Workspaces() {
                       <Label htmlFor="ws-slug">Slug</Label>
                       <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
                       <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="ws-desc">Description (optional)</Label>
-                      <Textarea id="ws-desc" placeholder="A brief description of this workspace" value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ws-website">Website (optional)</Label>
@@ -652,20 +653,14 @@ export default function Workspaces() {
                     )}
                     <div className="space-y-2">
                       <Label>Emails</Label>
-                      <Textarea
+                      <EmailChipInput
                         placeholder="name@example.com, name2@example.com"
                         value={inviteEmails}
-                        onChange={(e) => {
-                          setInviteEmails(e.target.value);
-                          const el = e.target;
-                          el.style.height = 'auto';
-                          el.style.height = `${el.scrollHeight}px`;
-                        }}
-                        rows={1}
-                        className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
-                        autoComplete="off"
+                        onValueChange={setInviteEmails}
+                        inputValue={inviteEmailInput}
+                        onInputValueChange={setInviteEmailInput}
                       />
-                      <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
+                      <p className="text-xs text-muted-foreground">Press comma, Enter, or Tab to turn each email into a chip. You can also paste a list.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Role</Label>
@@ -732,7 +727,7 @@ export default function Workspaces() {
                       <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites || createWebsiteSourceMutation.isPending}>
                         Skip
                       </Button>
-                      <Button type="submit" disabled={sendingInvites || createWebsiteSourceMutation.isPending || !inviteEmails.trim()}>
+                      <Button type="submit" disabled={sendingInvites || !hasInviteRecipients || hasInvalidInviteInput}>
                         {sendingInvites ? 'Sending...' : 'Send Invites'}
                       </Button>
                     </>

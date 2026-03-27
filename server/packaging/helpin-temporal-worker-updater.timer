@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic updates for Helpin Temporal Worker
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+Unit=helpin-temporal-worker-updater.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=Helpin Temporal Worker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment=HOME=/root
+EnvironmentFile=-/etc/helpin/temporal-worker.conf
+ExecStart=/usr/bin/doppler run --project ${DOPPLER_PROJECT} --config ${DOPPLER_CONFIG} -- /usr/bin/helpin-temporal-worker
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

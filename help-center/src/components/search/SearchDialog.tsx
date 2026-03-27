@@ -29,7 +29,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   }, [open])
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden rounded-xl" showCloseButton={false}>
         <DialogTitle className="sr-only">Search documentation</DialogTitle>
 

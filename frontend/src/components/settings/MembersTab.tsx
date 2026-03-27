@@ -9,16 +9,18 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/components/ui/email-chip-input';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { Copy, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
 
 export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
   workspaceId: string;
@@ -31,12 +33,15 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [invEmail, setInvEmail] = useState('');
+  const [invEmails, setInvEmails] = useState<string[]>([]);
+  const [invEmailInput, setInvEmailInput] = useState('');
   const [invRole, setInvRole] = useState('member');
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
 
@@ -86,6 +91,13 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     [invitations],
   );
 
+  const actorMember = useMemo(
+    () => members.find((member) => member.user_id === user?.id) ?? null,
+    [members, user?.id],
+  );
+
+  const actorRole = actorMember?.role ?? '';
+
   const loadData = async () => {
     setLoading(true);
     const [membersRes, invitationsRes] = await Promise.all([
@@ -101,7 +113,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
 
   const openInviteDialog = () => {
     setCreatedJoinUrl(null);
-    setInvEmail('');
+    setInvEmails([]);
+    setInvEmailInput('');
     setInvRole('member');
     setSelectedTeamIds([]);
     setInviteOpen(true);
@@ -112,16 +125,24 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     if (createdJoinUrl) loadData();
   };
 
-  const parseEmails = (raw: string): string[] =>
-    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
+  const pendingInviteEmails = useMemo(
+    () => mergeEmailChips(invEmails, invEmailInput),
+    [invEmailInput, invEmails],
+  );
+  const hasInvalidInviteInput = useMemo(
+    () => classifyEmailChipInput(invEmailInput).invalid.length > 0,
+    [invEmailInput],
+  );
 
   const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
-    const emails = parseEmails(invEmail);
+    const emails = pendingInviteEmails;
     if (emails.length === 0) {
       toast.error('Enter at least one valid email address');
       return;
     }
+    setInvEmails(emails);
+    setInvEmailInput('');
     setSending(true);
     let sent = 0;
     const failedEmails: string[] = [];
@@ -185,14 +206,47 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     }
   };
 
+  const canEditMemberRole = (member: MemberWithUser) => {
+    if (!editable || !user) return false;
+    if (member.user_id === user.id) return false;
+    if (actorRole !== 'owner' && actorRole !== 'admin') return false;
+    if (actorRole !== 'owner' && (member.role === 'owner' || member.role === 'admin')) return false;
+    return true;
+  };
+
+  const roleOptions = (member: MemberWithUser): Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> => {
+    const options: Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> = [
+      { value: 'admin', label: 'Admin' },
+      { value: 'member', label: 'Member' },
+      { value: 'viewer', label: 'Viewer' },
+    ];
+    if (actorRole === 'owner') {
+      options.unshift({ value: 'owner', label: 'Owner' });
+    }
+    if (actorRole !== 'owner' && member.role === 'admin') {
+      return [{ value: 'admin', label: 'Admin' }];
+    }
+    return options;
+  };
+
+  const handleUpdateRole = async (member: MemberWithUser, role: 'owner' | 'admin' | 'member' | 'viewer') => {
+    if (role === member.role) return;
+    setUpdatingMemberId(member.id);
+    const { error } = await workspacesService.updateMemberRole(workspaceId, member.id, { role });
+    setUpdatingMemberId(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setMembers((prev) => prev.map((current) => current.id === member.id ? { ...current, role } : current));
+    toast.success('Member role updated');
+  };
+
   if (loading) return <Skeleton className="h-96" />;
 
   return (
     <>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold">Members</h2>
-        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
           <div className="flex items-center gap-3">
@@ -284,7 +338,26 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                        {canEditMemberRole(m) ? (
+                          <Select
+                            value={m.role}
+                            onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
+                            disabled={updatingMemberId === m.id}
+                          >
+                            <SelectTrigger className="h-8 w-[132px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {roleOptions(m).map((option) => (
+                                <SelectItem key={`${m.id}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -365,7 +438,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 <DialogTitle>Invitation Sent</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{invEmail}</span> to join the workspace.</p>
+                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{pendingInviteEmails[0]}</span> to join the workspace.</p>
                 <div className="flex gap-2">
                   <Input value={createdJoinUrl} readOnly className="bg-muted text-xs" />
                   <Button type="button" variant="outline" size="icon" onClick={() => handleCopyLink(createdJoinUrl)}>
@@ -397,17 +470,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                         <PopoverContent align="end" className="w-64 p-0">
                           <div className="max-h-56 overflow-y-auto">
                             {availableOrgMembers.map((m) => {
-                              const alreadyAdded = parseEmails(invEmail).includes(m.email.toLowerCase());
+                              const alreadyAdded = pendingInviteEmails.includes(m.email.toLowerCase());
                               return (
                                 <button
                                   key={m.user_id}
                                   type="button"
                                   disabled={alreadyAdded}
                                   onClick={() => {
-                                    setInvEmail((prev) => {
-                                      const trimmed = prev.trim();
-                                      return trimmed ? `${trimmed}\n${m.email}` : m.email;
-                                    });
+                                    setInvEmails((prev) => mergeEmailChips(prev, [m.email]));
                                   }}
                                   className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                                     alreadyAdded
@@ -434,21 +504,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                       </Popover>
                     )}
                   </div>
-                  <Textarea
+                  <EmailChipInput
                     placeholder="name@example.com, name2@example.com"
-                    value={invEmail}
-                    onChange={(e) => {
-                      setInvEmail(e.target.value);
-                      const el = e.target;
-                      el.style.height = 'auto';
-                      el.style.height = `${el.scrollHeight}px`;
-                    }}
-                    rows={1}
-                    className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
-                    required
-                    autoComplete="off"
+                    value={invEmails}
+                    onValueChange={setInvEmails}
+                    inputValue={invEmailInput}
+                    onInputValueChange={setInvEmailInput}
                   />
-                  <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
+                  <p className="text-xs text-muted-foreground">Press comma, Enter, or Tab to turn each email into a chip. You can also paste a list.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
@@ -523,7 +586,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeInviteDialog}>Cancel</Button>
-                <Button type="submit" disabled={sending}>{sending ? 'Sending invites...' : 'Send Invites'}</Button>
+                <Button type="submit" disabled={sending || hasInvalidInviteInput}>{sending ? 'Sending invites...' : 'Send Invites'}</Button>
               </DialogFooter>
             </form>
           )}
