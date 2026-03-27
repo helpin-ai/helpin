@@ -1,7 +1,8 @@
 name: CI
 
 on:
-  # Paused temporarily. Run manually from the Actions UI if needed.
+  # Keep CI manual-only for now. The frontend support e2e suite is wired,
+  # but we are not gating PRs on it yet.
   workflow_dispatch:
   # pull_request:
   #   branches: [main, develop]
@@ -38,6 +39,11 @@ jobs:
       - uses: pnpm/action-setup@v4
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Enable when we are ready to gate PRs on frontend browser coverage.
+      # - name: Install Playwright Chromium
+      #   run: pnpm --dir frontend exec playwright install --with-deps chromium
+      # - name: Frontend support e2e
+      #   run: pnpm --dir frontend run test:e2e:support
       - name: Build all packages
         run: pnpm build
 
