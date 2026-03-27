@@ -1,28 +1,30 @@
-import { Link } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useDocsContext } from '@/contexts/DocsContext'
+import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
 import type { ArticlePagerLink } from '@/lib/navigation'
 
 interface ArticlePagerProps {
   locale: string
-  spaceSlug: string
   prev?: ArticlePagerLink
   next?: ArticlePagerLink
 }
 
-export function ArticlePager({ locale, spaceSlug, prev, next }: ArticlePagerProps) {
+export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
+  const { enabledLocales } = useDocsContext()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+
   if (!prev && !next) return null
 
   return (
     <nav className="flex items-stretch gap-4 mt-12 pt-8 border-t border-border">
       {prev ? (
-        <Link
-          to="/$locale/$spaceSlug/$collectionSlug/$articleSlug"
-          params={{
+        <a
+          href={buildCanonicalArticlePath(
+            multilingualEnabled,
             locale,
-            spaceSlug,
-            collectionSlug: prev.collectionSlug,
-            articleSlug: prev.slug,
-          }}
+            prev.collectionSlug,
+            prev.slug,
+          )}
           className="flex-1 group rounded-lg border border-border/70 px-4 py-3.5 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
         >
           <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
@@ -32,19 +34,18 @@ export function ArticlePager({ locale, spaceSlug, prev, next }: ArticlePagerProp
           <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
             {prev.title}
           </div>
-        </Link>
+        </a>
       ) : (
         <div className="flex-1" />
       )}
       {next ? (
-        <Link
-          to="/$locale/$spaceSlug/$collectionSlug/$articleSlug"
-          params={{
+        <a
+          href={buildCanonicalArticlePath(
+            multilingualEnabled,
             locale,
-            spaceSlug,
-            collectionSlug: next.collectionSlug,
-            articleSlug: next.slug,
-          }}
+            next.collectionSlug,
+            next.slug,
+          )}
           className="flex-1 group rounded-lg border border-border/70 px-4 py-3.5 text-right transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
         >
           <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground mb-1">
@@ -54,7 +55,7 @@ export function ArticlePager({ locale, spaceSlug, prev, next }: ArticlePagerProp
           <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
             {next.title}
           </div>
-        </Link>
+        </a>
       ) : (
         <div className="flex-1" />
       )}

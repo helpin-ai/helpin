@@ -10,7 +10,15 @@ export interface LocaleRouteState {
   searchQuery?: string
 }
 
+interface ResolveActiveLocaleOptions {
+  paramsLocale?: string
+  paramsSpaceSlug?: string
+  enabledLocales?: string[]
+  defaultLocale: string
+}
+
 interface ResolveLocaleSwitchPathOptions {
+  multilingualEnabled: boolean
   targetLocale: string
   defaultLocale: string
   current: LocaleRouteState
@@ -18,6 +26,14 @@ interface ResolveLocaleSwitchPathOptions {
   targetNavigation?: NavItem[]
   fallbackSpaces?: Space[]
   fallbackNavigation?: NavItem[]
+}
+
+export function isMultilingualEnabled(enabledLocales: string[] = []) {
+  return new Set(
+    enabledLocales
+      .map((locale) => locale.trim().toLowerCase())
+      .filter(Boolean),
+  ).size > 1
 }
 
 export function buildLocaleHomePath(locale: string) {
@@ -28,21 +44,16 @@ export function buildLocaleSpacePath(locale: string, spaceSlug: string) {
   return `/${locale}/${spaceSlug}`
 }
 
-export function buildLocaleCollectionPath(
-  locale: string,
-  spaceSlug: string,
-  collectionSlug: string,
-) {
-  return `/${locale}/${spaceSlug}/${collectionSlug}`
+export function buildLocaleCollectionPath(locale: string, collectionSlug: string) {
+  return `/${locale}/${collectionSlug}`
 }
 
 export function buildLocaleArticlePath(
   locale: string,
-  spaceSlug: string,
   collectionSlug: string,
   articleSlug: string,
 ) {
-  return `/${locale}/${spaceSlug}/${collectionSlug}/${articleSlug}`
+  return `/${locale}/${collectionSlug}/${articleSlug}`
 }
 
 export function buildLocaleSearchPath(
@@ -55,6 +66,79 @@ export function buildLocaleSearchPath(
   if (spaceSlug) params.set('space', spaceSlug)
   const queryString = params.toString()
   return queryString ? `/${locale}/search?${queryString}` : `/${locale}/search`
+}
+
+export function buildCanonicalHomePath(
+  multilingualEnabled: boolean,
+  locale: string,
+) {
+  return multilingualEnabled ? buildLocaleHomePath(locale) : '/'
+}
+
+export function buildCanonicalCollectionPath(
+  multilingualEnabled: boolean,
+  locale: string,
+  collectionSlug: string,
+) {
+  return multilingualEnabled
+    ? buildLocaleCollectionPath(locale, collectionSlug)
+    : `/${collectionSlug}`
+}
+
+export function buildCanonicalArticlePath(
+  multilingualEnabled: boolean,
+  locale: string,
+  collectionSlug: string,
+  articleSlug: string,
+) {
+  return multilingualEnabled
+    ? buildLocaleArticlePath(locale, collectionSlug, articleSlug)
+    : `/${collectionSlug}/${articleSlug}`
+}
+
+export function buildCanonicalSearchPath(
+  multilingualEnabled: boolean,
+  locale: string,
+  searchQuery?: string,
+  spaceSlug?: string,
+) {
+  if (multilingualEnabled) {
+    return buildLocaleSearchPath(locale, searchQuery, spaceSlug)
+  }
+  const params = new URLSearchParams()
+  if (searchQuery) params.set('q', searchQuery)
+  if (spaceSlug) params.set('space', spaceSlug)
+  const queryString = params.toString()
+  return queryString ? `/search?${queryString}` : '/search'
+}
+
+export function resolveActiveLocale({
+  paramsLocale,
+  paramsSpaceSlug,
+  enabledLocales = [],
+  defaultLocale,
+}: ResolveActiveLocaleOptions) {
+  const normalizedDefault = (defaultLocale || 'en').toLowerCase()
+  const normalizedEnabledLocales = enabledLocales.map((locale) =>
+    locale.trim().toLowerCase(),
+  )
+  const localeParam = paramsLocale?.trim().toLowerCase()
+  if (
+    localeParam &&
+    normalizedEnabledLocales.some((locale) => locale === localeParam)
+  ) {
+    return localeParam
+  }
+
+  const spaceSlug = paramsSpaceSlug?.trim().toLowerCase()
+  if (
+    spaceSlug &&
+    normalizedEnabledLocales.some((locale) => locale === spaceSlug)
+  ) {
+    return spaceSlug
+  }
+
+  return normalizedDefault
 }
 
 function findSpaceByID(spaces: Space[], spaceID?: string) {
@@ -79,6 +163,7 @@ function findArticleByID(navigation: NavItem[] = [], articleID?: string) {
 }
 
 export function resolveLocaleSwitchPath({
+  multilingualEnabled,
   targetLocale,
   defaultLocale,
   current,
@@ -89,9 +174,10 @@ export function resolveLocaleSwitchPath({
 }: ResolveLocaleSwitchPathOptions) {
   switch (current.kind) {
     case 'home':
-      return buildLocaleHomePath(targetLocale)
+      return buildCanonicalHomePath(multilingualEnabled, targetLocale)
     case 'search':
-      return buildLocaleSearchPath(
+      return buildCanonicalSearchPath(
+        multilingualEnabled,
         targetLocale,
         current.searchQuery,
         findSpaceByID(targetSpaces, current.spaceId)?.slug ??
@@ -100,69 +186,87 @@ export function resolveLocaleSwitchPath({
     case 'space': {
       const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
       if (targetSpace) {
-        return buildLocaleSpacePath(targetLocale, targetSpace.slug)
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          targetSpace.slug,
+        )
       }
       const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       return fallbackSpace
-        ? buildLocaleSpacePath(defaultLocale, fallbackSpace.slug)
-        : buildLocaleHomePath(defaultLocale)
+        ? buildCanonicalCollectionPath(
+            multilingualEnabled,
+            defaultLocale,
+            fallbackSpace.slug,
+          )
+        : buildCanonicalHomePath(multilingualEnabled, defaultLocale)
     }
     case 'collection': {
-      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
       const targetCollection = findCollectionByID(targetNavigation, current.collectionId)
-      if (targetSpace && targetCollection) {
-        return buildLocaleCollectionPath(targetLocale, targetSpace.slug, targetCollection.slug)
+      if (targetCollection) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          targetCollection.slug,
+        )
       }
 
-      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       const fallbackCollection = findCollectionByID(
         fallbackNavigation,
         current.collectionId,
       )
-      if (fallbackSpace && fallbackCollection) {
-        return buildLocaleCollectionPath(
+      if (fallbackCollection) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
           defaultLocale,
-          fallbackSpace.slug,
           fallbackCollection.slug,
         )
       }
 
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       if (fallbackSpace) {
-        return buildLocaleSpacePath(defaultLocale, fallbackSpace.slug)
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackSpace.slug,
+        )
       }
 
-      return buildLocaleHomePath(defaultLocale)
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
     }
     case 'article': {
-      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
       const targetArticle = findArticleByID(targetNavigation, current.articleId)
-      if (targetSpace && targetArticle) {
-        return buildLocaleArticlePath(
+      if (targetArticle) {
+        return buildCanonicalArticlePath(
+          multilingualEnabled,
           targetLocale,
-          targetSpace.slug,
           targetArticle.collection.slug,
           targetArticle.article.slug,
         )
       }
 
-      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       const fallbackArticle = findArticleByID(fallbackNavigation, current.articleId)
-      if (fallbackSpace && fallbackArticle) {
-        return buildLocaleArticlePath(
+      if (fallbackArticle) {
+        return buildCanonicalArticlePath(
+          multilingualEnabled,
           defaultLocale,
-          fallbackSpace.slug,
           fallbackArticle.collection.slug,
           fallbackArticle.article.slug,
         )
       }
 
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       if (fallbackSpace) {
-        return buildLocaleSpacePath(defaultLocale, fallbackSpace.slug)
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackSpace.slug,
+        )
       }
 
-      return buildLocaleHomePath(defaultLocale)
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
     }
     default:
-      return buildLocaleHomePath(defaultLocale)
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
   }
 }

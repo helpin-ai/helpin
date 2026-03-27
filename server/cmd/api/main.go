@@ -211,6 +211,7 @@ func main() {
 		&model.DocsLink{},
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
+		&model.DocsHelpcenterArticlePublication{},
 		&model.DocsHelpcenterSpaceTranslation{},
 		&model.DocsHelpcenterCollectionTranslation{},
 		&model.DocsHelpcenterArticleTranslation{},
@@ -331,6 +332,11 @@ func main() {
 	slog.Info("startup: running MigrateAutomationHealthSchema")
 	if err := repository.MigrateAutomationHealthSchema(db); err != nil {
 		slog.Error("failed to migrate automation health schema", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: running MigrateDocsRedirectPaths")
+	if err := repository.MigrateDocsRedirectPaths(db); err != nil {
+		slog.Error("failed to migrate docs redirect paths", "error", err)
 		os.Exit(1)
 	}
 
@@ -477,6 +483,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsHelpcenterTranslationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
+	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
@@ -683,8 +690,8 @@ func main() {
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
-	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
+	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)

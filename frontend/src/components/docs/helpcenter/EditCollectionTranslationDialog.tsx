@@ -42,7 +42,7 @@ export function EditCollectionTranslationDialog({
   onSave,
 }: EditCollectionTranslationDialogProps) {
   const [name, setName] = useState(translation?.name ?? sourceName)
-  const [slug, setSlug] = useState(translation?.slug ?? sourceSlug)
+  const [slug, setSlug] = useState(translation?.slug ?? '')
   const [description, setDescription] = useState(translation?.description ?? sourceDescription ?? '')
 
   const handleSave = async () => {
@@ -90,6 +90,9 @@ export function EditCollectionTranslationDialog({
             <div className="space-y-2">
               <Label htmlFor="collection-translation-slug">Localized slug</Label>
               <Input id="collection-translation-slug" value={slug} onChange={(event) => setSlug(event.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to derive the public slug from this localized name on first publish.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="collection-translation-description">Description</Label>
@@ -108,7 +111,7 @@ export function EditCollectionTranslationDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => void handleSave()} disabled={isSaving || !name.trim() || !slug.trim()}>
+          <Button type="button" onClick={() => void handleSave()} disabled={isSaving || !name.trim()}>
             {isSaving ? 'Saving…' : 'Save translation'}
           </Button>
         </DialogFooter>

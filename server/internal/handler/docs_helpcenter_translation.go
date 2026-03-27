@@ -72,7 +72,11 @@ func (h *DocsHandler) UpsertSpaceTranslation(w http.ResponseWriter, r *http.Requ
 func (h *DocsHandler) PublishSpaceTranslation(w http.ResponseWriter, r *http.Request) {
 	spaceID := chi.URLParam(r, "spaceId")
 	locale := chi.URLParam(r, "locale")
-	translation, err := h.translationSvc.PublishSpaceTranslation(r.Context(), spaceID, locale)
+	var body struct {
+		Slug *string `json:"slug"`
+	}
+	_ = decodeJSON(r, &body)
+	translation, err := h.translationSvc.PublishSpaceTranslation(r.Context(), spaceID, locale, body.Slug)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -130,7 +134,11 @@ func (h *DocsHandler) UpsertCollectionTranslation(w http.ResponseWriter, r *http
 func (h *DocsHandler) PublishCollectionTranslation(w http.ResponseWriter, r *http.Request) {
 	collectionID := chi.URLParam(r, "collectionId")
 	locale := chi.URLParam(r, "locale")
-	translation, err := h.translationSvc.PublishCollectionTranslation(r.Context(), collectionID, locale)
+	var body struct {
+		Slug *string `json:"slug"`
+	}
+	_ = decodeJSON(r, &body)
+	translation, err := h.translationSvc.PublishCollectionTranslation(r.Context(), collectionID, locale, body.Slug)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -178,12 +186,34 @@ func (h *DocsHandler) UpsertArticleTranslation(w http.ResponseWriter, r *http.Re
 func (h *DocsHandler) PublishArticleTranslation(w http.ResponseWriter, r *http.Request) {
 	docID := chi.URLParam(r, "docId")
 	locale := chi.URLParam(r, "locale")
-	translation, err := h.translationSvc.PublishArticleTranslation(r.Context(), docID, locale)
+	var body struct {
+		Slug *string `json:"slug"`
+	}
+	_ = decodeJSON(r, &body)
+	translation, err := h.translationSvc.PublishArticleTranslation(r.Context(), docID, locale, body.Slug)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, translation)
+}
+
+func (h *DocsHandler) UpdateArticleTranslationSlug(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	locale := chi.URLParam(r, "locale")
+	var body struct {
+		Slug string `json:"slug"`
+	}
+	if err := decodeJSON(r, &body); err != nil || body.Slug == "" {
+		writeError(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+	if err := h.translationSvc.UpdateArticleTranslationSlug(r.Context(), wsID, docID, locale, body.Slug); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "translation slug updated"})
 }
 
 func (h *DocsHandler) UnpublishArticleTranslation(w http.ResponseWriter, r *http.Request) {

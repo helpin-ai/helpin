@@ -71,7 +71,6 @@ function PreviewPage() {
           <Sidebar
             locale={defaultLocale}
             navigation={navigation}
-            spaceSlug={spaceSlug}
           />
         )}
 

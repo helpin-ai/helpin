@@ -128,6 +128,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			search_placeholder TEXT,
 			default_locale TEXT NOT NULL DEFAULT 'en',
 			enabled_locales TEXT,
+			protected_terms TEXT,
 			show_language_switcher BOOLEAN NOT NULL DEFAULT 0,
 			fallback_to_default_locale BOOLEAN NOT NULL DEFAULT 1,
 			is_published BOOLEAN NOT NULL DEFAULT 0,
@@ -156,7 +157,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			description TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
@@ -175,7 +176,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
 			source_synced BOOLEAN NOT NULL DEFAULT 0,
@@ -193,7 +194,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			collection_id TEXT,
 			locale TEXT NOT NULL,
 			title TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			excerpt TEXT,
 			content JSON,
 			content_text TEXT,
@@ -295,6 +296,15 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		},
+		&model.DocsContent{
+			ID:          "content-handler-i18n",
+			DocumentID:  documentID,
+			Content:     json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Welcome to Helpin."}]}]}`),
+			ContentText: "Welcome to Helpin.",
+			WordCount:   3,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
 		&model.DocsHelpcenterArticle{
 			ID:                "article-handler-i18n",
 			DocumentID:        documentID,
@@ -320,6 +330,8 @@ func newDocsHelpcenterTranslationHandlerForTestWithLLM(db *gorm.DB, llmProvider 
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
 		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterPublicationRepository(db),
+		repository.NewDocsRedirectRepository(db),
 		repository.NewDocsDocumentRepository(db),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
@@ -431,7 +443,7 @@ func TestDocsHelpcenterTranslationHandler_PublishArticleTranslationRejectsMissin
 		CollectionID:    func() *string { v := "collection-handler-i18n"; return &v }(),
 		Locale:          "fr",
 		Title:           "Commencer ici",
-		Slug:            "commencer-ici",
+		Slug:            func() *string { v := "commencer-ici"; return &v }(),
 		Status:          model.DocsHelpcenterTranslationStatusDraft,
 		SourceUpdatedAt: &now,
 		SourceSynced:    true,
@@ -463,7 +475,7 @@ func TestDocsHelpcenterTranslationHandler_GenerateArticleTranslationDraft(t *tes
 	now := time.Date(2026, 3, 25, 18, 0, 0, 0, time.UTC)
 	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
 	h := newDocsHelpcenterTranslationHandlerForTestWithLLM(db, &scriptedDocsTranslationHandlerLLM{
-		response: `{"title":"Commencer ici","slug":"commencer-ici","excerpt":"Guide rapide","seo_title":"Commencer ici","seo_description":"Guide FR","body":"Bonjour\n\nBienvenue dans Helpin."}`,
+		response: `{"segments":[{"id":"meta:title","translated_text":"Commencer ici"},{"id":"meta:excerpt","translated_text":"Guide rapide"},{"id":"doc/0","translated_text":"Bienvenue dans Helpin."}]}`,
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/docs/documents/document-handler-i18n/helpcenter/translations/fr/generate", nil)
@@ -475,7 +487,7 @@ func TestDocsHelpcenterTranslationHandler_GenerateArticleTranslationDraft(t *tes
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if body := rec.Body.String(); !strings.Contains(body, `"locale":"fr"`) || !strings.Contains(body, `"slug":"commencer-ici"`) {
+	if body := rec.Body.String(); !strings.Contains(body, `"locale":"fr"`) || !strings.Contains(body, `"slug":null`) || !strings.Contains(body, `Bienvenue dans Helpin.`) {
 		t.Fatalf("body = %s, want generated article translation draft", body)
 	}
 }

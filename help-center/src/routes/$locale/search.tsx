@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useSearchArticles } from '@/hooks/queries'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { SearchResultsList } from '@/components/SearchResults'
 import { LoadingState } from '@/components/LoadingState'
+import { SearchRouteView } from '@/components/routes/SearchRouteView'
+import { buildCanonicalSearchPath, isMultilingualEnabled } from '@/lib/locale'
 
 interface SearchParams {
   q?: string
@@ -20,35 +20,23 @@ export const Route = createFileRoute('/$locale/search')({
 
 function LocalizedSearchPage() {
   const { q = '', space } = Route.useSearch()
-  const { subdomain, locale } = useDocsContext()
-  const { data: results, isLoading } = useSearchArticles(
-    subdomain,
-    locale,
-    q,
-    space,
-  )
+  const { locale, defaultLocale, enabledLocales } = useDocsContext()
+  const navigate = useNavigate()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
-  useDocumentTitle(q ? `Search: ${q}` : 'Search')
+  useEffect(() => {
+    if (multilingualEnabled) {
+      return
+    }
+    navigate({
+      to: buildCanonicalSearchPath(false, defaultLocale, q, space),
+      replace: true,
+    })
+  }, [defaultLocale, multilingualEnabled, navigate, q, space])
 
-  return (
-    <div
-      className="mx-auto px-6 py-10"
-      style={{ maxWidth: 'var(--hc-content-max-width)' }}
-    >
-      <header className="mb-6">
-        <h1 className="mb-1 text-2xl font-bold">Search results</h1>
-        {q && (
-          <p className="text-sm" style={{ color: 'var(--hc-text-secondary)' }}>
-            Showing results for &ldquo;{q}&rdquo;
-          </p>
-        )}
-      </header>
+  if (!multilingualEnabled) {
+    return <LoadingState message="Redirecting..." />
+  }
 
-      {isLoading ? (
-        <LoadingState message="Searching..." />
-      ) : (
-        <SearchResultsList results={results ?? []} query={q} locale={locale} />
-      )}
-    </div>
-  )
+  return <SearchRouteView locale={locale} query={q} space={space} />
 }

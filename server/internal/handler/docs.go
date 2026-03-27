@@ -276,9 +276,9 @@ func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
-	// Enrich with help center slug if available.
-	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
-		doc.HCSlug = art.Slug
+	if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -296,6 +296,10 @@ func (h *DocsHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.queueEmbeddingSync(r.Context(), docID)
+	if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -709,8 +713,11 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Re-fetch to include updated helpcenter article data.
 	doc, _ = h.documentSvc.Get(r.Context(), docID)
-	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
-		doc.HCSlug = art.Slug
+	if doc != nil {
+		if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -1146,7 +1153,15 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 	collectionSlug := chi.URLParam(r, "collectionSlug")
 	articleSlug := chi.URLParam(r, "articleSlug")
 
-	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	var (
+		article *model.PublicArticleResponse
+		err     error
+	)
+	if spaceSlug == "" {
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug, articleSlug)
+	} else {
+		article, err = h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, "article not found")
 		return
@@ -1167,6 +1182,23 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		}
 		collectionSlug := chi.URLParam(r, "collectionSlug")
 		coll, articles, err := h.helpcenterSvc.GetPublicLocalizedCollection(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if coll == nil {
+			writeError(w, http.StatusNotFound, "collection not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"collection": coll,
+			"articles":   articles,
+		})
+		return
+	}
+	if locale, ok := h.resolveRequestedPublicLocale(w, r, cfg); ok {
+		collectionSlug := chi.URLParam(r, "collectionSlug")
+		coll, articles, err := h.helpcenterSvc.GetPublicLocalizedCollectionByCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -1238,10 +1270,7 @@ func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "no redirect found")
 		return
 	}
-	target := "/" + redirect.TargetCollectionSlug
-	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" {
-		target += "/" + *redirect.TargetArticleSlug
-	}
+	target := buildDocsRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"redirect": true,
 		"target":   target,
@@ -1293,7 +1322,15 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 	collectionSlug := chi.URLParam(r, "collectionSlug")
 
 	// Resolve article.
-	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	var (
+		article *model.PublicArticleResponse
+		err     error
+	)
+	if spaceSlug == "" {
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug, articleSlug)
+	} else {
+		article, err = h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	}
 	if err != nil || article == nil {
 		writeError(w, http.StatusNotFound, "article not found")
 		return

@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
 import {
-  Link,
   useParams,
   useRouterState,
   useSearch,
@@ -14,7 +13,12 @@ import { useTheme } from '@/hooks/useTheme'
 import { queryKeys } from '@/lib/queryKeys'
 import { helpCenterService } from '@/lib/services'
 import type { LocaleRouteState } from '@/lib/locale'
-import { resolveLocaleSwitchPath } from '@/lib/locale'
+import {
+  buildCanonicalCollectionPath,
+  buildCanonicalHomePath,
+  isMultilingualEnabled,
+  resolveLocaleSwitchPath,
+} from '@/lib/locale'
 import { LocaleSwitcher } from './LocaleSwitcher'
 import type { NavItem, Space } from '@/lib/types'
 
@@ -60,6 +64,7 @@ function findSpaceId(spaces: Space[], spaceSlug?: string) {
 export function TopBar({ onSearchClick }: TopBarProps) {
   const { config, subdomain, locale, defaultLocale, enabledLocales, spaces } =
     useDocsContext()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const params = useParams({ strict: false }) as {
     locale?: string
     spaceSlug?: string
@@ -68,14 +73,91 @@ export function TopBar({ onSearchClick }: TopBarProps) {
   }
   const search = useSearch({ strict: false }) as { q?: string; space?: string }
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const activeSpaceSlug = params.spaceSlug
+  const activeSpaceSlug = spaces.some((space) => space.slug === params.spaceSlug)
+    ? params.spaceSlug
+    : undefined
+  const canonicalCollectionSlug = !activeSpaceSlug ? params.spaceSlug : undefined
+  const canonicalArticleSlug = !activeSpaceSlug ? params.collectionSlug : undefined
   const { theme, toggleTheme, canToggle } = useTheme(config.theme_mode)
-  const currentSpaceId = findSpaceId(spaces, activeSpaceSlug)
   const { data: currentNavigation = [] } = useSpaceNavigation(
     subdomain,
     locale,
     activeSpaceSlug ?? '',
   )
+  const needsCrossSpaceLookup =
+    !activeSpaceSlug && (!!canonicalCollectionSlug || !!canonicalArticleSlug)
+
+  const currentLocaleNavigationQueries = useQueries({
+    queries: needsCrossSpaceLookup
+      ? spaces.map((space) => ({
+          queryKey: queryKeys.spaces.navigation(subdomain, locale, space.slug),
+          queryFn: async () =>
+            unwrap(
+              await helpCenterService.getSpaceNavigation(subdomain, locale, space.slug),
+            ),
+          enabled: !!subdomain && !!locale && !!space.slug,
+          staleTime: 60_000,
+        }))
+      : [],
+  })
+
+  const currentSpaceContext = useMemo(() => {
+    if (activeSpaceSlug) {
+      return {
+        spaceId: findSpaceId(spaces, activeSpaceSlug),
+        spaceSlug: activeSpaceSlug,
+        navigation: currentNavigation,
+      }
+    }
+
+    if (!needsCrossSpaceLookup) {
+      return { spaceId: undefined, spaceSlug: undefined, navigation: [] as NavItem[] }
+    }
+
+    for (let index = 0; index < spaces.length; index += 1) {
+      const navigation = currentLocaleNavigationQueries[index]?.data ?? []
+      const matchesArticle = params.articleSlug
+        ? findArticleId(navigation, params.articleSlug)
+        : undefined
+      const matchesCanonicalArticle = canonicalArticleSlug
+        ? findArticleId(navigation, canonicalArticleSlug)
+        : undefined
+      const matchesCollection = params.collectionSlug
+        ? findCollectionId(navigation, params.collectionSlug)
+        : undefined
+      const matchesCanonicalCollection = canonicalCollectionSlug
+        ? findCollectionId(navigation, canonicalCollectionSlug)
+        : undefined
+      if (
+        matchesArticle ||
+        matchesCanonicalArticle ||
+        matchesCollection ||
+        matchesCanonicalCollection
+      ) {
+        return {
+          spaceId: spaces[index]?.id,
+          spaceSlug: spaces[index]?.slug,
+          navigation,
+        }
+      }
+    }
+
+    return { spaceId: undefined, spaceSlug: undefined, navigation: [] as NavItem[] }
+  }, [
+    activeSpaceSlug,
+    canonicalArticleSlug,
+    canonicalCollectionSlug,
+    currentLocaleNavigationQueries,
+    currentNavigation,
+    needsCrossSpaceLookup,
+    params.articleSlug,
+    params.collectionSlug,
+    spaces,
+  ])
+
+  const currentSpaceId = currentSpaceContext.spaceId
+  const currentResolvedSpaceSlug = currentSpaceContext.spaceSlug
+  const currentResolvedNavigation = currentSpaceContext.navigation
 
   const sortedLinks = [...(config.header_links ?? [])].sort(
     (a, b) => (a.position ?? 0) - (b.position ?? 0),
@@ -94,8 +176,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       return {
         kind: 'article',
         spaceId: currentSpaceId,
-        collectionId: findCollectionId(currentNavigation, params.collectionSlug),
-        articleId: findArticleId(currentNavigation, params.articleSlug),
+        collectionId: findCollectionId(currentResolvedNavigation, params.collectionSlug),
+        articleId: findArticleId(currentResolvedNavigation, params.articleSlug),
       }
     }
 
@@ -103,7 +185,24 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       return {
         kind: 'collection',
         spaceId: currentSpaceId,
-        collectionId: findCollectionId(currentNavigation, params.collectionSlug),
+        collectionId: findCollectionId(currentResolvedNavigation, params.collectionSlug),
+      }
+    }
+
+    if (canonicalArticleSlug) {
+      return {
+        kind: 'article',
+        spaceId: currentSpaceId,
+        collectionId: findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
+        articleId: findArticleId(currentResolvedNavigation, canonicalArticleSlug),
+      }
+    }
+
+    if (canonicalCollectionSlug) {
+      return {
+        kind: 'collection',
+        spaceId: currentSpaceId,
+        collectionId: findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
       }
     }
 
@@ -116,8 +215,10 @@ export function TopBar({ onSearchClick }: TopBarProps) {
 
     return { kind: 'home' }
   }, [
-    currentNavigation,
+    currentResolvedNavigation,
     currentSpaceId,
+    canonicalArticleSlug,
+    canonicalCollectionSlug,
     params.articleSlug,
     params.collectionSlug,
     params.spaceSlug,
@@ -136,7 +237,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, code)),
       enabled:
         config.show_language_switcher &&
-        enabledLocales.length > 1 &&
+        multilingualEnabled &&
         !!subdomain &&
         !!code,
       staleTime: 60_000,
@@ -190,7 +291,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       !needsNavigationLookup
         ? []
         : defaultLocale === locale
-          ? currentNavigation
+          ? currentResolvedNavigation
           : defaultIndex >= 0
             ? localeNavigationQueries[defaultIndex]?.data ?? []
             : []
@@ -201,13 +302,14 @@ export function TopBar({ onSearchClick }: TopBarProps) {
         !needsNavigationLookup
           ? []
           : code === locale
-            ? currentNavigation
+            ? currentResolvedNavigation
             : localeNavigationQueries[index]?.data ?? []
 
       return {
         code,
         label: getLocaleLabel(code),
         href: resolveLocaleSwitchPath({
+          multilingualEnabled,
           targetLocale: code,
           defaultLocale,
           current: currentRouteState,
@@ -221,13 +323,14 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     })
   }, [
     config.show_language_switcher,
-    currentNavigation,
+    currentResolvedNavigation,
     currentRouteState,
     defaultLocale,
     enabledLocales,
     locale,
     localeNavigationQueries,
     localeSpaceQueries,
+    multilingualEnabled,
     needsNavigationLookup,
     spaces,
   ])
@@ -236,9 +339,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
       {/* Left: Brand + Space tabs */}
       <div className="flex items-center min-w-0">
-        <Link
-          to="/$locale"
-          params={{ locale }}
+        <a
+          href={buildCanonicalHomePath(multilingualEnabled, locale)}
           className="flex items-center gap-2.5 shrink-0"
         >
           {config.brand_logo_url ? (
@@ -264,19 +366,22 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               {config.brand_name || 'Docs'}
             </span>
           )}
-        </Link>
+        </a>
 
         {spaces.length > 1 && (
           <>
           <div className="h-5 w-px bg-border ml-5 mr-1.5 shrink-0" />
           <nav className="hidden sm:flex items-center gap-1">
             {spaces.map((space) => {
-              const isActive = activeSpaceSlug === space.slug
+              const isActive = currentResolvedSpaceSlug === space.slug
               return (
-                <Link
+                <a
                   key={space.id}
-                  to="/$locale/$spaceSlug"
-                  params={{ locale, spaceSlug: space.slug }}
+                  href={buildCanonicalCollectionPath(
+                    multilingualEnabled,
+                    locale,
+                    space.slug,
+                  )}
                   className={cn(
                     'px-3 py-1.5 text-[13.5px] rounded-md transition-colors',
                     isActive
@@ -286,7 +391,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                 >
                   {space.icon && <span className="mr-1.5">{space.icon}</span>}
                   {space.name}
-                </Link>
+                </a>
               )
             })}
           </nav>

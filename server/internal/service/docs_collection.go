@@ -52,6 +52,7 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		SpaceID:     spaceID,
 		WorkspaceID: workspaceID,
 		Name:        req.Name,
+		Slug:        slugify(req.Name),
 		Description: req.Description,
 		Icon:        req.Icon,
 		Position:    nextPos,

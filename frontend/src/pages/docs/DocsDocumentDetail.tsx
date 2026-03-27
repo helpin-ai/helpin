@@ -28,9 +28,7 @@ import {
   User,
   UserCheck,
   X,
-  Languages,
   Loader2,
-  Settings2,
   WandSparkles,
 } from 'lucide-react'
 import { ICON_MAP } from '@/components/ui/icon-picker'
@@ -50,11 +48,11 @@ import {
   useDocsHelpcenterSpaceTranslations,
   useCreateDocsCollection,
   useGenerateDocsHelpcenterArticleTranslation,
-  useMarkDocsHelpcenterArticleTranslationReviewed,
   usePublishDocsHelpcenterArticleTranslation,
+  useUnpublishDocsHelpcenterArticleTranslation,
+  useMarkDocsHelpcenterArticleTranslationReviewed,
   useSaveDocsContent,
   useUpdateDocsDocument,
-  useUnpublishDocsHelpcenterArticleTranslation,
   useUpsertDocsHelpcenterArticleTranslation,
   usePublishDocsDocument,
   useUnpublishDocsDocument,
@@ -71,6 +69,7 @@ import {
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { timeAgo } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -88,20 +87,11 @@ import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
-import { TranslationStatusBadge } from '@/components/docs/helpcenter/TranslationStatusBadge'
-import { TranslationsPanel } from '@/components/docs/helpcenter/TranslationsPanel'
+import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
+import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { docsService } from '@/lib/services/docsService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion } from '@/lib/docsTypes'
@@ -131,8 +121,6 @@ interface ArticleTranslationDraftState {
   title: string
   slug: string
   excerpt: string
-  seoTitle: string
-  seoDescription: string
   content: JSONContent | null
 }
 
@@ -142,8 +130,6 @@ function emptyTranslationDraft(locale: string): ArticleTranslationDraftState {
     title: '',
     slug: '',
     excerpt: '',
-    seoTitle: '',
-    seoDescription: '',
     content: null,
   }
 }
@@ -161,8 +147,6 @@ function translationDraftFromTranslation(locale: string, translation?: {
     title: translation?.title ?? '',
     slug: translation?.slug ?? '',
     excerpt: translation?.excerpt ?? '',
-    seoTitle: translation?.seo_title ?? '',
-    seoDescription: translation?.seo_description ?? '',
     content: (translation?.content as JSONContent | null | undefined) ?? null,
   }
 }
@@ -220,16 +204,17 @@ export function DocsDocumentDetail() {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
-  const [translationsOpen, setTranslationsOpen] = useState(false)
   const [editingTranslationLocale, setEditingTranslationLocale] = useState<string | null>(null)
   const [pendingTranslationLocale, setPendingTranslationLocale] = useState<string | null>(null)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [generatingParents, setGeneratingParents] = useState(false)
   const [parentPublishConfirmOpen, setParentPublishConfirmOpen] = useState(false)
+  const [revertConfirmOpen, setRevertConfirmOpen] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
+  const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
@@ -297,9 +282,6 @@ export function DocsDocumentDetail() {
     [saveContent, docId],
   )
 
-  const slugifyTitle = (title: string) =>
-    title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-
   const isExternalHelpCenter = space?.type === 'external_capable'
   const defaultLocale = localesConfig?.default_locale ?? 'en'
   const enabledLocales = localesConfig?.enabled_locales?.length
@@ -364,7 +346,8 @@ export function DocsDocumentDetail() {
   const handlePublish = async () => {
     // For external help center articles, show slug confirmation first
     if (isExternalHelpCenter && doc?.status === 'draft') {
-      setPendingSlug(slugifyTitle(doc.title ?? 'untitled'))
+      setPendingSlug(suggestDocsSlug(doc.title ?? 'untitled'))
+      setPendingPublishLocale(null)
       setSlugDialogOpen(true)
       return
     }
@@ -378,9 +361,15 @@ export function DocsDocumentDetail() {
 
   const handleConfirmPublish = async () => {
     try {
-      await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+      if (pendingPublishLocale && pendingPublishLocale !== defaultLocale) {
+        await publishArticleTranslation.mutateAsync({ locale: pendingPublishLocale, slug: pendingSlug })
+        toast.success(`${getHelpcenterLocaleLabel(pendingPublishLocale)} translation published`)
+      } else {
+        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+        toast.success('Document published')
+      }
       setSlugDialogOpen(false)
-      toast.success('Document published')
+      setPendingPublishLocale(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to publish')
     }
@@ -428,19 +417,16 @@ export function DocsDocumentDetail() {
     const title = draft.title.trim()
     if (!title) return null
 
-    const fallbackBase = doc?.hc_slug || slugifyTitle(doc?.title ?? '') || 'article'
-    const slug = draft.slug.trim() || slugifyTitle(title) || `${fallbackBase}-${draft.locale}`
-
     return {
       locale: draft.locale,
       title,
-      slug,
+      slug: draft.slug.trim() || undefined,
       excerpt: draft.excerpt.trim() || undefined,
       content: (draft.content as JSONContent | null) ?? { type: 'doc', content: [] },
-      seo_title: draft.seoTitle.trim() || undefined,
-      seo_description: draft.seoDescription.trim() || undefined,
+      seo_title: title,
+      seo_description: draft.excerpt.trim() || undefined,
     }
-  }, [doc?.hc_slug, doc?.title])
+  }, [])
 
   const persistTranslationDraft = useCallback(async (draft: ArticleTranslationDraftState) => {
     const payload = buildTranslationPayload(draft)
@@ -468,7 +454,6 @@ export function DocsDocumentDetail() {
       const next = {
         ...base,
         title: newTitle,
-        slug: base.slug || slugifyTitle(newTitle),
       }
       scheduleTranslationDraftSave(next)
       return { ...current, [key]: next }
@@ -543,32 +528,6 @@ export function DocsDocumentDetail() {
     }
   }, [activeLocale, docId, generateArticleTranslation, isSourceLocaleActive])
 
-  const handleGenerateAndPublishParents = useCallback(async () => {
-    if (!doc || isSourceLocaleActive) return
-    setGeneratingParents(true)
-    try {
-      // Generate + publish space translation if needed
-      const spaceRow = spaceTranslationsByLocale.get(activeLocale)
-      if (!spaceRow || spaceRow.status !== 'published') {
-        await docsService.generateSpaceTranslation(wsId, doc.space_id, activeLocale)
-      }
-      // Generate + publish collection translation if needed
-      if (doc.collection_id) {
-        const collRow = collectionTranslationsByLocale.get(activeLocale)
-        if (!collRow || collRow.status !== 'published') {
-          await docsService.generateCollectionTranslation(wsId, doc.collection_id, activeLocale)
-        }
-      }
-      toast.success('Parent translations generated and published')
-      // Refetch translations so the blocked reason clears
-      queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate parent translations')
-    } finally {
-      setGeneratingParents(false)
-    }
-  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale])
-
   const handleGenerateParentsAndPublish = useCallback(async () => {
     if (!doc || isSourceLocaleActive) return
     setGeneratingParents(true)
@@ -576,14 +535,16 @@ export function DocsDocumentDetail() {
       const spaceRow = spaceTranslationsByLocale.get(activeLocale)
       if (!spaceRow || spaceRow.status !== 'published') {
         await docsService.generateSpaceTranslation(wsId, doc.space_id, activeLocale)
+        await docsService.publishSpaceTranslation(wsId, doc.space_id, activeLocale)
       }
       if (doc.collection_id) {
         const collRow = collectionTranslationsByLocale.get(activeLocale)
         if (!collRow || collRow.status !== 'published') {
           await docsService.generateCollectionTranslation(wsId, doc.collection_id, activeLocale)
+          await docsService.publishCollectionTranslation(wsId, doc.collection_id, activeLocale)
         }
       }
-      await publishArticleTranslation.mutateAsync(activeLocale)
+      await publishArticleTranslation.mutateAsync({ locale: activeLocale })
       toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
       setParentPublishConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
@@ -595,23 +556,22 @@ export function DocsDocumentDetail() {
   }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, publishArticleTranslation, queryClient])
 
   const activeLocaleShortLabel = activeLocale.toUpperCase()
-  const activeContextTitle = isSourceLocaleActive
-    ? 'Editing source article'
-    : `Editing ${getHelpcenterLocaleLabel(activeLocale)} translation`
-  const activeContextHelper = isSourceLocaleActive
-    ? 'This internal article remains the source of truth for public locale variants.'
-    : activeTranslation?.source_synced === false
-      ? 'The source article changed after this locale was last reviewed. Update the translation before publishing.'
-      : 'This locale draft is served independently in the public help center once it is published.'
-  const isPublished = isSourceLocaleActive ? doc?.status === 'published' : activeTranslationStatus === 'published'
-  const activePublishLabel = isPublished
-    ? `Update (${activeLocaleShortLabel})`
-    : `Publish (${activeLocaleShortLabel})`
+  const sourceLivePublished = isExternalHelpCenter ? !!doc?.live_published_at : doc?.status === 'published'
+  const sourceHasUnpublishedChanges = isExternalHelpCenter ? !!doc?.has_unpublished_changes : false
+  const translationLivePublished = !!activeTranslation?.live_published_at
+  const translationHasUnpublishedChanges = !!activeTranslation?.has_unpublished_changes
+  const isPublished = isSourceLocaleActive ? sourceLivePublished : translationLivePublished
+  const hasUnpublishedChanges = isSourceLocaleActive ? sourceHasUnpublishedChanges : translationHasUnpublishedChanges
+  const activePublishLabel = !isPublished
+    ? `Publish (${activeLocaleShortLabel})`
+    : hasUnpublishedChanges
+      ? `Update (${activeLocaleShortLabel})`
+      : `Published (${activeLocaleShortLabel})`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
   const publishDisabled = isSourceLocaleActive
-    ? publishDoc.isPending || doc?.is_locked
-    : !activeTranslation || publishArticleTranslation.isPending || doc?.is_locked
+    ? publishDoc.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
+    : !activeTranslation || publishArticleTranslation.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
   const activeDialogTranslation = editingTranslationLocale === activeLocale && !isSourceLocaleActive
     ? {
         ...(activeTranslation ?? {
@@ -641,8 +601,8 @@ export function DocsDocumentDetail() {
         title: activeTranslationDraft.title,
         slug: activeTranslationDraft.slug,
         excerpt: activeTranslationDraft.excerpt || undefined,
-        seo_title: activeTranslationDraft.seoTitle || undefined,
-        seo_description: activeTranslationDraft.seoDescription || undefined,
+        seo_title: activeTranslationDraft.title || undefined,
+        seo_description: activeTranslationDraft.excerpt || undefined,
         content: activeTranslationDraft.content,
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
@@ -728,9 +688,17 @@ export function DocsDocumentDetail() {
           })()}
         </nav>
 
-        <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
-          {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-        </span>
+        {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
+          <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
+            {DOC_STATUS_LABELS[doc.status] ?? doc.status}
+          </span>
+        )}
+
+        {showContextualPublish && isPublished && hasUnpublishedChanges && (
+          <span className="shrink-0 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            Unpublished changes
+          </span>
+        )}
 
         {isExternalHelpCenter && (
           <Button
@@ -761,34 +729,28 @@ export function DocsDocumentDetail() {
           </Button>
         )}
 
-        {isExternalHelpCenter && canAdminDocs && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 text-xs"
-            onClick={() => setTranslationsOpen(true)}
-          >
-            <Languages className="h-3.5 w-3.5" />
-            Translations
-          </Button>
-        )}
-
         {showContextualPublish && (
           <>
             <Button
               size="sm"
-              variant="default"
+              variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
               className="h-7 gap-1.5 text-xs"
               onClick={() => {
                 if (isSourceLocaleActive) {
                   void handlePublish()
                   return
                 }
+                if (activeTranslation && !activeTranslation.slug) {
+                  setPendingSlug(suggestDocsSlug(activeTranslationDraft.title || activeTranslation.title || 'translation', 'translation'))
+                  setPendingPublishLocale(activeLocale)
+                  setSlugDialogOpen(true)
+                  return
+                }
                 if (parentTranslationsMissing) {
                   setParentPublishConfirmOpen(true)
                   return
                 }
-                publishArticleTranslation.mutate(activeLocale, {
+                publishArticleTranslation.mutate({ locale: activeLocale }, {
                   onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
                   onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
                 })
@@ -828,6 +790,18 @@ export function DocsDocumentDetail() {
               onSelectLocale={handleSelectLocale}
               onOpenSettings={(locale) => setEditingTranslationLocale(locale)}
             />
+            {!isSourceLocaleActive && activeTranslation && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 gap-1.5 text-xs"
+                disabled={regenerating}
+                onClick={() => setRegenerateConfirmOpen(true)}
+              >
+                <WandSparkles className="h-3.5 w-3.5" />
+                Regenerate with AI
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -945,13 +919,35 @@ export function DocsDocumentDetail() {
               key={isSourceLocaleActive ? 'source-editor' : `translation-${activeLocale}`}
               title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
               onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
-              slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug || undefined}
-              onSlugChange={isSourceLocaleActive && doc?.hc_slug && !effectiveReadOnly ? async (newSlug) => {
-                const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
-                if (res.error) throw new Error(res.error)
-                toast.success('Slug updated. A redirect from the old URL has been created.')
-                queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
-              } : undefined}
+              slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
+              slugHelperText={
+                isPublished && hasUnpublishedChanges
+                  ? 'Slug changes will go live when you update this article.'
+                  : undefined
+              }
+              onSlugChange={
+                isSourceLocaleActive
+                  ? doc?.hc_slug && !effectiveReadOnly
+                    ? async (newSlug) => {
+                        const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
+                        if (res.error) throw new Error(res.error)
+                        toast.success(sourceLivePublished ? 'Slug saved. It will go live when you update the article.' : 'Slug saved')
+                        queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+                      }
+                    : undefined
+                  : activeTranslationDraft.slug && !effectiveReadOnly
+                    ? async (newSlug) => {
+                        const res = await docsService.updateArticleTranslationSlug(wsId, docId, activeLocale, newSlug)
+                        if (res.error) throw new Error(res.error)
+                        toast.success(
+                          translationLivePublished
+                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will go live when you update the translation.`
+                            : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
+                        )
+                        queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+                      }
+                    : undefined
+              }
               initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
@@ -960,24 +956,6 @@ export function DocsDocumentDetail() {
                   ? { workspaceId: wsId, entityType: 'editor_upload', entityId: docId }
                   : undefined
               }
-              topBanner={showLocalePills && !isSourceLocaleActive && activeTranslation ? (
-                <div className="flex items-center justify-center gap-2 bg-muted/20 px-4 py-2 mx-6 mt-3 rounded-lg">
-                  <WandSparkles className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground">
-                    Regenerate this translation from the latest source article using AI. Protected terms from your settings will be preserved.
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs shrink-0"
-                    disabled={regenerating}
-                    onClick={() => setRegenerateConfirmOpen(true)}
-                  >
-                    <WandSparkles className="h-3 w-3" />
-                    {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
-                  </Button>
-                </div>
-              ) : undefined}
               generatingOverlay={
                 (regenerating || generateArticleTranslation.isPending) && !isSourceLocaleActive
                   ? 'Generating translation with AI...'
@@ -990,8 +968,49 @@ export function DocsDocumentDetail() {
         {/* Metadata sidebar */}
         {metaOpen && (
           <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-5">
-            {/* ── Sharing ── */}
-            {canEditDocs && (
+
+            {/* ── Document/Translation status ── */}
+            {showLocalePills && isSourceLocaleActive && (
+              <>
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                  doc.status === 'published' ? 'bg-emerald-500/8' :
+                  doc.status === 'archived' ? 'bg-muted/40' :
+                  'bg-amber-500/8'
+                }`}>
+                  <span className="text-xs font-medium">{getHelpcenterLocaleLabel(defaultLocale)} (Source)</span>
+                  <span className={`text-[11px] font-medium ${
+                    doc.status === 'published' ? 'text-emerald-600 dark:text-emerald-400' :
+                    doc.status === 'archived' ? 'text-muted-foreground' :
+                    'text-amber-600 dark:text-amber-400'
+                  }`}>
+                    {doc.status === 'published' ? 'Published' : doc.status === 'archived' ? 'Archived' : 'Draft'}
+                  </span>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
+            {showLocalePills && !isSourceLocaleActive && activeTranslation && (
+              <>
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                  activeTranslationStatus === 'published' ? 'bg-emerald-500/8' :
+                  activeTranslationStatus === 'needs_review' ? 'bg-blue-500/8' :
+                  'bg-amber-500/8'
+                }`}>
+                  <span className="text-xs font-medium">{getHelpcenterLocaleLabel(activeLocale)}</span>
+                  <span className={`text-[11px] font-medium ${
+                    activeTranslationStatus === 'published' ? 'text-emerald-600 dark:text-emerald-400' :
+                    activeTranslationStatus === 'needs_review' ? 'text-blue-600 dark:text-blue-400' :
+                    'text-amber-600 dark:text-amber-400'
+                  }`}>
+                    {activeTranslationStatus === 'published' ? 'Published' : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
+                  </span>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
+
+            {/* ── Sharing (source locale only) ── */}
+            {isSourceLocaleActive && canEditDocs && (
               <>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1035,7 +1054,8 @@ export function DocsDocumentDetail() {
 
             {/* ── Properties ── */}
             <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
-              {/* Owner */}
+              {/* Owner (source only) */}
+              {isSourceLocaleActive && (<>
               <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
@@ -1085,6 +1105,7 @@ export function DocsDocumentDetail() {
 
               {/* Collection */}
               <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+
               <span className="text-xs text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
@@ -1127,28 +1148,29 @@ export function DocsDocumentDetail() {
                   </span>
                 )}
               </div>
+              </>)}
 
               {/* Created */}
               <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{format(parseISO(doc.created_at), isThisYear(parseISO(doc.created_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
+                <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
               </div>
 
               {/* Updated */}
               <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{format(parseISO(doc.updated_at), isThisYear(parseISO(doc.updated_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
+                <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
               </div>
 
               {/* Published */}
-              {doc.published_at && (
+              {(isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at) && (
                 <>
                   <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                   <span className="text-xs text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
-                    <span className="text-xs">{format(parseISO(doc.published_at), isThisYear(parseISO(doc.published_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
+                    <span className="text-xs">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
                   </div>
                 </>
               )}
@@ -1176,8 +1198,49 @@ export function DocsDocumentDetail() {
               </button>
             </div>
 
-            {/* ── Document Actions ── */}
-            {canEditDocs && (
+            {/* ── Translation Actions (non-source locale) ── */}
+            {showLocalePills && !isSourceLocaleActive && activeTranslation && canEditDocs && (
+              <>
+                <Separator className="my-4" />
+                <div className="space-y-1">
+                  {activeTranslationStatus === 'needs_review' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        markArticleTranslationReviewed.mutate(activeLocale, {
+                          onSuccess: () => toast.success('Translation marked as reviewed'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark reviewed'),
+                        })
+                      }}
+                      disabled={markArticleTranslationReviewed.isPending}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Mark as reviewed
+                    </button>
+                  )}
+                  {activeTranslationStatus === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        unpublishArticleTranslation.mutate(activeLocale, {
+                          onSuccess: () => toast.success('Translation unpublished'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unpublish'),
+                        })
+                      }}
+                      disabled={unpublishArticleTranslation.isPending}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Unpublish translation
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── Document Actions (source locale) ── */}
+            {isSourceLocaleActive && canEditDocs && (
               <>
                 <Separator className="my-4" />
                 <div className="space-y-1">
@@ -1206,6 +1269,11 @@ export function DocsDocumentDetail() {
                     <button
                       type="button"
                       onClick={() => {
+                        const publishedTranslationCount = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
+                        if (publishedTranslationCount > 0) {
+                          setRevertConfirmOpen(true)
+                          return
+                        }
                         unpublishDoc.mutate(docId, {
                           onSuccess: () => toast.success('Reverted to draft'),
                           onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
@@ -1275,49 +1343,6 @@ export function DocsDocumentDetail() {
         canEdit={canEditDocs}
       />
 
-      <Sheet open={translationsOpen} onOpenChange={setTranslationsOpen}>
-        <SheetContent className="w-full sm:max-w-2xl">
-          <SheetHeader className="border-b border-border/60">
-            <SheetTitle className="flex items-center gap-2">
-              <Languages className="h-4 w-4 text-primary" />
-              Article translations
-            </SheetTitle>
-            <SheetDescription>
-              Manage localized public variants for this article. The default locale stays mirrored from the source document.
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="flex-1 overflow-y-auto p-4">
-            <TranslationsPanel
-              title="Public language variants"
-              description="Publish each locale independently once its parent path and localized body are ready."
-              locales={enabledLocales}
-              rows={articleTranslationRows}
-              onAdd={setEditingTranslationLocale}
-              onEdit={setEditingTranslationLocale}
-              onPublish={(locale) => {
-                publishArticleTranslation.mutate(locale, {
-                  onSuccess: () => toast.success('Article translation published'),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
-                })
-              }}
-              onUnpublish={(locale) => {
-                unpublishArticleTranslation.mutate(locale, {
-                  onSuccess: () => toast.success('Article translation reverted to draft'),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unpublish translation'),
-                })
-              }}
-              onMarkReviewed={(locale) => {
-                markArticleTranslationReviewed.mutate(locale, {
-                  onSuccess: () => toast.success('Article translation marked as reviewed'),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to mark translation reviewed'),
-                })
-              }}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {editingTranslationLocale && (
         <EditArticleTranslationDialog
           key={`${editingTranslationLocale}-${articleTranslationsByLocale.get(editingTranslationLocale)?.updated_at ?? 'new'}`}
@@ -1326,13 +1351,9 @@ export function DocsDocumentDetail() {
             if (!open) setEditingTranslationLocale(null)
           }}
           locale={editingTranslationLocale}
-          sourceTitle={doc.title}
-          sourceSlug={doc.hc_slug}
           sourceExcerpt={doc.excerpt}
-          sourceContent={(content?.content as JSONContent | null | undefined) ?? null}
           translation={activeDialogTranslation}
           isSaving={upsertArticleTranslation.isPending}
-          mode={editingTranslationLocale === activeLocale && !isSourceLocaleActive ? 'details_only' : 'full'}
           onSave={async (data) => {
             await handleSaveTranslation(data)
             if (editingTranslationLocale === activeLocale) {
@@ -1341,10 +1362,8 @@ export function DocsDocumentDetail() {
                 [translationDraftKey(docId, data.locale)]: {
                   locale: data.locale,
                   title: data.title,
-                  slug: data.slug,
+                  slug: current[translationDraftKey(docId, data.locale)]?.slug ?? activeTranslationDraft.slug,
                   excerpt: data.excerpt ?? '',
-                  seoTitle: data.seo_title ?? '',
-                  seoDescription: data.seo_description ?? '',
                   content: (data.content as JSONContent | null | undefined) ?? null,
                 },
               }))
@@ -1420,39 +1439,51 @@ export function DocsDocumentDetail() {
           </Dialog>
         </>
       )}
-      {/* Slug confirmation dialog for external help center articles */}
-      <Dialog open={slugDialogOpen} onOpenChange={setSlugDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm article URL slug</DialogTitle>
-            <DialogDescription>
-              This slug will be used in the public help center URL.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="slug">Slug</Label>
-            <div className="flex items-center">
-              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">/</span>
-              <Input
-                id="slug"
-                value={pendingSlug}
-                onChange={(e) => setPendingSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                placeholder="article-slug"
-                className="rounded-l-none"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSlugDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmPublish} disabled={!pendingSlug || publishDoc.isPending}>
-              <Send className="h-3.5 w-3.5 mr-1.5" />
-              Publish
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={revertConfirmOpen}
+        onOpenChange={setRevertConfirmOpen}
+        title="Revert to draft"
+        variant="destructive"
+        description={(() => {
+          const count = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
+          return `This will revert the source article and ${count} published translation${count !== 1 ? 's' : ''} to draft. They will no longer be visible on the public help center.`
+        })()}
+        confirmLabel="Revert all to draft"
+        onConfirm={() => {
+          // Unpublish all published translations first, then the source
+          const publishedLocales = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').map(r => r.locale)
+          Promise.all(publishedLocales.map(locale => unpublishArticleTranslation.mutateAsync(locale).catch(() => {})))
+            .then(() => {
+              unpublishDoc.mutate(docId, {
+                onSuccess: () => toast.success(`Reverted to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also reverted)`),
+                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+              })
+            })
+          setRevertConfirmOpen(false)
+        }}
+      />
+
+      <PublishSlugDialog
+        open={slugDialogOpen}
+        onOpenChange={(open) => {
+          setSlugDialogOpen(open)
+          if (!open) setPendingPublishLocale(null)
+        }}
+        title={
+          pendingPublishLocale && pendingPublishLocale !== defaultLocale
+            ? `Confirm ${getHelpcenterLocaleLabel(pendingPublishLocale)} URL slug`
+            : 'Confirm article URL slug'
+        }
+        description={
+          pendingPublishLocale && pendingPublishLocale !== defaultLocale
+            ? 'This slug will be used in the localized public help center URL for the active translation.'
+            : 'This slug will be used in the public help center URL.'
+        }
+        slug={pendingSlug}
+        onSlugChange={setPendingSlug}
+        onConfirm={handleConfirmPublish}
+        isPublishing={pendingPublishLocale && pendingPublishLocale !== defaultLocale ? publishArticleTranslation.isPending : publishDoc.isPending}
+      />
     </div>
   )
 }

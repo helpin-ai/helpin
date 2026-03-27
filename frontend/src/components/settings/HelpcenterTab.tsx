@@ -57,6 +57,15 @@ function withIds(links: HelpcenterHeaderLink[]): HeaderLinkWithId[] {
   return links.map(l => ({ ...l, _id: nextLinkId() }));
 }
 
+function findCollectionByCardLinkValue(
+  collections: DocsCollection[],
+  linkValue: string,
+): DocsCollection | undefined {
+  return collections.find((collection) =>
+    collection.id === linkValue || collection.slug === linkValue,
+  );
+}
+
 interface ConfigState {
   subdomain: string;
   custom_domain: string;
@@ -311,8 +320,17 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             // Sync card titles and icons from current collection data
             const existingCards = res.data?.homepage_config?.featured_cards ?? [];
             const synced = existingCards.map(card => {
-              const col = colRes.data!.find(c => c.id === card.link_value);
-              return col ? { ...card, title: col.name, icon: col.icon ?? '' } : card;
+              const col = findCollectionByCardLinkValue(colRes.data!, card.link_value);
+              return col
+                ? {
+                    ...card,
+                    title: col.name,
+                    description: col.description ?? card.description,
+                    icon: col.icon ?? '',
+                    link_value: col.slug,
+                    space_slug: space.slug,
+                  }
+                : card;
             });
             setConfig(prev => ({ ...prev, homepage_featured_cards: synced }));
           }
@@ -357,7 +375,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     // Sync icon changes back to collections
     for (const card of config.homepage_featured_cards) {
       if (card.link_type !== 'collection' || !card.link_value) continue;
-      const col = spaceCollections.find(c => c.id === card.link_value);
+      const col = findCollectionByCardLinkValue(spaceCollections, card.link_value);
       if (col && (col.icon ?? '') !== card.icon) {
         await docsService.updateCollection(workspaceId, col.id, { icon: card.icon });
       }
@@ -451,22 +469,22 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       description: col.description ?? '',
       icon: col.icon ?? '',
       link_type: 'collection',
-      link_value: col.id,
+      link_value: col.slug,
       space_slug: slug,
     }));
     setConfig(prev => ({ ...prev, homepage_featured_cards: cards }));
   };
 
   const toggleCollection = (colId: string) => {
-    const exists = config.homepage_featured_cards.find(c => c.link_value === colId);
+    const col = spaceCollections.find(c => c.id === colId);
+    if (!col) return;
+    const exists = config.homepage_featured_cards.find(c => c.link_value === col.slug);
     if (exists) {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== colId),
+        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
       }));
     } else {
-      const col = spaceCollections.find(c => c.id === colId);
-      if (!col) return;
       setConfig(prev => ({
         ...prev,
         homepage_featured_cards: [...prev.homepage_featured_cards, {
@@ -474,7 +492,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           description: col.description ?? '',
           icon: col.icon ?? '',
           link_type: 'collection',
-          link_value: col.id,
+          link_value: col.slug,
           space_slug: homepageSpaceSlug,
         }],
       }));
@@ -482,10 +500,12 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   };
 
   const updateCardByCollectionId = (colId: string, patch: Partial<HomepageFeaturedCard>) => {
+    const col = spaceCollections.find(c => c.id === colId);
+    if (!col) return;
     setConfig(prev => ({
       ...prev,
       homepage_featured_cards: prev.homepage_featured_cards.map(c =>
-        c.link_value === colId ? { ...c, ...patch } : c
+        c.link_value === col.slug ? { ...c, ...patch } : c
       ),
     }));
   };
@@ -900,7 +920,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             {spaceCollections.length > 0 && (
               <div className="space-y-1.5">
                 {spaceCollections.map(col => {
-                  const card = config.homepage_featured_cards.find(c => c.link_value === col.id);
+                  const card = config.homepage_featured_cards.find(c => c.link_value === col.slug);
                   const checked = !!card;
                   return (
                     <div

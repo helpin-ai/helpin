@@ -188,7 +188,10 @@ type DocsDocument struct {
 	DeletedAt        *time.Time      `json:"deleted_at" gorm:"index"`
 
 	// Transient fields (not stored in docs_documents, populated by handlers)
-	HCSlug string `json:"hc_slug,omitempty" gorm:"-"`
+	HCSlug                string     `json:"hc_slug,omitempty" gorm:"-"`
+	HasUnpublishedChanges bool       `json:"has_unpublished_changes" gorm:"-"`
+	LivePublishedAt       *time.Time `json:"live_published_at,omitempty" gorm:"-"`
+	LiveSlug              *string    `json:"live_slug,omitempty" gorm:"-"`
 }
 
 func (DocsDocument) TableName() string { return "docs_documents" }
@@ -311,6 +314,7 @@ type DocsHelpcenterConfig struct {
 	SearchPlaceholder       *string         `json:"search_placeholder"`
 	DefaultLocale           string          `json:"default_locale" gorm:"not null;default:'en'"`
 	EnabledLocales          DocsStringArray `json:"enabled_locales" gorm:"type:text[]"`
+	ProtectedTerms          DocsStringArray `json:"protected_terms" gorm:"type:text[]"`
 	ShowLanguageSwitcher    bool            `json:"show_language_switcher" gorm:"not null;default:false"`
 	FallbackToDefaultLocale bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
 	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
@@ -527,6 +531,7 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	SearchPlaceholder       *string         `json:"search_placeholder"`
 	DefaultLocale           *string         `json:"default_locale"`
 	EnabledLocales          []string        `json:"enabled_locales"`
+	ProtectedTerms          []string        `json:"protected_terms"`
 	ShowLanguageSwitcher    *bool           `json:"show_language_switcher"`
 	FallbackToDefaultLocale *bool           `json:"fallback_to_default_locale"`
 	IsPublished             *bool           `json:"is_published"`
@@ -581,6 +586,7 @@ type PublicNavCollection struct {
 	ID       string             `json:"id"`
 	Name     string             `json:"name"`
 	Slug     string             `json:"slug"`
+	SpaceSlug string            `json:"space_slug,omitempty"`
 	Icon     *string            `json:"icon"`
 	Articles []PublicNavArticle `json:"articles"`
 }

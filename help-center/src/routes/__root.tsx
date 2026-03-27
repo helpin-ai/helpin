@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { DocsProvider } from '@/contexts/DocsContext'
 import { useHelpCenterConfig, useSpaces } from '@/hooks/queries'
+import { resolveActiveLocale } from '@/lib/locale'
 import type { HelpCenterContext } from '@/lib/types'
 
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
@@ -18,7 +19,7 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
 
 function RootLayout() {
   const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
-  const params = useParams({ strict: false }) as { locale?: string }
+  const params = useParams({ strict: false }) as { locale?: string; spaceSlug?: string }
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPreview = pathname.startsWith('/preview/')
 
@@ -28,7 +29,12 @@ function RootLayout() {
     error: configError,
   } = useHelpCenterConfig(subdomain)
 
-  const activeLocale = params.locale || config?.default_locale || ''
+  const activeLocale = resolveActiveLocale({
+    paramsLocale: params.locale,
+    paramsSpaceSlug: params.spaceSlug,
+    enabledLocales: config?.enabled_locales,
+    defaultLocale: config?.default_locale || 'en',
+  })
   const { data: spaces, isLoading: spacesLoading } = useSpaces(
     subdomain,
     activeLocale,

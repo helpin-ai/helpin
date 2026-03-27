@@ -1,11 +1,15 @@
-import { Link } from '@tanstack/react-router'
 import { FileText, ArrowRight } from 'lucide-react'
+import {
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+} from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
 interface SearchResultItemProps {
   locale: string
   result: SearchResult
   variant?: 'compact' | 'full'
+  multilingualEnabled?: boolean
   onClick?: () => void
 }
 
@@ -13,6 +17,7 @@ export function SearchResultItem({
   locale,
   result,
   variant = 'full',
+  multilingualEnabled = true,
   onClick,
 }: SearchResultItemProps) {
   const isCompact = variant === 'compact'
@@ -57,30 +62,32 @@ export function SearchResultItem({
 
   if (!collectionSlug) {
     return (
-      <Link
-        to="/$locale/$spaceSlug"
-        params={{ locale: targetLocale, spaceSlug: result.space_slug }}
+      <a
+        href={buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          result.space_slug,
+        )}
         onClick={onClick}
         className={className}
       >
         {content}
-      </Link>
+      </a>
     )
   }
 
   return (
-    <Link
-      to="/$locale/$spaceSlug/$collectionSlug/$articleSlug"
-      params={{
-        locale: targetLocale,
-        spaceSlug: result.space_slug,
+    <a
+      href={buildCanonicalArticlePath(
+        multilingualEnabled,
+        targetLocale,
         collectionSlug,
-        articleSlug: result.slug,
-      }}
+        result.slug,
+      )}
       onClick={onClick}
       className={className}
     >
       {content}
-    </Link>
+    </a>
   )
 }

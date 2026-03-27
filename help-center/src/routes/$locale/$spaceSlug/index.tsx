@@ -1,48 +1,76 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useSpaceContext } from '@/contexts/SpaceContext'
-import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { ArticleRouteView } from '@/components/routes/ArticleRouteView'
+import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
+import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
-import { ErrorState } from '@/components/ErrorState'
+import {
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+  isMultilingualEnabled,
+} from '@/lib/locale'
 
 export const Route = createFileRoute('/$locale/$spaceSlug/')({
   component: LocalizedSpaceIndex,
 })
 
 function LocalizedSpaceIndex() {
-  const { locale, spaceSlug } = Route.useParams()
-  const { space, navigation, isLoading } = useSpaceContext()
+  const { locale: localeParam, spaceSlug } = Route.useParams()
+  const { defaultLocale, enabledLocales } = useDocsContext()
   const navigate = useNavigate()
-
-  useDocumentTitle(space?.name)
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const isValidLocaleParam = enabledLocales.some(
+    (enabledLocale) => enabledLocale.toLowerCase() === localeParam.toLowerCase(),
+  )
 
   useEffect(() => {
-    if (navigation.length > 0) {
-      const firstCollection = navigation[0]
-      if (firstCollection) {
+    if (!isValidLocaleParam) {
+      if (multilingualEnabled) {
         navigate({
-          to: '/$locale/$spaceSlug/$collectionSlug',
-          params: {
-            locale,
-            spaceSlug,
-            collectionSlug: firstCollection.slug,
-          },
+          to: buildCanonicalArticlePath(true, defaultLocale, localeParam, spaceSlug),
           replace: true,
         })
+        return
       }
+      return
     }
-  }, [navigation, navigate, locale, spaceSlug])
 
-  if (isLoading) return <LoadingState />
+    if (multilingualEnabled) {
+      return
+    }
+    navigate({
+      to: buildCanonicalCollectionPath(false, defaultLocale, spaceSlug),
+      replace: true,
+    })
+  }, [
+    defaultLocale,
+    isValidLocaleParam,
+    localeParam,
+    multilingualEnabled,
+    navigate,
+    spaceSlug,
+  ])
 
-  if (navigation.length === 0) {
+  if (!isValidLocaleParam && !multilingualEnabled) {
     return (
-      <ErrorState
-        title="No articles yet"
-        message="This space has no published articles."
+      <ArticleRouteView
+        locale={defaultLocale}
+        collectionSlug={localeParam}
+        articleSlug={spaceSlug}
+        multilingualEnabled={false}
       />
     )
   }
 
-  return <LoadingState />
+  if (!isValidLocaleParam || !multilingualEnabled) {
+    return <LoadingState message="Redirecting..." />
+  }
+
+  return (
+    <CollectionRouteView
+      locale={localeParam}
+      collectionOrSpaceSlug={spaceSlug}
+      multilingualEnabled
+    />
+  )
 }

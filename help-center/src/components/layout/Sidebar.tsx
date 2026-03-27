@@ -5,10 +5,9 @@ import type { NavItem } from '@/lib/types'
 interface SidebarProps {
   locale: string
   navigation: NavItem[]
-  spaceSlug: string
 }
 
-export function Sidebar({ locale, navigation, spaceSlug }: SidebarProps) {
+export function Sidebar({ locale, navigation }: SidebarProps) {
   return (
     <aside
       className="sticky top-[var(--hc-header-height)] hidden lg:block shrink-0 border-r border-border/70 dark:bg-card"
@@ -18,7 +17,7 @@ export function Sidebar({ locale, navigation, spaceSlug }: SidebarProps) {
       }}
       >
       <ScrollArea className="h-full">
-        <NavTree locale={locale} navigation={navigation} spaceSlug={spaceSlug} />
+        <NavTree locale={locale} navigation={navigation} />
       </ScrollArea>
     </aside>
   )

@@ -12,8 +12,8 @@ describe('LocaleSwitcher', () => {
       <LocaleSwitcher
         currentLocale="en"
         options={[
-          { code: 'en', label: 'English', href: '/en/getting-started/basics/start-here', active: true },
-          { code: 'fr', label: 'Francais', href: '/fr/demarrage/bases/bonjour-fr', active: false },
+          { code: 'en', label: 'English', href: '/en/basics/start-here', active: true },
+          { code: 'fr', label: 'Francais', href: '/fr/bases/bonjour-fr', active: false },
         ]}
         onSelect={onSelect}
       />,
@@ -22,6 +22,6 @@ describe('LocaleSwitcher', () => {
     await user.click(screen.getByRole('button', { name: /english/i }))
     await user.click(screen.getByRole('menuitem', { name: /francais/i }))
 
-    expect(onSelect).toHaveBeenCalledWith('/fr/demarrage/bases/bonjour-fr')
+    expect(onSelect).toHaveBeenCalledWith('/fr/bases/bonjour-fr')
   })
 })

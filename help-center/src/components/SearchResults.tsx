@@ -1,4 +1,6 @@
 import { SearchResultItem } from '@/components/search/SearchResultItem'
+import { useDocsContext } from '@/contexts/DocsContext'
+import { isMultilingualEnabled } from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
 interface SearchResultsProps {
@@ -8,6 +10,9 @@ interface SearchResultsProps {
 }
 
 export function SearchResultsList({ results, query, locale }: SearchResultsProps) {
+  const { enabledLocales } = useDocsContext()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+
   if (results.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -26,6 +31,7 @@ export function SearchResultsList({ results, query, locale }: SearchResultsProps
           locale={locale}
           result={result}
           variant="full"
+          multilingualEnabled={multilingualEnabled}
         />
       ))}
     </div>

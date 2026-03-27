@@ -5,14 +5,12 @@ import { useDocsContext } from '@/contexts/DocsContext'
 
 interface ArticleFeedbackProps {
   locale: string
-  spaceSlug: string
   collectionSlug?: string | null
   articleSlug: string
 }
 
 export function ArticleFeedback({
   locale,
-  spaceSlug,
   collectionSlug,
   articleSlug,
 }: ArticleFeedbackProps) {
@@ -28,7 +26,6 @@ export function ArticleFeedback({
         await helpCenterService.submitFeedback(
           subdomain,
           locale,
-          spaceSlug,
           collectionSlug,
           articleSlug,
           {
@@ -39,7 +36,7 @@ export function ArticleFeedback({
         // Feedback is best-effort
       }
     },
-    [subdomain, locale, spaceSlug, collectionSlug, articleSlug, submitted],
+    [subdomain, locale, collectionSlug, articleSlug, submitted],
   )
 
   return (

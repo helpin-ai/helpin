@@ -8,7 +8,6 @@ interface ArticleShellProps {
   locale: string
   title: string
   excerpt?: string | null
-  spaceSlug: string
   spaceName?: string
   collectionName?: string | null
   collectionSlug?: string | null
@@ -21,7 +20,6 @@ export function ArticleShell({
   locale,
   title,
   excerpt,
-  spaceSlug,
   spaceName: _spaceName,
   collectionName,
   collectionSlug,
@@ -38,7 +36,6 @@ export function ArticleShell({
         <div className="mb-2.5">
           <Breadcrumbs
             locale={locale}
-            spaceSlug={spaceSlug}
             collectionName={collectionName}
             collectionSlug={collectionSlug}
           />
@@ -60,11 +57,10 @@ export function ArticleShell({
 
       <ArticleFeedback
         locale={locale}
-        spaceSlug={spaceSlug}
         collectionSlug={collectionSlug}
         articleSlug={articleSlug}
       />
-      <ArticlePager locale={locale} spaceSlug={spaceSlug} prev={pager.prev} next={pager.next} />
+      <ArticlePager locale={locale} prev={pager.prev} next={pager.next} />
     </article>
   )
 }

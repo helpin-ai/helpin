@@ -9,23 +9,17 @@ export const queryKeys = {
       ['spaces', subdomain, locale, spaceSlug, 'navigation'] as const,
   },
   collections: {
-    bySlug: (
-      subdomain: string,
-      locale: string,
-      spaceSlug: string,
-      collectionSlug: string,
-    ) =>
-      ['collections', subdomain, locale, spaceSlug, collectionSlug] as const,
+    bySlug: (subdomain: string, locale: string, collectionSlug: string) =>
+      ['collections', subdomain, locale, collectionSlug] as const,
   },
   articles: {
     bySlug: (
       subdomain: string,
       locale: string,
-      spaceSlug: string,
       collectionSlug: string,
       articleSlug: string,
     ) =>
-      ['articles', subdomain, locale, spaceSlug, collectionSlug, articleSlug] as const,
+      ['articles', subdomain, locale, collectionSlug, articleSlug] as const,
     search: (
       subdomain: string,
       locale: string,

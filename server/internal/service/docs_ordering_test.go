@@ -226,6 +226,38 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		}
 	})
 
+	t.Run("Collection create derives slug when request slug is omitted", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		spaceRepo := repository.NewDocsSpaceRepository(db)
+		collectionRepo := repository.NewDocsCollectionRepository(db)
+		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo)
+		ctx := context.Background()
+
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          "space-collections",
+			WorkspaceID: workspaceID,
+			Name:        "Knowledge Base",
+			Slug:        "knowledge-base",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeExternalCapable,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+
+		created, err := collectionSvc.Create(ctx, workspaceID, "space-collections", model.CreateDocsCollectionRequest{
+			Name: "Getting Started",
+		}, userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		if created.Slug != "getting-started" {
+			t.Fatalf("created collection slug = %q, want %q", created.Slug, "getting-started")
+		}
+	})
+
 	t.Run("Delete appends docs into uncategorized and normalizes remaining collections", func(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		repo := repository.NewDocsCollectionRepository(db)

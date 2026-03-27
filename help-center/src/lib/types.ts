@@ -121,6 +121,7 @@ export interface ArticleDetail extends Article {
 export interface CollectionPage {
   collection: NavItem
   articles: NavArticle[]
+  space_slug?: string
 }
 
 export interface PreviewArticleDetail {

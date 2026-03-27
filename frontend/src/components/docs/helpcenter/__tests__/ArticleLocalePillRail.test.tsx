@@ -43,7 +43,7 @@ describe('ArticleLocalePillRail', () => {
     expect(container.textContent).toContain('FR')
     expect(container.textContent).toContain('Draft')
     expect(container.textContent).toContain('DE')
-    expect(container.textContent).toContain('Missing')
+    expect(container.textContent).toContain('Add')
     expect(container.textContent).toContain('ES')
     expect(container.textContent).toContain('Needs review')
 

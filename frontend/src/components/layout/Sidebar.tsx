@@ -384,7 +384,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
           <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center gap-1">
             External Spaces
             <QuickTooltip label="Published to your public help center">
-              <CircleHelp className="h-2.5 w-2.5 text-muted-foreground/50" />
+              <CircleHelp className="h-[10px] w-[10px] text-muted-foreground/50" />
             </QuickTooltip>
           </SidebarGroupLabel>
           <SidebarMenu>
@@ -809,7 +809,11 @@ export function Sidebar() {
                 <Button
                   size="sm"
                   className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
-                  onClick={() => openCreate('docs_document')}
+                  onClick={() => {
+                    // Extract spaceId from URL if user is browsing a space
+                    const spaceMatch = location.pathname.match(/\/docs\/spaces\/([^/]+)/)
+                    openCreate('docs_document', { spaceId: spaceMatch?.[1] })
+                  }}
                 >
                   <Plus className="h-3 w-3" />
                   Document

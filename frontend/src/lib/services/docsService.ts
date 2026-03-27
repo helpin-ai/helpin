@@ -129,7 +129,7 @@ export const docsService = {
   unpublishExternally: (wsId: string, docId: string) =>
     api.post(`/docs/documents/${docId}/unpublish-external${qs(wsId)}`),
   updateArticleSlug: (wsId: string, docId: string, slug: string) =>
-    api.patch(`/docs/documents/${docId}/slug${qs(wsId)}`, { slug }),
+    api.post(`/docs/documents/${docId}/update-slug${qs(wsId)}`, { slug }),
 
   // ── Search ──────────────────────────────────────────────────────────────
   search: (wsId: string, query: string, filters?: { status?: string; limit?: number }) => {
@@ -154,8 +154,11 @@ export const docsService = {
     api.get<DocsHelpcenterSpaceTranslation[]>(`/docs/spaces/${spaceId}/helpcenter/translations${qs(wsId)}`),
   upsertSpaceTranslation: (wsId: string, spaceId: string, payload: UpsertDocsHelpcenterSpaceTranslationRequest) =>
     api.put<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations${qs(wsId)}`, payload),
-  publishSpaceTranslation: (wsId: string, spaceId: string, locale: string) =>
-    api.post<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  publishSpaceTranslation: (wsId: string, spaceId: string, locale: string, slug?: string) =>
+    api.post<DocsHelpcenterSpaceTranslation>(
+      `/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`,
+      slug ? { slug } : undefined,
+    ),
   unpublishSpaceTranslation: (wsId: string, spaceId: string, locale: string) =>
     api.post<DocsHelpcenterSpaceTranslation>(`/docs/spaces/${spaceId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
   markSpaceTranslationReviewed: (wsId: string, spaceId: string, locale: string) =>
@@ -166,8 +169,11 @@ export const docsService = {
     api.get<DocsHelpcenterCollectionTranslation[]>(`/docs/collections/${collectionId}/helpcenter/translations${qs(wsId)}`),
   upsertCollectionTranslation: (wsId: string, collectionId: string, payload: UpsertDocsHelpcenterCollectionTranslationRequest) =>
     api.put<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations${qs(wsId)}`, payload),
-  publishCollectionTranslation: (wsId: string, collectionId: string, locale: string) =>
-    api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  publishCollectionTranslation: (wsId: string, collectionId: string, locale: string, slug?: string) =>
+    api.post<DocsHelpcenterCollectionTranslation>(
+      `/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`,
+      slug ? { slug } : undefined,
+    ),
   unpublishCollectionTranslation: (wsId: string, collectionId: string, locale: string) =>
     api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
   markCollectionTranslationReviewed: (wsId: string, collectionId: string, locale: string) =>
@@ -180,8 +186,16 @@ export const docsService = {
     api.put<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`, payload),
   generateArticleTranslation: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/generate${qs(wsId)}`),
-  publishArticleTranslation: (wsId: string, docId: string, locale: string) =>
-    api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`),
+  publishArticleTranslation: (wsId: string, docId: string, locale: string, slug?: string) =>
+    api.post<DocsHelpcenterArticleTranslation>(
+      `/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`,
+      slug ? { slug } : undefined,
+    ),
+  updateArticleTranslationSlug: (wsId: string, docId: string, locale: string, slug: string) =>
+    api.post(
+      `/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/update-slug${qs(wsId)}`,
+      { slug },
+    ),
   unpublishArticleTranslation: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
   markArticleTranslationReviewed: (wsId: string, docId: string, locale: string) =>

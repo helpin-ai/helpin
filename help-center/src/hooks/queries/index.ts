@@ -41,55 +41,40 @@ export function useSpaceNavigation(
 export function useCollection(
   subdomain: string,
   locale: string,
-  spaceSlug: string,
   collectionSlug: string,
 ) {
   return useQuery({
-    queryKey: queryKeys.collections.bySlug(
-      subdomain,
-      locale,
-      spaceSlug,
-      collectionSlug,
-    ),
+    queryKey: queryKeys.collections.bySlug(subdomain, locale, collectionSlug),
     queryFn: async () =>
       unwrap(
         await helpCenterService.getCollection(
           subdomain,
           locale,
-          spaceSlug,
           collectionSlug,
         ),
       ),
-    enabled: !!subdomain && !!locale && !!spaceSlug && !!collectionSlug,
+    enabled: !!subdomain && !!locale && !!collectionSlug,
   })
 }
 
 export function useArticle(
   subdomain: string,
   locale: string,
-  spaceSlug: string,
   collectionSlug: string,
   articleSlug: string,
 ) {
   return useQuery({
-    queryKey: queryKeys.articles.bySlug(
-      subdomain,
-      locale,
-      spaceSlug,
-      collectionSlug,
-      articleSlug,
-    ),
+    queryKey: queryKeys.articles.bySlug(subdomain, locale, collectionSlug, articleSlug),
     queryFn: async () =>
       unwrap(
         await helpCenterService.getArticle(
           subdomain,
           locale,
-          spaceSlug,
           collectionSlug,
           articleSlug,
         ),
       ),
-    enabled: !!subdomain && !!locale && !!spaceSlug && !!collectionSlug && !!articleSlug,
+    enabled: !!subdomain && !!locale && !!collectionSlug && !!articleSlug,
   })
 }
 

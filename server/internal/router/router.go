@@ -174,6 +174,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/{locale}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/{locale}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/{locale}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/{locale}/search", h.Docs.PublicSearchArticles)
 
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
@@ -758,7 +761,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// External publish/unpublish — docs.publish
 				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/publish-external", h.Docs.PublishExternally)
 				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/unpublish-external", h.Docs.UnpublishExternally)
-				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}/slug", h.Docs.UpdateArticleSlug)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/update-slug", h.Docs.UpdateArticleSlug)
 
 				// Search
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/search", h.Docs.Search)
@@ -785,6 +788,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/documents/{docId}/helpcenter/translations", h.Docs.UpsertArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateArticleTranslationDraft)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/publish", h.Docs.PublishArticleTranslation)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/update-slug", h.Docs.UpdateArticleTranslationSlug)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkArticleTranslationReviewed)
 

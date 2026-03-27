@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
-import { buildLocaleSearchPath } from '@/lib/locale'
-import { useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { SearchRouteView } from '@/components/routes/SearchRouteView'
+import { buildCanonicalSearchPath, isMultilingualEnabled } from '@/lib/locale'
 
 interface SearchParams {
   q?: string
@@ -15,20 +15,28 @@ export const Route = createFileRoute('/search')({
     q: typeof search.q === 'string' ? search.q : undefined,
     space: typeof search.space === 'string' ? search.space : undefined,
   }),
-  component: LegacySearchRedirect,
+  component: SearchRoute,
 })
 
-function LegacySearchRedirect() {
+function SearchRoute() {
   const { q = '', space } = Route.useSearch()
-  const { defaultLocale } = useDocsContext()
+  const { defaultLocale, enabledLocales } = useDocsContext()
   const navigate = useNavigate()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
   useEffect(() => {
+    if (!multilingualEnabled) {
+      return
+    }
     navigate({
-      to: buildLocaleSearchPath(defaultLocale, q, space),
+      to: buildCanonicalSearchPath(true, defaultLocale, q, space),
       replace: true,
     })
-  }, [defaultLocale, navigate, q, space])
+  }, [defaultLocale, multilingualEnabled, navigate, q, space])
+
+  if (!multilingualEnabled) {
+    return <SearchRouteView locale={defaultLocale} query={q} space={space} />
+  }
 
   return <LoadingState message="Redirecting..." />
 }

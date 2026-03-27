@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 type DocsHelpcenterTranslationService struct {
 	translationRepo *repository.DocsHelpcenterTranslationRepository
 	hcRepo          *repository.DocsHelpcenterRepository
+	publicationRepo *repository.DocsHelpcenterPublicationRepository
+	redirectRepo    *repository.DocsRedirectRepository
 	docRepo         *repository.DocsDocumentRepository
 	contentRepo     *repository.DocsContentRepository
 	spaceRepo       *repository.DocsSpaceRepository
@@ -31,6 +34,8 @@ type DocsHelpcenterTranslationService struct {
 func NewDocsHelpcenterTranslationService(
 	translationRepo *repository.DocsHelpcenterTranslationRepository,
 	hcRepo *repository.DocsHelpcenterRepository,
+	publicationRepo *repository.DocsHelpcenterPublicationRepository,
+	redirectRepo *repository.DocsRedirectRepository,
 	docRepo *repository.DocsDocumentRepository,
 	contentRepo *repository.DocsContentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
@@ -40,6 +45,8 @@ func NewDocsHelpcenterTranslationService(
 	return &DocsHelpcenterTranslationService{
 		translationRepo: translationRepo,
 		hcRepo:          hcRepo,
+		publicationRepo: publicationRepo,
+		redirectRepo:    redirectRepo,
 		docRepo:         docRepo,
 		contentRepo:     contentRepo,
 		spaceRepo:       spaceRepo,
@@ -78,16 +85,46 @@ func (s *DocsHelpcenterTranslationService) UpdateLocales(ctx context.Context, wo
 		return nil, fmt.Errorf("default locale must be included in enabled locales")
 	}
 
-	return s.hcRepo.UpsertConfig(ctx, workspaceID, map[string]interface{}{
+	cfg, err := s.hcRepo.UpsertConfig(ctx, workspaceID, map[string]interface{}{
 		"default_locale":             defaultLocale,
 		"enabled_locales":            enabled,
 		"show_language_switcher":     req.ShowLanguageSwitcher,
 		"fallback_to_default_locale": req.FallbackToDefaultLocale,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
 func (s *DocsHelpcenterTranslationService) ListArticleTranslations(ctx context.Context, documentID string) ([]model.DocsHelpcenterArticleTranslation, error) {
-	return s.translationRepo.ListArticleTranslations(ctx, documentID)
+	translations, err := s.translationRepo.ListArticleTranslations(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range translations {
+		if translations[i].Status != model.DocsHelpcenterTranslationStatusPublished || translations[i].PublishedAt == nil {
+			translations[i].LivePublishedAt = nil
+			translations[i].LiveSlug = nil
+			translations[i].HasUnpublishedChanges = false
+			continue
+		}
+		publication, err := s.publicationRepo.GetArticlePublication(ctx, documentID, translations[i].Locale)
+		if err != nil {
+			return nil, err
+		}
+		if publication != nil {
+			translations[i].LivePublishedAt = &publication.PublishedAt
+			translations[i].LiveSlug = &publication.Slug
+			translations[i].HasUnpublishedChanges = translationHasUnpublishedChanges(&translations[i], publication)
+		}
+	}
+	return translations, nil
 }
 
 func (s *DocsHelpcenterTranslationService) ListSpaceTranslations(ctx context.Context, spaceID string) ([]model.DocsHelpcenterSpaceTranslation, error) {
@@ -141,7 +178,7 @@ func (s *DocsHelpcenterTranslationService) UpsertSpaceTranslation(ctx context.Co
 		WorkspaceID:     space.WorkspaceID,
 		Locale:          locale,
 		Name:            req.Name,
-		Slug:            req.Slug,
+		Slug:            normalizeSlugPointer(req.Slug),
 		Description:     req.Description,
 		Status:          status,
 		SourceUpdatedAt: &space.UpdatedAt,
@@ -149,6 +186,9 @@ func (s *DocsHelpcenterTranslationService) UpsertSpaceTranslation(ctx context.Co
 	}
 	if existing != nil {
 		translation.PublishedAt = existing.PublishedAt
+		if req.Slug == nil {
+			translation.Slug = existing.Slug
+		}
 	}
 
 	return s.translationRepo.UpsertSpaceTranslation(ctx, translation)
@@ -204,13 +244,16 @@ func (s *DocsHelpcenterTranslationService) UpsertCollectionTranslation(ctx conte
 		Locale:          locale,
 		Name:            req.Name,
 		Description:     req.Description,
-		Slug:            req.Slug,
+		Slug:            normalizeSlugPointer(req.Slug),
 		Status:          status,
 		SourceUpdatedAt: &collection.UpdatedAt,
 		SourceSynced:    true,
 	}
 	if existing != nil {
 		translation.PublishedAt = existing.PublishedAt
+		if req.Slug == nil {
+			translation.Slug = existing.Slug
+		}
 	}
 
 	return s.translationRepo.UpsertCollectionTranslation(ctx, translation)
@@ -270,7 +313,7 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 		CollectionID:    doc.CollectionID,
 		Locale:          locale,
 		Title:           req.Title,
-		Slug:            req.Slug,
+		Slug:            normalizeSlugPointer(req.Slug),
 		Excerpt:         req.Excerpt,
 		Content:         req.Content,
 		SEOTitle:        req.SEOTitle,
@@ -284,9 +327,28 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 		translation.ViewCount = existing.ViewCount
 		translation.HelpfulCount = existing.HelpfulCount
 		translation.NotHelpfulCount = existing.NotHelpfulCount
+		if req.Slug == nil {
+			translation.Slug = existing.Slug
+		}
 	}
 
-	return s.translationRepo.UpsertArticleTranslation(ctx, translation)
+	updated, err := s.translationRepo.UpsertArticleTranslation(ctx, translation)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil || updated.Status != model.DocsHelpcenterTranslationStatusPublished || updated.PublishedAt == nil {
+		return updated, nil
+	}
+	publication, err := s.publicationRepo.GetArticlePublication(ctx, documentID, locale)
+	if err != nil {
+		return nil, err
+	}
+	if publication != nil {
+		updated.LivePublishedAt = &publication.PublishedAt
+		updated.LiveSlug = &publication.Slug
+		updated.HasUnpublishedChanges = translationHasUnpublishedChanges(updated, publication)
+	}
+	return updated, nil
 }
 
 func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx context.Context, documentID, locale string) (*model.DocsHelpcenterArticleTranslation, error) {
@@ -398,12 +460,9 @@ Rules:
 	if err != nil {
 		return nil, fmt.Errorf("marshal translated tiptap content: %w", err)
 	}
-	slug := normalizedSlugOrFallback("", articleSlug(article), title, locale)
-
 	req := model.UpsertDocsHelpcenterArticleTranslationRequest{
 		Locale:         locale,
 		Title:          title,
-		Slug:           slug,
 		Excerpt:        draft.Excerpt,
 		Content:        json.RawMessage(contentJSON),
 		SEOTitle:       draft.SEOTitle,
@@ -417,16 +476,45 @@ func (s *DocsHelpcenterTranslationService) UnpublishArticleTranslation(ctx conte
 	if err := s.translationRepo.SetArticleTranslationStatus(ctx, documentID, locale, model.DocsHelpcenterTranslationStatusDraft, nil); err != nil {
 		return nil, err
 	}
-	return s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
+	updated, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
+	if err != nil {
+		return nil, err
+	}
+	if updated != nil {
+		updated.LivePublishedAt = nil
+		updated.LiveSlug = nil
+		updated.HasUnpublishedChanges = false
+	}
+	return updated, nil
 }
 
-func (s *DocsHelpcenterTranslationService) PublishSpaceTranslation(ctx context.Context, spaceID, locale string) (*model.DocsHelpcenterSpaceTranslation, error) {
+func (s *DocsHelpcenterTranslationService) PublishSpaceTranslation(ctx context.Context, spaceID, locale string, requestedSlug *string) (*model.DocsHelpcenterSpaceTranslation, error) {
 	translation, err := s.translationRepo.GetSpaceTranslation(ctx, spaceID, locale)
 	if err != nil {
 		return nil, err
 	}
 	if translation == nil {
 		return nil, fmt.Errorf("space translation not found")
+	}
+
+	space, err := s.spaceRepo.GetByID(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+
+	requestedSlug = normalizeSlugPointer(requestedSlug)
+	if translation.Slug == nil || strings.TrimSpace(*translation.Slug) == "" || requestedSlug != nil {
+		slug, err := s.ensureUniqueSpaceTranslationSlug(ctx, space.WorkspaceID, locale, spaceID, normalizedSlugOrFallback(stringPtrValue(requestedSlug), space.Slug, translation.Name, locale))
+		if err != nil {
+			return nil, err
+		}
+		if err := s.translationRepo.SetSpaceTranslationSlug(ctx, spaceID, locale, &slug); err != nil {
+			return nil, err
+		}
+		translation.Slug = &slug
 	}
 
 	now := time.Now().UTC()
@@ -462,7 +550,7 @@ func (s *DocsHelpcenterTranslationService) MarkSpaceTranslationReviewed(ctx cont
 		WorkspaceID:     translation.WorkspaceID,
 		Locale:          translation.Locale,
 		Name:            translation.Name,
-		Slug:            translation.Slug,
+		Slug:            normalizeSlugPointer(translation.Slug),
 		Description:     translation.Description,
 		Status:          status,
 		SourceUpdatedAt: translation.SourceUpdatedAt,
@@ -471,7 +559,7 @@ func (s *DocsHelpcenterTranslationService) MarkSpaceTranslationReviewed(ctx cont
 	})
 }
 
-func (s *DocsHelpcenterTranslationService) PublishCollectionTranslation(ctx context.Context, collectionID, locale string) (*model.DocsHelpcenterCollectionTranslation, error) {
+func (s *DocsHelpcenterTranslationService) PublishCollectionTranslation(ctx context.Context, collectionID, locale string, requestedSlug *string) (*model.DocsHelpcenterCollectionTranslation, error) {
 	translation, err := s.translationRepo.GetCollectionTranslation(ctx, collectionID, locale)
 	if err != nil {
 		return nil, err
@@ -486,6 +574,26 @@ func (s *DocsHelpcenterTranslationService) PublishCollectionTranslation(ctx cont
 	}
 	if spaceTranslation == nil || spaceTranslation.Status != model.DocsHelpcenterTranslationStatusPublished {
 		return nil, fmt.Errorf("published space translation is required before publishing this collection translation")
+	}
+
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil {
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	requestedSlug = normalizeSlugPointer(requestedSlug)
+	if translation.Slug == nil || strings.TrimSpace(*translation.Slug) == "" || requestedSlug != nil {
+		slug, err := s.ensureUniqueCollectionTranslationSlug(ctx, translation.SpaceID, locale, collectionID, normalizedSlugOrFallback(stringPtrValue(requestedSlug), collection.Slug, translation.Name, locale))
+		if err != nil {
+			return nil, err
+		}
+		if err := s.translationRepo.SetCollectionTranslationSlug(ctx, collectionID, locale, &slug); err != nil {
+			return nil, err
+		}
+		translation.Slug = &slug
 	}
 
 	now := time.Now().UTC()
@@ -523,7 +631,7 @@ func (s *DocsHelpcenterTranslationService) MarkCollectionTranslationReviewed(ctx
 		Locale:          translation.Locale,
 		Name:            translation.Name,
 		Description:     translation.Description,
-		Slug:            translation.Slug,
+		Slug:            normalizeSlugPointer(translation.Slug),
 		Status:          status,
 		SourceUpdatedAt: translation.SourceUpdatedAt,
 		SourceSynced:    true,
@@ -552,7 +660,7 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationReviewed(ctx co
 		CollectionID:    translation.CollectionID,
 		Locale:          translation.Locale,
 		Title:           translation.Title,
-		Slug:            translation.Slug,
+		Slug:            normalizeSlugPointer(translation.Slug),
 		Excerpt:         translation.Excerpt,
 		Content:         translation.Content,
 		ContentText:     translation.ContentText,
@@ -619,7 +727,7 @@ func (s *DocsHelpcenterTranslationService) SyncDefaultLocaleArticleMirror(ctx co
 		CollectionID:    doc.CollectionID,
 		Locale:          defaultLocale,
 		Title:           doc.Title,
-		Slug:            article.Slug,
+		Slug:            stringPointerOrNil(article.Slug),
 		Excerpt:         doc.Excerpt,
 		SEOTitle:        article.SEOTitle,
 		SEODescription:  article.SEODescription,
@@ -697,7 +805,7 @@ func (s *DocsHelpcenterTranslationService) RefreshSpaceSource(ctx context.Contex
 		WorkspaceID:     space.WorkspaceID,
 		Locale:          defaultLocale,
 		Name:            space.Name,
-		Slug:            space.Slug,
+		Slug:            stringPointerOrNil(space.Slug),
 		Status:          model.DocsHelpcenterTranslationStatusPublished,
 		SourceUpdatedAt: &space.UpdatedAt,
 		SourceSynced:    true,
@@ -743,7 +851,7 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 		Locale:          defaultLocale,
 		Name:            collection.Name,
 		Description:     collection.Description,
-		Slug:            collection.Slug,
+		Slug:            stringPointerOrNil(collection.Slug),
 		Status:          model.DocsHelpcenterTranslationStatusPublished,
 		SourceUpdatedAt: &collection.UpdatedAt,
 		SourceSynced:    true,
@@ -752,9 +860,48 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 	return err
 }
 
-// GenerateSpaceTranslation uses AI to translate a space's name, slug, and description for a locale.
-// If the space has no description, the LLM will generate one from the space name.
-// The result is saved as a published translation ready to unblock article publishing.
+func (s *DocsHelpcenterTranslationService) EnsureDefaultLocaleMirrorsForWorkspace(ctx context.Context, workspaceID string) error {
+	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	status := model.DocStatusPublished
+	for _, space := range spaces {
+		if space.Type != model.SpaceTypeExternalCapable {
+			continue
+		}
+
+		if err := s.RefreshSpaceSource(ctx, space.ID); err != nil {
+			return err
+		}
+
+		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+		if err != nil {
+			return err
+		}
+		for _, collection := range collections {
+			if err := s.RefreshCollectionSource(ctx, collection.ID); err != nil {
+				return err
+			}
+		}
+
+		docs, err := s.docRepo.List(ctx, workspaceID, &space.ID, nil, &status, nil, "", false)
+		if err != nil {
+			return err
+		}
+		for _, doc := range docs {
+			if err := s.RefreshArticleSource(ctx, doc.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// GenerateSpaceTranslation uses AI to translate a space's name and description for a locale.
+// The resulting translation stays draft until a human publishes it; the first publish derives the slug.
 func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.Context, spaceID, locale string) (*model.DocsHelpcenterSpaceTranslation, error) {
 	if s.llmProvider == nil {
 		return nil, fmt.Errorf("AI translation generation is unavailable")
@@ -786,16 +933,14 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 		"target_locale": locale,
 		"entity_type":   "help_center_space",
 		"name":          space.Name,
-		"slug":          space.Slug,
 	})
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: `You translate metadata for a public help center / knowledge base.
-Return strict JSON with shape {"name":"...","slug":"...","description":"..."}.
+Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
 - Translate the name and description into the target locale.
 - If description is empty, generate a short helpful description (1-2 sentences) based on the name, suitable for a public help center space.
-- The slug must be URL-safe: lowercase, hyphens only, no special characters. Translate it to match the localized name.
 - Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
 - Do not include markdown fences or commentary.`,
 		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
@@ -808,7 +953,6 @@ Rules:
 
 	var result struct {
 		Name        string `json:"name"`
-		Slug        string `json:"slug"`
 		Description string `json:"description"`
 	}
 	if err := llm.UnmarshalResponse(resp.Content, &result); err != nil {
@@ -821,25 +965,22 @@ Rules:
 		descPtr = &desc
 	}
 
-	now := time.Now().UTC()
 	translation := &model.DocsHelpcenterSpaceTranslation{
 		SpaceID:         space.ID,
 		WorkspaceID:     space.WorkspaceID,
 		Locale:          locale,
 		Name:            strings.TrimSpace(result.Name),
-		Slug:            normalizedSlugOrFallback(strings.TrimSpace(result.Slug), space.Slug, result.Name, locale),
+		Slug:            nil,
 		Description:     descPtr,
-		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		Status:          model.DocsHelpcenterTranslationStatusDraft,
 		SourceUpdatedAt: &space.UpdatedAt,
 		SourceSynced:    true,
-		PublishedAt:     &now,
 	}
 	return s.translationRepo.UpsertSpaceTranslation(ctx, translation)
 }
 
-// GenerateCollectionTranslation uses AI to translate a collection's name, slug, and description for a locale.
-// If the collection has no description, the LLM will generate one from the collection name.
-// The result is saved as a published translation ready to unblock article publishing.
+// GenerateCollectionTranslation uses AI to translate a collection's name and description for a locale.
+// The resulting translation stays draft until a human publishes it; the first publish derives the slug.
 func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx context.Context, collectionID, locale string) (*model.DocsHelpcenterCollectionTranslation, error) {
 	if s.llmProvider == nil {
 		return nil, fmt.Errorf("AI translation generation is unavailable")
@@ -884,18 +1025,16 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 		"target_locale": locale,
 		"entity_type":   "help_center_collection",
 		"name":          collection.Name,
-		"slug":          collection.Slug,
 		"description":   description,
 		"space_name":    space.Name,
 	})
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: `You translate metadata for a public help center / knowledge base.
-Return strict JSON with shape {"name":"...","slug":"...","description":"..."}.
+Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
 - Translate the name and description into the target locale.
 - If description is empty, generate a short helpful description (1-2 sentences) based on the name and parent space name, suitable for a public help center collection.
-- The slug must be URL-safe: lowercase, hyphens only, no special characters. Translate it to match the localized name.
 - Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
 - Do not include markdown fences or commentary.`,
 		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
@@ -908,7 +1047,6 @@ Rules:
 
 	var result struct {
 		Name        string `json:"name"`
-		Slug        string `json:"slug"`
 		Description string `json:"description"`
 	}
 	if err := llm.UnmarshalResponse(resp.Content, &result); err != nil {
@@ -921,19 +1059,17 @@ Rules:
 		descPtr = &desc
 	}
 
-	now := time.Now().UTC()
 	translation := &model.DocsHelpcenterCollectionTranslation{
 		CollectionID:    collection.ID,
 		WorkspaceID:     space.WorkspaceID,
 		SpaceID:         collection.SpaceID,
 		Locale:          locale,
 		Name:            strings.TrimSpace(result.Name),
-		Slug:            normalizedSlugOrFallback(strings.TrimSpace(result.Slug), collection.Slug, result.Name, locale),
+		Slug:            nil,
 		Description:     descPtr,
-		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		Status:          model.DocsHelpcenterTranslationStatusDraft,
 		SourceUpdatedAt: &collection.UpdatedAt,
 		SourceSynced:    true,
-		PublishedAt:     &now,
 	}
 	return s.translationRepo.UpsertCollectionTranslation(ctx, translation)
 }
@@ -1070,7 +1206,7 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationsForSourceChang
 	return s.translationRepo.MarkArticleTranslationsNeedsReview(ctx, documentID, defaultLocale, doc.UpdatedAt)
 }
 
-func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string) (*model.DocsHelpcenterArticleTranslation, error) {
+func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string, requestedSlug *string) (*model.DocsHelpcenterArticleTranslation, error) {
 	translation, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
 	if err != nil {
 		return nil, err
@@ -1121,12 +1257,117 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 		}
 	}
 
+	requestedSlug = normalizeSlugPointer(requestedSlug)
+	if translation.Slug == nil || strings.TrimSpace(stringPtrValue(translation.Slug)) == "" || requestedSlug != nil {
+		base := normalizedSlugOrFallback(stringPtrValue(requestedSlug), "", translation.Title, locale)
+		slug, err := s.ensureUniqueArticleTranslationSlug(ctx, doc.SpaceID, locale, documentID, base)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.translationRepo.SetArticleTranslationSlug(ctx, documentID, locale, &slug); err != nil {
+			return nil, err
+		}
+		translation.Slug = &slug
+	}
+
+	livePublication, err := s.publicationRepo.GetArticlePublication(ctx, documentID, locale)
+	if err != nil {
+		return nil, err
+	}
+	publication := buildArticleTranslationPublication(translation)
+	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
+		return nil, err
+	}
+
+	if livePublication != nil && livePublication.Slug != publication.Slug && s.redirectRepo != nil {
+		collectionSlug, err := s.localizedCollectionSlugForArticlePath(ctx, translation.CollectionID, locale)
+		if err != nil {
+			return nil, err
+		}
+		redirect := &model.DocsRedirect{
+			WorkspaceID:          translation.WorkspaceID,
+			SourcePath:           buildDocsRedirectPath(collectionSlug, &livePublication.Slug),
+			TargetCollectionSlug: collectionSlug,
+			TargetArticleSlug:    &publication.Slug,
+			Type:                 model.RedirectTypeSlugChange,
+		}
+		if err := s.redirectRepo.Create(ctx, redirect); err != nil {
+			slog.ErrorContext(ctx, "create localized slug change redirect", "error", err, "document_id", documentID, "locale", locale)
+		}
+	}
+
 	now := time.Now().UTC()
 	if err := s.translationRepo.SetArticleTranslationStatus(ctx, documentID, locale, model.DocsHelpcenterTranslationStatusPublished, &now); err != nil {
 		return nil, err
 	}
 
-	return s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
+	updated, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
+	if err != nil {
+		return nil, err
+	}
+	if updated != nil {
+		updated.LivePublishedAt = &publication.PublishedAt
+		updated.LiveSlug = &publication.Slug
+		updated.HasUnpublishedChanges = false
+	}
+	return updated, nil
+}
+
+func (s *DocsHelpcenterTranslationService) UpdateArticleTranslationSlug(ctx context.Context, workspaceID, documentID, locale, newSlug string) error {
+	translation, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
+	if err != nil {
+		return err
+	}
+	if translation == nil {
+		return fmt.Errorf("article translation not found")
+	}
+	if translation.WorkspaceID != workspaceID {
+		return fmt.Errorf("article translation not found")
+	}
+	if translation.Slug == nil || strings.TrimSpace(*translation.Slug) == "" {
+		return fmt.Errorf("article translation has no published slug")
+	}
+
+	cleaned := normalizeSlug(newSlug)
+	if cleaned == "" {
+		return fmt.Errorf("slug is required")
+	}
+	if cleaned == *translation.Slug {
+		return nil
+	}
+
+	slug, err := s.ensureUniqueArticleTranslationSlug(ctx, translation.SpaceID, locale, documentID, cleaned)
+	if err != nil {
+		return err
+	}
+	return s.translationRepo.SetArticleTranslationSlug(ctx, documentID, locale, &slug)
+}
+
+func (s *DocsHelpcenterTranslationService) localizedCollectionSlugForArticlePath(ctx context.Context, collectionID *string, locale string) (string, error) {
+	if collectionID == nil {
+		return "", nil
+	}
+
+	if locale != "" {
+		translation, err := s.translationRepo.GetCollectionTranslation(ctx, *collectionID, locale)
+		if err != nil {
+			return "", err
+		}
+		if translation != nil && translation.Slug != nil {
+			if slug := strings.TrimSpace(*translation.Slug); slug != "" {
+				return slug, nil
+			}
+		}
+	}
+
+	collection, err := s.collectionRepo.GetByID(ctx, *collectionID)
+	if err != nil {
+		return "", err
+	}
+	if collection == nil {
+		return "", fmt.Errorf("collection not found")
+	}
+	return strings.TrimSpace(collection.Slug), nil
 }
 
 func (s *DocsHelpcenterTranslationService) ResolveArticleTranslation(ctx context.Context, documentID, requestedLocale string) (*model.DocsHelpcenterArticleTranslation, string, bool, error) {
@@ -1183,6 +1424,48 @@ func localeEnabled(enabled model.DocsStringArray, locale string) bool {
 	return false
 }
 
+func buildArticleTranslationPublication(translation *model.DocsHelpcenterArticleTranslation) *model.DocsHelpcenterArticlePublication {
+	publishedAt := time.Now().UTC()
+	slug := strings.TrimSpace(stringPtrValue(translation.Slug))
+	return &model.DocsHelpcenterArticlePublication{
+		DocumentID:     translation.DocumentID,
+		WorkspaceID:    translation.WorkspaceID,
+		SpaceID:        translation.SpaceID,
+		CollectionID:   translation.CollectionID,
+		Locale:         translation.Locale,
+		Title:          strings.TrimSpace(translation.Title),
+		Slug:           slug,
+		Excerpt:        translation.Excerpt,
+		Content:        translation.Content,
+		ContentText:    translation.ContentText,
+		SEOTitle:       translation.SEOTitle,
+		SEODescription: translation.SEODescription,
+		PublishedAt:    publishedAt,
+	}
+}
+
+func translationHasUnpublishedChanges(translation *model.DocsHelpcenterArticleTranslation, publication *model.DocsHelpcenterArticlePublication) bool {
+	if publication == nil {
+		return false
+	}
+	if strings.TrimSpace(translation.Title) != strings.TrimSpace(publication.Title) {
+		return true
+	}
+	if stringPtrValue(translation.Slug) != publication.Slug {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.Excerpt)) != strings.TrimSpace(stringPtrValue(publication.Excerpt)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.SEOTitle)) != strings.TrimSpace(stringPtrValue(publication.SEOTitle)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.SEODescription)) != strings.TrimSpace(stringPtrValue(publication.SEODescription)) {
+		return true
+	}
+	return !bytes.Equal(compactJSON(translation.Content), compactJSON(publication.Content))
+}
+
 func validateEditableLocale(cfg *model.DocsHelpcenterConfig, locale string) (string, error) {
 	normalized := strings.TrimSpace(strings.ToLower(locale))
 	if normalized == "" {
@@ -1204,6 +1487,41 @@ func validateEditableLocale(cfg *model.DocsHelpcenterConfig, locale string) (str
 
 var nonSlugChars = regexp.MustCompile(`[^a-z0-9-]+`)
 
+func (s *DocsHelpcenterTranslationService) ensureUniqueSpaceTranslationSlug(ctx context.Context, workspaceID, locale, excludeSpaceID, base string) (string, error) {
+	return ensureUniqueSlug(base, func(candidate string) (bool, error) {
+		return s.translationRepo.SpaceTranslationSlugExists(ctx, workspaceID, locale, candidate, excludeSpaceID)
+	})
+}
+
+func (s *DocsHelpcenterTranslationService) ensureUniqueCollectionTranslationSlug(ctx context.Context, spaceID, locale, excludeCollectionID, base string) (string, error) {
+	return ensureUniqueSlug(base, func(candidate string) (bool, error) {
+		return s.translationRepo.CollectionTranslationSlugExists(ctx, spaceID, locale, candidate, excludeCollectionID)
+	})
+}
+
+func (s *DocsHelpcenterTranslationService) ensureUniqueArticleTranslationSlug(ctx context.Context, spaceID, locale, excludeDocumentID, base string) (string, error) {
+	return ensureUniqueSlug(base, func(candidate string) (bool, error) {
+		return s.translationRepo.ArticleTranslationSlugExists(ctx, spaceID, locale, candidate, excludeDocumentID)
+	})
+}
+
+func ensureUniqueSlug(base string, exists func(candidate string) (bool, error)) (string, error) {
+	if base == "" {
+		base = "article"
+	}
+	candidate := base
+	for i := 2; ; i++ {
+		taken, err := exists(candidate)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 func normalizedSlugOrFallback(candidate, sourceSlug, title, locale string) string {
 	if normalized := normalizeSlug(candidate); normalized != "" {
 		return normalized
@@ -1216,6 +1534,25 @@ func normalizedSlugOrFallback(candidate, sourceSlug, title, locale string) strin
 		base = "article"
 	}
 	return fmt.Sprintf("%s-%s", base, normalizeSlug(locale))
+}
+
+func normalizeSlugPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	normalized := normalizeSlug(*value)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
+}
+
+func stringPointerOrNil(value string) *string {
+	normalized := normalizeSlug(value)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
 }
 
 func normalizeSlug(value string) string {

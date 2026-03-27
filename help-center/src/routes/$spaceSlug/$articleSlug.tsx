@@ -1,9 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
-import { useNavigate } from '@tanstack/react-router'
-import { useSpaceNavigation } from '@/hooks/queries'
+import { ArticleRouteView } from '@/components/routes/ArticleRouteView'
+import {
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+  isMultilingualEnabled,
+} from '@/lib/locale'
 
 export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
   component: LegacyArticleRedirect,
@@ -11,44 +15,40 @@ export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
 
 function LegacyArticleRedirect() {
   const { spaceSlug, articleSlug } = Route.useParams()
-  const { subdomain, defaultLocale } = useDocsContext()
+  const { defaultLocale, enabledLocales } = useDocsContext()
   const navigate = useNavigate()
-  const { data: navigation, isLoading } = useSpaceNavigation(
-    subdomain,
-    defaultLocale,
-    spaceSlug,
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const normalizedSpaceSlug = spaceSlug.trim().toLowerCase()
+  const isKnownLocaleSlug = enabledLocales.some(
+    (locale) => locale.toLowerCase() === normalizedSpaceSlug,
   )
 
   useEffect(() => {
-    if (!navigation) return
-
-    const collection = navigation.find((item) =>
-      item.articles.some((article) => article.slug === articleSlug),
-    )
-
-    if (collection) {
+    if (multilingualEnabled) {
       navigate({
-        to: '/$locale/$spaceSlug/$collectionSlug/$articleSlug',
-        params: {
-          locale: defaultLocale,
-          spaceSlug,
-          collectionSlug: collection.slug,
-          articleSlug,
-        },
+        to: buildCanonicalArticlePath(true, defaultLocale, spaceSlug, articleSlug),
         replace: true,
       })
       return
     }
 
-    navigate({
-      to: '/$locale/$spaceSlug',
-      params: { locale: defaultLocale, spaceSlug },
-      replace: true,
-    })
-  }, [articleSlug, defaultLocale, navigate, navigation, spaceSlug])
+    if (isKnownLocaleSlug) {
+      navigate({
+        to: buildCanonicalCollectionPath(false, defaultLocale, articleSlug),
+        replace: true,
+      })
+    }
+  }, [articleSlug, defaultLocale, isKnownLocaleSlug, multilingualEnabled, navigate, spaceSlug])
 
-  if (isLoading) {
-    return <LoadingState message="Redirecting..." />
+  if (!multilingualEnabled && !isKnownLocaleSlug) {
+    return (
+      <ArticleRouteView
+        locale={defaultLocale}
+        collectionSlug={spaceSlug}
+        articleSlug={articleSlug}
+        multilingualEnabled={false}
+      />
+    )
   }
 
   return <LoadingState message="Redirecting..." />

@@ -22,22 +22,20 @@ export const helpCenterService = {
   getCollection: (
     subdomain: string,
     locale: string,
-    spaceSlug: string,
     collectionSlug: string,
   ) =>
     api.get<CollectionPage>(
-      `/hc/${subdomain}/${locale}/spaces/${spaceSlug}/collections/${collectionSlug}`,
+      `/hc/${subdomain}/${locale}/collections/${collectionSlug}`,
     ),
 
   getArticle: (
     subdomain: string,
     locale: string,
-    spaceSlug: string,
     collectionSlug: string,
     articleSlug: string,
   ) =>
     api.get<ArticleDetail>(
-      `/hc/${subdomain}/${locale}/spaces/${spaceSlug}/collections/${collectionSlug}/articles/${articleSlug}`,
+      `/hc/${subdomain}/${locale}/collections/${collectionSlug}/articles/${articleSlug}`,
     ),
 
   search: (subdomain: string, locale: string, query: string, spaceSlug?: string) =>
@@ -48,13 +46,12 @@ export const helpCenterService = {
   submitFeedback: (
     subdomain: string,
     locale: string,
-    spaceSlug: string,
     collectionSlug: string,
     articleSlug: string,
     payload: { is_helpful: boolean; comment?: string },
   ) =>
     api.post(
-      `/hc/${subdomain}/${locale}/spaces/${spaceSlug}/collections/${collectionSlug}/articles/${articleSlug}/feedback`,
+      `/hc/${subdomain}/${locale}/collections/${collectionSlug}/articles/${articleSlug}/feedback`,
       payload,
     ),
 

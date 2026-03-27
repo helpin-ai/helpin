@@ -1,18 +1,20 @@
-import { Link } from '@tanstack/react-router'
+import { useDocsContext } from '@/contexts/DocsContext'
+import { buildCanonicalCollectionPath, isMultilingualEnabled } from '@/lib/locale'
 
 interface BreadcrumbsProps {
   locale: string
-  spaceSlug: string
   collectionName?: string | null
   collectionSlug?: string | null
 }
 
 export function Breadcrumbs({
   locale,
-  spaceSlug,
   collectionName,
   collectionSlug,
 }: BreadcrumbsProps) {
+  const { enabledLocales } = useDocsContext()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+
   if (!collectionName) return null
 
   if (!collectionSlug) {
@@ -25,13 +27,16 @@ export function Breadcrumbs({
 
   return (
     <nav className="flex items-center text-[14px]">
-      <Link
-        to="/$locale/$spaceSlug/$collectionSlug"
-        params={{ locale, spaceSlug, collectionSlug }}
+      <a
+        href={buildCanonicalCollectionPath(
+          multilingualEnabled,
+          locale,
+          collectionSlug,
+        )}
         className="font-medium text-primary transition-colors hover:text-primary/80"
       >
         {collectionName}
-      </Link>
+      </a>
     </nav>
   )
 }
