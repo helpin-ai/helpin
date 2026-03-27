@@ -55,6 +55,25 @@ vi.mock('@/components/ui/popover', () => ({
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/command', () => ({
+  Command: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandEmpty: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
+  CommandItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode
+    onSelect?: () => void
+  }) => (
+    <button type="button" onClick={() => onSelect?.()}>
+      {children}
+    </button>
+  ),
+  CommandList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('@/components/ui/tiptap-editor', () => ({
   TiptapEditor: ({ content, onChange }: { content: string; onChange: (value: string) => void }) => (
     <textarea value={content} onChange={(event) => onChange(event.target.value)} />

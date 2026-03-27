@@ -36,6 +36,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
@@ -68,6 +69,7 @@ import { buildAssignableMemberNameMap, findAssignableMember } from "@/lib/assign
 import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
 import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
+import { buildSprintOptionGroups } from "@/lib/pmSprintOptions";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/tiptapMarkdown";
 import { toast } from "sonner";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
@@ -189,6 +191,74 @@ function SidebarPopoverSelect<T extends string>({
             </button>
           ))}
         </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function GroupedSidebarPopoverSelect<T extends string>({
+  value,
+  groups,
+  onChange,
+  renderTrigger,
+  searchPlaceholder = 'Search...',
+  emptyLabel = 'No options',
+}: {
+  value: T;
+  groups: Array<{ key: string; label: string; options: { value: T; label: string }[] }>;
+  onChange: (value: T) => void;
+  renderTrigger: () => React.ReactNode;
+  searchPlaceholder?: string;
+  emptyLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        >
+          {renderTrigger()}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="start">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>{emptyLabel}</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="No sprint"
+                onSelect={() => {
+                  onChange('__none__' as T);
+                  setOpen(false);
+                }}
+              >
+                <span>No sprint</span>
+                {value === '__none__' ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+              </CommandItem>
+            </CommandGroup>
+            {groups.map((group) => (
+              <CommandGroup key={group.key} heading={group.label}>
+                {group.options.map((option) => (
+                  <CommandItem
+                    key={option.value}
+                    value={`${group.label} ${option.label}`}
+                    onSelect={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{option.label}</span>
+                    {value === option.value ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   );
@@ -362,6 +432,14 @@ export function CreateStoryModal({
     });
   }, [labels, form.team_id]);
 
+  useEffect(() => {
+    if (!form.sprint_id) return;
+    const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
+    if (!selectedSprint) return;
+    if (!form.team_id || selectedSprint.sprint.team_id === form.team_id) return;
+    setForm((current) => (current.sprint_id ? { ...current, sprint_id: '' } : current));
+  }, [form.sprint_id, form.team_id, sprints]);
+
   const canSubmit = useMemo(
     () =>
       descriptionPendingUploads === 0 &&
@@ -388,6 +466,11 @@ export function CreateStoryModal({
         .name ?? "None"
     );
   }, [form.sprint_id, sprints]);
+
+  const sprintOptionGroups = useMemo(
+    () => buildSprintOptionGroups(sprints, teams, form.team_id || null),
+    [form.team_id, sprints, teams],
+  );
 
   const currentTeamName = useMemo(() => {
     if (!form.team_id) return "Select team";
@@ -1271,18 +1354,17 @@ export function CreateStoryModal({
                 {/* Sprint */}
                 {fieldVis.sprint && (
                 <MetadataRow icon={SprintIcon} label="Sprint">
-                  <SidebarPopoverSelect
+                  <GroupedSidebarPopoverSelect
                     value={form.sprint_id || "__none__"}
-                    options={[
-                      { value: "__none__", label: "No sprint" },
-                      ...sprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
-                    ]}
+                    groups={sprintOptionGroups}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
                         sprint_id: value === "__none__" ? "" : value,
                       }))
                     }
+                    searchPlaceholder="Search sprints..."
+                    emptyLabel="No sprints"
                     renderTrigger={() => <span>{currentSprintName}</span>}
                   />
                 </MetadataRow>
