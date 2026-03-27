@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-  testDir: './e2e',
-  testMatch: /support-.*\.spec\.ts/,
+  testDir: './e2e/support',
+  testIgnore: ['**/live/**'],
+  testMatch: /.*\.spec\.ts/,
   timeout: 30_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -11,7 +12,7 @@ export default defineConfig({
   reporter: 'list',
   webServer: {
     command: 'pnpm exec vite --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173/e2e/support-presence-harness.html',
+    url: 'http://127.0.0.1:4173/e2e/support/harness/support-presence-harness.html',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
