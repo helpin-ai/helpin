@@ -1569,6 +1569,15 @@ export interface SupportAttachmentPayload {
   url: string;
 }
 
+export interface SupportLinkPreview {
+  url: string;
+  title: string;
+  description?: string;
+  site_name?: string;
+  image_url?: string;
+  host: string;
+}
+
 export interface SupportMessage {
   id: string;
   workspace_id: string;
@@ -1687,6 +1696,7 @@ export interface AIMessageMetadata {
   ai_model: string;
   ai_tokens_used: number;
   ai_agent_id: string;
+  link_previews?: SupportLinkPreview[];
 }
 
 export interface AgentKnowledgeSource {

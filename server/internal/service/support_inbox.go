@@ -39,6 +39,7 @@ type SupportInboxService struct {
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
 	attachmentService       *SupportAttachmentService
+	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 }
@@ -220,6 +221,15 @@ func (s *SupportInboxService) SetAttachmentService(attachmentService *SupportAtt
 		return nil
 	}
 	s.attachmentService = attachmentService
+	return s
+}
+
+// SetLinkPreviewService injects the support message link preview enricher.
+func (s *SupportInboxService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.linkPreviewService = linkPreviewService
 	return s
 }
 
@@ -724,6 +734,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if len(mentionedUserIDs) > 0 {
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, msg)
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {

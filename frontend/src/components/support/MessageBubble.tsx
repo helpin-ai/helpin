@@ -2,11 +2,11 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import { CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
-import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
-import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata } from './helpers';
+import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -65,6 +65,50 @@ const SENDER_TYPE_LABELS: Record<string, string> = {
   ai: 'AI Agent',
 };
 
+function previewHostLabel(preview: SupportLinkPreview): string {
+  try {
+    return new URL(preview.url).hostname.replace(/^www\./, '') || preview.host;
+  } catch {
+    return preview.host.replace(/^www\./, '');
+  }
+}
+
+function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
+  return (
+    <a
+      href={preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`block overflow-hidden rounded-xl border transition-colors hover:opacity-95 ${
+        isOutgoing
+          ? 'border-white/20 bg-white/10 text-white'
+          : 'border-border bg-background text-foreground'
+      }`}
+    >
+      {preview.image_url ? (
+        <img
+          src={preview.image_url}
+          alt={preview.title}
+          className="h-36 w-full object-cover"
+          loading="lazy"
+        />
+      ) : null}
+      <div className="space-y-1.5 p-3">
+        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
+          <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
+          <ExternalLink className="h-3 w-3 shrink-0" />
+        </div>
+        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
+        {preview.description ? (
+          <p className={`text-xs leading-relaxed ${isOutgoing ? 'text-white/80' : 'text-muted-foreground'}`}>
+            {preview.description}
+          </p>
+        ) : null}
+      </div>
+    </a>
+  );
+}
+
 function findTrailingAIContractStart(content: string): number {
   const trimmed = content.trimEnd();
   if (!trimmed.endsWith('}')) return -1;
@@ -119,6 +163,7 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
+  const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
   const isCustomer = effectiveSenderType === 'customer';
   const isAI = effectiveSenderType === 'ai';
@@ -175,7 +220,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
-  const showBubble = !!displayContent || fileAttachments.length > 0;
+  const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -344,6 +389,17 @@ export const MessageBubble = memo(function MessageBubble({
                           <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
                           <Download className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
                         </a>
+                      ))}
+                    </div>
+                  )}
+                  {linkPreviews.length > 0 && (
+                    <div className={`${displayContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                      {linkPreviews.map((preview) => (
+                        <LinkPreviewCard
+                          key={`${message.id}:${preview.url}`}
+                          preview={preview}
+                          isOutgoing={!isCustomer}
+                        />
                       ))}
                     </div>
                   )}

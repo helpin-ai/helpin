@@ -80,6 +80,47 @@ function formatSourceCount(count: number): string {
   return `${count} source${count === 1 ? '' : 's'}`;
 }
 
+function linkPreviewHost(preview: NonNullable<Message['linkPreviews']>[number]): string {
+  try {
+    return new URL(preview.url).hostname.replace(/^www\./, '') || preview.host;
+  } catch {
+    return preview.host.replace(/^www\./, '');
+  }
+}
+
+function LinkPreviews({ previews, outgoing }: { previews: NonNullable<Message['linkPreviews']>; outgoing: boolean }) {
+  if (previews.length === 0) return null;
+  return (
+    <div className="helpin-link-previews">
+      {previews.map((preview, index) => (
+        <a
+          key={`${preview.url}-${index}`}
+          className={`helpin-link-preview ${outgoing ? 'helpin-link-preview--outgoing' : ''}`}
+          href={preview.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {preview.image_url ? (
+            <img
+              src={preview.image_url}
+              alt={preview.title}
+              className="helpin-link-preview-image"
+              loading="lazy"
+            />
+          ) : null}
+          <div className="helpin-link-preview-body">
+            <div className="helpin-link-preview-host">{preview.site_name || linkPreviewHost(preview)}</div>
+            <div className="helpin-link-preview-title">{preview.title}</div>
+            {preview.description ? (
+              <div className="helpin-link-preview-description">{preview.description}</div>
+            ) : null}
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }) {
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -168,8 +209,9 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
   const hasSources = Boolean(message.sources && message.sources.length > 0);
+  const hasLinkPreviews = Boolean(message.linkPreviews && message.linkPreviews.length > 0);
   const showConfidence = hasSources && message.aiConfidence !== undefined;
-  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources;
+  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews;
   const hasMeta = hasSources || showConfidence;
 
   const agentName = message.senderName;
@@ -227,6 +269,10 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                   </div>
                 )}
 
+                {hasLinkPreviews && message.linkPreviews && (
+                  <LinkPreviews previews={message.linkPreviews} outgoing={false} />
+                )}
+
                 {message.attachments && message.attachments.length > 0 && (
                   <FileAttachments attachments={message.attachments} />
                 )}
@@ -248,6 +294,9 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
               />
               {message.viaChannel === 'email' && (
                 <div className="helpin-message-channel">Via email</div>
+              )}
+              {hasLinkPreviews && message.linkPreviews && (
+                <LinkPreviews previews={message.linkPreviews} outgoing />
               )}
               {message.attachments && message.attachments.length > 0 && (
                 <FileAttachments attachments={message.attachments} />

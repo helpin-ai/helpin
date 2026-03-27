@@ -1,12 +1,17 @@
 import { create } from 'zustand';
 
 export type WSSendFn = (type: string, data: Record<string, unknown>) => void;
+export interface AgentTypingState {
+  content: string;
+  name?: string;
+  avatarUrl?: string;
+}
 
 interface SupportPresenceState {
   // Typing indicators: conversationId → content string when typing, false when not
   typingIndicators: Record<string, string | false>;
-  // Agent typing: conversationId → map of actorId → content (supports multiple agents)
-  agentTyping: Record<string, Record<string, string>>;
+  // Agent typing: conversationId → map of actorId → metadata (supports multiple agents)
+  agentTyping: Record<string, Record<string, AgentTypingState>>;
   // Viewing presence: conversationId → set of agent userIds currently viewing
   viewingAgents: Record<string, string[]>;
   // Online visitors: anonymousId → true (set-like record for Zustand compatibility)
@@ -18,7 +23,12 @@ interface SupportPresenceState {
 
   // Actions
   setTyping: (conversationId: string, isTyping: boolean, content?: string) => void;
-  setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
+  setAgentTyping: (
+    conversationId: string,
+    actorId: string | null,
+    content?: string,
+    metadata?: { name?: string; avatarUrl?: string }
+  ) => void;
   clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
   setVisitorOnline: (anonymousId: string) => void;
@@ -58,7 +68,7 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
     set((state) => ({
       typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping ? (content ?? '') : false },
     })),
-  setAgentTyping: (conversationId, actorId, content) =>
+  setAgentTyping: (conversationId, actorId, content, metadata) =>
     set((state) => {
       const current = state.agentTyping[conversationId] ?? {};
       if (!actorId) {
@@ -66,10 +76,18 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
         if (Object.keys(current).length === 0) return state;
         return { agentTyping: { ...state.agentTyping, [conversationId]: {} } };
       }
+      const existing = current[actorId];
       return {
         agentTyping: {
           ...state.agentTyping,
-          [conversationId]: { ...current, [actorId]: content ?? '' },
+          [conversationId]: {
+            ...current,
+            [actorId]: {
+              content: content ?? '',
+              name: metadata?.name ?? existing?.name,
+              avatarUrl: metadata?.avatarUrl ?? existing?.avatarUrl,
+            },
+          },
         },
       };
     }),

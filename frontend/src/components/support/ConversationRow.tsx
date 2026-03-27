@@ -3,7 +3,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
@@ -21,18 +21,83 @@ const TypingDotsPill = memo(function TypingDotsPill() {
   );
 });
 
-const AgentAvatar = memo(function AgentAvatar({ userId, tooltip }: { userId: string; tooltip?: string }) {
+const AgentTypingActivity = memo(function AgentTypingActivity({
+  viewingAgentIds,
+  agentTypingMap,
+  agentTypingEntries,
+  members,
+}: {
+  viewingAgentIds: string[];
+  agentTypingMap: Record<string, AgentTypingState> | undefined;
+  agentTypingEntries: Array<[string, AgentTypingState]>;
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <TypingDotsPill />
+      <div className="flex items-center flex-row-reverse">
+        {viewingAgentIds.map((uid) => (
+          <AgentAvatar
+            key={uid}
+            userId={uid}
+            tooltip={agentTypingMap?.[uid] !== undefined ? 'typing' : 'viewing'}
+            nameOverride={agentTypingMap?.[uid]?.name}
+            avatarUrlOverride={agentTypingMap?.[uid]?.avatarUrl}
+          />
+        ))}
+        {agentTypingEntries
+          .filter(([uid]) => !viewingAgentIds.includes(uid))
+          .map(([uid, typing]) => {
+            const identity = resolveAgentIdentity(uid, typing, members);
+            return (
+              <AgentAvatar
+                key={uid}
+                userId={uid}
+                tooltip={typing.content ? `typing: ${typing.content}` : 'typing'}
+                nameOverride={identity.name}
+                avatarUrlOverride={identity.avatarUrl}
+              />
+            );
+          })}
+      </div>
+    </div>
+  );
+});
+
+function resolveAgentIdentity(
+  userId: string,
+  typingState: AgentTypingState | undefined,
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>
+) {
+  const member = members.find((m) => m.user_id === userId);
+  const name = typingState?.name || member?.full_name || member?.email || 'Agent';
+  const avatarUrl = typingState?.avatarUrl || member?.avatar_url || undefined;
+  return { name, avatarUrl };
+}
+
+const AgentAvatar = memo(function AgentAvatar({
+  userId,
+  tooltip,
+  nameOverride,
+  avatarUrlOverride,
+}: {
+  userId: string;
+  tooltip?: string;
+  nameOverride?: string;
+  avatarUrlOverride?: string;
+}) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id ?? '');
   const { data: members = [] } = useWorkspaceMembers(wsId);
   const member = members.find((m) => m.user_id === userId);
-  const name = member?.full_name || member?.email || 'Agent';
+  const name = nameOverride || member?.full_name || member?.email || 'Agent';
+  const avatarUrl = avatarUrlOverride || member?.avatar_url || undefined;
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className={`flex h-5 w-5 -ml-1.5 first:ml-0 items-center justify-center rounded-full text-[9px] font-medium ring-2 ring-background animate-in zoom-in-75 duration-300 ${getAvatarColor(userId)}`}>
-          {member?.avatar_url ? (
-            <img src={member.avatar_url} alt={name} className="h-5 w-5 rounded-full object-cover" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} className="h-5 w-5 rounded-full object-cover" />
           ) : (
             getInitial(name)
           )}
@@ -134,10 +199,10 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
               ) : isAgentTyping ? (
                 <span className="italic text-blue-600/70 dark:text-blue-400/70">
                   {(() => {
-                    const [uid, content] = agentTypingEntries[0];
-                    const m = members.find((mb) => mb.user_id === uid);
-                    const name = m?.full_name?.split(' ')[0] || 'Agent';
-                    return content ? `${name}: ${content}` : `${name} is typing…`;
+                    const [uid, typing] = agentTypingEntries[0];
+                    const { name } = resolveAgentIdentity(uid, typing, members);
+                    const shortName = name.split(' ')[0] || 'Agent';
+                    return `${shortName} is typing…`;
                   })()}
                 </span>
               ) : hasDraft ? (
@@ -159,26 +224,24 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
 
             {/* Activity indicators or status icon */}
             <div className="flex shrink-0 items-center">
-              {(isCustomerTyping || isAgentTyping) ? (
+              {isCustomerTyping ? (
                 <TypingDotsPill />
+              ) : isAgentTyping ? (
+                <AgentTypingActivity
+                  viewingAgentIds={viewingAgentIds}
+                  agentTypingMap={agentTypingMap}
+                  agentTypingEntries={agentTypingEntries}
+                  members={members}
+                />
               ) : isUnread ? (
                 <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white animate-in zoom-in-75 duration-200">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
-              ) : (agentTypingEntries.length > 0 || viewingAgentIds.length > 0) ? (
+              ) : viewingAgentIds.length > 0 ? (
                 <div className="flex items-center flex-row-reverse">
                   {viewingAgentIds.map((uid) => (
-                    <AgentAvatar
-                      key={uid}
-                      userId={uid}
-                      tooltip={agentTypingMap?.[uid] !== undefined ? 'responding' : 'viewing'}
-                    />
+                    <AgentAvatar key={uid} userId={uid} tooltip="viewing" />
                   ))}
-                  {agentTypingEntries
-                    .filter(([uid]) => !viewingAgentIds.includes(uid))
-                    .map(([uid]) => (
-                      <AgentAvatar key={uid} userId={uid} tooltip="responding" />
-                    ))}
                 </div>
               ) : (conversation.status === 'resolved' || conversation.status === 'closed') ? (
                 <Tooltip>

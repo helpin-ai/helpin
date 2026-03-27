@@ -1,5 +1,5 @@
 export type { Conversation } from './types/conversation';
-export type { Message, AiSource, Attachment, PendingAttachment } from './types/message';
+export type { Message, AiSource, Attachment, LinkPreview, PendingAttachment } from './types/message';
 export type { Organization } from './types/organization';
 export type { User } from './types/user';
 export type { Workspace, WorkspaceBranding } from './types/workspace';

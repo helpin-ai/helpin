@@ -225,6 +225,7 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetLinkPreviewService(service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs))
 	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
 	go func() {
 		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {

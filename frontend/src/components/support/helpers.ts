@@ -1,4 +1,4 @@
-import type { AIMessageMetadata, SupportMessage } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportLinkPreview, SupportMessage } from '@/lib/pmTypes';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 
@@ -96,4 +96,21 @@ export function isAIMessage(message: Pick<SupportMessage, 'sender_type' | 'metad
 
 export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {
   return isAIMessage(message) ? 'ai' : message.sender_type;
+}
+
+export function parseSupportLinkPreviews(metadata?: string): SupportLinkPreview[] {
+  if (!metadata) return [];
+  try {
+    const parsed = JSON.parse(metadata) as { link_previews?: unknown };
+    if (!Array.isArray(parsed.link_previews)) {
+      return [];
+    }
+    return parsed.link_previews.filter((preview): preview is SupportLinkPreview => {
+      if (!preview || typeof preview !== 'object') return false;
+      const candidate = preview as Partial<SupportLinkPreview>;
+      return typeof candidate.url === 'string' && typeof candidate.title === 'string';
+    });
+  } catch {
+    return [];
+  }
 }

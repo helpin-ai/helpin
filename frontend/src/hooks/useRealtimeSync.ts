@@ -126,8 +126,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         const store = useSupportPresenceStore.getState()
         const convId = event.entity_id
         const content = (event.data?.content as string) || ''
+        const agentName = typeof event.data?.agent_name === 'string' ? event.data.agent_name : undefined
+        const agentAvatar = typeof event.data?.agent_avatar === 'string' ? event.data.agent_avatar : undefined
         const isWidget = event.actor_id?.startsWith('widget:')
-        const timerKey = `${convId}:${isWidget ? 'customer' : 'agent'}`
+        const timerKey = `${convId}:${isWidget ? 'customer' : `agent:${event.actor_id ?? 'unknown'}`}`
 
         // Clear any existing auto-clear timer for this conversation+actor type
         const prevTimer = typingTimers.current.get(timerKey)
@@ -142,7 +144,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         } else {
           // Agent typing — supports multiple agents per conversation
           if (event.action === 'typing_started') {
-            store.setAgentTyping(convId, event.actor_id, content)
+            store.setAgentTyping(convId, event.actor_id, content, {
+              name: agentName,
+              avatarUrl: agentAvatar,
+            })
           } else {
             store.clearOneAgentTyping(convId, event.actor_id)
           }

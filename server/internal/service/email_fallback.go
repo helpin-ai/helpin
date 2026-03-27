@@ -42,6 +42,7 @@ type EmailFallbackService struct {
 	sessionRepo         *repository.SupportInboxSessionRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	notificationService *NotificationService
+	linkPreviewService  SupportMessageLinkPreviewer
 	replyDomain         string
 	appBaseURL          string
 	logger              *slog.Logger
@@ -58,6 +59,15 @@ func (s *EmailFallbackService) SetNotificationService(notificationService *Notif
 		return nil
 	}
 	s.notificationService = notificationService
+	return s
+}
+
+// SetLinkPreviewService injects the support message link preview enricher.
+func (s *EmailFallbackService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.linkPreviewService = linkPreviewService
 	return s
 }
 
@@ -283,19 +293,22 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		senderName = "Customer"
 	}
 	viaEmail := "email"
+	msg := &model.SupportMessage{
+		WorkspaceID:       conv.WorkspaceID,
+		ConversationID:    conv.ID,
+		SenderType:        "customer",
+		SenderDisplayName: &senderName,
+		Content:           content,
+		IsInternal:        false,
+		MessageType:       "reply",
+		ViaChannel:        &viaEmail,
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, msg)
+	}
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		msg := &model.SupportMessage{
-			WorkspaceID:       conv.WorkspaceID,
-			ConversationID:    conv.ID,
-			SenderType:        "customer",
-			SenderDisplayName: &senderName,
-			Content:           content,
-			IsInternal:        false,
-			MessageType:       "reply",
-			ViaChannel:        &viaEmail,
-		}
 		if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
 			return err
 		}

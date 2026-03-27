@@ -457,6 +457,9 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		MessageType:       "reply",
 		ViaChannel:        strPtr("widget"),
 	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, msg)
+	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err

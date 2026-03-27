@@ -431,6 +431,7 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackTestEnv(t, settings)
 	defer env.redisServer.Close()
+	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	conversationID := "88888888-8888-8888-8888-888888888888"
@@ -454,11 +455,11 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
 		Subject:           "Re: Inbound test",
 		MessageID:         "pm-in-1",
-		StrippedTextReply: "Thanks, that helps.",
-		HtmlBody:          "<p>Thanks, that helps.</p>",
+		StrippedTextReply: "Thanks, that helps. https://example.com",
+		HtmlBody:          "<p>Thanks, that helps. https://example.com</p>",
 	}
 
-	rawInboundPayload := `{"MessageStream":"inbound","MessageID":"pm-in-1","OriginalRecipient":"conv-` + conversationID + `@replies.helpin.ai","To":"conv-` + conversationID + `@replies.helpin.ai","StrippedTextReply":"Thanks, that helps."}`
+	rawInboundPayload := `{"MessageStream":"inbound","MessageID":"pm-in-1","OriginalRecipient":"conv-` + conversationID + `@replies.helpin.ai","To":"conv-` + conversationID + `@replies.helpin.ai","StrippedTextReply":"Thanks, that helps. https://example.com"}`
 	if err := env.service.ProcessInboundEmail(ctx, payload, rawInboundPayload); err != nil {
 		t.Fatalf("process inbound email: %v", err)
 	}
@@ -476,6 +477,9 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	if messages[0].ViaChannel == nil || *messages[0].ViaChannel != "email" {
 		t.Fatalf("expected via_channel=email, got %#v", messages[0].ViaChannel)
 	}
+	if !strings.Contains(messages[0].Metadata, `"link_previews"`) {
+		t.Fatalf("expected link preview metadata, got %q", messages[0].Metadata)
+	}
 
 	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
 	if err != nil {
@@ -490,7 +494,7 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-in-1" {
 		t.Fatalf("unexpected inbound postmark message id: %#v", logs[0].PostmarkMessageID)
 	}
-	if !strings.Contains(logs[0].RawBody, `"MessageID":"pm-in-1"`) || !strings.Contains(logs[0].RawBody, `"StrippedTextReply":"Thanks, that helps."`) {
+	if !strings.Contains(logs[0].RawBody, `"MessageID":"pm-in-1"`) || !strings.Contains(logs[0].RawBody, `"StrippedTextReply":"Thanks, that helps. https://example.com"`) {
 		t.Fatalf("expected raw payload json to be stored, got %q", logs[0].RawBody)
 	}
 

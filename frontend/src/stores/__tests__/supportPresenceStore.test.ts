@@ -6,6 +6,7 @@ function resetStore() {
     typingIndicators: {},
     agentTyping: {},
     viewingAgents: {},
+    onlineVisitors: {},
     wsSend: null,
     wsConnected: false,
   });
@@ -51,7 +52,7 @@ describe('supportPresenceStore', () => {
     it('adds an agent typing entry', () => {
       useSupportPresenceStore.getState().setAgentTyping('conv-1', 'agent-a', 'drafting reply');
       const map = useSupportPresenceStore.getState().agentTyping['conv-1'];
-      expect(map).toEqual({ 'agent-a': 'drafting reply' });
+      expect(map).toEqual({ 'agent-a': { content: 'drafting reply' } });
     });
 
     it('supports multiple agents typing in the same conversation', () => {
@@ -59,7 +60,10 @@ describe('supportPresenceStore', () => {
       setAgentTyping('conv-1', 'agent-a', 'reply A');
       setAgentTyping('conv-1', 'agent-b', 'reply B');
       const map = useSupportPresenceStore.getState().agentTyping['conv-1'];
-      expect(map).toEqual({ 'agent-a': 'reply A', 'agent-b': 'reply B' });
+      expect(map).toEqual({
+        'agent-a': { content: 'reply A' },
+        'agent-b': { content: 'reply B' },
+      });
     });
 
     it('clears all agents when actorId is null', () => {
@@ -79,7 +83,21 @@ describe('supportPresenceStore', () => {
 
     it('defaults content to empty string when omitted', () => {
       useSupportPresenceStore.getState().setAgentTyping('conv-1', 'agent-a');
-      expect(useSupportPresenceStore.getState().agentTyping['conv-1']['agent-a']).toBe('');
+      expect(useSupportPresenceStore.getState().agentTyping['conv-1']['agent-a']).toEqual({ content: '' });
+    });
+
+    it('preserves agent metadata across updates', () => {
+      const { setAgentTyping } = useSupportPresenceStore.getState();
+      setAgentTyping('conv-1', 'agent-a', 'first draft', {
+        name: 'Alice Agent',
+        avatarUrl: 'https://example.com/avatar.png',
+      });
+      setAgentTyping('conv-1', 'agent-a', 'final draft');
+      expect(useSupportPresenceStore.getState().agentTyping['conv-1']['agent-a']).toEqual({
+        content: 'final draft',
+        name: 'Alice Agent',
+        avatarUrl: 'https://example.com/avatar.png',
+      });
     });
   });
 
@@ -92,7 +110,7 @@ describe('supportPresenceStore', () => {
       setAgentTyping('conv-1', 'agent-b', 'B');
       clearOneAgentTyping('conv-1', 'agent-a');
       const map = useSupportPresenceStore.getState().agentTyping['conv-1'];
-      expect(map).toEqual({ 'agent-b': 'B' });
+      expect(map).toEqual({ 'agent-b': { content: 'B' } });
     });
 
     it('is a no-op when the agent is not in the map', () => {

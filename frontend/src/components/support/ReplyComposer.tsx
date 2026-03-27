@@ -215,9 +215,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     }
     const now = Date.now();
     if (isTypingRef.current && now - lastTypingSentRef.current < 300) return;
+    const eventType = isTypingRef.current ? 'support:typing:update' : 'support:typing:start';
     isTypingRef.current = true;
     lastTypingSentRef.current = now;
-    wsSend(isTypingRef.current ? 'support:typing:update' : 'support:typing:start', {
+    wsSend(eventType, {
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
@@ -540,6 +541,50 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           <StickyNote className="h-3 w-3" />
           Note
         </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canUseAITools}
+              className={cn(
+                'h-auto rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                canUseAITools
+                  ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  : 'text-muted-foreground/50'
+              )}
+            >
+              {rewriteMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              AI Tools
+              <ChevronUp className="h-3 w-3 rotate-180" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            {aiTools.slice(0, 3).map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
+                  <Icon className="h-4 w-4" />
+                  <span>{tool.label}</span>
+                </DropdownMenuItem>
+              );
+            })}
+            <DropdownMenuSeparator />
+            {aiTools.slice(3).map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
+                  <Icon className="h-4 w-4" />
+                  <span>{tool.label}</span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* TipTap Editor */}
@@ -608,45 +653,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canUseAITools}
-                className="ml-1 h-7 gap-1.5 rounded-md px-2 text-xs"
-              >
-                {rewriteMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
-                AI Tools
-                <ChevronUp className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              {aiTools.slice(0, 3).map((tool) => {
-                const Icon = tool.icon;
-                return (
-                  <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
-                    <Icon className="h-4 w-4" />
-                    <span>{tool.label}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-              <DropdownMenuSeparator />
-              {aiTools.slice(3).map((tool) => {
-                const Icon = tool.icon;
-                return (
-                  <DropdownMenuItem key={tool.operation} onSelect={() => { void handleRewrite(tool.operation); }}>
-                    <Icon className="h-4 w-4" />
-                    <span>{tool.label}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
           {members.length > 0 && (
             <span className="ml-1 text-[10px] text-muted-foreground">
               Type @ to mention
