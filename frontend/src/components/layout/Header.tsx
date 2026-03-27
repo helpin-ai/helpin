@@ -37,6 +37,13 @@ export function Header() {
   }, []);
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
+    const formatLabel = (value: string) =>
+      value
+        .split('-')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+
     const segments = location.pathname.split("/").filter(Boolean);
     if (segments.length < 2 || segments[0] !== "w") return [];
 
@@ -88,21 +95,36 @@ export function Header() {
     };
 
     const settingsSubMap: Record<string, string> = {
-      system: "General",
+      general: "General",
+      profile: "Profile",
+      notifications: "Notifications",
+      account: "Account",
       members: "Members",
       teams: "Teams",
-      people: "People",
-      jobroles: "Job Roles",
+      knowledge: "Knowledge",
       workflows: "Workflows",
+      labels: "Labels",
+      "story-templates": "Story Templates",
+      "recurring-tasks": "Recurring Tasks",
+      automations: "Automations",
+      delivery: "Delivery",
       ai: "AI",
       import: "Import / Export",
+      helpcenter: "Help Center",
+      redirects: "Redirects",
+      "crm-pipelines": "Pipelines",
+      "crm-email": "Email Accounts",
+      "crm-autonomy": "Autonomy",
+      "ai-automations": "AI & Automations",
+      "chat-general": "Chat Widget",
+      "chat-ai": "AI & Routing",
     };
 
     if (section === "pm") {
       crumbs.push({ label: "Projects", to: `/w/${slug}/pm/my-work` });
       if (subRoute[1]) {
         const pmSub = subRoute[1];
-        const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, " ");
+        const pmLabel = pmSubMap[pmSub] ?? formatLabel(pmSub);
         if (subRoute[2]) {
           crumbs.push({ label: pmLabel, to: `/w/${slug}/pm/${pmSub}` });
           crumbs.push({ label: `${pmLabel.replace(/s$/, "")} Detail` });
@@ -117,7 +139,7 @@ export function Header() {
       crumbs.push({ label: "CRM", to: `/w/${slug}/crm/contacts` });
       if (subRoute[1]) {
         const crmSub = subRoute[1];
-        const crmLabel = crmSubMap[crmSub] ?? crmSub.replace(/-/g, " ");
+        const crmLabel = crmSubMap[crmSub] ?? formatLabel(crmSub);
         if (subRoute[2]) {
           crumbs.push({ label: crmLabel, to: `/w/${slug}/crm/${crmSub}` });
           crumbs.push({ label: `${crmLabel.replace(/s$/, "")} Detail` });
@@ -133,13 +155,13 @@ export function Header() {
       if (subRoute[1]) {
         const settingsSub = subRoute[1];
         crumbs.push({
-          label: settingsSubMap[settingsSub] ?? settingsSub.replace(/-/g, " "),
+          label: settingsSubMap[settingsSub] ?? formatLabel(settingsSub),
         });
       }
       return crumbs;
     }
 
-    crumbs.push({ label: sectionMap[section] ?? section.replace(/-/g, " ") });
+    crumbs.push({ label: sectionMap[section] ?? formatLabel(section) });
     return crumbs;
   }, [location.pathname, currentWorkspace?.name]);
 

@@ -1324,7 +1324,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
         {/* Workflow States Editor Dialog */}
         <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
-          <DialogContent className="sm:max-w-5xl">
+          <DialogContent className="max-h-[90vh] w-[min(96vw,72rem)] max-w-[min(96vw,72rem)] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Workflow States</DialogTitle>
             </DialogHeader>
