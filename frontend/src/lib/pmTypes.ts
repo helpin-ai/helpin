@@ -218,6 +218,10 @@ export interface Story {
   state_type?: StateType;
   state_color?: string;
   labels?: Label[];
+  contacts?: AssociationObjectSummary[];
+  companies?: AssociationObjectSummary[];
+  deals?: AssociationObjectSummary[];
+  support_conversations?: AssociationObjectSummary[];
 }
 
 export interface StoryDependencyStory {

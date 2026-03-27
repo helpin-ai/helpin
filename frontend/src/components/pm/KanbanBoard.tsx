@@ -19,7 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { Agent, CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
-import { agentService } from '@/lib/services/agentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -29,7 +28,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
-import { useSession, useAutomationRulesByWorkflow } from '@/hooks/queries';
+import { useAgents, useSession, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
@@ -509,13 +508,12 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
   const [refSprints, setRefSprints] = useState<SprintWithStats[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const { data: agents = [] } = useAgents(workspaceId);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setRefLabels(r.data); });
     pmEpicService.list(workspaceId).then((r) => { if (r.data) setRefEpics(r.data); });
     pmSprintService.list(workspaceId).then((r) => { if (r.data) setRefSprints(r.data); });
-    agentService.list(workspaceId).then((r) => { if (r.data) setAgents(r.data); });
   }, [workspaceId]);
   const agentById = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent])),
@@ -1005,6 +1003,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   return (
     <StoryFilterProvider
+      workspaceId={workspaceId}
       assignableMembers={assignableMembers}
       labels={refLabels}
       epics={refEpics}
@@ -1054,7 +1053,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
               By Members
             </button>
           </div>
-          <BoardDisplayMenu />
+          {viewMode === 'board' ? <BoardDisplayMenu /> : null}
           <QuickTooltip label="Board view">
             <Button
               variant={viewMode === 'board' ? 'default' : 'ghost'}

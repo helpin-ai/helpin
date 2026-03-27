@@ -1,0 +1,159 @@
+import { useState } from 'react';
+import { Check, Plus, Target, X } from 'lucide-react';
+
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import type { Objective } from '@/lib/pmTypes';
+
+export interface ObjectivePickerSelection {
+  id: string;
+  name: string;
+  archived?: boolean;
+}
+
+interface ObjectivePickerProps {
+  objectives: Objective[];
+  selectedObjectiveIds: string[];
+  selectedObjectives?: ObjectivePickerSelection[];
+  onChange: (objectiveIds: string[]) => void | Promise<void>;
+  className?: string;
+  addLabel?: string;
+  emptyLabel?: string;
+}
+
+function ObjectiveBadge({
+  objective,
+  onRemove,
+}: {
+  objective: ObjectivePickerSelection;
+  onRemove?: () => void;
+}) {
+  return (
+    <span className="inline-flex h-5 max-w-full min-w-0 items-center gap-1 rounded-sm border-[0.5px] border-border px-2 text-[11px] font-medium text-foreground/80">
+      <Target className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 truncate">{objective.name}</span>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+          className="ml-0.5 rounded-sm opacity-60 transition-opacity hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
+export function ObjectivePicker({
+  objectives,
+  selectedObjectiveIds,
+  selectedObjectives: selectedObjectivesProp,
+  onChange,
+  className,
+  addLabel = 'Add objective',
+  emptyLabel = 'No objective',
+}: ObjectivePickerProps) {
+  const [open, setOpen] = useState(false);
+  const availableObjectives = objectives.filter((objective) => !objective.archived);
+  const selectedObjectives = selectedObjectivesProp ?? objectives
+    .filter((objective) => selectedObjectiveIds.includes(objective.id))
+    .map((objective) => ({
+      id: objective.id,
+      name: objective.name,
+      archived: objective.archived,
+    }));
+
+  const toggleObjective = (objectiveId: string) => {
+    if (selectedObjectiveIds.includes(objectiveId)) {
+      void onChange(selectedObjectiveIds.filter((id) => id !== objectiveId));
+      return;
+    }
+    void onChange([...selectedObjectiveIds, objectiveId]);
+  };
+
+  const removeObjective = (objectiveId: string) => {
+    void onChange(selectedObjectiveIds.filter((id) => id !== objectiveId));
+  };
+
+  return (
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+      {selectedObjectives.map((objective) => (
+        <ObjectiveBadge
+          key={objective.id}
+          objective={{
+            id: objective.id,
+            name: objective.archived ? `${objective.name} (Archived)` : objective.name,
+            archived: !!objective.archived,
+          }}
+          onRemove={() => removeObjective(objective.id)}
+        />
+      ))}
+
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpen(true);
+            }}
+          >
+            <Plus className="h-3 w-3" />
+            {selectedObjectives.length === 0 ? addLabel : 'Add'}
+          </button>
+        </PopoverTrigger>
+        {open ? (
+          <PopoverContent
+            className="w-[260px] p-0"
+            align="start"
+            side="bottom"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <Command>
+              <CommandInput placeholder="Search objectives..." className="h-8 text-xs" />
+              <CommandList>
+                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                  No objectives found
+                </CommandEmpty>
+                <CommandGroup>
+                  {availableObjectives.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyLabel}</div>
+                  ) : null}
+                  {availableObjectives.map((objective) => {
+                    const isSelected = selectedObjectiveIds.includes(objective.id);
+                    return (
+                      <CommandItem
+                        key={objective.id}
+                        value={objective.name}
+                        className="flex items-center gap-2 text-xs"
+                        onSelect={() => toggleObjective(objective.id)}
+                      >
+                        <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{objective.name}</span>
+                        {isSelected ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        ) : null}
+      </Popover>
+    </div>
+  );
+}

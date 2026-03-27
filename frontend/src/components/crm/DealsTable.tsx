@@ -104,6 +104,7 @@ export function DealsTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalDeals(deals); }, [deals]);
@@ -502,7 +503,7 @@ export function DealsTable({
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                   ) : (
-                    <MemoDataRow row={row} />
+                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
                   )}
                 </div>
               );
@@ -561,9 +562,15 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
 // ── Data Row ──────────────────────────────────────────────────────
 
-const MemoDataRow = memo(function DataRow({ row }: { row: Row<CRMDeal> }) {
+const MemoDataRow = memo(function DataRow({
+  row,
+  columnSizingVersion,
+}: {
+  row: Row<CRMDeal>;
+  columnSizingVersion: string;
+}) {
   return (
-    <div className={TABLE_ROW}>
+    <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
