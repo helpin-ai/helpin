@@ -12,14 +12,12 @@ import { Trash2, Plus, Search, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { formatRedirectTargetPath, normalizeRedirectSourcePathForDisplay } from '@/lib/docsRedirectPaths';
 
 const PER_PAGE = 20;
 
 function formatTarget(redirect: DocsRedirect): string {
-  if (redirect.target_article_slug) {
-    return `/${redirect.target_collection_slug}/${redirect.target_article_slug}`;
-  }
-  return `/${redirect.target_collection_slug}`;
+  return formatRedirectTargetPath(redirect.target_collection_slug, redirect.target_article_slug);
 }
 
 function typeBadge(type: DocsRedirect['type']) {
@@ -97,7 +95,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
   };
 
   const openEdit = (r: DocsRedirect) => {
-    setSourcePath(r.source_path);
+    setSourcePath(normalizeRedirectSourcePathForDisplay(r.source_path));
     setTargetCollectionSlug(r.target_collection_slug);
     setTargetArticleSlug(r.target_article_slug ?? '');
     setEditRedirect(r);
@@ -114,7 +112,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
     try {
       if (editRedirect) {
         const { error } = await docsRedirectService.update(workspaceId, editRedirect.id, {
-          source_path: sourcePath.trim(),
+          source_path: normalizeRedirectSourcePathForDisplay(sourcePath),
           target_collection_slug: targetCollectionSlug.trim(),
           target_article_slug: targetArticleSlug.trim() || undefined,
         });
@@ -129,7 +127,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
         }
       } else {
         const { error } = await docsRedirectService.create(workspaceId, {
-          source_path: sourcePath.trim(),
+          source_path: normalizeRedirectSourcePathForDisplay(sourcePath),
           target_collection_slug: targetCollectionSlug.trim(),
           target_article_slug: targetArticleSlug.trim() || undefined,
         });
@@ -230,7 +228,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
                 {redirects.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
-                      <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-xs font-mono" title={r.source_path}>{r.source_path}</code>
+                      <code className="block truncate rounded bg-muted px-1.5 py-0.5 text-xs font-mono" title={normalizeRedirectSourcePathForDisplay(r.source_path)}>{normalizeRedirectSourcePathForDisplay(r.source_path)}</code>
                     </TableCell>
                     <TableCell>
                       <span className="block truncate text-sm text-muted-foreground" title={formatTarget(r)}>{formatTarget(r)}</span>

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { AGENT_ALICE, AGENT_CHARLIE } from './supportE2E'
+import { AGENT_ALICE, AGENT_CHARLIE } from '../fixtures/supportE2E'
 
 declare global {
   interface Window {
@@ -28,8 +28,8 @@ test('agent typing is visible to another agent in list and thread', async ({ bro
   const agentA = await browser.newPage()
   const agentB = await browser.newPage()
 
-  await agentA.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-a&name=Alice%20Agent`)
-  await agentB.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await agentA.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-a&name=Alice%20Agent`)
+  await agentB.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
 
   await waitForHarness(agentA)
   await waitForHarness(agentB)
@@ -70,7 +70,7 @@ test('agent typing is visible to another agent in list and thread', async ({ bro
 })
 
 test('multiple agents typing stay visible together in the list and thread', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
   await waitForHarness(page)
 
   await page.evaluate(() => {
@@ -107,7 +107,7 @@ test('multiple agents typing stay visible together in the list and thread', asyn
 })
 
 test('customer typing takes precedence over agent typing and unread state in the conversation list', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent&unreadCount=3`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent&unreadCount=3`)
   await waitForHarness(page)
 
   await page.evaluate(() => {
@@ -145,7 +145,7 @@ test('customer typing takes precedence over agent typing and unread state in the
 })
 
 test('unread state still wins over passive teammate viewing in the conversation list', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent&unreadCount=4`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent&unreadCount=4`)
   await waitForHarness(page)
 
   await page.evaluate(() => {
@@ -168,7 +168,7 @@ test('unread state still wins over passive teammate viewing in the conversation 
 })
 
 test('passive teammate viewing avatars are shown when there is no typing or unread state', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
   await waitForHarness(page)
 
   await page.evaluate(() => {
@@ -191,7 +191,7 @@ test('passive teammate viewing avatars are shown when there is no typing or unre
 })
 
 test('when agent typing stops the row falls back to passive viewing avatars', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
   await waitForHarness(page)
 
   await page.evaluate(() => {
@@ -239,7 +239,7 @@ test('when agent typing stops the row falls back to passive viewing avatars', as
 })
 
 test('reconnect triggers presence resync for the list and active thread', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
   await waitForHarness(page)
 
   await page.evaluate(() => window.__supportPresenceHarness.clearSentMessages())
@@ -264,7 +264,7 @@ test('reconnect triggers presence resync for the list and active thread', async 
 })
 
 test('presence snapshots replace stale typing and viewing state after reconnect', async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/e2e/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
+  await page.goto(`${baseURL}/e2e/support/harness/support-presence-harness.html?userId=user-b&name=Bob%20Agent`)
   await waitForHarness(page)
 
   await page.evaluate(() => {

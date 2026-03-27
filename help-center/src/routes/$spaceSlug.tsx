@@ -1,65 +1,63 @@
-import { useState, useCallback } from 'react'
-import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { Menu } from 'lucide-react'
-import { SpaceProvider, useSpaceContext } from '@/contexts/SpaceContext'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { MobileNav } from '@/components/navigation/MobileNav'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { LoadingState } from '@/components/LoadingState'
+import { LocalizedHomePage } from '@/components/home/LocalizedHomePage'
+import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
+import { useDocsContext } from '@/contexts/DocsContext'
+import {
+  buildCanonicalCollectionPath,
+  buildCanonicalHomePath,
+  isMultilingualEnabled,
+} from '@/lib/locale'
 
 export const Route = createFileRoute('/$spaceSlug')({
-  component: SpaceRoute,
+  component: LegacySpaceRedirect,
 })
 
-function SpaceRoute() {
+function LegacySpaceRedirect() {
   const { spaceSlug } = Route.useParams()
-  return (
-    <SpaceProvider spaceSlug={spaceSlug}>
-      <SpaceLayout />
-    </SpaceProvider>
+  const { defaultLocale, enabledLocales } = useDocsContext()
+  const navigate = useNavigate()
+  const normalizedSlug = spaceSlug.trim().toLowerCase()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const isKnownLocaleSlug = enabledLocales.some(
+    (locale) => locale.toLowerCase() === normalizedSlug,
   )
-}
 
-function SpaceLayout() {
-  const { space, spaceSlug, navigation, isLoading } = useSpaceContext()
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
+  useEffect(() => {
+    if (multilingualEnabled && isKnownLocaleSlug) {
+      return
+    }
 
-  if (isLoading) {
-    return <LoadingState message="Loading space..." />
+    if (multilingualEnabled) {
+      navigate({
+        to: buildCanonicalCollectionPath(true, defaultLocale, spaceSlug),
+        replace: true,
+      })
+      return
+    }
+
+    if (isKnownLocaleSlug) {
+      navigate({
+        to: buildCanonicalHomePath(false, defaultLocale),
+        replace: true,
+      })
+    }
+  }, [defaultLocale, isKnownLocaleSlug, multilingualEnabled, navigate, spaceSlug])
+
+  if (multilingualEnabled && isKnownLocaleSlug) {
+    return <LocalizedHomePage />
   }
 
-  return (
-    <div className="flex">
-      {/* Mobile nav bar */}
-      <div className="lg:hidden fixed top-[var(--hc-header-height)] left-0 right-0 z-20 flex items-center gap-2 px-4 py-2 border-b border-border bg-background">
-        <button
-          onClick={() => setMobileNavOpen(true)}
-          className="inline-flex items-center justify-center h-7 w-7 -ml-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-          aria-label="Open navigation"
-        >
-          <Menu size={18} />
-        </button>
-        {space && (
-          <span className="text-[13px] font-medium truncate">{space.name}</span>
-        )}
-      </div>
+  if (!multilingualEnabled && !isKnownLocaleSlug) {
+    return (
+      <CollectionRouteView
+        locale={defaultLocale}
+        collectionOrSpaceSlug={spaceSlug}
+        multilingualEnabled={false}
+      />
+    )
+  }
 
-      {/* Mobile nav drawer */}
-      {mobileNavOpen && (
-        <MobileNav
-          navigation={navigation}
-          spaceSlug={spaceSlug}
-          onClose={closeMobileNav}
-        />
-      )}
-
-      {/* Desktop sidebar */}
-      <Sidebar navigation={navigation} spaceSlug={spaceSlug} />
-
-      {/* Main content */}
-      <main className="flex-1 min-w-0 pt-[41px] lg:pt-0">
-        <Outlet />
-      </main>
-    </div>
-  )
+  return <LoadingState message="Redirecting..." />
 }

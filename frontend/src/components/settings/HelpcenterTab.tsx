@@ -16,7 +16,6 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,13 +29,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
+import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import {
-  Plus, Trash2, GripVertical, Info,
-  Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon,
+  Plus, Trash2, GripVertical, Info, ChevronDown, X,
+  Globe, Palette, LayoutGrid, LinkIcon, ImageIcon, Languages,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type {
   HelpcenterHeaderLink,
   HelpcenterHeaderLinkStyle,
@@ -55,6 +55,15 @@ function withIds(links: HelpcenterHeaderLink[]): HeaderLinkWithId[] {
   return links.map(l => ({ ...l, _id: nextLinkId() }));
 }
 
+function findCollectionByCardLinkValue(
+  collections: DocsCollection[],
+  linkValue: string,
+): DocsCollection | undefined {
+  return collections.find((collection) =>
+    collection.id === linkValue || collection.slug === linkValue,
+  );
+}
+
 interface ConfigState {
   subdomain: string;
   custom_domain: string;
@@ -71,6 +80,7 @@ interface ConfigState {
   homepage_hero_subtitle: string;
   homepage_featured_cards: HomepageFeaturedCard[];
   search_placeholder: string;
+  protected_terms: string[];
   is_published: boolean;
   seo_title: string;
   seo_description: string;
@@ -93,6 +103,7 @@ const DEFAULT_CONFIG: ConfigState = {
   homepage_hero_subtitle: '',
   homepage_featured_cards: [],
   search_placeholder: '',
+  protected_terms: [],
   is_published: false,
   seo_title: '',
   seo_description: '',
@@ -179,15 +190,77 @@ function SortableHeaderLinkRow({
   );
 }
 
+function SortableFooterLinkRow({
+  id,
+  link,
+  onUpdate,
+  onRemove,
+}: {
+  id: number;
+  link: HelpcenterFooterLink;
+  onUpdate: (patch: Partial<HelpcenterFooterLink>) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group">
+      <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/50 hover:text-muted-foreground">
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <Input
+        value={link.label}
+        onChange={(e) => onUpdate({ label: e.target.value })}
+        placeholder="Label"
+        className="w-28 h-8 text-sm"
+      />
+      <Input
+        value={link.url}
+        onChange={(e) => onUpdate({ url: e.target.value })}
+        placeholder="https://..."
+        className="flex-1 h-8 text-sm"
+      />
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
+        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+      </Button>
+    </div>
+  );
+}
+
 export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
   const [spaces, setSpaces] = useState<DocsSpace[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const isExpanded = (key: string) => expandedSections.has(key);
   const [homepageSpaceSlug, setHomepageSpaceSlug] = useState('');
   const [spaceCollections, setSpaceCollections] = useState<DocsCollection[]>([]);
   const { data: localesConfig } = useDocsHelpcenterLocales(workspaceId);
   const updateLocales = useUpdateDocsHelpcenterLocales(workspaceId);
+  const normalizedLocalesConfig = localesConfig
+    ? {
+        ...localesConfig,
+        default_locale: localesConfig.default_locale || 'en',
+        enabled_locales:
+          Array.isArray(localesConfig.enabled_locales) && localesConfig.enabled_locales.length > 0
+            ? localesConfig.enabled_locales
+            : [localesConfig.default_locale || 'en'],
+        fallback_to_default_locale: localesConfig.fallback_to_default_locale !== false,
+      }
+    : null;
 
   useEffect(() => {
     const load = async () => {
@@ -212,6 +285,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           homepage_hero_subtitle: d.homepage_config?.hero_subtitle ?? '',
           homepage_featured_cards: d.homepage_config?.featured_cards ?? [],
           search_placeholder: d.search_placeholder ?? '',
+          protected_terms: d.protected_terms ?? [],
           is_published: d.is_published ?? false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
@@ -244,8 +318,17 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             // Sync card titles and icons from current collection data
             const existingCards = res.data?.homepage_config?.featured_cards ?? [];
             const synced = existingCards.map(card => {
-              const col = colRes.data!.find(c => c.id === card.link_value);
-              return col ? { ...card, title: col.name, icon: col.icon ?? '' } : card;
+              const col = findCollectionByCardLinkValue(colRes.data!, card.link_value);
+              return col
+                ? {
+                    ...card,
+                    title: col.name,
+                    description: col.description ?? card.description,
+                    icon: col.icon ?? '',
+                    link_value: col.slug,
+                    space_slug: space.slug,
+                  }
+                : card;
             });
             setConfig(prev => ({ ...prev, homepage_featured_cards: synced }));
           }
@@ -281,6 +364,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         featured_cards: config.homepage_featured_cards,
       },
       search_placeholder: config.search_placeholder || undefined,
+      protected_terms: config.protected_terms.filter(Boolean),
       is_published: config.is_published,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
@@ -289,7 +373,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     // Sync icon changes back to collections
     for (const card of config.homepage_featured_cards) {
       if (card.link_type !== 'collection' || !card.link_value) continue;
-      const col = spaceCollections.find(c => c.id === card.link_value);
+      const col = findCollectionByCardLinkValue(spaceCollections, card.link_value);
       if (col && (col.icon ?? '') !== card.icon) {
         await docsService.updateCollection(workspaceId, col.id, { icon: card.icon });
       }
@@ -358,6 +442,16 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
+  const handleFooterDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setConfig(prev => {
+      const oldIndex = Number(active.id);
+      const newIndex = Number(over.id);
+      return { ...prev, footer_links: arrayMove(prev.footer_links, oldIndex, newIndex) };
+    });
+  }, []);
+
   // ── Featured card helpers (space-driven) ──
   const handleHomepageSpaceChange = async (slug: string) => {
     setHomepageSpaceSlug(slug);
@@ -373,22 +467,22 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       description: col.description ?? '',
       icon: col.icon ?? '',
       link_type: 'collection',
-      link_value: col.id,
+      link_value: col.slug,
       space_slug: slug,
     }));
     setConfig(prev => ({ ...prev, homepage_featured_cards: cards }));
   };
 
   const toggleCollection = (colId: string) => {
-    const exists = config.homepage_featured_cards.find(c => c.link_value === colId);
+    const col = spaceCollections.find(c => c.id === colId);
+    if (!col) return;
+    const exists = config.homepage_featured_cards.find(c => c.link_value === col.slug);
     if (exists) {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== colId),
+        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
       }));
     } else {
-      const col = spaceCollections.find(c => c.id === colId);
-      if (!col) return;
       setConfig(prev => ({
         ...prev,
         homepage_featured_cards: [...prev.homepage_featured_cards, {
@@ -396,7 +490,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           description: col.description ?? '',
           icon: col.icon ?? '',
           link_type: 'collection',
-          link_value: col.id,
+          link_value: col.slug,
           space_slug: homepageSpaceSlug,
         }],
       }));
@@ -404,10 +498,12 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   };
 
   const updateCardByCollectionId = (colId: string, patch: Partial<HomepageFeaturedCard>) => {
+    const col = spaceCollections.find(c => c.id === colId);
+    if (!col) return;
     setConfig(prev => ({
       ...prev,
       homepage_featured_cards: prev.homepage_featured_cards.map(c =>
-        c.link_value === colId ? { ...c, ...patch } : c
+        c.link_value === col.slug ? { ...c, ...patch } : c
       ),
     }));
   };
@@ -460,7 +556,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-8">
+    <form onSubmit={handleSave} className="space-y-5">
       {/* ── Top Actions ── */}
       <div className="flex items-center justify-between">
         <div>
@@ -496,32 +592,21 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         </div>
       </div>
 
-      {localesConfig && (
-        <HelpcenterLocalesCard
-          key={`${localesConfig.default_locale}:${localesConfig.enabled_locales.join(',')}:${String(localesConfig.show_language_switcher)}:${String(localesConfig.fallback_to_default_locale)}`}
-          config={localesConfig}
-          isSaving={updateLocales.isPending}
-          onSave={async (data) => {
-            try {
-              await updateLocales.mutateAsync(data)
-              toast.success('Locale settings saved')
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
-            }
-          }}
-        />
-      )}
-
-      {/* ── Branding ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <Palette className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Branding</CardTitle>
+      {/* ── Section: Branding ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('branding') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('branding')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Palette className="h-4 w-4" />
           </div>
-          <CardDescription>Customize your help center&apos;s visual identity.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Branding</p>
+            <p className="text-xs text-muted-foreground">Logo, colors, and theme for your help center</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('branding') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('branding')}>
+          <div>
+          <div className="border-t border-border px-6 py-6 space-y-6">
           {/* Upload zones */}
           <div className="grid gap-6 sm:grid-cols-3">
             {/* Logo (light) upload zone */}
@@ -678,20 +763,28 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          </div>
+          </div>
+        </div>
+      </div>
 
-      {/* ── Domain & SEO ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Domain</CardTitle>
-            </div>
-            <CardDescription>Configure your help center URL.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      {/* ── Section: Domain & SEO ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Globe className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Domain & SEO</p>
+            <p className="text-xs text-muted-foreground">URL configuration and search engine optimization</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('domain-seo') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('domain-seo')}>
+          <div>
+          <div className="border-t border-border px-6 py-6 space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-subdomain">Subdomain</Label>
               <div className="flex items-center">
@@ -724,18 +817,8 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 placeholder="support@yourcompany.com"
               />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">SEO</CardTitle>
-            </div>
-            <CardDescription>Optimize for search engines.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          </div>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-seo-title">Meta Title</Label>
               <Input
@@ -757,20 +840,28 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               />
               <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          </div>
+          </div>
+          </div>
+        </div>
       </div>
 
-      {/* ── Homepage ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Homepage</CardTitle>
+      {/* ── Section: Homepage ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('homepage') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('homepage')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <LayoutGrid className="h-4 w-4" />
           </div>
-          <CardDescription>Configure the hero section and featured content visitors see first.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Homepage</p>
+            <p className="text-xs text-muted-foreground">Hero section and featured content visitors see first</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('homepage') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('homepage')}>
+          <div>
+          <div className="border-t border-border px-6 py-6 space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="hc-hero-title">Hero Title</Label>
@@ -827,7 +918,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             {spaceCollections.length > 0 && (
               <div className="space-y-1.5">
                 {spaceCollections.map(col => {
-                  const card = config.homepage_featured_cards.find(c => c.link_value === col.id);
+                  const card = config.homepage_featured_cards.find(c => c.link_value === col.slug);
                   const checked = !!card;
                   return (
                     <div
@@ -861,98 +952,190 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+          </div>
+          </div>
+        </div>
+      </div>
 
-      {/* ── Navigation ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Header Links</CardTitle>
-            </div>
-            <CardDescription>Navigation links displayed in the top bar.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {config.header_links.length === 0 && (
-              <p className="text-xs text-muted-foreground py-3 text-center">No header links yet. Add one below.</p>
-            )}
-            {config.header_links.length > 0 && (
-              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleHeaderDragEnd}>
-                <SortableContext items={headerLinkIds} strategy={verticalListSortingStrategy}>
-                  {config.header_links.map((link, i) => (
-                    <SortableHeaderLinkRow
-                      key={headerLinkIds[i]}
-                      id={headerLinkIds[i]}
-                      link={link}
-                      onUpdate={(patch) => updateHeaderLink(i, patch)}
-                      onRemove={() => removeHeaderLink(i)}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            )}
-            <div className="flex justify-center">
-              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Footer</CardTitle>
-            </div>
-            <CardDescription>Copyright text and footer navigation.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
-              <Input
-                id="hc-footer-copyright"
-                value={config.footer_copyright_text}
-                onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
-                placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
-              />
-            </div>
-            <Separator />
-            <div className="space-y-3">
-              <Label className="text-sm">Footer Links</Label>
-              {config.footer_links.length === 0 && (
-                <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+      {/* ── Section: Navigation ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('navigation') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('navigation')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <LinkIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Navigation</p>
+            <p className="text-xs text-muted-foreground">Header links and footer configuration</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('navigation') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('navigation')}>
+          <div>
+          <div className="border-t border-border px-6 py-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Header Links */}
+            <div className="space-y-3 rounded-lg border border-border/60 p-4">
+              <div>
+                <Label className="text-sm font-medium">Header Links</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Navigation links in the top bar.</p>
+              </div>
+              {config.header_links.length === 0 && (
+                <p className="text-xs text-muted-foreground py-3 text-center">No header links yet.</p>
               )}
-              {config.footer_links.map((link, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <Input
-                    value={link.label}
-                    onChange={(e) => updateFooterLink(i, { label: e.target.value })}
-                    placeholder="Label"
-                    className="w-28 h-8 text-sm"
-                  />
-                  <Input
-                    value={link.url}
-                    onChange={(e) => updateFooterLink(i, { url: e.target.value })}
-                    placeholder="https://..."
-                    className="flex-1 h-8 text-sm"
-                  />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeFooterLink(i)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
-                </div>
-              ))}
+              {config.header_links.length > 0 && (
+                <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleHeaderDragEnd}>
+                  <SortableContext items={headerLinkIds} strategy={verticalListSortingStrategy}>
+                    {config.header_links.map((link, i) => (
+                      <SortableHeaderLinkRow
+                        key={headerLinkIds[i]}
+                        id={headerLinkIds[i]}
+                        link={link}
+                        onUpdate={(patch) => updateHeaderLink(i, patch)}
+                        onRemove={() => removeHeaderLink(i)}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              )}
               <div className="flex justify-center">
-                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
                   <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Footer */}
+            <div className="space-y-4 rounded-lg border border-border/60 p-4">
+              <div>
+                <Label className="text-sm font-medium">Footer</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Copyright text and footer links.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
+                <Input
+                  id="hc-footer-copyright"
+                  value={config.footer_copyright_text}
+                  onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
+                  placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-sm">Footer Links</Label>
+                {config.footer_links.length === 0 && (
+                  <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+                )}
+                {config.footer_links.length > 0 && (
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFooterDragEnd}>
+                    <SortableContext items={config.footer_links.map((_, i) => i)} strategy={verticalListSortingStrategy}>
+                      {config.footer_links.map((link, i) => (
+                        <SortableFooterLinkRow
+                          key={i}
+                          id={i}
+                          link={link}
+                          onUpdate={(patch) => updateFooterLink(i, patch)}
+                          onRemove={() => removeFooterLink(i)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                )}
+                <div className="flex justify-center">
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+          </div>
+        </div>
       </div>
+
+      {/* ── Section: Locales ── */}
+      {normalizedLocalesConfig && (
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
+          <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Languages className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Languages & Translation</p>
+              <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
+            </div>
+            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
+          </button>
+          <div className="accordion-animate" data-open={isExpanded('locales')}>
+            <div>
+            <div className="border-t border-border px-6 py-6">
+              <div className="space-y-6">
+                <HelpcenterLocalesCard
+                  key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
+                  config={normalizedLocalesConfig}
+                  isSaving={updateLocales.isPending}
+                  onSave={async (data) => {
+                    try {
+                      await updateLocales.mutateAsync(data)
+                      toast.success('Locale settings saved')
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
+                    }
+                  }}
+                />
+
+                <Separator />
+
+                <div>
+                  <h3 className="text-sm font-medium">Protected terms</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Terms that AI will not translate — product names, features, and technical language.
+                  </p>
+                  <div className="mt-3">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {config.protected_terms.map((term, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-sm">
+                            {term}
+                            <button
+                              type="button"
+                              onClick={() => setConfig({ ...config, protected_terms: config.protected_terms.filter((_, j) => j !== i) })}
+                              className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <Input
+                        placeholder="Type a term and press Enter..."
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const val = (e.target as HTMLInputElement).value.trim()
+                            if (val && !config.protected_terms.includes(val)) {
+                              setConfig({ ...config, protected_terms: [...config.protected_terms, val] })
+                              ;(e.target as HTMLInputElement).value = ''
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <HelpcenterTranslationsTable
+                  workspaceId={workspaceId}
+                  defaultLocale={normalizedLocalesConfig.default_locale}
+                  enabledLocales={normalizedLocalesConfig.enabled_locales}
+                />
+              </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </form>
   );

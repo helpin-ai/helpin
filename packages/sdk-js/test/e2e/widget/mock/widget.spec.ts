@@ -25,7 +25,7 @@ declare global {
 
 async function bootWidget(page: Page, options: { unreadCount?: number; persistedSession?: boolean; invalidStoredSession?: boolean } = {}) {
   await installWidgetMocks(page, options)
-  await page.goto('/test/e2e/widget/test-page.html')
+  await page.goto('/test/e2e/widget/mock/test-page.html')
   await page.waitForFunction(() => typeof window.helpin === 'function')
 
   await page.evaluate(({ key, host }) => {

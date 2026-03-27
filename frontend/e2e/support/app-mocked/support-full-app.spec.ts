@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { AGENT_ALICE, CONVERSATION_ID, installSupportAppMocks, WORKSPACE_SLUG } from './supportE2E'
+import { AGENT_ALICE, CONVERSATION_ID, installSupportAppMocks, WORKSPACE_SLUG } from '../fixtures/supportE2E'
 
 declare global {
   interface Window {

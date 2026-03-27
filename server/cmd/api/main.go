@@ -218,6 +218,7 @@ func main() {
 		&model.DocsLink{},
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
+		&model.DocsHelpcenterArticlePublication{},
 		&model.DocsHelpcenterSpaceTranslation{},
 		&model.DocsHelpcenterCollectionTranslation{},
 		&model.DocsHelpcenterArticleTranslation{},
@@ -336,6 +337,11 @@ func main() {
 	slog.Info("startup: running MigrateAutomationHealthSchema")
 	if err := repository.MigrateAutomationHealthSchema(db); err != nil {
 		fatalWithSentry("failed to migrate automation health schema", err)
+	}
+	slog.Info("startup: running MigrateDocsRedirectPaths")
+	if err := repository.MigrateDocsRedirectPaths(db); err != nil {
+		slog.Error("failed to migrate docs redirect paths", "error", err)
+		os.Exit(1)
 	}
 
 	// Migrate existing workspaces to organizations (one-time, idempotent).
@@ -483,6 +489,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsHelpcenterTranslationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
+	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
@@ -698,14 +705,26 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
+	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
+	var llmProvider llm.Provider
+	switch cfg.CRMLLMProvider {
+	case "openai":
+		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+	default:
+		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
+	}
+	if llmProvider != nil {
+		slog.Info("LLM provider configured for signal detection")
+	}
+
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo)
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
-	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
+	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
@@ -782,22 +801,6 @@ func main() {
 		slog.Info("Gmail OAuth configured")
 	} else {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
-	}
-
-	// Initialize LLM provider for signal detection and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		if provider := llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel); provider != nil {
-			llmProvider = provider
-		} else {
-			slog.Warn("CRM OpenAI provider not configured; CRM_LLM_API_KEY is empty")
-		}
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
 	}
 
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)

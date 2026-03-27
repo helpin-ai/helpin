@@ -14,11 +14,20 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+type scriptedDocsTranslationHandlerLLM struct {
+	response string
+}
+
+func (f *scriptedDocsTranslationHandlerLLM) ChatCompletion(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	return &llm.ChatResponse{Content: f.response}, nil
+}
 
 func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -119,6 +128,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			search_placeholder TEXT,
 			default_locale TEXT NOT NULL DEFAULT 'en',
 			enabled_locales TEXT,
+			protected_terms TEXT,
 			show_language_switcher BOOLEAN NOT NULL DEFAULT 0,
 			fallback_to_default_locale BOOLEAN NOT NULL DEFAULT 1,
 			is_published BOOLEAN NOT NULL DEFAULT 0,
@@ -147,7 +157,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			description TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
@@ -166,7 +176,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
 			source_synced BOOLEAN NOT NULL DEFAULT 0,
@@ -184,7 +194,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			collection_id TEXT,
 			locale TEXT NOT NULL,
 			title TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			excerpt TEXT,
 			content JSON,
 			content_text TEXT,
@@ -286,6 +296,15 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		},
+		&model.DocsContent{
+			ID:          "content-handler-i18n",
+			DocumentID:  documentID,
+			Content:     json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Welcome to Helpin."}]}]}`),
+			ContentText: "Welcome to Helpin.",
+			WordCount:   3,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
 		&model.DocsHelpcenterArticle{
 			ID:                "article-handler-i18n",
 			DocumentID:        documentID,
@@ -304,13 +323,20 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 }
 
 func newDocsHelpcenterTranslationHandlerForTest(db *gorm.DB) *DocsHandler {
+	return newDocsHelpcenterTranslationHandlerForTestWithLLM(db, nil)
+}
+
+func newDocsHelpcenterTranslationHandlerForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHandler {
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
 		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterPublicationRepository(db),
+		repository.NewDocsRedirectRepository(db),
 		repository.NewDocsDocumentRepository(db),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
 		repository.NewDocsCollectionRepository(db),
+		llmProvider,
 	)
 	return &DocsHandler{translationSvc: translationSvc}
 }
@@ -351,6 +377,35 @@ func TestDocsHelpcenterTranslationHandler_UpdateLocales(t *testing.T) {
 	}
 }
 
+func TestDocsHelpcenterTranslationHandler_GetLocalesNormalizesEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 18, 0, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	h := newDocsHelpcenterTranslationHandlerForTest(db)
+
+	if err := db.Exec(`UPDATE docs_helpcenter_configs SET enabled_locales = NULL WHERE workspace_id = ?`, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("null enabled_locales: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/docs/helpcenter/locales", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", nil)
+	rec := httptest.NewRecorder()
+
+	h.GetHelpcenterLocales(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if body := rec.Body.String(); strings.Contains(body, `"enabled_locales":null`) {
+		t.Fatalf("body = %s, want normalized enabled locales array", body)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"enabled_locales":["en"]`) {
+		t.Fatalf("body = %s, want default locale fallback", body)
+	}
+}
+
 func TestDocsHelpcenterTranslationHandler_UpsertArticleTranslation(t *testing.T) {
 	t.Parallel()
 
@@ -388,7 +443,7 @@ func TestDocsHelpcenterTranslationHandler_PublishArticleTranslationRejectsMissin
 		CollectionID:    func() *string { v := "collection-handler-i18n"; return &v }(),
 		Locale:          "fr",
 		Title:           "Commencer ici",
-		Slug:            "commencer-ici",
+		Slug:            func() *string { v := "commencer-ici"; return &v }(),
 		Status:          model.DocsHelpcenterTranslationStatusDraft,
 		SourceUpdatedAt: &now,
 		SourceSynced:    true,
@@ -410,5 +465,29 @@ func TestDocsHelpcenterTranslationHandler_PublishArticleTranslationRejectsMissin
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "published space translation is required") {
 		t.Fatalf("body = %s, want missing parent error", body)
+	}
+}
+
+func TestDocsHelpcenterTranslationHandler_GenerateArticleTranslationDraft(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 18, 0, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	h := newDocsHelpcenterTranslationHandlerForTestWithLLM(db, &scriptedDocsTranslationHandlerLLM{
+		response: `{"segments":[{"id":"meta:title","translated_text":"Commencer ici"},{"id":"meta:excerpt","translated_text":"Guide rapide"},{"id":"doc/0","translated_text":"Bienvenue dans Helpin."}]}`,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/docs/documents/document-handler-i18n/helpcenter/translations/fr/generate", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{"docId": "document-handler-i18n", "locale": "fr"})
+	rec := httptest.NewRecorder()
+
+	h.GenerateArticleTranslationDraft(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"locale":"fr"`) || !strings.Contains(body, `"slug":null`) || !strings.Contains(body, `Bienvenue dans Helpin.`) {
+		t.Fatalf("body = %s, want generated article translation draft", body)
 	}
 }

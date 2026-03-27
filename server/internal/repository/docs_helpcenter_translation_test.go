@@ -112,6 +112,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			search_placeholder TEXT,
 			default_locale TEXT NOT NULL DEFAULT 'en',
 			enabled_locales TEXT,
+			protected_terms TEXT,
 			show_language_switcher BOOLEAN NOT NULL DEFAULT 0,
 			fallback_to_default_locale BOOLEAN NOT NULL DEFAULT 1,
 			is_published BOOLEAN NOT NULL DEFAULT 0,
@@ -140,7 +141,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			description TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
@@ -159,7 +160,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			locale TEXT NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
 			source_synced BOOLEAN NOT NULL DEFAULT 0,
@@ -177,7 +178,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			collection_id TEXT,
 			locale TEXT NOT NULL,
 			title TEXT NOT NULL,
-			slug TEXT NOT NULL,
+			slug TEXT,
 			excerpt TEXT,
 			content JSON,
 			content_text TEXT,
@@ -195,6 +196,26 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			UNIQUE(document_id, locale),
 			UNIQUE(space_id, locale, slug)
 		)`,
+		`CREATE TABLE docs_helpcenter_article_publications (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			locale TEXT NOT NULL,
+			title TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			excerpt TEXT,
+			content JSON,
+			content_text TEXT,
+			seo_title TEXT,
+			seo_description TEXT,
+			published_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(document_id, locale),
+			UNIQUE(space_id, locale, slug)
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -204,6 +225,17 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 	}
 
 	return db
+}
+
+func ptrString(value string) *string {
+	return &value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func seedDocsHelpcenterTranslationSpace(t *testing.T, db *gorm.DB, space model.DocsSpace) {
@@ -260,7 +292,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleUniqueness(t *testing.
 		WorkspaceID:  "ws-1",
 		Locale:       "en",
 		Name:         "English name",
-		Slug:         "english-name",
+		Slug:         ptrString("english-name"),
 		Status:       model.DocsHelpcenterTranslationStatusPublished,
 		PublishedAt:  nil,
 		SourceSynced: true,
@@ -275,7 +307,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleUniqueness(t *testing.
 		WorkspaceID:  "ws-1",
 		Locale:       "en",
 		Name:         "English name updated",
-		Slug:         "english-name",
+		Slug:         ptrString("english-name"),
 		Status:       model.DocsHelpcenterTranslationStatusNeedsReview,
 		SourceSynced: false,
 	})
@@ -315,7 +347,7 @@ func TestDocsHelpcenterTranslationRepository_SpaceSlugUniquePerWorkspaceLocale(t
 		WorkspaceID:  "ws-1",
 		Locale:       "fr",
 		Name:         "Aide",
-		Slug:         "centre-aide",
+		Slug:         ptrString("centre-aide"),
 		Status:       model.DocsHelpcenterTranslationStatusPublished,
 		SourceSynced: true,
 	}); err != nil {
@@ -327,7 +359,7 @@ func TestDocsHelpcenterTranslationRepository_SpaceSlugUniquePerWorkspaceLocale(t
 		WorkspaceID:  "ws-1",
 		Locale:       "fr",
 		Name:         "Autre aide",
-		Slug:         "centre-aide",
+		Slug:         ptrString("centre-aide"),
 		Status:       model.DocsHelpcenterTranslationStatusPublished,
 		SourceSynced: true,
 	}); err == nil {
@@ -348,7 +380,7 @@ func TestDocsHelpcenterTranslationRepository_CollectionSlugUniquePerSpaceLocale(
 		SpaceID:      "space-1",
 		Locale:       "de",
 		Name:         "Erste Sammlung",
-		Slug:         "erste-sammlung",
+		Slug:         ptrString("erste-sammlung"),
 		Status:       model.DocsHelpcenterTranslationStatusPublished,
 		SourceSynced: true,
 	}); err != nil {
@@ -361,7 +393,7 @@ func TestDocsHelpcenterTranslationRepository_CollectionSlugUniquePerSpaceLocale(
 		SpaceID:      "space-1",
 		Locale:       "de",
 		Name:         "Zweite Sammlung",
-		Slug:         "erste-sammlung",
+		Slug:         ptrString("erste-sammlung"),
 		Status:       model.DocsHelpcenterTranslationStatusPublished,
 		SourceSynced: true,
 	}); err == nil {
@@ -481,7 +513,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(spaceTranslations) != 1 {
 		t.Fatalf("space translations = %d, want 1", len(spaceTranslations))
 	}
-	if spaceTranslations[0].Locale != "en" || spaceTranslations[0].Name != "Getting Started" || spaceTranslations[0].Slug != "getting-started" {
+	if spaceTranslations[0].Locale != "en" || spaceTranslations[0].Name != "Getting Started" || stringValue(spaceTranslations[0].Slug) != "getting-started" {
 		t.Fatalf("unexpected space translation: %+v", spaceTranslations[0])
 	}
 	if spaceTranslations[0].Status != model.DocsHelpcenterTranslationStatusPublished || !spaceTranslations[0].SourceSynced {
@@ -495,7 +527,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(collectionTranslations) != 1 {
 		t.Fatalf("collection translations = %d, want 1", len(collectionTranslations))
 	}
-	if collectionTranslations[0].Locale != "en" || collectionTranslations[0].Name != "Basics" || collectionTranslations[0].Slug != "basics" {
+	if collectionTranslations[0].Locale != "en" || collectionTranslations[0].Name != "Basics" || stringValue(collectionTranslations[0].Slug) != "basics" {
 		t.Fatalf("unexpected collection translation: %+v", collectionTranslations[0])
 	}
 	if collectionTranslations[0].Description == nil || *collectionTranslations[0].Description != description {
@@ -509,7 +541,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(articleTranslations) != 1 {
 		t.Fatalf("article translations = %d, want 1", len(articleTranslations))
 	}
-	if articleTranslations[0].Locale != "en" || articleTranslations[0].Title != "Start Here" || articleTranslations[0].Slug != "start-here" {
+	if articleTranslations[0].Locale != "en" || articleTranslations[0].Title != "Start Here" || stringValue(articleTranslations[0].Slug) != "start-here" {
 		t.Fatalf("unexpected article translation: %+v", articleTranslations[0])
 	}
 	if articleTranslations[0].Excerpt == nil || *articleTranslations[0].Excerpt != excerpt {

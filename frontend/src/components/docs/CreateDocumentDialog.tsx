@@ -58,6 +58,17 @@ export function CreateDocumentDialog({
     setSpaceId(defaultSpaceId ?? spaces[0].id)
   }, [defaultSpaceId, open, spaceId, spaces])
 
+  // Auto-select first collection when collections load for the current space
+  // Only if no default was provided and we're not already set
+  useEffect(() => {
+    if (defaultCollectionId) return
+    if (collections && collections.length > 0) {
+      setCollectionId(collections[0].id)
+    } else {
+      setCollectionId('')
+    }
+  }, [collections, defaultCollectionId])
+
   const reset = () => {
     setTitle('')
     setSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
@@ -128,15 +139,15 @@ export function CreateDocumentDialog({
               </Select>
             </div>
 
-            {(collections ?? []).length > 0 && (
+            {spaceId && (
               <div className="grid gap-2">
-                <Label>Collection (optional)</Label>
+                <Label>Collection</Label>
                 <Select value={collectionId || '__none__'} onValueChange={(v) => setCollectionId(v === '__none__' ? '' : v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="No collection" />
+                    <SelectValue placeholder="Uncategorized" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    <SelectItem value="__none__">Uncategorized</SelectItem>
                     {(collections ?? []).map((c) => {
                       const ColIcon = c.icon ? ICON_MAP[c.icon] : null;
                       return (

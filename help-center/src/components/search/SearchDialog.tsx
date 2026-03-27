@@ -15,10 +15,14 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onClose }: SearchDialogProps) {
-  const { subdomain } = useDocsContext()
+  const { subdomain, locale } = useDocsContext()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const { data: results, isLoading } = useSearchArticles(subdomain, query)
+  const { data: results, isLoading } = useSearchArticles(
+    subdomain,
+    locale,
+    query,
+  )
 
   // Focus input and reset query on open
   useEffect(() => {
@@ -68,6 +72,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
               {results?.map((result) => (
                 <SearchResultItem
                   key={result.id}
+                  locale={locale}
                   result={result}
                   variant="compact"
                   onClick={onClose}

@@ -34,6 +34,10 @@ export interface HelpCenterConfig {
   favicon_url: string | null
   theme_mode: HelpcenterThemeMode
   search_placeholder: string | null
+  default_locale: string
+  enabled_locales: string[]
+  show_language_switcher: boolean
+  fallback_to_default_locale: boolean
   is_published: boolean
   seo_title: string | null
   seo_description: string | null
@@ -91,11 +95,16 @@ export interface Article {
   id: string
   title: string
   slug: string
+  locale?: string
+  requested_locale?: string
+  is_fallback?: boolean
   excerpt: string | null
   icon: string | null
   status: string
+  space_slug?: string
   collection_id: string | null
   collection_name?: string
+  collection_slug?: string | null
   published_at: string | null
   seo_title: string | null
   seo_description: string | null
@@ -107,6 +116,12 @@ export interface Article {
 export interface ArticleDetail extends Article {
   content: Record<string, unknown> | null
   content_html?: string
+}
+
+export interface CollectionPage {
+  collection: NavItem
+  articles: NavArticle[]
+  space_slug?: string
 }
 
 export interface PreviewArticleDetail {
@@ -144,8 +159,12 @@ export interface SearchResult {
   id: string
   title: string
   slug: string
+  locale?: string
+  requested_locale?: string
+  is_fallback?: boolean
   excerpt: string | null
   collection_name: string | null
+  collection_slug?: string | null
   space_slug: string
   space_name?: string
   highlights?: string[]

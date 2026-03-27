@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useSearchArticles } from '@/hooks/queries'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { SearchResultsList } from '@/components/SearchResults'
 import { LoadingState } from '@/components/LoadingState'
+import { SearchRouteView } from '@/components/routes/SearchRouteView'
+import { buildCanonicalSearchPath, isMultilingualEnabled } from '@/lib/locale'
 
 interface SearchParams {
   q?: string
@@ -15,38 +15,28 @@ export const Route = createFileRoute('/search')({
     q: typeof search.q === 'string' ? search.q : undefined,
     space: typeof search.space === 'string' ? search.space : undefined,
   }),
-  component: SearchPage,
+  component: SearchRoute,
 })
 
-function SearchPage() {
+function SearchRoute() {
   const { q = '', space } = Route.useSearch()
-  const { subdomain } = useDocsContext()
-  const { data: results, isLoading } = useSearchArticles(subdomain, q, space)
+  const { defaultLocale, enabledLocales } = useDocsContext()
+  const navigate = useNavigate()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
-  useDocumentTitle(q ? `Search: ${q}` : 'Search')
+  useEffect(() => {
+    if (!multilingualEnabled) {
+      return
+    }
+    navigate({
+      to: buildCanonicalSearchPath(true, defaultLocale, q, space),
+      replace: true,
+    })
+  }, [defaultLocale, multilingualEnabled, navigate, q, space])
 
-  return (
-    <div
-      className="mx-auto py-10 px-6"
-      style={{ maxWidth: 'var(--hc-content-max-width)' }}
-    >
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold mb-1">Search results</h1>
-        {q && (
-          <p
-            className="text-sm"
-            style={{ color: 'var(--hc-text-secondary)' }}
-          >
-            Showing results for &ldquo;{q}&rdquo;
-          </p>
-        )}
-      </header>
+  if (!multilingualEnabled) {
+    return <SearchRouteView locale={defaultLocale} query={q} space={space} />
+  }
 
-      {isLoading ? (
-        <LoadingState message="Searching..." />
-      ) : (
-        <SearchResultsList results={results ?? []} query={q} />
-      )}
-    </div>
-  )
+  return <LoadingState message="Redirecting..." />
 }

@@ -73,6 +73,9 @@ export interface DocsDocument {
   updated_at: string;
   deleted_at?: string;
   hc_slug?: string;
+  has_unpublished_changes?: boolean;
+  live_published_at?: string;
+  live_slug?: string;
 }
 
 export interface DocsContent {
@@ -174,6 +177,7 @@ export interface DocsHelpcenterConfig {
   search_placeholder?: string;
   default_locale: string;
   enabled_locales: string[];
+  protected_terms: string[];
   show_language_switcher: boolean;
   fallback_to_default_locale: boolean;
   is_published: boolean;
@@ -206,7 +210,7 @@ export interface DocsHelpcenterSpaceTranslation {
   workspace_id: string;
   locale: string;
   name: string;
-  slug: string;
+  slug?: string;
   description?: string;
   status: DocsHelpcenterTranslationStatus;
   source_updated_at?: string;
@@ -224,7 +228,7 @@ export interface DocsHelpcenterCollectionTranslation {
   locale: string;
   name: string;
   description?: string;
-  slug: string;
+  slug?: string;
   status: DocsHelpcenterTranslationStatus;
   source_updated_at?: string;
   source_synced: boolean;
@@ -241,7 +245,7 @@ export interface DocsHelpcenterArticleTranslation {
   collection_id?: string;
   locale: string;
   title: string;
-  slug: string;
+  slug?: string;
   excerpt?: string;
   content: unknown;
   content_text: string;
@@ -256,6 +260,9 @@ export interface DocsHelpcenterArticleTranslation {
   not_helpful_count: number;
   created_at: string;
   updated_at: string;
+  has_unpublished_changes?: boolean;
+  live_published_at?: string;
+  live_slug?: string;
 }
 
 export type DocsHelpcenterLocalesConfig = Pick<
@@ -273,7 +280,7 @@ export interface UpdateDocsHelpcenterLocalesRequest {
 export interface UpsertDocsHelpcenterSpaceTranslationRequest {
   locale: string;
   name: string;
-  slug: string;
+  slug?: string;
   description?: string;
   status?: DocsHelpcenterTranslationStatus;
 }
@@ -282,14 +289,14 @@ export interface UpsertDocsHelpcenterCollectionTranslationRequest {
   locale: string;
   name: string;
   description?: string;
-  slug: string;
+  slug?: string;
   status?: DocsHelpcenterTranslationStatus;
 }
 
 export interface UpsertDocsHelpcenterArticleTranslationRequest {
   locale: string;
   title: string;
-  slug: string;
+  slug?: string;
   excerpt?: string;
   content: unknown;
   seo_title?: string;
@@ -442,6 +449,7 @@ export interface UpdateDocsHelpcenterConfigRequest {
   homepage_config?: HelpcenterHomepageConfig;
   space_nav_config?: HelpcenterSpaceNavConfig;
   search_placeholder?: string;
+  protected_terms?: string[];
   is_published?: boolean;
   seo_title?: string;
   seo_description?: string;
