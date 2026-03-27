@@ -91,6 +91,12 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 		if err := s.translationSvc.RefreshSpaceSource(ctx, created.ID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter space translation source after create", "space_id", created.ID, "error", err)
 		}
+		// Auto-generate translations for all enabled locales
+		go func() {
+			if err := s.translationSvc.AutoGenerateSpaceTranslations(ctx, created.ID); err != nil {
+				slog.WarnContext(ctx, "failed to auto-generate space translations", "space_id", created.ID, "error", err)
+			}
+		}()
 	}
 
 	return s.withTeams(ctx, created)

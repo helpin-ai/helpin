@@ -122,4 +122,38 @@ describe('HelpcenterLocalesCard', () => {
     })
     container.remove()
   })
+
+  it('marks the default locale row clearly', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <HelpcenterLocalesCard
+          config={{
+            default_locale: 'en',
+            enabled_locales: ['en', 'fr'],
+            show_language_switcher: true,
+            fallback_to_default_locale: true,
+          }}
+          isSaving={false}
+          onSave={saveMutation}
+        />,
+      )
+    })
+
+    const defaultCheckbox = container.querySelector('input[id="locale-en"]')
+    const defaultRow = defaultCheckbox?.closest('label')
+    expect(defaultRow).not.toBeNull()
+
+    const defaultBadge = defaultRow?.querySelector('[data-slot="badge"]')
+    expect(defaultBadge?.textContent).toBe('Default')
+    expect(defaultBadge?.getAttribute('data-variant')).toBe('secondary')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })

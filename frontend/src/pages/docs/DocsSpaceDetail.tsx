@@ -73,8 +73,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
-import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import type { DocsCollection, DocsDocument, DocStatus, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
@@ -86,6 +86,8 @@ import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditCollectionTranslationDialog } from '@/components/docs/helpcenter/EditCollectionTranslationDialog'
 import { EditSpaceTranslationDialog } from '@/components/docs/helpcenter/EditSpaceTranslationDialog'
 import { TranslationsPanel, type TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
+import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
+import { suggestDocsSlug } from '@/lib/docsSlugs'
 
 function statusColor(status: string): string {
   switch (status) {
@@ -117,7 +119,7 @@ export function DocsSpaceDetail() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate)
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { canEditDocs, canAdminDocs } = usePermissions(access)
+  const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
   const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
@@ -139,6 +141,11 @@ export function DocsSpaceDetail() {
   const [translationsOpen, setTranslationsOpen] = useState(false)
   const [editingSpaceTranslationLocale, setEditingSpaceTranslationLocale] = useState<string | null>(null)
   const [editingCollectionTranslationLocale, setEditingCollectionTranslationLocale] = useState<string | null>(null)
+  const [pendingTranslationPublish, setPendingTranslationPublish] = useState<{
+    entity: 'space' | 'collection'
+    locale: string
+    slug: string
+  } | null>(null)
   const [translationCollectionId, setTranslationCollectionId] = useState('')
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
   const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
@@ -255,7 +262,7 @@ export function DocsSpaceDetail() {
     const isDefaultLocale = locale === defaultLocale
     return {
       locale,
-      state: translation?.status ?? 'missing',
+      state: (translation?.status ?? 'missing') as DocsHelpcenterTranslationState,
       updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
       helperText: isDefaultLocale
         ? 'Mirrored from the source space and refreshed automatically when the source changes.'
@@ -273,7 +280,7 @@ export function DocsSpaceDetail() {
     const parentPublished = spaceTranslationsByLocale.get(locale)?.status === 'published'
     return {
       locale,
-      state: translation?.status ?? 'missing',
+      state: (translation?.status ?? 'missing') as DocsHelpcenterTranslationState,
       updatedAtLabel: translation ? `Updated ${timeAgo(translation.updated_at)}` : undefined,
       helperText: isDefaultLocale
         ? 'Mirrored from the source collection and kept in sync automatically.'
@@ -305,6 +312,29 @@ export function DocsSpaceDetail() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save translation')
       throw err
+    }
+  }
+
+  const handleConfirmTranslationPublish = async () => {
+    if (!pendingTranslationPublish) return
+
+    try {
+      if (pendingTranslationPublish.entity === 'space') {
+        await publishSpaceTranslation.mutateAsync({
+          locale: pendingTranslationPublish.locale,
+          slug: pendingTranslationPublish.slug,
+        })
+        toast.success('Space translation published')
+      } else {
+        await publishCollectionTranslation.mutateAsync({
+          locale: pendingTranslationPublish.locale,
+          slug: pendingTranslationPublish.slug,
+        })
+        toast.success('Collection translation published')
+      }
+      setPendingTranslationPublish(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
     }
   }
 
@@ -425,17 +455,7 @@ export function DocsSpaceDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {space.type === 'external_capable' && canAdminDocs && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={() => setTranslationsOpen(true)}
-            >
-              <Languages className="h-3.5 w-3.5" />
-              Translations
-            </Button>
-          )}
+          {/* Translations managed from Settings > Help Center > Languages */}
           {canEditDocs && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -826,7 +846,16 @@ export function DocsSpaceDetail() {
               onAdd={setEditingSpaceTranslationLocale}
               onEdit={setEditingSpaceTranslationLocale}
               onPublish={(locale) => {
-                publishSpaceTranslation.mutate(locale, {
+                const translation = spaceTranslationsByLocale.get(locale)
+                if (translation && !translation.slug) {
+                  setPendingTranslationPublish({
+                    entity: 'space',
+                    locale,
+                    slug: suggestDocsSlug(translation.name || 'space', 'space'),
+                  })
+                  return
+                }
+                publishSpaceTranslation.mutate({ locale }, {
                   onSuccess: () => toast.success('Space translation published'),
                   onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
                 })
@@ -878,7 +907,16 @@ export function DocsSpaceDetail() {
                   onAdd={setEditingCollectionTranslationLocale}
                   onEdit={setEditingCollectionTranslationLocale}
                   onPublish={(locale) => {
-                    publishCollectionTranslation.mutate(locale, {
+                    const translation = collectionTranslationsByLocale.get(locale)
+                    if (translation && !translation.slug) {
+                      setPendingTranslationPublish({
+                        entity: 'collection',
+                        locale,
+                        slug: suggestDocsSlug(translation.name || 'collection', 'collection'),
+                      })
+                      return
+                    }
+                    publishCollectionTranslation.mutate({ locale }, {
                       onSuccess: () => toast.success('Collection translation published'),
                       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
                     })
@@ -941,6 +979,29 @@ export function DocsSpaceDetail() {
           onSave={handleSaveCollectionTranslation}
         />
       )}
+
+      <PublishSlugDialog
+        open={pendingTranslationPublish !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingTranslationPublish(null)
+        }}
+        title={
+          pendingTranslationPublish?.entity === 'collection'
+            ? `Confirm ${pendingTranslationPublish ? `${getHelpcenterLocaleLabel(pendingTranslationPublish.locale)} ` : ''}collection slug`
+            : `Confirm ${pendingTranslationPublish ? `${getHelpcenterLocaleLabel(pendingTranslationPublish.locale)} ` : ''}space slug`
+        }
+        description={
+          pendingTranslationPublish?.entity === 'collection'
+            ? 'This slug will be used in the localized public help center collection path on first publish.'
+            : 'This slug will be stored with the localized space record on first publish.'
+        }
+        slug={pendingTranslationPublish?.slug ?? ''}
+        onSlugChange={(slug) => {
+          setPendingTranslationPublish((current) => (current ? { ...current, slug } : current))
+        }}
+        onConfirm={handleConfirmTranslationPublish}
+        isPublishing={pendingTranslationPublish?.entity === 'collection' ? publishCollectionTranslation.isPending : publishSpaceTranslation.isPending}
+      />
 
       {/* Typed confirm delete dialog */}
       <TypedConfirmDialog

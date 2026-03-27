@@ -51,7 +51,7 @@ describe('TranslationsPanel', () => {
       )
     })
 
-    expect(container.textContent).toContain('Missing')
+    expect(container.textContent).toContain('Add')
     expect(container.textContent).toContain('Draft')
     expect(container.textContent).toContain('Published')
     expect(container.textContent).toContain('Needs review')

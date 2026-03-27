@@ -1,26 +1,32 @@
-import { Link, useMatchRoute } from '@tanstack/react-router'
+import { useRouterState } from '@tanstack/react-router'
+import { useDocsContext } from '@/contexts/DocsContext'
+import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
 import { cn } from '@/lib/utils'
 import { PhIcon } from '@/components/PhIcon'
 import type { NavItem } from '@/lib/types'
 
 interface NavTreeProps {
+  locale: string
   navigation: NavItem[]
-  spaceSlug: string
   onArticleClick?: () => void
 }
 
 export function NavTree({
+  locale,
   navigation,
-  spaceSlug,
   onArticleClick,
 }: NavTreeProps) {
+  const { enabledLocales } = useDocsContext()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+
   return (
     <nav className="py-4 px-3">
       {navigation.map((collection, idx) => (
         <CollectionGroup
           key={collection.id}
+          locale={locale}
           collection={collection}
-          spaceSlug={spaceSlug}
+          multilingualEnabled={multilingualEnabled}
           onArticleClick={onArticleClick}
           isFirst={idx === 0}
         />
@@ -31,16 +37,18 @@ export function NavTree({
 
 function CollectionGroup({
   collection,
-  spaceSlug,
+  locale,
+  multilingualEnabled,
   onArticleClick,
   isFirst,
 }: {
   collection: NavItem
-  spaceSlug: string
+  locale: string
+  multilingualEnabled: boolean
   onArticleClick?: () => void
   isFirst: boolean
 }) {
-  const matchRoute = useMatchRoute()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
 
   return (
     <div className={cn(!isFirst && 'mt-5')}>
@@ -53,16 +61,18 @@ function CollectionGroup({
 
       <div className="mt-0.5">
         {collection.articles.map((article) => {
-          const isActive = !!matchRoute({
-            to: '/$spaceSlug/$articleSlug',
-            params: { spaceSlug, articleSlug: article.slug },
-          })
+          const href = buildCanonicalArticlePath(
+            multilingualEnabled,
+            locale,
+            collection.slug,
+            article.slug,
+          )
+          const isActive = pathname === href
 
           return (
-            <Link
+            <a
               key={article.id}
-              to="/$spaceSlug/$articleSlug"
-              params={{ spaceSlug, articleSlug: article.slug }}
+              href={href}
               onClick={onArticleClick}
               className={cn(
                 'block rounded-lg px-3 py-[7px] text-[13px] transition-colors',
@@ -72,7 +82,7 @@ function CollectionGroup({
               )}
             >
               {article.title}
-            </Link>
+            </a>
           )
         })}
       </div>

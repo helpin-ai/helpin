@@ -1,75 +1,55 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
-import { useArticle } from '@/hooks/queries'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { useSpaceContext } from '@/contexts/SpaceContext'
-import { useScrollSpy } from '@/hooks/useScrollSpy'
-import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { extractTocFromHtml } from '@/lib/toc'
-import { ArticleShell } from '@/components/article/ArticleShell'
-import { ArticleContent } from '@/components/ArticleContent'
-import { TableOfContents } from '@/components/layout/TableOfContents'
 import { LoadingState } from '@/components/LoadingState'
-import { ErrorState } from '@/components/ErrorState'
+import { ArticleRouteView } from '@/components/routes/ArticleRouteView'
+import {
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+  isMultilingualEnabled,
+} from '@/lib/locale'
 
 export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
-  component: ArticlePage,
+  component: LegacyArticleRedirect,
 })
 
-function ArticlePage() {
+function LegacyArticleRedirect() {
   const { spaceSlug, articleSlug } = Route.useParams()
-  const { subdomain } = useDocsContext()
-  const { space, getPager, getCollectionName } = useSpaceContext()
-
-  const { data: article, isLoading, error } = useArticle(subdomain, spaceSlug, articleSlug)
-
-  // Document title
-  useDocumentTitle(article?.title)
-
-  // Extract TOC headings from HTML content
-  const tocItems = useMemo(
-    () => (article?.content_html ? extractTocFromHtml(article.content_html) : []),
-    [article?.content_html],
+  const { defaultLocale, enabledLocales } = useDocsContext()
+  const navigate = useNavigate()
+  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const normalizedSpaceSlug = spaceSlug.trim().toLowerCase()
+  const isKnownLocaleSlug = enabledLocales.some(
+    (locale) => locale.toLowerCase() === normalizedSpaceSlug,
   )
 
-  // Scroll spy for active TOC heading
-  const tocIds = useMemo(() => tocItems.map((item) => item.id), [tocItems])
-  const activeHeadingId = useScrollSpy(tocIds)
+  useEffect(() => {
+    if (multilingualEnabled) {
+      navigate({
+        to: buildCanonicalArticlePath(true, defaultLocale, spaceSlug, articleSlug),
+        replace: true,
+      })
+      return
+    }
 
-  // Prev/next from space context (no duplicate query)
-  const pager = useMemo(() => getPager(articleSlug), [getPager, articleSlug])
+    if (isKnownLocaleSlug) {
+      navigate({
+        to: buildCanonicalCollectionPath(false, defaultLocale, articleSlug),
+        replace: true,
+      })
+    }
+  }, [articleSlug, defaultLocale, isKnownLocaleSlug, multilingualEnabled, navigate, spaceSlug])
 
-  // Collection name from space context (fallback to article data)
-  const collectionName = getCollectionName(articleSlug) ?? article?.collection_name
-
-  if (isLoading) return <LoadingState />
-  if (error || !article) {
+  if (!multilingualEnabled && !isKnownLocaleSlug) {
     return (
-      <ErrorState
-        title="Article not found"
-        message="This article does not exist or is not published."
-        statusCode={404}
+      <ArticleRouteView
+        locale={defaultLocale}
+        collectionSlug={spaceSlug}
+        articleSlug={articleSlug}
+        multilingualEnabled={false}
       />
     )
   }
 
-  return (
-    <div className="flex">
-      <div className="flex-1 min-w-0">
-        <ArticleShell
-          title={article.seo_title || article.title}
-          excerpt={article.excerpt}
-          spaceSlug={spaceSlug}
-          spaceName={space?.name}
-          collectionName={collectionName}
-          articleSlug={articleSlug}
-          pager={pager}
-        >
-          <ArticleContent html={article.content_html} />
-        </ArticleShell>
-      </div>
-
-      <TableOfContents items={tocItems} activeId={activeHeadingId} />
-    </div>
-  )
+  return <LoadingState message="Redirecting..." />
 }

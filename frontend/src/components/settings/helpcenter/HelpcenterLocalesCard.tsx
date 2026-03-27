@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Globe2, Languages } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -43,8 +42,6 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
     return Array.from(byValue.values())
   }, [draft.enabled_locales])
 
-  const enabledLocales = withDefaultFirst(draft.enabled_locales, draft.default_locale)
-
   const toggleLocale = (locale: string, checked: boolean) => {
     setDraft((current) => {
       const next = new Set(current.enabled_locales)
@@ -61,17 +58,8 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
   }
 
   return (
-    <Card className="border-border/60 shadow-none">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Languages className="h-4 w-4 text-primary" />
-          Languages
-        </CardTitle>
-        <CardDescription>
-          Configure the languages your public help center supports. The default locale stays mirrored from the source docs tree.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
+    <Card className="border-0 shadow-none p-0">
+      <CardContent className="space-y-5 px-0 pb-0 pt-0">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,220px)_1fr]">
           <div className="space-y-2">
             <Label htmlFor="helpcenter-default-locale">Default locale</Label>
@@ -137,17 +125,14 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Globe2 className="h-4 w-4 text-primary" />
-            <div>
-              <h3 className="text-sm font-medium">Enabled locales</h3>
-              <p className="text-xs text-muted-foreground">
-                Choose the languages translators can work in. Default locale is always kept enabled.
-              </p>
-            </div>
+          <div>
+            <h3 className="text-sm font-medium">Enabled locales</h3>
+            <p className="text-xs text-muted-foreground">
+              Select which languages your help center will be available in.
+            </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="flex flex-wrap gap-2">
             {localeOptions.map((option) => {
               const checked = draft.enabled_locales.includes(option.value)
               const isDefault = option.value === draft.default_locale
@@ -155,30 +140,28 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
                 <label
                   key={option.value}
                   htmlFor={`locale-${option.value}`}
-                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-sm transition-colors ${
-                    checked ? 'border-primary/25 bg-primary/5' : 'border-border/60 bg-background'
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs cursor-pointer transition-colors ${
+                    checked ? 'border-primary/25 bg-primary/5 text-foreground' : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground">{option.label}</p>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{option.value}</p>
-                  </div>
                   <Checkbox
                     id={`locale-${option.value}`}
                     checked={checked}
                     disabled={isDefault}
                     onCheckedChange={(value) => toggleLocale(option.value, Boolean(value))}
+                    className="h-3.5 w-3.5"
                   />
+                  <span>{option.label}</span>
+                  {isDefault && (
+                    <span className="text-[9px] text-muted-foreground">(default)</span>
+                  )}
                 </label>
               )
             })}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-          <p className="text-xs text-muted-foreground">
-            Enabled: {enabledLocales.map(getHelpcenterLocaleLabel).join(', ')}
-          </p>
+        <div className="flex justify-end border-t border-border/60 pt-4">
           <Button type="button" onClick={() => onSave(draft)} disabled={isSaving}>
             {isSaving ? 'Saving locales…' : 'Save locales'}
           </Button>

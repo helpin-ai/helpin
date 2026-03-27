@@ -545,7 +545,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         )}
         {/* Widget Installation */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
@@ -562,7 +562,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('widget-installation')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               {!widgetKey ? (
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
@@ -642,7 +642,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Identity Capture */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('identity-capture')}
@@ -659,7 +659,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm">Require email before chat</Label>
@@ -699,7 +699,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Appearance */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('appearance')}
@@ -716,7 +716,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('appearance')}>
             <div>
-            <div className="border-t border-border p-4 space-y-6">
+            <div className="border-t border-border px-6 py-6 space-y-6">
               {/* Widget Identity */}
               <div className="space-y-3">
                 <div>
@@ -944,7 +944,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Help Center */}
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('help-center')}
@@ -961,7 +961,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </button>
           <div className="accordion-animate" data-open={isExpanded('help-center')}>
             <div>
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border px-6 py-6 space-y-4">
               {docsSpacesLoading && (
                 <p className="text-sm text-muted-foreground">Loading available spaces...</p>
               )}
@@ -998,7 +998,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
           {/* AI Auto-Reply */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('ai-auto-reply')}
@@ -1015,7 +1015,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Enable AI auto-reply</Label>
@@ -1146,7 +1146,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Availability */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('business-hours')}
@@ -1163,7 +1163,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('business-hours')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">Enable availability schedule</Label>
@@ -1241,7 +1241,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Chat Features — merged CSAT, File Uploads, Email */}
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('chat-features')}
@@ -1258,7 +1258,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             </button>
             <div className="accordion-animate" data-open={isExpanded('chat-features')}>
               <div>
-              <div className="border-t border-border p-4 space-y-4">
+              <div className="border-t border-border px-6 py-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">File uploads</Label>

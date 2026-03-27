@@ -1379,14 +1379,14 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             {!allSpaces || allSpaces.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No docs spaces created yet.</p>
             ) : (
+              <>
               <div className="flex flex-wrap gap-1.5">
                 {allSpaces.map((space) => {
                   const isWorkspaceWide = space.visibility === 'workspace_wide';
                   const selected = isWorkspaceWide || (space.team_ids?.includes(selectedTeamId ?? '') ?? false);
                   const isSaving = spaceSaving === space.id;
-                  return (
+                  const pill = (
                     <button
-                      key={space.id}
                       type="button"
                       disabled={isSaving || isWorkspaceWide}
                       onClick={async () => {
@@ -1416,8 +1416,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                       {space.icon ? `${space.icon} ` : ''}{space.name}{isWorkspaceWide ? ' (all teams)' : ''}
                     </button>
                   );
+                  return <span key={space.id}>{pill}</span>;
                 })}
               </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                <span className="font-medium">Note:</span> Workspace-wide spaces can't be removed from here. Edit visibility from space settings.
+              </p>
+              </>
             )}
           </div>
         </DialogContent>
