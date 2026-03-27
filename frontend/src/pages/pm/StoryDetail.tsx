@@ -691,13 +691,14 @@ export function StoryDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
 
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.objective_name}
                 onClick={() => navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug, objectiveId: storyDetail.objective_id! } })}
               >
                 {storyDetail.objective_name}
@@ -710,7 +711,8 @@ export function StoryDetailPage() {
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.epic_name}
                 onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: storyDetail.story.epic_id! } })}
               >
                 {storyDetail.epic_name}
@@ -723,7 +725,8 @@ export function StoryDetailPage() {
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={currentSprintName}
                 onClick={() => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug, sprintId: form.sprint_id! } })}
               >
                 {currentSprintName}
@@ -741,7 +744,7 @@ export function StoryDetailPage() {
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-2 flex shrink-0 items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <FollowButton entityType="story" entityId={storyDetail.story.id} />
           <DropdownMenu>
