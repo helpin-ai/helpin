@@ -318,14 +318,12 @@ export default function Settings({ section, initialTeamId }: { section: Settings
 
   return (
     <div className="space-y-4">
-      {section !== 'teams' && section !== 'members' && (
-        <div>
-          <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
-          {sectionMeta.description && (
-            <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
-          )}
-        </div>
-      )}
+      <div>
+        <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
+        {sectionMeta.description && (
+          <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+        )}
+      </div>
       {renderSection()}
     </div>
   );
