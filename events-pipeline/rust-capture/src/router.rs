@@ -26,7 +26,7 @@ pub struct State {
 }
 
 async fn index() -> &'static str {
-    "Hello world!"
+    "ok"
 }
 
 pub fn router<
