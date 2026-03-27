@@ -203,6 +203,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
   renderTrigger,
   searchPlaceholder = 'Search...',
   emptyLabel = 'No options',
+  showGroupHeadings = true,
 }: {
   value: T;
   groups: Array<{ key: string; label: string; options: { value: T; label: string }[] }>;
@@ -210,6 +211,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
   renderTrigger: () => React.ReactNode;
   searchPlaceholder?: string;
   emptyLabel?: string;
+  showGroupHeadings?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -223,13 +225,14 @@ function GroupedSidebarPopoverSelect<T extends string>({
           {renderTrigger()}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
+      <PopoverContent className="w-48 p-0.5" align="start">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
+          <CommandInput placeholder={searchPlaceholder} className="h-8 text-xs" />
+          <CommandList className="max-h-56">
             <CommandEmpty>{emptyLabel}</CommandEmpty>
             <CommandGroup>
               <CommandItem
+                className="gap-1.5 px-2 py-1 text-xs"
                 value="No sprint"
                 onSelect={() => {
                   onChange('__none__' as T);
@@ -240,12 +243,32 @@ function GroupedSidebarPopoverSelect<T extends string>({
                 {value === '__none__' ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
               </CommandItem>
             </CommandGroup>
-            {groups.map((group) => (
-              <CommandGroup key={group.key} heading={group.label}>
-                {group.options.map((option) => (
+            {showGroupHeadings ? (
+              groups.map((group) => (
+                <CommandGroup key={group.key} heading={group.label}>
+                  {group.options.map((option) => (
+                    <CommandItem
+                      className="gap-1.5 px-2 py-1 text-xs"
+                      key={option.value}
+                      value={`${group.label} ${option.label}`}
+                      onSelect={() => {
+                        onChange(option.value);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="truncate">{option.label}</span>
+                      {value === option.value ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))
+            ) : (
+              <CommandGroup>
+                {groups.flatMap((group) => group.options).map((option) => (
                   <CommandItem
+                    className="gap-1.5 px-2 py-1 text-xs"
                     key={option.value}
-                    value={`${group.label} ${option.label}`}
+                    value={option.label}
                     onSelect={() => {
                       onChange(option.value);
                       setOpen(false);
@@ -256,7 +279,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
                   </CommandItem>
                 ))}
               </CommandGroup>
-            ))}
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -1357,6 +1380,7 @@ export function CreateStoryModal({
                   <GroupedSidebarPopoverSelect
                     value={form.sprint_id || "__none__"}
                     groups={sprintOptionGroups}
+                    showGroupHeadings={!form.team_id}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,

@@ -615,40 +615,6 @@ export function SprintDetailPage() {
 
           </div>
 
-          <Separator className="my-4" />
-
-          <div className="space-y-1">
-            {sprint.sprint.archived ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!workspaceId || !sprint) return;
-                  setSaving(true);
-                  const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
-                  if (err || !data) {
-                    setSaveError(err ?? 'Failed to update');
-                  } else {
-                    setSprint(data);
-                    setSaveError(null);
-                  }
-                  setSaving(false);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <ArchiveRestore className="h-3.5 w-3.5" />
-                Unarchive
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setArchiveConfirmOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Archive
-              </button>
-            )}
-          </div>
         </aside>
       </div>
 
