@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
-import { timeAgo } from '@/lib/utils'
 import {
   ArrowLeft,
   Archive,
@@ -67,9 +66,9 @@ import {
   useToggleDocLock,
   useRevertDocsVersion,
 } from '@/hooks/queries'
+import { timeAgo } from '@/lib/utils'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
-import { timeAgo } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -85,7 +84,7 @@ import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/componen
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
-import { TranslationsPanel, type TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
+import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
