@@ -101,6 +101,19 @@ describe('supportPresenceStore', () => {
     });
   });
 
+  describe('replaceAgentTyping', () => {
+    it('replaces the full agent typing map for a conversation', () => {
+      const { setAgentTyping, replaceAgentTyping } = useSupportPresenceStore.getState();
+      setAgentTyping('conv-1', 'agent-a', 'draft A');
+      replaceAgentTyping('conv-1', {
+        'agent-b': { content: 'draft B', name: 'Bob' },
+      });
+      expect(useSupportPresenceStore.getState().agentTyping['conv-1']).toEqual({
+        'agent-b': { content: 'draft B', name: 'Bob' },
+      });
+    });
+  });
+
   // ── clearOneAgentTyping ────────────────────────────────────
 
   describe('clearOneAgentTyping', () => {
@@ -169,6 +182,15 @@ describe('supportPresenceStore', () => {
       const viewing = useSupportPresenceStore.getState().viewingAgents;
       expect(viewing['conv-1']).toEqual(['agent-a']);
       expect(viewing['conv-2']).toEqual(['agent-b']);
+    });
+  });
+
+  describe('replaceViewingAgents', () => {
+    it('replaces the full viewing set for a conversation', () => {
+      const { setViewingAgent, replaceViewingAgents } = useSupportPresenceStore.getState();
+      setViewingAgent('conv-1', 'agent-a', true);
+      replaceViewingAgents('conv-1', ['agent-b', 'agent-c']);
+      expect(useSupportPresenceStore.getState().viewingAgents['conv-1']).toEqual(['agent-b', 'agent-c']);
     });
   });
 });

@@ -17,9 +17,22 @@ export interface WSEvent {
 }
 
 // Snapshot sent by server when agent starts viewing a conversation
+export interface PresenceSnapshotViewer {
+  user_id: string
+  name?: string
+  avatar?: string
+}
+
+export interface PresenceSnapshotTyper {
+  content: string
+  name?: string
+  avatar?: string
+}
+
 export interface PresenceSnapshot {
-  viewers: string[]
-  typers: Record<string, string>
+  conversation_id: string
+  viewers: PresenceSnapshotViewer[]
+  typers: Record<string, PresenceSnapshotTyper>
 }
 
 export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
@@ -27,7 +40,7 @@ export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() 
 interface UseWebSocketOptions {
   workspaceId: string
   onEvent: (event: WSEvent) => void
-  onPresenceSnapshot?: (conversationId: string, snapshot: PresenceSnapshot) => void
+  onPresenceSnapshot?: (snapshot: PresenceSnapshot) => void
 }
 
 export type WSSend = (type: string, data: Record<string, unknown>) => void
@@ -89,9 +102,8 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
         if (parsed.type === 'support:online_visitors' && parsed.data?.visitors) {
           useSupportPresenceStore.getState().setOnlineVisitors(parsed.data.visitors as string[])
         } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
-          // Handle presence snapshot (sent as {type, data} envelope)
-          const snapshot = parsed.data as PresenceSnapshot & { conversation_id?: string }
-          onSnapshotRef.current?.('', snapshot)
+          const snapshot = parsed.data as PresenceSnapshot
+          onSnapshotRef.current?.(snapshot)
         } else if (parsed.action && parsed.entity) {
           // Standard event (has action/entity fields)
           const event = parsed as WSEvent

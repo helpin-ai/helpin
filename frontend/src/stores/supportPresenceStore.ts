@@ -23,6 +23,7 @@ interface SupportPresenceState {
 
   // Actions
   setTyping: (conversationId: string, isTyping: boolean, content?: string) => void;
+  replaceAgentTyping: (conversationId: string, next: Record<string, AgentTypingState>) => void;
   setAgentTyping: (
     conversationId: string,
     actorId: string | null,
@@ -31,6 +32,7 @@ interface SupportPresenceState {
   ) => void;
   clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
+  replaceViewingAgents: (conversationId: string, actorIds: string[]) => void;
   setVisitorOnline: (anonymousId: string) => void;
   setVisitorOffline: (anonymousId: string) => void;
   setOnlineVisitors: (visitors: string[]) => void;
@@ -67,6 +69,10 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   setTyping: (conversationId, isTyping, content) =>
     set((state) => ({
       typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping ? (content ?? '') : false },
+    })),
+  replaceAgentTyping: (conversationId, next) =>
+    set((state) => ({
+      agentTyping: { ...state.agentTyping, [conversationId]: next },
     })),
   setAgentTyping: (conversationId, actorId, content, metadata) =>
     set((state) => {
@@ -106,4 +112,8 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
       const next = viewing ? [...current, actorId] : current.filter((id) => id !== actorId);
       return { viewingAgents: { ...state.viewingAgents, [conversationId]: next } };
     }),
+  replaceViewingAgents: (conversationId, actorIds) =>
+    set((state) => ({
+      viewingAgents: { ...state.viewingAgents, [conversationId]: actorIds },
+    })),
 }));

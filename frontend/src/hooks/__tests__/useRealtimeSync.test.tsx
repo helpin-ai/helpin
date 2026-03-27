@@ -6,15 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
+  onPresenceSnapshot: null as ((snapshot: unknown) => void) | null,
+  send: vi.fn(),
 }
 
 vi.mock('../useWebSocket', () => ({
-  useWebSocket: vi.fn(({ onEvent }) => {
+  useWebSocket: vi.fn(({ onEvent, onPresenceSnapshot }) => {
     captured.onEvent = onEvent
-    return { send: vi.fn(), isConnected: true }
+    captured.onPresenceSnapshot = onPresenceSnapshot
+    return { send: captured.send, isConnected: true }
   }),
   useWSStore: { setState: vi.fn() },
 }))
@@ -39,10 +43,20 @@ describe('useRealtimeSync story ordering events', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    captured.send = vi.fn()
+    captured.onPresenceSnapshot = null
     useAuthStore.setState({ user: { id: 'user-1' } as never })
     usePMBoardStore.setState({
       refreshBoard: vi.fn() as never,
       patchStory: vi.fn() as never,
+    })
+    useSupportPresenceStore.setState({
+      typingIndicators: {},
+      agentTyping: {},
+      viewingAgents: {},
+      onlineVisitors: {},
+      wsSend: null,
+      wsConnected: false,
     })
   })
 
@@ -203,6 +217,64 @@ describe('useRealtimeSync story ordering events', () => {
       }),
     )
     expect(refreshBoard).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('replaces support presence state from authoritative snapshots', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    useSupportPresenceStore.setState({
+      typingIndicators: {},
+      agentTyping: {
+        'conv-1': {
+          'user-stale': { content: 'old draft', name: 'Stale Agent' },
+        },
+      },
+      viewingAgents: {
+        'conv-1': ['user-stale'],
+      },
+      onlineVisitors: {},
+      wsSend: null,
+      wsConnected: false,
+    })
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onPresenceSnapshot?.({
+        conversation_id: 'conv-1',
+        viewers: [{ user_id: 'user-2', name: 'Bob Agent', avatar: 'https://example.com/bob.png' }],
+        typers: {
+          'user-3': {
+            content: 'fresh draft',
+            name: 'Cara Agent',
+            avatar: 'https://example.com/cara.png',
+          },
+        },
+      })
+      await Promise.resolve()
+    })
+
+    const state = useSupportPresenceStore.getState()
+    expect(state.viewingAgents['conv-1']).toEqual(['user-2'])
+    expect(state.agentTyping['conv-1']).toEqual({
+      'user-3': {
+        content: 'fresh draft',
+        name: 'Cara Agent',
+        avatarUrl: 'https://example.com/cara.png',
+      },
+    })
 
     act(() => root.unmount())
     container.remove()
