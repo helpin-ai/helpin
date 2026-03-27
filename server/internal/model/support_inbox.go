@@ -132,6 +132,16 @@ type SupportMessage struct {
 
 func (SupportMessage) TableName() string { return "support_messages" }
 
+// SupportLinkPreview represents an unfurled link card attached to a support message.
+type SupportLinkPreview struct {
+	URL         string  `json:"url"`
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+	SiteName    *string `json:"site_name,omitempty"`
+	ImageURL    *string `json:"image_url,omitempty"`
+	Host        string  `json:"host"`
+}
+
 // SupportCannedResponse represents a canned response for quick replies.
 type SupportCannedResponse struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`

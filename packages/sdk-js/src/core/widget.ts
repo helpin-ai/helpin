@@ -1130,6 +1130,7 @@ export class WidgetManager {
             if (parsedMeta) {
               if (parsedMeta.ai_sources) msg.sources = parsedMeta.ai_sources;
               if (parsedMeta.ai_confidence !== undefined) msg.aiConfidence = parsedMeta.ai_confidence;
+              if (Array.isArray(parsedMeta.link_previews)) msg.linkPreviews = parsedMeta.link_previews;
             }
             return msg;
           });
@@ -1227,6 +1228,7 @@ export class WidgetManager {
         if (wsMeta) {
           if (wsMeta.ai_sources) (newMsg as any).sources = wsMeta.ai_sources;
           if (wsMeta.ai_confidence !== undefined) (newMsg as any).aiConfidence = wsMeta.ai_confidence;
+          if (Array.isArray(wsMeta.link_previews)) (newMsg as any).linkPreviews = wsMeta.link_previews;
         }
 
         // Replace optimistic message if this is an echo
@@ -1391,6 +1393,7 @@ export class WidgetManager {
             if (meta) {
               if (meta.ai_sources) mapped.sources = meta.ai_sources;
               if (meta.ai_confidence !== undefined) mapped.aiConfidence = meta.ai_confidence;
+              if (Array.isArray(meta.link_previews)) mapped.linkPreviews = meta.link_previews;
             }
             return mapped;
           });

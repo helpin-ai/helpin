@@ -32,8 +32,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  // Track which conversation the snapshot is for (set before sending viewing:start)
-  const pendingSnapshotConvRef = useRef<string | null>(null)
   const selfIdRef = useRef<string | undefined>(useAuthStore.getState().user?.id)
   selfIdRef.current = useAuthStore.getState().user?.id
   const scheduleRefresh = useCallback(() => {
@@ -126,8 +124,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         const store = useSupportPresenceStore.getState()
         const convId = event.entity_id
         const content = (event.data?.content as string) || ''
+        const agentName = typeof event.data?.agent_name === 'string' ? event.data.agent_name : undefined
+        const agentAvatar = typeof event.data?.agent_avatar === 'string' ? event.data.agent_avatar : undefined
         const isWidget = event.actor_id?.startsWith('widget:')
-        const timerKey = `${convId}:${isWidget ? 'customer' : 'agent'}`
+        const timerKey = `${convId}:${isWidget ? 'customer' : `agent:${event.actor_id ?? 'unknown'}`}`
 
         // Clear any existing auto-clear timer for this conversation+actor type
         const prevTimer = typingTimers.current.get(timerKey)
@@ -142,7 +142,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         } else {
           // Agent typing — supports multiple agents per conversation
           if (event.action === 'typing_started') {
-            store.setAgentTyping(convId, event.actor_id, content)
+            store.setAgentTyping(convId, event.actor_id, content, {
+              name: agentName,
+              avatarUrl: agentAvatar,
+            })
           } else {
             store.clearOneAgentTyping(convId, event.actor_id)
           }
@@ -262,18 +265,37 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
   }, [scheduleRefresh, workspaceId, queryClient])
 
-  const onPresenceSnapshot = useCallback((_convId: string, snapshot: PresenceSnapshot) => {
-    const convId = pendingSnapshotConvRef.current
+  const onPresenceSnapshot = useCallback((snapshot: PresenceSnapshot) => {
+    const convId = snapshot.conversation_id
     if (!convId) return
     const store = useSupportPresenceStore.getState()
     const selfId = selfIdRef.current
-    // Apply viewers (excluding self — self avatar is handled locally via isSelected)
-    for (const uid of snapshot.viewers) {
-      if (uid !== selfId) store.setViewingAgent(convId, uid, true)
-    }
-    // Apply typers (excluding self)
-    for (const [uid, content] of Object.entries(snapshot.typers)) {
-      if (uid !== selfId) store.setAgentTyping(convId, uid, content)
+
+    const nextViewers = snapshot.viewers
+      .map((viewer) => viewer.user_id)
+      .filter((uid) => uid && uid !== selfId)
+    store.replaceViewingAgents(convId, nextViewers)
+
+    const nextTypers = Object.fromEntries(
+      Object.entries(snapshot.typers)
+        .filter(([uid]) => uid !== selfId)
+        .map(([uid, typing]) => [uid, {
+          content: typing.content ?? '',
+          name: typing.name,
+          avatarUrl: typing.avatar,
+        }])
+    )
+    store.replaceAgentTyping(convId, nextTypers)
+
+    for (const [uid] of Object.entries(nextTypers)) {
+      const timerKey = `${convId}:agent:${uid}`
+      const prevTimer = typingTimers.current.get(timerKey)
+      if (prevTimer) clearTimeout(prevTimer)
+      const timer = setTimeout(() => {
+        typingTimers.current.delete(timerKey)
+        useSupportPresenceStore.getState().clearOneAgentTyping(convId, uid)
+      }, TYPING_TIMEOUT_MS)
+      typingTimers.current.set(timerKey, timer)
     }
   }, [])
 
@@ -287,23 +309,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
 
   const { send: wsSend, isConnected } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
 
-  // Wrap send to track pending snapshot conversation
-  const wsSendWithSnapshot: WSSend = useCallback((type, data) => {
-    if (type === 'support:viewing:start' && data.conversation_id) {
-      pendingSnapshotConvRef.current = data.conversation_id as string
-    }
-    wsSend(type, data)
-  }, [wsSend])
-
   // Expose wsSend and connection state to components via the store
   useEffect(() => {
-    useSupportPresenceStore.getState().setWsSend(wsSendWithSnapshot)
+    useSupportPresenceStore.getState().setWsSend(wsSend)
     return () => { useSupportPresenceStore.getState().setWsSend(null) }
-  }, [wsSendWithSnapshot])
+  }, [wsSend])
 
   useEffect(() => {
     useSupportPresenceStore.getState().setWsConnected(isConnected)
   }, [isConnected])
 
-  return { wsSend: wsSendWithSnapshot }
+  return { wsSend }
 }

@@ -260,6 +260,7 @@ type SupportAIService struct {
 	installationRepo       *repository.SupportInboxInstallationRepository
 	workspaceRepo          *repository.WorkspaceRepository
 	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
+	linkPreviewService     SupportMessageLinkPreviewer
 	wsPublisher            *websocket.Publisher
 	presence               websocket.PresenceProvider
 	js                     nats.JetStreamContext
@@ -325,6 +326,15 @@ func (s *SupportAIService) SetSupportRoutingDependencies(
 	s.workspaceRepo = workspaceRepo
 	s.presence = presence
 	s.statusOverrideRepo = statusOverrideRepo
+	return s
+}
+
+// SetLinkPreviewService injects the support message link preview enricher.
+func (s *SupportAIService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.linkPreviewService = linkPreviewService
 	return s
 }
 
@@ -677,6 +687,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			Content:           cleanContent,
 			MessageType:       "reply",
 			Metadata:          metadataStr,
+		}
+		if s.linkPreviewService != nil {
+			s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 		}
 		if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 			return fmt.Errorf("create AI message: %w", err)
@@ -1496,6 +1509,9 @@ func (s *SupportAIService) publishAIReply(
 		Content:           stripPII(strings.TrimSpace(content)),
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 	}
 	if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 		return nil, fmt.Errorf("create AI message: %w", err)

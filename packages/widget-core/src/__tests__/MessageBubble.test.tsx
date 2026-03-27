@@ -85,4 +85,50 @@ describe('MessageBubble', () => {
     const { container } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('Via email');
   });
+
+  it('renders link previews for support messages', () => {
+    const message = createMessage({
+      role: 'agent',
+      linkPreviews: [
+        {
+          url: 'https://example.com/pricing',
+          title: 'Pricing',
+          description: 'Compare plans and limits.',
+          host: 'example.com',
+        },
+      ],
+    });
+    const { container, getByRole } = render(<MessageBubble message={message} />);
+    expect(container.textContent).toContain('Pricing');
+    expect((getByRole('link', { name: /pricing/i }) as HTMLAnchorElement).href).toContain('https://example.com/pricing');
+  });
+
+  it('uses outgoing preview styling for customer links and incoming styling for agent links', () => {
+    const customerMessage = createMessage({
+      role: 'customer',
+      linkPreviews: [
+        {
+          url: 'https://example.com/customer',
+          title: 'Customer Link',
+          host: 'example.com',
+        },
+      ],
+    });
+    const agentMessage = createMessage({
+      role: 'agent',
+      linkPreviews: [
+        {
+          url: 'https://example.com/agent',
+          title: 'Agent Link',
+          host: 'example.com',
+        },
+      ],
+    });
+
+    const customerRender = render(<MessageBubble message={customerMessage} />);
+    expect(customerRender.container.querySelector('.helpin-link-preview--outgoing')).toBeTruthy();
+
+    const agentRender = render(<MessageBubble message={agentMessage} />);
+    expect(agentRender.container.querySelector('.helpin-link-preview--outgoing')).toBeNull();
+  });
 });

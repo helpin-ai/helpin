@@ -50,14 +50,24 @@
 
   const HELPIN_AI_DISPLAY_NAME = "Helpin AI";
 
-  function parseAIMessageMetadata(metadata) {
+  function parseMessageMetadata(metadata) {
     if (!metadata) return null;
     try {
-      const parsed = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
-      return parsed && (parsed.ai_auto_reply || parsed.ai_agent_id) ? parsed : null;
+      return typeof metadata === "string" ? JSON.parse(metadata) : metadata;
     } catch (_error) {
       return null;
     }
+  }
+
+  function parseAIMessageMetadata(metadata) {
+    const parsed = parseMessageMetadata(metadata);
+    return parsed && (parsed.ai_auto_reply || parsed.ai_agent_id) ? parsed : null;
+  }
+
+  function parseLinkPreviews(metadata) {
+    const parsed = parseMessageMetadata(metadata);
+    if (!parsed || !Array.isArray(parsed.link_previews)) return [];
+    return parsed.link_previews.filter((preview) => preview && typeof preview.url === "string" && typeof preview.title === "string");
   }
 
   function isAIMessage(msg) {
@@ -510,6 +520,69 @@
 
       .tp-team + .tp-team .tp-msg-bubble {
         border-radius: 4px 18px 18px 4px;
+      }
+
+      .tp-link-previews {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .tp-link-preview {
+        display: block;
+        overflow: hidden;
+        text-decoration: none;
+        border-radius: 14px;
+        border: 1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"};
+        background: ${isDark ? "rgba(255,255,255,0.04)" : "#ffffff"};
+        color: inherit;
+      }
+
+      .tp-link-preview.tp-outgoing {
+        border-color: rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.12);
+      }
+
+      .tp-link-preview-image {
+        display: block;
+        width: 100%;
+        height: 132px;
+        object-fit: cover;
+      }
+
+      .tp-link-preview-body {
+        padding: 10px 12px;
+      }
+
+      .tp-link-preview-host {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: ${isDark ? "#a0a0b8" : "#6b7280"};
+      }
+
+      .tp-link-preview.tp-outgoing .tp-link-preview-host {
+        color: rgba(255,255,255,0.78);
+      }
+
+      .tp-link-preview-title {
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+
+      .tp-link-preview-desc {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 1.45;
+        color: ${isDark ? "#c4c4d0" : "#6b7280"};
+      }
+
+      .tp-link-preview.tp-outgoing .tp-link-preview-desc {
+        color: rgba(255,255,255,0.86);
       }
 
       .tp-msg-time {
@@ -1154,10 +1227,62 @@
 
   function linkify(text) {
     const escaped = escapeHTML(text);
-    return escaped.replace(
-      /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">$1</a>'
-    );
+    return escaped.replace(/(^|[\s(>])(https?:\/\/[^\s<]+)/g, function (_match, prefix, rawUrl) {
+      let url = rawUrl;
+      let suffix = "";
+
+      while (url) {
+        const last = url[url.length - 1];
+        if (/[.,!?;:]/.test(last)) {
+          suffix = last + suffix;
+          url = url.slice(0, -1);
+          continue;
+        }
+        if (last === ")" && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+          suffix = last + suffix;
+          url = url.slice(0, -1);
+          continue;
+        }
+        break;
+      }
+
+      return prefix + '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' + url + "</a>" + suffix;
+    });
+  }
+
+  function safePreviewURL(url) {
+    return /^https?:\/\//i.test(url || "") ? url : "#";
+  }
+
+  function previewHost(preview) {
+    try {
+      return new URL(preview.url).hostname.replace(/^www\./, "");
+    } catch (_error) {
+      return (preview.host || "").replace(/^www\./, "");
+    }
+  }
+
+  function renderLinkPreviews(previews, isCustomer) {
+    if (!Array.isArray(previews) || previews.length === 0) return "";
+    return `<div class="tp-link-previews">` + previews.map((preview) => {
+      const href = escapeHTML(safePreviewURL(preview.url));
+      const title = escapeHTML(preview.title);
+      const host = escapeHTML(preview.site_name || previewHost(preview));
+      const desc = preview.description ? `<div class="tp-link-preview-desc">${escapeHTML(preview.description)}</div>` : "";
+      const image = preview.image_url && /^https?:\/\//i.test(preview.image_url)
+        ? `<img class="tp-link-preview-image" src="${escapeHTML(preview.image_url)}" alt="${title}" loading="lazy" />`
+        : "";
+      return `
+        <a class="tp-link-preview ${isCustomer ? "tp-outgoing" : ""}" href="${href}" target="_blank" rel="noopener noreferrer">
+          ${image}
+          <div class="tp-link-preview-body">
+            <div class="tp-link-preview-host">${host}</div>
+            <div class="tp-link-preview-title">${title}</div>
+            ${desc}
+          </div>
+        </a>
+      `;
+    }).join("") + `</div>`;
   }
 
   // ─── Storage ───
@@ -1882,6 +2007,7 @@
           : "";
 
         const contentHTML = linkify(msg.content);
+        const linkPreviewsHTML = renderLinkPreviews(parseLinkPreviews(msg.metadata), isCustomer);
 
         let statusClass = "";
         if (msg._sending) statusClass = ' style="opacity:0.6;"';
@@ -1891,7 +2017,7 @@
           ${!isCustomer ? avatarHTML : ""}
           <div class="tp-msg-content">
             ${senderHTML}
-            <div class="tp-msg-bubble"${statusClass}>${contentHTML}</div>
+            <div class="tp-msg-bubble"${statusClass}>${contentHTML}${linkPreviewsHTML}</div>
             ${timeHTML}
           </div>
         `;

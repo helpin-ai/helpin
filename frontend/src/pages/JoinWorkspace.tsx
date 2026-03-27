@@ -173,7 +173,7 @@ export default function JoinWorkspace() {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSignupAndJoin}>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pb-6">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" value={info.email} disabled className="bg-muted" />

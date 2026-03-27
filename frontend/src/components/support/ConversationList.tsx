@@ -1,4 +1,4 @@
-import { useMemo, useCallback, memo } from 'react';
+import { useMemo, useCallback, memo, useEffect } from 'react';
 import { MessageSquare, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -37,6 +37,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     navFilter,
   } = useSupportInboxStore();
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
+  const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
 
   const handleSelect = useCallback((id: string) => {
     selectConversation(id);
@@ -59,6 +60,13 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const filteredConversations = useMemo(() => {
     return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
   }, [conversations, navFilter, userId, searchQuery]);
+
+  useEffect(() => {
+    if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
+    wsSend('support:presence:sync', {
+      conversation_ids: filteredConversations.map((conversation) => conversation.id),
+    });
+  }, [filteredConversations, wsConnected, wsSend]);
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">

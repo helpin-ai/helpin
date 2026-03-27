@@ -344,12 +344,12 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                             onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
                             disabled={updatingMemberId === m.id}
                           >
-                            <SelectTrigger className="h-8 w-[132px]">
+                            <SelectTrigger size="sm" className="h-7 w-[116px] px-2.5 text-xs">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="text-xs">
                               {roleOptions(m).map((option) => (
-                                <SelectItem key={`${m.id}-${option.value}`} value={option.value}>
+                                <SelectItem key={`${m.id}-${option.value}`} value={option.value} className="py-1 text-xs">
                                   {option.label}
                                 </SelectItem>
                               ))}

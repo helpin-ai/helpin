@@ -8,6 +8,7 @@ export interface Message {
   senderAvatar?: string;
   sources?: AiSource[];
   aiConfidence?: number;
+  linkPreviews?: LinkPreview[];
   attachments?: Attachment[];
   viaChannel?: 'email' | 'widget';
   isInternal: boolean;
@@ -29,6 +30,15 @@ export interface Attachment {
   fileType: string;
   fileSize: number;
   url?: string;
+}
+
+export interface LinkPreview {
+  url: string;
+  title: string;
+  description?: string;
+  site_name?: string;
+  image_url?: string;
+  host: string;
 }
 
 export interface PendingAttachment {

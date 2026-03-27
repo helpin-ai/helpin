@@ -24,7 +24,7 @@ import {
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
-import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
@@ -79,9 +79,9 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
 
   return (
     <>
-      {entries.map(([actorId, content]) => {
+      {entries.map(([actorId, typing]) => {
         const member = members.find((m) => m.user_id === actorId);
-        const name = member?.full_name || member?.email || 'Agent';
+        const { name, avatarUrl } = resolveAgentIdentity(member, typing);
         return (
           <div key={actorId} className="flex justify-end mt-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="max-w-[70%]">
@@ -96,8 +96,8 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
                 </span>
               </div>
               <div className="rounded-2xl rounded-br-sm bg-blue-100/60 px-3.5 py-2 text-sm leading-relaxed text-blue-600/70 dark:bg-blue-900/20 dark:text-blue-300/70">
-                {content ? (
-                  <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
+                {typing.content ? (
+                  <p className="whitespace-pre-wrap italic opacity-70">{typing.content}</p>
                 ) : (
                   <span className="flex items-center gap-1.5 italic opacity-50">
                     <span className="flex gap-0.5">
@@ -111,8 +111,8 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
               </div>
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-              {member?.avatar_url ? (
-                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
               ) : (
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm" title={name}>
                   {getInitial(name)}
@@ -124,6 +124,16 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
       })}
     </>
   );
+}
+
+function resolveAgentIdentity(
+  member: { full_name?: string | null; email?: string | null; avatar_url?: string | null } | undefined,
+  typing: AgentTypingState
+) {
+  return {
+    name: typing.name || member?.full_name || member?.email || 'Agent',
+    avatarUrl: typing.avatarUrl || member?.avatar_url || undefined,
+  };
 }
 
 function DaySeparator({
