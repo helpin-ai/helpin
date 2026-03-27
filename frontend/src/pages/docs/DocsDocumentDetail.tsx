@@ -278,8 +278,12 @@ export function DocsDocumentDetail() {
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
+      // Invalidate translation data so needs_review status updates promptly
+      if (space?.type === 'external_capable' && (localesConfig?.enabled_locales?.length ?? 0) > 1) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+      }
     },
-    [saveContent, docId],
+    [saveContent, docId, space?.type, localesConfig?.enabled_locales?.length, queryClient, wsId],
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
@@ -1176,27 +1180,30 @@ export function DocsDocumentDetail() {
               )}
             </div>
 
-            <Separator className="my-4" />
-
-            {/* ── History & Links ── */}
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => { setVersionsOpen(true); setMetaOpen(false) }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <Clock className="h-3.5 w-3.5" />
-                Version History
-              </button>
-              <button
-                type="button"
-                onClick={() => setLinksOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Linked Items
-              </button>
-            </div>
+            {/* ── History & Links (source locale only) ── */}
+            {isSourceLocaleActive && (
+              <>
+              <Separator className="my-4" />
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => { setVersionsOpen(true); setMetaOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  Version History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLinksOpen(true)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Linked Items
+                </button>
+              </div>
+              </>
+            )}
 
             {/* ── Translation Actions (non-source locale) ── */}
             {showLocalePills && !isSourceLocaleActive && activeTranslation && canEditDocs && (

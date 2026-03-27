@@ -108,7 +108,9 @@ func (s *DocsHelpcenterTranslationService) ListArticleTranslations(ctx context.C
 		return nil, err
 	}
 	for i := range translations {
-		if translations[i].Status != model.DocsHelpcenterTranslationStatusPublished || translations[i].PublishedAt == nil {
+		isPublishedOrNeedsReview := translations[i].Status == model.DocsHelpcenterTranslationStatusPublished ||
+			translations[i].Status == model.DocsHelpcenterTranslationStatusNeedsReview
+		if !isPublishedOrNeedsReview || translations[i].PublishedAt == nil {
 			translations[i].LivePublishedAt = nil
 			translations[i].LiveSlug = nil
 			translations[i].HasUnpublishedChanges = false
