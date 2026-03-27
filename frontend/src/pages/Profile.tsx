@@ -14,6 +14,8 @@ import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
 import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
+import { queryClient } from '@/lib/queryClient';
+import { queryKeys } from '@/lib/queryKeys';
 
 type PendingAvatarFile = {
   file: File;
@@ -104,6 +106,10 @@ export default function Profile() {
     }
     toast.success('Avatar updated');
     useAuthStore.setState({ user: data });
+    if (currentWorkspace?.id) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.members(currentWorkspace.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(currentWorkspace.id) });
+    }
     resetPendingAvatar();
   };
 

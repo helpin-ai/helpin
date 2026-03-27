@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import { CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -34,6 +34,10 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function containsMarkdownTable(content: string): boolean {
+  return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
 }
 
 const markdownComponents = {
@@ -102,9 +106,17 @@ interface MessageBubbleProps {
   isLastInGroup?: boolean;
   source?: TicketSource;
   receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null;
+  fallbackAvatarUrl?: string;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  isConsecutive,
+  isLastInGroup = true,
+  source,
+  receiptStatus,
+  fallbackAvatarUrl,
+}: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
@@ -150,6 +162,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
 
     return message.content;
   }, [message.content]);
+  const hasTableContent = useMemo(() => containsMarkdownTable(displayContent), [displayContent]);
 
   // Highlight @mentions in internal notes
   const mentionParts = useMemo(() => {
@@ -175,6 +188,20 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     </div>
   );
 
+  const resolvedAvatarUrl = message.sender_avatar_url
+    ?? fallbackAvatarUrl
+    ?? ((message.sender_user_id && message.sender_user_id === currentUser?.id)
+      ? (currentUser.avatar_url ?? undefined)
+      : undefined);
+  const avatarSeed = message.sender_user_id || message.sender_agent_id || resolvedSenderName;
+  const fallbackAvatar = (
+    <div
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold leading-none shadow-sm ${getAvatarColor(avatarSeed)}`}
+    >
+      {getInitial(resolvedSenderName)}
+    </div>
+  );
+
   // ── System message: right-aligned pill with avatar (Crisp-style) ──
   if (message.message_type === 'system') {
     const isResolved = message.content.toLowerCase().includes('resolved');
@@ -185,8 +212,6 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       : isReopened ? <RotateCcw className="h-3.5 w-3.5 shrink-0" />
       : isClosed ? <XCircle className="h-4 w-4 shrink-0" />
       : <CheckCircle2 className="h-4 w-4 shrink-0" />;
-
-    const avatarUrl = message.sender_avatar_url;
 
     return (
       <div className="my-4 flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -204,12 +229,10 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
             </div>
           </TooltipContent>
         </Tooltip>
-        {avatarUrl ? (
-          <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+        {resolvedAvatarUrl ? (
+          <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
         ) : (
-          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-            {getInitial(resolvedSenderName)}
-          </div>
+          fallbackAvatar
         )}
       </div>
     );
@@ -247,40 +270,24 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   }
 
   // ── Chat bubble ──
-  const avatarUrl = message.sender_avatar_url;
-  const showBotAvatar = isAI || isAgent;
-
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-          {getInitial(resolvedSenderName)}
-        </div>
+        {fallbackAvatar}
       </TooltipTrigger>
       <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
-  ) : avatarUrl ? (
+  ) : resolvedAvatarUrl ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
-      </TooltipTrigger>
-      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
-    </Tooltip>
-  ) : showBotAvatar ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary shadow-sm">
-          <Bot className="h-3.5 w-3.5" />
-        </div>
+        <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
       </TooltipTrigger>
       <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-          {getInitial(resolvedSenderName)}
-        </div>
+        {fallbackAvatar}
       </TooltipTrigger>
       <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
@@ -300,7 +307,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
           </div>
         )}
 
-        <div className="max-w-[70%]">
+        <div className={hasTableContent ? 'max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'max-w-[70%]'}>
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -309,10 +316,14 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                     isCustomer
                       ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  }`}
+                  } ${hasTableContent ? 'overflow-hidden' : ''}`}
                 >
                   {displayContent && (
-                    <div className="prose-chat">
+                    <div
+                      className="prose-chat"
+                      data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                      data-has-table={hasTableContent ? 'true' : 'false'}
+                    >
                       <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
                     </div>
                   )}
