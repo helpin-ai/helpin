@@ -48,6 +48,11 @@ type PresenceProvider interface {
 	RefreshDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) error
 	ClearAllDocViewingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error)
 	GetDocSnapshot(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error)
+	SetDocEditing(ctx context.Context, workspaceID, documentID, userID, connID, area, section string) (changed bool, err error)
+	ClearDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) (changed bool, err error)
+	GetActiveDocEditing(ctx context.Context, workspaceID, userID, connID string) (DocEditorPresenceRef, error)
+	RefreshDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) error
+	ClearAllDocEditingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error)
 
 	// Online visitors — conn-scoped (one visitor can have multiple widget tabs).
 	SetVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error

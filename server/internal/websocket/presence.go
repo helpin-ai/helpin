@@ -29,6 +29,12 @@ type PresenceState struct {
 	docViewingConns map[string]map[string]map[string]map[string]struct{}
 	// workspaceID → userID → connID → documentID
 	activeDocViewing map[string]map[string]map[string]string
+	// workspaceID → documentID → userID → editor state
+	docEditing map[string]map[string]map[string]DocEditorPresence
+	// workspaceID → documentID → userID → owning connID
+	docEditingOwner map[string]map[string]map[string]string
+	// workspaceID → userID → connID → active editor state
+	activeDocEditing map[string]map[string]map[string]DocEditorPresenceRef
 	// workspaceID → anonymousID → connID → struct{} (visitor connections)
 	visitorConns map[string]map[string]map[string]struct{}
 	// workspaceID → userID → connID → struct{} (internal agent connections)
@@ -48,6 +54,9 @@ func NewPresenceState() *PresenceState {
 		docViewing:       make(map[string]map[string]map[string]struct{}),
 		docViewingConns:  make(map[string]map[string]map[string]map[string]struct{}),
 		activeDocViewing: make(map[string]map[string]map[string]string),
+		docEditing:       make(map[string]map[string]map[string]DocEditorPresence),
+		docEditingOwner:  make(map[string]map[string]map[string]string),
+		activeDocEditing: make(map[string]map[string]map[string]DocEditorPresenceRef),
 		visitorConns:     make(map[string]map[string]map[string]struct{}),
 		agentConns:       make(map[string]map[string]map[string]struct{}),
 		agentLastSeen:    make(map[string]map[string]time.Time),
@@ -449,7 +458,19 @@ func (p *PresenceState) GetSnapshot(_ context.Context, workspaceID, conversation
 }
 
 type DocPresenceSnapshot struct {
-	Viewers []string `json:"viewers"`
+	Viewers []string                     `json:"viewers"`
+	Editors map[string]DocEditorPresence `json:"editors,omitempty"`
+}
+
+type DocEditorPresence struct {
+	Area    string `json:"area"`
+	Section string `json:"section,omitempty"`
+}
+
+type DocEditorPresenceRef struct {
+	DocumentID string `json:"document_id"`
+	Area       string `json:"area"`
+	Section    string `json:"section,omitempty"`
 }
 
 func (p *PresenceState) SetDocViewing(_ context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
@@ -597,15 +618,154 @@ func (p *PresenceState) ClearAllDocViewingForConn(_ context.Context, workspaceID
 	return viewingCleared, nil
 }
 
+func (p *PresenceState) SetDocEditing(_ context.Context, workspaceID, documentID, userID, connID, area, section string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	next := DocEditorPresence{
+		Area:    area,
+		Section: section,
+	}
+	nextRef := DocEditorPresenceRef{
+		DocumentID: documentID,
+		Area:       area,
+		Section:    section,
+	}
+
+	if wsActive, ok := p.activeDocEditing[workspaceID]; ok {
+		if userActive, ok := wsActive[userID]; ok {
+			if prev, ok := userActive[connID]; ok && prev.DocumentID != "" && prev.DocumentID != documentID {
+				p.clearDocEditingLocked(workspaceID, prev.DocumentID, userID, connID)
+			}
+		}
+	}
+
+	if p.docEditing[workspaceID] == nil {
+		p.docEditing[workspaceID] = make(map[string]map[string]DocEditorPresence)
+	}
+	if p.docEditing[workspaceID][documentID] == nil {
+		p.docEditing[workspaceID][documentID] = make(map[string]DocEditorPresence)
+	}
+	if p.docEditingOwner[workspaceID] == nil {
+		p.docEditingOwner[workspaceID] = make(map[string]map[string]string)
+	}
+	if p.docEditingOwner[workspaceID][documentID] == nil {
+		p.docEditingOwner[workspaceID][documentID] = make(map[string]string)
+	}
+	if p.activeDocEditing[workspaceID] == nil {
+		p.activeDocEditing[workspaceID] = make(map[string]map[string]DocEditorPresenceRef)
+	}
+	if p.activeDocEditing[workspaceID][userID] == nil {
+		p.activeDocEditing[workspaceID][userID] = make(map[string]DocEditorPresenceRef)
+	}
+
+	prev, existed := p.docEditing[workspaceID][documentID][userID]
+	prevOwner := p.docEditingOwner[workspaceID][documentID][userID]
+
+	p.docEditing[workspaceID][documentID][userID] = next
+	p.docEditingOwner[workspaceID][documentID][userID] = connID
+	p.activeDocEditing[workspaceID][userID][connID] = nextRef
+
+	changed := !existed || prevOwner != connID || prev.Area != next.Area || prev.Section != next.Section
+	return changed, nil
+}
+
+func (p *PresenceState) ClearDocEditing(_ context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.clearDocEditingLocked(workspaceID, documentID, userID, connID), nil
+}
+
+func (p *PresenceState) clearDocEditingLocked(workspaceID, documentID, userID, connID string) bool {
+	if ws := p.activeDocEditing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			delete(user, connID)
+			if len(user) == 0 {
+				delete(ws, userID)
+			}
+		}
+	}
+
+	if ws := p.docEditingOwner[workspaceID]; ws != nil {
+		if doc := ws[documentID]; doc != nil {
+			if ownerConnID, ok := doc[userID]; ok {
+				if ownerConnID != connID {
+					return false
+				}
+				delete(doc, userID)
+				if len(doc) == 0 {
+					delete(ws, documentID)
+				}
+			} else {
+				return false
+			}
+		}
+	}
+
+	if ws := p.docEditing[workspaceID]; ws != nil {
+		if doc := ws[documentID]; doc != nil {
+			if _, exists := doc[userID]; exists {
+				delete(doc, userID)
+				if len(doc) == 0 {
+					delete(ws, documentID)
+				}
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (p *PresenceState) GetActiveDocEditing(_ context.Context, workspaceID, userID, connID string) (DocEditorPresenceRef, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if ws := p.activeDocEditing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			if ref, ok := user[connID]; ok {
+				return ref, nil
+			}
+		}
+	}
+	return DocEditorPresenceRef{}, nil
+}
+
+func (p *PresenceState) RefreshDocEditing(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+func (p *PresenceState) ClearAllDocEditingForConn(_ context.Context, workspaceID, userID, connID string) ([]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var editingCleared []string
+	var active DocEditorPresenceRef
+	if ws := p.activeDocEditing[workspaceID]; ws != nil {
+		if user := ws[userID]; user != nil {
+			active = user[connID]
+		}
+	}
+	if active.DocumentID != "" && p.clearDocEditingLocked(workspaceID, active.DocumentID, userID, connID) {
+		editingCleared = append(editingCleared, active.DocumentID)
+	}
+	return editingCleared, nil
+}
+
 func (p *PresenceState) GetDocSnapshot(_ context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	snap := DocPresenceSnapshot{
 		Viewers: make([]string, 0),
+		Editors: make(map[string]DocEditorPresence),
 	}
 	if ws := p.docViewing[workspaceID]; ws != nil {
 		for uid := range ws[documentID] {
 			snap.Viewers = append(snap.Viewers, uid)
+		}
+	}
+	if ws := p.docEditing[workspaceID]; ws != nil {
+		for uid, editor := range ws[documentID] {
+			snap.Editors[uid] = editor
 		}
 	}
 	return snap, nil

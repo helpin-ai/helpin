@@ -6,7 +6,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 export interface WSEvent {
   event_id?: string
   sent_at?: string
-  action: 'created' | 'updated' | 'deleted' | 'moved' | 'reordered' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'visitor_online' | 'visitor_offline'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'reordered' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'editing_updated' | 'editing_stopped' | 'visitor_online' | 'visitor_offline'
   entity: string
   entity_id: string
   workspace_id: string
@@ -38,6 +38,15 @@ export interface PresenceSnapshot {
 export interface DocsPresenceSnapshot {
   document_id: string
   viewers: PresenceSnapshotViewer[]
+  editors: Record<string, DocsPresenceSnapshotEditor>
+}
+
+export interface DocsPresenceSnapshotEditor {
+  user_id: string
+  area: string
+  section?: string
+  name?: string
+  avatar?: string
 }
 
 export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
