@@ -15,19 +15,21 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsHelpcenterService handles help center publishing, config, and slug management.
 type DocsHelpcenterService struct {
-	hcRepo         *repository.DocsHelpcenterRepository
+	hcRepo          *repository.DocsHelpcenterRepository
 	publicationRepo *repository.DocsHelpcenterPublicationRepository
-	docRepo        *repository.DocsDocumentRepository
-	contentRepo    *repository.DocsContentRepository
-	spaceRepo      *repository.DocsSpaceRepository
-	collectionRepo *repository.DocsCollectionRepository
-	redirectRepo   *repository.DocsRedirectRepository
-	s3Client       *storage.S3Client
-	translationSvc *DocsHelpcenterTranslationService
+	docRepo         *repository.DocsDocumentRepository
+	contentRepo     *repository.DocsContentRepository
+	spaceRepo       *repository.DocsSpaceRepository
+	collectionRepo  *repository.DocsCollectionRepository
+	redirectRepo    *repository.DocsRedirectRepository
+	s3Client        *storage.S3Client
+	translationSvc  *DocsHelpcenterTranslationService
+	wsPublisher     *websocket.Publisher
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -40,8 +42,9 @@ func NewDocsHelpcenterService(
 	collectionRepo *repository.DocsCollectionRepository,
 	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
+	wsPublisher *websocket.Publisher,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, publicationRepo: publicationRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client}
+	return &DocsHelpcenterService{hcRepo: hcRepo, publicationRepo: publicationRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client, wsPublisher: wsPublisher}
 }
 
 func (s *DocsHelpcenterService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -148,7 +151,11 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.FallbackToDefaultLocale != nil {
 		updates["fallback_to_default_locale"] = *req.FallbackToDefaultLocale
 	}
-	return s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
+	config, err := s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
+	if err == nil && config != nil {
+		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_helpcenter_config", workspaceID, workspaceID, "")
+	}
+	return config, err
 }
 
 // PublishExternally publishes a help center article externally.
@@ -233,6 +240,7 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after publish", "document_id", documentID, "error", err)
 		}
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, "")
 	return nil
 }
 
@@ -271,7 +279,11 @@ func (s *DocsHelpcenterService) UpdateArticleSlug(ctx context.Context, workspace
 	if err != nil {
 		return err
 	}
-	return s.hcRepo.SetSlug(ctx, documentID, slug)
+	if err := s.hcRepo.SetSlug(ctx, documentID, slug); err != nil {
+		return err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
+	return nil
 }
 
 // UnpublishExternally removes a help center article from public access.
@@ -283,6 +295,10 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 	if art == nil {
 		return nil // Not published, no-op.
 	}
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return err
+	}
 	if err := s.hcRepo.SetPublicPublishedAt(ctx, documentID, nil); err != nil {
 		return err
 	}
@@ -290,6 +306,9 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after unpublish", "document_id", documentID, "error", err)
 		}
+	}
+	if doc != nil {
+		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, "")
 	}
 	return nil
 }
@@ -1432,7 +1451,6 @@ func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspac
 		ContentHTML:    contentHTML,
 	}, nil
 }
-
 
 // ListRedirects returns paginated redirects for a workspace.
 func (s *DocsHelpcenterService) ListRedirects(ctx context.Context, workspaceID string, filter model.DocsRedirectFilter) ([]model.DocsRedirect, int64, error) {

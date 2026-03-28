@@ -44,6 +44,14 @@ type presenceSyncData struct {
 	ConversationIDs []string `json:"conversation_ids"`
 }
 
+type docViewingData struct {
+	DocumentID string `json:"document_id"`
+}
+
+type docPresenceSyncData struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
 type PresenceSnapshotViewer struct {
 	UserID string  `json:"user_id"`
 	Name   *string `json:"name,omitempty"`
@@ -60,6 +68,11 @@ type PresenceSnapshotPayload struct {
 	ConversationID string                           `json:"conversation_id"`
 	Viewers        []PresenceSnapshotViewer         `json:"viewers"`
 	Typers         map[string]PresenceSnapshotTyper `json:"typers,omitempty"`
+}
+
+type DocPresenceSnapshotPayload struct {
+	DocumentID string                   `json:"document_id"`
+	Viewers    []PresenceSnapshotViewer `json:"viewers"`
 }
 
 // MarkReadFunc marks a conversation as read for the given user.
@@ -153,6 +166,49 @@ func (h *Handler) sendPresenceSnapshot(ctx context.Context, conn *websocket.Conn
 		"typer_count", len(payload.Typers))
 	if err := SendToClient(conn, "support:presence_snapshot", payload); err != nil {
 		slog.Error("presence snapshot send failed", "error", err, "conversation_id", conversationID, "workspace_id", workspaceID)
+	}
+}
+
+func (h *Handler) buildDocPresenceSnapshotPayload(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshotPayload, error) {
+	snap, err := h.hub.Presence.GetDocSnapshot(ctx, workspaceID, documentID)
+	if err != nil {
+		return DocPresenceSnapshotPayload{}, err
+	}
+
+	payload := DocPresenceSnapshotPayload{
+		DocumentID: documentID,
+		Viewers:    make([]PresenceSnapshotViewer, 0, len(snap.Viewers)),
+	}
+
+	for _, userID := range snap.Viewers {
+		viewer := PresenceSnapshotViewer{UserID: userID}
+		if h.userLookup != nil {
+			name, avatar := h.userLookup(ctx, userID)
+			if name != "" {
+				viewer.Name = &name
+			}
+			if avatar != nil {
+				viewer.Avatar = avatar
+			}
+		}
+		payload.Viewers = append(payload.Viewers, viewer)
+	}
+
+	return payload, nil
+}
+
+func (h *Handler) sendDocPresenceSnapshot(ctx context.Context, conn *websocket.Conn, workspaceID, documentID string) {
+	payload, err := h.buildDocPresenceSnapshotPayload(ctx, workspaceID, documentID)
+	if err != nil {
+		slog.Error("doc presence GetSnapshot", "error", err, "document_id", documentID, "workspace_id", workspaceID)
+		return
+	}
+	slog.Debug("doc presence snapshot sent",
+		"document_id", documentID,
+		"workspace_id", workspaceID,
+		"viewer_count", len(payload.Viewers))
+	if err := SendToClient(conn, "docs:presence_snapshot", payload); err != nil {
+		slog.Error("doc presence snapshot send failed", "error", err, "document_id", documentID, "workspace_id", workspaceID)
 	}
 }
 
@@ -251,6 +307,93 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
+		case "docs:viewing:start":
+			var d docViewingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" {
+				continue
+			}
+			ctx := r.Context()
+			slog.Debug("doc presence viewing start",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
+			changed, err := h.hub.Presence.SetDocViewing(ctx, workspaceID, d.DocumentID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("doc presence SetDocViewing", "error", err)
+			}
+			if changed {
+				var eventData json.RawMessage
+				if h.userLookup != nil {
+					payload := map[string]string{}
+					name, avatar := h.userLookup(ctx, client.UserID)
+					if name != "" {
+						payload["viewer_name"] = name
+					}
+					if avatar != nil {
+						payload["viewer_avatar"] = *avatar
+					}
+					if len(payload) > 0 {
+						eventData, _ = json.Marshal(payload)
+					}
+				}
+				h.hub.BroadcastAll(Event{
+					Action:      "viewing_started",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+					Data:        eventData,
+				})
+			}
+			h.sendDocPresenceSnapshot(ctx, conn, workspaceID, d.DocumentID)
+
+		case "docs:viewing:stop":
+			var d docViewingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" {
+				continue
+			}
+			slog.Debug("doc presence viewing stop",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
+			cleared, err := h.hub.Presence.ClearDocViewing(r.Context(), workspaceID, d.DocumentID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("doc presence ClearDocViewing", "error", err)
+			}
+			if cleared {
+				h.hub.BroadcastAll(Event{
+					Action:      "viewing_stopped",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+				})
+			}
+
+		case "docs:presence:sync":
+			var d docPresenceSyncData
+			if json.Unmarshal(msg.Data, &d) != nil || len(d.DocumentIDs) == 0 {
+				continue
+			}
+			slog.Debug("doc presence sync requested",
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID,
+				"document_count", len(d.DocumentIDs))
+			seen := make(map[string]struct{}, len(d.DocumentIDs))
+			for _, documentID := range d.DocumentIDs {
+				if documentID == "" {
+					continue
+				}
+				if _, ok := seen[documentID]; ok {
+					continue
+				}
+				seen[documentID] = struct{}{}
+				h.sendDocPresenceSnapshot(r.Context(), conn, workspaceID, documentID)
+			}
+
 		case "support:viewing:start":
 			var d agentViewingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {

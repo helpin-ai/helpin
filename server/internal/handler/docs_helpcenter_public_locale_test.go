@@ -37,10 +37,11 @@ func newDocsHelpcenterPublicHandlerForTest(db *gorm.DB) *DocsHandler {
 		repository.NewDocsCollectionRepository(db),
 		nil,
 		nil,
+		nil,
 	)
 	helpcenterSvc.SetTranslationService(translationSvc)
 
-	spaceSvc := service.NewDocsSpaceService(repository.NewDocsSpaceRepository(db))
+	spaceSvc := service.NewDocsSpaceService(repository.NewDocsSpaceRepository(db), nil)
 	spaceSvc.SetTranslationService(translationSvc)
 
 	return &DocsHandler{

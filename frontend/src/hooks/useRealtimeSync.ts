@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useWebSocket, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
+import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
@@ -90,6 +91,26 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     if (event.entity === 'story') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.entity_id) })
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] })
+    } else if (event.entity === 'workflow') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.workflows(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.epicStates(workspaceId) })
+    } else if (event.entity === 'label') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.labels(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.labelsWithStats(workspaceId) })
+    } else if (event.entity === 'view') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.views(workspaceId) })
+    } else if (event.entity === 'story_template') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) })
+    } else if (event.entity === 'recurring_template') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.recurringTemplates(workspaceId) })
+    } else if (event.entity === 'automation_rule') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.automationRules(workspaceId) })
+      const workflowId = typeof event.data?.workflow_id === 'string' ? event.data.workflow_id : event.parent_id
+      if (workflowId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.automationRulesByWorkflow(workspaceId, workflowId) })
+      }
+    } else if (event.entity === 'team_estimate_settings') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.settings(workspaceId) })
     } else if (event.entity === 'epic') {
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
     } else if (event.entity === 'sprint') {
@@ -97,6 +118,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'objective') {
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'objectives'] })
     } else if (event.entity === 'docs_document') {
+      if (event.actor_id && event.actor_id === selfIdRef.current) {
+        return
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(workspaceId, event.entity_id) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, event.entity_id) })
@@ -105,6 +129,47 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.space(workspaceId, event.entity_id) })
     } else if (event.entity === 'docs_collection') {
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.collections(workspaceId, event.parent_id ?? '') })
+    } else if (event.entity === 'docs_version') {
+      const docId = event.parent_id ?? ''
+      if (docId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.versions(workspaceId, docId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.version(workspaceId, docId, event.entity_id) })
+      }
+    } else if (event.entity === 'docs_link') {
+      const docId = event.parent_id ?? ''
+      if (docId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.links(workspaceId, docId) })
+      }
+      const linkedObjectType = typeof event.data?.linked_object_type === 'string' ? event.data.linked_object_type : undefined
+      const linkedObjectId = typeof event.data?.linked_object_id === 'string' ? event.data.linked_object_id : undefined
+      if (linkedObjectType && linkedObjectId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.linkedDocs(workspaceId, linkedObjectType, linkedObjectId) })
+      }
+    } else if (event.entity === 'docs_helpcenter_config') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterLocales(workspaceId) })
+    } else if (event.entity === 'docs_document_presence') {
+      if (!event.entity_id || !event.actor_id || event.actor_id === selfIdRef.current) return
+      const docsStore = useDocsPresenceStore.getState()
+      const timerKey = `${event.entity_id}:docs:viewing:${event.actor_id}`
+      const prev = typingTimers.current.get(timerKey)
+      if (prev) {
+        clearTimeout(prev)
+        typingTimers.current.delete(timerKey)
+      }
+      const metadata = {
+        name: typeof event.data?.viewer_name === 'string' ? event.data.viewer_name : undefined,
+        avatarUrl: typeof event.data?.viewer_avatar === 'string' ? event.data.viewer_avatar : undefined,
+      }
+      docsStore.setViewingUser(event.entity_id, event.actor_id, event.action === 'viewing_started', metadata)
+
+      if (event.action === 'viewing_started') {
+        const timer = setTimeout(() => {
+          typingTimers.current.delete(timerKey)
+          useDocsPresenceStore.getState().setViewingUser(event.entity_id, event.actor_id, false)
+        }, 30_000)
+        typingTimers.current.set(timerKey, timer)
+      }
     } else if (event.entity === 'notification') {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
@@ -299,6 +364,21 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
   }, [])
 
+  const onDocsPresenceSnapshot = useCallback((snapshot: DocsPresenceSnapshot) => {
+    const docId = snapshot.document_id
+    if (!docId) return
+    const selfId = selfIdRef.current
+    const nextViewers = Object.fromEntries(
+      snapshot.viewers
+        .filter((viewer) => viewer.user_id && viewer.user_id !== selfId)
+        .map((viewer) => [viewer.user_id, {
+          name: viewer.name,
+          avatarUrl: viewer.avatar,
+        }])
+    )
+    useDocsPresenceStore.getState().replaceViewingUsers(docId, nextViewers)
+  }, [])
+
   useEffect(() => {
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
@@ -307,12 +387,14 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
   }, [])
 
-  const { send: wsSend, isConnected } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
+  const { send: wsSend, isConnected } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot })
 
   // Expose wsSend and connection state to components via the store
   useEffect(() => {
     useSupportPresenceStore.getState().setWsSend(wsSend)
-    return () => { useSupportPresenceStore.getState().setWsSend(null) }
+    return () => {
+      useSupportPresenceStore.getState().setWsSend(null)
+    }
   }, [wsSend])
 
   useEffect(() => {

@@ -319,13 +319,13 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	var (
-		completed      int
-		failed         int
-		published      int
-		drafted        int
-		artRedirects   int
-		failures       []model.ImportFailure
-		redirects      []redirectEntry
+		completed    int
+		failed       int
+		published    int
+		drafted      int
+		artRedirects int
+		failures     []model.ImportFailure
+		redirects    []redirectEntry
 	)
 
 	for i, ref := range articleRefs {
@@ -487,7 +487,7 @@ func (s *DocsImportService) importArticle(
 	if err != nil {
 		return nil, fmt.Errorf("marshal content for article %s: %w", ref.ID, err)
 	}
-	savedContent, err := s.contentSvc.Save(ctx, doc.ID, json.RawMessage(contentJSON))
+	savedContent, err := s.contentSvc.Save(ctx, doc.ID, json.RawMessage(contentJSON), userID)
 	if err != nil {
 		return nil, fmt.Errorf("save content for article %s: %w", ref.ID, err)
 	}
@@ -596,7 +596,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 			continue
 		}
 
-		if _, err := s.contentSvc.Save(ctx, c.DocumentID, json.RawMessage(contentJSON)); err != nil {
+		if _, err := s.contentSvc.Save(ctx, c.DocumentID, json.RawMessage(contentJSON), ""); err != nil {
 			s.logger.Error("reconvert save failed", "content_id", c.ID, "error", err)
 			result.Failed++
 			continue

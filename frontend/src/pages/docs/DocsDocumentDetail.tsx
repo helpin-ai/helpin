@@ -36,7 +36,9 @@ import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useAuthStore } from '@/stores/authStore'
+import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useWSStore } from '@/hooks/useWebSocket'
 import {
   useDocsDocument,
   useDocsContent,
@@ -96,6 +98,8 @@ import { docsService } from '@/lib/services/docsService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/pm/UserAvatar'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -181,6 +185,8 @@ function translationDraftKey(docId: string, locale: string): string {
   return `${docId}:${locale}`
 }
 
+const EMPTY_DOC_VIEWERS: Record<string, never> = {}
+
 export function DocsDocumentDetail() {
   const navigate = useNavigate()
   const router = useRouter()
@@ -209,6 +215,8 @@ export function DocsDocumentDetail() {
 
   const { data: space } = useDocsSpace(wsId, doc?.space_id ?? '')
   const { data: members = [] } = useAssignableMembers(wsId)
+  const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
+  const wsSendRaw = useWSStore((s) => s.send)
   const { data: collections = [] } = useDocsCollections(wsId, doc?.space_id ?? '')
   const { data: spaceTranslations = [] } = useDocsHelpcenterSpaceTranslations(wsId, doc?.space_id ?? '')
   const { data: collectionTranslations = [] } = useDocsHelpcenterCollectionTranslations(wsId, doc?.collection_id ?? '')
@@ -221,6 +229,17 @@ export function DocsDocumentDetail() {
 
   const toggleShare = useToggleDocShare(wsId)
   const toggleLock = useToggleDocLock(wsId)
+
+  const activeDocViewers = useMemo(() => {
+    return Object.entries(remoteViewers).map(([userId, viewer]) => {
+      const member = members.find((candidate) => candidate.user_id === userId)
+      return {
+        userId,
+        name: viewer.name ?? (member ? formatAssignableMemberName(member) : 'Teammate'),
+        avatarUrl: viewer.avatarUrl ?? member?.avatar_url ?? undefined,
+      }
+    })
+  }, [members, remoteViewers])
 
   // Lock-aware editing: locked docs are read-only for everyone — unlock to edit
   const effectiveReadOnly = !canEditDocs || doc?.status === 'archived' || !!doc?.is_locked
@@ -300,6 +319,17 @@ export function DocsDocumentDetail() {
   useEffect(() => () => {
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    if (!docId || !wsSendRaw) return
+
+    wsSendRaw({ type: 'docs:presence:sync', data: { document_ids: [docId] } })
+    wsSendRaw({ type: 'docs:viewing:start', data: { document_id: docId } })
+
+    return () => {
+      wsSendRaw({ type: 'docs:viewing:stop', data: { document_id: docId } })
+    }
+  }, [docId, wsSendRaw])
 
   const handleSave = useCallback(
     async (json: JSONContent) => {
@@ -728,6 +758,33 @@ export function DocsDocumentDetail() {
           <span className="shrink-0 text-[11px] font-medium text-amber-600 dark:text-amber-400">
             Unpublished changes
           </span>
+        )}
+
+        {activeDocViewers.length > 0 && (
+          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-2 py-1 md:flex">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Viewing now
+            </span>
+            <AvatarGroup className="-space-x-1.5">
+              {activeDocViewers.slice(0, 3).map((viewer) => (
+                <QuickTooltip key={viewer.userId} label={`${viewer.name} is reading this doc`}>
+                  <div>
+                    <UserAvatar
+                      name={viewer.name}
+                      avatarUrl={viewer.avatarUrl}
+                      className="h-6 w-6 ring-1 ring-background"
+                      fallbackClassName="text-[8px]"
+                    />
+                  </div>
+                </QuickTooltip>
+              ))}
+              {activeDocViewers.length > 3 && (
+                <AvatarGroupCount className="size-6 text-[10px]">
+                  +{activeDocViewers.length - 3}
+                </AvatarGroupCount>
+              )}
+            </AvatarGroup>
+          </div>
         )}
 
         {isExternalHelpCenter && (

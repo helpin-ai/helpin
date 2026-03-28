@@ -134,7 +134,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		docRepo := repository.NewDocsDocumentRepository(db)
-		docSvc := NewDocsDocumentService(docRepo, spaceRepo)
+		docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -230,7 +230,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		collectionRepo := repository.NewDocsCollectionRepository(db)
-		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo)
+		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -359,7 +359,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 	t.Run("Update type appends to target section and normalizes old section", func(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		repo := repository.NewDocsSpaceRepository(db)
-		svc := NewDocsSpaceService(repo)
+		svc := NewDocsSpaceService(repo, nil)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{

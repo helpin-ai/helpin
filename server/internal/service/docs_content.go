@@ -7,17 +7,20 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
 	contentRepo    *repository.DocsContentRepository
+	docRepo        *repository.DocsDocumentRepository
 	translationSvc *DocsHelpcenterTranslationService
+	wsPublisher    *websocket.Publisher
 }
 
 // NewDocsContentService creates a new DocsContentService.
-func NewDocsContentService(contentRepo *repository.DocsContentRepository) *DocsContentService {
-	return &DocsContentService{contentRepo: contentRepo}
+func NewDocsContentService(contentRepo *repository.DocsContentRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsContentService {
+	return &DocsContentService{contentRepo: contentRepo, docRepo: docRepo, wsPublisher: wsPublisher}
 }
 
 func (s *DocsContentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -31,7 +34,7 @@ func (s *DocsContentService) Get(ctx context.Context, documentID string) (*model
 
 // Save creates or updates document content.
 // Automatically extracts content_text and computes word_count in the repository layer.
-func (s *DocsContentService) Save(ctx context.Context, documentID string, content json.RawMessage) (*model.DocsContent, error) {
+func (s *DocsContentService) Save(ctx context.Context, documentID string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
 	saved, err := s.contentRepo.Upsert(ctx, documentID, content)
 	if err != nil {
 		return nil, err
@@ -39,6 +42,11 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 	if s.translationSvc != nil {
 		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after content save", "document_id", documentID, "error", err)
+		}
+	}
+	if s.docRepo != nil {
+		if doc, err := s.docRepo.GetByID(ctx, documentID); err == nil && doc != nil {
+			publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, actorID)
 		}
 	}
 	return saved, nil

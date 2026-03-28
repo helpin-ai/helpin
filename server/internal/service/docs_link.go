@@ -6,18 +6,20 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsLinkService handles business logic for document links.
 type DocsLinkService struct {
-	linkRepo  *repository.DocsLinkRepository
-	storyRepo *repository.PMStoryRepository
-	docRepo   *repository.DocsDocumentRepository
+	linkRepo    *repository.DocsLinkRepository
+	storyRepo   *repository.PMStoryRepository
+	docRepo     *repository.DocsDocumentRepository
+	wsPublisher *websocket.Publisher
 }
 
 // NewDocsLinkService creates a new DocsLinkService.
-func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMStoryRepository, docRepo *repository.DocsDocumentRepository) *DocsLinkService {
-	return &DocsLinkService{linkRepo: linkRepo, storyRepo: storyRepo, docRepo: docRepo}
+func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMStoryRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsLinkService {
+	return &DocsLinkService{linkRepo: linkRepo, storyRepo: storyRepo, docRepo: docRepo, wsPublisher: wsPublisher}
 }
 
 // Create creates a new link between a document and a PM/Support object.
@@ -34,10 +36,18 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 		DocumentID:       documentID,
 		LinkedObjectType: req.LinkedObjectType,
 		LinkedObjectID:   req.LinkedObjectID,
-		LinkContext:       req.LinkContext,
+		LinkContext:      req.LinkContext,
 		CreatedBy:        userID,
 	}
-	return s.linkRepo.Create(ctx, link)
+	created, err := s.linkRepo.Create(ctx, link)
+	if err == nil && created != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "created", "docs_link", created.ID, workspaceID, userID, "docs_document", documentID, map[string]any{
+			"linked_object_type": created.LinkedObjectType,
+			"linked_object_id":   created.LinkedObjectID,
+			"link_context":       created.LinkContext,
+		})
+	}
+	return created, err
 }
 
 // ListByDocument returns all links for a document, enriched with object names.
@@ -137,5 +147,13 @@ func (s *DocsLinkService) Delete(ctx context.Context, id string) error {
 	if link == nil {
 		return fmt.Errorf("link not found")
 	}
-	return s.linkRepo.Delete(ctx, id)
+	if err := s.linkRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_link", id, link.WorkspaceID, "", "docs_document", link.DocumentID, map[string]any{
+		"linked_object_type": link.LinkedObjectType,
+		"linked_object_id":   link.LinkedObjectID,
+		"link_context":       link.LinkContext,
+	})
+	return nil
 }
