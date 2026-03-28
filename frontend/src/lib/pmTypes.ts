@@ -1505,6 +1505,7 @@ export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export interface SupportConversation {
   id: string;
   workspace_id: string;
+  mailbox_id?: string | null;
   display_id: number;
   subject: string;
   status: ConversationStatus;
@@ -1527,6 +1528,9 @@ export interface SupportConversation {
   customer_requested_human_at?: string;
   last_message?: string;
   unread_count?: number;
+  mailbox_name?: string | null;
+  mailbox_handle?: string | null;
+  mailbox_icon?: string | null;
   team_last_seen_at?: string;
   contact_last_seen_at?: string;
   created_at: string;
@@ -1537,6 +1541,74 @@ export interface UnreadStats {
   total: number;
   my_inbox: number;
   unassigned: number;
+}
+
+export interface SupportInboxScope {
+  id: string;
+  name: string;
+  handle: string;
+  icon: string;
+  is_shared: boolean;
+  is_default: boolean;
+  unread_count: number;
+  active: boolean;
+  linked_team_id?: string | null;
+}
+
+export interface SupportInboxScopeListResponse {
+  shared_inbox: SupportInboxScope;
+  mailboxes: SupportInboxScope[];
+}
+
+export interface SupportMailbox {
+  id: string;
+  workspace_id: string;
+  name: string;
+  handle: string;
+  icon: string;
+  description?: string | null;
+  linked_team_id?: string | null;
+  linked_team_name?: string | null;
+  visibility_mode: 'members_only';
+  assignment_mode: 'manual' | 'round_robin';
+  position: number;
+  active: boolean;
+  member_count?: number;
+  unread_count?: number;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportMailboxMember {
+  workspace_member_id: string;
+  user_id?: string | null;
+  email: string;
+  display_name: string;
+  avatar_url?: string | null;
+  role: string;
+}
+
+export interface CreateSupportMailboxRequest {
+  name: string;
+  handle: string;
+  icon: string;
+  description?: string | null;
+  linked_team_id?: string | null;
+  workspace_member_ids: string[];
+  assignment_mode: 'manual' | 'round_robin';
+  import_linked_team?: boolean;
+}
+
+export interface UpdateSupportMailboxRequest {
+  name?: string;
+  handle?: string;
+  icon?: string;
+  description?: string | null;
+  linked_team_id?: string | null;
+  workspace_member_ids?: string[];
+  assignment_mode?: 'manual' | 'round_robin';
+  import_linked_team?: boolean;
 }
 
 export interface SupportTeammatePresenceStatus {
@@ -1803,6 +1875,7 @@ export interface UpdateSupportContentSourceRequest {
 }
 
 export interface CreateConversationRequest {
+  mailbox_id?: string | null;
   subject: string;
   priority?: ConversationPriority;
   customer_name?: string;
@@ -1845,6 +1918,8 @@ export interface SupportInboxSettings {
   escalation_message: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
+  default_mailbox_id: string | null;
+  ai_handoff_mailbox_id: string | null;
   business_hours_enabled: boolean;
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;

@@ -39,6 +39,7 @@ func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		installationRepo,
 		sessionRepo,
 		nil,
@@ -120,6 +121,7 @@ func TestSupportInboxServiceCreateWidgetSessionRejectsInvalidKey(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		installationRepo,
 		sessionRepo,
 		nil,
@@ -147,6 +149,7 @@ func TestSupportInboxServiceGetWidgetSessionRejectsExpired(t *testing.T) {
 	sessionRepo := repository.NewSupportInboxSessionRepository(db)
 
 	svc := NewSupportInboxService(
+		nil,
 		nil,
 		nil,
 		nil,
@@ -192,6 +195,7 @@ func TestSupportInboxServiceSessionConversationLifecycle(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		nil,
 		nil,

@@ -607,6 +607,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
+			mailbox_id TEXT,
 			display_id INTEGER NOT NULL,
 			subject TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'open',
@@ -633,6 +634,29 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type TEXT,
 			ai_turn_count INTEGER NOT NULL DEFAULT 0,
 			customer_requested_human_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_mailboxes (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			handle TEXT NOT NULL,
+			icon TEXT NOT NULL DEFAULT 'inbox',
+			description TEXT,
+			linked_team_id TEXT,
+			visibility_mode TEXT NOT NULL DEFAULT 'members_only',
+			assignment_mode TEXT NOT NULL DEFAULT 'manual',
+			position INTEGER NOT NULL DEFAULT 0,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			created_by_id TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_mailbox_memberships (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			mailbox_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

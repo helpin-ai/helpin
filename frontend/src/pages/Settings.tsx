@@ -25,9 +25,10 @@ import {
   AIAutomationsTab,
   ChatGeneralTab,
   RedirectsTab,
+  TeamInboxesTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'team-inboxes' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -146,6 +147,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     id: 'chat-general',
     label: 'Chat Widget',
     description: 'Widget installation, availability, identity capture, appearance, AI auto-reply, and routing.',
+    icon: MessageSquare,
+    group: 'Support & Docs',
+  },
+  {
+    id: 'team-inboxes',
+    label: 'Team Inboxes',
+    description: 'Create private support inboxes, add members, pick icons, and link support teams.',
     icon: MessageSquare,
     group: 'Support & Docs',
   },
@@ -311,6 +319,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <AIAutomationsTab workspaceId={workspaceId} />;
       case 'chat-general':
         return <ChatGeneralTab workspaceId={workspaceId} />;
+      case 'team-inboxes':
+        return <TeamInboxesTab workspaceId={workspaceId} />;
       default:
         return null;
     }

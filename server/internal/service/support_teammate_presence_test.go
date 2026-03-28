@@ -42,6 +42,7 @@ func TestListTeammatePresence_UsesLivePresenceAndRecentLastSeen(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		repository.NewSupportConversationRepository(db),
+		repository.NewSupportMailboxRepository(db),
 		repository.NewSupportMessageRepository(db),
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),
@@ -105,6 +106,7 @@ func TestUpdateMyTeammatePresence_ManualOverrideWinsAndCanBeCleared(t *testing.T
 
 	svc := NewSupportInboxService(
 		repository.NewSupportConversationRepository(db),
+		repository.NewSupportMailboxRepository(db),
 		repository.NewSupportMessageRepository(db),
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),

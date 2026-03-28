@@ -49,6 +49,7 @@ func TestCreateConversationMessageStoresLinkPreviewMetadata(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		msgRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),
@@ -105,6 +106,7 @@ func TestWidgetCreateMessageStoresLinkPreviewMetadata(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		msgRepo,
 		nil,
 		nil,

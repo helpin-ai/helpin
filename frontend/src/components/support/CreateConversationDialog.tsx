@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useCreateConversation } from '@/hooks/queries/useSupport';
+import { useCreateConversation, useInboxScopes } from '@/hooks/queries/useSupport';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { ConversationPriority } from '@/lib/pmTypes';
 
 interface CreateConversationDialogProps {
@@ -25,12 +26,26 @@ interface CreateConversationDialogProps {
 }
 
 export function CreateConversationDialog({ workspaceId, open, onOpenChange }: CreateConversationDialogProps) {
+  const { data: inboxScopes } = useInboxScopes(workspaceId);
+  const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
   const [subject, setSubject] = useState('');
   const [priority, setPriority] = useState<ConversationPriority>('medium');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [mailboxId, setMailboxId] = useState(selectedMailboxId);
 
   const createMutation = useCreateConversation(workspaceId);
+
+  const mailboxOptions = [
+    inboxScopes?.shared_inbox,
+    ...(inboxScopes?.mailboxes ?? []),
+  ].filter(Boolean);
+
+  useEffect(() => {
+    if (open) {
+      setMailboxId(selectedMailboxId);
+    }
+  }, [open, selectedMailboxId]);
 
   const handleCreate = async () => {
     if (!subject.trim()) return;
@@ -39,11 +54,13 @@ export function CreateConversationDialog({ workspaceId, open, onOpenChange }: Cr
       priority,
       customer_name: customerName || undefined,
       customer_email: customerEmail || undefined,
+      mailbox_id: mailboxId === 'shared' ? null : mailboxId,
     });
     setSubject('');
     setPriority('medium');
     setCustomerName('');
     setCustomerEmail('');
+    setMailboxId(selectedMailboxId);
     onOpenChange(false);
   };
 
@@ -62,6 +79,21 @@ export function CreateConversationDialog({ workspaceId, open, onOpenChange }: Cr
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Conversation subject"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Inbox</Label>
+            <Select value={mailboxId} onValueChange={setMailboxId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {mailboxOptions.map((mailbox) => (
+                  <SelectItem key={mailbox!.id} value={mailbox!.id}>
+                    {mailbox!.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Priority</Label>

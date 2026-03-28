@@ -10,14 +10,15 @@ const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
 interface PersistedState {
   navCollapsed: boolean;
   detailSidebarCollapsed: boolean;
+  selectedMailboxId: string;
 }
 
 function loadPersisted(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...{ navCollapsed: false, detailSidebarCollapsed: false }, ...JSON.parse(raw) };
+    if (raw) return { ...{ navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'shared' }, ...JSON.parse(raw) };
   } catch {}
-  return { navCollapsed: false, detailSidebarCollapsed: false };
+  return { navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'shared' };
 }
 
 function savePersisted(state: PersistedState) {
@@ -75,6 +76,7 @@ interface SupportInboxState {
   // Navigation
   navFilter: NavFilter;
   navCollapsed: boolean;
+  selectedMailboxId: string;
   // Filters
   statusFilter: string;
   searchQuery: string;
@@ -93,6 +95,7 @@ interface SupportInboxState {
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
+  setSelectedMailboxId: (mailboxId: string) => void;
   toggleNavCollapsed: () => void;
   setStatusFilter: (status: string) => void;
   setSearchQuery: (query: string) => void;
@@ -112,6 +115,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
   return {
     navFilter: 'all',
     navCollapsed: persisted.navCollapsed,
+    selectedMailboxId: persisted.selectedMailboxId,
     statusFilter: 'all',
     searchQuery: '',
     selectedConversationId: null,
@@ -122,10 +126,22 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     drafts: persistedDrafts,
 
     setNavFilter: (filter) => set({ navFilter: filter, statusFilter: 'all' }),
+    setSelectedMailboxId: (mailboxId) => {
+      set({ selectedMailboxId: mailboxId, selectedConversationId: null, activePanel: 'list' });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: mailboxId,
+      });
+    },
     toggleNavCollapsed: () => {
       const next = !get().navCollapsed;
       set({ navCollapsed: next });
-      savePersisted({ navCollapsed: next, detailSidebarCollapsed: get().detailSidebarCollapsed });
+      savePersisted({
+        navCollapsed: next,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: get().selectedMailboxId,
+      });
     },
     setStatusFilter: (status) => set({ statusFilter: status }),
     setSearchQuery: (query) => set({ searchQuery: query }),
@@ -134,7 +150,11 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     toggleDetailSidebar: () => {
       const next = !get().detailSidebarCollapsed;
       set({ detailSidebarCollapsed: next });
-      savePersisted({ navCollapsed: get().navCollapsed, detailSidebarCollapsed: next });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: next,
+        selectedMailboxId: get().selectedMailboxId,
+      });
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
     setActivePanel: (panel) => set({ activePanel: panel }),

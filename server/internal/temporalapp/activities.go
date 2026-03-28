@@ -2218,7 +2218,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 
 	if run.ConversationID != nil {
-		conversation, err := a.conversationRepo.GetByID(ctx, run.WorkspaceID, *run.ConversationID)
+		conversation, err := a.conversationRepo.GetByID(ctx, run.WorkspaceID, *run.ConversationID, "", model.RoleOwner)
 		if err != nil {
 			return nil, err
 		}
@@ -4031,7 +4031,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return a.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
 		},
 		UpdateConversationStatus: func(ctx context.Context, workspaceID, conversationID, status string) error {
-			conversation, err := a.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+			conversation, err := a.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 			if err != nil {
 				return err
 			}

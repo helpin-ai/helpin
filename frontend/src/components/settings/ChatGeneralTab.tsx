@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { Check, Copy, Code, Loader2, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, ChevronDown, Star } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
-import { useSupportAgents } from '@/hooks/queries/useSupport';
+import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
@@ -202,6 +202,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const regenerateKeyMutation = useRegenerateWidgetKey(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
+  const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
   const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
 
@@ -233,6 +234,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
+  const [defaultMailboxId, setDefaultMailboxId] = useState<string | null>(null);
+  const [aiHandoffMailboxId, setAiHandoffMailboxId] = useState<string | null>(null);
   const [businessHoursEnabled, setBusinessHoursEnabled] = useState(false);
   const [timezone, setTimezone] = useState('America/New_York');
   const [schedule, setSchedule] = useState<Record<string, BusinessHoursDay>>({});
@@ -282,6 +285,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
+      setDefaultMailboxId(s.default_mailbox_id);
+      setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
       setBusinessHoursEnabled(s.business_hours_enabled);
       setTimezone(s.business_hours_timezone);
       setSchedule(normalizedSchedule);
@@ -325,6 +330,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     escalation_message: escalationMessage,
     handoff_behavior: handoffBehavior,
     handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
+    default_mailbox_id: defaultMailboxId,
+    ai_handoff_mailbox_id: aiHandoffMailboxId,
     business_hours_enabled: businessHoursEnabled,
     business_hours_timezone: timezone,
     business_hours_schedule: normalizeBusinessHoursSchedule(schedule),
@@ -1108,6 +1115,36 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   <div>
                     <Label className="text-sm font-medium">Handoff Routing</Label>
                     <p className="text-xs text-muted-foreground mt-0.5">How conversations are assigned when human help is needed.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Default Inbox</Label>
+                      <Select value={defaultMailboxId ?? 'shared'} onValueChange={(value) => setDefaultMailboxId(value === 'shared' ? null : value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="shared">Shared Inbox</SelectItem>
+                          {supportMailboxes.filter((mailbox) => mailbox.active).map((mailbox) => (
+                            <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">AI Handoff Inbox</Label>
+                      <Select value={aiHandoffMailboxId ?? 'shared'} onValueChange={(value) => setAiHandoffMailboxId(value === 'shared' ? null : value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="shared">Shared Inbox</SelectItem>
+                          {supportMailboxes.filter((mailbox) => mailbox.active).map((mailbox) => (
+                            <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">

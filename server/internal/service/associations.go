@@ -59,10 +59,10 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 			Duplicates:   []model.StoryRelationshipSummary{},
 			DuplicatedBy: []model.StoryRelationshipSummary{},
 		},
-		Stories:        []model.AssociationObjectSummary{},
+		Stories:              []model.AssociationObjectSummary{},
 		SupportConversations: []model.AssociationObjectSummary{},
-		CRMRecords:     []model.AssociationObjectSummary{},
-		Docs:           []model.AssociationObjectSummary{},
+		CRMRecords:           []model.AssociationObjectSummary{},
+		Docs:                 []model.AssociationObjectSummary{},
 	}
 
 	if objectType == model.CRMObjectStory {
@@ -211,7 +211,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 
 	conversationsByID := make(map[string]model.SupportConversation)
 	if len(supportConversationIDs) > 0 {
-		conversations, err := s.supportRepo.ListByIDs(ctx, workspaceID, uniqueStrings(supportConversationIDs))
+		conversations, err := s.supportRepo.ListByIDs(ctx, workspaceID, uniqueStrings(supportConversationIDs), "", model.RoleOwner)
 		if err != nil {
 			return err
 		}
@@ -326,7 +326,7 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		}
 		sortAssociationObjects(response.SupportConversations)
 	case model.CRMObjectSupportConversation:
-		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, objectID)
+		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, objectID, "", model.RoleOwner)
 		if err != nil {
 			return err
 		}

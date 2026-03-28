@@ -73,6 +73,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.HandoffTeamID != nil {
 		current.HandoffTeamID = patch.HandoffTeamID
 	}
+	if patch.DefaultMailboxID != nil {
+		current.DefaultMailboxID = patch.DefaultMailboxID
+	}
+	if patch.AIHandoffMailboxID != nil {
+		current.AIHandoffMailboxID = patch.AIHandoffMailboxID
+	}
 	if patch.BusinessHoursEnabled != nil {
 		current.BusinessHoursEnabled = *patch.BusinessHoursEnabled
 	}
@@ -165,6 +171,23 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.HandoffBehavior == "assign_to_team" && (settings.HandoffTeamID == nil || *settings.HandoffTeamID == "") {
 		return fmt.Errorf("handoff_team_id is required when handoff_behavior is assign_to_team")
+	}
+	if s.mailboxRepo != nil {
+		for fieldName, mailboxID := range map[string]*string{
+			"default_mailbox_id":    settings.DefaultMailboxID,
+			"ai_handoff_mailbox_id": settings.AIHandoffMailboxID,
+		} {
+			if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
+				continue
+			}
+			mailbox, err := s.mailboxRepo.GetByID(ctx, workspaceID, strings.TrimSpace(*mailboxID))
+			if err != nil {
+				return fmt.Errorf("validate %s: %w", fieldName, err)
+			}
+			if mailbox == nil || !mailbox.Active {
+				return fmt.Errorf("%s must reference an active mailbox", fieldName)
+			}
+		}
 	}
 	validPosition := map[string]bool{"bottom_right": true, "bottom_left": true}
 	if !validPosition[settings.LauncherPosition] {

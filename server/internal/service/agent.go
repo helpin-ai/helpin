@@ -1200,7 +1200,7 @@ func (s *AgentService) RunConversationAgentAuto(ctx context.Context, workspaceID
 }
 
 func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, conversationID string, actorID *string) (*model.AgentRun, error) {
-	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}

@@ -21,6 +21,7 @@ func TestCreateConversationSetsAssignedToHumanFlowState(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		repository.NewSupportConversationRepository(db),
+		repository.NewSupportMailboxRepository(db),
 		repository.NewSupportMessageRepository(db),
 		nil,
 		nil,
@@ -74,6 +75,7 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		nil,
 		nil,
@@ -103,7 +105,7 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 		t.Fatalf("CreateConversationMessage: %v", err)
 	}
 
-	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID)
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -177,7 +179,7 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 		t.Fatalf("EscalateToHuman: %v", err)
 	}
 
-	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID)
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -229,7 +231,7 @@ func TestSupportAIServicePublishAIReplySetsAIHandlingFlowState(t *testing.T) {
 		t.Fatalf("publishAIReply: %v", err)
 	}
 
-	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID)
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}

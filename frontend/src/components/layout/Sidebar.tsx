@@ -61,7 +61,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useUnreadStats } from '@/hooks/queries/useSupport';
+import { useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -450,8 +450,18 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
-  const { navFilter, setNavFilter } = useSupportInboxStore();
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '');
+  const {
+    navFilter,
+    setNavFilter,
+    selectedMailboxId,
+    setSelectedMailboxId,
+  } = useSupportInboxStore();
+  const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId);
+  const totalSupportUnread = useMemo(
+    () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
+    [inboxScopes],
+  );
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '');
   const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');
   const mySupportPresence = useMemo(
@@ -556,7 +566,7 @@ export function Sidebar() {
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
-    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(unreadStats?.total) },
+    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
     { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -648,6 +658,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
           { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
+          { link: `/w/${wsSlug}/settings/team-inboxes`, label: 'Team Inboxes', icon: Inbox },
         ],
       },
       {
@@ -1015,6 +1026,45 @@ export function Sidebar() {
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+                <SidebarGroup className="p-0 pb-3">
+                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                    Team Inboxes
+                  </SidebarGroupLabel>
+                  <SidebarMenu>
+                    {(inboxScopes?.mailboxes ?? []).map((mailbox) => {
+                      const MailboxIcon = ICON_MAP[mailbox.icon] ?? Inbox;
+                      const isActiveMailbox = selectedMailboxId === mailbox.id;
+                      return (
+                        <SidebarMenuItem key={mailbox.id}>
+                          <SidebarMenuButton
+                            isActive={isActiveMailbox}
+                            className="h-8 rounded-md px-2 text-[13px]"
+                            onClick={() => setSelectedMailboxId(isActiveMailbox ? 'shared' : mailbox.id)}
+                          >
+                            <MailboxIcon className="h-4 w-4" />
+                            <span className="flex-1 truncate">{mailbox.name}</span>
+                            {mailbox.unread_count > 0 && (
+                              <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                                {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
+                              </span>
+                            )}
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                    {(inboxScopes?.mailboxes ?? []).length === 0 && (
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          className="h-8 rounded-md px-2 text-[13px]"
+                          onClick={() => navigate({ to: `/w/${wsSlug}/settings/team-inboxes` as string })}
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Create Inbox</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
                   </SidebarMenu>
                 </SidebarGroup>
               </>

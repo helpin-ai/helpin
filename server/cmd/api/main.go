@@ -189,6 +189,8 @@ func main() {
 		&model.AgentRunArtifact{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
+		&model.SupportMailbox{},
+		&model.SupportMailboxMembership{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
 		&model.SupportEmailWebhookEvent{},
@@ -470,6 +472,7 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
+	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
@@ -560,7 +563,7 @@ func main() {
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
-	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
@@ -586,7 +589,7 @@ func main() {
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
-	notificationService.SetSupportRoutingDependencies(supportInstallRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -840,6 +843,7 @@ func main() {
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetSupportAIService(supportAIService)
 
