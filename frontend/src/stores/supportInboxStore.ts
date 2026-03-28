@@ -88,6 +88,7 @@ interface SupportInboxState {
   detailSidebarCollapsed: boolean;
   // Create dialog
   createDialogOpen: boolean;
+  teamInboxDialogOpen: boolean;
   // Mobile
   activePanel: ActivePanel;
   // Drafts: conversationId → unsent textarea content
@@ -103,6 +104,7 @@ interface SupportInboxState {
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
   setCreateDialogOpen: (open: boolean) => void;
+  setTeamInboxDialogOpen: (open: boolean) => void;
   setActivePanel: (panel: ActivePanel) => void;
   setDraft: (conversationId: string, content: string) => void;
   clearDraft: (conversationId: string) => void;
@@ -122,6 +124,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     createDialogOpen: false,
+    teamInboxDialogOpen: false,
     activePanel: 'list',
     drafts: persistedDrafts,
 
@@ -157,6 +160,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
+    setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open }),
     setActivePanel: (panel) => set({ activePanel: panel }),
     setDraft: (conversationId, content) =>
       set((state) => {

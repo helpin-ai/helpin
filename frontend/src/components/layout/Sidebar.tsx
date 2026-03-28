@@ -455,6 +455,7 @@ export function Sidebar() {
     setNavFilter,
     selectedMailboxId,
     setSelectedMailboxId,
+    setTeamInboxDialogOpen,
   } = useSupportInboxStore();
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId);
@@ -1029,9 +1030,26 @@ export function Sidebar() {
                   </SidebarMenu>
                 </SidebarGroup>
                 <SidebarGroup className="p-0 pb-3">
-                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    Team Inboxes
-                  </SidebarGroupLabel>
+                  <div className="flex items-center justify-between px-2">
+                    <SidebarGroupLabel className="h-7 px-0 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                      Team Inboxes
+                    </SidebarGroupLabel>
+                    {canManageSettings && (inboxScopes?.mailboxes ?? []).length > 0 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 rounded-sm text-muted-foreground hover:text-foreground"
+                            onClick={() => setTeamInboxDialogOpen(true)}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">Create Team Inbox</TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                   <SidebarMenu>
                     {(inboxScopes?.mailboxes ?? []).map((mailbox) => {
                       const MailboxIcon = ICON_MAP[mailbox.icon] ?? Inbox;
@@ -1058,7 +1076,7 @@ export function Sidebar() {
                       <SidebarMenuItem>
                         <SidebarMenuButton
                           className="h-8 rounded-md px-2 text-[13px]"
-                          onClick={() => navigate({ to: `/w/${wsSlug}/settings/team-inboxes` as string })}
+                          onClick={() => setTeamInboxDialogOpen(true)}
                         >
                           <Plus className="h-4 w-4" />
                           <span>Create Inbox</span>
