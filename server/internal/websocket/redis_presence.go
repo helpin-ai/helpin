@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,6 +17,7 @@ const (
 	agentSeenTTL   = 24 * time.Hour
 	viewingConnTTL = 60 * time.Second
 	docViewingTTL  = 60 * time.Second
+	docEditingTTL  = 20 * time.Second
 	typingTTL      = 15 * time.Second
 	visitorConnTTL = 90 * time.Second
 )
@@ -72,6 +74,16 @@ func docViewingActiveKey(workspaceID, userID, connID string) string {
 // docs:viewing:{workspaceID}:{documentID}
 func docViewingSetKey(workspaceID, documentID string) string {
 	return fmt.Sprintf("docs:viewing:%s:%s", workspaceID, documentID)
+}
+
+// docs:editing:{workspaceID}:{documentID}:{userID}
+func docEditingKey(workspaceID, documentID, userID string) string {
+	return fmt.Sprintf("docs:editing:%s:%s:%s", workspaceID, documentID, userID)
+}
+
+// docs:editing:active:{workspaceID}:{userID}:{connID}
+func docEditingActiveKey(workspaceID, userID, connID string) string {
+	return fmt.Sprintf("docs:editing:active:%s:%s:%s", workspaceID, userID, connID)
 }
 
 // support:typing:{workspaceID}:{conversationID}:{userID}
@@ -550,15 +562,223 @@ func (p *RedisPresence) ClearAllDocViewingForConn(ctx context.Context, workspace
 	return viewingCleared, nil
 }
 
+func (p *RedisPresence) SetDocEditing(ctx context.Context, workspaceID, documentID, userID, connID, area, section string) (bool, error) {
+	prev, err := p.GetActiveDocEditing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetDocEditing active: %w", err)
+	}
+	if prev.DocumentID != "" && prev.DocumentID != documentID {
+		if _, err := p.ClearDocEditing(ctx, workspaceID, prev.DocumentID, userID, connID); err != nil {
+			slog.Warn("redis presence SetDocEditing: clear previous editing", "error", err, "document_id", prev.DocumentID)
+		}
+	}
+
+	next := DocEditorPresence{
+		Area:    area,
+		Section: section,
+	}
+	nextBytes, err := json.Marshal(struct {
+		ConnID  string `json:"conn_id"`
+		Area    string `json:"area"`
+		Section string `json:"section,omitempty"`
+	}{
+		ConnID:  connID,
+		Area:    area,
+		Section: section,
+	})
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetDocEditing marshal state: %w", err)
+	}
+	activeBytes, err := json.Marshal(DocEditorPresenceRef{
+		DocumentID: documentID,
+		Area:       area,
+		Section:    section,
+	})
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetDocEditing marshal active: %w", err)
+	}
+
+	key := docEditingKey(workspaceID, documentID, userID)
+	existing, err := p.rdb.Get(ctx, key).Result()
+	if err != nil && err != redis.Nil {
+		return false, fmt.Errorf("redis presence SetDocEditing GET: %w", err)
+	}
+
+	pipe := p.rdb.Pipeline()
+	pipe.Set(ctx, key, nextBytes, docEditingTTL)
+	pipe.Set(ctx, docEditingActiveKey(workspaceID, userID, connID), activeBytes, docEditingTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return false, fmt.Errorf("redis presence SetDocEditing SET: %w", err)
+	}
+
+	changed := true
+	if existing != "" {
+		var prevState struct {
+			ConnID  string `json:"conn_id"`
+			Area    string `json:"area"`
+			Section string `json:"section,omitempty"`
+		}
+		if json.Unmarshal([]byte(existing), &prevState) == nil &&
+			prevState.ConnID == connID &&
+			prevState.Area == next.Area &&
+			prevState.Section == next.Section {
+			changed = false
+		}
+	}
+	return changed, nil
+}
+
+func (p *RedisPresence) ClearDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) (bool, error) {
+	key := docEditingKey(workspaceID, documentID, userID)
+	val, err := p.rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		p.rdb.Del(ctx, docEditingActiveKey(workspaceID, userID, connID))
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("redis presence ClearDocEditing GET: %w", err)
+	}
+
+	var state struct {
+		ConnID string `json:"conn_id"`
+	}
+	if err := json.Unmarshal([]byte(val), &state); err != nil {
+		return false, fmt.Errorf("redis presence ClearDocEditing unmarshal: %w", err)
+	}
+	if state.ConnID != connID {
+		p.rdb.Del(ctx, docEditingActiveKey(workspaceID, userID, connID))
+		return false, nil
+	}
+
+	pipe := p.rdb.Pipeline()
+	pipe.Del(ctx, key)
+	pipe.Del(ctx, docEditingActiveKey(workspaceID, userID, connID))
+	res, err := pipe.Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("redis presence ClearDocEditing DEL: %w", err)
+	}
+
+	var deleted int64
+	for _, cmd := range res {
+		if intCmd, ok := cmd.(*redis.IntCmd); ok {
+			deleted += intCmd.Val()
+		}
+	}
+	return deleted > 0, nil
+}
+
+func (p *RedisPresence) GetActiveDocEditing(ctx context.Context, workspaceID, userID, connID string) (DocEditorPresenceRef, error) {
+	val, err := p.rdb.Get(ctx, docEditingActiveKey(workspaceID, userID, connID)).Result()
+	if err == redis.Nil {
+		return DocEditorPresenceRef{}, nil
+	}
+	if err != nil {
+		return DocEditorPresenceRef{}, fmt.Errorf("redis presence GetActiveDocEditing: %w", err)
+	}
+
+	var ref DocEditorPresenceRef
+	if err := json.Unmarshal([]byte(val), &ref); err != nil {
+		return DocEditorPresenceRef{}, fmt.Errorf("redis presence GetActiveDocEditing unmarshal: %w", err)
+	}
+	return ref, nil
+}
+
+func (p *RedisPresence) RefreshDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) error {
+	activeKey := docEditingActiveKey(workspaceID, userID, connID)
+	val, err := p.rdb.Get(ctx, docEditingKey(workspaceID, documentID, userID)).Result()
+	if err == redis.Nil {
+		p.rdb.Del(ctx, activeKey)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshDocEditing GET: %w", err)
+	}
+
+	var state struct {
+		ConnID string `json:"conn_id"`
+	}
+	if err := json.Unmarshal([]byte(val), &state); err != nil {
+		return fmt.Errorf("redis presence RefreshDocEditing unmarshal: %w", err)
+	}
+	if state.ConnID != connID {
+		p.rdb.Del(ctx, activeKey)
+		return nil
+	}
+
+	pipe := p.rdb.Pipeline()
+	pipe.Expire(ctx, docEditingKey(workspaceID, documentID, userID), docEditingTTL)
+	pipe.Expire(ctx, activeKey, docEditingTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("redis presence RefreshDocEditing: %w", err)
+	}
+	return nil
+}
+
+func (p *RedisPresence) ClearAllDocEditingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error) {
+	var editingCleared []string
+
+	active, err := p.GetActiveDocEditing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return nil, fmt.Errorf("redis presence ClearAllDocEditingForConn GetActiveDocEditing: %w", err)
+	}
+	if active.DocumentID != "" {
+		changed, err := p.ClearDocEditing(ctx, workspaceID, active.DocumentID, userID, connID)
+		if err != nil {
+			slog.Warn("redis presence ClearAllDocEditingForConn: clear doc editing",
+				"error", err, "document_id", active.DocumentID)
+		}
+		if changed {
+			editingCleared = append(editingCleared, active.DocumentID)
+		}
+	}
+
+	return editingCleared, nil
+}
+
 func (p *RedisPresence) GetDocSnapshot(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error) {
 	snap := DocPresenceSnapshot{
 		Viewers: make([]string, 0),
+		Editors: make(map[string]DocEditorPresence),
 	}
 	viewers, err := p.GetDocViewers(ctx, workspaceID, documentID)
 	if err != nil {
 		return snap, err
 	}
 	snap.Viewers = viewers
+
+	keys, err := p.scanKeys(ctx, docEditingKey(workspaceID, documentID, "*"), 100)
+	if err != nil {
+		return snap, fmt.Errorf("redis presence GetDocSnapshot editors scan: %w", err)
+	}
+	if len(keys) > 0 {
+		vals, err := p.rdb.MGet(ctx, keys...).Result()
+		if err != nil {
+			return snap, fmt.Errorf("redis presence GetDocSnapshot editors MGet: %w", err)
+		}
+		prefix := docEditingKey(workspaceID, documentID, "")
+		for i, key := range keys {
+			if vals[i] == nil {
+				continue
+			}
+			userID := strings.TrimPrefix(key, prefix)
+			raw, ok := vals[i].(string)
+			if !ok {
+				continue
+			}
+			var state struct {
+				ConnID  string `json:"conn_id"`
+				Area    string `json:"area"`
+				Section string `json:"section,omitempty"`
+			}
+			if json.Unmarshal([]byte(raw), &state) != nil {
+				continue
+			}
+			snap.Editors[userID] = DocEditorPresence{
+				Area:    state.Area,
+				Section: state.Section,
+			}
+		}
+	}
 	return snap, nil
 }
 
@@ -667,6 +887,16 @@ func (p *RedisPresence) RefreshAllForConn(ctx context.Context, workspaceID, user
 	}
 	if activeDoc != "" {
 		if err := p.RefreshDocViewing(ctx, workspaceID, activeDoc, userID, connID); err != nil {
+			return err
+		}
+	}
+
+	activeEditing, err := p.GetActiveDocEditing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshAllForConn GetActiveDocEditing: %w", err)
+	}
+	if activeEditing.DocumentID != "" {
+		if err := p.RefreshDocEditing(ctx, workspaceID, activeEditing.DocumentID, userID, connID); err != nil {
 			return err
 		}
 	}

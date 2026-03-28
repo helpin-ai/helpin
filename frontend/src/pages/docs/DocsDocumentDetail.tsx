@@ -81,7 +81,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { DocsEditor } from '@/components/docs/DocsEditor'
+import { DocsEditor, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
@@ -98,7 +98,7 @@ import { docsService } from '@/lib/services/docsService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
-import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar'
+import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 
 function docStatusColor(status: string): string {
@@ -186,6 +186,29 @@ function translationDraftKey(docId: string, locale: string): string {
 }
 
 const EMPTY_DOC_VIEWERS: Record<string, never> = {}
+const EMPTY_DOC_EDITORS: Record<string, never> = {}
+
+function formatEditorPresenceLabel(area: string, section?: string): string {
+  if (area === 'title') return 'editing the title'
+  if (section?.trim()) return `editing ${section.trim()}`
+  return 'editing the body'
+}
+
+function EditingIndicator() {
+  return (
+    <span className="absolute -bottom-1 left-1/2 inline-flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-amber-500/30 bg-background/95 px-1 py-0.5 shadow-sm">
+      {[0, 1, 2].map((index) => (
+        <span
+          key={index}
+          className="h-1 w-1 animate-bounce rounded-full bg-amber-600 dark:bg-amber-300"
+          style={{
+            animationDelay: `${index * 0.14}s`,
+          }}
+        />
+      ))}
+    </span>
+  )
+}
 
 export function DocsDocumentDetail() {
   const navigate = useNavigate()
@@ -216,6 +239,7 @@ export function DocsDocumentDetail() {
   const { data: space } = useDocsSpace(wsId, doc?.space_id ?? '')
   const { data: members = [] } = useAssignableMembers(wsId)
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
+  const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
   const wsSendRaw = useWSStore((s) => s.send)
   const { data: collections = [] } = useDocsCollections(wsId, doc?.space_id ?? '')
   const { data: spaceTranslations = [] } = useDocsHelpcenterSpaceTranslations(wsId, doc?.space_id ?? '')
@@ -240,6 +264,40 @@ export function DocsDocumentDetail() {
       }
     })
   }, [members, remoteViewers])
+
+  const activeDocEditors = useMemo(() => {
+    return Object.entries(remoteEditors).map(([userId, editor]) => {
+      const member = members.find((candidate) => candidate.user_id === userId)
+      const name = editor.name ?? (member ? formatAssignableMemberName(member) : 'Teammate')
+      return {
+        userId,
+        name,
+        avatarUrl: editor.avatarUrl ?? member?.avatar_url ?? undefined,
+        area: editor.area,
+        section: editor.section,
+        label: formatEditorPresenceLabel(editor.area, editor.section),
+      }
+    })
+  }, [members, remoteEditors])
+
+  const headerPresencePeople = useMemo(() => {
+    const editorsById = new Map(activeDocEditors.map((editor) => [editor.userId, editor]))
+    const viewers = activeDocViewers
+      .filter((viewer) => !editorsById.has(viewer.userId))
+      .map((viewer) => ({
+        ...viewer,
+        isEditing: false,
+        tooltip: `${viewer.name} is reading this doc`,
+      }))
+
+    const editors = activeDocEditors.map((editor) => ({
+      ...editor,
+      isEditing: true,
+      tooltip: `${editor.name} is ${editor.label}`,
+    }))
+
+    return [...editors, ...viewers]
+  }, [activeDocEditors, activeDocViewers])
 
   // Lock-aware editing: locked docs are read-only for everyone — unlock to edit
   const effectiveReadOnly = !canEditDocs || doc?.status === 'archived' || !!doc?.is_locked
@@ -329,6 +387,27 @@ export function DocsDocumentDetail() {
     return () => {
       wsSendRaw({ type: 'docs:viewing:stop', data: { document_id: docId } })
     }
+  }, [docId, wsSendRaw])
+
+  const handleEditingPresenceChange = useCallback((presence: DocsEditingPresenceSignal | null) => {
+    if (!docId || !wsSendRaw) return
+    if (presence) {
+      wsSendRaw({
+        type: 'docs:editing:update',
+        data: {
+          document_id: docId,
+          area: presence.area,
+          section: presence.section,
+        },
+      })
+      return
+    }
+    wsSendRaw({
+      type: 'docs:editing:stop',
+      data: {
+        document_id: docId,
+      },
+    })
   }, [docId, wsSendRaw])
 
   const handleSave = useCallback(
@@ -760,30 +839,39 @@ export function DocsDocumentDetail() {
           </span>
         )}
 
-        {activeDocViewers.length > 0 && (
-          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-2 py-1 md:flex">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Viewing now
+        {headerPresencePeople.length > 0 && (
+          <div className={`hidden shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 md:flex ${
+            activeDocEditors.length > 0
+              ? 'border-amber-500/30 bg-amber-500/10'
+              : 'border-border/60 bg-muted/40'
+          }`}>
+            <span className={`text-[11px] font-medium ${
+              activeDocEditors.length > 0
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-muted-foreground'
+            }`}>
+              {activeDocEditors.length > 0 ? 'Editing now' : 'Viewing now'}
             </span>
-            <AvatarGroup className="-space-x-1.5">
-              {activeDocViewers.slice(0, 3).map((viewer) => (
-                <QuickTooltip key={viewer.userId} label={`${viewer.name} is reading this doc`}>
-                  <div>
+            <div className="flex items-end gap-2">
+              {headerPresencePeople.slice(0, 4).map((person) => (
+                <QuickTooltip key={person.userId} label={person.tooltip}>
+                  <div className="relative pb-1">
                     <UserAvatar
-                      name={viewer.name}
-                      avatarUrl={viewer.avatarUrl}
-                      className="h-6 w-6 ring-1 ring-background"
+                      name={person.name}
+                      avatarUrl={person.avatarUrl}
+                      className={person.isEditing ? 'h-6 w-6 ring-1 ring-amber-200 dark:ring-amber-500/40' : 'h-6 w-6 opacity-75'}
                       fallbackClassName="text-[8px]"
                     />
+                    {person.isEditing && <EditingIndicator />}
                   </div>
                 </QuickTooltip>
               ))}
-              {activeDocViewers.length > 3 && (
+              {headerPresencePeople.length > 4 && (
                 <AvatarGroupCount className="size-6 text-[10px]">
-                  +{activeDocViewers.length - 3}
+                  +{headerPresencePeople.length - 4}
                 </AvatarGroupCount>
               )}
-            </AvatarGroup>
+            </div>
           </div>
         )}
 
@@ -1048,6 +1136,7 @@ export function DocsDocumentDetail() {
                   ? 'Generating translation with AI...'
                   : null
               }
+              onEditingPresenceChange={!effectiveReadOnly && !previewVersion ? handleEditingPresenceChange : undefined}
             />
           )}
         </div>

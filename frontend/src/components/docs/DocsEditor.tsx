@@ -103,6 +103,11 @@ function ToolbarButton({
 
 type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
 
+export interface DocsEditingPresenceSignal {
+  area: 'title' | 'body'
+  section?: string
+}
+
 function formatLastSaved(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
   if (seconds < 60) return 'a few seconds ago'
@@ -637,6 +642,7 @@ interface DocsEditorProps {
   uploadConfig?: EditorUploadConfig
   topBanner?: React.ReactNode
   generatingOverlay?: string | null
+  onEditingPresenceChange?: (presence: DocsEditingPresenceSignal | null) => void
 }
 
 export function DocsEditor({
@@ -652,6 +658,7 @@ export function DocsEditor({
   generatingOverlay,
   onSlugChange,
   slugHelperText,
+  onEditingPresenceChange,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -666,6 +673,8 @@ export function DocsEditor({
     initialContent ? JSON.stringify(initialContent) : null,
   )
   const editorReadyRef = useRef(false)
+  const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastEditingPresenceRef = useRef<string | null>(null)
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -728,7 +737,61 @@ export function DocsEditor({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
     if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
+    if (pendingPresenceClearRef.current) clearTimeout(pendingPresenceClearRef.current)
   }, [])
+
+  const emitEditingPresence = useCallback((presence: DocsEditingPresenceSignal | null) => {
+    if (!onEditingPresenceChange || readOnly) return
+    if (pendingPresenceClearRef.current) {
+      clearTimeout(pendingPresenceClearRef.current)
+      pendingPresenceClearRef.current = undefined
+    }
+    const nextKey = presence ? JSON.stringify(presence) : 'null'
+    if (lastEditingPresenceRef.current === nextKey) return
+    lastEditingPresenceRef.current = nextKey
+    onEditingPresenceChange(presence)
+  }, [onEditingPresenceChange, readOnly])
+
+  const scheduleClearEditingPresence = useCallback(() => {
+    if (!onEditingPresenceChange) return
+    if (pendingPresenceClearRef.current) clearTimeout(pendingPresenceClearRef.current)
+    pendingPresenceClearRef.current = setTimeout(() => {
+      emitEditingPresence(null)
+    }, 120)
+  }, [emitEditingPresence, onEditingPresenceChange])
+
+  const getNearestHeadingLabel = useCallback((editorInstance: NonNullable<typeof editorRef.current>) => {
+    const selectionFrom = editorInstance.state.selection.from
+    let headingText: string | undefined
+    editorInstance.state.doc.nodesBetween(0, selectionFrom, (node) => {
+      if (node.type.name === 'heading') {
+        const text = node.textContent.trim()
+        if (text) {
+          headingText = text.length > 64 ? `${text.slice(0, 61)}...` : text
+        }
+      }
+    })
+    return headingText
+  }, [])
+
+  const emitBodyEditingPresence = useCallback((editorInstance: NonNullable<typeof editorRef.current>) => {
+    emitEditingPresence({
+      area: 'body',
+      section: getNearestHeadingLabel(editorInstance),
+    })
+  }, [emitEditingPresence, getNearestHeadingLabel])
+
+  useEffect(() => {
+    if (!readOnly) return
+    emitEditingPresence(null)
+  }, [emitEditingPresence, readOnly])
+
+  useEffect(() => {
+    return () => {
+      if (!onEditingPresenceChange || readOnly) return
+      onEditingPresenceChange(null)
+    }
+  }, [onEditingPresenceChange, readOnly])
 
   const uploadConfigRef = useRef(uploadConfig)
   uploadConfigRef.current = uploadConfig
@@ -1004,7 +1067,11 @@ export function DocsEditor({
       if (slashState?.open) return
       if (!readOnly) {
         scheduleSave(e.getJSON())
+        emitBodyEditingPresence(e)
       }
+    },
+    onBlur: () => {
+      scheduleClearEditingPresence()
     },
     onCreate: () => {
       // Mark editor ready after initialization is complete
@@ -1347,7 +1414,11 @@ img { max-width: 100%; }
                 {onTitleChange && !readOnly ? (
                   <input
                     value={title}
-                    onChange={(e) => onTitleChange(e.target.value)}
+                    onChange={(e) => {
+                      onTitleChange(e.target.value)
+                      emitEditingPresence({ area: 'title', section: 'Title' })
+                    }}
+                    onBlur={() => scheduleClearEditingPresence()}
                     placeholder="Untitled"
                     className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
                   />

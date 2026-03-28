@@ -28,6 +28,7 @@ function playNotificationSound() {
 const DEBOUNCE_MS = 200
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
+const DOC_EDITING_TIMEOUT_MS = 20_000
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
@@ -151,24 +152,34 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'docs_document_presence') {
       if (!event.entity_id || !event.actor_id || event.actor_id === selfIdRef.current) return
       const docsStore = useDocsPresenceStore.getState()
-      const timerKey = `${event.entity_id}:docs:viewing:${event.actor_id}`
-      const prev = typingTimers.current.get(timerKey)
-      if (prev) {
-        clearTimeout(prev)
-        typingTimers.current.delete(timerKey)
-      }
-      const metadata = {
-        name: typeof event.data?.viewer_name === 'string' ? event.data.viewer_name : undefined,
-        avatarUrl: typeof event.data?.viewer_avatar === 'string' ? event.data.viewer_avatar : undefined,
-      }
-      docsStore.setViewingUser(event.entity_id, event.actor_id, event.action === 'viewing_started', metadata)
-
-      if (event.action === 'viewing_started') {
-        const timer = setTimeout(() => {
+      if (event.action === 'viewing_started' || event.action === 'viewing_stopped') {
+        const metadata = {
+          name: typeof event.data?.viewer_name === 'string' ? event.data.viewer_name : undefined,
+          avatarUrl: typeof event.data?.viewer_avatar === 'string' ? event.data.viewer_avatar : undefined,
+        }
+        docsStore.setViewingUser(event.entity_id, event.actor_id, event.action === 'viewing_started', metadata)
+      } else if (event.action === 'editing_updated' || event.action === 'editing_stopped') {
+        const timerKey = `${event.entity_id}:docs:editing:${event.actor_id}`
+        const prev = typingTimers.current.get(timerKey)
+        if (prev) {
+          clearTimeout(prev)
           typingTimers.current.delete(timerKey)
-          useDocsPresenceStore.getState().setViewingUser(event.entity_id, event.actor_id, false)
-        }, 30_000)
-        typingTimers.current.set(timerKey, timer)
+        }
+        const metadata = {
+          area: typeof event.data?.editor_area === 'string' ? event.data.editor_area : 'body',
+          section: typeof event.data?.editor_section === 'string' ? event.data.editor_section : undefined,
+          name: typeof event.data?.editor_name === 'string' ? event.data.editor_name : undefined,
+          avatarUrl: typeof event.data?.editor_avatar === 'string' ? event.data.editor_avatar : undefined,
+        }
+        docsStore.setEditingUser(event.entity_id, event.actor_id, event.action === 'editing_updated', metadata)
+
+        if (event.action === 'editing_updated') {
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(timerKey)
+            useDocsPresenceStore.getState().setEditingUser(event.entity_id, event.actor_id, false)
+          }, DOC_EDITING_TIMEOUT_MS)
+          typingTimers.current.set(timerKey, timer)
+        }
       }
     } else if (event.entity === 'notification') {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
@@ -376,7 +387,30 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           avatarUrl: viewer.avatar,
         }])
     )
-    useDocsPresenceStore.getState().replaceViewingUsers(docId, nextViewers)
+    const nextEditors = Object.fromEntries(
+      Object.entries(snapshot.editors ?? {})
+        .filter(([uid, editor]) => uid !== selfId && editor?.user_id)
+        .map(([uid, editor]) => [uid, {
+          area: editor.area,
+          section: editor.section,
+          name: editor.name,
+          avatarUrl: editor.avatar,
+        }])
+    )
+    const store = useDocsPresenceStore.getState()
+    store.replaceViewingUsers(docId, nextViewers)
+    store.replaceEditingUsers(docId, nextEditors)
+
+    for (const [uid] of Object.entries(nextEditors)) {
+      const timerKey = `${docId}:docs:editing:${uid}`
+      const prevTimer = typingTimers.current.get(timerKey)
+      if (prevTimer) clearTimeout(prevTimer)
+      const timer = setTimeout(() => {
+        typingTimers.current.delete(timerKey)
+        useDocsPresenceStore.getState().setEditingUser(docId, uid, false)
+      }, DOC_EDITING_TIMEOUT_MS)
+      typingTimers.current.set(timerKey, timer)
+    }
   }, [])
 
   useEffect(() => {
