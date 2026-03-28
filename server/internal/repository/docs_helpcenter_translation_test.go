@@ -231,7 +231,7 @@ func ptrString(value string) *string {
 	return &value
 }
 
-func stringValue(value *string) string {
+func helpcenterStringValue(value *string) string {
 	if value == nil {
 		return ""
 	}
@@ -513,7 +513,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(spaceTranslations) != 1 {
 		t.Fatalf("space translations = %d, want 1", len(spaceTranslations))
 	}
-	if spaceTranslations[0].Locale != "en" || spaceTranslations[0].Name != "Getting Started" || stringValue(spaceTranslations[0].Slug) != "getting-started" {
+	if spaceTranslations[0].Locale != "en" || spaceTranslations[0].Name != "Getting Started" || helpcenterStringValue(spaceTranslations[0].Slug) != "getting-started" {
 		t.Fatalf("unexpected space translation: %+v", spaceTranslations[0])
 	}
 	if spaceTranslations[0].Status != model.DocsHelpcenterTranslationStatusPublished || !spaceTranslations[0].SourceSynced {
@@ -527,7 +527,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(collectionTranslations) != 1 {
 		t.Fatalf("collection translations = %d, want 1", len(collectionTranslations))
 	}
-	if collectionTranslations[0].Locale != "en" || collectionTranslations[0].Name != "Basics" || stringValue(collectionTranslations[0].Slug) != "basics" {
+	if collectionTranslations[0].Locale != "en" || collectionTranslations[0].Name != "Basics" || helpcenterStringValue(collectionTranslations[0].Slug) != "basics" {
 		t.Fatalf("unexpected collection translation: %+v", collectionTranslations[0])
 	}
 	if collectionTranslations[0].Description == nil || *collectionTranslations[0].Description != description {
@@ -541,7 +541,7 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 	if len(articleTranslations) != 1 {
 		t.Fatalf("article translations = %d, want 1", len(articleTranslations))
 	}
-	if articleTranslations[0].Locale != "en" || articleTranslations[0].Title != "Start Here" || stringValue(articleTranslations[0].Slug) != "start-here" {
+	if articleTranslations[0].Locale != "en" || articleTranslations[0].Title != "Start Here" || helpcenterStringValue(articleTranslations[0].Slug) != "start-here" {
 		t.Fatalf("unexpected article translation: %+v", articleTranslations[0])
 	}
 	if articleTranslations[0].Excerpt == nil || *articleTranslations[0].Excerpt != excerpt {

@@ -14,12 +14,14 @@ import {
   useConversation,
   useConversationMessages,
   useChatSettings,
+  useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
   useMarkConversationUnread,
   useUpdateConversationSubject,
   useDeleteConversation,
+  useMoveConversation,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
@@ -196,6 +198,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
@@ -204,7 +207,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const markUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
+  const moveConversation = useMoveConversation(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
+  const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
@@ -218,6 +223,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     }
     return map;
   }, [members]);
+
+  const moveOptions = useMemo(() => {
+    const options = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
+    return options.filter((option) => option!.id !== (conversation?.mailbox_id ?? 'shared'));
+  }, [conversation?.mailbox_id, inboxScopes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -508,6 +518,31 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                   <Pencil className="h-4 w-4" />
                   Set conversation subject
                 </DropdownMenuItem>
+                {moveOptions.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {moveOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option!.id}
+                        onClick={() => {
+                          const nextMailboxId = option!.id === 'shared' ? null : option!.id;
+                          moveConversation.mutate({
+                            conversationId: conversation.id,
+                            mailboxId: nextMailboxId,
+                          }, {
+                            onSuccess: () => {
+                              setSelectedMailboxId(option!.id);
+                              toast.success(`Moved to ${option!.name}`);
+                            },
+                          });
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        Move to {option!.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

@@ -44,9 +44,17 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
 	aiState := r.URL.Query().Get("ai_state")
+	mailboxParam := r.URL.Query().Get("mailbox_id")
+	var mailboxID *string
+	if mailboxParam == "shared" || mailboxParam == "" {
+		empty := ""
+		mailboxID = &empty
+	} else {
+		mailboxID = &mailboxParam
+	}
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, aiState)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, aiState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -250,13 +258,130 @@ func (h *SupportInboxHandler) GetUnreadStats(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
+	mailboxParam := r.URL.Query().Get("mailbox_id")
+	var mailboxID *string
+	if mailboxParam == "shared" || mailboxParam == "" {
+		empty := ""
+		mailboxID = &empty
+	} else {
+		mailboxID = &mailboxParam
+	}
 
-	stats, err := h.supportService.GetUnreadStats(r.Context(), workspaceID, userID)
+	stats, err := h.supportService.GetUnreadStats(r.Context(), workspaceID, userID, mailboxID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *SupportInboxHandler) ListInboxScopes(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	resp, err := h.supportService.ListInboxScopes(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *SupportInboxHandler) ListMailboxes(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	mailboxes, err := h.supportService.ListMailboxesAdmin(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, mailboxes)
+}
+
+func (h *SupportInboxHandler) CreateMailbox(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateSupportMailboxRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	mailbox, err := h.supportService.CreateMailbox(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, mailbox)
+}
+
+func (h *SupportInboxHandler) UpdateMailbox(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	mailboxID := chi.URLParam(r, "mailboxId")
+
+	var req model.UpdateSupportMailboxRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	mailbox, err := h.supportService.UpdateMailbox(r.Context(), workspaceID, mailboxID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, mailbox)
+}
+
+func (h *SupportInboxHandler) ArchiveMailbox(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	mailboxID := chi.URLParam(r, "mailboxId")
+
+	mailbox, err := h.supportService.ArchiveMailbox(r.Context(), workspaceID, mailboxID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, mailbox)
+}
+
+func (h *SupportInboxHandler) ReorderMailboxes(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	var req model.ReorderSupportMailboxesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.supportService.ReorderMailboxes(r.Context(), workspaceID, req.MailboxIDs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SupportInboxHandler) ListMailboxMembers(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	mailboxID := chi.URLParam(r, "mailboxId")
+	members, err := h.supportService.ListMailboxMembers(r.Context(), workspaceID, mailboxID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
+func (h *SupportInboxHandler) MoveConversation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.MoveSupportConversationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	conversation, err := h.supportService.MoveConversation(r.Context(), workspaceID, conversationID, req.MailboxID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conversation)
 }
 
 // ListTeammatePresence handles GET /api/support/inbox/teammates/presence.

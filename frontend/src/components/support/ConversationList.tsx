@@ -35,6 +35,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     searchQuery, setSearchQuery,
     selectedConversationId, selectConversation,
     navFilter,
+    selectedMailboxId,
   } = useSupportInboxStore();
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
@@ -49,11 +50,14 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   }, [selectConversation, wsSend, workspaceId]);
 
   const filters = useMemo(() => {
-    const f: Record<string, string> = {};
+    const f: Record<string, string> = { mailbox_id: selectedMailboxId };
     if (statusFilter !== 'all') f.status = statusFilter;
     if (navFilter === 'mentions') f.filter = 'mentions';
+    if (navFilter === 'ai_pending') f.ai_state = 'pending';
+    if (navFilter === 'ai_resolved') f.ai_state = 'resolved';
+    if (navFilter === 'ai_escalated') f.ai_state = 'escalated';
     return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, navFilter]);
+  }, [statusFilter, navFilter, selectedMailboxId]);
   const { data: response, isLoading, error } = useConversations(workspaceId, filters);
   const conversations = response?.data ?? [];
 

@@ -13,7 +13,7 @@ import (
 
 // GetVisitorContext assembles visitor intelligence for a support conversation.
 func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID, conversationID string) (*model.VisitorContextResponse, error) {
-	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
 	}

@@ -720,6 +720,25 @@ func (r *WorkspaceRepository) ListActiveTeamUserIDs(ctx context.Context, workspa
 	return userIDs, nil
 }
 
+// ListActiveUserIDsByRoles returns active linked workspace user IDs for the given roles.
+func (r *WorkspaceRepository) ListActiveUserIDsByRoles(ctx context.Context, workspaceID string, roles []string) ([]string, error) {
+	if len(roles) == 0 {
+		return []string{}, nil
+	}
+
+	var userIDs []string
+	err := r.db.WithContext(ctx).
+		Table("workspace_members").
+		Where("workspace_id = ? AND status = ? AND user_id IS NOT NULL AND role IN ?", workspaceID, model.WorkspaceMemberStatusActive, roles).
+		Distinct().
+		Order("user_id ASC").
+		Pluck("user_id", &userIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list active workspace user ids by roles: %w", err)
+	}
+	return userIDs, nil
+}
+
 // CanUserAccessPMTeams reports whether the user can read a PM entity scoped to the given teams.
 // Admins and owners can read all entities. Members and viewers can only read entities in their teams.
 // An empty team scope represents an admin-only entity.

@@ -258,7 +258,7 @@ func (s *SupportInboxService) SetSessionConversation(ctx context.Context, sessio
 		return err
 	}
 
-	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID)
+	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return err
 	}
@@ -285,7 +285,7 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		return nil, fmt.Errorf("conversation_id is required")
 	}
 
-	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID)
+	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -369,6 +369,20 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		Source:        "widget",
 	}
 
+	mailboxID, mailbox, err := s.maybeApplyMailboxRouting(ctx, session.WorkspaceID, nil, true)
+	if err != nil {
+		return nil, err
+	}
+	ticket.MailboxID = mailboxID
+	if mailbox != nil {
+		ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, session.WorkspaceID, mailbox, nil)
+		if ownerErr != nil {
+			return nil, ownerErr
+		}
+		ticket.OpenedByUserID = ownerID
+		ticket.FlowState = strPtr(flowState)
+	}
+
 	if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, session.CustomerEmail, session.CustomerName); contactID != nil {
 		ticket.CRMContactID = contactID
 	}
@@ -401,7 +415,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	// Update conversation subject from first message if it was eagerly created with placeholder.
 	if session.ConversationID != nil {
-		conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID)
+		conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner)
 		if err == nil && conv != nil && conv.Subject == "New conversation" {
 			s.conversationRepo.UpdateSubject(ctx, conv.ID, truncate(strings.TrimSpace(content), 100))
 		}
@@ -419,6 +433,20 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			CustomerEmail: session.CustomerEmail,
 			AnonymousID:   &session.AnonymousID,
 			Source:        "widget",
+		}
+
+		mailboxID, mailbox, mailboxErr := s.maybeApplyMailboxRouting(ctx, session.WorkspaceID, nil, true)
+		if mailboxErr != nil {
+			return nil, mailboxErr
+		}
+		ticket.MailboxID = mailboxID
+		if mailbox != nil {
+			ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, session.WorkspaceID, mailbox, nil)
+			if ownerErr != nil {
+				return nil, ownerErr
+			}
+			ticket.OpenedByUserID = ownerID
+			ticket.FlowState = strPtr(flowState)
 		}
 
 		// Auto-match or create CRM contact by email.
@@ -478,7 +506,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
-	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID); err == nil {
+	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, displayName)
 	}
 
@@ -578,7 +606,7 @@ func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context,
 		return
 	}
 
-	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conversation == nil {
 		if err != nil {
 			slog.ErrorContext(ctx, "support widget auto-run: get conversation failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)

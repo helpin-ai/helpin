@@ -48,7 +48,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Get the conversation
-		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get conversation: %v", err)
 		}
@@ -76,7 +76,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{})
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -88,7 +88,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{})
+		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -100,7 +100,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{})
+		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Verify
-		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
@@ -142,7 +142,7 @@ func TestSupportConversationRepository(t *testing.T) {
 	t.Run("GetByID not found returns nil", func(t *testing.T) {
 		ctx := context.Background()
 
-		fetched, err := repo.GetByID(ctx, workspaceID, "non-existent-id")
+		fetched, err := repo.GetByID(ctx, workspaceID, "non-existent-id", "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -186,7 +186,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Should not be visible from original workspace
-		fetched, err := repo.GetByID(ctx, workspaceID, otherConv.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, otherConv.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get cross-workspace: %v", err)
 		}
@@ -215,7 +215,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2})
+		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -227,7 +227,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2})
+		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
@@ -314,7 +314,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("seed escalated unread message: %v", err)
 		}
 
-		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123")
+		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123", "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("get unread stats: %v", err)
 		}
@@ -516,6 +516,7 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),
@@ -619,6 +620,7 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),

@@ -43,6 +43,7 @@ import type {
   HelpcenterFooterLink,
   HelpcenterThemeMode,
   HomepageFeaturedCard,
+  DocsHelpcenterLocalesConfig,
   DocsSpace,
   DocsCollection,
 } from '@/lib/docsTypes';
@@ -108,6 +109,13 @@ const DEFAULT_CONFIG: ConfigState = {
   seo_title: '',
   seo_description: '',
   support_email: '',
+};
+
+const DEFAULT_LOCALES_CONFIG: DocsHelpcenterLocalesConfig = {
+  default_locale: 'en',
+  enabled_locales: ['en'],
+  show_language_switcher: true,
+  fallback_to_default_locale: true,
 };
 
 // Derive a URL-safe slug from a brand name.
@@ -250,17 +258,18 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const [spaceCollections, setSpaceCollections] = useState<DocsCollection[]>([]);
   const { data: localesConfig } = useDocsHelpcenterLocales(workspaceId);
   const updateLocales = useUpdateDocsHelpcenterLocales(workspaceId);
-  const normalizedLocalesConfig = localesConfig
+  const normalizedLocalesConfig: DocsHelpcenterLocalesConfig = localesConfig
     ? {
         ...localesConfig,
-        default_locale: localesConfig.default_locale || 'en',
+        default_locale: localesConfig.default_locale || DEFAULT_LOCALES_CONFIG.default_locale,
         enabled_locales:
           Array.isArray(localesConfig.enabled_locales) && localesConfig.enabled_locales.length > 0
             ? localesConfig.enabled_locales
-            : [localesConfig.default_locale || 'en'],
+            : [localesConfig.default_locale || DEFAULT_LOCALES_CONFIG.default_locale],
+        show_language_switcher: localesConfig.show_language_switcher !== false,
         fallback_to_default_locale: localesConfig.fallback_to_default_locale !== false,
       }
-    : null;
+    : DEFAULT_LOCALES_CONFIG;
 
   useEffect(() => {
     const load = async () => {
@@ -1053,89 +1062,87 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Locales ── */}
-      {normalizedLocalesConfig && (
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
-          <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Languages className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Languages & Translation</p>
-              <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
-            </div>
-            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
-          </button>
-          <div className="accordion-animate" data-open={isExpanded('locales')}>
-            <div>
-            <div className="border-t border-border px-6 py-6">
-              <div className="space-y-6">
-                <HelpcenterLocalesCard
-                  key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
-                  config={normalizedLocalesConfig}
-                  isSaving={updateLocales.isPending}
-                  onSave={async (data) => {
-                    try {
-                      await updateLocales.mutateAsync(data)
-                      toast.success('Locale settings saved')
-                    } catch (err) {
-                      toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
-                    }
-                  }}
-                />
+      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Languages className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Languages & Translation</p>
+            <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
+          </div>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('locales')}>
+          <div>
+          <div className="border-t border-border px-6 py-6">
+            <div className="space-y-6">
+              <HelpcenterLocalesCard
+                key={`${normalizedLocalesConfig.default_locale}:${normalizedLocalesConfig.enabled_locales.join(',')}:${String(normalizedLocalesConfig.show_language_switcher)}:${String(normalizedLocalesConfig.fallback_to_default_locale)}`}
+                config={normalizedLocalesConfig}
+                isSaving={updateLocales.isPending}
+                onSave={async (data) => {
+                  try {
+                    await updateLocales.mutateAsync(data)
+                    toast.success('Locale settings saved')
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : 'Failed to save locale settings')
+                  }
+                }}
+              />
 
-                <Separator />
+              <Separator />
 
-                <div>
-                  <h3 className="text-sm font-medium">Protected terms</h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Terms that AI will not translate — product names, features, and technical language.
-                  </p>
-                  <div className="mt-3">
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap gap-2">
-                        {config.protected_terms.map((term, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-sm">
-                            {term}
-                            <button
-                              type="button"
-                              onClick={() => setConfig({ ...config, protected_terms: config.protected_terms.filter((_, j) => j !== i) })}
-                              className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                      <Input
-                        placeholder="Type a term and press Enter..."
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            const val = (e.target as HTMLInputElement).value.trim()
-                            if (val && !config.protected_terms.includes(val)) {
-                              setConfig({ ...config, protected_terms: [...config.protected_terms, val] })
-                              ;(e.target as HTMLInputElement).value = ''
-                            }
-                          }
-                        }}
-                      />
+              <div>
+                <h3 className="text-sm font-medium">Protected terms</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Terms that AI will not translate — product names, features, and technical language.
+                </p>
+                <div className="mt-3">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {config.protected_terms.map((term, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-sm">
+                          {term}
+                          <button
+                            type="button"
+                            onClick={() => setConfig({ ...config, protected_terms: config.protected_terms.filter((_, j) => j !== i) })}
+                            className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
                     </div>
+                    <Input
+                      placeholder="Type a term and press Enter..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          const val = (e.target as HTMLInputElement).value.trim()
+                          if (val && !config.protected_terms.includes(val)) {
+                            setConfig({ ...config, protected_terms: [...config.protected_terms, val] })
+                            ;(e.target as HTMLInputElement).value = ''
+                          }
+                        }
+                      }}
+                    />
                   </div>
                 </div>
-
-                <Separator />
-
-                <HelpcenterTranslationsTable
-                  workspaceId={workspaceId}
-                  defaultLocale={normalizedLocalesConfig.default_locale}
-                  enabledLocales={normalizedLocalesConfig.enabled_locales}
-                />
               </div>
-            </div>
+
+              <Separator />
+
+              <HelpcenterTranslationsTable
+                workspaceId={workspaceId}
+                defaultLocale={normalizedLocalesConfig.default_locale}
+                enabledLocales={normalizedLocalesConfig.enabled_locales}
+              />
             </div>
           </div>
+          </div>
         </div>
-      )}
+      </div>
 
     </form>
   );

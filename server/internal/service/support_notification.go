@@ -82,12 +82,14 @@ func ProcessSupportCustomerReplyNotification(
 	selection, err := selectSupportConversationRecipient(
 		ctx,
 		notifService.workspaceRepo,
+		notifService.mailboxRepo,
 		notifService.installationRepo,
 		notifService.prefRepo,
 		notifService.presence,
 		notifService.statusOverrideRepo,
 		supportRecipientSelectorInput{
 			WorkspaceID:        conv.WorkspaceID,
+			MailboxID:          conv.MailboxID,
 			OwnerUserID:        conv.OpenedByUserID,
 			EventType:          "support_conversation.customer_reply",
 			Channel:            "in_app",

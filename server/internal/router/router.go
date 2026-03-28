@@ -456,6 +456,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/mailboxes/scopes", h.SupportInbox.ListInboxScopes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes", h.SupportInbox.ListMailboxes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes", h.SupportInbox.CreateMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/mailboxes/{mailboxId}", h.SupportInbox.UpdateMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes/{mailboxId}/archive", h.SupportInbox.ArchiveMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes/reorder", h.SupportInbox.ReorderMailboxes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes/{mailboxId}/members", h.SupportInbox.ListMailboxMembers)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/teammates/presence", h.SupportInbox.ListTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
@@ -471,6 +478,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-story", h.SupportInbox.LinkConversationStory)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
