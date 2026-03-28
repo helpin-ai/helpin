@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { queryClient } from '@/lib/queryClient'
 import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
+import { RoutePendingState } from '@/components/layout/RoutePendingState'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
@@ -32,6 +33,9 @@ const router = createRouter({
       serverUnreachable: false,
     },
   },
+  defaultPendingComponent: RoutePendingState,
+  defaultPendingMs: 120,
+  defaultPendingMinMs: 300,
   defaultNotFoundComponent: () => {
     router.navigate({ to: '/workspaces' })
     return null
