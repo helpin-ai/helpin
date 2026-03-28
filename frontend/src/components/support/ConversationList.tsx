@@ -2,10 +2,9 @@ import { useMemo, useCallback, memo, useEffect } from 'react';
 import { MessageSquare, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useConversations } from '@/hooks/queries/useSupport';
+import { useConversations, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
-import { supportService } from '@/lib/services/supportService';
 import { ConversationRow } from './ConversationRow';
 import { filterSupportConversations } from '@/lib/supportInboxFilters';
 
@@ -39,15 +38,12 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   } = useSupportInboxStore();
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
+  const markConversationRead = useMarkConversationRead(workspaceId);
 
   const handleSelect = useCallback((id: string) => {
     selectConversation(id);
-    if (wsSend) {
-      wsSend('support:conversation:read', { conversation_id: id });
-    } else {
-      supportService.markConversationRead(workspaceId, id).catch(() => {});
-    }
-  }, [selectConversation, wsSend, workspaceId]);
+    markConversationRead.mutate(id);
+  }, [markConversationRead, selectConversation]);
 
   const filters = useMemo(() => {
     const f: Record<string, string> = { mailbox_id: selectedMailboxId };

@@ -341,6 +341,23 @@ export function useMarkConversationUnread(workspaceId: string) {
   });
 }
 
+export function useMarkConversationRead(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.markConversationRead(workspaceId, conversationId),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to mark conversation as read', { description: error.message });
+    },
+  });
+}
+
 export function useUpdateConversationSubject(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

@@ -27,7 +27,6 @@ type MailboxFormState = {
   description: string;
   linkedTeamId: string;
   assignmentMode: 'manual' | 'round_robin';
-  importLinkedTeam: boolean;
   workspaceMemberIds: string[];
 };
 
@@ -38,7 +37,6 @@ const DEFAULT_FORM: MailboxFormState = {
   description: '',
   linkedTeamId: 'none',
   assignmentMode: 'manual',
-  importLinkedTeam: false,
   workspaceMemberIds: [],
 };
 
@@ -55,7 +53,6 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     description: mailbox.description ?? '',
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
-    importLinkedTeam: false,
     workspaceMemberIds: [],
   };
 }
@@ -162,7 +159,6 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
         description: form.description.trim() || null,
         linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
-        import_linked_team: form.importLinkedTeam,
         workspace_member_ids: form.workspaceMemberIds,
       };
       await updateMailbox.mutateAsync({ mailboxId: editingMailbox.id, payload });
@@ -175,7 +171,6 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
         description: form.description.trim() || null,
         linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
-        import_linked_team: form.importLinkedTeam,
         workspace_member_ids: form.workspaceMemberIds,
       };
       await createMailbox.mutateAsync(payload);
@@ -212,7 +207,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
             <CardTitle>Team Inboxes</CardTitle>
             {mailboxes.length > 0 && (
               <CardDescription>
-                Private inboxes with explicit members. The shared inbox stays workspace-wide.
+                Private inboxes can grant access through a linked team and extra individual members. The shared inbox stays workspace-wide.
               </CardDescription>
             )}
           </div>
@@ -232,7 +227,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
               </div>
               <h3 className="mt-4 text-sm font-medium">No team inboxes</h3>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Create a team inbox to give specific members their own private queue. The shared inbox stays available to everyone.
+                Create a team inbox to route conversations to a linked team or selected members. The shared inbox stays available to everyone.
               </p>
               <Button className="mt-4 gap-2" onClick={openCreate}>
                 <Plus className="h-4 w-4" />
@@ -253,7 +248,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
                       {!mailbox.active && <Badge variant="outline">Archived</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {mailbox.handle} • {mailbox.member_count ?? 0} members{mailbox.linked_team_name ? ` • linked to ${mailbox.linked_team_name}` : ''}
+                      {mailbox.handle} • {mailbox.member_count ?? 0} people with access{mailbox.linked_team_name ? ` • linked to ${mailbox.linked_team_name}` : ''}
                     </p>
                   </div>
                 </div>
@@ -383,7 +378,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <FieldLabel tip="Connect this inbox to an existing workspace team. Linked team members can be bulk-imported in the next step, similar to adding a LinkedIn team to a shared project.">
+                    <FieldLabel tip="Connect this inbox to an existing workspace team. Current members of that team get inbox access automatically, and you can still add extra individual members in the next step.">
                       Linked Team
                     </FieldLabel>
                     <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
@@ -426,6 +421,9 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
                 <DialogTitle>Add Members</DialogTitle>
                 <DialogDescription>
                   Choose who can see and respond to conversations in this inbox.
+                  {form.linkedTeamId !== 'none' && (
+                    <span className="ml-1">Linked team members already have access automatically.</span>
+                  )}
                   {form.workspaceMemberIds.length > 0 && (
                     <span className="ml-1 font-medium text-foreground">{form.workspaceMemberIds.length} selected</span>
                   )}
@@ -442,20 +440,6 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
                   className="pl-9"
                 />
               </div>
-
-              {/* Import linked team */}
-              {form.linkedTeamId !== 'none' && (
-                <label className="mb-3 flex items-center gap-3 rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-sm cursor-pointer hover:bg-muted/50 transition-colors">
-                  <Checkbox
-                    checked={form.importLinkedTeam}
-                    onCheckedChange={(checked) => setForm((current) => ({ ...current, importLinkedTeam: Boolean(checked) }))}
-                  />
-                  <div>
-                    <span className="font-medium">Import linked team members</span>
-                    <span className="text-muted-foreground ml-1">— one-time import, no ongoing sync</span>
-                  </div>
-                </label>
-              )}
 
               {/* Member list */}
               <ScrollArea className="h-72 rounded-lg border">
