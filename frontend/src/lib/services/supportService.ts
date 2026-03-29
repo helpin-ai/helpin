@@ -21,6 +21,8 @@ import type {
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
   SupportMailboxMember,
+  SupportEmailRoute,
+  CreateSupportEmailRouteRequest,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -49,6 +51,12 @@ export const supportService = {
     api.post(`/support/inbox/mailboxes/reorder${qs(workspaceId)}`, { mailbox_ids: mailboxIds }),
   listMailboxMembers: (workspaceId: string, mailboxId: string) =>
     api.get<SupportMailboxMember[]>(`/support/inbox/mailboxes/${mailboxId}/members${qs(workspaceId)}`),
+  listEmailRoutes: (workspaceId: string) =>
+    api.get<SupportEmailRoute[]>(`/support/inbox/email-routes${qs(workspaceId)}`),
+  createEmailRoute: (workspaceId: string, payload: CreateSupportEmailRouteRequest) =>
+    api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
+  disableEmailRoute: (workspaceId: string, routeId: string) =>
+    api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   createConversation: (workspaceId: string, payload: CreateConversationRequest) =>

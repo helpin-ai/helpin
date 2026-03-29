@@ -191,6 +191,7 @@ func main() {
 		&model.SupportConversation{},
 		&model.SupportMailbox{},
 		&model.SupportMailboxMembership{},
+		&model.SupportEmailRoute{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
 		&model.SupportEmailWebhookEvent{},
@@ -303,6 +304,10 @@ func main() {
 	slog.Info("startup: running MigrateEmailFallbackSchema")
 	if err := repository.MigrateEmailFallbackSchema(db); err != nil {
 		fatalWithSentry("failed to migrate email fallback schema", err)
+	}
+	slog.Info("startup: running MigrateSupportEmailRouteSchema")
+	if err := repository.MigrateSupportEmailRouteSchema(db); err != nil {
+		fatalWithSentry("failed to migrate support email route schema", err)
 	}
 
 	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
@@ -473,6 +478,7 @@ func main() {
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
+	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
@@ -585,9 +591,11 @@ func main() {
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
+	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	emailFallbackService.SetSupportInboxService(supportInboxService)
 	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 

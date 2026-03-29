@@ -13,3 +13,4 @@ export { AIAutomationsTab } from './AIAutomationsTab';
 export { ChatGeneralTab } from './ChatGeneralTab';
 export { RedirectsTab } from './RedirectsTab';
 export { TeamInboxesTab } from './TeamInboxesTab';
+export { SupportEmailForwardingTab } from './SupportEmailForwardingTab';

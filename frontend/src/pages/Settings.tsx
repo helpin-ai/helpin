@@ -26,9 +26,10 @@ import {
   ChatGeneralTab,
   RedirectsTab,
   TeamInboxesTab,
+  SupportEmailForwardingTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'team-inboxes' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'team-inboxes' | 'email-forwarding' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -155,6 +156,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Team Inboxes',
     description: 'Create private support inboxes, add members, pick icons, and link support teams.',
     icon: MessageSquare,
+    group: 'Support & Docs',
+  },
+  {
+    id: 'email-forwarding',
+    label: 'Email Forwarding',
+    description: 'Generate forwarding addresses for Shared Inbox and Team Inboxes.',
+    icon: Mail,
     group: 'Support & Docs',
   },
   {
@@ -321,6 +329,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'team-inboxes':
         return <TeamInboxesTab workspaceId={workspaceId} />;
+      case 'email-forwarding':
+        return <SupportEmailForwardingTab workspaceId={workspaceId} />;
       default:
         return null;
     }

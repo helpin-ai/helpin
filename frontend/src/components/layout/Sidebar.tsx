@@ -660,6 +660,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
           { link: `/w/${wsSlug}/settings/team-inboxes`, label: 'Team Inboxes', icon: Inbox },
+          { link: `/w/${wsSlug}/settings/email-forwarding`, label: 'Email Forwarding', icon: Mail },
         ],
       },
       {

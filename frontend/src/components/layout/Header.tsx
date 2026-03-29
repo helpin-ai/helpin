@@ -117,6 +117,8 @@ export function Header() {
       "crm-autonomy": "Autonomy",
       "ai-automations": "AI & Automations",
       "chat-general": "Chat Widget",
+      "team-inboxes": "Team Inboxes",
+      "email-forwarding": "Email Forwarding",
       "chat-ai": "AI & Routing",
     };
 

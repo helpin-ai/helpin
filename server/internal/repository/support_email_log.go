@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -53,6 +54,33 @@ func (r *SupportEmailLogRepository) GetByPostmarkMessageID(ctx context.Context, 
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get support email log by postmark message id: %w", err)
+	}
+	return &log, nil
+}
+
+// FindConversationByRFCReferences resolves a conversation from inbound threading headers.
+func (r *SupportEmailLogRepository) FindConversationByRFCReferences(ctx context.Context, workspaceID string, references []string) (*model.SupportEmailLog, error) {
+	cleaned := make([]string, 0, len(references))
+	for _, reference := range references {
+		reference = strings.TrimSpace(reference)
+		if reference == "" {
+			continue
+		}
+		cleaned = append(cleaned, reference)
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+
+	var log model.SupportEmailLog
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND rfc_message_id IN ?", workspaceID, cleaned).
+		Order("created_at DESC").
+		First(&log).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find support email log by rfc references: %w", err)
 	}
 	return &log, nil
 }

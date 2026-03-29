@@ -1589,6 +1589,29 @@ export interface SupportMailboxMember {
   role: string;
 }
 
+export interface SupportEmailRoute {
+  id: string;
+  workspace_id: string;
+  mailbox_id?: string | null;
+  route_key: string;
+  inbound_address: string;
+  source_address?: string | null;
+  provider_type: 'forwarding';
+  active: boolean;
+  last_inbound_at?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+  mailbox_name?: string | null;
+  mailbox_handle?: string | null;
+  mailbox_icon?: string | null;
+}
+
+export interface CreateSupportEmailRouteRequest {
+  mailbox_id?: string | null;
+  source_address?: string | null;
+}
+
 export interface CreateSupportMailboxRequest {
   name: string;
   handle: string;

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Globe, GlobeLock } from 'lucide-react'
 import { toast } from 'sonner'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import {
   usePublishDocsExternally,
   useUnpublishDocsExternally,
@@ -52,8 +53,16 @@ export function ExternalPublishPanel({
     }
   }
 
+  const confirm = useConfirm()
+
   const handleUnpublish = async () => {
-    if (!window.confirm('Remove this article from the public help center?')) return
+    const ok = await confirm({
+      title: 'Unpublish article?',
+      description: 'This will remove the article from the public help center.',
+      confirmText: 'Unpublish',
+      variant: 'destructive',
+    })
+    if (!ok) return
     try {
       await unpublishExternally.mutateAsync(doc.id)
       toast.success('Unpublished from help center')

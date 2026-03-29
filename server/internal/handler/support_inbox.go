@@ -366,6 +366,45 @@ func (h *SupportInboxHandler) ListMailboxMembers(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, members)
 }
 
+func (h *SupportInboxHandler) ListEmailRoutes(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	routes, err := h.supportService.ListEmailRoutes(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, routes)
+}
+
+func (h *SupportInboxHandler) CreateEmailRoute(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateSupportEmailRouteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	route, err := h.supportService.CreateEmailRoute(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, route)
+}
+
+func (h *SupportInboxHandler) DisableEmailRoute(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	routeID := chi.URLParam(r, "routeId")
+
+	if err := h.supportService.DisableEmailRoute(r.Context(), workspaceID, routeID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *SupportInboxHandler) MoveConversation(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	conversationID := chi.URLParam(r, "id")

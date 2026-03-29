@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowRight, Check, ChevronLeft, HelpCircle, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,7 +16,6 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import { useCreateMailbox, useMailboxMembers, useUpdateMailbox } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import type { CreateSupportMailboxRequest, SupportMailbox, UpdateSupportMailboxRequest } from '@/lib/pmTypes';
-import { getInitials } from '@/lib/utils';
 
 type MailboxFormState = {
   name: string;
@@ -37,6 +36,8 @@ const DEFAULT_FORM: MailboxFormState = {
   assignmentMode: 'manual',
   workspaceMemberIds: [],
 };
+
+const EMPTY_MEMBERS: never[] = [];
 
 function normalizeHandle(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-');
@@ -88,7 +89,8 @@ export function TeamInboxDialog({
 
   const { data: members = [] } = useAssignableMembers(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
-  const { data: mailboxMembers = [] } = useMailboxMembers(workspaceId, mailbox?.id);
+  const { data: mailboxMembersData = EMPTY_MEMBERS } = useMailboxMembers(workspaceId, mailbox?.id);
+  const mailboxMembers = Array.isArray(mailboxMembersData) ? mailboxMembersData : EMPTY_MEMBERS;
   const createMailbox = useCreateMailbox(workspaceId);
   const updateMailbox = useUpdateMailbox(workspaceId);
 
@@ -362,9 +364,12 @@ export function TeamInboxDialog({
                         checked={isSelected}
                         onCheckedChange={(checked) => toggleMember(member.id, Boolean(checked))}
                       />
-                      <Avatar size="sm">
-                        <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
-                      </Avatar>
+                      <UserAvatar
+                        name={displayName}
+                        avatarUrl={member.avatar_url}
+                        className="h-6 w-6 border-border/70"
+                        fallbackClassName="text-[10px]"
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{displayName}</p>
                         {member.email && member.display_name && (

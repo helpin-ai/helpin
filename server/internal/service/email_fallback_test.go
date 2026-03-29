@@ -42,6 +42,7 @@ type emailFallbackTestEnv struct {
 	redis        *redis.Client
 	redisServer  *miniredis.Miniredis
 	service      *EmailFallbackService
+	routeRepo    *repository.SupportEmailRouteRepository
 	messageRepo  *repository.SupportMessageRepository
 	convRepo     *repository.SupportConversationRepository
 	emailLogRepo *repository.SupportEmailLogRepository
@@ -52,17 +53,33 @@ type emailFallbackTestEnv struct {
 
 func setupEmailFallbackTestEnv(t *testing.T, settings model.SupportInboxSettings) *emailFallbackTestEnv {
 	t.Helper()
+	return setupEmailFallbackTestEnvWithRedis(t, settings, true)
+}
+
+func setupEmailFallbackInboundTestEnv(t *testing.T, settings model.SupportInboxSettings) *emailFallbackTestEnv {
+	t.Helper()
+	return setupEmailFallbackTestEnvWithRedis(t, settings, false)
+}
+
+func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInboxSettings, withRedis bool) *emailFallbackTestEnv {
+	t.Helper()
 
 	db := newTestDB(t)
-	redisServer := miniredis.RunT(t)
-	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	var redisServer *miniredis.Miniredis
+	var redisClient *redis.Client
+	if withRedis {
+		redisServer = miniredis.RunT(t)
+		redisClient = redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	}
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	ownerID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, ownerID, "owner@example.com", "Owner", "hashed")
 	seedWorkspace(t, db, workspaceID, "Acme", "acme", ownerID)
 
 	messageRepo := repository.NewSupportMessageRepository(db)
 	convRepo := repository.NewSupportConversationRepository(db)
+	routeRepo := repository.NewSupportEmailRouteRepository(db)
 	emailLogRepo := repository.NewSupportEmailLogRepository(db)
 	webhookRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	installRepo := repository.NewSupportInboxInstallationRepository(db)
@@ -100,11 +117,16 @@ func setupEmailFallbackTestEnv(t *testing.T, settings model.SupportInboxSettings
 		"https://app.helpin.ai",
 		"pod-test",
 	)
+	supportInboxService := NewSupportInboxService(convRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil, installRepo, sessionRepo, nil, nil, nil, repository.NewCRMContactRepository(db), nil, nil, nil, nil)
+	supportInboxService.SetEmailRouteRepository(routeRepo)
+	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	service.SetSupportInboxService(supportInboxService)
 
 	return &emailFallbackTestEnv{
 		redis:        redisClient,
 		redisServer:  redisServer,
 		service:      service,
+		routeRepo:    routeRepo,
 		messageRepo:  messageRepo,
 		convRepo:     convRepo,
 		emailLogRepo: emailLogRepo,
@@ -358,8 +380,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
-	env := setupEmailFallbackTestEnv(t, settings)
-	defer env.redisServer.Close()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	conversationID := "99999999-9999-9999-9999-999999999999"
@@ -429,8 +450,7 @@ func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
-	env := setupEmailFallbackTestEnv(t, settings)
-	defer env.redisServer.Close()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
 	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
@@ -510,6 +530,166 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	}
 	if !strings.Contains(events[0].RawPayload, `"OriginalRecipient":"conv-`+conversationID+`@replies.helpin.ai"`) {
 		t.Fatalf("expected raw webhook payload to be stored, got %q", events[0].RawPayload)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a1111111-1111-1111-1111-111111111111",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-shared123",
+		InboundAddress: "route-shared123@replies.helpin.ai",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Need billing help",
+		MessageID:         "pm-route-1",
+		StrippedTextReply: "I need help with my invoice",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<customer-thread-1@example.com>"},
+		},
+	}
+
+	rawPayload := `{"MessageID":"pm-route-1","OriginalRecipient":"` + route.InboundAddress + `","Subject":"Need billing help"}`
+	if err := env.service.ProcessInboundEmail(ctx, payload, rawPayload); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(resp) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(resp))
+	}
+	conv := resp[0]
+	if conv.Channel != "email" || conv.Source != "email" {
+		t.Fatalf("expected email conversation, got channel=%q source=%q", conv.Channel, conv.Source)
+	}
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "customer@example.com" {
+		t.Fatalf("unexpected customer email: %#v", conv.CustomerEmail)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conv.ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].ViaChannel == nil || *messages[0].ViaChannel != "email" {
+		t.Fatalf("expected 1 email message, got %#v", messages)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 email log, got %d", len(logs))
+	}
+	if logs[0].EmailRouteID == nil || *logs[0].EmailRouteID != route.ID {
+		t.Fatalf("expected route id on log, got %#v", logs[0].EmailRouteID)
+	}
+	if logs[0].RFCMessageID != "<customer-thread-1@example.com>" {
+		t.Fatalf("unexpected rfc message id: %q", logs[0].RFCMessageID)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999999"
+	customerEmail := "customer@example.com"
+	customerName := "Taylor"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Existing email thread",
+		Status:        "open",
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	outboundLog := &model.SupportEmailLog{
+		ID:             "b2222222-2222-2222-2222-222222222222",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "outbound",
+		FromEmail:      "support@example.com",
+		ToEmail:        customerEmail,
+		Subject:        "Existing email thread",
+		RFCMessageID:   "<helpin-thread-123@replies.helpin.ai>",
+		Status:         "sent",
+	}
+	if err := env.emailLogRepo.Create(ctx, outboundLog); err != nil {
+		t.Fatalf("create outbound log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "c3333333-3333-3333-3333-333333333333",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-thread123",
+		InboundAddress: "route-thread123@replies.helpin.ai",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: customerEmail, Name: customerName},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Re: Existing email thread",
+		MessageID:         "pm-route-reply-1",
+		StrippedTextReply: "Following up on this thread.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<customer-reply-2@example.com>"},
+			{Name: "In-Reply-To", Value: "<helpin-thread-123@replies.helpin.ai>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-reply-1"}`); err != nil {
+		t.Fatalf("process routed reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected threaded reply to stay in existing conversation, got %d messages", len(messages))
+	}
+
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(resp) != 1 || resp[0].ID != conversationID {
+		t.Fatalf("expected reply to stay on original conversation, got %#v total=%d", resp, total)
 	}
 }
 
