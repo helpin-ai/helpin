@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Inbox, MailPlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -54,10 +54,6 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Email Forwarding</CardTitle>
-        <CardDescription>
-          Forward your real mailbox (support@, billing@, etc.) into a Helpin inbox. Each inbox gets its own forwarding address.
-        </CardDescription>
         <button
           type="button"
           onClick={() => setShowHowItWorks((v) => !v)}

@@ -23,7 +23,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { useArchiveMailbox, useReorderMailboxes, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import type { SupportMailbox } from '@/lib/pmTypes';
@@ -155,24 +155,16 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {mailboxes.length > 0 && (
+        <div className="flex justify-end">
+          <Button className="gap-2" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            New Team Inbox
+          </Button>
+        </div>
+      )}
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle>Team Inboxes</CardTitle>
-            {mailboxes.length > 0 && (
-              <CardDescription>
-                Private inboxes can grant access through a linked team and extra individual members. The shared inbox stays workspace-wide.
-              </CardDescription>
-            )}
-          </div>
-          {mailboxes.length > 0 && (
-            <Button className="gap-2" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              New Team Inbox
-            </Button>
-          )}
-        </CardHeader>
         <CardContent className="space-y-3">
           {isLoading && <p className="text-sm text-muted-foreground">Loading inboxes...</p>}
           {!isLoading && mailboxes.length === 0 && (
