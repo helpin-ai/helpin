@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { pmSprintService } from '@/lib/services/pmSprintService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { CreateSprintRequest, UpdateSprintRequest } from '@/lib/pmTypes'
+import type { CreateSprintRequest, SprintPlanningFilters, UpdateSprintRequest } from '@/lib/pmTypes'
 
 interface SprintFilters {
   team_id?: string
@@ -23,6 +23,14 @@ export function useSprint(wsId: string, id: string) {
     queryKey: queryKeys.pm.sprint(wsId, id),
     queryFn: async () => unwrap(await pmSprintService.get(wsId, id)),
     enabled: !!wsId && !!id,
+  })
+}
+
+export function useSprintPlanningWorkspace(wsId: string, filters?: SprintPlanningFilters) {
+  return useQuery({
+    queryKey: queryKeys.pm.sprintPlanning(wsId, filters as Record<string, unknown> | undefined),
+    queryFn: async () => unwrap(await pmSprintService.planningWorkspace(wsId, filters)),
+    enabled: !!wsId,
   })
 }
 
@@ -51,6 +59,7 @@ export function useUpdateSprint(wsId: string) {
       unwrap(await pmSprintService.update(wsId, id, data)),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprints(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprint(wsId, id) })
     },
   })
@@ -62,6 +71,7 @@ export function useDeleteSprint(wsId: string) {
     mutationFn: async (id: string) => unwrap(await pmSprintService.remove(wsId, id)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprints(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
     },
   })
 }

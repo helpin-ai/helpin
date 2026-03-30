@@ -44,6 +44,8 @@ export const queryKeys = {
     epicAssociations: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'associations'] as const,
 
     sprints: (wsId: string) => ['pm', wsId, 'sprints'] as const,
+    sprintPlanning: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'sprints', 'planning', filters] as const) : (['pm', wsId, 'sprints', 'planning'] as const),
     sprint: (wsId: string, id: string) => ['pm', wsId, 'sprints', id] as const,
     sprintStories: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'stories'] as const,
 

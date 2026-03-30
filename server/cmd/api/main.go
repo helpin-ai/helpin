@@ -440,7 +440,7 @@ func main() {
 	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
 	go func() {
 		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
-			fatalWithSentry("jetstream bridge stopped", err)
+			slog.Error("jetstream bridge stopped (non-fatal in dev)", "error", err)
 		}
 	}()
 

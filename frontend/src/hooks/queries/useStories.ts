@@ -67,6 +67,7 @@ export function useCreateStory(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'stories'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
     },
   })
 }
@@ -80,6 +81,7 @@ export function useUpdateStory(wsId: string) {
       qc.setQueryData(queryKeys.pm.story(wsId, id), result)
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'stories'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
     },
   })
 }
@@ -91,6 +93,7 @@ export function useDeleteStory(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'stories'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
     },
   })
 }

@@ -349,13 +349,37 @@ export function HelpCenterImportSection({
       {/* Step 2: Import Progress */}
       {step === 2 && (
         <div className="mx-auto max-w-md rounded-none border border-border bg-card p-6 space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-3">
+            {!isFinished && (
+              <div className="flex justify-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+              </div>
+            )}
             <Progress value={progressPercent} className="h-2" />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground text-center">
               {isFinished
                 ? 'Import complete'
                 : `Importing... ${jobStatus ? jobStatus.completed + jobStatus.failed : 0} of ${jobStatus?.total ?? '...'} articles`}
             </p>
+            {!isFinished && jobStatus && jobStatus.completed > 0 && jobStatus.started_at && (() => {
+              const elapsed = (Date.now() - new Date(jobStatus.started_at).getTime()) / 1000
+              const done = jobStatus.completed + jobStatus.failed
+              const remaining = jobStatus.total - done
+              const perItem = elapsed / done
+              const etaSeconds = Math.round(remaining * perItem)
+              const etaMin = Math.floor(etaSeconds / 60)
+              const etaSec = etaSeconds % 60
+              return (
+                <p className="text-xs text-muted-foreground/60 text-center">
+                  ~{etaMin > 0 ? `${etaMin}m ` : ''}{etaSec}s remaining
+                </p>
+              )
+            })()}
+            {!isFinished && (
+              <p className="text-xs text-muted-foreground/50 text-center">
+                You can continue using the app. Come back here later to see the progress.
+              </p>
+            )}
           </div>
 
           {isFinished && jobStatus && (

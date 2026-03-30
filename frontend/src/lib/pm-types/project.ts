@@ -169,6 +169,39 @@ export interface SprintWithStats {
   stats: PMSprintStats;
 }
 
+export interface SprintPlanningStoryPreview {
+  id: string;
+  display_id: number;
+  name: string;
+  workflow_state_id: string;
+  state_name?: string;
+  state_type?: StateType;
+  owner_member_id?: string;
+  estimate?: number;
+  priority: Priority;
+  sprint_id?: string;
+  team_id?: string;
+}
+
+export interface SprintPlanningCard {
+  sprint: PMSprint;
+  stats: PMSprintStats;
+  preview_stories: SprintPlanningStoryPreview[];
+  story_preview_overflow: number;
+}
+
+export interface SprintPlanningBucket {
+  key: 'active' | 'upcoming' | 'completed';
+  label: string;
+  sprints: SprintPlanningCard[];
+}
+
+export interface SprintPlanningWorkspace {
+  buckets: SprintPlanningBucket[];
+  backlog_stories: SprintPlanningStoryPreview[];
+  backlog_total: number;
+}
+
 export interface Story {
   id: string;
   workspace_id: string;
@@ -729,6 +762,11 @@ export interface UpdateSprintRequest {
   team_id?: string;
   archived?: boolean;
   label_ids?: string[];
+}
+
+export interface SprintPlanningFilters {
+  team_id?: string;
+  include_completed?: boolean;
 }
 
 export interface CreateStoryRequest {

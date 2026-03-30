@@ -579,6 +579,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
