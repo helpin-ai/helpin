@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Check, Copy, Code, Loader2, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, ChevronDown, Star } from 'lucide-react';
+import { Check, Copy, Code, Loader2, MessageSquare, HelpCircle, ImageIcon, KeyRound, Bot, ChevronDown, Star } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -16,181 +16,18 @@ import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
-import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
-import type { WidgetConfig } from '@helpin/widget-core';
-
-const ICON_OPTIONS = [
-  { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
-  { value: 'question_mark', label: 'Question Mark', icon: HelpCircle },
-  { value: 'help', label: 'Help', icon: CircleHelp },
-];
-
-
-const COLOR_SCHEME_OPTIONS = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-];
-
-const DAYS = [
-  { key: 'mon', label: 'Monday' },
-  { key: 'tue', label: 'Tuesday' },
-  { key: 'wed', label: 'Wednesday' },
-  { key: 'thu', label: 'Thursday' },
-  { key: 'fri', label: 'Friday' },
-  { key: 'sat', label: 'Saturday' },
-  { key: 'sun', label: 'Sunday' },
-];
-
-const COMMON_TIMEZONES = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Anchorage',
-  'Pacific/Honolulu',
-  'Europe/London',
-  'Europe/Berlin',
-  'Europe/Paris',
-  'Asia/Tokyo',
-  'Asia/Shanghai',
-  'Asia/Kolkata',
-  'Australia/Sydney',
-  'Pacific/Auckland',
-  'UTC',
-];
-
-const NO_AGENT_VALUE = '__none__';
-const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
-const DEFAULT_BUSINESS_HOURS_DAY: BusinessHoursDay = { start: '09:00', end: '17:00', enabled: false };
-
-type ChatSettingsDraft = Omit<SupportInboxSettings, 'ai_agent_id'> & {
-  ai_agent_id: string;
-};
-
-function parseTimeToMinutes(value: string): number {
-  const [hours = '0', minutes = '0'] = value.split(':');
-  return Number(hours) * 60 + Number(minutes);
-}
-
-function weekdayKey(date: Date, timezone: string): string {
-  const day = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(date).toLowerCase();
-  return day.slice(0, 3);
-}
-
-function zonedMinutes(date: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
-  return (hour * 60) + minute;
-}
-
-function buildPreviewAvailability(
-  businessHoursEnabled: boolean,
-  timezone: string,
-  schedule: Record<string, BusinessHoursDay>,
-  outsideMessage: string,
-): WidgetConfig['availability'] {
-  const fallbackMessage = outsideMessage || "We're currently offline. Leave a message and we'll get back to you!";
-  if (!businessHoursEnabled) {
-    return {
-      isOnline: true,
-      statusText: 'Online now',
-      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-    };
-  }
-
-  try {
-    const now = new Date();
-    const day = schedule[weekdayKey(now, timezone)];
-    const nowMinutes = zonedMinutes(now, timezone);
-    const withinHours = Boolean(
-      day?.enabled
-      && nowMinutes >= parseTimeToMinutes(day.start)
-      && nowMinutes < parseTimeToMinutes(day.end),
-    );
-
-    if (withinHours) {
-      return {
-        isOnline: true,
-        statusText: 'Online now',
-        replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-      };
-    }
-
-    return {
-      isOnline: false,
-      statusText: 'Offline now',
-      replyTimeText: fallbackMessage,
-      outsideHoursMessage: fallbackMessage,
-    };
-  } catch {
-    return {
-      isOnline: true,
-      statusText: 'Online now',
-      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-    };
-  }
-}
-
-function normalizeBusinessHoursDay(day?: Partial<BusinessHoursDay> | null): BusinessHoursDay {
-  return {
-    start: day?.start ?? DEFAULT_BUSINESS_HOURS_DAY.start,
-    end: day?.end ?? DEFAULT_BUSINESS_HOURS_DAY.end,
-    enabled: day?.enabled ?? DEFAULT_BUSINESS_HOURS_DAY.enabled,
-  };
-}
-
-function normalizeBusinessHoursSchedule(
-  schedule?: Record<string, BusinessHoursDay> | null,
-): Record<string, BusinessHoursDay> {
-  return DAYS.reduce<Record<string, BusinessHoursDay>>((acc, day) => {
-    acc[day.key] = normalizeBusinessHoursDay(schedule?.[day.key]);
-    return acc;
-  }, {});
-}
-
-function sortHelpSpaceIds(ids?: string[] | null): string[] {
-  return [...(ids ?? [])].sort();
-}
-
-function buildSettingsDraftFromServer(settings: SupportInboxSettings): ChatSettingsDraft {
-  return {
-    ...settings,
-    ai_agent_id: settings.ai_agent_id ?? '',
-    business_hours_schedule: normalizeBusinessHoursSchedule(settings.business_hours_schedule),
-    widget_help_space_ids: sortHelpSpaceIds(settings.widget_help_space_ids),
-  };
-}
-
-function serializeSettingsDraft(draft: ChatSettingsDraft): string {
-  return JSON.stringify(draft);
-}
-
-/* ── Two-column layout shell ─────────────────────────────────────────── */
-
-function PreviewLayout({ children, preview }: { children: ReactNode; preview: ReactNode }) {
-  return (
-    <div className="grid h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="flex min-w-0 flex-col overflow-hidden">
-        {children}
-      </div>
-
-      <aside className="hidden self-start xl:block xl:sticky xl:top-0">
-        <div className="h-[calc(100svh-8rem)] min-h-[36rem] overflow-y-auto overscroll-contain">
-          <div className="h-full pr-1">
-            {preview}
-          </div>
-        </div>
-      </aside>
-    </div>
-  );
-}
+import type { BusinessHoursDay } from '@/lib/pmTypes';
+import { COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
+import { PreviewLayout } from './chat-widget/PreviewLayout';
+import {
+  buildPreviewAvailability,
+  buildSettingsDraftFromServer,
+  normalizeBusinessHoursDay,
+  normalizeBusinessHoursSchedule,
+  serializeSettingsDraft,
+  sortHelpSpaceIds,
+  type ChatSettingsDraft,
+} from './chat-widget/utils';
 
 /* ── Main component ──────────────────────────────────────────────────── */
 

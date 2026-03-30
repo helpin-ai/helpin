@@ -1,8 +1,8 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
-import Settings, { isSettingsSection } from '@/pages/Settings'
 import Profile from '@/pages/Profile'
 import AccountSettings from '@/pages/AccountSettings'
 import NotificationSettings from '@/pages/NotificationSettings'
+import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport'
 
 type SettingsSearch = {
   workflow?: string
@@ -19,39 +19,30 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/$section'
 
 function SettingsSectionRoute() {
   const { slug, section } = Route.useParams()
-  const { workflow, team } = Route.useSearch()
 
   if (section === 'profile') {
     return (
-      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
+      <SettingsRouteViewport>
         <Profile />
-      </div>
+      </SettingsRouteViewport>
     )
   }
 
   if (section === 'account') {
     return (
-      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
+      <SettingsRouteViewport>
         <AccountSettings />
-      </div>
+      </SettingsRouteViewport>
     )
   }
 
   if (section === 'notifications') {
     return (
-      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
+      <SettingsRouteViewport>
         <NotificationSettings />
-      </div>
+      </SettingsRouteViewport>
     )
   }
 
-  if (!isSettingsSection(section)) {
-    return <Navigate to="/w/$slug/settings/$section" params={{ slug, section: 'profile' }} replace />
-  }
-
-  return (
-    <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
-      <Settings section={section} initialWorkflowId={workflow} initialTeamId={team} />
-    </div>
-  )
+  return <Navigate to="/w/$slug/settings/$section" params={{ slug, section: 'profile' }} replace />
 }

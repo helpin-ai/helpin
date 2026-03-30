@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import {
-  CheckCircle2,
   ChevronRight,
   Eye,
   ExternalLink,
@@ -13,10 +12,7 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Settings2,
   Trash2,
-  TriangleAlert,
-  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -25,7 +21,6 @@ import {
   useDeleteSupportContentSource,
   useReindexSupportContentSource,
   useSupportContentSources,
-  useSupportContentSourcePage,
   useSupportContentSourcePages,
   useUpdateAgentContentSources,
   useUpdateSupportContentSource,
@@ -47,8 +42,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { CreateSupportContentSourceRequest, SupportContentSource, UpdateSupportContentSourceRequest } from '@/lib/pmTypes';
-
-type WizardStep = 'connect' | 'review';
+import { CRAWL_SOURCE_OPTIONS, STATUS_META, STEP_ORDER, type WizardStep } from './support-content-sources/constants';
+import { PageContentPreview } from './support-content-sources/PageContentPreview';
+import { ReviewRow } from './support-content-sources/ReviewRow';
 
 type ContentSourceDraft = {
   name: string;
@@ -66,23 +62,6 @@ type ContentSourceDraft = {
   jsonPrompt: string;
   jsonResponseFormatText: string;
 };
-
-const STEP_ORDER: WizardStep[] = ['connect', 'review'];
-
-const STATUS_META: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  queued: { label: 'Pending', className: 'border-amber-500/40 bg-amber-500/10 text-amber-700', icon: LoaderCircle },
-  running: { label: 'Syncing', className: 'border-sky-500/40 bg-sky-500/10 text-sky-700', icon: LoaderCircle },
-  ready: { label: 'Ready', className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700', icon: CheckCircle2 },
-  failed: { label: 'Failed', className: 'border-destructive/40 bg-destructive/10 text-destructive', icon: TriangleAlert },
-  stale: { label: 'Outdated', className: 'border-orange-500/40 bg-orange-500/10 text-orange-700', icon: RefreshCw },
-  disabled: { label: 'Disabled', className: 'border-muted-foreground/30 bg-muted text-muted-foreground', icon: Settings2 },
-};
-
-const CRAWL_SOURCE_OPTIONS = [
-  { value: 'all', label: 'Sitemaps and links', description: 'Find pages using both sitemap files and in-page links.' },
-  { value: 'sitemaps', label: 'Sitemaps only', description: 'Only import pages listed in the sitemap.' },
-  { value: 'links', label: 'Links only', description: 'Discover pages by following links from the start URL.' },
-] as const;
 
 export function SupportContentSourcesField({
   workspaceId,
@@ -806,82 +785,6 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function PageContentPreview({
-  workspaceId,
-  contentSourceId,
-  pageId,
-  onBack,
-}: {
-  workspaceId: string;
-  contentSourceId: string;
-  pageId: string;
-  onBack: () => void;
-}) {
-  const { data: page, isLoading } = useSupportContentSourcePage(workspaceId, contentSourceId, pageId);
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-border/70 px-6 py-3">
-        <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={onBack} title="Back to pages">
-          <X className="h-4 w-4" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Favicon
-              url={page?.url}
-              name={page?.title || page?.url}
-              size={16}
-              className="h-4 w-4 rounded-sm border-none bg-transparent"
-              fallbackClassName="text-[8px]"
-            />
-            <p className="truncate text-sm font-medium">{page?.title || 'Loading…'}</p>
-          </div>
-          {page?.url && (
-            <a
-              href={page.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ExternalLink className="h-3 w-3" />
-              <span className="max-w-[400px] truncate">{page.url}</span>
-            </a>
-          )}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-3 p-6">
-          <Skeleton className="h-4 w-3/4 rounded" />
-          <Skeleton className="h-4 w-full rounded" />
-          <Skeleton className="h-4 w-5/6 rounded" />
-          <Skeleton className="h-4 w-full rounded" />
-          <Skeleton className="h-4 w-2/3 rounded" />
-        </div>
-      ) : page?.content_text ? (
-        <div className="flex-1 overflow-auto p-6">
-          <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90 font-mono">
-            {page.content_text}
-          </pre>
-        </div>
-      ) : (
-        <div className="px-6 py-12 text-center">
-          <p className="text-sm text-muted-foreground">No content available for this page.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ReviewRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="grid gap-2 px-5 py-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-start">
-      <div className="text-sm font-medium text-muted-foreground">{label}</div>
-      <div className="min-w-0 text-sm">{value}</div>
     </div>
   );
 }

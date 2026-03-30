@@ -27,7 +27,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { getSettingsSidebarGroups } from '@/lib/settingsSections';
+import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import type { NavGroup, RailId, RailItem } from './types';
 
 export function deriveActiveRail(pathname: string): RailId {
@@ -60,7 +60,7 @@ export function buildRailItems(wsSlug: string, totalSupportUnread: number): Rail
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
     { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
-    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
+    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
 }
 
@@ -120,7 +120,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean):
     settings: getSettingsSidebarGroups(canManageSettings).map((group) => ({
       label: group.label,
       items: group.sections.map((section) => ({
-        link: `/w/${wsSlug}/settings/${section.id}`,
+        link: buildSettingsRoutePath(wsSlug, section.id),
         label: section.label,
         icon: section.icon,
       })),

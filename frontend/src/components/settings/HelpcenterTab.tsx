@@ -11,11 +11,9 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,8 +28,9 @@ import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
+import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
 import {
-  Plus, Trash2, GripVertical, Info, ChevronDown, X,
+  Plus, Info, ChevronDown, X,
   Globe, Palette, LayoutGrid, LinkIcon, ImageIcon, Languages,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -39,7 +38,6 @@ import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type {
   HelpcenterHeaderLink,
-  HelpcenterHeaderLinkStyle,
   HelpcenterFooterLink,
   HelpcenterThemeMode,
   HomepageFeaturedCard,
@@ -141,103 +139,6 @@ function deriveDefaults(brandName: string, current: ConfigState): Partial<Config
   if (!current.search_placeholder) defaults.search_placeholder = 'Search for articles...';
   if (!current.footer_copyright_text) defaults.footer_copyright_text = `\u00A9 ${year} ${name}. All rights reserved.`;
   return defaults;
-}
-
-// ── Sortable header link row ──
-function SortableHeaderLinkRow({
-  id,
-  link,
-  onUpdate,
-  onRemove,
-}: {
-  id: string;
-  link: HelpcenterHeaderLink;
-  onUpdate: (patch: Partial<HelpcenterHeaderLink>) => void;
-  onRemove: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group">
-      <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/50 hover:text-muted-foreground">
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <Input
-        value={link.label}
-        onChange={(e) => onUpdate({ label: e.target.value })}
-        placeholder="Label"
-        className="w-28 h-8 text-sm"
-      />
-      <Input
-        value={link.url}
-        onChange={(e) => onUpdate({ url: e.target.value })}
-        placeholder="https://..."
-        className="flex-1 h-8 text-sm"
-      />
-      <Select
-        value={link.style || 'text'}
-        onValueChange={(v) => onUpdate({ style: v as HelpcenterHeaderLinkStyle })}
-      >
-        <SelectTrigger className="w-[90px] h-8 text-xs shrink-0">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="text">Text</SelectItem>
-          <SelectItem value="button">Button</SelectItem>
-        </SelectContent>
-      </Select>
-      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
-        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-      </Button>
-    </div>
-  );
-}
-
-function SortableFooterLinkRow({
-  id,
-  link,
-  onUpdate,
-  onRemove,
-}: {
-  id: number;
-  link: HelpcenterFooterLink;
-  onUpdate: (patch: Partial<HelpcenterFooterLink>) => void;
-  onRemove: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group">
-      <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/50 hover:text-muted-foreground">
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <Input
-        value={link.label}
-        onChange={(e) => onUpdate({ label: e.target.value })}
-        placeholder="Label"
-        className="w-28 h-8 text-sm"
-      />
-      <Input
-        value={link.url}
-        onChange={(e) => onUpdate({ url: e.target.value })}
-        placeholder="https://..."
-        className="flex-1 h-8 text-sm"
-      />
-      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
-        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-      </Button>
-    </div>
-  );
 }
 
 export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
