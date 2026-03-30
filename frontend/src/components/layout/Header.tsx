@@ -9,7 +9,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
-import { SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
+import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
 
 type Crumb = {
   label: string;
@@ -126,7 +126,7 @@ export function Header() {
     }
 
     if (section === "settings") {
-      crumbs.push({ label: "Settings", to: `/w/${slug}/settings/profile` });
+      crumbs.push({ label: "Settings", to: buildSettingsRoutePath(slug, 'profile') });
       if (subRoute[1]) {
         const settingsSub = subRoute[1];
         crumbs.push({

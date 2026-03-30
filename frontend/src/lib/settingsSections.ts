@@ -243,6 +243,10 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsRouteSection, string> = SET
   {} as Record<SettingsRouteSection, string>,
 );
 
+export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsRouteSection): string {
+  return `/w/${workspaceSlug}/settings/${section}`;
+}
+
 export type SettingsSidebarGroup = {
   label: string;
   sections: SettingsSectionMeta[];

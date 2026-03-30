@@ -120,7 +120,7 @@ export function SearchCommandPalette({
           });
           break;
         case 'member':
-          navigate({ to: '/w/$slug/settings/$section', params: { slug, section: 'people' } });
+          navigate({ to: '/w/$slug/settings/$section', params: { slug, section: 'members' } });
           break;
         case 'document':
           navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId: item.id } });
