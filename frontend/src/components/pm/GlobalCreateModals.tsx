@@ -4,7 +4,6 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
   Hash,
-  Heart,
   Layers,
   Loader2,
   User,
@@ -42,7 +41,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { EpicHealth, GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
@@ -56,13 +55,6 @@ import {
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
 
-const healthOptions: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'off_track'];
-const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
-  no_health: { label: 'No health', color: 'text-muted-foreground' },
-  on_track: { label: 'On track', color: 'text-green-600' },
-  at_risk: { label: 'At risk', color: 'text-yellow-600' },
-  off_track: { label: 'Off track', color: 'text-red-600' },
-};
 
 // ── Story wrapper ────────────────────────────────────────────────────
 

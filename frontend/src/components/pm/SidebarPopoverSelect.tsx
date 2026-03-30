@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -10,11 +10,13 @@ interface SidebarPopoverSelectOption<T extends string = string> {
   className?: string;
 }
 
-interface SidebarPopoverSelectProps<T extends string = string> {
+export interface SidebarPopoverSelectProps<T extends string = string> {
   value: T;
   options: SidebarPopoverSelectOption<T>[];
   onChange: (value: T) => void;
   renderTrigger: () => React.ReactNode;
+  /** Custom renderer for each option. Receives the option value. Falls back to the label. */
+  renderOption?: (value: T) => React.ReactNode;
   /** Show search input when options exceed this count (default: 8) */
   searchThreshold?: number;
   /** Popover width class (default: "w-52") */
@@ -28,6 +30,7 @@ export function SidebarPopoverSelect<T extends string>({
   options,
   onChange,
   renderTrigger,
+  renderOption,
   searchThreshold = 8,
   width = 'w-52',
   searchPlaceholder = 'Search...',
@@ -59,7 +62,7 @@ export function SidebarPopoverSelect<T extends string>({
                     onSelect={() => { onChange(option.value); setOpen(false); }}
                     className="flex items-center gap-2 text-xs"
                   >
-                    <span className={cn('truncate', option.className)}>{option.label}</span>
+                    {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
                     {value === option.value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-primary" />}
                   </CommandItem>
                 ))}
@@ -95,7 +98,7 @@ export function SidebarPopoverSelect<T extends string>({
               )}
               onClick={() => { onChange(option.value); setOpen(false); }}
             >
-              <span className={cn('truncate', option.className)}>{option.label}</span>
+              {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
             </button>
           ))}
         </div>
