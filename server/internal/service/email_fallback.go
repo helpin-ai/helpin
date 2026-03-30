@@ -41,6 +41,7 @@ type EmailFallbackService struct {
 	installRepo         *repository.SupportInboxInstallationRepository
 	sessionRepo         *repository.SupportInboxSessionRepository
 	workspaceRepo       *repository.WorkspaceRepository
+	supportInboxService *SupportInboxService
 	notificationService *NotificationService
 	linkPreviewService  SupportMessageLinkPreviewer
 	replyDomain         string
@@ -69,6 +70,23 @@ func (s *EmailFallbackService) SetLinkPreviewService(linkPreviewService SupportM
 	}
 	s.linkPreviewService = linkPreviewService
 	return s
+}
+
+// SetSupportInboxService injects the support inbox service for mailbox-aware inbound email handling.
+func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *SupportInboxService) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.supportInboxService = supportInboxService
+	return s
+}
+
+// InboundDomain returns the domain used for reply and forwarding aliases.
+func (s *EmailFallbackService) InboundDomain() string {
+	if s == nil || strings.TrimSpace(s.replyDomain) == "" {
+		return "replies.helpin.ai"
+	}
+	return strings.TrimSpace(s.replyDomain)
 }
 
 // NewEmailFallbackService constructs the email fallback service.
@@ -238,6 +256,10 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		return s.convRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"email_unsubscribed": true})
 	}
 
+	if strings.HasPrefix(mailboxHash, "route-") {
+		return s.processInboundRouteEmail(ctx, mailboxHash, payload, rawPayload)
+	}
+
 	if !strings.HasPrefix(mailboxHash, "conv-") {
 		return fmt.Errorf("invalid mailbox hash")
 	}
@@ -254,6 +276,13 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 			"message_id", strings.TrimSpace(payload.MessageID),
 			"conversation_id", conversationID,
 		)
+		return nil
+	}
+	return s.processInboundConversationReply(ctx, conv, nil, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) processInboundConversationReply(ctx context.Context, conv *model.SupportConversation, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
+	if conv == nil {
 		return nil
 	}
 	if isEmailFallbackTerminalStatus(conv.Status) {
@@ -284,6 +313,11 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	if len(content) > 50_000 {
 		content = content[:50_000]
 	}
+
+	rfcMessageID := inboundRFCMessageID(payload)
+	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
+	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
+	recipientAddress := inboundRecipientAddress(payload)
 
 	senderName := strings.TrimSpace(payload.FromFull.Name)
 	if senderName == "" && conv.CustomerName != nil {
@@ -320,11 +354,18 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 			MessageIDs:        model.DocsStringArray{msg.ID},
 			FromEmail:         fromEmail,
 			ToEmail:           strings.TrimSpace(payload.To),
+			RecipientAddress:  recipientAddress,
 			Subject:           strings.TrimSpace(payload.Subject),
+			RFCMessageID:      rfcMessageID,
+			InReplyTo:         inReplyTo,
+			ReferencesHeader:  referencesHeader,
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
 			Status:            "sent",
+		}
+		if route != nil {
+			logRow.EmailRouteID = &route.ID
 		}
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {
 			logRow.PostmarkMessageID = nil
@@ -354,6 +395,9 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		"conversation_id", conv.ID,
 		"support_message_id", createdMsg.ID,
 	)
+	if route != nil && s.supportInboxService != nil && s.supportInboxService.emailRouteRepo != nil {
+		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, s.now())
+	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
 	return nil
 }
@@ -915,6 +959,218 @@ func (s *EmailFallbackService) findConversationByID(ctx context.Context, convers
 	return &conv, nil
 }
 
+func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mailboxHash string, payload model.PostmarkInboundPayload, rawPayload string) error {
+	if s == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return fmt.Errorf("support email routes are unavailable")
+	}
+
+	route, err := s.supportInboxService.emailRouteRepo.GetByRouteKey(ctx, mailboxHash)
+	if err != nil {
+		return err
+	}
+	if route == nil || !route.Active {
+		s.logger.InfoContext(ctx, "postmark inbound route not found",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"route_key", mailboxHash,
+		)
+		return nil
+	}
+
+	if threadedConversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload); err != nil {
+		return err
+	} else if threadedConversation != nil {
+		return s.processInboundConversationReply(ctx, threadedConversation, route, payload, rawPayload)
+	}
+
+	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Context, workspaceID string, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {
+	if s == nil || s.emailLogRepo == nil {
+		return nil, nil
+	}
+
+	threadLog, err := s.emailLogRepo.FindConversationByRFCReferences(ctx, workspaceID, inboundThreadReferences(payload))
+	if err != nil {
+		return nil, err
+	}
+	if threadLog == nil || strings.TrimSpace(threadLog.ConversationID) == "" {
+		return nil, nil
+	}
+	return s.findConversationByID(ctx, threadLog.ConversationID)
+}
+
+func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
+	if route == nil {
+		return nil
+	}
+
+	fromEmail := inboundEmailAddress(payload)
+	if strings.TrimSpace(fromEmail) == "" {
+		return nil
+	}
+
+	content := strings.TrimSpace(payload.StrippedTextReply)
+	if content == "" {
+		content = strings.TrimSpace(payload.TextBody)
+	}
+	if content == "" {
+		return nil
+	}
+	if len(content) > 50_000 {
+		content = content[:50_000]
+	}
+
+	senderName := strings.TrimSpace(payload.FromFull.Name)
+	if senderName == "" {
+		senderName = fromEmail
+	}
+
+	subject := strings.TrimSpace(payload.Subject)
+	if subject == "" {
+		subject = fmt.Sprintf("Email from %s", senderName)
+	}
+
+	customerName := senderName
+	customerEmail := fromEmail
+	viaEmail := "email"
+	now := s.now()
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   route.WorkspaceID,
+		MailboxID:     route.MailboxID,
+		Subject:       subject,
+		Status:        "open",
+		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
+		Priority:      "medium",
+		Channel:       "email",
+		CustomerName:  &customerName,
+		CustomerEmail: &customerEmail,
+		Source:        "email",
+	}
+
+	var (
+		mailbox *model.SupportMailbox
+		err     error
+	)
+	if route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
+		mailbox, err = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
+		if err != nil {
+			return err
+		}
+	}
+	if mailbox != nil {
+		ownerID, flowState, ownerErr := s.supportInboxService.determineMailboxOwner(ctx, route.WorkspaceID, mailbox, nil)
+		if ownerErr != nil {
+			return ownerErr
+		}
+		conversation.OpenedByUserID = ownerID
+		conversation.FlowState = strPtr(flowState)
+	}
+
+	message := &model.SupportMessage{
+		WorkspaceID:       route.WorkspaceID,
+		SenderType:        "customer",
+		SenderDisplayName: &customerName,
+		Content:           content,
+		IsInternal:        false,
+		MessageType:       "reply",
+		ViaChannel:        &viaEmail,
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, message)
+	}
+
+	rfcMessageID := inboundRFCMessageID(payload)
+	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
+	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
+	recipientAddress := inboundRecipientAddress(payload)
+
+	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		convRepoTx := s.convRepo.WithTx(tx)
+		msgRepoTx := s.messageRepo.WithTx(tx)
+		emailLogRepoTx := s.emailLogRepo.WithTx(tx)
+
+		if err := convRepoTx.Create(ctx, conversation); err != nil {
+			return err
+		}
+
+		if s.supportInboxService != nil && s.supportInboxService.contactRepo != nil {
+			if contactID := s.supportInboxService.matchOrCreateCRMContactTx(ctx, s.supportInboxService.contactRepo.WithTx(tx), conversation.WorkspaceID, conversation.CustomerEmail, conversation.CustomerName, "email_forward"); contactID != nil {
+				conversation.CRMContactID = contactID
+				if err := convRepoTx.Update(ctx, conversation); err != nil {
+					return err
+				}
+			}
+		}
+
+		message.ConversationID = conversation.ID
+		if err := msgRepoTx.Create(ctx, message); err != nil {
+			return err
+		}
+
+		logRow := &model.SupportEmailLog{
+			WorkspaceID:       route.WorkspaceID,
+			ConversationID:    conversation.ID,
+			EmailRouteID:      &route.ID,
+			Direction:         "inbound",
+			MessageIDs:        model.DocsStringArray{message.ID},
+			FromEmail:         fromEmail,
+			ToEmail:           strings.TrimSpace(payload.To),
+			RecipientAddress:  recipientAddress,
+			Subject:           subject,
+			RFCMessageID:      rfcMessageID,
+			InReplyTo:         inReplyTo,
+			ReferencesHeader:  referencesHeader,
+			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
+			RawBody:           rawPayload,
+			StrippedText:      content,
+			Status:            "sent",
+		}
+		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {
+			logRow.PostmarkMessageID = nil
+		}
+		if err := emailLogRepoTx.Create(ctx, logRow); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		if isLikelyUniqueConstraintError(txErr) {
+			s.logger.InfoContext(ctx, "postmark inbound route duplicate ignored after transaction race",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"route_key", route.RouteKey,
+			)
+			return nil
+		}
+		return txErr
+	}
+	if s.supportInboxService.emailRouteRepo != nil {
+		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now)
+	}
+
+	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conversation, content, customerName)
+
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "created",
+			Entity:      "support_conversation",
+			EntityID:    conversation.ID,
+			WorkspaceID: conversation.WorkspaceID,
+			ActorID:     "email:" + conversation.ID,
+		})
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(conversation.WorkspaceID, message, "email:"+message.ID))
+	}
+
+	s.logger.InfoContext(ctx, "postmark inbound created support conversation from route",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"conversation_id", conversation.ID,
+		"route_key", route.RouteKey,
+	)
+	return nil
+}
+
 func inboundEmailAddress(payload model.PostmarkInboundPayload) string {
 	if strings.TrimSpace(payload.FromFull.Email) != "" {
 		return strings.TrimSpace(payload.FromFull.Email)
@@ -958,10 +1214,79 @@ func mailboxHashFromRecipient(value string) string {
 		return ""
 	}
 	local := strings.TrimSpace(value[:at])
-	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") {
+	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") || strings.HasPrefix(local, "route-") {
 		return local
 	}
 	return ""
+}
+
+func inboundRecipientAddress(payload model.PostmarkInboundPayload) string {
+	for _, candidate := range []string{payload.OriginalRecipient, payload.To} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if addr, err := mail.ParseAddress(candidate); err == nil {
+			return strings.TrimSpace(addr.Address)
+		}
+		return candidate
+	}
+	for _, addr := range payload.ToFull {
+		if strings.TrimSpace(addr.Email) != "" {
+			return strings.TrimSpace(addr.Email)
+		}
+	}
+	return ""
+}
+
+func inboundHeaderValue(headers []model.PostmarkHeader, name string) string {
+	for _, header := range headers {
+		if strings.EqualFold(strings.TrimSpace(header.Name), name) {
+			return strings.TrimSpace(header.Value)
+		}
+	}
+	return ""
+}
+
+func inboundRFCMessageID(payload model.PostmarkInboundPayload) string {
+	if value := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "Message-ID")); value != "" {
+		return value
+	}
+	return normalizeRFCHeaderValue(strings.TrimSpace(payload.MessageID))
+}
+
+func inboundThreadReferences(payload model.PostmarkInboundPayload) []string {
+	references := parseRFCMessageIDList(inboundHeaderValue(payload.Headers, "In-Reply-To"))
+	references = append(references, parseRFCMessageIDList(inboundHeaderValue(payload.Headers, "References"))...)
+	return uniqueEmailFallbackStrings(references)
+}
+
+func parseRFCMessageIDList(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	fields := strings.Fields(value)
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(strings.Trim(field, ",;"))
+		field = normalizeRFCHeaderValue(field)
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func normalizeRFCHeaderValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if !strings.HasPrefix(value, "<") && strings.Contains(value, "@") {
+		value = "<" + strings.Trim(value, "<>") + ">"
+	}
+	return value
 }
 
 func inboundConversationID(payload model.PostmarkInboundPayload) string {

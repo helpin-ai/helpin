@@ -20,6 +20,7 @@ import type {
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
+  CreateSupportEmailRouteRequest,
 } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
@@ -112,8 +113,20 @@ export function useSupportMailboxes(workspaceId: string) {
 export function useMailboxMembers(workspaceId: string, mailboxId?: string | null) {
   return useQuery({
     queryKey: queryKeys.support.mailboxMembers(workspaceId, mailboxId ?? ''),
-    queryFn: async () => unwrap(await supportService.listMailboxMembers(workspaceId, mailboxId!)),
+    queryFn: async () => {
+      const data = unwrap(await supportService.listMailboxMembers(workspaceId, mailboxId!));
+      return Array.isArray(data) ? data : [];
+    },
     enabled: !!workspaceId && !!mailboxId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSupportEmailRoutes(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.emailRoutes(workspaceId),
+    queryFn: async () => unwrap(await supportService.listEmailRoutes(workspaceId)),
+    enabled: !!workspaceId,
     staleTime: 15_000,
   });
 }
@@ -139,6 +152,33 @@ export function useUpdateMySupportTeammatePresence(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update support status', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportEmailRoute(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportEmailRouteRequest) =>
+      supportService.createEmailRoute(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to enable email forwarding', { description: error.message });
+    },
+  });
+}
+
+export function useDisableSupportEmailRoute(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (routeId: string) => supportService.disableEmailRoute(workspaceId, routeId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to disable email forwarding', { description: error.message });
     },
   });
 }
@@ -337,6 +377,23 @@ export function useMarkConversationUnread(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to mark as unread', { description: error.message });
+    },
+  });
+}
+
+export function useMarkConversationRead(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.markConversationRead(workspaceId, conversationId),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to mark conversation as read', { description: error.message });
     },
   });
 }

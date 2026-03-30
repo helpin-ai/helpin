@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -207,6 +208,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const markUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
+  const confirm = useConfirm();
   const moveConversation = useMoveConversation(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
@@ -556,15 +558,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to permanently delete this conversation?')) {
-                      deleteConversation.mutate(conversation.id, {
-                        onSuccess: () => {
-                          useSupportInboxStore.getState().selectConversation(null);
-                          toast.success('Conversation deleted');
-                        },
-                      });
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Delete conversation?',
+                      description: 'This will permanently delete this conversation. This action cannot be undone.',
+                      confirmText: 'Delete',
+                      variant: 'destructive',
+                    });
+                    if (!ok) return;
+                    deleteConversation.mutate(conversation.id, {
+                      onSuccess: () => {
+                        useSupportInboxStore.getState().selectConversation(null);
+                        toast.success('Conversation deleted');
+                      },
+                    });
                   }}
                 >
                   <Trash2 className="h-4 w-4" />

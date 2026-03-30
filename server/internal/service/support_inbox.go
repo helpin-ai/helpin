@@ -22,6 +22,7 @@ import (
 type SupportInboxService struct {
 	conversationRepo        *repository.SupportConversationRepository
 	mailboxRepo             *repository.SupportMailboxRepository
+	emailRouteRepo          *repository.SupportEmailRouteRepository
 	messageRepo             *repository.SupportMessageRepository
 	agentRepo               *repository.AgentRepository
 	assocRepo               *repository.CRMAssociationRepository
@@ -222,6 +223,15 @@ func (s *SupportInboxService) SetEmailFallbackService(emailFallbackService *Emai
 		return nil
 	}
 	s.emailFallbackService = emailFallbackService
+	return s
+}
+
+// SetEmailRouteRepository injects the support email route repository.
+func (s *SupportInboxService) SetEmailRouteRepository(emailRouteRepo *repository.SupportEmailRouteRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailRouteRepo = emailRouteRepo
 	return s
 }
 

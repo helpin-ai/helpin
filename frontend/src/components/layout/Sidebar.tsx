@@ -1,453 +1,47 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Collapsible } from 'radix-ui';
-import { ICON_MAP } from '@/components/ui/icon-picker';
-import {
-  BarChart3,
-  Bell,
-  BookOpen,
-  Bot,
-  Briefcase,
-  Building2,
-  ChevronDown,
-  ClipboardCheck,
-  Clock,
-  ChevronRight,
-  CircleHelp,
-  DollarSign,
-  FileText,
-  FolderKanban,
-  FolderOpen,
-  GanttChart,
-  Globe,
-  EllipsisVertical,
-  Import,
-  Layers,
-  ArrowUpRight,
-  Lightbulb,
-  LogOut,
-  Mail,
-  MessageSquare,
-  Inbox,
-  LayoutList,
-  UserX,
-  CheckCircle2,
-  Moon,
-  Play,
-  Plus,
-  RefreshCw,
-  Settings,
-  Settings2,
-  Sliders,
-  Sparkles,
-  SquareKanban,
-  Sun,
-  Tag,
-  Target,
-  Trash2,
-  User,
-  Users,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments, useDeleteDocsSpace } from '@/hooks/queries';
-import type { DocsSpace } from '@/lib/docsTypes';
-import { useTruncationDetection } from '@/hooks/useTruncationDetection';
-import { SpaceDialog } from '@/components/docs/SpaceDialog';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { isModuleEnabled } from '@/lib/featureFlags';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Sidebar as ShellSidebar,
   SidebarContent,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
-
-type NavItem = {
-  link: string;
-  label: string;
-  icon: LucideIcon;
-};
-
-type NavGroup = {
-  label: string;
-  items: NavItem[];
-};
-
-type RailId = 'projects' | 'support' | 'crm' | 'agents' | 'docs' | 'settings';
-
-type RailItem = {
-  id: RailId;
-  label: string;
-  icon: LucideIcon;
-  defaultLink: string;
-  badge?: number;
-  indicator?: boolean;
-};
-
-function deriveActiveRail(pathname: string): RailId {
-  if (pathname.includes('/settings')) return 'settings';
-  if (pathname.includes('/support')) return 'support';
-  if (pathname.includes('/crm')) return 'crm';
-  if (pathname.includes('/pm/agent-runs') || pathname.includes('/pm/agents') || pathname.includes('/pm/tool-catalog')) return 'agents';
-  if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
-  if (pathname.includes('/docs')) return 'docs';
-  return 'projects';
-}
-
-// ── localStorage helpers for expanded teams ──
-
-function getExpandedTeams(wsId: string): Set<string> {
-  try {
-    const raw = localStorage.getItem(`pm_sidebar_expanded_teams_${wsId}`);
-    if (raw) return new Set(JSON.parse(raw));
-  } catch {}
-  return new Set();
-}
-
-function saveExpandedTeams(wsId: string, teams: Set<string>) {
-  try {
-    localStorage.setItem(`pm_sidebar_expanded_teams_${wsId}`, JSON.stringify([...teams]));
-  } catch {}
-}
-
-// ── Settings group collapse persistence ──
-const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Support & Docs', 'CRM Settings', 'AI & Automations', 'Data']);
-
-function getCollapsedSettingsGroups(): Set<string> {
-  try {
-    const raw = localStorage.getItem('settings_sidebar_collapsed');
-    if (raw) return new Set(JSON.parse(raw));
-  } catch {}
-  // Default: all collapsible groups start collapsed
-  return new Set(COLLAPSIBLE_SETTINGS_GROUPS);
-}
-
-function saveCollapsedSettingsGroups(groups: Set<string>) {
-  try {
-    localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
-  } catch {}
-}
-
-// ── Team sub-items config ──
-
-const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string }[] = [
-  { key: 'stories', label: 'Stories', icon: LayoutList, path: 'stories' },
-  { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
-  { key: 'epics', label: 'Epics', icon: Layers, path: 'epics' },
-];
-
-// ── Docs space collections (fetches only when parent space is expanded) ──
-
-function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openCreate }: {
-  wsId: string;
-  spaceId: string;
-  wsSlug: string;
-  navigate: ReturnType<typeof useNavigate>;
-  isActive: (link: string) => boolean;
-  openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
-}) {
-  const { data: collections } = useDocsCollections(wsId, spaceId);
-  const { data: documents } = useDocsDocuments(wsId, { space_id: spaceId });
-  const uncollectedCount = (documents ?? []).filter((d) => !d.collection_id).length;
-  const uncollectedLink = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=__uncollected__`;
-
-  const { checkRef: checkColTruncation, isTruncated: isColTruncated } = useTruncationDetection();
-
-  return (
-    <SidebarMenuSub>
-      {(collections ?? []).map((col) => {
-        const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${col.id}`;
-        const showTooltip = isColTruncated(col.id);
-        return (
-          <SidebarMenuSubItem key={col.id}>
-            <Tooltip open={showTooltip ? undefined : false}>
-              <TooltipTrigger asChild>
-                <SidebarMenuSubButton
-                  asChild
-                  size="sm"
-                  isActive={isActive(link)}
-                >
-                  <a
-                    href={link}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      navigate({
-                        to: '/w/$slug/docs/spaces/$spaceId' as string,
-                        params: { slug: wsSlug, spaceId },
-                        search: { collection: col.id } as Record<string, string>,
-                      });
-                    }}
-                  >
-                    <SidebarCollectionIcon name={col.icon} />
-                    <span className="truncate" ref={(el) => checkColTruncation(col.id, el)}>{col.name}</span>
-                  </a>
-                </SidebarMenuSubButton>
-              </TooltipTrigger>
-              <TooltipContent side="right" align="center">
-                {col.name}
-              </TooltipContent>
-            </Tooltip>
-          </SidebarMenuSubItem>
-        );
-      })}
-      {uncollectedCount > 0 && (
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton
-            asChild
-            size="sm"
-            isActive={isActive(uncollectedLink)}
-          >
-            <a
-              href={uncollectedLink}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate({
-                  to: '/w/$slug/docs/spaces/$spaceId' as string,
-                  params: { slug: wsSlug, spaceId },
-                  search: { collection: '__uncollected__' } as Record<string, string>,
-                });
-              }}
-            >
-              <Inbox className="h-3.5 w-3.5" />
-              <span className="truncate">Uncategorized</span>
-            </a>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      )}
-      <SidebarMenuSubItem>
-        <SidebarMenuSubButton
-          size="sm"
-          className="text-muted-foreground/70 hover:text-foreground cursor-pointer"
-          onClick={() => openCreate('docs_collection', { spaceId })}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Add collection</span>
-        </SidebarMenuSubButton>
-      </SidebarMenuSubItem>
-    </SidebarMenuSub>
-  );
-}
-
-// ── Docs spaces nav (extracted to avoid conditional hook calls) ──
-
-function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam: _toggleTeam, setExpandedTeams, openCreate }: {
-  wsId: string;
-  wsSlug: string;
-  navigate: ReturnType<typeof useNavigate>;
-  isActive: (link: string) => boolean;
-  expandedTeams: Set<string>;
-  toggleTeam: (id: string) => void;
-  setExpandedTeams: React.Dispatch<React.SetStateAction<Set<string>>>;
-  openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
-}) {
-  const { data: spaces } = useDocsSpaces(wsId);
-  const deleteSpace = useDeleteDocsSpace(wsId);
-  const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null);
-  const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null);
-  const { checkRef: checkSpaceTruncation, isTruncated: isSpaceTruncated } = useTruncationDetection();
-
-  const toggleDocSpace = (spaceKey: string) => {
-    setExpandedTeams((prev) => {
-      const next = new Set(prev);
-      // Close all other doc spaces
-      for (const key of prev) {
-        if (key.startsWith('docs_space_') && key !== spaceKey) {
-          next.delete(key);
-        }
-      }
-      // Toggle the clicked one
-      if (next.has(spaceKey)) next.delete(spaceKey);
-      else next.add(spaceKey);
-      return next;
-    });
-  };
-
-  if (!spaces || spaces.length === 0) return null;
-
-  const internalSpaces = spaces.filter((s) => s.type === 'internal');
-  const externalSpaces = spaces.filter((s) => s.type === 'external_capable');
-
-  const renderSpaceItem = (space: typeof spaces[number]) => {
-    const spaceKey = `docs_space_${space.id}`;
-    const isExpanded = expandedTeams.has(spaceKey);
-    const spaceLink = `/w/${wsSlug}/docs/spaces/${space.id}`;
-    const showTooltip = isSpaceTruncated(space.id);
-
-    return (
-      <Collapsible.Root
-        key={space.id}
-        asChild
-        open={isExpanded}
-      >
-        <SidebarMenuItem>
-          <div className="group/space relative flex items-center">
-            <Tooltip open={showTooltip ? undefined : false}>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  className="h-8 rounded-md px-2 flex-1"
-                  isActive={isActive(spaceLink)}
-                  onClick={() => {
-                    toggleDocSpace(spaceKey);
-                    navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } });
-                  }}
-                >
-                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                  <span className="truncate" ref={(el) => checkSpaceTruncation(space.id, el)}>{space.name}</span>
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              <TooltipContent side="right" align="center">
-                {space.name}
-              </TooltipContent>
-            </Tooltip>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100 data-[state=open]:opacity-100"
-                >
-                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="start">
-                <DropdownMenuItem onClick={() => setEditingSpace(space)}>
-                  <Settings className="h-4 w-4" />
-                  Edit space
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDeletingSpace(space)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete space
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <Collapsible.Content>
-            <DocsSpaceCollections
-              wsId={wsId}
-              spaceId={space.id}
-              wsSlug={wsSlug}
-              navigate={navigate}
-              isActive={isActive}
-              openCreate={openCreate}
-            />
-          </Collapsible.Content>
-        </SidebarMenuItem>
-      </Collapsible.Root>
-    );
-  };
-
-  return (
-    <>
-      {internalSpaces.length > 0 && (
-        <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Team Spaces
-          </SidebarGroupLabel>
-          <SidebarMenu>
-            {internalSpaces.map(renderSpaceItem)}
-          </SidebarMenu>
-        </SidebarGroup>
-      )}
-      {externalSpaces.length > 0 && (
-        <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center gap-1">
-            External Spaces
-            <QuickTooltip label="Published to your public help center">
-              <CircleHelp className="h-[10px] w-[10px] text-muted-foreground/50" />
-            </QuickTooltip>
-          </SidebarGroupLabel>
-          <SidebarMenu>
-            {externalSpaces.map(renderSpaceItem)}
-          </SidebarMenu>
-        </SidebarGroup>
-      )}
-
-      <SpaceDialog
-        wsId={wsId}
-        open={editingSpace !== null}
-        onOpenChange={(open) => { if (!open) setTimeout(() => setEditingSpace(null), 150) }}
-        space={editingSpace}
-      />
-
-      <ConfirmDialog
-        open={deletingSpace !== null}
-        onOpenChange={(open) => { if (!open) setTimeout(() => setDeletingSpace(null), 150) }}
-        title="Delete space"
-        description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => {
-          if (!deletingSpace) return;
-          deleteSpace.mutate(deletingSpace.id, {
-            onSuccess: () => {
-              setDeletingSpace(null);
-              navigate({ to: '/w/$slug/docs' as string, params: { slug: wsSlug } });
-            },
-          });
-        }}
-      />
-    </>
-  );
-}
-
-function SidebarCollectionIcon({ name }: { name?: string | null }) {
-  if (name) {
-    const Icon = ICON_MAP[name];
-    if (Icon) return <Icon className="h-3.5 w-3.5" />;
-  }
-  return <FolderOpen className="h-3.5 w-3.5" />;
-}
+import { DocsSpacesNav } from './sidebar/DocsSpacesNav';
+import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions } from './sidebar/config';
+import { isSidebarLinkActive, isTeamSubLinkActive, type SidebarNavigateTarget } from './sidebar/navigation';
+import { ProjectsTeamsNav } from './sidebar/ProjectsTeamsNav';
+import { COLLAPSIBLE_SETTINGS_GROUPS, getCollapsedSettingsGroups, getExpandedTeams, saveCollapsedSettingsGroups, saveExpandedTeams } from './sidebar/state';
+import { SidebarAccountMenu } from './sidebar/SidebarAccountMenu';
+import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
+import { SidebarRail } from './sidebar/SidebarRail';
+import { SettingsRailNav } from './sidebar/SettingsRailNav';
+import { StandardRailNav } from './sidebar/StandardRailNav';
+import { SupportRailNav } from './sidebar/SupportRailNav';
 
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
-
   const { user, signOut } = useAuthStore();
   const { theme, setTheme } = useTheme();
+  const openCreate = useGlobalCreateStore((state) => state.openCreate);
+
   const wsSlug = currentWorkspace?.slug ?? '';
   const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
-  const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const initials = getInitials(user?.full_name || user?.email);
+
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
   const {
@@ -455,13 +49,16 @@ export function Sidebar() {
     setNavFilter,
     selectedMailboxId,
     setSelectedMailboxId,
+    setTeamInboxDialogOpen,
   } = useSupportInboxStore();
+
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId);
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
     [inboxScopes],
   );
+
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '');
   const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');
   const mySupportPresence = useMemo(
@@ -473,49 +70,77 @@ export function Sidebar() {
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
   const teams = useMemo(() => {
-    if (isAdmin) return allTeams;
-    const myTeamIds = new Set(myTeamMemberships.map((m) => m.team_id));
-    return allTeams.filter((t) => myTeamIds.has(t.id));
+    if (isAdmin) {
+      return allTeams;
+    }
+
+    const myTeamIds = new Set(myTeamMemberships.map((membership) => membership.team_id));
+    return allTeams.filter((team) => myTeamIds.has(team.id));
   }, [allTeams, myTeamMemberships, isAdmin]);
 
-  // ── Expanded teams state ──
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
-    workspaceId ? getExpandedTeams(workspaceId) : new Set()
+    workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setExpandedTeams(new Set());
+      return;
+    }
+
+    setExpandedTeams(getExpandedTeams(workspaceId));
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (workspaceId) {
+      saveExpandedTeams(workspaceId, expandedTeams);
+    }
+  }, [expandedTeams, workspaceId]);
 
   const toggleTeam = (teamId: string) => {
-    setExpandedTeams((prev) => {
-      const next = new Set(prev);
-      if (next.has(teamId)) next.delete(teamId);
-      else next.add(teamId);
-      if (workspaceId) saveExpandedTeams(workspaceId, next);
+    setExpandedTeams((previous) => {
+      const next = new Set(previous);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
       return next;
     });
   };
 
-  // ── Collapsed settings groups state ──
-  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
-
   const toggleSettingsGroup = (groupLabel: string) => {
-    setCollapsedSettingsGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupLabel)) next.delete(groupLabel);
-      else next.add(groupLabel);
+    setCollapsedSettingsGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupLabel)) {
+        next.delete(groupLabel);
+      } else {
+        next.add(groupLabel);
+      }
       saveCollapsedSettingsGroups(next);
       return next;
     });
   };
 
-  // Auto-expand settings group containing the active section
+  const panelNavGroups = useMemo(() => buildPanelNavGroups(wsSlug, canManageSettings), [wsSlug, canManageSettings]);
+  const currentNavGroups = panelNavGroups[activeRail];
+  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
+
   useEffect(() => {
-    if (activeRail !== 'settings') return;
-    const currentNavGroups = panelNavGroups['settings'];
+    if (activeRail !== 'settings') {
+      return;
+    }
+
     for (const group of currentNavGroups) {
-      if (!COLLAPSIBLE_SETTINGS_GROUPS.has(group.label)) continue;
+      if (!COLLAPSIBLE_SETTINGS_GROUPS.has(group.label)) {
+        continue;
+      }
+
       const hasActiveItem = group.items.some((item) => isActive(item.link));
       if (hasActiveItem && collapsedSettingsGroups.has(group.label)) {
-        setCollapsedSettingsGroups((prev) => {
-          const next = new Set(prev);
+        setCollapsedSettingsGroups((previous) => {
+          const next = new Set(previous);
           next.delete(group.label);
           saveCollapsedSettingsGroups(next);
           return next;
@@ -523,202 +148,67 @@ export function Sidebar() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, activeRail]);
+  }, [location.pathname, activeRail, currentNavGroups, collapsedSettingsGroups]);
 
-  // ── Detect active team from URL search params ──
   const activeTeamParam = useMemo(() => {
     const search = location.search as Record<string, string | undefined>;
     return search.team ?? null;
   }, [location.search]);
 
-  // ── Auto-expand team when navigating via direct URL ──
   useEffect(() => {
-    if (activeTeamParam && workspaceId) {
-      setExpandedTeams((prev) => {
-        if (prev.has(activeTeamParam)) return prev;
-        const next = new Set(prev);
-        next.add(activeTeamParam);
-        saveExpandedTeams(workspaceId, next);
-        return next;
-      });
+    if (!activeTeamParam) {
+      return;
     }
-  }, [activeTeamParam, workspaceId]);
 
-  const createOptions = [
-    { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
-    { key: 'epic' as const, label: 'Epic', icon: Layers, pages: ['epics'] },
-    { key: 'sprint' as const, label: 'Sprint', icon: RefreshCw, pages: ['sprints'] },
-    { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
-  ];
+    setExpandedTeams((previous) => {
+      if (previous.has(activeTeamParam)) {
+        return previous;
+      }
+
+      const next = new Set(previous);
+      next.add(activeTeamParam);
+      return next;
+    });
+  }, [activeTeamParam]);
 
   const primaryCreate = useMemo(() => {
     const segments = location.pathname.split('/').filter(Boolean);
     if (segments[0] === 'w' && segments[2] === 'pm') {
       const sub = segments[3];
-      const match = createOptions.find((o) => o.pages.includes(sub));
-      if (match) return match;
+      const match = projectCreateOptions.find((option) => option.pages.includes(sub));
+      if (match) {
+        return match;
+      }
     }
-    return createOptions[0];
+
+    return projectCreateOptions[0];
   }, [location.pathname]);
 
-  const secondaryOptions = createOptions.filter((o) => o.key !== primaryCreate.key);
+  const secondaryOptions = projectCreateOptions.filter((option) => option.key !== primaryCreate.key);
 
-  const railItems: RailItem[] = [
-    { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
-    { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
-    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs` },
-    { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
-    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
-  ];
+  const isActive = (link: string) => isSidebarLinkActive(location.pathname, location.search as Record<string, string | undefined>, link);
 
-  const panelNavGroups: Record<RailId, NavGroup[]> = {
-    projects: [
-      {
-        label: '',
-        items: [
-          { link: `/w/${wsSlug}/pm/my-work`, label: 'My Work', icon: ClipboardCheck },
-          { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
-          { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
-          { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
-        ],
-      },
-    ],
-    crm: [
-      {
-        label: '',
-        items: [
-          { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: Users },
-          { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building2 },
-          { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarSign },
-          { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutList },
-          { link: `/w/${wsSlug}/crm/sequences`, label: 'Sequences', icon: Play },
-          { link: `/w/${wsSlug}/crm/review`, label: 'Review', icon: ClipboardCheck },
-          { link: `/w/${wsSlug}/crm/insights`, label: 'Insights', icon: Lightbulb },
-        ],
-      },
-    ],
-    support: [
-      {
-        label: '',
-        items: [],
-      },
-    ],
-    agents: [
-      {
-        label: '',
-        items: [
-          { link: `/w/${wsSlug}/pm/agent-runs`, label: 'Runs', icon: Clock },
-          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
-          { link: `/w/${wsSlug}/pm/tool-catalog`, label: 'Tool Catalog', icon: Wrench },
-        ],
-      },
-    ],
-    docs: [
-      {
-        label: '',
-        items: [
-          { link: `/w/${wsSlug}/docs/recent`, label: 'Recent Docs', icon: Clock },
-          { link: `/w/${wsSlug}/docs/my`, label: 'My Documents', icon: User },
-          { link: `/w/${wsSlug}/docs`, label: 'All Docs', icon: FileText },
-        ],
-      },
-    ],
-    settings: [
-      {
-        label: 'My Account',
-        items: [
-          { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
-          { link: `/w/${wsSlug}/settings/account`, label: 'Account', icon: Building2 },
-          { link: `/w/${wsSlug}/settings/notifications`, label: 'Notifications', icon: Bell },
-        ],
-      },
-      {
-        label: 'Workspace',
-        items: [
-          { link: `/w/${wsSlug}/settings/general`, label: 'General', icon: Settings2 },
-          { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
-          { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
-          { link: `/w/${wsSlug}/settings/knowledge`, label: 'Knowledge', icon: BookOpen },
-        ],
-      },
-      {
-        label: 'Project Settings',
-        items: [
-          { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
-          { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
-          { link: `/w/${wsSlug}/settings/recurring-tasks`, label: 'Recurring Tasks', icon: RefreshCw },
-          { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
-          { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
-        ],
-      },
-      {
-        label: 'Support & Docs',
-        items: [
-          { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
-          { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
-          { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
-          { link: `/w/${wsSlug}/settings/team-inboxes`, label: 'Team Inboxes', icon: Inbox },
-        ],
-      },
-      {
-        label: 'CRM Settings',
-        items: [
-          { link: `/w/${wsSlug}/settings/crm-pipelines`, label: 'Pipelines', icon: FolderKanban },
-          { link: `/w/${wsSlug}/settings/crm-email`, label: 'Email Accounts', icon: Mail },
-          { link: `/w/${wsSlug}/settings/crm-autonomy`, label: 'Autonomy', icon: Sliders },
-        ],
-      },
-      ...(canManageSettings ? [{
-        label: 'AI & Automations',
-        items: [
-          { link: `/w/${wsSlug}/settings/ai-automations`, label: 'Inventory & Health', icon: Sparkles },
-        ],
-      }] : []),
-      {
-        label: 'Data',
-        items: [
-          { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
-        ],
-      },
-    ],
-  };
+  const isTeamSubActive = (teamId: string, subPath: string) =>
+    isTeamSubLinkActive(isActive, wsSlug, activeTeamParam, teamId, subPath);
 
-  const currentNavGroups = panelNavGroups[activeRail];
-
-  const isActive = (link: string) => {
-    const [linkPath, linkQuery] = link.split('?');
-    const search = location.search as Record<string, string | undefined>;
-
-    if (linkQuery) {
-      // Link has query params (e.g. collection=abc) — must match pathname + param value
-      if (location.pathname !== linkPath) return false;
-      const params = new URLSearchParams(linkQuery);
-      for (const [key, value] of params.entries()) {
-        if (search[key] !== value) return false;
-      }
-      return true;
+  const handleNavigate = (args: SidebarNavigateTarget) => {
+    if (typeof args === 'string') {
+      navigate({ to: args as string });
+      return;
     }
-    // Link has no query params — match pathname but NOT if a collection param is active
-    if (location.pathname === linkPath) {
-      if (search.collection) return false;
-      return true;
-    }
-    // Don't prefix-match section roots (e.g. /docs) — they'd match every sub-page
-    if (link.endsWith('/docs') || link.endsWith('/pm') || link.endsWith('/support')) return false;
-    return location.pathname.startsWith(`${linkPath}/`);
-  };
 
-
-  const isTeamSubActive = (teamId: string, subPath: string) => {
-    return isActive(`/w/${wsSlug}/pm/${subPath}`) && activeTeamParam === teamId;
+    navigate({
+      to: args.to as string,
+      params: args.params,
+      search: args.search as never,
+    });
   };
 
   return (
     <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
-      <SidebarHeader className="border-b border-border/70 dark:border-sidebar-border p-2">
+      <SidebarHeader className="border-b border-border/70 p-2 dark:border-sidebar-border">
         <div className="flex items-center gap-1">
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <WorkspaceSwitcher />
           </div>
           <NotificationCenter />
@@ -727,433 +217,106 @@ export function Sidebar() {
 
       <SidebarContent className="gap-0">
         <div className="flex min-h-0 flex-1">
-          <div className="flex w-16 shrink-0 flex-col border-r border-border/70 dark:border-sidebar-border py-2">
-            <div className="flex flex-1 flex-col items-center gap-1.5">
-              {railItems.filter((item) => isModuleEnabled(item.id, user?.email)).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-label={item.label}
-                    onClick={() => navigate({ to: item.defaultLink as string })}
-                    className={`flex w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-2 transition-colors ${
-                      activeRail === item.id
-                        ? 'bg-foreground/10 text-foreground'
-                        : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-                    }`}
-                  >
-                    <div className="relative">
-                      <item.icon className="h-3.5 w-3.5" />
-                      {item.indicator && (
-                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-blue-600" />
-                      )}
-                      {!!item.badge && (
-                        <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold leading-none text-white">
-                          {item.badge > 99 ? '99+' : item.badge}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] leading-none">{item.label}</span>
-                  </button>
-              ))}
-            </div>
-            <div className="flex flex-col items-center gap-1.5 pt-2">
-              <button
-                type="button"
-                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                aria-label="Toggle theme"
-              >
-                <Sun className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
-                <Moon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="relative rounded-full transition-opacity hover:opacity-80"
-                    aria-label="Account menu"
-                  >
-                    <Avatar className="size-8">
-                      <AvatarImage src={user?.avatar_url ?? undefined} alt={user?.full_name || user?.email || 'Account'} />
-                      <AvatarFallback className="text-[11px]">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    {mySupportPresence && (
-                      <span
-                        className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${
-                          mySupportPresence.status === 'online'
-                            ? 'bg-emerald-500'
-                            : mySupportPresence.status === 'away'
-                              ? 'bg-amber-500'
-                              : 'bg-slate-300 dark:bg-slate-600'
-                        }`}
-                      />
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="right" align="end" className="w-56">
-                  <DropdownMenuLabel className="truncate">
-                    {user?.full_name || user?.email || 'Account'}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {mySupportPresence && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <span className="flex items-center gap-2">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              mySupportPresence.status === 'online'
-                                ? 'bg-emerald-500'
-                                : mySupportPresence.status === 'away'
-                                  ? 'bg-amber-500'
-                                  : 'bg-slate-300 dark:bg-slate-600'
-                            }`}
-                          />
-                          <span>Support status</span>
-                        </span>
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-44">
-                        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                          Set your status
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuRadioGroup
-                          value={selectedSupportPresenceMode}
-                          onValueChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : (value as 'online' | 'away' | 'offline'))}
-                        >
-                          <DropdownMenuRadioItem value="auto">Automatic</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="online">Online</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="away">Away</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="offline">Offline</DropdownMenuRadioItem>
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  )}
-                  {mySupportPresence && <DropdownMenuSeparator />}
-                  <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}>
-                    <User className="h-4 w-4" />
-                    <span>Profile</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate({ to: '/workspaces' })}>
-                    <Users className="h-4 w-4" />
-                    <span>All Workspaces</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={signOut} variant="destructive">
-                    <LogOut className="h-4 w-4" />
-                    <span>Sign out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
+          <SidebarRail
+            railItems={railItems}
+            activeRail={activeRail}
+            userEmail={user?.email ?? undefined}
+            theme={theme}
+            onRailSelect={(link) => handleNavigate(link)}
+            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            accountMenu={(
+              <SidebarAccountMenu
+                user={user}
+                initials={initials}
+                presence={mySupportPresence}
+                selectedPresenceMode={selectedSupportPresenceMode}
+                onPresenceChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : value)}
+                onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
+                onWorkspaces={() => handleNavigate('/workspaces')}
+                onSignOut={signOut}
+              />
+            )}
+          />
 
           <div className="min-w-0 flex-1 overflow-y-auto p-2 pb-16">
             {activeRail === 'projects' && (
-              <div className="mb-2 flex w-full">
-                <Button
-                  size="sm"
-                  className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
-                  onClick={() => openCreate(primaryCreate.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}
-                >
-                  <Plus className="h-3 w-3" />
-                  {primaryCreate.label}
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {secondaryOptions.map((opt) => (
-                      <DropdownMenuItem key={opt.key} onClick={() => openCreate(opt.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}>
-                        <opt.icon className="h-4 w-4" />
-                        {opt.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <SidebarCreateBar
+                primaryLabel={primaryCreate.label}
+                onPrimaryClick={() => openCreate(primaryCreate.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}
+                options={secondaryOptions.map((option) => ({
+                  key: option.key,
+                  label: option.label,
+                  icon: option.icon,
+                  onSelect: () => openCreate(option.key, activeTeamParam ? { teamId: activeTeamParam } : undefined),
+                }))}
+              />
             )}
 
             {activeRail === 'docs' && (
-              <div className="mb-2 flex w-full">
-                <Button
-                  size="sm"
-                  className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
-                  onClick={() => {
-                    // Extract spaceId from URL if user is browsing a space
-                    const spaceMatch = location.pathname.match(/\/docs\/spaces\/([^/]+)/)
-                    openCreate('docs_document', { spaceId: spaceMatch?.[1] })
-                  }}
-                >
-                  <Plus className="h-3 w-3" />
-                  Document
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onClick={() => openCreate('docs_space')}>
-                      <Globe className="h-4 w-4" />
-                      Space
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openCreate('docs_collection')}>
-                      <FolderOpen className="h-4 w-4" />
-                      Collection
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <SidebarCreateBar
+                primaryLabel="Document"
+                onPrimaryClick={() => {
+                  const spaceMatch = location.pathname.match(/\/docs\/spaces\/([^/]+)/);
+                  openCreate('docs_document', { spaceId: spaceMatch?.[1] });
+                }}
+                options={[
+                  { key: 'docs_space', label: 'Space', onSelect: () => openCreate('docs_space') },
+                  { key: 'docs_collection', label: 'Collection', onSelect: () => openCreate('docs_collection') },
+                ]}
+              />
             )}
 
-            {currentNavGroups.map((group, idx) => {
-              const isCollapsible = activeRail === 'settings' && COLLAPSIBLE_SETTINGS_GROUPS.has(group.label);
-              const isOpen = !collapsedSettingsGroups.has(group.label);
+            {activeRail === 'settings' ? (
+              <SettingsRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                collapsedGroups={collapsedSettingsGroups}
+                toggleGroup={toggleSettingsGroup}
+                onNavigate={(link) => handleNavigate(link)}
+              />
+            ) : (
+              <StandardRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                onNavigate={(link) => handleNavigate(link)}
+              />
+            )}
 
-              const menuItems = (
-                <SidebarMenu>
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.link}>
-                      <SidebarMenuButton
-                        asChild
-                        tooltip={item.label}
-                        isActive={isActive(item.link)}
-                        className="h-8 rounded-md px-2 text-[13px]"
-                      >
-                        <a
-                          href={item.link}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            navigate({ to: item.link as string });
-                          }}
-                        >
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </a>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              );
-
-              if (isCollapsible) {
-                return (
-                  <Collapsible.Root
-                    key={group.label}
-                    open={isOpen}
-                    onOpenChange={() => toggleSettingsGroup(group.label)}
-                    asChild
-                  >
-                    <SidebarGroup className="p-0 pb-3">
-                      <Collapsible.Trigger asChild>
-                        <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 cursor-pointer select-none hover:text-muted-foreground">
-                          <span className="flex-1">{group.label}</span>
-                          <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
-                        </SidebarGroupLabel>
-                      </Collapsible.Trigger>
-                      <Collapsible.Content>
-                        {menuItems}
-                      </Collapsible.Content>
-                    </SidebarGroup>
-                  </Collapsible.Root>
-                );
-              }
-
-              return (
-                <SidebarGroup key={group.label || idx} className="p-0 pb-3">
-                  {group.label && (
-                    <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                      {group.label}
-                    </SidebarGroupLabel>
-                  )}
-                  {menuItems}
-                </SidebarGroup>
-              );
-            })}
-
-            {/* ── Support inbox filters (support rail only) ── */}
             {activeRail === 'support' && (
-              <>
-                <SidebarMenu className="p-0 pb-3">
-                  {([
-                    { key: 'my_inbox' as const, label: 'My Inbox', icon: User, badge: unreadStats?.my_inbox },
-                    { key: 'unassigned' as const, label: 'Unassigned', icon: UserX, badge: unreadStats?.unassigned },
-                    { key: 'mentions' as const, label: 'Mentions', icon: MessageSquare, badge: undefined as number | undefined },
-                    { key: 'all' as const, label: 'All', icon: Mail, badge: unreadStats?.total },
-                  ]).map((item) => (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={navFilter === item.key}
-                        className="h-8 rounded-md px-2 text-[13px]"
-                        onClick={() => setNavFilter(item.key)}
-                      >
-                        <item.icon />
-                        <span className="flex-1">{item.label}</span>
-                        {item.badge != null && item.badge > 0 && (
-                          <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
-                            {item.badge > 99 ? '99+' : item.badge}
-                          </span>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-                <SidebarGroup className="p-0 pb-3">
-                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    Helpin AI Agent
-                  </SidebarGroupLabel>
-                  <SidebarMenu>
-                    {([
-                      { key: 'ai_all' as const, label: 'All AI', icon: Bot },
-                      { key: 'ai_pending' as const, label: 'Pending', icon: Clock },
-                      { key: 'ai_resolved' as const, label: 'Resolved', icon: CheckCircle2 },
-                      { key: 'ai_escalated' as const, label: 'Escalated', icon: ArrowUpRight },
-                    ] as const).map((item) => (
-                      <SidebarMenuItem key={item.key}>
-                        <SidebarMenuButton
-                          isActive={navFilter === item.key}
-                          className="h-8 rounded-md px-2 text-[13px]"
-                          onClick={() => setNavFilter(item.key)}
-                        >
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroup>
-                <SidebarGroup className="p-0 pb-3">
-                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    Team Inboxes
-                  </SidebarGroupLabel>
-                  <SidebarMenu>
-                    {(inboxScopes?.mailboxes ?? []).map((mailbox) => {
-                      const MailboxIcon = ICON_MAP[mailbox.icon] ?? Inbox;
-                      const isActiveMailbox = selectedMailboxId === mailbox.id;
-                      return (
-                        <SidebarMenuItem key={mailbox.id}>
-                          <SidebarMenuButton
-                            isActive={isActiveMailbox}
-                            className="h-8 rounded-md px-2 text-[13px]"
-                            onClick={() => setSelectedMailboxId(isActiveMailbox ? 'shared' : mailbox.id)}
-                          >
-                            <MailboxIcon className="h-4 w-4" />
-                            <span className="flex-1 truncate">{mailbox.name}</span>
-                            {mailbox.unread_count > 0 && (
-                              <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
-                                {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
-                              </span>
-                            )}
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      );
-                    })}
-                    {(inboxScopes?.mailboxes ?? []).length === 0 && (
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          className="h-8 rounded-md px-2 text-[13px]"
-                          onClick={() => navigate({ to: `/w/${wsSlug}/settings/team-inboxes` as string })}
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span>Create Inbox</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
-                  </SidebarMenu>
-                </SidebarGroup>
-              </>
+              <SupportRailNav
+                navFilter={navFilter}
+                unreadStats={unreadStats}
+                inboxScopes={inboxScopes}
+                selectedMailboxId={selectedMailboxId}
+                canManageSettings={canManageSettings}
+                onNavFilterChange={setNavFilter}
+                onMailboxSelect={setSelectedMailboxId}
+                onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+              />
             )}
 
-            {/* ── Team-scoped navigation (projects rail only) ── */}
             {activeRail === 'projects' && (
-              <SidebarGroup className="p-0 pb-3">
-                <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                  Your Teams
-                </SidebarGroupLabel>
-                <SidebarMenu>
-
-                  {teams.map((team) => {
-                    const isExpanded = expandedTeams.has(team.id);
-                    return (
-                      <Collapsible.Root
-                        key={team.id}
-                        asChild
-                        open={isExpanded}
-                        onOpenChange={() => toggleTeam(team.id)}
-                      >
-                        <SidebarMenuItem>
-                          <div className="group/team relative flex items-center">
-                            <Collapsible.Trigger asChild>
-                              <SidebarMenuButton className="h-8 rounded-md px-2 flex-1">
-                                <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                <span className="truncate">{team.name}</span>
-                              </SidebarMenuButton>
-                            </Collapsible.Trigger>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
-                                >
-                                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent side="right" align="start">
-                                <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'teams' } })}>
-                                  <Settings className="h-4 w-4" />
-                                  Settings
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <Collapsible.Content>
-                            <SidebarMenuSub>
-                              {teamSubItems.map((sub) => {
-                                const link = `/w/${wsSlug}/pm/${sub.path}?team=${team.id}`;
-                                const active = isTeamSubActive(team.id, sub.path);
-                                return (
-                                  <SidebarMenuSubItem key={sub.key}>
-                                    <SidebarMenuSubButton
-                                      asChild
-                                      size="sm"
-                                      isActive={active}
-                                    >
-                                      <a
-                                        href={link}
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          navigate({
-                                            to: `/w/$slug/pm/${sub.path}` as string,
-                                            params: { slug: wsSlug },
-                                            search: { team: team.id },
-                                          });
-                                        }}
-                                      >
-                                        <sub.icon className="h-3.5 w-3.5" />
-                                        <span>{sub.label}</span>
-                                      </a>
-                                    </SidebarMenuSubButton>
-                                  </SidebarMenuSubItem>
-                                );
-                              })}
-                            </SidebarMenuSub>
-                          </Collapsible.Content>
-                        </SidebarMenuItem>
-                      </Collapsible.Root>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroup>
+              <ProjectsTeamsNav
+                wsSlug={wsSlug}
+                teams={teams}
+                expandedTeams={expandedTeams}
+                isTeamSubActive={isTeamSubActive}
+                toggleTeam={toggleTeam}
+                onNavigate={handleNavigate}
+              />
             )}
 
-            {/* ── Docs spaces navigation (docs rail only) ── */}
-            {activeRail === 'docs' && <DocsSpacesNav wsId={workspaceId ?? ''} wsSlug={wsSlug} navigate={navigate} isActive={isActive} expandedTeams={expandedTeams} toggleTeam={toggleTeam} setExpandedTeams={setExpandedTeams} openCreate={openCreate} />}
+            {activeRail === 'docs' && (
+              <DocsSpacesNav
+                wsId={workspaceId ?? ''}
+                wsSlug={wsSlug}
+                expandedTeams={expandedTeams}
+                setExpandedTeams={setExpandedTeams}
+                isActive={isActive}
+                openCreate={openCreate}
+                onNavigate={handleNavigate}
+              />
+            )}
           </div>
         </div>
       </SidebarContent>

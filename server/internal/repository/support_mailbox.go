@@ -18,6 +18,50 @@ func NewSupportMailboxRepository(db *gorm.DB) *SupportMailboxRepository {
 	return &SupportMailboxRepository{db: db}
 }
 
+func supportMailboxAccessCondition(mailboxAlias string) string {
+	return fmt.Sprintf(`(
+		EXISTS (
+			SELECT 1
+			FROM support_mailbox_memberships smm
+			JOIN workspace_members wm_explicit ON wm_explicit.id = smm.workspace_member_id
+			WHERE smm.mailbox_id = %s.id
+			  AND smm.workspace_member_id = ?
+			  AND wm_explicit.status = 'active'
+		)
+		OR EXISTS (
+			SELECT 1
+			FROM team_workspace_memberships twm
+			JOIN workspace_members wm_team ON wm_team.id = twm.workspace_member_id
+			WHERE twm.team_id = %s.linked_team_id
+			  AND twm.workspace_member_id = ?
+			  AND wm_team.status = 'active'
+		)
+	)`, mailboxAlias, mailboxAlias)
+}
+
+func supportMailboxEffectiveMemberCountExpr(mailboxAlias string) string {
+	return fmt.Sprintf(`(
+		SELECT COUNT(DISTINCT wm.id)
+		FROM workspace_members wm
+		WHERE wm.workspace_id = %s.workspace_id
+		  AND wm.status = 'active'
+		  AND (
+			EXISTS (
+				SELECT 1
+				FROM support_mailbox_memberships smm
+				WHERE smm.mailbox_id = %s.id
+				  AND smm.workspace_member_id = wm.id
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM team_workspace_memberships twm
+				WHERE twm.team_id = %s.linked_team_id
+				  AND twm.workspace_member_id = wm.id
+			)
+		  )
+	)`, mailboxAlias, mailboxAlias, mailboxAlias)
+}
+
 func (r *SupportMailboxRepository) Create(ctx context.Context, mailbox *model.SupportMailbox) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var maxPosition int
@@ -88,7 +132,7 @@ func (r *SupportMailboxRepository) ListAccessible(ctx context.Context, workspace
 
 	isElevated := role == model.RoleOwner || role == model.RoleAdmin
 	if !isElevated {
-		query = query.Joins("JOIN support_mailbox_memberships smm ON smm.mailbox_id = sm.id AND smm.workspace_member_id = ?", workspaceMemberID)
+		query = query.Where(supportMailboxAccessCondition("sm"), workspaceMemberID, workspaceMemberID)
 	}
 
 	var mailboxes []model.SupportMailbox
@@ -177,9 +221,23 @@ func (r *SupportMailboxRepository) ListMembers(ctx context.Context, mailboxID st
 func (r *SupportMailboxRepository) ListActiveMemberUserIDs(ctx context.Context, workspaceID, mailboxID string) ([]string, error) {
 	var userIDs []string
 	if err := r.db.WithContext(ctx).
-		Table("support_mailbox_memberships smm").
-		Joins("JOIN workspace_members wm ON wm.id = smm.workspace_member_id").
-		Where("smm.mailbox_id = ? AND wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL", mailboxID, workspaceID, model.WorkspaceMemberStatusActive).
+		Table("workspace_members wm").
+		Where("wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL", workspaceID, model.WorkspaceMemberStatusActive).
+		Where(`(
+			EXISTS (
+				SELECT 1
+				FROM support_mailbox_memberships smm
+				WHERE smm.mailbox_id = ?
+				  AND smm.workspace_member_id = wm.id
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM support_mailboxes sm
+				JOIN team_workspace_memberships twm ON twm.team_id = sm.linked_team_id
+				WHERE sm.id = ?
+				  AND twm.workspace_member_id = wm.id
+			)
+		)`, mailboxID, mailboxID).
 		Distinct().
 		Order("wm.user_id ASC").
 		Pluck("wm.user_id", &userIDs).Error; err != nil {
@@ -210,8 +268,9 @@ func (r *SupportMailboxRepository) ImportLinkedTeamMembers(ctx context.Context, 
 func (r *SupportMailboxRepository) IsMember(ctx context.Context, mailboxID, workspaceMemberID string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).
-		Model(&model.SupportMailboxMembership{}).
-		Where("mailbox_id = ? AND workspace_member_id = ?", mailboxID, workspaceMemberID).
+		Table("support_mailboxes sm").
+		Where("sm.id = ? AND sm.active = ?", mailboxID, true).
+		Where(supportMailboxAccessCondition("sm"), workspaceMemberID, workspaceMemberID).
 		Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check support mailbox membership: %w", err)
 	}
@@ -251,20 +310,33 @@ func (r *SupportMailboxRepository) SelectRoundRobinOwnerUserID(ctx context.Conte
 	var result row
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT wm.user_id
-		FROM support_mailbox_memberships smm
-		JOIN workspace_members wm ON wm.id = smm.workspace_member_id
+		FROM workspace_members wm
 		LEFT JOIN support_conversations sc
 		  ON sc.workspace_id = ?
-		 AND sc.mailbox_id = smm.mailbox_id
+		 AND sc.mailbox_id = ?
 		 AND sc.opened_by_user_id = wm.user_id
-		WHERE smm.mailbox_id = ?
-		  AND wm.workspace_id = ?
+		WHERE wm.workspace_id = ?
 		  AND wm.status = ?
 		  AND wm.user_id IS NOT NULL
+		  AND (
+			EXISTS (
+				SELECT 1
+				FROM support_mailbox_memberships smm
+				WHERE smm.mailbox_id = ?
+				  AND smm.workspace_member_id = wm.id
+			)
+			OR EXISTS (
+				SELECT 1
+				FROM support_mailboxes sm
+				JOIN team_workspace_memberships twm ON twm.team_id = sm.linked_team_id
+				WHERE sm.id = ?
+				  AND twm.workspace_member_id = wm.id
+			)
+		  )
 		GROUP BY wm.user_id
 		ORDER BY COALESCE(MAX(sc.created_at), '1970-01-01 00:00:00') ASC, wm.user_id ASC
 		LIMIT 1
-	`, workspaceID, mailboxID, workspaceID, model.WorkspaceMemberStatusActive).Scan(&result).Error; err != nil {
+	`, workspaceID, mailboxID, workspaceID, model.WorkspaceMemberStatusActive, mailboxID, mailboxID).Scan(&result).Error; err != nil {
 		return nil, fmt.Errorf("select support mailbox round robin owner: %w", err)
 	}
 	if strings.TrimSpace(result.UserID) == "" {
@@ -277,15 +349,9 @@ func (r *SupportMailboxRepository) baseMailboxQuery(ctx context.Context) *gorm.D
 	return r.db.WithContext(ctx).
 		Table("support_mailboxes sm").
 		Joins("LEFT JOIN workspace_teams wt ON wt.id = sm.linked_team_id").
-		Select(`
+		Select(fmt.Sprintf(`
 			sm.*,
 			wt.name AS linked_team_name,
-			(
-				SELECT COUNT(*)
-				FROM support_mailbox_memberships smm
-				JOIN workspace_members wm ON wm.id = smm.workspace_member_id
-				WHERE smm.mailbox_id = sm.id
-				  AND wm.status = 'active'
-			) AS member_count
-		`)
+			%s AS member_count
+		`, supportMailboxEffectiveMemberCountExpr("sm")))
 }

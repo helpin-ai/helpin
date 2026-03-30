@@ -10,7 +10,6 @@ import { RecurringTemplatesSettings } from '@/components/pm/RecurringTemplatesSe
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BookOpen, Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -26,148 +25,12 @@ import {
   ChatGeneralTab,
   RedirectsTab,
   TeamInboxesTab,
+  SupportEmailForwardingTab,
 } from '@/components/settings';
+import { SETTINGS_SECTIONS, isSettingsSection, type SettingsSection } from '@/lib/settingsSections';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'knowledge' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'team-inboxes' | 'account';
-
-export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
-  {
-    id: 'general',
-    label: 'General',
-    description: '',
-    icon: Settings2,
-    group: 'Workspace',
-  },
-  {
-    id: 'members',
-    label: 'Members',
-    description: '',
-    icon: Users,
-    group: 'Workspace',
-  },
-  {
-    id: 'teams',
-    label: 'Teams',
-    description: '',
-    icon: Users,
-    group: 'Workspace',
-  },
-  {
-    id: 'knowledge',
-    label: 'Knowledge',
-    description: 'Manage help center docs and website content sources used across AI experiences.',
-    icon: BookOpen,
-    group: 'Workspace',
-  },
-  {
-    id: 'labels',
-    label: 'Labels',
-    description: 'Categorize and filter stories with color-coded labels.',
-    icon: Tag,
-    group: 'Project Settings',
-  },
-  {
-    id: 'story-templates',
-    label: 'Story Templates',
-    description: 'Define reusable templates for quick story creation.',
-    icon: FileText,
-    group: 'Project Settings',
-  },
-  {
-    id: 'recurring-tasks',
-    label: 'Recurring Tasks',
-    description: 'Manage recurring work templates, schedules, failures, and generated stories.',
-    icon: RefreshCw,
-    group: 'Project Settings',
-  },
-  {
-    id: 'automations',
-    label: 'Automations',
-    description: '',
-    icon: RefreshCw,
-    group: 'Project Settings',
-  },
-  {
-    id: 'delivery',
-    label: 'Delivery',
-    description: 'Connect GitHub, curate repositories, and monitor shared runner pools.',
-    icon: Globe,
-    group: 'Project Settings',
-  },
-  {
-    id: 'import',
-    label: 'Import / Export',
-    description: 'Import data from Shortcut and other project management tools.',
-    icon: Import,
-    group: 'Data',
-  },
-  {
-    id: 'helpcenter',
-    label: 'Help Center',
-    description: 'Configure your public help center branding, domain, and SEO.',
-    icon: Globe,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'redirects',
-    label: 'Redirects',
-    description: 'Manage URL redirects for the public help center.',
-    icon: RefreshCw,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'crm-pipelines',
-    label: 'Pipelines',
-    description: 'Configure deal pipelines and stages.',
-    icon: FolderKanban,
-    group: 'CRM Settings',
-  },
-  {
-    id: 'crm-email',
-    label: 'Email Accounts',
-    description: 'Connect Gmail to sync conversations and detect buyer signals.',
-    icon: Mail,
-    group: 'CRM Settings',
-  },
-  {
-    id: 'crm-autonomy',
-    label: 'Autonomy',
-    description: 'Configure self-driving deal automation thresholds.',
-    icon: Sliders,
-    group: 'CRM Settings',
-  },
-  {
-    id: 'ai-automations',
-    label: 'AI & Automations',
-    description: 'Read-only inventory and health for shared built-ins and contextual agents.',
-    icon: Sparkles,
-    group: 'AI & Automations',
-  },
-  {
-    id: 'chat-general',
-    label: 'Chat Widget',
-    description: 'Widget installation, availability, identity capture, appearance, AI auto-reply, and routing.',
-    icon: MessageSquare,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'team-inboxes',
-    label: 'Team Inboxes',
-    description: 'Create private support inboxes, add members, pick icons, and link support teams.',
-    icon: MessageSquare,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'chat-ai',
-    label: 'AI & Routing',
-    description: 'Configure support AI auto-reply, routing, handoff, and related chat behavior.',
-    icon: Bot,
-    group: 'Support & Docs',
-  },
-];
-
-export const isSettingsSection = (value: string): value is SettingsSection =>
-  SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
+export type { SettingsSection };
+export { isSettingsSection };
 
 export default function Settings({ section, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
@@ -321,6 +184,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'team-inboxes':
         return <TeamInboxesTab workspaceId={workspaceId} />;
+      case 'email-forwarding':
+        return <SupportEmailForwardingTab workspaceId={workspaceId} />;
       default:
         return null;
     }

@@ -72,6 +72,7 @@ import { uploadToS3 } from "@/lib/api";
 import { buildSprintOptionGroups } from "@/lib/pmSprintOptions";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/tiptapMarkdown";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
 import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
@@ -306,6 +307,7 @@ export function CreateStoryModal({
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
   const [descriptionMode, setDescriptionMode] = useState<'rich' | 'markdown'>('rich');
@@ -734,9 +736,15 @@ export function CreateStoryModal({
   const hasUnsavedChanges =
     form.name.trim() !== '' || stripHtml(currentDescriptionForCompare) !== stripHtml(initialDescRef.current);
 
-  const handleOpenChange = (nextOpen: boolean) => {
+  const handleOpenChange = async (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      const ok = await confirm({
+        title: 'Discard changes?',
+        description: 'You have unsaved changes that will be lost.',
+        confirmText: 'Discard',
+        variant: 'destructive',
+      });
+      if (!ok) return;
     }
     if (!nextOpen) {
       void cleanupInlineDraftUploads();

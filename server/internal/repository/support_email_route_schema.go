@@ -1,0 +1,39 @@
+package repository
+
+import (
+	"fmt"
+
+	"gorm.io/gorm"
+)
+
+// MigrateSupportEmailRouteSchema creates indexes that AutoMigrate cannot express.
+func MigrateSupportEmailRouteSchema(db *gorm.DB) error {
+	if db == nil || db.Dialector.Name() == "sqlite" {
+		return nil
+	}
+
+	statements := []string{
+		`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_ser_active_shared_route
+		ON support_email_routes(workspace_id)
+		WHERE mailbox_id IS NULL AND active = true
+		`,
+		`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_ser_active_mailbox_route
+		ON support_email_routes(mailbox_id)
+		WHERE mailbox_id IS NOT NULL AND active = true
+		`,
+		`
+		CREATE INDEX IF NOT EXISTS idx_sel_rfc_message_id
+		ON support_email_logs(workspace_id, rfc_message_id)
+		WHERE rfc_message_id IS NOT NULL AND rfc_message_id <> ''
+		`,
+	}
+
+	for _, stmt := range statements {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("migrate support email route schema: %w", err)
+		}
+	}
+	return nil
+}

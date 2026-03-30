@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -433,6 +434,7 @@ const buildForm = (obj: ObjectiveWithDetails): FormState => ({
 
 export function ObjectiveDetailPage() {
   const { objectiveId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -567,7 +569,13 @@ export function ObjectiveDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 

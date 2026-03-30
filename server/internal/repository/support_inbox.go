@@ -725,14 +725,13 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		baseQuery += ` AND (
 			sc.mailbox_id IS NULL
 			OR sc.mailbox_id IN (
-				SELECT smm.mailbox_id
-				FROM support_mailbox_memberships smm
-				JOIN support_mailboxes sm ON sm.id = smm.mailbox_id
-				WHERE smm.workspace_member_id = ?
-				  AND sm.active = true
+				SELECT sm.id
+				FROM support_mailboxes sm
+				WHERE sm.active = true
+				  AND ` + supportMailboxAccessCondition("sm") + `
 			)
 		)`
-		args = append(args, workspaceMemberID)
+		args = append(args, workspaceMemberID, workspaceMemberID)
 	}
 
 	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
@@ -760,14 +759,13 @@ func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, works
 		(
 			support_conversations.mailbox_id IS NULL
 			OR support_conversations.mailbox_id IN (
-				SELECT smm.mailbox_id
-				FROM support_mailbox_memberships smm
-				JOIN support_mailboxes sm ON sm.id = smm.mailbox_id
-				WHERE smm.workspace_member_id = ?
-				  AND sm.active = true
+				SELECT sm.id
+				FROM support_mailboxes sm
+				WHERE sm.active = true
+				  AND `+supportMailboxAccessCondition("sm")+`
 			)
 		)
-	`, workspaceMemberID)
+	`, workspaceMemberID, workspaceMemberID)
 }
 
 // UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor

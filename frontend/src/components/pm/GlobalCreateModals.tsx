@@ -37,6 +37,7 @@ import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
@@ -110,6 +111,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 // ── Epic dialog ──────────────────────────────────────────────────────
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const confirm = useConfirm();
   const { data: epicStates = [] } = useEpicStates(workspaceId);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -190,9 +192,15 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
   const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      const ok = await confirm({
+        title: 'Discard changes?',
+        description: 'You have unsaved changes that will be lost.',
+        confirmText: 'Discard',
+        variant: 'destructive',
+      });
+      if (!ok) return;
     }
     void cleanupInlineDraftUploads();
     onClose();
@@ -382,6 +390,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 // ── Sprint dialog ─────────────────────────────────────────────────
 
 function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const confirm = useConfirm();
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
@@ -624,9 +633,15 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
   const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      const ok = await confirm({
+        title: 'Discard changes?',
+        description: 'You have unsaved changes that will be lost.',
+        confirmText: 'Discard',
+        variant: 'destructive',
+      });
+      if (!ok) return;
     }
     void cleanupInlineDraftUploads();
     onClose();
@@ -800,6 +815,7 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const confirm = useConfirm();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId);
@@ -860,9 +876,15 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
   const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+      const ok = await confirm({
+        title: 'Discard changes?',
+        description: 'You have unsaved changes that will be lost.',
+        confirmText: 'Discard',
+        variant: 'destructive',
+      });
+      if (!ok) return;
     }
     void cleanupInlineDraftUploads();
     onClose();

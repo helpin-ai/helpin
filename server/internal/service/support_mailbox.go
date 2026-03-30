@@ -260,15 +260,7 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 		return nil, err
 	}
 
-	memberIDs := append([]string(nil), req.WorkspaceMemberIDs...)
-	if req.ImportLinkedTeam && mailbox.LinkedTeamID != nil && strings.TrimSpace(*mailbox.LinkedTeamID) != "" {
-		imported, err := s.mailboxRepo.ImportLinkedTeamMembers(ctx, workspaceID, mailbox.ID, strings.TrimSpace(*mailbox.LinkedTeamID))
-		if err != nil {
-			return nil, err
-		}
-		memberIDs = append(memberIDs, imported...)
-	}
-	if err := s.mailboxRepo.AddMembers(ctx, mailbox.ID, memberIDs); err != nil {
+	if err := s.mailboxRepo.AddMembers(ctx, mailbox.ID, req.WorkspaceMemberIDs); err != nil {
 		return nil, err
 	}
 
@@ -340,11 +332,6 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 	}
 	if req.WorkspaceMemberIDs != nil {
 		if err := s.mailboxRepo.ReplaceMembers(ctx, mailbox.ID, req.WorkspaceMemberIDs); err != nil {
-			return nil, err
-		}
-	}
-	if req.ImportLinkedTeam && mailbox.LinkedTeamID != nil && strings.TrimSpace(*mailbox.LinkedTeamID) != "" {
-		if _, err := s.mailboxRepo.ImportLinkedTeamMembers(ctx, workspaceID, mailbox.ID, strings.TrimSpace(*mailbox.LinkedTeamID)); err != nil {
 			return nil, err
 		}
 	}

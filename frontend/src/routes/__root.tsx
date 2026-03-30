@@ -1,5 +1,6 @@
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
 import { ThemeProvider } from 'next-themes'
+import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { User } from '@/lib/types'
@@ -23,8 +24,10 @@ function RootComponent() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <TooltipProvider>
-        <Outlet />
-        <Toaster />
+        <ConfirmProvider>
+          <Outlet />
+          <Toaster />
+        </ConfirmProvider>
       </TooltipProvider>
     </ThemeProvider>
   )

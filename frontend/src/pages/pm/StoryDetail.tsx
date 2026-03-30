@@ -115,6 +115,7 @@ import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries/useSettings';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -274,6 +275,7 @@ function ActivityEntry({ entry }: { entry: ActivityLogEntry }) {
 
 export function StoryDetailPage() {
   const { storyId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -564,7 +566,13 @@ export function StoryDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
