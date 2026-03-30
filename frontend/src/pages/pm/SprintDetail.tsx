@@ -17,7 +17,6 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
