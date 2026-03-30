@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
@@ -20,7 +20,7 @@ import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import {
   useDocsSpaces,
-  useDocsCollections,
+  useAllDocsCollections,
   useDocsDocuments,
   useCreateDocsSpace,
   useWorkspaceAccess,
@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
 import { DocsArrangeTree } from '@/components/docs/DocsArrangeTree'
-import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
+import type { DocsSpace, DocsCollection, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 
 // ── Space templates for quick setup ─────────────────────────────────────────
@@ -162,37 +162,35 @@ function CollectionSection({
 
 function SpaceSection({
   space,
-  wsId,
+  collections,
+  documents,
   wsSlug,
   navigate,
   teamNames,
 }: {
   space: DocsSpace
-  wsId: string
+  collections: DocsCollection[]
+  documents: DocsDocument[]
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
   teamNames: string
 }) {
   const [expanded, setExpanded] = useState(false)
-  const { data: collections } = useDocsCollections(wsId, space.id)
-  const { data: documents } = useDocsDocuments(wsId, { space_id: space.id })
 
   const collectionMap = new Map<string, DocsDocument[]>()
   const uncollected: DocsDocument[] = []
 
-  if (documents) {
-    for (const doc of documents) {
-      if (doc.collection_id) {
-        const list = collectionMap.get(doc.collection_id) ?? []
-        list.push(doc)
-        collectionMap.set(doc.collection_id, list)
-      } else {
-        uncollected.push(doc)
-      }
+  for (const doc of documents) {
+    if (doc.collection_id) {
+      const list = collectionMap.get(doc.collection_id) ?? []
+      list.push(doc)
+      collectionMap.set(doc.collection_id, list)
+    } else {
+      uncollected.push(doc)
     }
   }
-  const docCount = documents?.length ?? 0
-  const collCount = collections?.length ?? 0
+  const docCount = documents.length
+  const collCount = collections.length
 
   return (
     <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
@@ -290,6 +288,29 @@ export function DocsHome() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
   const { data: spaces, isLoading } = useDocsSpaces(wsId)
+  const { data: allCollections } = useAllDocsCollections(wsId)
+  const { data: allDocuments } = useDocsDocuments(wsId, {})
+
+  // Build per-space lookup maps from batch data
+  const collectionsBySpace = useMemo(() => {
+    const map = new Map<string, DocsCollection[]>()
+    for (const c of allCollections ?? []) {
+      const list = map.get(c.space_id) ?? []
+      list.push(c)
+      map.set(c.space_id, list)
+    }
+    return map
+  }, [allCollections])
+
+  const documentsBySpace = useMemo(() => {
+    const map = new Map<string, DocsDocument[]>()
+    for (const d of allDocuments ?? []) {
+      const list = map.get(d.space_id) ?? []
+      list.push(d)
+      map.set(d.space_id, list)
+    }
+    return map
+  }, [allDocuments])
 
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false)
   const [arrangeMode, setArrangeMode] = useState(false)
@@ -498,7 +519,8 @@ export function DocsHome() {
                     <SpaceSection
                       key={space.id}
                       space={space}
-                      wsId={wsId}
+                      collections={collectionsBySpace.get(space.id) ?? []}
+                      documents={documentsBySpace.get(space.id) ?? []}
                       wsSlug={wsSlug}
                       navigate={navigate}
                       teamNames={getTeamNames(space)}
@@ -522,7 +544,8 @@ export function DocsHome() {
                     <SpaceSection
                       key={space.id}
                       space={space}
-                      wsId={wsId}
+                      collections={collectionsBySpace.get(space.id) ?? []}
+                      documents={documentsBySpace.get(space.id) ?? []}
                       wsSlug={wsSlug}
                       navigate={navigate}
                       teamNames={getTeamNames(space)}

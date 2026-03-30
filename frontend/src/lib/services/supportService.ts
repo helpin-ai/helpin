@@ -23,6 +23,10 @@ import type {
   SupportMailboxMember,
   SupportEmailRoute,
   CreateSupportEmailRouteRequest,
+  SupportTriageRule,
+  CreateSupportTriageRuleRequest,
+  UpdateSupportTriageRuleRequest,
+  SupportConversationTriage,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -57,6 +61,14 @@ export const supportService = {
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
+  listTriageRules: (workspaceId: string) =>
+    api.get<SupportTriageRule[]>(`/support/inbox/triage-rules${qs(workspaceId)}`),
+  createTriageRule: (workspaceId: string, payload: CreateSupportTriageRuleRequest) =>
+    api.post<SupportTriageRule>(`/support/inbox/triage-rules${qs(workspaceId)}`, payload),
+  updateTriageRule: (workspaceId: string, ruleId: string, payload: UpdateSupportTriageRuleRequest) =>
+    api.put<SupportTriageRule>(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`, payload),
+  deleteTriageRule: (workspaceId: string, ruleId: string) =>
+    api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   createConversation: (workspaceId: string, payload: CreateConversationRequest) =>
@@ -96,6 +108,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
   moveConversation: (workspaceId: string, conversationId: string, mailboxId: string | null) =>
     api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/move${qs(workspaceId)}`, { mailbox_id: mailboxId }),
+  dismissConversationTriage: (workspaceId: string, conversationId: string) =>
+    api.post<SupportConversationTriage>(`/support/inbox/conversations/${conversationId}/triage/dismiss${qs(workspaceId)}`, {}),
   updateConversationSubject: (workspaceId: string, conversationId: string, subject: string) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/subject${qs(workspaceId)}`, { subject }),
   deleteConversation: (workspaceId: string, conversationId: string) =>

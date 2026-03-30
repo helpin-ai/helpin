@@ -363,13 +363,14 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		Status:        "open",
 		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 		Priority:      "medium",
+		Channel:       "widget",
 		CustomerName:  session.CustomerName,
 		CustomerEmail: session.CustomerEmail,
 		AnonymousID:   &session.AnonymousID,
 		Source:        "widget",
 	}
 
-	mailboxID, mailbox, err := s.maybeApplyMailboxRouting(ctx, session.WorkspaceID, nil, true)
+	mailboxID, mailbox, err := s.maybeApplyMailboxRoutingForChannel(ctx, session.WorkspaceID, nil, true, "widget")
 	if err != nil {
 		return nil, err
 	}
@@ -402,6 +403,11 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		EntityID:    ticket.ID,
 		WorkspaceID: session.WorkspaceID,
 	})
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
+			slog.ErrorContext(ctx, "hydrate widget support conversation triage", "error", err, "workspace_id", session.WorkspaceID, "conversation_id", ticket.ID)
+		}
+	}
 
 	return ticket, nil
 }
@@ -429,13 +435,14 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			Status:        "open",
 			FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 			Priority:      "medium",
+			Channel:       "widget",
 			CustomerName:  session.CustomerName,
 			CustomerEmail: session.CustomerEmail,
 			AnonymousID:   &session.AnonymousID,
 			Source:        "widget",
 		}
 
-		mailboxID, mailbox, mailboxErr := s.maybeApplyMailboxRouting(ctx, session.WorkspaceID, nil, true)
+		mailboxID, mailbox, mailboxErr := s.maybeApplyMailboxRoutingForChannel(ctx, session.WorkspaceID, nil, true, "widget")
 		if mailboxErr != nil {
 			return nil, mailboxErr
 		}
@@ -510,39 +517,52 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, displayName)
 	}
 
-	// Branch on ai_response_mode: AI-first publishes to JetStream, manual-assist runs existing path.
-	inst, instErr := s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)
+	go s.runWidgetPostMessageAutomation(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content)
+
+	return msg, nil
+}
+
+func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context, workspaceID, conversationID, messageID, content string) {
+	if s == nil || s.installationRepo == nil {
+		return
+	}
+
+	if s.triageService != nil {
+		if _, err := s.triageService.EvaluateAndRoute(ctx, workspaceID, conversationID, messageID); err != nil {
+			slog.ErrorContext(ctx, "widget support triage failed", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
+		}
+	}
+
+	inst, instErr := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	settings := model.DefaultSupportInboxSettings()
 	if instErr == nil && inst != nil {
 		settings = parseSettings(inst.Settings)
 	}
 
 	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
-		// AI-first path: publish to JetStream for worker consumer
-		if pubErr := s.supportAIService.PublishAIRequest(ctx, session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content); pubErr != nil {
+		if pubErr := s.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, messageID, content); pubErr != nil {
 			slog.ErrorContext(ctx, "failed to publish AI request event",
-				"workspace_id", session.WorkspaceID,
-				"conversation_id", *session.ConversationID,
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
 				"error", pubErr,
 			)
-			// Fallback to manual-assist path on publish failure
-			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
+			return
 		}
 
-		// Set AI state to pending and assign AI agent
 		agentID := strings.TrimSpace(*settings.AIAgentID)
 		pending := "pending"
-		_ = s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
 			"ai_state":          &pending,
 			"assigned_agent_id": &agentID,
 			"flow_state":        model.SupportConversationFlowStateAIHandling,
-		})
-	} else {
-		// Manual-assist path: existing agent run (unchanged)
-		go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+		}); err != nil {
+			slog.ErrorContext(ctx, "set AI handling state after widget triage", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		}
+		return
 	}
 
-	return msg, nil
+	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
 }
 
 // PublishWidgetTypingIndicator publishes a widget visitor typing event using session context.

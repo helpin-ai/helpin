@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,7 @@ import {
   useUpdateConversationSubject,
   useDeleteConversation,
   useMoveConversation,
+  useDismissConversationTriage,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
@@ -210,6 +212,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const deleteConversation = useDeleteConversation(workspaceId);
   const confirm = useConfirm();
   const moveConversation = useMoveConversation(workspaceId);
+  const dismissTriage = useDismissConversationTriage(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
 
@@ -230,6 +233,50 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     const options = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
     return options.filter((option) => option!.id !== (conversation?.mailbox_id ?? 'shared'));
   }, [conversation?.mailbox_id, inboxScopes]);
+
+  const triageBanner = useMemo(() => {
+    const triage = conversation?.triage;
+    if (!conversation || !triage || !triage.suggested_mailbox_id) return null;
+
+    const suggestedMailboxId = triage.suggested_mailbox_id;
+    const suggestedMailbox = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])]
+      .filter(Boolean)
+      .find((option) => option!.id === suggestedMailboxId);
+
+    const mailboxName = suggestedMailbox?.name ?? 'Selected Inbox';
+    const sourceLabel = triage.classifier_source === 'rule' ? 'Routing Rule' : 'AI Triage';
+    const confidenceLabel = triage.confidence != null
+      ? `${Math.round(triage.confidence * 100)}% confidence`
+      : null;
+
+    if (
+      triage.status === 'suggested'
+      && !triage.locked_at
+      && suggestedMailboxId !== (conversation.mailbox_id ?? null)
+    ) {
+      return {
+        kind: 'suggested' as const,
+        mailboxId: suggestedMailboxId,
+        mailboxName,
+        sourceLabel,
+        confidenceLabel,
+        reason: triage.reason?.trim() || null,
+      };
+    }
+
+    if (triage.status === 'auto_moved') {
+      return {
+        kind: 'auto_moved' as const,
+        mailboxId: suggestedMailboxId,
+        mailboxName,
+        sourceLabel,
+        confidenceLabel,
+        reason: triage.reason?.trim() || null,
+      };
+    }
+
+    return null;
+  }, [conversation, inboxScopes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -579,6 +626,69 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+        </div>
+      )}
+
+      {conversation && triageBanner && (
+        <div className={`border-b px-4 py-3 ${
+          triageBanner.kind === 'suggested'
+            ? 'bg-amber-50/70 dark:bg-amber-950/20'
+            : 'bg-emerald-50/70 dark:bg-emerald-950/20'
+        }`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium">
+                  {triageBanner.kind === 'suggested'
+                    ? `Suggested inbox: ${triageBanner.mailboxName}`
+                    : `Moved to ${triageBanner.mailboxName}`}
+                </p>
+                <Badge variant="secondary">{triageBanner.sourceLabel}</Badge>
+                {triageBanner.confidenceLabel && <Badge variant="outline">{triageBanner.confidenceLabel}</Badge>}
+              </div>
+              {triageBanner.reason && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Reason: {triageBanner.reason}
+                </p>
+              )}
+            </div>
+
+            {triageBanner.kind === 'suggested' && (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    moveConversation.mutate({
+                      conversationId: conversation.id,
+                      mailboxId: triageBanner.mailboxId,
+                    }, {
+                      onSuccess: () => {
+                        setSelectedMailboxId(triageBanner.mailboxId);
+                        toast.success(`Moved to ${triageBanner.mailboxName}`);
+                      },
+                    });
+                  }}
+                  disabled={moveConversation.isPending || dismissTriage.isPending}
+                >
+                  Move
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    dismissTriage.mutate(conversation.id, {
+                      onSuccess: () => {
+                        toast.success('Routing suggestion dismissed');
+                      },
+                    });
+                  }}
+                  disabled={moveConversation.isPending || dismissTriage.isPending}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

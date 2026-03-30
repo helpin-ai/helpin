@@ -189,8 +189,11 @@ func main() {
 		&model.AgentRunArtifact{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
+		&model.SupportConversationTriage{},
+		&model.SupportConversationTriageEvent{},
 		&model.SupportMailbox{},
 		&model.SupportMailboxMembership{},
+		&model.SupportTriageRule{},
 		&model.SupportEmailRoute{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
@@ -440,7 +443,7 @@ func main() {
 	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
 	go func() {
 		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
-			fatalWithSentry("jetstream bridge stopped", err)
+			slog.Error("jetstream bridge stopped (non-fatal in dev)", "error", err)
 		}
 	}()
 
@@ -477,7 +480,10 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
+	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
+	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
+	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
@@ -609,6 +615,18 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	supportInboxTriageService := service.NewSupportInboxTriageService(
+		supportInboxService,
+		supportConversationTriageRepo,
+		supportConversationTriageEventRepo,
+		supportTriageRuleRepo,
+		supportInstallRepo,
+		supportMailboxRepo,
+		supportConversationRepo,
+		supportMessageRepo,
+		supportLLMRouter,
+	)
+	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)

@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_all' | 'ai_resolved' | 'ai_escalated' | 'ai_pending';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
+export type ActiveContext = 'nav' | 'mailbox';
 
 const STORAGE_KEY = 'support_inbox_ui';
 const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
@@ -77,6 +78,7 @@ interface SupportInboxState {
   navFilter: NavFilter;
   navCollapsed: boolean;
   selectedMailboxId: string;
+  activeContext: ActiveContext;
   // Filters
   statusFilter: string;
   searchQuery: string;
@@ -118,6 +120,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     navFilter: 'all',
     navCollapsed: persisted.navCollapsed,
     selectedMailboxId: persisted.selectedMailboxId,
+    activeContext: persisted.selectedMailboxId !== 'shared' ? 'mailbox' : 'nav',
     statusFilter: 'all',
     searchQuery: '',
     selectedConversationId: null,
@@ -128,9 +131,29 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     activePanel: 'list',
     drafts: persistedDrafts,
 
-    setNavFilter: (filter) => set({ navFilter: filter, statusFilter: 'all' }),
+    setNavFilter: (filter) => {
+      set({
+        navFilter: filter,
+        statusFilter: 'all',
+        activeContext: 'nav',
+        selectedMailboxId: 'shared',
+        selectedConversationId: null,
+        activePanel: 'list',
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: 'shared',
+      });
+    },
     setSelectedMailboxId: (mailboxId) => {
-      set({ selectedMailboxId: mailboxId, selectedConversationId: null, activePanel: 'list' });
+      set({
+        selectedMailboxId: mailboxId,
+        selectedConversationId: null,
+        activePanel: 'list',
+        activeContext: mailboxId === 'shared' ? 'nav' : 'mailbox',
+        navFilter: 'all',
+      });
       savePersisted({
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: get().detailSidebarCollapsed,

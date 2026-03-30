@@ -141,9 +141,8 @@
 .tiptap {
   outline: none;
 }
-.tiptap > p.is-editor-empty:first-child::before,
-.tiptap > p.is-empty::before,
-.tiptap > .is-empty:not([data-type="codeBlock"])::before {
+/* Show placeholder only when the entire editor is empty (first child of empty editor) */
+.tiptap.is-editor-empty > p.is-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: var(--muted-foreground);

@@ -1,12 +1,20 @@
-import { useMemo, useCallback, memo, useEffect } from 'react';
-import { MessageSquare, Search } from 'lucide-react';
+import { useMemo, useCallback, useState, memo, useEffect } from 'react';
+import { MessageSquare, Search, X, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversations, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
 import { filterSupportConversations } from '@/lib/supportInboxFilters';
+import { supportStatusOptions } from '@/components/layout/sidebar/config';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -30,12 +38,13 @@ interface ConversationListProps {
 
 export function ConversationList({ workspaceId, userId }: ConversationListProps) {
   const {
-    statusFilter,
+    statusFilter, setStatusFilter,
     searchQuery, setSearchQuery,
     selectedConversationId, selectConversation,
     navFilter,
     selectedMailboxId,
   } = useSupportInboxStore();
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const markConversationRead = useMarkConversationRead(workspaceId);
@@ -70,22 +79,75 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
-      {/* Frosted glass search header */}
+      {/* Filter toolbar */}
       <div
-        className="relative z-10 border-b border-border/60 bg-background/85 px-3 py-2 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
-        style={{
-          backdropFilter: 'blur(8px) saturate(160%)',
-        }}
+        className="relative z-10 flex items-center gap-1.5 border-b border-border/60 bg-background/85 px-2 py-1.5 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
+        style={{ backdropFilter: 'blur(8px) saturate(160%)' }}
       >
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="h-8 border-border/60 bg-background/80 pl-8 text-sm shadow-none dark:border-sidebar-border dark:bg-sidebar-accent/60 dark:text-sidebar-foreground dark:placeholder:text-sidebar-foreground/60"
-            placeholder="Search conversations..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        {searchExpanded ? (
+          <div className="flex flex-1 items-center gap-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Input
+              autoFocus
+              className="h-7 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0 dark:text-sidebar-foreground dark:placeholder:text-sidebar-foreground/60"
+              placeholder="Search conversations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('');
+                  setSearchExpanded(false);
+                }
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={() => { setSearchQuery(''); setSearchExpanded(false); }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs font-medium">
+                  {(() => {
+                    const active = supportStatusOptions.find((o) => o.value === statusFilter);
+                    const Icon = active?.icon;
+                    return Icon ? <Icon className={`h-3.5 w-3.5 ${active.color}`} /> : null;
+                  })()}
+                  {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-44">
+                {supportStatusOptions.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.value}
+                    checked={statusFilter === option.value}
+                    onCheckedChange={() => setStatusFilter(option.value)}
+                    className="gap-2"
+                  >
+                    <option.icon className={`h-3.5 w-3.5 ${option.color}`} />
+                    {option.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={() => setSearchExpanded(true)}
+            >
+              <Search className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Conversation list */}

@@ -92,6 +92,11 @@ func (s *DocsCollectionService) List(ctx context.Context, spaceID string) ([]mod
 	return s.collectionRepo.ListBySpace(ctx, spaceID)
 }
 
+// ListByWorkspace returns all collections across all spaces in a workspace.
+func (s *DocsCollectionService) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsCollection, error) {
+	return s.collectionRepo.ListByWorkspace(ctx, workspaceID)
+}
+
 // Update updates a collection.
 func (s *DocsCollectionService) Update(ctx context.Context, id string, req model.UpdateDocsCollectionRequest) (*model.DocsCollection, error) {
 	updates := map[string]interface{}{}

@@ -52,6 +52,15 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 	return result, nil
 }
 
+// ListPlanningWorkspace returns grouped sprints and an unassigned backlog for the planning page.
+func (s *PMSprintService) ListPlanningWorkspace(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters) (*model.SprintPlanningWorkspace, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	return s.sprintRepo.ListPlanningWorkspace(ctx, workspaceID, filters)
+}
+
 // GetByID returns sprint with stats.
 func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.SprintWithStats, error) {
 	sprint, err := s.sprintRepo.GetWithStats(ctx, id)

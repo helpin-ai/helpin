@@ -53,6 +53,18 @@ func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID stri
 	return colls, nil
 }
 
+// ListByWorkspace returns all collections across all spaces in a workspace.
+func (r *DocsCollectionRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsCollection, error) {
+	var colls []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND deleted_at IS NULL", workspaceID).
+		Order("space_id ASC, position ASC, created_at ASC").
+		Find(&colls).Error; err != nil {
+		return nil, fmt.Errorf("list docs collections by workspace: %w", err)
+	}
+	return colls, nil
+}
+
 // Update applies partial updates to a collection.
 func (r *DocsCollectionRepository) Update(ctx context.Context, id string, updates map[string]interface{}) (*model.DocsCollection, error) {
 	if err := r.db.WithContext(ctx).Model(&model.DocsCollection{}).Where("id = ? AND deleted_at IS NULL", id).Updates(updates).Error; err != nil {

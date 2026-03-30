@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
@@ -20,6 +21,7 @@ import {
   Maximize2,
   MoreVertical,
   Paperclip,
+  Pencil,
   Play,
   RefreshCw,
   ShieldAlert,
@@ -52,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
@@ -82,6 +85,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
@@ -211,57 +215,6 @@ function MetadataRow({
   );
 }
 
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-  renderOption,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  renderOption?: (value: T) => React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-              `}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {renderOption ? renderOption(option.value) : null}
-              <span className="truncate">{option.label}</span>
-              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ── Timeline Entry ─────────────────────────────────────────────────
 
@@ -327,6 +280,7 @@ function StoryDetailPanelBody({
 }) {
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
@@ -335,6 +289,7 @@ function StoryDetailPanelBody({
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
@@ -535,6 +490,10 @@ function StoryDetailPanelBody({
       } else {
         setSaveError(null);
         onStoryUpdated(data);
+        // Invalidate sprint planning if sprint/state/estimate changed
+        if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
+          queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
+        }
         const nextDescription = data.story.description ?? '';
         savedDescriptionRef.current = nextDescription;
         if (patch.description !== undefined) {
@@ -868,16 +827,46 @@ function StoryDetailPanelBody({
 
           {/* Description */}
           <div className="mt-4">
-            <TiptapEditor
-              content={form.description}
-              onChange={(html) => updateField('description', html, { description: html })}
-              placeholder="Add a description..."
-              className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
-              uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-              onUploadStateChange={setDescriptionPendingUploads}
-              teams={mentionTeams}
-              members={assignableMembers}
-            />
+            {editingDescription ? (
+              <div>
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => updateField('description', html, { description: html })}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
+                  members={assignableMembers}
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="group/desc relative">
+                {form.description ? (
+                  <RichTextMentionContent
+                    html={form.description}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                    className="prose prose-sm dark:prose-invert max-w-none text-[13px] [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No description yet</p>
+                )}
+                <button
+                  type="button"
+                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                  onClick={() => setEditingDescription(true)}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit description
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Action bar — "Add to Story" */}
@@ -1271,6 +1260,8 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
             )}
+
+            <div className="col-span-3 border-t border-border/60" />
 
             {/* Estimate */}
             {fieldVis.estimate && (

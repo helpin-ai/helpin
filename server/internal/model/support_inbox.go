@@ -1,6 +1,9 @@
 package model
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -42,14 +45,15 @@ type SupportConversation struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
-	LastMessage         *string `json:"last_message,omitempty" gorm:"->"`
-	UnreadCount         int     `json:"unread_count" gorm:"->"`
-	OpenedByDisplayName *string `json:"opened_by_display_name,omitempty" gorm:"-"`
-	OpenedByAvatarURL   *string `json:"opened_by_avatar_url,omitempty" gorm:"-"`
-	OpenedByStatus      *string `json:"opened_by_status,omitempty" gorm:"-"`
-	MailboxName         *string `json:"mailbox_name,omitempty" gorm:"->"`
-	MailboxHandle       *string `json:"mailbox_handle,omitempty" gorm:"->"`
-	MailboxIcon         *string `json:"mailbox_icon,omitempty" gorm:"->"`
+	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
+	UnreadCount         int                        `json:"unread_count" gorm:"->"`
+	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
+	OpenedByAvatarURL   *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
+	OpenedByStatus      *string                    `json:"opened_by_status,omitempty" gorm:"-"`
+	MailboxName         *string                    `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle       *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon         *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
+	Triage              *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -68,6 +72,25 @@ const (
 	SupportTeammateStatusOnline  = "online"
 	SupportTeammateStatusAway    = "away"
 	SupportTeammateStatusOffline = "offline"
+)
+
+const (
+	SupportConversationTriageStatusNotRun     = "not_run"
+	SupportConversationTriageStatusSuggested  = "suggested"
+	SupportConversationTriageStatusAutoMoved  = "auto_moved"
+	SupportConversationTriageStatusDismissed  = "dismissed"
+	SupportConversationTriageStatusOverridden = "overridden"
+)
+
+const (
+	SupportConversationTriageSourceRule = "rule"
+	SupportConversationTriageSourceAI   = "ai"
+)
+
+const (
+	SupportConversationTriageFeedbackAccepted  = "accepted"
+	SupportConversationTriageFeedbackDismissed = "dismissed"
+	SupportConversationTriageFeedbackCorrected = "corrected"
 )
 
 const (
@@ -96,14 +119,14 @@ type UnreadStats struct {
 }
 
 type SupportInboxScope struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Handle      string  `json:"handle"`
-	Icon        string  `json:"icon"`
-	IsShared    bool    `json:"is_shared"`
-	IsDefault   bool    `json:"is_default"`
-	UnreadCount int     `json:"unread_count"`
-	Active      bool    `json:"active"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Handle       string  `json:"handle"`
+	Icon         string  `json:"icon"`
+	IsShared     bool    `json:"is_shared"`
+	IsDefault    bool    `json:"is_default"`
+	UnreadCount  int     `json:"unread_count"`
+	Active       bool    `json:"active"`
 	LinkedTeamID *string `json:"linked_team_id,omitempty"`
 }
 
@@ -214,20 +237,22 @@ type SupportWidgetSession struct {
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
 type SupportMailbox struct {
-	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name           string     `json:"name" gorm:"not null"`
-	Handle         string     `json:"handle" gorm:"not null"`
-	Icon           string     `json:"icon" gorm:"not null;default:'inbox'"`
-	Description    *string    `json:"description"`
-	LinkedTeamID   *string    `json:"linked_team_id" gorm:"type:uuid"`
-	VisibilityMode string     `json:"visibility_mode" gorm:"not null;default:'members_only'"`
-	AssignmentMode string     `json:"assignment_mode" gorm:"not null;default:'manual'"`
-	Position       int        `json:"position" gorm:"not null;default:0"`
-	Active         bool       `json:"active" gorm:"not null;default:true"`
-	CreatedByID    string     `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name           string    `json:"name" gorm:"not null"`
+	Handle         string    `json:"handle" gorm:"not null"`
+	Icon           string    `json:"icon" gorm:"not null;default:'inbox'"`
+	Description    *string   `json:"description"`
+	RoutingPrompt  *string   `json:"routing_prompt"`
+	TriageEligible bool      `json:"triage_eligible" gorm:"not null;default:true"`
+	LinkedTeamID   *string   `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode string    `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode string    `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	Position       int       `json:"position" gorm:"not null;default:0"`
+	Active         bool      `json:"active" gorm:"not null;default:true"`
+	CreatedByID    string    `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	LinkedTeamName *string `json:"linked_team_name,omitempty" gorm:"->"`
 	MemberCount    int     `json:"member_count,omitempty" gorm:"->"`
@@ -235,6 +260,101 @@ type SupportMailbox struct {
 }
 
 func (SupportMailbox) TableName() string { return "support_mailboxes" }
+
+type SupportConversationTriage struct {
+	ID                 string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID     string     `json:"conversation_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Status             string     `json:"status" gorm:"not null;default:'suggested'"`
+	Intent             *string    `json:"intent,omitempty"`
+	Confidence         *float64   `json:"confidence,omitempty"`
+	Reason             *string    `json:"reason,omitempty"`
+	ClassifierSource   string     `json:"classifier_source" gorm:"column:source;not null"`
+	SuggestedMailboxID *string    `json:"suggested_mailbox_id,omitempty" gorm:"type:uuid;index"`
+	AutoMoved          bool       `json:"auto_moved" gorm:"not null;default:false"`
+	LockedAt           *time.Time `json:"locked_at,omitempty"`
+	EvaluatedAt        *time.Time `json:"evaluated_at,omitempty"`
+	FeedbackAction     *string    `json:"feedback_action,omitempty"`
+	InputHash          string     `json:"-" gorm:"index"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportConversationTriage) TableName() string { return "support_conversation_triage" }
+
+type SupportConversationTriageEvent struct {
+	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID string    `json:"conversation_id" gorm:"type:uuid;not null;index"`
+	TriageID       *string   `json:"triage_id,omitempty" gorm:"type:uuid;index"`
+	EventType      string    `json:"event_type" gorm:"not null;index"`
+	Source         *string   `json:"source,omitempty" gorm:"index"`
+	Cached         bool      `json:"cached,omitempty" gorm:"not null;default:false"`
+	FromMailboxID  *string   `json:"from_mailbox_id,omitempty" gorm:"type:uuid"`
+	ToMailboxID    *string   `json:"to_mailbox_id,omitempty" gorm:"type:uuid"`
+	ActorUserID    *string   `json:"actor_user_id,omitempty" gorm:"type:uuid"`
+	InputHash      string    `json:"-" gorm:"index"`
+	Payload        JSONB     `json:"payload" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (SupportConversationTriageEvent) TableName() string { return "support_conversation_triage_events" }
+
+type SupportTriageRuleConditions struct {
+	PhraseContains    []string `json:"phrase_contains,omitempty"`
+	EmailDomainEquals []string `json:"email_domain_equals,omitempty"`
+}
+
+func (c SupportTriageRuleConditions) Value() (driver.Value, error) {
+	if len(c.PhraseContains) == 0 && len(c.EmailDomainEquals) == 0 {
+		return "{}", nil
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
+}
+
+func (c *SupportTriageRuleConditions) Scan(value interface{}) error {
+	if value == nil {
+		*c = SupportTriageRuleConditions{}
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("failed to scan SupportTriageRuleConditions: %T", value)
+	}
+	if len(bytes) == 0 {
+		*c = SupportTriageRuleConditions{}
+		return nil
+	}
+	return json.Unmarshal(bytes, c)
+}
+
+type SupportTriageRule struct {
+	ID              string                      `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string                      `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Priority        int                         `json:"priority" gorm:"not null;default:0"`
+	Active          bool                        `json:"active" gorm:"not null;default:true"`
+	Name            string                      `json:"name" gorm:"not null"`
+	Channels        DocsStringArray             `json:"channels" gorm:"type:text[];not null;default:'{}'"`
+	Conditions      SupportTriageRuleConditions `json:"conditions" gorm:"type:jsonb;not null;default:'{}'"`
+	TargetMailboxID string                      `json:"target_mailbox_id" gorm:"type:uuid;not null;index"`
+	CreatedByID     string                      `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt       time.Time                   `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time                   `json:"updated_at" gorm:"autoUpdateTime"`
+
+	TargetMailboxName   *string `json:"target_mailbox_name,omitempty" gorm:"->"`
+	TargetMailboxHandle *string `json:"target_mailbox_handle,omitempty" gorm:"->"`
+}
+
+func (SupportTriageRule) TableName() string { return "support_triage_rules" }
 
 type SupportMailboxMembership struct {
 	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -256,22 +376,22 @@ type SupportMailboxMember struct {
 }
 
 type SupportEmailRoute struct {
-	ID               string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	MailboxID        *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
-	RouteKey         string     `json:"route_key" gorm:"not null;uniqueIndex"`
-	InboundAddress   string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
-	SourceAddress    *string    `json:"source_address,omitempty"`
-	ProviderType     string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
-	Active           bool       `json:"active" gorm:"not null;default:true"`
-	LastInboundAt    *time.Time `json:"last_inbound_at,omitempty"`
-	CreatedByID      string     `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID      *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	RouteKey       string     `json:"route_key" gorm:"not null;uniqueIndex"`
+	InboundAddress string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
+	SourceAddress  *string    `json:"source_address,omitempty"`
+	ProviderType   string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
+	Active         bool       `json:"active" gorm:"not null;default:true"`
+	LastInboundAt  *time.Time `json:"last_inbound_at,omitempty"`
+	CreatedByID    string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	MailboxName      *string `json:"mailbox_name,omitempty" gorm:"->"`
-	MailboxHandle    *string `json:"mailbox_handle,omitempty" gorm:"->"`
-	MailboxIcon      *string `json:"mailbox_icon,omitempty" gorm:"->"`
+	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon   *string `json:"mailbox_icon,omitempty" gorm:"->"`
 }
 
 func (SupportEmailRoute) TableName() string { return "support_email_routes" }
@@ -288,6 +408,8 @@ type CreateSupportMailboxRequest struct {
 	Handle             string   `json:"handle"`
 	Icon               string   `json:"icon"`
 	Description        *string  `json:"description"`
+	RoutingPrompt      *string  `json:"routing_prompt"`
+	TriageEligible     *bool    `json:"triage_eligible"`
 	LinkedTeamID       *string  `json:"linked_team_id"`
 	WorkspaceMemberIDs []string `json:"workspace_member_ids"`
 	AssignmentMode     string   `json:"assignment_mode"`
@@ -299,6 +421,8 @@ type UpdateSupportMailboxRequest struct {
 	Handle             *string  `json:"handle,omitempty"`
 	Icon               *string  `json:"icon,omitempty"`
 	Description        *string  `json:"description,omitempty"`
+	RoutingPrompt      *string  `json:"routing_prompt,omitempty"`
+	TriageEligible     *bool    `json:"triage_eligible,omitempty"`
 	LinkedTeamID       *string  `json:"linked_team_id,omitempty"`
 	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
 	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
@@ -311,6 +435,24 @@ type ReorderSupportMailboxesRequest struct {
 
 type MoveSupportConversationRequest struct {
 	MailboxID *string `json:"mailbox_id"`
+}
+
+type CreateSupportTriageRuleRequest struct {
+	Priority        int                         `json:"priority"`
+	Active          *bool                       `json:"active"`
+	Name            string                      `json:"name"`
+	Channels        []string                    `json:"channels"`
+	Conditions      SupportTriageRuleConditions `json:"conditions"`
+	TargetMailboxID string                      `json:"target_mailbox_id"`
+}
+
+type UpdateSupportTriageRuleRequest struct {
+	Priority        *int                         `json:"priority,omitempty"`
+	Active          *bool                        `json:"active,omitempty"`
+	Name            *string                      `json:"name,omitempty"`
+	Channels        []string                     `json:"channels,omitempty"`
+	Conditions      *SupportTriageRuleConditions `json:"conditions,omitempty"`
+	TargetMailboxID *string                      `json:"target_mailbox_id,omitempty"`
 }
 
 // CreateConversationRequest is the payload for creating a support conversation.
@@ -525,10 +667,23 @@ type SupportInboxSettings struct {
 	EscalationMessage string `json:"escalation_message"` // message shown when AI hands off to human
 
 	// Handoff Routing
-	HandoffBehavior string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
-	HandoffTeamID   *string `json:"handoff_team_id"`
+	HandoffBehavior    string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
+	HandoffTeamID      *string `json:"handoff_team_id"`
 	DefaultMailboxID   *string `json:"default_mailbox_id"`
 	AIHandoffMailboxID *string `json:"ai_handoff_mailbox_id"`
+
+	// Conversation triage
+	TriageEnabled                 bool    `json:"triage_enabled"`
+	TriageAutoMoveEnabled         bool    `json:"triage_auto_move_enabled"`
+	TriageConfidenceThreshold     float64 `json:"triage_confidence_threshold"`
+	TriageWidgetEnabled           bool    `json:"triage_widget_enabled"`
+	TriageEmailEnabled            bool    `json:"triage_email_enabled"`
+	TriageInternalEnabled         bool    `json:"triage_internal_enabled"`
+	TriageFallbackBehavior        string  `json:"triage_fallback_behavior"` // shared, default
+	TriageRerunOnMeaningChange    bool    `json:"triage_rerun_on_meaning_change"`
+	TriageDailyBudget             int     `json:"triage_daily_budget"`
+	TriageSkipSpamConversations   bool    `json:"triage_skip_spam_conversations"`
+	TriageDeduplicateFirstMessage bool    `json:"triage_deduplicate_first_message"`
 
 	// Business Hours
 	BusinessHoursEnabled  bool                        `json:"business_hours_enabled"`
@@ -571,26 +726,37 @@ type SupportInboxSettings struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
-		RequireEmailBeforeChat: true,
-		RequirePhoneAfterEmail: false,
-		WelcomeMessage:         "Hi there! How can we help you today?",
-		AutoCreateCRMContact:   true,
-		DefaultLifecycleStage:  "subscriber",
-		AutoPromoteToLead:      false,
-		AIEnabled:              false,
-		AIAgentID:              nil,
-		AIConfidenceThreshold:  0.7,
-		AIResponseMode:         "off",
-		AIMaxFollowups:         3,
-		AIAutoResolveTimeout:   24,
-		ShowTalkToHuman:        true,
-		EscalationMessage:      "Let me connect you with a team member who can help further.",
-		HandoffBehavior:        "unassigned",
-		HandoffTeamID:          nil,
-		DefaultMailboxID:       nil,
-		AIHandoffMailboxID:     nil,
-		BusinessHoursEnabled:   false,
-		BusinessHoursTimezone:  "America/New_York",
+		RequireEmailBeforeChat:        true,
+		RequirePhoneAfterEmail:        false,
+		WelcomeMessage:                "Hi there! How can we help you today?",
+		AutoCreateCRMContact:          true,
+		DefaultLifecycleStage:         "subscriber",
+		AutoPromoteToLead:             false,
+		AIEnabled:                     false,
+		AIAgentID:                     nil,
+		AIConfidenceThreshold:         0.7,
+		AIResponseMode:                "off",
+		AIMaxFollowups:                3,
+		AIAutoResolveTimeout:          24,
+		ShowTalkToHuman:               true,
+		EscalationMessage:             "Let me connect you with a team member who can help further.",
+		HandoffBehavior:               "unassigned",
+		HandoffTeamID:                 nil,
+		DefaultMailboxID:              nil,
+		AIHandoffMailboxID:            nil,
+		TriageEnabled:                 false,
+		TriageAutoMoveEnabled:         false,
+		TriageConfidenceThreshold:     0.9,
+		TriageWidgetEnabled:           true,
+		TriageEmailEnabled:            true,
+		TriageInternalEnabled:         false,
+		TriageFallbackBehavior:        "shared",
+		TriageRerunOnMeaningChange:    false,
+		TriageDailyBudget:             250,
+		TriageSkipSpamConversations:   true,
+		TriageDeduplicateFirstMessage: true,
+		BusinessHoursEnabled:          false,
+		BusinessHoursTimezone:         "America/New_York",
 		BusinessHoursSchedule: map[string]BusinessHoursDay{
 			"mon": {Start: "09:00", End: "17:00", Enabled: true},
 			"tue": {Start: "09:00", End: "17:00", Enabled: true},
@@ -623,45 +789,56 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
-	RequireEmailBeforeChat *bool                       `json:"require_email_before_chat,omitempty"`
-	RequirePhoneAfterEmail *bool                       `json:"require_phone_after_email,omitempty"`
-	WelcomeMessage         *string                     `json:"welcome_message,omitempty"`
-	AutoCreateCRMContact   *bool                       `json:"auto_create_crm_contact,omitempty"`
-	DefaultLifecycleStage  *string                     `json:"default_lifecycle_stage,omitempty"`
-	AutoPromoteToLead      *bool                       `json:"auto_promote_to_lead,omitempty"`
-	AIEnabled              *bool                       `json:"ai_enabled,omitempty"`
-	AIAgentID              *string                     `json:"ai_agent_id,omitempty"`
-	AIConfidenceThreshold  *float64                    `json:"ai_confidence_threshold,omitempty"`
-	AIResponseMode         *string                     `json:"ai_response_mode,omitempty"`
-	AIMaxFollowups         *int                        `json:"ai_max_followups,omitempty"`
-	AIAutoResolveTimeout   *int                        `json:"ai_auto_resolve_timeout,omitempty"`
-	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
-	EscalationMessage      *string                     `json:"escalation_message,omitempty"`
-	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
-	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
-	DefaultMailboxID       *string                     `json:"default_mailbox_id,omitempty"`
-	AIHandoffMailboxID     *string                     `json:"ai_handoff_mailbox_id,omitempty"`
-	BusinessHoursEnabled   *bool                       `json:"business_hours_enabled,omitempty"`
-	BusinessHoursTimezone  *string                     `json:"business_hours_timezone,omitempty"`
-	BusinessHoursSchedule  map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
-	OutsideHoursMessage    *string                     `json:"outside_hours_message,omitempty"`
-	EmailFallbackEnabled   *bool                       `json:"email_fallback_enabled,omitempty"`
-	EmailFallbackDelaySecs *int                        `json:"email_fallback_delay_secs,omitempty"`
-	EmailFallbackFromName  *string                     `json:"email_fallback_from_name,omitempty"`
-	WidgetName             *string                     `json:"widget_name,omitempty"`
-	WidgetAvatarURL        *string                     `json:"widget_avatar_url,omitempty"`
-	WidgetHelpSpaceIDs     []string                    `json:"widget_help_space_ids,omitempty"`
-	BrandColor             *string                     `json:"brand_color,omitempty"`
-	ShowBranding           *bool                       `json:"show_branding,omitempty"`
-	ColorScheme            *string                     `json:"color_scheme,omitempty"`
-	ButtonColor            *string                     `json:"button_color,omitempty"`
-	ButtonIconColor        *string                     `json:"button_icon_color,omitempty"`
-	LogoURL                *string                     `json:"logo_url,omitempty"`
-	LauncherPosition       *string                     `json:"launcher_position,omitempty"`
-	LauncherIcon           *string                     `json:"launcher_icon,omitempty"`
-	CSATEnabled            *bool                       `json:"csat_enabled,omitempty"`
-	FileUploadsEnabled     *bool                       `json:"file_uploads_enabled,omitempty"`
-	ForceVisitorIdentity   *bool                       `json:"force_visitor_identity,omitempty"`
+	RequireEmailBeforeChat        *bool                       `json:"require_email_before_chat,omitempty"`
+	RequirePhoneAfterEmail        *bool                       `json:"require_phone_after_email,omitempty"`
+	WelcomeMessage                *string                     `json:"welcome_message,omitempty"`
+	AutoCreateCRMContact          *bool                       `json:"auto_create_crm_contact,omitempty"`
+	DefaultLifecycleStage         *string                     `json:"default_lifecycle_stage,omitempty"`
+	AutoPromoteToLead             *bool                       `json:"auto_promote_to_lead,omitempty"`
+	AIEnabled                     *bool                       `json:"ai_enabled,omitempty"`
+	AIAgentID                     *string                     `json:"ai_agent_id,omitempty"`
+	AIConfidenceThreshold         *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIResponseMode                *string                     `json:"ai_response_mode,omitempty"`
+	AIMaxFollowups                *int                        `json:"ai_max_followups,omitempty"`
+	AIAutoResolveTimeout          *int                        `json:"ai_auto_resolve_timeout,omitempty"`
+	ShowTalkToHuman               *bool                       `json:"show_talk_to_human,omitempty"`
+	EscalationMessage             *string                     `json:"escalation_message,omitempty"`
+	HandoffBehavior               *string                     `json:"handoff_behavior,omitempty"`
+	HandoffTeamID                 *string                     `json:"handoff_team_id,omitempty"`
+	DefaultMailboxID              *string                     `json:"default_mailbox_id,omitempty"`
+	AIHandoffMailboxID            *string                     `json:"ai_handoff_mailbox_id,omitempty"`
+	TriageEnabled                 *bool                       `json:"triage_enabled,omitempty"`
+	TriageAutoMoveEnabled         *bool                       `json:"triage_auto_move_enabled,omitempty"`
+	TriageConfidenceThreshold     *float64                    `json:"triage_confidence_threshold,omitempty"`
+	TriageWidgetEnabled           *bool                       `json:"triage_widget_enabled,omitempty"`
+	TriageEmailEnabled            *bool                       `json:"triage_email_enabled,omitempty"`
+	TriageInternalEnabled         *bool                       `json:"triage_internal_enabled,omitempty"`
+	TriageFallbackBehavior        *string                     `json:"triage_fallback_behavior,omitempty"`
+	TriageRerunOnMeaningChange    *bool                       `json:"triage_rerun_on_meaning_change,omitempty"`
+	TriageDailyBudget             *int                        `json:"triage_daily_budget,omitempty"`
+	TriageSkipSpamConversations   *bool                       `json:"triage_skip_spam_conversations,omitempty"`
+	TriageDeduplicateFirstMessage *bool                       `json:"triage_deduplicate_first_message,omitempty"`
+	BusinessHoursEnabled          *bool                       `json:"business_hours_enabled,omitempty"`
+	BusinessHoursTimezone         *string                     `json:"business_hours_timezone,omitempty"`
+	BusinessHoursSchedule         map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
+	OutsideHoursMessage           *string                     `json:"outside_hours_message,omitempty"`
+	EmailFallbackEnabled          *bool                       `json:"email_fallback_enabled,omitempty"`
+	EmailFallbackDelaySecs        *int                        `json:"email_fallback_delay_secs,omitempty"`
+	EmailFallbackFromName         *string                     `json:"email_fallback_from_name,omitempty"`
+	WidgetName                    *string                     `json:"widget_name,omitempty"`
+	WidgetAvatarURL               *string                     `json:"widget_avatar_url,omitempty"`
+	WidgetHelpSpaceIDs            []string                    `json:"widget_help_space_ids,omitempty"`
+	BrandColor                    *string                     `json:"brand_color,omitempty"`
+	ShowBranding                  *bool                       `json:"show_branding,omitempty"`
+	ColorScheme                   *string                     `json:"color_scheme,omitempty"`
+	ButtonColor                   *string                     `json:"button_color,omitempty"`
+	ButtonIconColor               *string                     `json:"button_icon_color,omitempty"`
+	LogoURL                       *string                     `json:"logo_url,omitempty"`
+	LauncherPosition              *string                     `json:"launcher_position,omitempty"`
+	LauncherIcon                  *string                     `json:"launcher_icon,omitempty"`
+	CSATEnabled                   *bool                       `json:"csat_enabled,omitempty"`
+	FileUploadsEnabled            *bool                       `json:"file_uploads_enabled,omitempty"`
+	ForceVisitorIdentity          *bool                       `json:"force_visitor_identity,omitempty"`
 }
 
 // SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.

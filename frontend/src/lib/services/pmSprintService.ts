@@ -1,6 +1,8 @@
 import { api } from '../api';
 import type {
   CreateSprintRequest,
+  SprintPlanningFilters,
+  SprintPlanningWorkspace,
   SprintWithStats,
   Story,
   UpdateSprintRequest,
@@ -22,6 +24,12 @@ const filterQuery = (filters: Record<string, string | boolean | undefined>) => {
   return str ? `&${str}` : '';
 };
 
+const planningFilterQuery = (filters: SprintPlanningFilters) =>
+  filterQuery({
+    team_id: filters.team_id,
+    include_completed: filters.include_completed,
+  });
+
 export const pmSprintService = {
   list: (
     workspaceId: string,
@@ -31,6 +39,10 @@ export const pmSprintService = {
       archived?: boolean;
     }
   ) => api.get<SprintWithStats[]>(`/pm/sprints${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  planningWorkspace: (
+    workspaceId: string,
+    filters?: SprintPlanningFilters,
+  ) => api.get<SprintPlanningWorkspace>(`/pm/sprints/planning${qs(workspaceId)}${planningFilterQuery(filters ?? {})}`),
   create: (payload: CreateSprintRequest) =>
     api.post<SprintWithStats>(`/pm/sprints${qs(payload.workspace_id)}`, {
       ...payload,
