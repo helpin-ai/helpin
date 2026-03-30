@@ -258,8 +258,10 @@ type SupportAIService struct {
 	agentRepo              *repository.AgentRepository
 	handoffRepo            *repository.AgentHandoffRepository
 	installationRepo       *repository.SupportInboxInstallationRepository
+	mailboxRepo            *repository.SupportMailboxRepository
 	workspaceRepo          *repository.WorkspaceRepository
 	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
+	linkPreviewService     SupportMessageLinkPreviewer
 	wsPublisher            *websocket.Publisher
 	presence               websocket.PresenceProvider
 	js                     nats.JetStreamContext
@@ -328,6 +330,23 @@ func (s *SupportAIService) SetSupportRoutingDependencies(
 	return s
 }
 
+func (s *SupportAIService) SetMailboxRepository(mailboxRepo *repository.SupportMailboxRepository) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.mailboxRepo = mailboxRepo
+	return s
+}
+
+// SetLinkPreviewService injects the support message link preview enricher.
+func (s *SupportAIService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.linkPreviewService = linkPreviewService
+	return s
+}
+
 // PublishAIRequest publishes an AI processing event to JetStream.
 func (s *SupportAIService) PublishAIRequest(ctx context.Context, workspaceID, conversationID, messageID, content string) error {
 	if s == nil || s.js == nil {
@@ -372,7 +391,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 2. Check conversation state
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conv == nil {
 		return fmt.Errorf("get conversation: %w", err)
 	}
@@ -678,6 +697,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			MessageType:       "reply",
 			Metadata:          metadataStr,
 		}
+		if s.linkPreviewService != nil {
+			s.linkPreviewService.EnrichMessage(ctx, aiMsg)
+		}
 		if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 			return fmt.Errorf("create AI message: %w", err)
 		}
@@ -724,7 +746,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
 	}
@@ -762,12 +784,14 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 	selection, selectErr := selectSupportConversationRecipient(
 		ctx,
 		s.workspaceRepo,
+		s.mailboxRepo,
 		s.installationRepo,
 		nil,
 		s.presence,
 		s.statusOverrideRepo,
 		supportRecipientSelectorInput{
 			WorkspaceID:         workspaceID,
+			MailboxID:           conv.MailboxID,
 			OwnerUserID:         conv.OpenedByUserID,
 			HandoffBehavior:     settings.HandoffBehavior,
 			HandoffTeamID:       settings.HandoffTeamID,
@@ -783,10 +807,25 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 	if selection != nil {
 		flowState = model.SupportConversationFlowStateAssignedToHuman
 	}
+	handoffMailboxID := conv.MailboxID
+	if s.mailboxRepo != nil {
+		if settings.AIHandoffMailboxID != nil && strings.TrimSpace(*settings.AIHandoffMailboxID) != "" {
+			trimmed := strings.TrimSpace(*settings.AIHandoffMailboxID)
+			if mailbox, mailboxErr := s.mailboxRepo.GetByID(ctx, workspaceID, trimmed); mailboxErr == nil && mailbox != nil && mailbox.Active {
+				handoffMailboxID = &trimmed
+			}
+		} else if settings.DefaultMailboxID != nil && strings.TrimSpace(*settings.DefaultMailboxID) != "" {
+			trimmed := strings.TrimSpace(*settings.DefaultMailboxID)
+			if mailbox, mailboxErr := s.mailboxRepo.GetByID(ctx, workspaceID, trimmed); mailboxErr == nil && mailbox != nil && mailbox.Active {
+				handoffMailboxID = &trimmed
+			}
+		}
+	}
 	fields := map[string]any{
 		"ai_state":          "escalated",
 		"ai_escalated_at":   now,
 		"assigned_agent_id": nil,
+		"mailbox_id":        handoffMailboxID,
 		"flow_state":        flowState,
 	}
 	if selection != nil {
@@ -977,7 +1016,7 @@ func (s *SupportAIService) resolvePreviewHistory(
 	if req.ConversationID != nil && strings.TrimSpace(*req.ConversationID) != "" {
 		conversationID := strings.TrimSpace(*req.ConversationID)
 		if s.conversationRepo != nil {
-			conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+			conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 			if err != nil {
 				return nil, "", fmt.Errorf("get conversation: %w", err)
 			}
@@ -1251,7 +1290,7 @@ func (s *SupportAIService) loadRewriteHistory(ctx context.Context, workspaceID, 
 		return nil, nil
 	}
 	if s.conversationRepo != nil {
-		conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+		conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 		if err != nil {
 			return nil, fmt.Errorf("get conversation: %w", err)
 		}
@@ -1496,6 +1535,9 @@ func (s *SupportAIService) publishAIReply(
 		Content:           stripPII(strings.TrimSpace(content)),
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 	}
 	if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 		return nil, fmt.Errorf("create AI message: %w", err)

@@ -276,9 +276,9 @@ func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
-	// Enrich with help center slug if available.
-	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
-		doc.HCSlug = art.Slug
+	if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -296,6 +296,10 @@ func (h *DocsHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.queueEmbeddingSync(r.Context(), docID)
+	if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -406,6 +410,24 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, content)
+}
+
+// UpdateArticleSlug changes a help center article's slug and creates a redirect.
+func (h *DocsHandler) UpdateArticleSlug(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	docID := chi.URLParam(r, "docId")
+	var body struct {
+		Slug string `json:"slug"`
+	}
+	if err := decodeJSON(r, &body); err != nil || body.Slug == "" {
+		writeError(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+	if err := h.helpcenterSvc.UpdateArticleSlug(r.Context(), wsID, docID, body.Slug); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "slug updated"})
 }
 
 // ReorderSpaces reorders spaces within a section.
@@ -536,7 +558,7 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	content, err := h.contentSvc.Save(r.Context(), docID, req.Content)
+	content, err := h.contentSvc.Save(r.Context(), docID, req.Content, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -580,7 +602,7 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 	envelope := map[string]string{"_markdown_source": req.Markdown}
 	raw, _ := json.Marshal(envelope)
 
-	content, err := h.contentSvc.Save(r.Context(), docID, raw)
+	content, err := h.contentSvc.Save(r.Context(), docID, raw, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -691,8 +713,11 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Re-fetch to include updated helpcenter article data.
 	doc, _ = h.documentSvc.Get(r.Context(), docID)
-	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
-		doc.HCSlug = art.Slug
+	if doc != nil {
+		if err := h.helpcenterSvc.EnrichDocumentPublishState(r.Context(), doc); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -1010,6 +1035,58 @@ func (h *DocsHandler) resolveSubdomain(w http.ResponseWriter, r *http.Request) *
 	return cfg
 }
 
+func publicDefaultLocale(cfg *model.DocsHelpcenterConfig) string {
+	if cfg != nil && cfg.DefaultLocale != "" {
+		return cfg.DefaultLocale
+	}
+	return "en"
+}
+
+func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, enabled := range cfg.EnabledLocales {
+		if enabled == locale {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *DocsHandler) publicLocaleRedirectTarget(r *http.Request, cfg *model.DocsHelpcenterConfig) string {
+	subdomain := chi.URLParam(r, "subdomain")
+	base := "/api/hc/" + subdomain
+	rest := strings.TrimPrefix(r.URL.Path, base)
+
+	currentLocale := chi.URLParam(r, "locale")
+	if currentLocale != "" {
+		if rest == "/"+currentLocale {
+			rest = ""
+		} else if strings.HasPrefix(rest, "/"+currentLocale+"/") {
+			rest = strings.TrimPrefix(rest, "/"+currentLocale)
+		}
+	}
+
+	target := base + "/" + publicDefaultLocale(cfg) + rest
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	return target
+}
+
+func (h *DocsHandler) resolveRequestedPublicLocale(w http.ResponseWriter, r *http.Request, cfg *model.DocsHelpcenterConfig) (string, bool) {
+	requested := strings.TrimSpace(strings.ToLower(chi.URLParam(r, "locale")))
+	if requested == "" {
+		return publicDefaultLocale(cfg), true
+	}
+	if publicLocaleEnabled(cfg, requested) {
+		return requested, true
+	}
+	http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
+	return "", false
+}
+
 // VerifyDomain checks if a domain is registered for on_demand_tls (Caddy).
 func (h *DocsHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
 	domain := r.URL.Query().Get("domain")
@@ -1044,7 +1121,15 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	spaces, err := h.helpcenterSvc.ListPublicSpaces(r.Context(), cfg.WorkspaceID)
+	if chi.URLParam(r, "locale") == "" {
+		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
+		return
+	}
+	locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+	if !ok {
+		return
+	}
+	spaces, err := h.helpcenterSvc.ListPublicSpaces(r.Context(), cfg.WorkspaceID, locale)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1057,8 +1142,16 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 	if cfg == nil {
 		return
 	}
+	if chi.URLParam(r, "locale") == "" {
+		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
+		return
+	}
+	locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+	if !ok {
+		return
+	}
 	spaceSlug := chi.URLParam(r, "spaceSlug")
-	nav, err := h.helpcenterSvc.GetSpaceNavigation(r.Context(), cfg.WorkspaceID, spaceSlug)
+	nav, err := h.helpcenterSvc.GetSpaceNavigation(r.Context(), cfg.WorkspaceID, locale, spaceSlug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -1071,10 +1164,23 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 	if cfg == nil {
 		return
 	}
+	locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+	if !ok {
+		return
+	}
 	spaceSlug := chi.URLParam(r, "spaceSlug")
+	collectionSlug := chi.URLParam(r, "collectionSlug")
 	articleSlug := chi.URLParam(r, "articleSlug")
 
-	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, spaceSlug, articleSlug)
+	var (
+		article *model.PublicArticleResponse
+		err     error
+	)
+	if spaceSlug == "" {
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug, articleSlug)
+	} else {
+		article, err = h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, "article not found")
 		return
@@ -1086,6 +1192,44 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
+		return
+	}
+	if spaceSlug := chi.URLParam(r, "spaceSlug"); spaceSlug != "" {
+		locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+		if !ok {
+			return
+		}
+		collectionSlug := chi.URLParam(r, "collectionSlug")
+		coll, articles, err := h.helpcenterSvc.GetPublicLocalizedCollection(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if coll == nil {
+			writeError(w, http.StatusNotFound, "collection not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"collection": coll,
+			"articles":   articles,
+		})
+		return
+	}
+	if locale, ok := h.resolveRequestedPublicLocale(w, r, cfg); ok {
+		collectionSlug := chi.URLParam(r, "collectionSlug")
+		coll, articles, err := h.helpcenterSvc.GetPublicLocalizedCollectionByCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if coll == nil {
+			writeError(w, http.StatusNotFound, "collection not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"collection": coll,
+			"articles":   articles,
+		})
 		return
 	}
 	collectionSlug := chi.URLParam(r, "collectionSlug")
@@ -1145,10 +1289,7 @@ func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "no redirect found")
 		return
 	}
-	target := "/" + redirect.TargetCollectionSlug
-	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" {
-		target += "/" + *redirect.TargetArticleSlug
-	}
+	target := buildDocsRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"redirect": true,
 		"target":   target,
@@ -1161,6 +1302,14 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	if cfg == nil {
 		return
 	}
+	if chi.URLParam(r, "locale") == "" {
+		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
+		return
+	}
+	locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+	if !ok {
+		return
+	}
 	query := r.URL.Query().Get("q")
 	spaceSlug := r.URL.Query().Get("space")
 	limit := 50
@@ -1170,16 +1319,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Resolve space slug to ID if provided.
-	spaceID := ""
-	if spaceSlug != "" {
-		space, err := h.spaceSvc.GetBySlug(r.Context(), cfg.WorkspaceID, spaceSlug)
-		if err == nil && space != nil {
-			spaceID = space.ID
-		}
-	}
-
-	results, err := h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, query, spaceID, limit)
+	results, err := h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1192,11 +1332,24 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 	if cfg == nil {
 		return
 	}
+	locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+	if !ok {
+		return
+	}
 	articleSlug := chi.URLParam(r, "articleSlug")
 	spaceSlug := chi.URLParam(r, "spaceSlug")
+	collectionSlug := chi.URLParam(r, "collectionSlug")
 
 	// Resolve article.
-	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, spaceSlug, articleSlug)
+	var (
+		article *model.PublicArticleResponse
+		err     error
+	)
+	if spaceSlug == "" {
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug, articleSlug)
+	} else {
+		article, err = h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)
+	}
 	if err != nil || article == nil {
 		writeError(w, http.StatusNotFound, "article not found")
 		return
@@ -1207,7 +1360,7 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.helpcenterSvc.SubmitFeedback(r.Context(), article.ID, req); err != nil {
+	if err := h.helpcenterSvc.SubmitFeedbackForLocale(r.Context(), article.ID, article.Locale, req); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

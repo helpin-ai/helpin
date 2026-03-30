@@ -222,6 +222,72 @@ func (r *DocsHelpcenterTranslationRepository) SetArticleTranslationStatus(ctx co
 	return nil
 }
 
+func (r *DocsHelpcenterTranslationRepository) SetSpaceTranslationSlug(ctx context.Context, spaceID, locale string, slug *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterSpaceTranslation{}).
+		Where("space_id = ? AND locale = ?", spaceID, locale).
+		Update("slug", slug).Error; err != nil {
+		return fmt.Errorf("set space translation slug: %w", err)
+	}
+	return nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) SetCollectionTranslationSlug(ctx context.Context, collectionID, locale string, slug *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterCollectionTranslation{}).
+		Where("collection_id = ? AND locale = ?", collectionID, locale).
+		Update("slug", slug).Error; err != nil {
+		return fmt.Errorf("set collection translation slug: %w", err)
+	}
+	return nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) SetArticleTranslationSlug(ctx context.Context, documentID, locale string, slug *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticleTranslation{}).
+		Where("document_id = ? AND locale = ?", documentID, locale).
+		Update("slug", slug).Error; err != nil {
+		return fmt.Errorf("set article translation slug: %w", err)
+	}
+	return nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) SpaceTranslationSlugExists(ctx context.Context, workspaceID, locale, slug, excludeSpaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterSpaceTranslation{}).
+		Where("workspace_id = ? AND locale = ? AND slug = ?", workspaceID, locale, slug).
+		Where("space_id <> ?", excludeSpaceID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check space translation slug exists: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) CollectionTranslationSlugExists(ctx context.Context, spaceID, locale, slug, excludeCollectionID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterCollectionTranslation{}).
+		Where("space_id = ? AND locale = ? AND slug = ?", spaceID, locale, slug).
+		Where("collection_id <> ?", excludeCollectionID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check collection translation slug exists: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) ArticleTranslationSlugExists(ctx context.Context, spaceID, locale, slug, excludeDocumentID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticleTranslation{}).
+		Where("space_id = ? AND locale = ? AND slug = ?", spaceID, locale, slug).
+		Where("document_id <> ?", excludeDocumentID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check article translation slug exists: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *DocsHelpcenterTranslationRepository) SetSpaceTranslationStatus(ctx context.Context, spaceID, locale, status string, publishedAt *time.Time) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.DocsHelpcenterSpaceTranslation{}).
@@ -279,7 +345,7 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 			WorkspaceID:     space.WorkspaceID,
 			Locale:          defaultLocale,
 			Name:            space.Name,
-			Slug:            space.Slug,
+			Slug:            stringPointerOrNil(space.Slug),
 			Status:          model.DocsHelpcenterTranslationStatusPublished,
 			SourceUpdatedAt: &space.UpdatedAt,
 			SourceSynced:    true,
@@ -306,7 +372,7 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 			Locale:          defaultLocale,
 			Name:            collection.Name,
 			Description:     collection.Description,
-			Slug:            collection.Slug,
+			Slug:            stringPointerOrNil(collection.Slug),
 			Status:          model.DocsHelpcenterTranslationStatusPublished,
 			SourceUpdatedAt: &collection.UpdatedAt,
 			SourceSynced:    true,
@@ -379,7 +445,7 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 			CollectionID:    article.CollectionID,
 			Locale:          defaultLocale,
 			Title:           article.Title,
-			Slug:            article.Slug,
+			Slug:            stringPointerOrNil(article.Slug),
 			Excerpt:         article.Excerpt,
 			Content:         article.Content,
 			ContentText:     article.ContentText,
@@ -398,4 +464,12 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 	}
 
 	return nil
+}
+
+func stringPointerOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+	v := value
+	return &v
 }

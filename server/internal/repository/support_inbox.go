@@ -220,9 +220,41 @@ func (r *SupportInboxSessionRepository) GetByToken(ctx context.Context, token st
 
 // Create creates a new session.
 func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *model.SupportWidgetSession) error {
-	if err := r.db.WithContext(ctx).Create(session).Error; err != nil {
+	values := map[string]interface{}{
+		"workspace_id":    session.WorkspaceID,
+		"conversation_id": session.ConversationID,
+		"session_token":   session.SessionToken,
+		"anonymous_id":    session.AnonymousID,
+		"is_anonymous":    session.IsAnonymous,
+		"customer_name":   session.CustomerName,
+		"customer_email":  session.CustomerEmail,
+		"customer_phone":  session.CustomerPhone,
+		"user_agent":      session.UserAgent,
+		"last_page_url":   session.LastPageURL,
+		"timezone":        session.Timezone,
+		"locale":          session.Locale,
+		"revoked_at":      session.RevokedAt,
+		"expires_at":      session.ExpiresAt,
+	}
+	if session.ID != "" {
+		values["id"] = session.ID
+	}
+	if !session.CreatedAt.IsZero() {
+		values["created_at"] = session.CreatedAt
+	}
+
+	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).Create(values).Error; err != nil {
 		return fmt.Errorf("create widget session: %w", err)
 	}
+
+	created, err := r.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		return err
+	}
+	if created == nil {
+		return fmt.Errorf("create widget session: session not found after insert")
+	}
+	*session = *created
 	return nil
 }
 
@@ -286,6 +318,10 @@ func NewSupportConversationRepository(db *gorm.DB) *SupportConversationRepositor
 	return &SupportConversationRepository{db: db}
 }
 
+func isElevatedSupportRole(role string) bool {
+	return role == model.RoleOwner || role == model.RoleAdmin
+}
+
 func (r *SupportConversationRepository) epochExpr() string {
 	if r.db != nil && r.db.Dialector.Name() == "sqlite" {
 		return "'1970-01-01 00:00:00'"
@@ -315,8 +351,10 @@ func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *g
 }
 
 // List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, aiState ...string) ([]model.SupportConversation, int64, error) {
-	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
+func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, aiState ...string) ([]model.SupportConversation, int64, error) {
+	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", workspaceID)
+	base = r.applyMailboxAccess(base, workspaceMemberID, role)
+	base = r.applyMailboxScope(base, mailboxID)
 
 	if status != "" {
 		base = base.Where("status = ?", status)
@@ -349,23 +387,26 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	offset := (page - 1) * perPage
 
 	// Fresh query for fetch — Count() taints the SELECT clause
-	fetch := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", workspaceID)
+	fetch = r.applyMailboxAccess(fetch, workspaceMemberID, role)
+	fetch = r.applyMailboxScope(fetch, mailboxID)
 	if status != "" {
-		fetch = fetch.Where("status = ?", status)
+		fetch = fetch.Where("support_conversations.status = ?", status)
 	}
 	if priority != "" {
-		fetch = fetch.Where("priority = ?", priority)
+		fetch = fetch.Where("support_conversations.priority = ?", priority)
 	}
 	if len(aiState) > 0 && aiState[0] != "" {
 		if aiState[0] == "any" {
-			fetch = fetch.Where("ai_state IS NOT NULL")
+			fetch = fetch.Where("support_conversations.ai_state IS NOT NULL")
 		} else {
-			fetch = fetch.Where("ai_state = ?", aiState[0])
+			fetch = fetch.Where("support_conversations.ai_state = ?", aiState[0])
 		}
 	}
 
 	var conversations []model.SupportConversation
 	if err := fetch.
+		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Select(fmt.Sprintf(`support_conversations.*, (
 			SELECT CASE WHEN m.is_internal THEN 'Note: ' || %s ELSE %s END
 			FROM support_messages m
@@ -379,17 +420,25 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
-		) AS unread_count`, r.textPrefixExpr("m.content", 100), r.textPrefixExpr("m.content", 100), r.epochExpr())).
-		Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
+		) AS unread_count,
+		sm.name AS mailbox_name,
+		sm.handle AS mailbox_handle,
+		sm.icon AS mailbox_icon`, r.textPrefixExpr("m.content", 100), r.textPrefixExpr("m.content", 100), r.epochExpr())).
+		Order("support_conversations.updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil
 }
 
 // GetByID returns a single conversation.
-func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
+func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID, id, workspaceMemberID, role string) (*model.SupportConversation, error) {
 	var conversation model.SupportConversation
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&conversation).Error; err != nil {
+	query := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
+	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	if err := query.Select("support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon").First(&conversation).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -458,14 +507,19 @@ func (r *SupportConversationRepository) ListConversationIDsWithMentions(ctx cont
 }
 
 // ListByIDs returns conversations by ID for a workspace.
-func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportConversation, error) {
+func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string, workspaceMemberID, role string) ([]model.SupportConversation, error) {
 	if len(ids) == 0 {
 		return []model.SupportConversation{}, nil
 	}
 
 	var conversations []model.SupportConversation
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+	query := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Where("support_conversations.workspace_id = ? AND support_conversations.id IN ?", workspaceID, ids)
+	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	if err := query.
+		Select("support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon").
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by ids: %w", err)
@@ -609,10 +663,10 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 	return nil
 }
 
-// GetUnreadStats returns aggregate unread conversation counts for a workspace.
-func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID string) (model.UnreadStats, error) {
+// GetUnreadStats returns aggregate unread conversation counts for an accessible inbox scope.
+func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
-	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
+	baseQuery := `
 		SELECT
 			COUNT(*) FILTER (
 				WHERE (
@@ -656,11 +710,62 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status != 'closed'
-	`, r.epochExpr(), r.epochExpr(), r.epochExpr()), userID, workspaceID).Scan(&stats).Error
+	`
+
+	args := []any{userID, workspaceID}
+	if mailboxID != nil {
+		if *mailboxID == "" {
+			baseQuery += " AND sc.mailbox_id IS NULL"
+		} else {
+			baseQuery += " AND sc.mailbox_id = ?"
+			args = append(args, *mailboxID)
+		}
+	}
+	if !isElevatedSupportRole(role) {
+		baseQuery += ` AND (
+			sc.mailbox_id IS NULL
+			OR sc.mailbox_id IN (
+				SELECT sm.id
+				FROM support_mailboxes sm
+				WHERE sm.active = true
+				  AND ` + supportMailboxAccessCondition("sm") + `
+			)
+		)`
+		args = append(args, workspaceMemberID, workspaceMemberID)
+	}
+
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}
 	return stats, nil
+}
+
+func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, mailboxID *string) *gorm.DB {
+	if mailboxID == nil {
+		return query
+	}
+	if strings.TrimSpace(*mailboxID) == "" {
+		return query.Where("support_conversations.mailbox_id IS NULL")
+	}
+	return query.Where("support_conversations.mailbox_id = ?", strings.TrimSpace(*mailboxID))
+}
+
+func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, workspaceMemberID, role string) *gorm.DB {
+	if isElevatedSupportRole(role) {
+		return query
+	}
+	return query.Where(`
+		(
+			support_conversations.mailbox_id IS NULL
+			OR support_conversations.mailbox_id IN (
+				SELECT sm.id
+				FROM support_mailboxes sm
+				WHERE sm.active = true
+				  AND `+supportMailboxAccessCondition("sm")+`
+			)
+		)
+	`, workspaceMemberID, workspaceMemberID)
 }
 
 // UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor

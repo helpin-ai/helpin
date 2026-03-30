@@ -3,6 +3,7 @@ import type { NavItem } from './types'
 export interface ArticlePagerLink {
   title: string
   slug: string
+  collectionSlug: string
   collectionName: string
 }
 
@@ -16,6 +17,7 @@ export function getArticlePager(
       flat.push({
         title: article.title,
         slug: article.slug,
+        collectionSlug: collection.slug,
         collectionName: collection.name,
       })
     }

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
@@ -13,11 +13,20 @@ import { Camera, Loader2, Mail, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
+import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
+import { queryClient } from '@/lib/queryClient';
+import { queryKeys } from '@/lib/queryKeys';
+
+type PendingAvatarFile = {
+  file: File;
+  previewUrl: string;
+};
 
 export default function Profile() {
   useTitle('Profile');
   const { user, updateUser } = useAuthStore();
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [saving, setSaving] = useState(false);
 
@@ -26,8 +35,18 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [pendingAvatar, setPendingAvatar] = useState<PendingAvatarFile | null>(null);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
   const initials = getInitials(user?.full_name || user?.email);
+
+  useEffect(() => {
+    return () => {
+      if (pendingAvatar?.previewUrl) {
+        URL.revokeObjectURL(pendingAvatar.previewUrl);
+      }
+    };
+  }, [pendingAvatar]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -41,27 +60,57 @@ export default function Profile() {
     setSaving(false);
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const resetPendingAvatar = () => {
+    if (pendingAvatar?.previewUrl) {
+      URL.revokeObjectURL(pendingAvatar.previewUrl);
+    }
+    setPendingAvatar(null);
+    setAvatarDialogOpen(false);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = '';
+    }
+  };
+
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
+      e.target.value = '';
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
       toast.error('Image must be under 2MB');
+      e.target.value = '';
       return;
     }
+
+    if (pendingAvatar?.previewUrl) {
+      URL.revokeObjectURL(pendingAvatar.previewUrl);
+    }
+
+    setPendingAvatar({
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+    setAvatarDialogOpen(true);
+  };
+
+  const handleAvatarSave = async (file: File) => {
     setUploadingAvatar(true);
     const { data, error } = await authService.uploadAvatar(file);
     setUploadingAvatar(false);
-    e.target.value = '';
     if (error || !data) {
       toast.error(error ?? 'Upload failed');
       return;
     }
     toast.success('Avatar updated');
     useAuthStore.setState({ user: data });
+    if (currentWorkspace?.id) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.members(currentWorkspace.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(currentWorkspace.id) });
+    }
+    resetPendingAvatar();
   };
 
   const handleRemoveAvatar = async () => {
@@ -101,6 +150,22 @@ export default function Profile() {
 
   return (
     <div className="space-y-4">
+      <AvatarCropDialog
+        open={avatarDialogOpen}
+        imageUrl={pendingAvatar?.previewUrl ?? null}
+        fileName={pendingAvatar?.file.name ?? 'avatar.png'}
+        onOpenChange={(open) => {
+          if (uploadingAvatar) return;
+          if (!open) {
+            resetPendingAvatar();
+            return;
+          }
+          setAvatarDialogOpen(open);
+        }}
+        onSave={handleAvatarSave}
+        saving={uploadingAvatar}
+      />
+
       <h2 className="text-xl font-semibold">Profile</h2>
 
       <Card>
@@ -118,10 +183,11 @@ export default function Profile() {
                   <Camera className="h-5 w-5 text-white" />
                 )}
                 <input
+                  ref={avatarInputRef}
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={handleAvatarUpload}
+                  onChange={handleAvatarFileSelect}
                   disabled={uploadingAvatar}
                 />
               </label>
@@ -132,6 +198,9 @@ export default function Profile() {
                 <Mail className="h-3 w-3" />
                 {user?.email}
               </CardDescription>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Upload a square-friendly image, then drag and zoom before saving.
+              </p>
               {user?.avatar_url && (
                 <Button
                   variant="ghost"

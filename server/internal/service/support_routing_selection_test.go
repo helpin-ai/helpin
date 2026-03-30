@@ -60,10 +60,11 @@ func TestCreateConversationMessage_CustomerReplyFallsBackToWorkspaceRecipient(t 
 		nil,
 		emailer,
 		"",
-	).SetSupportRoutingDependencies(installRepo, nil, repository.NewSupportTeammateStatusOverrideRepository(db))
+	).SetSupportRoutingDependencies(installRepo, nil, nil, repository.NewSupportTeammateStatusOverrideRepository(db))
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),
@@ -159,7 +160,7 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 		t.Fatalf("EscalateToHuman: %v", err)
 	}
 
-	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID)
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}

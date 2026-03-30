@@ -1,11 +1,10 @@
-import { useMemo, useCallback, memo } from 'react';
+import { useMemo, useCallback, memo, useEffect } from 'react';
 import { MessageSquare, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useConversations } from '@/hooks/queries/useSupport';
+import { useConversations, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
-import { supportService } from '@/lib/services/supportService';
 import { ConversationRow } from './ConversationRow';
 import { filterSupportConversations } from '@/lib/supportInboxFilters';
 
@@ -35,30 +34,39 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     searchQuery, setSearchQuery,
     selectedConversationId, selectConversation,
     navFilter,
+    selectedMailboxId,
   } = useSupportInboxStore();
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
+  const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
+  const markConversationRead = useMarkConversationRead(workspaceId);
 
   const handleSelect = useCallback((id: string) => {
     selectConversation(id);
-    if (wsSend) {
-      wsSend('support:conversation:read', { conversation_id: id });
-    } else {
-      supportService.markConversationRead(workspaceId, id).catch(() => {});
-    }
-  }, [selectConversation, wsSend, workspaceId]);
+    markConversationRead.mutate(id);
+  }, [markConversationRead, selectConversation]);
 
   const filters = useMemo(() => {
-    const f: Record<string, string> = {};
+    const f: Record<string, string> = { mailbox_id: selectedMailboxId };
     if (statusFilter !== 'all') f.status = statusFilter;
     if (navFilter === 'mentions') f.filter = 'mentions';
+    if (navFilter === 'ai_pending') f.ai_state = 'pending';
+    if (navFilter === 'ai_resolved') f.ai_state = 'resolved';
+    if (navFilter === 'ai_escalated') f.ai_state = 'escalated';
     return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, navFilter]);
+  }, [statusFilter, navFilter, selectedMailboxId]);
   const { data: response, isLoading, error } = useConversations(workspaceId, filters);
   const conversations = response?.data ?? [];
 
   const filteredConversations = useMemo(() => {
     return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
   }, [conversations, navFilter, userId, searchQuery]);
+
+  useEffect(() => {
+    if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
+    wsSend('support:presence:sync', {
+      conversation_ids: filteredConversations.map((conversation) => conversation.id),
+    });
+  }, [filteredConversations, wsConnected, wsSend]);
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">

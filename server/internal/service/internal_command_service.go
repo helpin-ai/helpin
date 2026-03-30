@@ -407,7 +407,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if documentContentIsEffectivelyEmpty(docContent) {
 				return nil, fmt.Errorf("content must not be empty")
 			}
-			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent)
+			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent, meta.ActorID)
 			if err != nil {
 				return nil, err
 			}

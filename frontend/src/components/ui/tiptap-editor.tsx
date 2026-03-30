@@ -1,6 +1,7 @@
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Markdown } from 'tiptap-markdown';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
@@ -41,6 +42,7 @@ interface TiptapEditorProps {
   onUploadStateChange?: (pendingUploads: number) => void;
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
+  onEditorReady?: (editor: Editor | null) => void;
 }
 
 function ToolbarButton({
@@ -65,7 +67,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [] }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -175,6 +177,13 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         },
       }),
       Placeholder.configure({ placeholder }),
+      Markdown.configure({
+        html: true,
+        tightLists: true,
+        bulletListMarker: '-',
+        transformPastedText: true,
+        transformCopiedText: false,
+      }),
       MentionHighlight,
     ];
     if (uploadConfig) {
@@ -331,6 +340,11 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       editor.off('blur', handleBlur);
     };
   }, [cleanupDraftAttachments, editor]);
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   // Sync external content changes (e.g. form reset, template apply)
   useEffect(() => {

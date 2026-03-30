@@ -18,7 +18,7 @@ type DocsHelpcenterSpaceTranslation struct {
 	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_hc_space_ws_locale_slug,priority:1;index:idx_docs_hc_space_translation_space_locale,priority:2"`
 	Locale          string     `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_space_locale,priority:2;uniqueIndex:idx_docs_hc_space_ws_locale_slug,priority:2;index:idx_docs_hc_space_translation_space_locale,priority:3"`
 	Name            string     `json:"name" gorm:"not null"`
-	Slug            string     `json:"slug" gorm:"not null;uniqueIndex:idx_docs_hc_space_ws_locale_slug,priority:3"`
+	Slug            *string    `json:"slug" gorm:"uniqueIndex:idx_docs_hc_space_ws_locale_slug,priority:3"`
 	Description     *string    `json:"description"`
 	Status          string     `json:"status" gorm:"not null;default:'draft'"`
 	SourceUpdatedAt *time.Time `json:"source_updated_at"`
@@ -41,7 +41,7 @@ type DocsHelpcenterCollectionTranslation struct {
 	Locale          string     `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_collection_locale,priority:2;uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:2;index:idx_docs_hc_collection_translation_space_locale,priority:3"`
 	Name            string     `json:"name" gorm:"not null"`
 	Description     *string    `json:"description"`
-	Slug            string     `json:"slug" gorm:"not null;uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:3"`
+	Slug            *string    `json:"slug" gorm:"uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:3"`
 	Status          string     `json:"status" gorm:"not null;default:'draft'"`
 	SourceUpdatedAt *time.Time `json:"source_updated_at"`
 	SourceSynced    bool       `json:"source_synced" gorm:"not null;default:false"`
@@ -63,7 +63,7 @@ type DocsHelpcenterArticleTranslation struct {
 	CollectionID    *string         `json:"collection_id" gorm:"type:uuid"`
 	Locale          string          `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_article_locale,priority:2;uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:2;index:idx_docs_hc_article_translation_space_locale,priority:3"`
 	Title           string          `json:"title" gorm:"not null"`
-	Slug            string          `json:"slug" gorm:"not null;uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:3"`
+	Slug            *string         `json:"slug" gorm:"uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:3"`
 	Excerpt         *string         `json:"excerpt"`
 	Content         json.RawMessage `json:"content" gorm:"type:jsonb"`
 	ContentText     string          `json:"content_text" gorm:"type:text"`
@@ -78,6 +78,10 @@ type DocsHelpcenterArticleTranslation struct {
 	NotHelpfulCount int             `json:"not_helpful_count" gorm:"not null;default:0"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+
+	HasUnpublishedChanges bool       `json:"has_unpublished_changes" gorm:"-"`
+	LivePublishedAt       *time.Time `json:"live_published_at,omitempty" gorm:"-"`
+	LiveSlug              *string    `json:"live_slug,omitempty" gorm:"-"`
 }
 
 func (DocsHelpcenterArticleTranslation) TableName() string {
@@ -94,7 +98,7 @@ type UpdateDocsHelpcenterLocalesRequest struct {
 type UpsertDocsHelpcenterSpaceTranslationRequest struct {
 	Locale      string  `json:"locale"`
 	Name        string  `json:"name"`
-	Slug        string  `json:"slug"`
+	Slug        *string `json:"slug"`
 	Description *string `json:"description"`
 	Status      string  `json:"status"`
 }
@@ -103,14 +107,14 @@ type UpsertDocsHelpcenterCollectionTranslationRequest struct {
 	Locale      string  `json:"locale"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
-	Slug        string  `json:"slug"`
+	Slug        *string `json:"slug"`
 	Status      string  `json:"status"`
 }
 
 type UpsertDocsHelpcenterArticleTranslationRequest struct {
 	Locale         string          `json:"locale"`
 	Title          string          `json:"title"`
-	Slug           string          `json:"slug"`
+	Slug           *string         `json:"slug"`
 	Excerpt        *string         `json:"excerpt"`
 	Content        json.RawMessage `json:"content"`
 	SEOTitle       *string         `json:"seo_title"`

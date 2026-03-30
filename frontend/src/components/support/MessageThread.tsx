@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -14,18 +15,21 @@ import {
   useConversation,
   useConversationMessages,
   useChatSettings,
+  useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
   useMarkConversationUnread,
   useUpdateConversationSubject,
   useDeleteConversation,
+  useMoveConversation,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
-import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
@@ -78,9 +82,9 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
 
   return (
     <>
-      {entries.map(([actorId, content]) => {
+      {entries.map(([actorId, typing]) => {
         const member = members.find((m) => m.user_id === actorId);
-        const name = member?.full_name || member?.email || 'Agent';
+        const { name, avatarUrl } = resolveAgentIdentity(member, typing);
         return (
           <div key={actorId} className="flex justify-end mt-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="max-w-[70%]">
@@ -95,8 +99,8 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
                 </span>
               </div>
               <div className="rounded-2xl rounded-br-sm bg-blue-100/60 px-3.5 py-2 text-sm leading-relaxed text-blue-600/70 dark:bg-blue-900/20 dark:text-blue-300/70">
-                {content ? (
-                  <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
+                {typing.content ? (
+                  <p className="whitespace-pre-wrap italic opacity-70">{typing.content}</p>
                 ) : (
                   <span className="flex items-center gap-1.5 italic opacity-50">
                     <span className="flex gap-0.5">
@@ -110,8 +114,8 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
               </div>
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-              {member?.avatar_url ? (
-                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
               ) : (
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm" title={name}>
                   {getInitial(name)}
@@ -123,6 +127,16 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
       })}
     </>
   );
+}
+
+function resolveAgentIdentity(
+  member: { full_name?: string | null; email?: string | null; avatar_url?: string | null } | undefined,
+  typing: AgentTypingState
+) {
+  return {
+    name: typing.name || member?.full_name || member?.email || 'Agent',
+    avatarUrl: typing.avatarUrl || member?.avatar_url || undefined,
+  };
 }
 
 function DaySeparator({
@@ -185,18 +199,37 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
-  useWorkspaceMembers(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
   const markUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
+  const confirm = useConfirm();
+  const moveConversation = useMoveConversation(workspaceId);
+  const currentUser = useAuthStore((s) => s.user);
+  const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
+  const memberAvatarByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      if (member.user_id && member.avatar_url) {
+        map.set(member.user_id, member.avatar_url);
+      }
+    }
+    return map;
+  }, [members]);
+
+  const moveOptions = useMemo(() => {
+    const options = [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean);
+    return options.filter((option) => option!.id !== (conversation?.mailbox_id ?? 'shared'));
+  }, [conversation?.mailbox_id, inboxScopes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -487,6 +520,31 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                   <Pencil className="h-4 w-4" />
                   Set conversation subject
                 </DropdownMenuItem>
+                {moveOptions.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {moveOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option!.id}
+                        onClick={() => {
+                          const nextMailboxId = option!.id === 'shared' ? null : option!.id;
+                          moveConversation.mutate({
+                            conversationId: conversation.id,
+                            mailboxId: nextMailboxId,
+                          }, {
+                            onSuccess: () => {
+                              setSelectedMailboxId(option!.id);
+                              toast.success(`Moved to ${option!.name}`);
+                            },
+                          });
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        Move to {option!.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
@@ -500,15 +558,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to permanently delete this conversation?')) {
-                      deleteConversation.mutate(conversation.id, {
-                        onSuccess: () => {
-                          useSupportInboxStore.getState().selectConversation(null);
-                          toast.success('Conversation deleted');
-                        },
-                      });
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Delete conversation?',
+                      description: 'This will permanently delete this conversation. This action cannot be undone.',
+                      confirmText: 'Delete',
+                      variant: 'destructive',
+                    });
+                    if (!ok) return;
+                    deleteConversation.mutate(conversation.id, {
+                      onSuccess: () => {
+                        useSupportInboxStore.getState().selectConversation(null);
+                        toast.success('Conversation deleted');
+                      },
+                    });
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -566,6 +629,12 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
                 receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                fallbackAvatarUrl={
+                  (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
+                  ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
+                    ? currentUser?.avatar_url
+                    : undefined)
+                }
               />
             );
           })}

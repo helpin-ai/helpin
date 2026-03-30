@@ -9,17 +9,19 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsSpaceService handles business logic for docs spaces.
 type DocsSpaceService struct {
 	spaceRepo      *repository.DocsSpaceRepository
 	translationSvc *DocsHelpcenterTranslationService
+	wsPublisher    *websocket.Publisher
 }
 
 // NewDocsSpaceService creates a new DocsSpaceService.
-func NewDocsSpaceService(spaceRepo *repository.DocsSpaceRepository) *DocsSpaceService {
-	return &DocsSpaceService{spaceRepo: spaceRepo}
+func NewDocsSpaceService(spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsSpaceService {
+	return &DocsSpaceService{spaceRepo: spaceRepo, wsPublisher: wsPublisher}
 }
 
 func (s *DocsSpaceService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -91,9 +93,19 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 		if err := s.translationSvc.RefreshSpaceSource(ctx, created.ID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter space translation source after create", "space_id", created.ID, "error", err)
 		}
+		// Auto-generate translations for all enabled locales
+		go func() {
+			if err := s.translationSvc.AutoGenerateSpaceTranslations(ctx, created.ID); err != nil {
+				slog.WarnContext(ctx, "failed to auto-generate space translations", "space_id", created.ID, "error", err)
+			}
+		}()
 	}
 
-	return s.withTeams(ctx, created)
+	spaceWithTeams, err := s.withTeams(ctx, created)
+	if err == nil {
+		publishWorkspaceEvent(s.wsPublisher, "created", "docs_space", created.ID, workspaceID, userID)
+	}
+	return spaceWithTeams, err
 }
 
 // GetBySlug returns a space by workspace ID + slug (no auth check, for public use).
@@ -149,7 +161,11 @@ func (s *DocsSpaceService) GetUnfiltered(ctx context.Context, id string) (*model
 	if space == nil {
 		return nil, nil
 	}
-	return s.withTeams(ctx, space)
+	spaceWithTeams, err := s.withTeams(ctx, space)
+	if err == nil {
+		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_space", space.ID, space.WorkspaceID, "")
+	}
+	return spaceWithTeams, err
 }
 
 // AccessibleSpaceIDs returns the IDs of spaces the actor can access.
@@ -321,7 +337,11 @@ func (s *DocsSpaceService) Delete(ctx context.Context, id string) error {
 	if space.IsSystem {
 		return fmt.Errorf("cannot delete a system space")
 	}
-	return s.spaceRepo.Delete(ctx, id)
+	if err := s.spaceRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "deleted", "docs_space", id, space.WorkspaceID, "")
+	return nil
 }
 
 // Restore restores a soft-deleted space.
@@ -330,7 +350,11 @@ func (s *DocsSpaceService) Restore(ctx context.Context, id string) (*model.DocsS
 	if err != nil {
 		return nil, err
 	}
-	return s.withTeams(ctx, space)
+	spaceWithTeams, err := s.withTeams(ctx, space)
+	if err == nil {
+		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_space", space.ID, space.WorkspaceID, "")
+	}
+	return spaceWithTeams, err
 }
 
 // SeedDefaultSpaces creates the default spaces for a workspace (idempotent).
@@ -423,5 +447,9 @@ func (s *DocsSpaceService) ReorderSpaces(ctx context.Context, workspaceID string
 	if len(req.SpaceIDs) == 0 {
 		return nil
 	}
-	return s.spaceRepo.Reorder(ctx, workspaceID, req.Section, req.SpaceIDs)
+	if err := s.spaceRepo.Reorder(ctx, workspaceID, req.Section, req.SpaceIDs); err != nil {
+		return err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "reordered", "docs_space", req.SpaceIDs[0], workspaceID, "")
+	return nil
 }

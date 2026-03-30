@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -22,7 +23,14 @@ func (s *DocsSearchService) Search(ctx context.Context, workspaceID, query strin
 	return s.searchRepo.Search(ctx, workspaceID, query, spaceIDs, status, limit)
 }
 
-// PublicSearch searches published help center articles, optionally filtered by space.
-func (s *DocsSearchService) PublicSearch(ctx context.Context, workspaceID, query, spaceID string, limit int) ([]repository.DocsSearchResult, error) {
-	return s.searchRepo.PublicSearch(ctx, workspaceID, query, spaceID, limit)
+// PublicSearch searches published help center article translations for a single locale.
+func (s *DocsSearchService) PublicSearch(ctx context.Context, workspaceID, locale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
+	results, err := s.searchRepo.PublicSearch(ctx, workspaceID, locale, query, spaceSlug, limit)
+	if err != nil {
+		return nil, err
+	}
+	for i := range results {
+		results[i].RequestedLocale = locale
+	}
+	return results, nil
 }

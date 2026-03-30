@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -433,6 +434,7 @@ const buildForm = (obj: ObjectiveWithDetails): FormState => ({
 
 export function ObjectiveDetailPage() {
   const { objectiveId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -567,7 +569,13 @@ export function ObjectiveDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
@@ -1010,10 +1018,22 @@ export function ObjectiveDetailPage() {
                   const epicStateColor = e.epic.completed ? 'text-green-500' : e.epic.started ? 'text-amber-500' : 'text-zinc-400';
                   const epicUpdated = formatDistanceToNow(parseISO(e.epic.updated_at), { addSuffix: true });
                   return (
-                    <div key={e.epic.id} className="group flex items-center gap-3 rounded-lg border border-border/60 px-4 py-3">
+                    <div
+                      key={e.epic.id}
+                      role="button"
+                      tabIndex={0}
+                      className="group flex w-full items-center gap-3 rounded-lg border border-border/60 px-4 py-3 text-left transition-colors hover:border-border hover:bg-accent/30 cursor-pointer"
+                      onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: e.epic.id } })}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          void navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: e.epic.id } });
+                        }
+                      }}
+                    >
                       <Hexagon className="h-4 w-4 shrink-0 text-violet-500" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{e.epic.name}</p>
+                        <p className="text-sm font-medium truncate" title={e.epic.name}>{e.epic.name}</p>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className={epicStateColor}>{epicState.toLowerCase()}</span>
                         </div>
@@ -1028,7 +1048,10 @@ export function ObjectiveDetailPage() {
                             <button
                               type="button"
                               className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-                              onClick={() => handleUnlinkEpic(e.epic.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleUnlinkEpic(e.epic.id);
+                              }}
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>

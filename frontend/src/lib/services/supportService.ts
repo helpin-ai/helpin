@@ -1,16 +1,62 @@
 import { api } from '../api';
-import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings, ConversationListResponse, UnreadStats, VisitorContextResponse, SupportTeammatePresenceStatus, SupportAIRewriteDraftRequest, SupportAIRewriteDraftResponse } from '../pmTypes';
+import type {
+  SupportConversation,
+  SupportMessage,
+  CreateConversationRequest,
+  CreateMessageRequest,
+  LinkStoryRequest,
+  AssignConversationAgentRequest,
+  AgentRun,
+  ConversationStatus,
+  SupportInstallationResponse,
+  SupportInboxSettings,
+  ConversationListResponse,
+  UnreadStats,
+  VisitorContextResponse,
+  SupportTeammatePresenceStatus,
+  SupportAIRewriteDraftRequest,
+  SupportAIRewriteDraftResponse,
+  SupportInboxScopeListResponse,
+  SupportMailbox,
+  CreateSupportMailboxRequest,
+  UpdateSupportMailboxRequest,
+  SupportMailboxMember,
+  SupportEmailRoute,
+  CreateSupportEmailRouteRequest,
+} from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string }) => {
+  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string }) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
     if (filters?.filter) path += `&filter=${filters.filter}`;
+    if (filters?.mailbox_id) path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
+    if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
     return api.get<ConversationListResponse>(path);
   },
+  listInboxScopes: (workspaceId: string) =>
+    api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listMailboxes: (workspaceId: string) =>
+    api.get<SupportMailbox[]>(`/support/inbox/mailboxes${qs(workspaceId)}`),
+  createMailbox: (workspaceId: string, payload: CreateSupportMailboxRequest) =>
+    api.post<SupportMailbox>(`/support/inbox/mailboxes${qs(workspaceId)}`, payload),
+  updateMailbox: (workspaceId: string, mailboxId: string, payload: UpdateSupportMailboxRequest) =>
+    api.put<SupportMailbox>(`/support/inbox/mailboxes/${mailboxId}${qs(workspaceId)}`, payload),
+  archiveMailbox: (workspaceId: string, mailboxId: string) =>
+    api.post<SupportMailbox>(`/support/inbox/mailboxes/${mailboxId}/archive${qs(workspaceId)}`, {}),
+  reorderMailboxes: (workspaceId: string, mailboxIds: string[]) =>
+    api.post(`/support/inbox/mailboxes/reorder${qs(workspaceId)}`, { mailbox_ids: mailboxIds }),
+  listMailboxMembers: (workspaceId: string, mailboxId: string) =>
+    api.get<SupportMailboxMember[]>(`/support/inbox/mailboxes/${mailboxId}/members${qs(workspaceId)}`),
+  listEmailRoutes: (workspaceId: string) =>
+    api.get<SupportEmailRoute[]>(`/support/inbox/email-routes${qs(workspaceId)}`),
+  createEmailRoute: (workspaceId: string, payload: CreateSupportEmailRouteRequest) =>
+    api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
+  disableEmailRoute: (workspaceId: string, routeId: string) =>
+    api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   createConversation: (workspaceId: string, payload: CreateConversationRequest) =>
@@ -35,8 +81,11 @@ export const supportService = {
     api.get<VisitorContextResponse>(`/support/inbox/conversations/${conversationId}/visitor-context${qs(workspaceId)}`),
 
   // Unread
-  getUnreadStats: (workspaceId: string) =>
-    api.get<UnreadStats>(`/support/inbox/unread-stats${qs(workspaceId)}`),
+  getUnreadStats: (workspaceId: string, mailboxId?: string | null) => {
+    let path = `/support/inbox/unread-stats${qs(workspaceId)}`;
+    if (mailboxId) path += `&mailbox_id=${encodeURIComponent(mailboxId)}`;
+    return api.get<UnreadStats>(path);
+  },
   listTeammatePresence: (workspaceId: string) =>
     api.get<SupportTeammatePresenceStatus[]>(`/support/inbox/teammates/presence${qs(workspaceId)}`),
   updateMyTeammatePresence: (workspaceId: string, manualStatus: 'online' | 'away' | 'offline' | null) =>
@@ -45,6 +94,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
   markConversationUnread: (workspaceId: string, conversationId: string) =>
     api.post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
+  moveConversation: (workspaceId: string, conversationId: string, mailboxId: string | null) =>
+    api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/move${qs(workspaceId)}`, { mailbox_id: mailboxId }),
   updateConversationSubject: (workspaceId: string, conversationId: string, subject: string) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/subject${qs(workspaceId)}`, { subject }),
   deleteConversation: (workspaceId: string, conversationId: string) =>

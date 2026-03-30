@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -20,6 +21,8 @@ import (
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
 	conversationRepo        *repository.SupportConversationRepository
+	mailboxRepo             *repository.SupportMailboxRepository
+	emailRouteRepo          *repository.SupportEmailRouteRepository
 	messageRepo             *repository.SupportMessageRepository
 	agentRepo               *repository.AgentRepository
 	assocRepo               *repository.CRMAssociationRepository
@@ -39,6 +42,7 @@ type SupportInboxService struct {
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
 	attachmentService       *SupportAttachmentService
+	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 }
@@ -46,6 +50,7 @@ type SupportInboxService struct {
 // NewSupportInboxService creates a new SupportInboxService.
 func NewSupportInboxService(
 	conversationRepo *repository.SupportConversationRepository,
+	mailboxRepo *repository.SupportMailboxRepository,
 	messageRepo *repository.SupportMessageRepository,
 	agentRepo *repository.AgentRepository,
 	assocRepo *repository.CRMAssociationRepository,
@@ -62,6 +67,7 @@ func NewSupportInboxService(
 ) *SupportInboxService {
 	return &SupportInboxService{
 		conversationRepo:   conversationRepo,
+		mailboxRepo:        mailboxRepo,
 		messageRepo:        messageRepo,
 		agentRepo:          agentRepo,
 		assocRepo:          assocRepo,
@@ -76,6 +82,22 @@ func NewSupportInboxService(
 		docsCollectionRepo: docsCollectionRepo,
 		docsHelpcenterRepo: docsHelpcenterRepo,
 	}
+}
+
+func supportActorFromContext(ctx context.Context, workspaceID string) *authorization.Actor {
+	actor := authorization.GetActor(ctx)
+	if actor == nil || actor.WorkspaceID != workspaceID {
+		return nil
+	}
+	return actor
+}
+
+func (s *SupportInboxService) actorMailboxScope(ctx context.Context, workspaceID string) (workspaceMemberID, role string) {
+	actor := supportActorFromContext(ctx, workspaceID)
+	if actor == nil {
+		return "", ""
+	}
+	return actor.WorkspaceMemberID, actor.Role
 }
 
 func renderWidgetArticleHTML(content json.RawMessage) *string {
@@ -204,6 +226,15 @@ func (s *SupportInboxService) SetEmailFallbackService(emailFallbackService *Emai
 	return s
 }
 
+// SetEmailRouteRepository injects the support email route repository.
+func (s *SupportInboxService) SetEmailRouteRepository(emailRouteRepo *repository.SupportEmailRouteRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailRouteRepo = emailRouteRepo
+	return s
+}
+
 // SetNotificationService injects the notification service and workspace repo for @mention support.
 func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr *repository.WorkspaceRepository) *SupportInboxService {
 	if s == nil {
@@ -220,6 +251,15 @@ func (s *SupportInboxService) SetAttachmentService(attachmentService *SupportAtt
 		return nil
 	}
 	s.attachmentService = attachmentService
+	return s
+}
+
+// SetLinkPreviewService injects the support message link preview enricher.
+func (s *SupportInboxService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.linkPreviewService = linkPreviewService
 	return s
 }
 
@@ -264,15 +304,20 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil)
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, aiState ...string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, aiState...)
+	if err := s.requireMailboxAccess(ctx, workspaceID, mailboxID); err != nil {
+		return nil, err
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, aiState...)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +325,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 		conversations = []model.SupportConversation{}
 	}
 
-	stats, err := s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID)
+	stats, err := s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get unread stats", "error", err, "workspace_id", workspaceID)
 		// Non-fatal: return conversations with zero stats
@@ -312,13 +357,17 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 }
 
 // GetUnreadStats returns aggregate unread conversation counts for sidebar badges.
-func (s *SupportInboxService) GetUnreadStats(ctx context.Context, workspaceID, userID string) (model.UnreadStats, error) {
-	return s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID)
+func (s *SupportInboxService) GetUnreadStats(ctx context.Context, workspaceID, userID string, mailboxID *string) (model.UnreadStats, error) {
+	if err := s.requireMailboxAccess(ctx, workspaceID, mailboxID); err != nil {
+		return model.UnreadStats{}, err
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	return s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
 }
 
 // MarkConversationRead updates the team read cursor and broadcasts a read event.
 func (s *SupportInboxService) MarkConversationRead(ctx context.Context, workspaceID, conversationID, userID string) error {
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -356,7 +405,7 @@ func (s *SupportInboxService) MarkConversationRead(ctx context.Context, workspac
 
 // MarkConversationReadByVisitor updates the contact read cursor and broadcasts a list refresh.
 func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context, workspaceID, conversationID, anonymousID string) error {
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.loadConversationUnscoped(ctx, workspaceID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -415,7 +464,7 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 
 // MarkConversationUnread resets the team read cursor so the conversation appears unread.
 func (s *SupportInboxService) MarkConversationUnread(ctx context.Context, workspaceID, conversationID, userID string) error {
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -443,7 +492,7 @@ func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, wor
 		return nil, fmt.Errorf("subject is required")
 	}
 
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +518,7 @@ func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, wor
 
 // DeleteConversation permanently deletes a conversation and its messages.
 func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
-	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -495,7 +544,7 @@ func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceI
 
 // GetConversation returns a single conversation.
 func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
-	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, id)
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -522,6 +571,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 
 	ticket := &model.SupportConversation{
 		WorkspaceID:    req.WorkspaceID,
+		MailboxID:      req.MailboxID,
 		Subject:        strings.TrimSpace(req.Subject),
 		Status:         "open",
 		FlowState:      strPtr(defaultConversationFlowState(&actorID, nil)),
@@ -530,6 +580,23 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		CustomerEmail:  req.CustomerEmail,
 		OpenedByUserID: &actorID,
 		Source:         source,
+	}
+
+	mailboxID, mailbox, err := s.maybeApplyMailboxRouting(ctx, req.WorkspaceID, req.MailboxID, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireMailboxAccess(ctx, req.WorkspaceID, mailboxID); err != nil {
+		return nil, err
+	}
+	ticket.MailboxID = mailboxID
+	if mailbox != nil {
+		ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, req.WorkspaceID, mailbox, ticket.OpenedByUserID)
+		if ownerErr != nil {
+			return nil, ownerErr
+		}
+		ticket.OpenedByUserID = ownerID
+		ticket.FlowState = strPtr(flowState)
 	}
 
 	if err := s.conversationRepo.Create(ctx, ticket); err != nil {
@@ -570,7 +637,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		return nil, fmt.Errorf("invalid status: %s", status)
 	}
 
-	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -661,6 +728,13 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
 	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, ticketID, includeInternal)
 	if err != nil {
 		return nil, err
@@ -679,6 +753,13 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
 	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
+	}
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
 	}
 
 	messageType := req.MessageType
@@ -705,6 +786,15 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
 		}
+		if len(ids) > 0 {
+			filtered := make([]string, 0, len(ids))
+			for _, mentionedID := range ids {
+				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) {
+					filtered = append(filtered, mentionedID)
+				}
+			}
+			ids = filtered
+		}
 		mentionedUserIDs = ids
 	}
 
@@ -725,6 +815,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, msg)
+	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
@@ -743,11 +836,6 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
-
-	var conv *model.SupportConversation
-	if len(mentionedUserIDs) > 0 || (!msg.IsInternal && msg.MessageType == "reply") {
-		conv, _ = s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-	}
 
 	// Emit mention notifications after message creation.
 	if len(mentionedUserIDs) > 0 {
@@ -809,7 +897,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 // LinkConversationStory links a conversation to a story.
 func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
-	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
 	}
@@ -855,7 +943,20 @@ func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, works
 
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	return s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+	conversations, _, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	filtered, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids, workspaceMemberID, role)
+	if err != nil {
+		return nil, 0, err
+	}
+	return filtered, int64(len(filtered)), nil
 }
 
 // matchOrCreateCRMContact looks up a CRM contact by email; if not found,
@@ -986,7 +1087,8 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 			Data: []model.SupportConversation{},
 		}, nil
 	}
-	conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids)
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids, workspaceMemberID, role)
 	if err != nil {
 		return nil, err
 	}
@@ -1004,7 +1106,7 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {
-	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
 		return err
 	}

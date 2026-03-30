@@ -40,6 +40,20 @@ type PresenceProvider interface {
 	// GetSnapshot returns viewers + typers for a conversation.
 	GetSnapshot(ctx context.Context, workspaceID, conversationID string) (PresenceSnapshot, error)
 
+	// Docs viewing — conn-scoped (one agent can read docs from multiple tabs).
+	SetDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) (changed bool, err error)
+	ClearDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) (changed bool, err error)
+	GetDocViewers(ctx context.Context, workspaceID, documentID string) ([]string, error)
+	GetActiveDocViewing(ctx context.Context, workspaceID, userID, connID string) (string, error)
+	RefreshDocViewing(ctx context.Context, workspaceID, documentID, userID, connID string) error
+	ClearAllDocViewingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error)
+	GetDocSnapshot(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshot, error)
+	SetDocEditing(ctx context.Context, workspaceID, documentID, userID, connID, area, section string) (changed bool, err error)
+	ClearDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) (changed bool, err error)
+	GetActiveDocEditing(ctx context.Context, workspaceID, userID, connID string) (DocEditorPresenceRef, error)
+	RefreshDocEditing(ctx context.Context, workspaceID, documentID, userID, connID string) error
+	ClearAllDocEditingForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, error)
+
 	// Online visitors — conn-scoped (one visitor can have multiple widget tabs).
 	SetVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error
 	SetVisitorOffline(ctx context.Context, workspaceID, anonymousID, connID string) (lastConn bool, err error)

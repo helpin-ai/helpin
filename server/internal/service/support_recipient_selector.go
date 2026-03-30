@@ -20,6 +20,7 @@ type supportRecipientSelection struct {
 
 type supportRecipientSelectorInput struct {
 	WorkspaceID         string
+	MailboxID           *string
 	OwnerUserID         *string
 	HandoffBehavior     string
 	HandoffTeamID       *string
@@ -33,6 +34,7 @@ type supportRecipientSelectorInput struct {
 func selectSupportConversationRecipient(
 	ctx context.Context,
 	workspaceRepo *repository.WorkspaceRepository,
+	mailboxRepo *repository.SupportMailboxRepository,
 	installationRepo *repository.SupportInboxInstallationRepository,
 	prefRepo *repository.NotificationPreferenceRepository,
 	presence websocket.PresenceProvider,
@@ -75,6 +77,28 @@ func selectSupportConversationRecipient(
 	}
 
 	ownerID := strings.TrimSpace(derefString(input.OwnerUserID))
+	mailboxID := strings.TrimSpace(derefString(input.MailboxID))
+	if mailboxID != "" && mailboxRepo != nil {
+		mailboxUserIDs, err := mailboxRepo.ListActiveMemberUserIDs(ctx, input.WorkspaceID, mailboxID)
+		if err != nil {
+			return nil, err
+		}
+		adminIDs, err := workspaceRepo.ListActiveUserIDsByRoles(ctx, input.WorkspaceID, []string{model.RoleOwner, model.RoleAdmin})
+		if err != nil {
+			return nil, err
+		}
+		mailboxCandidates := append(mailboxUserIDs, adminIDs...)
+		if ownerID != "" {
+			if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
+				return selection, err
+			}
+		}
+		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, mailboxCandidates, "", "mailbox"); err != nil || selection != nil {
+			return selection, err
+		}
+		return nil, nil
+	}
+
 	if ownerID != "" {
 		if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
 			return selection, err

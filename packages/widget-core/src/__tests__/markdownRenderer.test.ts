@@ -40,6 +40,12 @@ describe('renderMarkdown', () => {
     expect(result).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>');
   });
 
+  it('auto-links bare urls', () => {
+    const input = 'Visit https://example.com/docs for details.';
+    const result = renderMarkdown(input);
+    expect(result).toContain('<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">https://example.com/docs</a>');
+  });
+
   it('blocks javascript: URLs', () => {
     const input = '[click me](javascript:alert(1))';
     const result = renderMarkdown(input);

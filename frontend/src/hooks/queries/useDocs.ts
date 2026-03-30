@@ -624,8 +624,8 @@ export function useUpsertDocsHelpcenterSpaceTranslation(wsId: string, spaceId: s
 export function usePublishDocsHelpcenterSpaceTranslation(wsId: string, spaceId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (locale: string) =>
-      unwrap(await docsService.publishSpaceTranslation(wsId, spaceId, locale)),
+    mutationFn: async ({ locale, slug }: { locale: string; slug?: string }) =>
+      unwrap(await docsService.publishSpaceTranslation(wsId, spaceId, locale, slug)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterSpaceTranslations(wsId, spaceId) })
     },
@@ -676,8 +676,8 @@ export function useUpsertDocsHelpcenterCollectionTranslation(wsId: string, colle
 export function usePublishDocsHelpcenterCollectionTranslation(wsId: string, collectionId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (locale: string) =>
-      unwrap(await docsService.publishCollectionTranslation(wsId, collectionId, locale)),
+    mutationFn: async ({ locale, slug }: { locale: string; slug?: string }) =>
+      unwrap(await docsService.publishCollectionTranslation(wsId, collectionId, locale, slug)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterCollectionTranslations(wsId, collectionId) })
     },
@@ -728,8 +728,19 @@ export function useUpsertDocsHelpcenterArticleTranslation(wsId: string, docId: s
 export function usePublishDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
   const qc = useQueryClient()
   return useMutation({
+    mutationFn: async ({ locale, slug }: { locale: string; slug?: string }) =>
+      unwrap(await docsService.publishArticleTranslation(wsId, docId, locale, slug)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+    },
+  })
+}
+
+export function useGenerateDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: async (locale: string) =>
-      unwrap(await docsService.publishArticleTranslation(wsId, docId, locale)),
+      unwrap(await docsService.generateArticleTranslation(wsId, docId, locale)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
     },

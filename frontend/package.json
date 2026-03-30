@@ -7,7 +7,11 @@
     "dev": "vite --host 0.0.0.0",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 tsc -b && NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:support": "playwright test --config=./playwright.support.config.ts --project=chromium",
+    "test:e2e:support:install": "playwright install chromium",
+    "test:e2e:presence": "playwright test --config=./playwright.support.config.ts --project=chromium",
+    "test:e2e:presence:install": "playwright install chromium"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -66,6 +70,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^24.10.1",

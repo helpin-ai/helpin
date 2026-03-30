@@ -36,6 +36,7 @@ type NotificationService struct {
 	userRepo           *repository.UserRepository
 	workspaceRepo      *repository.WorkspaceRepository
 	installationRepo   *repository.SupportInboxInstallationRepository
+	mailboxRepo        *repository.SupportMailboxRepository
 	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository
 	wsPublisher        *ws.Publisher
 	presence           ws.PresenceProvider
@@ -76,6 +77,7 @@ func NewNotificationService(
 
 func (s *NotificationService) SetSupportRoutingDependencies(
 	installationRepo *repository.SupportInboxInstallationRepository,
+	mailboxRepo *repository.SupportMailboxRepository,
 	presence ws.PresenceProvider,
 	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
 ) *NotificationService {
@@ -83,6 +85,7 @@ func (s *NotificationService) SetSupportRoutingDependencies(
 		return nil
 	}
 	s.installationRepo = installationRepo
+	s.mailboxRepo = mailboxRepo
 	s.presence = presence
 	s.statusOverrideRepo = statusOverrideRepo
 	return s

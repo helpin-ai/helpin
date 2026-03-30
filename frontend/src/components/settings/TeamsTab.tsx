@@ -8,27 +8,23 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { agentService } from '@/lib/services/agentService';
 import { PipelineBuilder } from './PipelineBuilder';
-import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
-import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
-import type { Agent, AutomationRule, GitRepository, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
-import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { SettingsSection } from '@/pages/Settings';
+import { SCALE_LABELS } from '@/lib/estimateScales';
+import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, TeamRepoDefault } from '@/lib/types';
+import type { Agent, AutomationRule, GitRepository, WorkflowWithStates } from '@/lib/pmTypes';
+import type { SettingsSection } from '@/lib/settingsSections';
 import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, ChevronRight, Eye, FileText, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Eye, FileText, GitBranch, GitPullRequest, LayoutGrid, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useDocsSpaces, useUpdateDocsSpace } from '@/hooks/queries';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -39,368 +35,11 @@ import {
   TEAM_TYPE_PRESETS,
   type DefaultStoryType,
   type TeamType,
-  type VisibilityFieldKey,
 } from '@/lib/teamPresets';
-
-/* ── Helper Forms ── */
-
-function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
-  teamId: string;
-  initial: TeamEstimateSettings | null;
-  saving: boolean;
-  onSave: (data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) => void;
-}) {
-  const [enabled, setEnabled] = useState(initial?.enabled ?? false);
-  const [scale, setScale] = useState<EstimateScale>(initial?.scale ?? 'linear');
-  const [extended, setExtended] = useState(initial?.extended ?? false);
-  const [allowZero, setAllowZero] = useState(initial?.allow_zero ?? false);
-  const [countUnestimated, setCountUnestimated] = useState(initial?.count_unestimated_as_one ?? true);
-
-  useEffect(() => {
-    setEnabled(initial?.enabled ?? false);
-    setScale(initial?.scale ?? 'linear');
-    setExtended(initial?.extended ?? false);
-    setAllowZero(initial?.allow_zero ?? false);
-    setCountUnestimated(initial?.count_unestimated_as_one ?? true);
-  }, [initial, teamId]);
-
-  const scaleOptions = getEstimateOptions(scale, extended, allowZero);
-
-  return (
-    <div className="space-y-5 py-2">
-      {/* Enable toggle */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium">Enable estimates</p>
-          <p className="text-xs text-muted-foreground">Show effort estimates on stories</p>
-        </div>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
-      </div>
-
-      {enabled && (
-        <>
-          {/* Scale selection */}
-          <div className="space-y-2">
-            <Label className="text-sm">Scale</Label>
-            <Select value={scale} onValueChange={(v) => setScale(v as EstimateScale)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(SCALE_LABELS) as EstimateScale[]).map((s) => (
-                  <SelectItem key={s} value={s}>
-                    <span className="font-medium">{SCALE_LABELS[s]}</span>
-                    <span className="ml-2 text-muted-foreground">{SCALE_DESCRIPTIONS[s]}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Preview */}
-          <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
-            <p className="text-xs text-muted-foreground mb-1">Scale values</p>
-            <div className="flex flex-wrap gap-1.5">
-              {scaleOptions.map((opt) => (
-                <span key={opt.value} className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-xs font-medium">
-                  {opt.label}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Extended scale */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Extended scale</p>
-              <p className="text-xs text-muted-foreground">Add two additional larger values</p>
-            </div>
-            <Switch checked={extended} onCheckedChange={setExtended} />
-          </div>
-
-          {/* Allow zero */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Allow zero estimates</p>
-              <p className="text-xs text-muted-foreground">Allow stories to be estimated as zero effort</p>
-            </div>
-            <Switch checked={allowZero} onCheckedChange={setAllowZero} />
-          </div>
-
-          {/* Count unestimated as one */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Count unestimated as 1 point</p>
-              <p className="text-xs text-muted-foreground">Unestimated stories count as 1 point in calculations</p>
-            </div>
-            <Switch checked={countUnestimated} onCheckedChange={setCountUnestimated} />
-          </div>
-        </>
-      )}
-
-      <DialogFooter>
-        <Button
-          disabled={saving}
-          onClick={() => onSave({ enabled, scale, extended, allow_zero: allowZero, count_unestimated_as_one: countUnestimated })}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </DialogFooter>
-    </div>
-  );
-}
-
-type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other' | 'Panels';
-
-const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
-  { key: 'priority', label: 'Priority', group: 'Classification' },
-  { key: 'story_type', label: 'Type', group: 'Classification' },
-  { key: 'severity', label: 'Severity', group: 'Classification' },
-  { key: 'epic', label: 'Epic', group: 'Planning' },
-  { key: 'sprint', label: 'Sprint', group: 'Planning' },
-  { key: 'estimate', label: 'Estimate', group: 'Planning' },
-  { key: 'labels', label: 'Labels', group: 'Other' },
-  { key: 'due_date', label: 'Due Date', group: 'Other' },
-  { key: 'blocked', label: 'Blocked', group: 'Other' },
-  { key: 'delivery', label: 'Delivery', group: 'Panels' },
-  { key: 'dev_history', label: 'Development History', group: 'Panels' },
-];
-
-const FIELD_VISIBILITY_HELP: Record<VisibilityFieldKey, string> = {
-  priority: 'Shows the urgency level for a story so the team can quickly sort what matters most.',
-  story_type: 'Shows whether the story is a feature, bug, or chore.',
-  severity: 'Shows impact level, usually for bugs or operational issues. This starts off for new teams by default.',
-  epic: 'Lets stories roll up into larger initiatives.',
-  sprint: 'Lets stories be assigned to sprint cycles.',
-  estimate: 'Shows effort sizing on stories for planning and forecasting.',
-  labels: 'Adds lightweight tags for categorization and filtering.',
-  due_date: 'Shows target due dates directly on stories.',
-  blocked: 'Lets the team mark a story as blocked when it cannot move forward.',
-  delivery: 'Shows delivery-related metadata such as repo and branch context.',
-  dev_history: 'Shows linked pull requests, commits, and related development activity.',
-};
-
-function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
-  teamId: string;
-  initial: TeamFieldVisibility | null;
-  saving: boolean;
-  onSave: (data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) => void;
-}) {
-  const [fields, setFields] = useState<Record<VisibilityFieldKey, boolean>>(() => {
-    const defaults = {} as Record<VisibilityFieldKey, boolean>;
-    for (const f of FIELD_VISIBILITY_FIELDS) {
-      defaults[f.key] = initial ? initial[f.key] : f.key === 'severity' || f.key === 'blocked' ? false : true;
-    }
-    return defaults;
-  });
-
-  useEffect(() => {
-    const next = {} as Record<VisibilityFieldKey, boolean>;
-    for (const f of FIELD_VISIBILITY_FIELDS) {
-      next[f.key] = initial ? initial[f.key] : f.key === 'severity' || f.key === 'blocked' ? false : true;
-    }
-    setFields(next);
-  }, [initial, teamId]);
-
-  const groups = [...new Set(FIELD_VISIBILITY_FIELDS.map((f) => f.group))];
-
-  return (
-    <div className="space-y-5 py-2">
-      <p className="text-sm text-muted-foreground">
-        Configure which fields and panels appear on stories for this team. State, Owner, Requester, and Team are always visible.
-      </p>
-      {groups.map((group) => (
-        <div key={group} className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{group}</p>
-          {FIELD_VISIBILITY_FIELDS.filter((f) => f.group === group).map((f) => (
-            <div key={f.key} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{f.label}</p>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/70 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                      aria-label={`Help for ${f.label}`}
-                    >
-                      ?
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="w-56 text-pretty leading-relaxed">
-                    {FIELD_VISIBILITY_HELP[f.key]}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Switch
-                checked={fields[f.key]}
-                onCheckedChange={(checked) => setFields((prev) => ({ ...prev, [f.key]: checked }))}
-              />
-            </div>
-          ))}
-        </div>
-      ))}
-      <DialogFooter>
-        <Button
-          disabled={saving}
-          onClick={() => onSave(fields)}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </DialogFooter>
-    </div>
-  );
-}
-
-function TeamRepoDefaultForm({
-  initial,
-  repositories,
-  workflowStates,
-  loading,
-  saving,
-  onSave,
-}: {
-  initial: TeamRepoDefault | null;
-  repositories: GitRepository[];
-  workflowStates: WorkflowState[];
-  loading: boolean;
-  saving: boolean;
-  onSave: (payload: {
-    repository_id: string;
-    base_branch?: string;
-    branch_template?: string;
-    auto_sync_states?: boolean;
-    review_state_id?: string;
-    done_state_id?: string;
-  }) => void | Promise<void>;
-}) {
-  const [repositoryId, setRepositoryId] = useState(initial?.repository_id ?? '');
-  const [baseBranch, setBaseBranch] = useState(initial?.base_branch ?? '');
-  const [branchTemplate, setBranchTemplate] = useState(initial?.branch_template ?? 'tp-{display_id}-{slug}');
-  const [autoSyncStates, setAutoSyncStates] = useState(initial?.auto_sync_states ?? true);
-  const [reviewStateId, setReviewStateId] = useState(initial?.review_state_id ?? 'none');
-  const [doneStateId, setDoneStateId] = useState(initial?.done_state_id ?? 'none');
-
-  useEffect(() => {
-    setRepositoryId(initial?.repository_id ?? '');
-    setBaseBranch(initial?.base_branch ?? '');
-    setBranchTemplate(initial?.branch_template ?? 'tp-{display_id}-{slug}');
-    setAutoSyncStates(initial?.auto_sync_states ?? true);
-    setReviewStateId(initial?.review_state_id ?? 'none');
-    setDoneStateId(initial?.done_state_id ?? 'none');
-  }, [initial]);
-
-  const selectedRepository = repositories.find((repository) => repository.id === repositoryId) ?? null;
-
-  return (
-    <div className="space-y-5 py-2">
-      <p className="text-sm text-muted-foreground">
-        Stories on this team inherit these delivery defaults. Story detail can still override the repository or base branch.
-      </p>
-      <div className="space-y-2">
-        <Label>Repository</Label>
-        <Select value={repositoryId || undefined} onValueChange={setRepositoryId}>
-          <SelectTrigger>
-            <SelectValue placeholder={loading ? 'Loading repositories...' : 'Select repository'} />
-          </SelectTrigger>
-          <SelectContent>
-            {repositories.map((repository) => (
-              <SelectItem key={repository.id} value={repository.id}>
-                {repository.full_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selectedRepository && (
-          <p className="text-xs text-muted-foreground">
-            Default branch: {selectedRepository.default_branch}
-          </p>
-        )}
-      </div>
-      <div className="space-y-2">
-        <Label>Base branch</Label>
-        <Input
-          value={baseBranch}
-          onChange={(event) => setBaseBranch(event.target.value)}
-          placeholder={selectedRepository?.default_branch || 'main'}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Branch template</Label>
-        <Input
-          value={branchTemplate}
-          onChange={(event) => setBranchTemplate(event.target.value)}
-          placeholder="tp-{display_id}-{slug}"
-        />
-        <p className="text-xs text-muted-foreground">
-          Available tokens: {'{display_id}'} and {'{slug}'}.
-        </p>
-      </div>
-      <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
-        <div>
-          <p className="text-sm font-medium">Auto-sync workflow state from PR events</p>
-          <p className="text-xs text-muted-foreground">
-            When enabled, pull request webhooks can move stories forward automatically.
-          </p>
-        </div>
-        <Switch checked={autoSyncStates} onCheckedChange={setAutoSyncStates} />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label>PR opened state</Label>
-          <Select value={reviewStateId} onValueChange={setReviewStateId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose review state" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Do not map</SelectItem>
-              {workflowStates.map((state) => (
-                <SelectItem key={state.id} value={state.id}>
-                  {state.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>PR merged state</Label>
-          <Select value={doneStateId} onValueChange={setDoneStateId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose done state" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Do not map</SelectItem>
-              {workflowStates.map((state) => (
-                <SelectItem key={state.id} value={state.id}>
-                  {state.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      {repositories.length === 0 && !loading && (
-        <p className="text-xs text-muted-foreground">
-          No repositories are synced yet. Connect GitHub and sync repositories before setting a team delivery default.
-        </p>
-      )}
-      <DialogFooter>
-        <Button
-          disabled={saving || !repositoryId}
-          onClick={() => onSave({
-            repository_id: repositoryId,
-            base_branch: baseBranch || selectedRepository?.default_branch || 'main',
-            branch_template: branchTemplate || 'tp-{display_id}-{slug}',
-            auto_sync_states: autoSyncStates,
-            review_state_id: reviewStateId !== 'none' ? reviewStateId : undefined,
-            done_state_id: doneStateId !== 'none' ? doneStateId : undefined,
-          })}
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </DialogFooter>
-    </div>
-  );
-}
+import { EstimateSettingsForm } from './teams/EstimateSettingsForm';
+import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
+import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
+import { TeamWorkflowStateEditor } from './teams/TeamWorkflowStateEditor';
 
 /* ── Teams Tab ── */
 
@@ -1324,7 +963,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
         {/* Workflow States Editor Dialog */}
         <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
-          <DialogContent className="max-h-[90vh] w-[min(96vw,72rem)] max-w-[min(96vw,72rem)] overflow-y-auto">
+          <DialogContent
+            className="max-h-[90vh] overflow-y-auto"
+            style={{
+              width: `min(96vw, ${Math.max(40, (activeTeamWorkflow?.states.length ?? 3) * 14.5 + 6)}rem)`,
+              maxWidth: '96vw',
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Workflow States</DialogTitle>
             </DialogHeader>
@@ -1373,14 +1018,14 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             {!allSpaces || allSpaces.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">No docs spaces created yet.</p>
             ) : (
+              <>
               <div className="flex flex-wrap gap-1.5">
                 {allSpaces.map((space) => {
                   const isWorkspaceWide = space.visibility === 'workspace_wide';
                   const selected = isWorkspaceWide || (space.team_ids?.includes(selectedTeamId ?? '') ?? false);
                   const isSaving = spaceSaving === space.id;
-                  return (
+                  const pill = (
                     <button
-                      key={space.id}
                       type="button"
                       disabled={isSaving || isWorkspaceWide}
                       onClick={async () => {
@@ -1410,8 +1055,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                       {space.icon ? `${space.icon} ` : ''}{space.name}{isWorkspaceWide ? ' (all teams)' : ''}
                     </button>
                   );
+                  return <span key={space.id}>{pill}</span>;
                 })}
               </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                <span className="font-medium">Note:</span> Workspace-wide spaces can't be removed from here. Edit visibility from space settings.
+              </p>
+              </>
             )}
           </div>
         </DialogContent>
@@ -1674,238 +1324,5 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         onConfirm={() => { if (deleteTeamConfirm) handleDelete(deleteTeamConfirm); setDeleteTeamConfirm(null); }}
       />
     </>
-  );
-}
-
-// ── Inline Workflow State Editor ──────────────────────────────────────
-
-const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
-const STATE_TYPE_LABEL: Record<StateType, string> = {
-  backlog: 'Backlog',
-  unstarted: 'Not started',
-  started: 'Started',
-  done: 'Done',
-};
-
-function TeamWorkflowStateEditor({
-  workspaceId,
-  workflow,
-  editable,
-  onUpdate,
-}: {
-  workspaceId: string;
-  workflow: WorkflowWithStates;
-  editable: boolean;
-  onUpdate: (updated: WorkflowWithStates) => void;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [addingType, setAddingType] = useState<StateType | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-
-  const sorted = workflow.states.slice().sort((a, b) => a.position - b.position);
-  const grouped = STATE_TYPE_ORDER.map((type) => ({
-    type,
-    label: STATE_TYPE_LABEL[type],
-    states: sorted.filter((s) => s.state_type === type),
-  })).filter((g) => g.states.length > 0 || addingType === g.type);
-
-  const handleRename = async (state: WorkflowState) => {
-    const trimmed = editName.trim();
-    if (!trimmed || trimmed === state.name) {
-      setEditingId(null);
-      return;
-    }
-    setSaving(true);
-    const { data, error } = await pmWorkflowService.updateState(workspaceId, workflow.workflow.id, state.id, { name: trimmed });
-    setSaving(false);
-    if (error) { toast.error(error); return; }
-    if (data) {
-      onUpdate({
-        ...workflow,
-        states: workflow.states.map((s) => s.id === state.id ? { ...s, name: trimmed } : s),
-      });
-    }
-    setEditingId(null);
-  };
-
-  const handleColorChange = async (state: WorkflowState, color: string) => {
-    const { error } = await pmWorkflowService.updateState(workspaceId, workflow.workflow.id, state.id, { color });
-    if (error) { toast.error(error); return; }
-    onUpdate({
-      ...workflow,
-      states: workflow.states.map((s) => s.id === state.id ? { ...s, color } : s),
-    });
-  };
-
-  const handleAdd = async () => {
-    const trimmed = newName.trim();
-    if (!trimmed || !addingType) return;
-    setSaving(true);
-    const statesOfType = sorted.filter((s) => s.state_type === addingType);
-    const position = statesOfType.length > 0 ? statesOfType[statesOfType.length - 1].position + 1 : sorted.length;
-    const { data, error } = await pmWorkflowService.createState(workspaceId, workflow.workflow.id, {
-      name: trimmed,
-      state_type: addingType,
-      position,
-      color: newColor,
-    });
-    setSaving(false);
-    if (error) { toast.error(error); return; }
-    if (data && typeof data === 'object' && 'id' in data && 'workflow_id' in data) {
-      const createdState = data as WorkflowState;
-      onUpdate({ ...workflow, states: [...workflow.states, createdState] });
-    }
-    setNewName('');
-    setNewColor(PRESET_COLORS[0]);
-    setAddingType(null);
-  };
-
-  const handleDelete = async (stateId: string) => {
-    setSaving(true);
-    const { error } = await pmWorkflowService.removeState(workspaceId, workflow.workflow.id, stateId);
-    setSaving(false);
-    if (error) { toast.error(error); return; }
-    onUpdate({ ...workflow, states: workflow.states.filter((s) => s.id !== stateId) });
-    setDeleteConfirm(null);
-  };
-
-  return (
-    <div className="space-y-4 py-2">
-      {grouped.map((group) => (
-        <div key={group.type}>
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-            {group.label}
-          </p>
-          <div className="space-y-1">
-            {group.states.map((state) => (
-              <div
-                key={state.id}
-                className="group flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5"
-              >
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110"
-                      style={{ backgroundColor: state.color ?? '#9ca3af' }}
-                      disabled={!editable}
-                    />
-                  </PopoverTrigger>
-                  {editable && (
-                    <PopoverContent className="w-auto p-2" align="start">
-                      <ColorPicker value={state.color ?? '#9ca3af'} onChange={(c) => handleColorChange(state, c)} />
-                    </PopoverContent>
-                  )}
-                </Popover>
-
-                {editingId === state.id ? (
-                  <Input
-                    autoFocus
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onBlur={() => handleRename(state)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleRename(state); if (e.key === 'Escape') setEditingId(null); }}
-                    className="h-6 flex-1 text-xs px-1 py-0"
-                    disabled={saving}
-                  />
-                ) : (
-                  <span className="flex-1 text-sm truncate">{state.name}</span>
-                )}
-
-                {editable && editingId !== state.id && (
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                      onClick={() => { setEditingId(state.id); setEditName(state.name); }}
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    {workflow.states.length > 1 && (
-                      <button
-                        type="button"
-                        className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-muted"
-                        onClick={() => setDeleteConfirm(state.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {addingType === group.type && (
-              <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-background px-2.5 py-1.5">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110"
-                      style={{ backgroundColor: newColor }}
-                    />
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start">
-                    <ColorPicker value={newColor} onChange={setNewColor} />
-                  </PopoverContent>
-                </Popover>
-                <Input
-                  autoFocus
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAddingType(null); setNewName(''); } }}
-                  placeholder="State name..."
-                  className="h-6 flex-1 text-xs px-1 py-0 border-0 shadow-none focus-visible:ring-0"
-                  disabled={saving}
-                />
-                <button
-                  type="button"
-                  className="h-5 w-5 flex items-center justify-center rounded text-primary hover:bg-muted"
-                  onClick={handleAdd}
-                  disabled={saving || !newName.trim()}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:bg-muted"
-                  onClick={() => { setAddingType(null); setNewName(''); }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {editable && addingType !== group.type && (
-            <button
-              type="button"
-              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => { setAddingType(group.type); setNewName(''); setNewColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)]); }}
-            >
-              <Plus className="h-3 w-3" /> Add state
-            </button>
-          )}
-        </div>
-      ))}
-
-      {!editable && (
-        <p className="text-xs text-muted-foreground">You don't have permission to edit workflow states.</p>
-      )}
-
-      <ConfirmDialog
-        open={deleteConfirm !== null}
-        onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}
-        title="Delete state"
-        description="Stories in this state will need to be moved to another state. This cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => { if (deleteConfirm) handleDelete(deleteConfirm); }}
-      />
-    </div>
   );
 }

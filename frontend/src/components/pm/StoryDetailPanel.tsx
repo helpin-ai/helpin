@@ -92,6 +92,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { buildStoryCopyUrl } from '@/lib/pmStoryLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
@@ -117,6 +118,7 @@ import type {
   WorkflowState,
 } from '@/lib/pmTypes';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -323,6 +325,7 @@ function StoryDetailPanelBody({
   onStoryUpdated: (story: StoryDetail) => void;
   onStoryArchived: (storyId: string) => void;
 }) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
@@ -563,7 +566,13 @@ function StoryDetailPanelBody({
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
@@ -609,7 +618,16 @@ function StoryDetailPanelBody({
   };
 
   // ── Copy link ──────────────────────────────────────────────────
-  const copyLink = () => copyText(window.location.href);
+  const copyLink = () =>
+    copyText(
+      buildStoryCopyUrl({
+        currentHref: window.location.href,
+        displayId: storyDetail.story.display_id,
+        origin: window.location.origin,
+        slug: workspace?.slug,
+        storyId: storyDetail.story.id,
+      }),
+    );
 
   // ── Pipeline automation rules ──────────────────────────────────
   const workflowId = states[0]?.workflow_id;
@@ -681,13 +699,14 @@ function StoryDetailPanelBody({
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && workspace && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.objective_name}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: storyDetail.objective_id! } });
@@ -703,7 +722,8 @@ function StoryDetailPanelBody({
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.epic_name}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.story.epic_id! } });
@@ -719,7 +739,8 @@ function StoryDetailPanelBody({
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={currentSprintName}
                 onClick={() => {
                   onOpenChange(false);
                   navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: form.sprint_id! } });
@@ -740,7 +761,7 @@ function StoryDetailPanelBody({
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-2 flex shrink-0 items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
@@ -1398,13 +1419,12 @@ function StoryDetailPanelBody({
 
           </div>
 
-          <Separator className="my-4" />
-
           <AssociationsPanel
             objectType="story"
             objectId={storyDetail.story.id}
             workspaceId={workspaceId}
             includeStoryRelationships={false}
+            className="-mx-4 mt-4 border-t border-border/60"
           />
         </aside>
       </div>

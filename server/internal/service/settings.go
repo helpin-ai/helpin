@@ -10,12 +10,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // SettingsService handles workspace configuration business logic.
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
 	pmWorkflowService *PMWorkflowService
+	wsPublisher       *websocket.Publisher
 	logger            *slog.Logger
 }
 
@@ -47,10 +49,11 @@ func isValidDefaultStoryType(value string) bool {
 }
 
 // NewSettingsService creates a new SettingsService.
-func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService) *SettingsService {
+func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService, wsPublisher *websocket.Publisher) *SettingsService {
 	return &SettingsService{
 		settingsRepo:      settingsRepo,
 		pmWorkflowService: pmWorkflowService,
+		wsPublisher:       wsPublisher,
 		logger:            slog.Default().With("service", "settings"),
 	}
 }
@@ -377,7 +380,15 @@ func (s *SettingsService) UpdateTeamEstimateSettings(ctx context.Context, teamID
 	if req.Scale != nil && !validEstimateScales[*req.Scale] {
 		return nil, fmt.Errorf("invalid estimate scale: %s", *req.Scale)
 	}
-	return s.settingsRepo.UpsertTeamEstimateSettings(ctx, teamID, req)
+	settings, err := s.settingsRepo.UpsertTeamEstimateSettings(ctx, teamID, req)
+	if err != nil {
+		return nil, err
+	}
+	team, err := s.settingsRepo.GetTeamByID(ctx, teamID)
+	if err == nil && team != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "team_estimate_settings", teamID, team.WorkspaceID, "", "team", teamID, nil)
+	}
+	return settings, nil
 }
 
 // GetTeamFieldVisibility returns field visibility settings for a team.

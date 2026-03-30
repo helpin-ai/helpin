@@ -236,6 +236,7 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetLinkPreviewService(service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs))
 	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
 	go func() {
 		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {
@@ -258,6 +259,7 @@ func main() {
 		checklistRepo,
 		externalLinkRepo,
 		pmActivityService,
+		nil,
 	)
 	pmAutomationService := service.NewPMAutomationService(
 		pmAutomationRepo,
@@ -268,7 +270,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
-	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo)
+	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
 		workspaceRepo,
@@ -333,8 +335,8 @@ func main() {
 		cfg.CodexChatGPTAccountID,
 	)
 	agentService.SetWorkflowService(pmWorkflowService)
-	docsContentService := service.NewDocsContentService(docsContentRepo)
-	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
+	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,

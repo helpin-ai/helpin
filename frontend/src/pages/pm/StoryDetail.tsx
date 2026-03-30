@@ -87,6 +87,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { buildStoryUrl } from '@/lib/pmStoryLinks';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -114,6 +115,7 @@ import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries/useSettings';
 import { toast } from 'sonner';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -273,6 +275,7 @@ function ActivityEntry({ entry }: { entry: ActivityLogEntry }) {
 
 export function StoryDetailPage() {
   const { storyId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -563,7 +566,13 @@ export function StoryDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
@@ -609,7 +618,17 @@ export function StoryDetailPage() {
   };
 
   // ── Copy link ───────────────────────────────────────────────────
-  const copyLink = () => copyText(window.location.href);
+  const copyLink = () => {
+    if (!storyDetail) return Promise.resolve(false);
+
+    return copyText(
+      buildStoryUrl({
+        origin: window.location.origin,
+        slug,
+        storyId: storyDetail.story.id,
+      }),
+    );
+  };
 
   // ── Derived data ────────────────────────────────────────────────
   const currentState = useMemo(
@@ -691,13 +710,14 @@ export function StoryDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
 
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.objective_name}
                 onClick={() => navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug, objectiveId: storyDetail.objective_id! } })}
               >
                 {storyDetail.objective_name}
@@ -710,7 +730,8 @@ export function StoryDetailPage() {
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={storyDetail.epic_name}
                 onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: storyDetail.story.epic_id! } })}
               >
                 {storyDetail.epic_name}
@@ -723,7 +744,8 @@ export function StoryDetailPage() {
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
                 type="button"
-                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
+                title={currentSprintName}
                 onClick={() => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug, sprintId: form.sprint_id! } })}
               >
                 {currentSprintName}
@@ -741,7 +763,7 @@ export function StoryDetailPage() {
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-2 flex shrink-0 items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <FollowButton entityType="story" entityId={storyDetail.story.id} />
           <DropdownMenu>
@@ -1284,7 +1306,7 @@ export function StoryDetailPage() {
             objectId={storyDetail.story.id}
             workspaceId={workspaceId!}
             includeStoryRelationships={false}
-            className="mt-6"
+            className="-mx-4 mt-4 border-t border-border/60"
           />
 
           {/* Delivery */}

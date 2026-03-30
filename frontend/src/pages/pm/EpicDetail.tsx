@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -182,6 +183,7 @@ function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null
 
 export function EpicDetailPage() {
   const { epicId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 
@@ -316,7 +318,13 @@ export function EpicDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
@@ -850,8 +858,7 @@ export function EpicDetailPage() {
 
           {workspaceId ? (
             <>
-              <Separator className="my-6" />
-              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} />
+              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} className="-mx-4 mt-4 border-t border-border/60" />
             </>
           ) : null}
         </aside>

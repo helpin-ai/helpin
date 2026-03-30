@@ -40,6 +40,56 @@ type agentTypingData struct {
 	Content        string `json:"content,omitempty"`
 }
 
+type presenceSyncData struct {
+	ConversationIDs []string `json:"conversation_ids"`
+}
+
+type docViewingData struct {
+	DocumentID string `json:"document_id"`
+}
+
+type docPresenceSyncData struct {
+	DocumentIDs []string `json:"document_ids"`
+}
+
+type docEditingData struct {
+	DocumentID string `json:"document_id"`
+	Area       string `json:"area"`
+	Section    string `json:"section,omitempty"`
+}
+
+type PresenceSnapshotViewer struct {
+	UserID string  `json:"user_id"`
+	Name   *string `json:"name,omitempty"`
+	Avatar *string `json:"avatar,omitempty"`
+}
+
+type PresenceSnapshotTyper struct {
+	Content string  `json:"content"`
+	Name    *string `json:"name,omitempty"`
+	Avatar  *string `json:"avatar,omitempty"`
+}
+
+type PresenceSnapshotPayload struct {
+	ConversationID string                           `json:"conversation_id"`
+	Viewers        []PresenceSnapshotViewer         `json:"viewers"`
+	Typers         map[string]PresenceSnapshotTyper `json:"typers,omitempty"`
+}
+
+type DocPresenceSnapshotPayload struct {
+	DocumentID string                       `json:"document_id"`
+	Viewers    []PresenceSnapshotViewer     `json:"viewers"`
+	Editors    map[string]DocPresenceEditor `json:"editors,omitempty"`
+}
+
+type DocPresenceEditor struct {
+	UserID  string  `json:"user_id"`
+	Area    string  `json:"area"`
+	Section string  `json:"section,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Avatar  *string `json:"avatar,omitempty"`
+}
+
 // MarkReadFunc marks a conversation as read for the given user.
 type MarkReadFunc func(ctx context.Context, workspaceID, conversationID, userID string) error
 
@@ -73,6 +123,128 @@ func (h *Handler) SetUserLookup(fn UserLookupFunc) {
 // SetMarkRead injects the function used to mark conversations as read.
 func (h *Handler) SetMarkRead(fn MarkReadFunc) {
 	h.markRead = fn
+}
+
+func (h *Handler) buildPresenceSnapshotPayload(ctx context.Context, workspaceID, conversationID string) (PresenceSnapshotPayload, error) {
+	snap, err := h.hub.Presence.GetSnapshot(ctx, workspaceID, conversationID)
+	if err != nil {
+		return PresenceSnapshotPayload{}, err
+	}
+
+	payload := PresenceSnapshotPayload{
+		ConversationID: conversationID,
+		Viewers:        make([]PresenceSnapshotViewer, 0, len(snap.Viewers)),
+		Typers:         make(map[string]PresenceSnapshotTyper, len(snap.Typers)),
+	}
+
+	for _, userID := range snap.Viewers {
+		viewer := PresenceSnapshotViewer{UserID: userID}
+		if h.userLookup != nil {
+			name, avatar := h.userLookup(ctx, userID)
+			if name != "" {
+				viewer.Name = &name
+			}
+			if avatar != nil {
+				viewer.Avatar = avatar
+			}
+		}
+		payload.Viewers = append(payload.Viewers, viewer)
+	}
+
+	for userID, content := range snap.Typers {
+		typer := PresenceSnapshotTyper{Content: content}
+		if h.userLookup != nil {
+			name, avatar := h.userLookup(ctx, userID)
+			if name != "" {
+				typer.Name = &name
+			}
+			if avatar != nil {
+				typer.Avatar = avatar
+			}
+		}
+		payload.Typers[userID] = typer
+	}
+
+	return payload, nil
+}
+
+func (h *Handler) sendPresenceSnapshot(ctx context.Context, conn *websocket.Conn, workspaceID, conversationID string) {
+	payload, err := h.buildPresenceSnapshotPayload(ctx, workspaceID, conversationID)
+	if err != nil {
+		slog.Error("presence GetSnapshot", "error", err, "conversation_id", conversationID, "workspace_id", workspaceID)
+		return
+	}
+	slog.Debug("presence snapshot sent",
+		"conversation_id", conversationID,
+		"workspace_id", workspaceID,
+		"viewer_count", len(payload.Viewers),
+		"typer_count", len(payload.Typers))
+	if err := SendToClient(conn, "support:presence_snapshot", payload); err != nil {
+		slog.Error("presence snapshot send failed", "error", err, "conversation_id", conversationID, "workspace_id", workspaceID)
+	}
+}
+
+func (h *Handler) buildDocPresenceSnapshotPayload(ctx context.Context, workspaceID, documentID string) (DocPresenceSnapshotPayload, error) {
+	snap, err := h.hub.Presence.GetDocSnapshot(ctx, workspaceID, documentID)
+	if err != nil {
+		return DocPresenceSnapshotPayload{}, err
+	}
+
+	payload := DocPresenceSnapshotPayload{
+		DocumentID: documentID,
+		Viewers:    make([]PresenceSnapshotViewer, 0, len(snap.Viewers)),
+		Editors:    make(map[string]DocPresenceEditor, len(snap.Editors)),
+	}
+
+	for _, userID := range snap.Viewers {
+		viewer := PresenceSnapshotViewer{UserID: userID}
+		if h.userLookup != nil {
+			name, avatar := h.userLookup(ctx, userID)
+			if name != "" {
+				viewer.Name = &name
+			}
+			if avatar != nil {
+				viewer.Avatar = avatar
+			}
+		}
+		payload.Viewers = append(payload.Viewers, viewer)
+	}
+
+	for userID, editorState := range snap.Editors {
+		editor := DocPresenceEditor{
+			UserID:  userID,
+			Area:    editorState.Area,
+			Section: editorState.Section,
+		}
+		if h.userLookup != nil {
+			name, avatar := h.userLookup(ctx, userID)
+			if name != "" {
+				editor.Name = &name
+			}
+			if avatar != nil {
+				editor.Avatar = avatar
+			}
+		}
+		payload.Editors[userID] = editor
+	}
+
+	return payload, nil
+}
+
+func (h *Handler) sendDocPresenceSnapshot(ctx context.Context, conn *websocket.Conn, workspaceID, documentID string) {
+	payload, err := h.buildDocPresenceSnapshotPayload(ctx, workspaceID, documentID)
+	if err != nil {
+		slog.Error("doc presence GetSnapshot", "error", err, "document_id", documentID, "workspace_id", workspaceID)
+		return
+	}
+	slog.Debug("doc presence snapshot sent",
+		"document_id", documentID,
+		"workspace_id", workspaceID,
+		"viewer_count", len(payload.Viewers),
+		"editor_count", len(payload.Editors))
+	if err := SendToClient(conn, "docs:presence_snapshot", payload); err != nil {
+		slog.Error("doc presence snapshot send failed", "error", err, "document_id", documentID, "workspace_id", workspaceID)
+	}
 }
 
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
@@ -170,12 +342,174 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
+		case "docs:viewing:start":
+			var d docViewingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" {
+				continue
+			}
+			ctx := r.Context()
+			slog.Debug("doc presence viewing start",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
+			changed, err := h.hub.Presence.SetDocViewing(ctx, workspaceID, d.DocumentID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("doc presence SetDocViewing", "error", err)
+			}
+			if changed {
+				var eventData json.RawMessage
+				if h.userLookup != nil {
+					payload := map[string]string{}
+					name, avatar := h.userLookup(ctx, client.UserID)
+					if name != "" {
+						payload["viewer_name"] = name
+					}
+					if avatar != nil {
+						payload["viewer_avatar"] = *avatar
+					}
+					if len(payload) > 0 {
+						eventData, _ = json.Marshal(payload)
+					}
+				}
+				h.hub.BroadcastAll(Event{
+					Action:      "viewing_started",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+					Data:        eventData,
+				})
+			}
+			h.sendDocPresenceSnapshot(ctx, conn, workspaceID, d.DocumentID)
+
+		case "docs:viewing:stop":
+			var d docViewingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" {
+				continue
+			}
+			slog.Debug("doc presence viewing stop",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
+			cleared, err := h.hub.Presence.ClearDocViewing(r.Context(), workspaceID, d.DocumentID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("doc presence ClearDocViewing", "error", err)
+			}
+			if cleared {
+				h.hub.BroadcastAll(Event{
+					Action:      "viewing_stopped",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+				})
+			}
+
+		case "docs:editing:update":
+			var d docEditingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" || d.Area == "" {
+				continue
+			}
+			ctx := r.Context()
+			slog.Debug("doc presence editing update",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID,
+				"area", d.Area,
+				"section", d.Section)
+			changed, err := h.hub.Presence.SetDocEditing(ctx, workspaceID, d.DocumentID, client.UserID, client.ConnID, d.Area, d.Section)
+			if err != nil {
+				slog.Error("doc presence SetDocEditing", "error", err)
+				continue
+			}
+			if changed {
+				payload := map[string]string{
+					"editor_area": d.Area,
+				}
+				if d.Section != "" {
+					payload["editor_section"] = d.Section
+				}
+				if h.userLookup != nil {
+					name, avatar := h.userLookup(ctx, client.UserID)
+					if name != "" {
+						payload["editor_name"] = name
+					}
+					if avatar != nil {
+						payload["editor_avatar"] = *avatar
+					}
+				}
+				eventData, _ := json.Marshal(payload)
+				h.hub.BroadcastAll(Event{
+					Action:      "editing_updated",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+					Data:        eventData,
+				})
+			}
+
+		case "docs:editing:stop":
+			var d docEditingData
+			if json.Unmarshal(msg.Data, &d) != nil || d.DocumentID == "" {
+				continue
+			}
+			slog.Debug("doc presence editing stop",
+				"document_id", d.DocumentID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
+			cleared, err := h.hub.Presence.ClearDocEditing(r.Context(), workspaceID, d.DocumentID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("doc presence ClearDocEditing", "error", err)
+				continue
+			}
+			if cleared {
+				h.hub.BroadcastAll(Event{
+					Action:      "editing_stopped",
+					Entity:      "docs_document_presence",
+					EntityID:    d.DocumentID,
+					WorkspaceID: workspaceID,
+					ActorID:     client.UserID,
+				})
+			}
+
+		case "docs:presence:sync":
+			var d docPresenceSyncData
+			if json.Unmarshal(msg.Data, &d) != nil || len(d.DocumentIDs) == 0 {
+				continue
+			}
+			slog.Debug("doc presence sync requested",
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID,
+				"document_count", len(d.DocumentIDs))
+			seen := make(map[string]struct{}, len(d.DocumentIDs))
+			for _, documentID := range d.DocumentIDs {
+				if documentID == "" {
+					continue
+				}
+				if _, ok := seen[documentID]; ok {
+					continue
+				}
+				seen[documentID] = struct{}{}
+				h.sendDocPresenceSnapshot(r.Context(), conn, workspaceID, documentID)
+			}
+
 		case "support:viewing:start":
 			var d agentViewingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
 			ctx := r.Context()
+			slog.Debug("presence viewing start",
+				"conversation_id", d.ConversationID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
 			changed, err := h.hub.Presence.SetViewing(ctx, workspaceID, d.ConversationID, client.UserID, client.ConnID)
 			if err != nil {
 				slog.Error("presence SetViewing", "error", err)
@@ -189,19 +523,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ActorID:     client.UserID,
 				})
 			}
-			// Send presence snapshot to this client
-			snap, err := h.hub.Presence.GetSnapshot(ctx, workspaceID, d.ConversationID)
-			if err != nil {
-				slog.Error("presence GetSnapshot", "error", err)
-			}
-			snapData, _ := json.Marshal(snap)
-			SendToClient(conn, "support:presence_snapshot", json.RawMessage(snapData))
+			h.sendPresenceSnapshot(ctx, conn, workspaceID, d.ConversationID)
 
 		case "support:viewing:stop":
 			var d agentViewingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
+			slog.Debug("presence viewing stop",
+				"conversation_id", d.ConversationID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
 			cleared, err := h.hub.Presence.ClearViewing(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID)
 			if err != nil {
 				slog.Error("presence ClearViewing", "error", err)
@@ -221,6 +554,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
+			slog.Debug("presence typing update",
+				"message_type", msg.Type,
+				"conversation_id", d.ConversationID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID,
+				"has_content", d.Content != "")
 			if err := h.hub.Presence.SetTyping(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID, d.Content); err != nil {
 				slog.Error("presence SetTyping", "error", err)
 			}
@@ -256,6 +596,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
+			slog.Debug("presence typing stop",
+				"conversation_id", d.ConversationID,
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
 			cleared, err := h.hub.Presence.ClearTyping(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID)
 			if err != nil {
 				slog.Error("presence ClearTyping", "error", err)
@@ -283,12 +628,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "support:ping":
+			slog.Debug("presence ping",
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID)
 			if err := h.hub.Presence.RefreshAgentOnline(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
 				slog.Error("presence RefreshAgentOnline", "error", err)
 			}
 			// Refresh all active presence keys for this agent connection (keepalive).
 			if err := h.hub.Presence.RefreshAllForConn(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
 				slog.Error("presence RefreshAllForConn", "error", err)
+			}
+
+		case "support:presence:sync":
+			var d presenceSyncData
+			if json.Unmarshal(msg.Data, &d) != nil || len(d.ConversationIDs) == 0 {
+				continue
+			}
+			slog.Debug("presence sync requested",
+				"workspace_id", workspaceID,
+				"user_id", client.UserID,
+				"conn_id", client.ConnID,
+				"conversation_count", len(d.ConversationIDs))
+			seen := make(map[string]struct{}, len(d.ConversationIDs))
+			for _, conversationID := range d.ConversationIDs {
+				if conversationID == "" {
+					continue
+				}
+				if _, ok := seen[conversationID]; ok {
+					continue
+				}
+				seen[conversationID] = struct{}{}
+				h.sendPresenceSnapshot(r.Context(), conn, workspaceID, conversationID)
 			}
 
 		default:

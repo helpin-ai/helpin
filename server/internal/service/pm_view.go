@@ -8,17 +8,19 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // PMViewService contains view business logic.
 type PMViewService struct {
-	viewRepo *repository.PMViewRepository
-	logger   *slog.Logger
+	viewRepo    *repository.PMViewRepository
+	wsPublisher *websocket.Publisher
+	logger      *slog.Logger
 }
 
 // NewPMViewService creates a new PMViewService.
-func NewPMViewService(viewRepo *repository.PMViewRepository) *PMViewService {
-	return &PMViewService{viewRepo: viewRepo, logger: slog.Default().With("service", "pm_view")}
+func NewPMViewService(viewRepo *repository.PMViewRepository, wsPublisher *websocket.Publisher) *PMViewService {
+	return &PMViewService{viewRepo: viewRepo, wsPublisher: wsPublisher, logger: slog.Default().With("service", "pm_view")}
 }
 
 // List lists views visible to the given user.
@@ -50,6 +52,7 @@ func (s *PMViewService) Create(ctx context.Context, workspaceID, userID string, 
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "view created", "view_id", view.ID, "workspace_id", workspaceID, "name", view.Name)
+	publishWorkspaceEvent(s.wsPublisher, "created", "view", view.ID, workspaceID, userID)
 	return view, nil
 }
 
@@ -91,6 +94,7 @@ func (s *PMViewService) Update(ctx context.Context, id, userID string, req model
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "view updated", "view_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "updated", "view", id, view.WorkspaceID, userID)
 	return view, nil
 }
 
@@ -111,5 +115,6 @@ func (s *PMViewService) Delete(ctx context.Context, id, userID string) error {
 		return err
 	}
 	s.logger.InfoContext(ctx, "view deleted", "view_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "deleted", "view", id, view.WorkspaceID, userID)
 	return nil
 }

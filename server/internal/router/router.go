@@ -201,6 +201,38 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
+		// ---- Help Center domain verification (Caddy on_demand_tls) ----
+		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
+
+		// ---- Public Help Center routes (no JWT) ----
+		r.Route("/hc/{subdomain}", func(r chi.Router) {
+			r.Get("/config", h.Docs.PublicGetConfig)
+			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
+			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/{locale}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/{locale}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/{locale}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/{locale}/search", h.Docs.PublicSearchArticles)
+
+			r.Get("/spaces", h.Docs.PublicGetSpaces)
+			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
+			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/search", h.Docs.PublicSearchArticles)
+
+			// Canonical collection + article routes
+			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
+
+			// Document preview (token-authenticated)
+			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
+
+			// Legacy/redirect resolver
+			r.Get("/resolve/*", h.Docs.PublicResolvePath)
+		})
 		// ---- Public shared document route (no JWT) ----
 		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
 
@@ -424,6 +456,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/mailboxes/scopes", h.SupportInbox.ListInboxScopes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes", h.SupportInbox.ListMailboxes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes", h.SupportInbox.CreateMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/mailboxes/{mailboxId}", h.SupportInbox.UpdateMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes/{mailboxId}/archive", h.SupportInbox.ArchiveMailbox)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes/reorder", h.SupportInbox.ReorderMailboxes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes/{mailboxId}/members", h.SupportInbox.ListMailboxMembers)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-routes", h.SupportInbox.ListEmailRoutes)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes", h.SupportInbox.CreateEmailRoute)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes/{routeId}/disable", h.SupportInbox.DisableEmailRoute)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/teammates/presence", h.SupportInbox.ListTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
@@ -439,6 +481,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-story", h.SupportInbox.LinkConversationStory)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
@@ -774,6 +817,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// External publish/unpublish — docs.publish
 				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/publish-external", h.Docs.PublishExternally)
 				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/unpublish-external", h.Docs.UnpublishExternally)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/update-slug", h.Docs.UpdateArticleSlug)
 
 				// Search
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/search", h.Docs.Search)
@@ -790,14 +834,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/helpcenter/translations/{locale}/publish", h.Docs.PublishSpaceTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishSpaceTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkSpaceTranslationReviewed)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateSpaceTranslation)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/collections/{collectionId}/helpcenter/translations", h.Docs.ListCollectionTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/collections/{collectionId}/helpcenter/translations", h.Docs.UpsertCollectionTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/publish", h.Docs.PublishCollectionTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishCollectionTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkCollectionTranslationReviewed)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateCollectionTranslation)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/helpcenter/translations", h.Docs.ListArticleTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/documents/{docId}/helpcenter/translations", h.Docs.UpsertArticleTranslation)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateArticleTranslationDraft)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/publish", h.Docs.PublishArticleTranslation)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/update-slug", h.Docs.UpdateArticleTranslationSlug)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkArticleTranslationReviewed)
 

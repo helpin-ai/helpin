@@ -55,6 +55,25 @@ vi.mock('@/components/ui/popover', () => ({
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
+vi.mock('@/components/ui/command', () => ({
+  Command: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandEmpty: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  CommandInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
+  CommandItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode
+    onSelect?: () => void
+  }) => (
+    <button type="button" onClick={() => onSelect?.()}>
+      {children}
+    </button>
+  ),
+  CommandList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('@/components/ui/tiptap-editor', () => ({
   TiptapEditor: ({ content, onChange }: { content: string; onChange: (value: string) => void }) => (
     <textarea value={content} onChange={(event) => onChange(event.target.value)} />
@@ -275,6 +294,81 @@ describe('CreateStoryModal', () => {
       }),
     )
     expect(toastSuccess).toHaveBeenCalledWith('Story created')
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('submits converted html when saving from markdown mode', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'story-2' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateStoryModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const titleInput = container.querySelector('#story-title') as HTMLInputElement | null
+    const markdownButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Markdown'),
+    ) as HTMLButtonElement | undefined
+
+    expect(titleInput).toBeTruthy()
+    expect(markdownButton).toBeTruthy()
+
+    await act(async () => {
+      setInputValue(titleInput!, 'Markdown story')
+      markdownButton?.click()
+      await Promise.resolve()
+    })
+
+    const markdownTextarea = container.querySelector('textarea') as HTMLTextAreaElement | null
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save',
+    ) as HTMLButtonElement | undefined
+
+    expect(markdownTextarea).toBeTruthy()
+    expect(saveButton).toBeTruthy()
+
+    await act(async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')
+      descriptor?.set?.call(markdownTextarea, '# Problem\n\n- first')
+      markdownTextarea?.dispatchEvent(new Event('input', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      saveButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Markdown story',
+        description: expect.stringContaining('<h1>Problem</h1>'),
+      }),
+    )
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining('<ul'),
+      }),
+    )
 
     act(() => {
       root.unmount()

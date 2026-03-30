@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // PMWorkflowService contains workflow business logic.
@@ -16,15 +17,17 @@ type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
 	storyRepo    *repository.PMStoryRepository
 	labelRepo    *repository.PMLabelRepository
+	wsPublisher  *websocket.Publisher
 	logger       *slog.Logger
 }
 
 // NewPMWorkflowService creates a new PMWorkflowService.
-func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository) *PMWorkflowService {
+func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
 	return &PMWorkflowService{
 		workflowRepo: workflowRepo,
 		storyRepo:    storyRepo,
 		labelRepo:    labelRepo,
+		wsPublisher:  wsPublisher,
 		logger:       slog.Default().With("service", "pm_workflow"),
 	}
 }
@@ -101,6 +104,7 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 	}
 
 	s.logger.InfoContext(ctx, "workflow created", "workflow_id", workflow.ID, "workspace_id", req.WorkspaceID, "name", workflow.Name)
+	publishWorkspaceEvent(s.wsPublisher, "created", "workflow", workflow.ID, req.WorkspaceID, "")
 	return s.workflowRepo.GetByID(ctx, workflow.ID)
 }
 
@@ -146,6 +150,7 @@ func (s *PMWorkflowService) Update(ctx context.Context, id string, req model.Upd
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "workflow updated", "workflow_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "updated", "workflow", id, wf.Workflow.WorkspaceID, "")
 	return s.workflowRepo.GetByID(ctx, id)
 }
 
@@ -181,6 +186,7 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	s.logger.InfoContext(ctx, "workflow deleted", "workflow_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "deleted", "workflow", id, wf.Workflow.WorkspaceID, "")
 	return nil
 }
 
@@ -247,6 +253,7 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 	if err := s.normalizePositions(ctx, workflowID, updated.States); err != nil {
 		return nil, err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "workflow", workflowID, wf.Workflow.WorkspaceID, "")
 
 	return state, nil
 }
@@ -330,6 +337,7 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	}
 	for _, state := range updated.States {
 		if state.ID == stateID {
+			publishWorkspaceEvent(s.wsPublisher, "updated", "workflow", workflowID, wf.Workflow.WorkspaceID, "")
 			return &state, nil
 		}
 	}
@@ -377,6 +385,7 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 			return err
 		}
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "workflow", workflowID, wf.Workflow.WorkspaceID, "")
 	return nil
 }
 
@@ -416,6 +425,7 @@ func (s *PMWorkflowService) ReorderStates(ctx context.Context, workflowID string
 	if err := s.workflowRepo.ReorderStates(ctx, workflowID, req.StateIDs); err != nil {
 		return err
 	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "workflow", workflowID, wf.Workflow.WorkspaceID, "")
 	return nil
 }
 

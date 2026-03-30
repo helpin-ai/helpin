@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -131,6 +132,7 @@ const buildForm = (iter: SprintWithStats): SprintFormState => ({
 
 export function SprintDetailPage() {
   const { sprintId, slug } = routeApi.useParams();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -252,7 +254,13 @@ export function SprintDetailPage() {
       if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
         return 'fallback' as const;
       }
-      if (!window.confirm('Delete this image from the description and attachments?')) {
+      const ok = await confirm({
+        title: 'Delete image?',
+        description: 'This will remove the image from the description and attachments.',
+        confirmText: 'Delete',
+        variant: 'destructive',
+      });
+      if (!ok) {
         return 'prevent' as const;
       }
 
@@ -615,40 +623,6 @@ export function SprintDetailPage() {
 
           </div>
 
-          <Separator className="my-4" />
-
-          <div className="space-y-1">
-            {sprint.sprint.archived ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!workspaceId || !sprint) return;
-                  setSaving(true);
-                  const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
-                  if (err || !data) {
-                    setSaveError(err ?? 'Failed to update');
-                  } else {
-                    setSprint(data);
-                    setSaveError(null);
-                  }
-                  setSaving(false);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <ArchiveRestore className="h-3.5 w-3.5" />
-                Unarchive
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setArchiveConfirmOpen(true)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Archive
-              </button>
-            )}
-          </div>
         </aside>
       </div>
 

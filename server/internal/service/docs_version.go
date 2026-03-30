@@ -7,17 +7,20 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsVersionService handles business logic for document versioning.
 type DocsVersionService struct {
 	versionRepo *repository.DocsVersionRepository
 	contentRepo *repository.DocsContentRepository
+	docRepo     *repository.DocsDocumentRepository
+	wsPublisher *websocket.Publisher
 }
 
 // NewDocsVersionService creates a new DocsVersionService.
-func NewDocsVersionService(versionRepo *repository.DocsVersionRepository, contentRepo *repository.DocsContentRepository) *DocsVersionService {
-	return &DocsVersionService{versionRepo: versionRepo, contentRepo: contentRepo}
+func NewDocsVersionService(versionRepo *repository.DocsVersionRepository, contentRepo *repository.DocsContentRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsVersionService {
+	return &DocsVersionService{versionRepo: versionRepo, contentRepo: contentRepo, docRepo: docRepo, wsPublisher: wsPublisher}
 }
 
 // List returns all versions for a document.
@@ -40,7 +43,9 @@ func (s *DocsVersionService) CreateSnapshot(ctx context.Context, documentID, use
 		return nil, fmt.Errorf("no content to snapshot")
 	}
 	wc := repository.WordCount(content.ContentText)
-	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, model.VersionTypeManual, wc)
+	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, model.VersionTypeManual, wc)
+	s.publishVersionEvent(ctx, "created", version, userID)
+	return version, err
 }
 
 // SnapshotOnPublish creates a version snapshot labeled "Published" with type=publish.
@@ -54,7 +59,9 @@ func (s *DocsVersionService) SnapshotOnPublish(ctx context.Context, documentID, 
 	}
 	label := "Published"
 	wc := repository.WordCount(content.ContentText)
-	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypePublish, wc)
+	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypePublish, wc)
+	s.publishVersionEvent(ctx, "created", version, userID)
+	return version, err
 }
 
 // createInternalSnapshot creates a version snapshot with a specific type (used internally for revert flow).
@@ -67,7 +74,9 @@ func (s *DocsVersionService) createInternalSnapshot(ctx context.Context, documen
 		return nil, fmt.Errorf("no content to snapshot")
 	}
 	wc := repository.WordCount(content.ContentText)
-	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, versionType, wc)
+	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, versionType, wc)
+	s.publishVersionEvent(ctx, "created", version, userID)
+	return version, err
 }
 
 // Revert replaces current content with a previous version's content and creates before/after revert snapshots.
@@ -96,7 +105,13 @@ func (s *DocsVersionService) Revert(ctx context.Context, documentID, versionID, 
 	// Create a "Reverted" snapshot with the timestamp of the target version.
 	revertLabel := fmt.Sprintf("Reverted to version from %s", version.CreatedAt.Format("Jan 2, 2006 15:04"))
 	wc := repository.WordCount(version.ContentText)
-	_, _ = s.versionRepo.Create(ctx, documentID, userID, version.Content, version.ContentText, &revertLabel, model.VersionTypeRevert, wc)
+	revertVersion, _ := s.versionRepo.Create(ctx, documentID, userID, version.Content, version.ContentText, &revertLabel, model.VersionTypeRevert, wc)
+	s.publishVersionEvent(ctx, "created", revertVersion, userID)
+	if s.docRepo != nil {
+		if doc, err := s.docRepo.GetByID(ctx, documentID); err == nil && doc != nil {
+			publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, userID)
+		}
+	}
 
 	return updated, nil
 }
@@ -113,7 +128,13 @@ func (s *DocsVersionService) UpdateLabel(ctx context.Context, versionID string, 
 	if version.VersionType != model.VersionTypeManual {
 		return nil, fmt.Errorf("only manual snapshots can be renamed")
 	}
-	return s.versionRepo.UpdateLabel(ctx, versionID, label)
+	updated, err := s.versionRepo.UpdateLabel(ctx, versionID, label)
+	actorID := ""
+	if updated != nil {
+		actorID = updated.CreatedBy
+	}
+	s.publishVersionEvent(ctx, "updated", updated, actorID)
+	return updated, err
 }
 
 // autoSnapshotInterval is the minimum time between auto snapshots.
@@ -138,7 +159,8 @@ func (s *DocsVersionService) MaybeAutoSnapshot(ctx context.Context, documentID, 
 			return // too little content
 		}
 		label := "Auto snapshot"
-		_, _ = s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, wc)
+		version, _ := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, wc)
+		s.publishVersionEvent(ctx, "created", version, userID)
 		return
 	}
 
@@ -165,5 +187,17 @@ func (s *DocsVersionService) MaybeAutoSnapshot(ctx context.Context, documentID, 
 	}
 
 	label := "Auto snapshot"
-	_, _ = s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, currentWC)
+	version, _ := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, currentWC)
+	s.publishVersionEvent(ctx, "created", version, userID)
+}
+
+func (s *DocsVersionService) publishVersionEvent(ctx context.Context, action string, version *model.DocsVersion, actorID string) {
+	if s.docRepo == nil || version == nil {
+		return
+	}
+	doc, err := s.docRepo.GetByID(ctx, version.DocumentID)
+	if err != nil || doc == nil {
+		return
+	}
+	publishWorkspaceEventWithParent(s.wsPublisher, action, "docs_version", version.ID, doc.WorkspaceID, actorID, "docs_document", version.DocumentID, nil)
 }

@@ -609,6 +609,9 @@ func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID strin
 		"action_type", rule.ActionType,
 		"workspace_id", workspaceID,
 	)
+	publishWorkspaceEventWithParent(e.wsPublisher, "created", "automation_rule", rule.ID, workspaceID, "", "workflow", derefString(rule.WorkflowID), map[string]any{
+		"workflow_id": derefString(rule.WorkflowID),
+	})
 	return rule, nil
 }
 
@@ -657,12 +660,28 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if err := e.ruleRepo.Update(ctx, rule); err != nil {
 		return nil, err
 	}
+	publishWorkspaceEventWithParent(e.wsPublisher, "updated", "automation_rule", rule.ID, workspaceID, "", "workflow", derefString(rule.WorkflowID), map[string]any{
+		"workflow_id": derefString(rule.WorkflowID),
+	})
 	return rule, nil
 }
 
 // DeleteRule deletes an automation rule.
 func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, ruleID string) error {
-	return e.ruleRepo.Delete(ctx, workspaceID, ruleID)
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil {
+		return err
+	}
+	if rule == nil {
+		return fmt.Errorf("automation rule not found")
+	}
+	if err := e.ruleRepo.Delete(ctx, workspaceID, ruleID); err != nil {
+		return err
+	}
+	publishWorkspaceEventWithParent(e.wsPublisher, "deleted", "automation_rule", ruleID, workspaceID, "", "workflow", derefString(rule.WorkflowID), map[string]any{
+		"workflow_id": derefString(rule.WorkflowID),
+	})
+	return nil
 }
 
 // GetRule returns a single automation rule.

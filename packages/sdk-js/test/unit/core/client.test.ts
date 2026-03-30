@@ -32,9 +32,9 @@ describe('HelpinClient', () => {
       expect(client['retryQueue'].add).not.toHaveBeenCalled();
     });
 
-    it('should throw an error for invalid email', () => {
+    it('should throw an error for invalid email', async () => {
       const userData = { id: 'user123', email: 'invalid-email' };
-      expect(() => client.id(userData)).rejects.toThrow(
+      await expect(client.id(userData)).rejects.toThrow(
         'Invalid email provided',
       );
     });
@@ -174,9 +174,9 @@ describe('HelpinClient', () => {
       expect(client.track).not.toHaveBeenCalled();
     });
 
-    it('should throw an error for invalid company properties', () => {
+    it('should throw an error for invalid company properties', async () => {
       const invalidProps = { id: 'company123' };
-      expect(() => client.group(invalidProps as any)).rejects.toThrow(
+      await expect(client.group(invalidProps as any)).rejects.toThrow(
         'Company properties must include id, name, and created_at',
       );
     });

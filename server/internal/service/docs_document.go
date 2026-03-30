@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // DocsDocumentService handles business logic for documents.
@@ -16,11 +17,12 @@ type DocsDocumentService struct {
 	docRepo        *repository.DocsDocumentRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	translationSvc *DocsHelpcenterTranslationService
+	wsPublisher    *websocket.Publisher
 }
 
 // NewDocsDocumentService creates a new DocsDocumentService.
-func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRepo *repository.DocsSpaceRepository) *DocsDocumentService {
-	return &DocsDocumentService{docRepo: docRepo, spaceRepo: spaceRepo}
+func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsDocumentService {
+	return &DocsDocumentService{docRepo: docRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher}
 }
 
 func (s *DocsDocumentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -77,7 +79,11 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		Position:     nextPos,
 		CreatedBy:    userID,
 	}
-	return s.docRepo.Create(ctx, doc)
+	created, err := s.docRepo.Create(ctx, doc)
+	if err == nil && created != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "created", "docs_document", created.ID, workspaceID, userID, "docs_space", created.SpaceID, nil)
+	}
+	return created, err
 }
 
 // Get returns a document by ID.
@@ -166,6 +172,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 				slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after document move", "document_id", id, "error", err)
 			}
 		}
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 		return updated, nil
 	}
 	updated, err := s.docRepo.Update(ctx, id, updates)
@@ -177,6 +184,7 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after document update", "document_id", id, "error", err)
 		}
 	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 	return updated, nil
 }
 
@@ -198,7 +206,11 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusPublished); err != nil {
 		return nil, err
 	}
-	return s.docRepo.GetByID(ctx, id)
+	updated, err := s.docRepo.GetByID(ctx, id)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+	}
+	return updated, err
 }
 
 // Unpublish transitions a published document back to draft status.
@@ -219,7 +231,11 @@ func (s *DocsDocumentService) Unpublish(ctx context.Context, id string) (*model.
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusDraft); err != nil {
 		return nil, err
 	}
-	return s.docRepo.GetByID(ctx, id)
+	updated, err := s.docRepo.GetByID(ctx, id)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+	}
+	return updated, err
 }
 
 // Archive transitions a document to archived status.
@@ -254,6 +270,7 @@ func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.Do
 		"doc_id", id,
 		"new_status", updated.Status,
 	)
+	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 	return updated, nil
 }
 
@@ -272,7 +289,11 @@ func (s *DocsDocumentService) Unarchive(ctx context.Context, id string) (*model.
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusDraft); err != nil {
 		return nil, err
 	}
-	return s.docRepo.GetByID(ctx, id)
+	updated, err := s.docRepo.GetByID(ctx, id)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+	}
+	return updated, err
 }
 
 // Move moves a document to a different space and/or collection.
@@ -304,7 +325,13 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 	if err := s.docRepo.Move(ctx, id, req.SpaceID, req.CollectionID); err != nil {
 		return nil, err
 	}
-	return s.docRepo.GetByID(ctx, id)
+	updated, err := s.docRepo.GetByID(ctx, id)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "moved", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, map[string]any{
+			"collection_id": updated.CollectionID,
+		})
+	}
+	return updated, err
 }
 
 // Delete soft-deletes a document.
@@ -319,12 +346,20 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	if err := checkLocked(doc); err != nil {
 		return err
 	}
-	return s.docRepo.Delete(ctx, id)
+	if err := s.docRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_document", id, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)
+	return nil
 }
 
 // Restore restores a soft-deleted document. Does NOT auto-republish externally.
 func (s *DocsDocumentService) Restore(ctx context.Context, id string) (*model.DocsDocument, error) {
-	return s.docRepo.Restore(ctx, id)
+	doc, err := s.docRepo.Restore(ctx, id)
+	if err == nil && doc != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", doc.ID, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)
+	}
+	return doc, err
 }
 
 // ToggleShare enables or disables public sharing for a document.
@@ -350,7 +385,11 @@ func (s *DocsDocumentService) ToggleShare(ctx context.Context, id string, enable
 		updates["share_token"] = token
 	}
 
-	return s.docRepo.Update(ctx, id, updates)
+	updated, err := s.docRepo.Update(ctx, id, updates)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+	}
+	return updated, err
 }
 
 // GetByShareToken returns a publicly shared document by its token.
@@ -386,7 +425,11 @@ func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bo
 		updates["locked_by"] = nil
 	}
 
-	return s.docRepo.Update(ctx, id, updates)
+	updated, err := s.docRepo.Update(ctx, id, updates)
+	if err == nil && updated != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, userID, "docs_space", updated.SpaceID, nil)
+	}
+	return updated, err
 }
 
 // checkLocked returns an error if the document is locked, preventing mutation.
@@ -399,7 +442,18 @@ func checkLocked(doc *model.DocsDocument) error {
 
 // ReorderDocuments reorders documents within a bucket (collection or uncategorized).
 func (s *DocsDocumentService) ReorderDocuments(ctx context.Context, spaceID string, req model.ReorderDocsDocumentsRequest) error {
-	return s.docRepo.Reorder(ctx, spaceID, req.CollectionID, req.DocumentIDs)
+	if err := s.docRepo.Reorder(ctx, spaceID, req.CollectionID, req.DocumentIDs); err != nil {
+		return err
+	}
+	if len(req.DocumentIDs) == 0 {
+		return nil
+	}
+	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_document", req.DocumentIDs[0], space.WorkspaceID, "", "docs_space", spaceID, map[string]any{
+			"collection_id": req.CollectionID,
+		})
+	}
+	return nil
 }
 
 func generateShareToken() (string, error) {

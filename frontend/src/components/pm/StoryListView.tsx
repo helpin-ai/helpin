@@ -50,8 +50,10 @@ import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { buildStoryCopyUrl } from '@/lib/pmStoryLinks';
 import { useAgents, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
@@ -148,6 +150,7 @@ export function StoryListView({
   externalStories,
   onOpenStory,
 }: StoryListViewProps) {
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
@@ -741,13 +744,14 @@ export function StoryListView({
           <InlineActionsCell
             story={info.row.original}
             workspaceId={workspaceId}
+            workspaceSlug={workspaceSlug}
             onOpenStory={onOpenStory}
             setStories={setStories}
           />
         ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -1776,11 +1780,13 @@ function InlineLabelsCell({
 function InlineActionsCell({
   story,
   workspaceId,
+  workspaceSlug,
   onOpenStory,
   setStories,
 }: {
   story: Story;
   workspaceId: string;
+  workspaceSlug: string | null;
   onOpenStory: (story: Story) => void;
   setStories: React.Dispatch<React.SetStateAction<Story[]>>;
 }) {
@@ -1789,7 +1795,13 @@ function InlineActionsCell({
 
   const copyLink = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}${window.location.pathname}?story=${story.display_id}`;
+    const url = buildStoryCopyUrl({
+      currentHref: window.location.href,
+      displayId: story.display_id,
+      origin: window.location.origin,
+      slug: workspaceSlug,
+      storyId: story.id,
+    });
     copy(url);
   };
 

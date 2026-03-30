@@ -2,11 +2,11 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import { CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
-import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
-import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata } from './helpers';
+import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -36,6 +36,10 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function containsMarkdownTable(content: string): boolean {
+  return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
+}
+
 const markdownComponents = {
   a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
     <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
@@ -60,6 +64,50 @@ const SENDER_TYPE_LABELS: Record<string, string> = {
   agent: 'Agent',
   ai: 'AI Agent',
 };
+
+function previewHostLabel(preview: SupportLinkPreview): string {
+  try {
+    return new URL(preview.url).hostname.replace(/^www\./, '') || preview.host;
+  } catch {
+    return preview.host.replace(/^www\./, '');
+  }
+}
+
+function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
+  return (
+    <a
+      href={preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`block overflow-hidden rounded-xl border transition-colors hover:opacity-95 ${
+        isOutgoing
+          ? 'border-white/20 bg-white/10 text-white'
+          : 'border-border bg-background text-foreground'
+      }`}
+    >
+      {preview.image_url ? (
+        <img
+          src={preview.image_url}
+          alt={preview.title}
+          className="h-36 w-full object-cover"
+          loading="lazy"
+        />
+      ) : null}
+      <div className="space-y-1.5 p-3">
+        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
+          <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
+          <ExternalLink className="h-3 w-3 shrink-0" />
+        </div>
+        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
+        {preview.description ? (
+          <p className={`text-xs leading-relaxed ${isOutgoing ? 'text-white/80' : 'text-muted-foreground'}`}>
+            {preview.description}
+          </p>
+        ) : null}
+      </div>
+    </a>
+  );
+}
 
 function findTrailingAIContractStart(content: string): number {
   const trimmed = content.trimEnd();
@@ -102,11 +150,20 @@ interface MessageBubbleProps {
   isLastInGroup?: boolean;
   source?: TicketSource;
   receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null;
+  fallbackAvatarUrl?: string;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  isConsecutive,
+  isLastInGroup = true,
+  source,
+  receiptStatus,
+  fallbackAvatarUrl,
+}: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
+  const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
   const isCustomer = effectiveSenderType === 'customer';
   const isAI = effectiveSenderType === 'ai';
@@ -150,6 +207,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
 
     return message.content;
   }, [message.content]);
+  const hasTableContent = useMemo(() => containsMarkdownTable(displayContent), [displayContent]);
 
   // Highlight @mentions in internal notes
   const mentionParts = useMemo(() => {
@@ -162,7 +220,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
-  const showBubble = !!displayContent || fileAttachments.length > 0;
+  const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -172,6 +230,20 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
         {senderLabel}
         {sourceLabel && ` · via ${sourceLabel}`}
       </div>
+    </div>
+  );
+
+  const resolvedAvatarUrl = message.sender_avatar_url
+    ?? fallbackAvatarUrl
+    ?? ((message.sender_user_id && message.sender_user_id === currentUser?.id)
+      ? (currentUser.avatar_url ?? undefined)
+      : undefined);
+  const avatarSeed = message.sender_user_id || message.sender_agent_id || resolvedSenderName;
+  const fallbackAvatar = (
+    <div
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold leading-none shadow-sm ${getAvatarColor(avatarSeed)}`}
+    >
+      {getInitial(resolvedSenderName)}
     </div>
   );
 
@@ -185,8 +257,6 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       : isReopened ? <RotateCcw className="h-3.5 w-3.5 shrink-0" />
       : isClosed ? <XCircle className="h-4 w-4 shrink-0" />
       : <CheckCircle2 className="h-4 w-4 shrink-0" />;
-
-    const avatarUrl = message.sender_avatar_url;
 
     return (
       <div className="my-4 flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -204,12 +274,10 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
             </div>
           </TooltipContent>
         </Tooltip>
-        {avatarUrl ? (
-          <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+        {resolvedAvatarUrl ? (
+          <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
         ) : (
-          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-            {getInitial(resolvedSenderName)}
-          </div>
+          fallbackAvatar
         )}
       </div>
     );
@@ -239,7 +307,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 </div>
               </div>
             </TooltipTrigger>
-            <TooltipContent side="left">{tooltipContent}</TooltipContent>
+            <TooltipContent side="top" align="start">{tooltipContent}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -247,40 +315,24 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   }
 
   // ── Chat bubble ──
-  const avatarUrl = message.sender_avatar_url;
-  const showBotAvatar = isAI || isAgent;
-
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-          {getInitial(resolvedSenderName)}
-        </div>
+        {fallbackAvatar}
       </TooltipTrigger>
       <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
-  ) : avatarUrl ? (
+  ) : resolvedAvatarUrl ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
-      </TooltipTrigger>
-      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
-    </Tooltip>
-  ) : showBotAvatar ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary shadow-sm">
-          <Bot className="h-3.5 w-3.5" />
-        </div>
+        <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
       </TooltipTrigger>
       <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
-          {getInitial(resolvedSenderName)}
-        </div>
+        {fallbackAvatar}
       </TooltipTrigger>
       <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
@@ -300,7 +352,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
           </div>
         )}
 
-        <div className="max-w-[70%]">
+        <div className={hasTableContent ? 'max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'max-w-[70%]'}>
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -309,10 +361,14 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                     isCustomer
                       ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  }`}
+                  } ${hasTableContent ? 'overflow-hidden' : ''}`}
                 >
                   {displayContent && (
-                    <div className="prose-chat">
+                    <div
+                      className="prose-chat"
+                      data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                      data-has-table={hasTableContent ? 'true' : 'false'}
+                    >
                       <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
                     </div>
                   )}
@@ -336,9 +392,20 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                       ))}
                     </div>
                   )}
+                  {linkPreviews.length > 0 && (
+                    <div className={`${displayContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                      {linkPreviews.map((preview) => (
+                        <LinkPreviewCard
+                          key={`${message.id}:${preview.url}`}
+                          preview={preview}
+                          isOutgoing={!isCustomer}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </TooltipTrigger>
-              <TooltipContent side={isCustomer ? 'right' : 'left'}>
+              <TooltipContent side="top" align={isCustomer ? 'start' : 'end'}>
                 {tooltipContent}
               </TooltipContent>
             </Tooltip>

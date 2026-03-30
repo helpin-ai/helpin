@@ -48,7 +48,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Get the conversation
-		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get conversation: %v", err)
 		}
@@ -76,7 +76,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{})
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -88,7 +88,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{})
+		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -100,7 +100,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{})
+		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Verify
-		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
@@ -142,7 +142,7 @@ func TestSupportConversationRepository(t *testing.T) {
 	t.Run("GetByID not found returns nil", func(t *testing.T) {
 		ctx := context.Background()
 
-		fetched, err := repo.GetByID(ctx, workspaceID, "non-existent-id")
+		fetched, err := repo.GetByID(ctx, workspaceID, "non-existent-id", "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -186,7 +186,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Should not be visible from original workspace
-		fetched, err := repo.GetByID(ctx, workspaceID, otherConv.ID)
+		fetched, err := repo.GetByID(ctx, workspaceID, otherConv.ID, "", model.RoleOwner)
 		if err != nil {
 			t.Fatalf("get cross-workspace: %v", err)
 		}
@@ -215,7 +215,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2})
+		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -227,12 +227,110 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2})
+		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
 		if len(page3) != 1 {
 			t.Errorf("expected 1 result on page 3, got %d", len(page3))
+		}
+	})
+
+	t.Run("Linked team members can access mailbox conversations", func(t *testing.T) {
+		ctx := context.Background()
+
+		linkedWorkspaceID := "ws-linked-team-access"
+		ownerUserID := "user-linked-owner"
+		teamUserID := "user-linked-team"
+		outsiderUserID := "user-linked-outsider"
+		teamID := "team-linked-support"
+
+		seedUser(t, db, ownerUserID, "linked-owner@example.com", "Linked Owner", "hash")
+		seedUser(t, db, teamUserID, "linked-team@example.com", "Linked Team", "hash")
+		seedUser(t, db, outsiderUserID, "linked-outsider@example.com", "Linked Outsider", "hash")
+		seedWorkspace(t, db, linkedWorkspaceID, "Linked Team Access", "linked-team-access", ownerUserID)
+		seedWorkspaceMember(t, db, "wm-linked-owner", linkedWorkspaceID, ownerUserID, "linked-owner@example.com", "Linked Owner", model.RoleAdmin)
+		seedWorkspaceMember(t, db, "wm-linked-team", linkedWorkspaceID, teamUserID, "linked-team@example.com", "Linked Team", model.RoleMember)
+		seedWorkspaceMember(t, db, "wm-linked-outsider", linkedWorkspaceID, outsiderUserID, "linked-outsider@example.com", "Linked Outsider", model.RoleMember)
+
+		now := time.Now()
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			teamID, linkedWorkspaceID, "Linked Support", "linked-support", now, now)
+		mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			"twm-linked-team", teamID, "wm-linked-team", "member", now, now)
+
+		mailboxRepo := repository.NewSupportMailboxRepository(db)
+		mailbox := &model.SupportMailbox{
+			WorkspaceID:    linkedWorkspaceID,
+			Name:           "Billing",
+			Handle:         "billing",
+			Icon:           "inbox",
+			LinkedTeamID:   strPtr(teamID),
+			VisibilityMode: "members_only",
+			AssignmentMode: "round_robin",
+			Active:         true,
+			CreatedByID:    ownerUserID,
+		}
+		if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+			t.Fatalf("create mailbox: %v", err)
+		}
+
+		privateConversation := &model.SupportConversation{
+			WorkspaceID: linkedWorkspaceID,
+			MailboxID:   &mailbox.ID,
+			Subject:     "Linked team private conversation",
+			Status:      "open",
+		}
+		if err := repo.Create(ctx, privateConversation); err != nil {
+			t.Fatalf("create private conversation: %v", err)
+		}
+
+		accessibleMailboxes, err := mailboxRepo.ListAccessible(ctx, linkedWorkspaceID, "wm-linked-team", model.RoleMember, false)
+		if err != nil {
+			t.Fatalf("list accessible mailboxes: %v", err)
+		}
+		if len(accessibleMailboxes) != 1 || accessibleMailboxes[0].ID != mailbox.ID {
+			t.Fatalf("expected linked team member to see mailbox %q, got %#v", mailbox.ID, accessibleMailboxes)
+		}
+
+		isMember, err := mailboxRepo.IsMember(ctx, mailbox.ID, "wm-linked-team")
+		if err != nil {
+			t.Fatalf("is member: %v", err)
+		}
+		if !isMember {
+			t.Fatal("expected linked team member to have mailbox access")
+		}
+
+		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil)
+		if err != nil {
+			t.Fatalf("list conversations for linked team member: %v", err)
+		}
+		if total != 1 || len(teamConversations) != 1 || teamConversations[0].ID != privateConversation.ID {
+			t.Fatalf("expected linked team member to see private conversation, got total=%d conversations=%#v", total, teamConversations)
+		}
+
+		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil)
+		if err != nil {
+			t.Fatalf("list conversations for outsider: %v", err)
+		}
+		if outsiderTotal != 0 || len(outsiderConversations) != 0 {
+			t.Fatalf("expected outsider to see no private conversations, got total=%d conversations=%#v", outsiderTotal, outsiderConversations)
+		}
+
+		memberUserIDs, err := mailboxRepo.ListActiveMemberUserIDs(ctx, linkedWorkspaceID, mailbox.ID)
+		if err != nil {
+			t.Fatalf("list active mailbox member user ids: %v", err)
+		}
+		if len(memberUserIDs) != 1 || memberUserIDs[0] != teamUserID {
+			t.Fatalf("expected linked team user id %q, got %#v", teamUserID, memberUserIDs)
+		}
+
+		ownerID, err := mailboxRepo.SelectRoundRobinOwnerUserID(ctx, linkedWorkspaceID, mailbox.ID)
+		if err != nil {
+			t.Fatalf("select round robin owner: %v", err)
+		}
+		if ownerID == nil || *ownerID != teamUserID {
+			t.Fatalf("expected round robin owner %q, got %#v", teamUserID, ownerID)
 		}
 	})
 
@@ -314,7 +412,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("seed escalated unread message: %v", err)
 		}
 
-		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123")
+		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123", "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("get unread stats: %v", err)
 		}
@@ -516,6 +614,7 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),
@@ -619,6 +718,7 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 
 	svc := NewSupportInboxService(
 		convRepo,
+		repository.NewSupportMailboxRepository(db),
 		messageRepo,
 		repository.NewAgentRepository(db),
 		repository.NewCRMAssociationRepository(db),

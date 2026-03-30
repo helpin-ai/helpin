@@ -8,6 +8,7 @@ import (
 type SupportConversation struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID         *string    `json:"mailbox_id" gorm:"type:uuid;index"`
 	DisplayID         int        `json:"display_id" gorm:"not null;index"`
 	Subject           string     `json:"subject" gorm:"not null"`
 	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
@@ -46,6 +47,9 @@ type SupportConversation struct {
 	OpenedByDisplayName *string `json:"opened_by_display_name,omitempty" gorm:"-"`
 	OpenedByAvatarURL   *string `json:"opened_by_avatar_url,omitempty" gorm:"-"`
 	OpenedByStatus      *string `json:"opened_by_status,omitempty" gorm:"-"`
+	MailboxName         *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle       *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon         *string `json:"mailbox_icon,omitempty" gorm:"->"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -91,6 +95,23 @@ type UnreadStats struct {
 	Unassigned int `json:"unassigned"`
 }
 
+type SupportInboxScope struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Handle      string  `json:"handle"`
+	Icon        string  `json:"icon"`
+	IsShared    bool    `json:"is_shared"`
+	IsDefault   bool    `json:"is_default"`
+	UnreadCount int     `json:"unread_count"`
+	Active      bool    `json:"active"`
+	LinkedTeamID *string `json:"linked_team_id,omitempty"`
+}
+
+type SupportInboxScopeListResponse struct {
+	SharedInbox SupportInboxScope   `json:"shared_inbox"`
+	Mailboxes   []SupportInboxScope `json:"mailboxes"`
+}
+
 // ConversationListMeta holds metadata returned alongside paginated conversation lists.
 type ConversationListMeta struct {
 	Unread UnreadStats `json:"unread"`
@@ -131,6 +152,16 @@ type SupportMessage struct {
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
+
+// SupportLinkPreview represents an unfurled link card attached to a support message.
+type SupportLinkPreview struct {
+	URL         string  `json:"url"`
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+	SiteName    *string `json:"site_name,omitempty"`
+	ImageURL    *string `json:"image_url,omitempty"`
+	Host        string  `json:"host"`
+}
 
 // SupportCannedResponse represents a canned response for quick replies.
 type SupportCannedResponse struct {
@@ -182,9 +213,110 @@ type SupportWidgetSession struct {
 
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
+type SupportMailbox struct {
+	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name           string     `json:"name" gorm:"not null"`
+	Handle         string     `json:"handle" gorm:"not null"`
+	Icon           string     `json:"icon" gorm:"not null;default:'inbox'"`
+	Description    *string    `json:"description"`
+	LinkedTeamID   *string    `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode string     `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode string     `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	Position       int        `json:"position" gorm:"not null;default:0"`
+	Active         bool       `json:"active" gorm:"not null;default:true"`
+	CreatedByID    string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	LinkedTeamName *string `json:"linked_team_name,omitempty" gorm:"->"`
+	MemberCount    int     `json:"member_count,omitempty" gorm:"->"`
+	UnreadCount    int     `json:"unread_count,omitempty" gorm:"->"`
+}
+
+func (SupportMailbox) TableName() string { return "support_mailboxes" }
+
+type SupportMailboxMembership struct {
+	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	MailboxID         string    `json:"mailbox_id" gorm:"type:uuid;not null;index"`
+	WorkspaceMemberID string    `json:"workspace_member_id" gorm:"type:uuid;not null;index"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportMailboxMembership) TableName() string { return "support_mailbox_memberships" }
+
+type SupportMailboxMember struct {
+	WorkspaceMemberID string  `json:"workspace_member_id"`
+	UserID            *string `json:"user_id,omitempty"`
+	Email             string  `json:"email"`
+	DisplayName       string  `json:"display_name"`
+	AvatarURL         *string `json:"avatar_url,omitempty"`
+	Role              string  `json:"role"`
+}
+
+type SupportEmailRoute struct {
+	ID               string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID        *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	RouteKey         string     `json:"route_key" gorm:"not null;uniqueIndex"`
+	InboundAddress   string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
+	SourceAddress    *string    `json:"source_address,omitempty"`
+	ProviderType     string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
+	Active           bool       `json:"active" gorm:"not null;default:true"`
+	LastInboundAt    *time.Time `json:"last_inbound_at,omitempty"`
+	CreatedByID      string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	MailboxName      *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle    *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon      *string `json:"mailbox_icon,omitempty" gorm:"->"`
+}
+
+func (SupportEmailRoute) TableName() string { return "support_email_routes" }
+
+type CreateSupportEmailRouteRequest struct {
+	MailboxID     *string `json:"mailbox_id"`
+	SourceAddress *string `json:"source_address"`
+}
+
+type DisableSupportEmailRouteRequest struct{}
+
+type CreateSupportMailboxRequest struct {
+	Name               string   `json:"name"`
+	Handle             string   `json:"handle"`
+	Icon               string   `json:"icon"`
+	Description        *string  `json:"description"`
+	LinkedTeamID       *string  `json:"linked_team_id"`
+	WorkspaceMemberIDs []string `json:"workspace_member_ids"`
+	AssignmentMode     string   `json:"assignment_mode"`
+	ImportLinkedTeam   bool     `json:"import_linked_team"`
+}
+
+type UpdateSupportMailboxRequest struct {
+	Name               *string  `json:"name,omitempty"`
+	Handle             *string  `json:"handle,omitempty"`
+	Icon               *string  `json:"icon,omitempty"`
+	Description        *string  `json:"description,omitempty"`
+	LinkedTeamID       *string  `json:"linked_team_id,omitempty"`
+	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
+	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
+	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
+}
+
+type ReorderSupportMailboxesRequest struct {
+	MailboxIDs []string `json:"mailbox_ids"`
+}
+
+type MoveSupportConversationRequest struct {
+	MailboxID *string `json:"mailbox_id"`
+}
+
 // CreateConversationRequest is the payload for creating a support conversation.
 type CreateConversationRequest struct {
 	WorkspaceID   string  `json:"workspace_id"`
+	MailboxID     *string `json:"mailbox_id,omitempty"`
 	Subject       string  `json:"subject"`
 	Priority      string  `json:"priority"`
 	CustomerName  *string `json:"customer_name"`
@@ -395,6 +527,8 @@ type SupportInboxSettings struct {
 	// Handoff Routing
 	HandoffBehavior string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
 	HandoffTeamID   *string `json:"handoff_team_id"`
+	DefaultMailboxID   *string `json:"default_mailbox_id"`
+	AIHandoffMailboxID *string `json:"ai_handoff_mailbox_id"`
 
 	// Business Hours
 	BusinessHoursEnabled  bool                        `json:"business_hours_enabled"`
@@ -453,6 +587,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		EscalationMessage:      "Let me connect you with a team member who can help further.",
 		HandoffBehavior:        "unassigned",
 		HandoffTeamID:          nil,
+		DefaultMailboxID:       nil,
+		AIHandoffMailboxID:     nil,
 		BusinessHoursEnabled:   false,
 		BusinessHoursTimezone:  "America/New_York",
 		BusinessHoursSchedule: map[string]BusinessHoursDay{
@@ -503,6 +639,8 @@ type UpdateInstallationSettingsRequest struct {
 	EscalationMessage      *string                     `json:"escalation_message,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
+	DefaultMailboxID       *string                     `json:"default_mailbox_id,omitempty"`
+	AIHandoffMailboxID     *string                     `json:"ai_handoff_mailbox_id,omitempty"`
 	BusinessHoursEnabled   *bool                       `json:"business_hours_enabled,omitempty"`
 	BusinessHoursTimezone  *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule  map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`

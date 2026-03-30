@@ -190,6 +190,34 @@ func (h *Hub) Unregister(c *Client) {
 				ActorID:     c.UserID,
 			})
 		}
+		docViewingCleared, err := h.Presence.ClearAllDocViewingForConn(ctx, c.WorkspaceID, c.UserID, c.ConnID)
+		if err != nil {
+			slog.Error("doc presence cleanup on disconnect", "error", err,
+				"user_id", c.UserID, "workspace_id", c.WorkspaceID, "conn_id", c.ConnID)
+		}
+		for _, docID := range docViewingCleared {
+			h.BroadcastAll(Event{
+				Action:      "viewing_stopped",
+				Entity:      "docs_document_presence",
+				EntityID:    docID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
+		docEditingCleared, err := h.Presence.ClearAllDocEditingForConn(ctx, c.WorkspaceID, c.UserID, c.ConnID)
+		if err != nil {
+			slog.Error("doc editing cleanup on disconnect", "error", err,
+				"user_id", c.UserID, "workspace_id", c.WorkspaceID, "conn_id", c.ConnID)
+		}
+		for _, docID := range docEditingCleared {
+			h.BroadcastAll(Event{
+				Action:      "editing_stopped",
+				Entity:      "docs_document_presence",
+				EntityID:    docID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
 		lastConn, err := h.Presence.SetAgentOffline(ctx, c.WorkspaceID, c.UserID, c.ConnID)
 		if err != nil {
 			slog.Error("agent presence cleanup on disconnect", "error", err,

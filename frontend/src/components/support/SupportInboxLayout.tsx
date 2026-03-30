@@ -9,13 +9,23 @@ import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { CreateConversationDialog } from './CreateConversationDialog';
+import { TeamInboxDialog } from './TeamInboxDialog';
 
 export function SupportInboxLayout() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const user = useAuthStore((s) => s.user);
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
-  const { selectedConversationId, activePanel, setActivePanel, selectConversation, createDialogOpen, setCreateDialogOpen } = useSupportInboxStore();
+  const {
+    selectedConversationId,
+    activePanel,
+    setActivePanel,
+    selectConversation,
+    createDialogOpen,
+    setCreateDialogOpen,
+    teamInboxDialogOpen,
+    setTeamInboxDialogOpen,
+  } = useSupportInboxStore();
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { conversationId?: string };
 
@@ -87,6 +97,11 @@ export function SupportInboxLayout() {
         workspaceId={workspaceId}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+      />
+      <TeamInboxDialog
+        workspaceId={workspaceId}
+        open={teamInboxDialogOpen}
+        onOpenChange={setTeamInboxDialogOpen}
       />
     </div>
   );

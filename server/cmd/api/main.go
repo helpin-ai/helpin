@@ -189,6 +189,9 @@ func main() {
 		&model.AgentRunArtifact{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
+		&model.SupportMailbox{},
+		&model.SupportMailboxMembership{},
+		&model.SupportEmailRoute{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
 		&model.SupportEmailWebhookEvent{},
@@ -218,6 +221,7 @@ func main() {
 		&model.DocsLink{},
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
+		&model.DocsHelpcenterArticlePublication{},
 		&model.DocsHelpcenterSpaceTranslation{},
 		&model.DocsHelpcenterCollectionTranslation{},
 		&model.DocsHelpcenterArticleTranslation{},
@@ -301,6 +305,10 @@ func main() {
 	if err := repository.MigrateEmailFallbackSchema(db); err != nil {
 		fatalWithSentry("failed to migrate email fallback schema", err)
 	}
+	slog.Info("startup: running MigrateSupportEmailRouteSchema")
+	if err := repository.MigrateSupportEmailRouteSchema(db); err != nil {
+		fatalWithSentry("failed to migrate support email route schema", err)
+	}
 
 	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
 	for _, stmt := range []string{
@@ -336,6 +344,11 @@ func main() {
 	slog.Info("startup: running MigrateAutomationHealthSchema")
 	if err := repository.MigrateAutomationHealthSchema(db); err != nil {
 		fatalWithSentry("failed to migrate automation health schema", err)
+	}
+	slog.Info("startup: running MigrateDocsRedirectPaths")
+	if err := repository.MigrateDocsRedirectPaths(db); err != nil {
+		slog.Error("failed to migrate docs redirect paths", "error", err)
+		os.Exit(1)
 	}
 
 	// Migrate existing workspaces to organizations (one-time, idempotent).
@@ -464,6 +477,8 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
+	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
+	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
@@ -483,6 +498,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsHelpcenterTranslationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
+	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
@@ -528,10 +544,10 @@ func main() {
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, orgRepo, jwtManager, s3Client)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
-	pmLabelService := service.NewPMLabelService(pmLabelRepo)
-	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
-	pmRecurringTemplateService := service.NewPMRecurringTemplateService(pmRecurringTemplateRepo, pmStoryRepo, pmWorkflowRepo, pmSprintRepo, workspaceRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService)
-	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
+	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
+	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo, wsPublisher)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(pmRecurringTemplateRepo, pmStoryRepo, pmWorkflowRepo, pmSprintRepo, workspaceRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService, wsPublisher)
+	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo, wsPublisher)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
@@ -548,12 +564,13 @@ func main() {
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmStoryRepo, wsPublisher, notificationService, workspaceRepo)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
-	pmViewService := service.NewPMViewService(pmViewRepo)
+	pmViewService := service.NewPMViewService(pmViewRepo, wsPublisher)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
-	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
 		wsHub,
@@ -572,11 +589,15 @@ func main() {
 	)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
+	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
+	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
-	notificationService.SetSupportRoutingDependencies(supportInstallRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	emailFallbackService.SetSupportInboxService(supportInboxService)
+	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
+	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -703,14 +724,26 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
-	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo)
-	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo)
-	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo)
-	docsContentService := service.NewDocsContentService(docsContentRepo)
-	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
-	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
-	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo)
+	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
+	var llmProvider llm.Provider
+	switch cfg.CRMLLMProvider {
+	case "openai":
+		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+	default:
+		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
+	}
+	if llmProvider != nil {
+		slog.Info("LLM provider configured for signal detection")
+	}
+
+	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
+	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
+	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo, wsPublisher)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
+	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
@@ -789,22 +822,6 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	// Initialize LLM provider for signal detection and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		if provider := llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel); provider != nil {
-			llmProvider = provider
-		} else {
-			slog.Warn("CRM OpenAI provider not configured; CRM_LLM_API_KEY is empty")
-		}
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
-	}
-
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
@@ -842,12 +859,14 @@ func main() {
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
+	supportAIService.SetMailboxRepository(supportMailboxRepo)
+	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService)
+	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, wsPublisher)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)

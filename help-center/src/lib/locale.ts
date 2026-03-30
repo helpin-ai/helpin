@@ -1,0 +1,272 @@
+import type { NavItem, Space } from '@/lib/types'
+
+export type LocaleRouteKind = 'home' | 'space' | 'collection' | 'article' | 'search'
+
+export interface LocaleRouteState {
+  kind: LocaleRouteKind
+  spaceId?: string
+  collectionId?: string
+  articleId?: string
+  searchQuery?: string
+}
+
+interface ResolveActiveLocaleOptions {
+  paramsLocale?: string
+  paramsSpaceSlug?: string
+  enabledLocales?: string[]
+  defaultLocale: string
+}
+
+interface ResolveLocaleSwitchPathOptions {
+  multilingualEnabled: boolean
+  targetLocale: string
+  defaultLocale: string
+  current: LocaleRouteState
+  targetSpaces: Space[]
+  targetNavigation?: NavItem[]
+  fallbackSpaces?: Space[]
+  fallbackNavigation?: NavItem[]
+}
+
+export function isMultilingualEnabled(enabledLocales: string[] = []) {
+  return new Set(
+    enabledLocales
+      .map((locale) => locale.trim().toLowerCase())
+      .filter(Boolean),
+  ).size > 1
+}
+
+export function buildLocaleHomePath(locale: string) {
+  return `/${locale}`
+}
+
+export function buildLocaleSpacePath(locale: string, spaceSlug: string) {
+  return `/${locale}/${spaceSlug}`
+}
+
+export function buildLocaleCollectionPath(locale: string, collectionSlug: string) {
+  return `/${locale}/${collectionSlug}`
+}
+
+export function buildLocaleArticlePath(
+  locale: string,
+  collectionSlug: string,
+  articleSlug: string,
+) {
+  return `/${locale}/${collectionSlug}/${articleSlug}`
+}
+
+export function buildLocaleSearchPath(
+  locale: string,
+  searchQuery?: string,
+  spaceSlug?: string,
+) {
+  const params = new URLSearchParams()
+  if (searchQuery) params.set('q', searchQuery)
+  if (spaceSlug) params.set('space', spaceSlug)
+  const queryString = params.toString()
+  return queryString ? `/${locale}/search?${queryString}` : `/${locale}/search`
+}
+
+export function buildCanonicalHomePath(
+  multilingualEnabled: boolean,
+  locale: string,
+) {
+  return multilingualEnabled ? buildLocaleHomePath(locale) : '/'
+}
+
+export function buildCanonicalCollectionPath(
+  multilingualEnabled: boolean,
+  locale: string,
+  collectionSlug: string,
+) {
+  return multilingualEnabled
+    ? buildLocaleCollectionPath(locale, collectionSlug)
+    : `/${collectionSlug}`
+}
+
+export function buildCanonicalArticlePath(
+  multilingualEnabled: boolean,
+  locale: string,
+  collectionSlug: string,
+  articleSlug: string,
+) {
+  return multilingualEnabled
+    ? buildLocaleArticlePath(locale, collectionSlug, articleSlug)
+    : `/${collectionSlug}/${articleSlug}`
+}
+
+export function buildCanonicalSearchPath(
+  multilingualEnabled: boolean,
+  locale: string,
+  searchQuery?: string,
+  spaceSlug?: string,
+) {
+  if (multilingualEnabled) {
+    return buildLocaleSearchPath(locale, searchQuery, spaceSlug)
+  }
+  const params = new URLSearchParams()
+  if (searchQuery) params.set('q', searchQuery)
+  if (spaceSlug) params.set('space', spaceSlug)
+  const queryString = params.toString()
+  return queryString ? `/search?${queryString}` : '/search'
+}
+
+export function resolveActiveLocale({
+  paramsLocale,
+  paramsSpaceSlug,
+  enabledLocales = [],
+  defaultLocale,
+}: ResolveActiveLocaleOptions) {
+  const normalizedDefault = (defaultLocale || 'en').toLowerCase()
+  const normalizedEnabledLocales = enabledLocales.map((locale) =>
+    locale.trim().toLowerCase(),
+  )
+  const localeParam = paramsLocale?.trim().toLowerCase()
+  if (
+    localeParam &&
+    normalizedEnabledLocales.some((locale) => locale === localeParam)
+  ) {
+    return localeParam
+  }
+
+  const spaceSlug = paramsSpaceSlug?.trim().toLowerCase()
+  if (
+    spaceSlug &&
+    normalizedEnabledLocales.some((locale) => locale === spaceSlug)
+  ) {
+    return spaceSlug
+  }
+
+  return normalizedDefault
+}
+
+function findSpaceByID(spaces: Space[], spaceID?: string) {
+  if (!spaceID) return undefined
+  return spaces.find((space) => space.id === spaceID)
+}
+
+function findCollectionByID(navigation: NavItem[] = [], collectionID?: string) {
+  if (!collectionID) return undefined
+  return navigation.find((collection) => collection.id === collectionID)
+}
+
+function findArticleByID(navigation: NavItem[] = [], articleID?: string) {
+  if (!articleID) return undefined
+  for (const collection of navigation) {
+    const article = collection.articles.find((candidate) => candidate.id === articleID)
+    if (article) {
+      return { collection, article }
+    }
+  }
+  return undefined
+}
+
+export function resolveLocaleSwitchPath({
+  multilingualEnabled,
+  targetLocale,
+  defaultLocale,
+  current,
+  targetSpaces,
+  targetNavigation = [],
+  fallbackSpaces = [],
+  fallbackNavigation = [],
+}: ResolveLocaleSwitchPathOptions) {
+  switch (current.kind) {
+    case 'home':
+      return buildCanonicalHomePath(multilingualEnabled, targetLocale)
+    case 'search':
+      return buildCanonicalSearchPath(
+        multilingualEnabled,
+        targetLocale,
+        current.searchQuery,
+        findSpaceByID(targetSpaces, current.spaceId)?.slug ??
+          findSpaceByID(fallbackSpaces, current.spaceId)?.slug,
+      )
+    case 'space': {
+      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
+      if (targetSpace) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          targetSpace.slug,
+        )
+      }
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
+      return fallbackSpace
+        ? buildCanonicalCollectionPath(
+            multilingualEnabled,
+            defaultLocale,
+            fallbackSpace.slug,
+          )
+        : buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+    }
+    case 'collection': {
+      const targetCollection = findCollectionByID(targetNavigation, current.collectionId)
+      if (targetCollection) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          targetCollection.slug,
+        )
+      }
+
+      const fallbackCollection = findCollectionByID(
+        fallbackNavigation,
+        current.collectionId,
+      )
+      if (fallbackCollection) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackCollection.slug,
+        )
+      }
+
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
+      if (fallbackSpace) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackSpace.slug,
+        )
+      }
+
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+    }
+    case 'article': {
+      const targetArticle = findArticleByID(targetNavigation, current.articleId)
+      if (targetArticle) {
+        return buildCanonicalArticlePath(
+          multilingualEnabled,
+          targetLocale,
+          targetArticle.collection.slug,
+          targetArticle.article.slug,
+        )
+      }
+
+      const fallbackArticle = findArticleByID(fallbackNavigation, current.articleId)
+      if (fallbackArticle) {
+        return buildCanonicalArticlePath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackArticle.collection.slug,
+          fallbackArticle.article.slug,
+        )
+      }
+
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
+      if (fallbackSpace) {
+        return buildCanonicalCollectionPath(
+          multilingualEnabled,
+          defaultLocale,
+          fallbackSpace.slug,
+        )
+      }
+
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+    }
+    default:
+      return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+  }
+}

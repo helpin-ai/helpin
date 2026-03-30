@@ -8,17 +8,19 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // PMLabelService contains label business logic.
 type PMLabelService struct {
-	labelRepo *repository.PMLabelRepository
-	logger    *slog.Logger
+	labelRepo   *repository.PMLabelRepository
+	wsPublisher *websocket.Publisher
+	logger      *slog.Logger
 }
 
 // NewPMLabelService creates a new PMLabelService.
-func NewPMLabelService(labelRepo *repository.PMLabelRepository) *PMLabelService {
-	return &PMLabelService{labelRepo: labelRepo, logger: slog.Default().With("service", "pm_label")}
+func NewPMLabelService(labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMLabelService {
+	return &PMLabelService{labelRepo: labelRepo, wsPublisher: wsPublisher, logger: slog.Default().With("service", "pm_label")}
 }
 
 // ListByWorkspace lists labels by workspace.
@@ -71,6 +73,7 @@ func (s *PMLabelService) Create(ctx context.Context, req model.CreateLabelReques
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "label created", "label_id", label.ID, "workspace_id", req.WorkspaceID, "name", label.Name)
+	publishWorkspaceEvent(s.wsPublisher, "created", "label", label.ID, req.WorkspaceID, "")
 	return label, nil
 }
 
@@ -118,16 +121,25 @@ func (s *PMLabelService) Update(ctx context.Context, id string, req model.Update
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "label updated", "label_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "updated", "label", id, label.WorkspaceID, "")
 	return label, nil
 }
 
 // Delete deletes a label.
 func (s *PMLabelService) Delete(ctx context.Context, id string) error {
+	label, err := s.labelRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if label == nil {
+		return fmt.Errorf("label not found")
+	}
 	if err := s.labelRepo.Delete(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete label", "error", err, "label_id", id)
 		return err
 	}
 	s.logger.InfoContext(ctx, "label deleted", "label_id", id)
+	publishWorkspaceEvent(s.wsPublisher, "deleted", "label", id, label.WorkspaceID, "")
 	return nil
 }
 
@@ -163,4 +175,3 @@ func (s *PMLabelService) SeedDefaults(ctx context.Context, workspaceID string) e
 	}
 	return nil
 }
-

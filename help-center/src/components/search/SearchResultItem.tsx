@@ -1,31 +1,31 @@
-import { Link } from '@tanstack/react-router'
 import { FileText, ArrowRight } from 'lucide-react'
+import {
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+} from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
 interface SearchResultItemProps {
+  locale: string
   result: SearchResult
   variant?: 'compact' | 'full'
+  multilingualEnabled?: boolean
   onClick?: () => void
 }
 
 export function SearchResultItem({
+  locale,
   result,
   variant = 'full',
+  multilingualEnabled = true,
   onClick,
 }: SearchResultItemProps) {
   const isCompact = variant === 'compact'
+  const targetLocale = result.locale || locale
+  const collectionSlug = result.collection_slug
 
-  return (
-    <Link
-      to="/$spaceSlug/$articleSlug"
-      params={{ spaceSlug: result.space_slug, articleSlug: result.slug }}
-      onClick={onClick}
-      className={
-        isCompact
-          ? 'flex items-center gap-3 px-4 py-2.5 mx-1 rounded-md transition-colors hover:bg-muted/60 group'
-          : 'block rounded-lg border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02] group'
-      }
-    >
+  const content = (
+    <>
       <FileText
         size={isCompact ? 15 : 18}
         className="shrink-0 text-primary/70"
@@ -53,6 +53,41 @@ export function SearchResultItem({
           className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50"
         />
       )}
-    </Link>
+    </>
+  )
+
+  const className = isCompact
+    ? 'flex items-center gap-3 px-4 py-2.5 mx-1 rounded-md transition-colors hover:bg-muted/60 group'
+    : 'block rounded-lg border border-border/70 p-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02] group'
+
+  if (!collectionSlug) {
+    return (
+      <a
+        href={buildCanonicalCollectionPath(
+          multilingualEnabled,
+          targetLocale,
+          result.space_slug,
+        )}
+        onClick={onClick}
+        className={className}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <a
+      href={buildCanonicalArticlePath(
+        multilingualEnabled,
+        targetLocale,
+        collectionSlug,
+        result.slug,
+      )}
+      onClick={onClick}
+      className={className}
+    >
+      {content}
+    </a>
   )
 }

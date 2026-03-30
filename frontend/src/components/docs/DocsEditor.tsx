@@ -46,7 +46,6 @@ import { TableControls } from './TableControls'
 import { BlockGapInserter } from './BlockGapInserter'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { docsService } from '@/lib/services/docsService'
-import { toast } from 'sonner'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   DropdownMenu,
@@ -64,6 +63,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { SlugDisplay } from './SlugDisplay'
+import { toast } from 'sonner'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -101,6 +102,11 @@ function ToolbarButton({
 // ── Save status indicator ───────────────────────────────────────────────────
 
 type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
+
+export interface DocsEditingPresenceSignal {
+  area: 'title' | 'body'
+  section?: string
+}
 
 function formatLastSaved(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
@@ -627,11 +633,16 @@ interface DocsEditorProps {
   title?: string
   onTitleChange?: (title: string) => void
   slug?: string
+  onSlugChange?: (slug: string) => Promise<void>
+  slugHelperText?: string
   initialContent?: JSONContent | null
   onSave: (content: JSONContent) => Promise<void>
   autoSaveMs?: number
   readOnly?: boolean
   uploadConfig?: EditorUploadConfig
+  topBanner?: React.ReactNode
+  generatingOverlay?: string | null
+  onEditingPresenceChange?: (presence: DocsEditingPresenceSignal | null) => void
 }
 
 export function DocsEditor({
@@ -643,6 +654,11 @@ export function DocsEditor({
   autoSaveMs = 2000,
   readOnly = false,
   uploadConfig,
+  topBanner,
+  generatingOverlay,
+  onSlugChange,
+  slugHelperText,
+  onEditingPresenceChange,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -656,6 +672,9 @@ export function DocsEditor({
   const lastSavedSnapshotRef = useRef<string | null>(
     initialContent ? JSON.stringify(initialContent) : null,
   )
+  const editorReadyRef = useRef(false)
+  const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const lastEditingPresenceRef = useRef<string | null>(null)
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -718,7 +737,61 @@ export function DocsEditor({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
     if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
+    if (pendingPresenceClearRef.current) clearTimeout(pendingPresenceClearRef.current)
   }, [])
+
+  const emitEditingPresence = useCallback((presence: DocsEditingPresenceSignal | null) => {
+    if (!onEditingPresenceChange || readOnly) return
+    if (pendingPresenceClearRef.current) {
+      clearTimeout(pendingPresenceClearRef.current)
+      pendingPresenceClearRef.current = undefined
+    }
+    const nextKey = presence ? JSON.stringify(presence) : 'null'
+    if (lastEditingPresenceRef.current === nextKey) return
+    lastEditingPresenceRef.current = nextKey
+    onEditingPresenceChange(presence)
+  }, [onEditingPresenceChange, readOnly])
+
+  const scheduleClearEditingPresence = useCallback(() => {
+    if (!onEditingPresenceChange) return
+    if (pendingPresenceClearRef.current) clearTimeout(pendingPresenceClearRef.current)
+    pendingPresenceClearRef.current = setTimeout(() => {
+      emitEditingPresence(null)
+    }, 120)
+  }, [emitEditingPresence, onEditingPresenceChange])
+
+  const getNearestHeadingLabel = useCallback((editorInstance: NonNullable<typeof editorRef.current>) => {
+    const selectionFrom = editorInstance.state.selection.from
+    let headingText: string | undefined
+    editorInstance.state.doc.nodesBetween(0, selectionFrom, (node) => {
+      if (node.type.name === 'heading') {
+        const text = node.textContent.trim()
+        if (text) {
+          headingText = text.length > 64 ? `${text.slice(0, 61)}...` : text
+        }
+      }
+    })
+    return headingText
+  }, [])
+
+  const emitBodyEditingPresence = useCallback((editorInstance: NonNullable<typeof editorRef.current>) => {
+    emitEditingPresence({
+      area: 'body',
+      section: getNearestHeadingLabel(editorInstance),
+    })
+  }, [emitEditingPresence, getNearestHeadingLabel])
+
+  useEffect(() => {
+    if (!readOnly) return
+    emitEditingPresence(null)
+  }, [emitEditingPresence, readOnly])
+
+  useEffect(() => {
+    return () => {
+      if (!onEditingPresenceChange || readOnly) return
+      onEditingPresenceChange(null)
+    }
+  }, [onEditingPresenceChange, readOnly])
 
   const uploadConfigRef = useRef(uploadConfig)
   uploadConfigRef.current = uploadConfig
@@ -983,6 +1056,8 @@ export function DocsEditor({
       },
     },
     onUpdate: ({ editor: e }) => {
+      // Skip saves during initial mount — TipTap fires onUpdate when normalizing content
+      if (!editorReadyRef.current) return
       if (skipNextSaveRef.current) {
         skipNextSaveRef.current = false
         return
@@ -992,7 +1067,16 @@ export function DocsEditor({
       if (slashState?.open) return
       if (!readOnly) {
         scheduleSave(e.getJSON())
+        emitBodyEditingPresence(e)
       }
+    },
+    onBlur: () => {
+      scheduleClearEditingPresence()
+    },
+    onCreate: () => {
+      // Mark editor ready after initialization is complete
+      // Use requestAnimationFrame to ensure all mount-time updates have settled
+      requestAnimationFrame(() => { editorReadyRef.current = true })
     },
   })
 
@@ -1005,26 +1089,31 @@ export function DocsEditor({
     }
   }, [editor, readOnly])
 
-  // Update content if initial content changes (e.g. after revert)
+  // Update content if initial content changes AFTER mount (e.g. after revert).
+  // Skip the first run — useEditor already sets initial content on mount.
+  const initialContentMountedRef = useRef(false)
   useEffect(() => {
-    if (editor && initialContent) {
-      const currentJson = JSON.stringify(editor.getJSON())
-      const newJson = JSON.stringify(initialContent)
-      if (currentJson !== newJson) {
-        skipNextSaveRef.current = true
-        const { from, to } = editor.state.selection
-        const wasFocused = editor.isFocused
-        editor.commands.setContent(initialContent)
-        if (wasFocused) {
-          const maxPos = editor.state.doc.content.size
-          editor.chain().focus().setTextSelection({
-            from: Math.min(from, maxPos),
-            to: Math.min(to, maxPos),
-          }).run()
-        }
-        lastSavedSnapshotRef.current = newJson
-        setSaveStatus('idle')
+    if (!editor || !initialContent) return
+    if (!initialContentMountedRef.current) {
+      initialContentMountedRef.current = true
+      return
+    }
+    const currentJson = JSON.stringify(editor.getJSON())
+    const newJson = JSON.stringify(initialContent)
+    if (currentJson !== newJson) {
+      skipNextSaveRef.current = true
+      const { from, to } = editor.state.selection
+      const wasFocused = editor.isFocused
+      editor.commands.setContent(initialContent)
+      if (wasFocused) {
+        const maxPos = editor.state.doc.content.size
+        editor.chain().focus().setTextSelection({
+          from: Math.min(from, maxPos),
+          to: Math.min(to, maxPos),
+        }).run()
       }
+      lastSavedSnapshotRef.current = newJson
+      setSaveStatus('idle')
     }
   }, [editor, initialContent])
 
@@ -1235,6 +1324,12 @@ img { max-width: 100%; }
 
       {/* Editor content with title */}
       <div className={`relative flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+        {generatingOverlay && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
+            <p className="text-sm font-medium text-foreground">{generatingOverlay}</p>
+          </div>
+        )}
         {/* Markdown menu (left) + Save indicator (right) — floating */}
         {!readOnly && (
           <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
@@ -1255,6 +1350,8 @@ img { max-width: 100%; }
             </div>
           </div>
         )}
+
+        {topBanner}
 
         {sourceView ? (
           /* Source view — full width, fills remaining height */
@@ -1313,16 +1410,15 @@ img { max-width: 100%; }
             {/* Title */}
             {title !== undefined && (
               <div className="group/title px-6 pt-10 pb-1">
-                {slug && (
-                  <p className="text-[13px] text-muted-foreground/60 font-mono mb-3 opacity-0 group-hover/title:opacity-100 transition-opacity flex items-center gap-1.5">
-                    <Link2 className="h-3.5 w-3.5" />
-                    /{slug}
-                  </p>
-                )}
+                {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (
                   <input
                     value={title}
-                    onChange={(e) => onTitleChange(e.target.value)}
+                    onChange={(e) => {
+                      onTitleChange(e.target.value)
+                      emitEditingPresence({ area: 'title', section: 'Title' })
+                    }}
+                    onBlur={() => scheduleClearEditingPresence()}
                     placeholder="Untitled"
                     className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
                   />

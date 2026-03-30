@@ -42,6 +42,24 @@ function makePlaceholder(prefix: string): string {
 // ── Inline transforms (operates on raw text, escapes at leaf level) ──
 
 const BR_PLACEHOLDER = '\x00BR\x00';
+const AUTO_LINK_RE = /(^|[\s(>])((https?:\/\/)[^\s<]+)(?=$|[\s).,!?:;])/gi;
+
+function trimAutoLinkedUrl(url: string): string {
+  let trimmed = url;
+  while (trimmed) {
+    const last = trimmed[trimmed.length - 1];
+    if (/[.,!?;:]/.test(last)) {
+      trimmed = trimmed.slice(0, -1);
+      continue;
+    }
+    if (last === ')' && (trimmed.match(/\(/g)?.length ?? 0) < (trimmed.match(/\)/g)?.length ?? 0)) {
+      trimmed = trimmed.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+  return trimmed;
+}
 
 function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): string {
   // 1. Inline code → placeholders (content is escaped, not processed further)
@@ -78,6 +96,15 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
     const safeUrl = sanitizeUrl(url);
     return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  });
+
+  // 6c. Bare URLs: https://example.com
+  result = result.replace(AUTO_LINK_RE, (match, prefix, rawUrl) => {
+    const trimmedUrl = trimAutoLinkedUrl(rawUrl);
+    const suffix = rawUrl.slice(trimmedUrl.length);
+    const safeUrl = sanitizeUrl(trimmedUrl);
+    if (!safeUrl) return match;
+    return `${prefix}<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${trimmedUrl}</a>${suffix}`;
   });
 
   // 7. Restore <br> placeholders

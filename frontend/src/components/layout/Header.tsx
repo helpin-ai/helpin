@@ -9,6 +9,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
+import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
 
 type Crumb = {
   label: string;
@@ -94,32 +95,6 @@ export function Header() {
       reports: "Reports",
     };
 
-    const settingsSubMap: Record<string, string> = {
-      general: "General",
-      profile: "Profile",
-      notifications: "Notifications",
-      account: "Account",
-      members: "Members",
-      teams: "Teams",
-      knowledge: "Knowledge",
-      workflows: "Workflows",
-      labels: "Labels",
-      "story-templates": "Story Templates",
-      "recurring-tasks": "Recurring Tasks",
-      automations: "Automations",
-      delivery: "Delivery",
-      ai: "AI",
-      import: "Import / Export",
-      helpcenter: "Help Center",
-      redirects: "Redirects",
-      "crm-pipelines": "Pipelines",
-      "crm-email": "Email Accounts",
-      "crm-autonomy": "Autonomy",
-      "ai-automations": "AI & Automations",
-      "chat-general": "Chat Widget",
-      "chat-ai": "AI & Routing",
-    };
-
     if (section === "pm") {
       crumbs.push({ label: "Projects", to: `/w/${slug}/pm/my-work` });
       if (subRoute[1]) {
@@ -151,11 +126,11 @@ export function Header() {
     }
 
     if (section === "settings") {
-      crumbs.push({ label: "Settings", to: `/w/${slug}/settings/system` });
+      crumbs.push({ label: "Settings", to: buildSettingsRoutePath(slug, 'profile') });
       if (subRoute[1]) {
         const settingsSub = subRoute[1];
         crumbs.push({
-          label: settingsSubMap[settingsSub] ?? formatLabel(settingsSub),
+          label: SETTINGS_SECTION_LABELS[settingsSub as keyof typeof SETTINGS_SECTION_LABELS] ?? formatLabel(settingsSub),
         });
       }
       return crumbs;
