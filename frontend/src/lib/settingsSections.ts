@@ -7,6 +7,7 @@ import {
   Mail,
   MessageSquare,
   RefreshCw,
+  Route,
   Settings2,
   Sliders,
   Sparkles,
@@ -204,7 +205,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     id: 'inboxes-routing',
     label: 'Inboxes & Routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
-    icon: MessageSquare,
+    icon: Route,
     group: 'Support & Docs',
   },
 ];
