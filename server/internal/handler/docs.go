@@ -706,7 +706,9 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	pubSpace, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
 	if pubSpace != nil && pubSpace.Type == model.SpaceTypeExternalCapable {
 		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
-			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
+			slog.ErrorContext(r.Context(), "PublishExternally failed", "doc_id", docID, "error", err)
+			writeError(w, http.StatusInternalServerError, "Article published internally but failed to publish to help center: "+err.Error())
+			return
 		}
 	}
 	h.queueEmbeddingSync(r.Context(), docID)
