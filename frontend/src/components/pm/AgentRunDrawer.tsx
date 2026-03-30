@@ -491,6 +491,14 @@ export function buildAutonomousRuntimeStreamDisplay(
   const processingText = unique(eventParts).join('\n').trim();
   const errorText = unique(errorParts).join('\n').trim();
 
+  if (!assistantText && !processingText && !errorText && stdout.trim()) {
+    return {
+      assistantText: '',
+      processingText: stdout.trim(),
+      errorText,
+    };
+  }
+
   if (!assistantText && !processingText && !errorText) return null;
 
   return { assistantText, processingText, errorText };
@@ -566,6 +574,7 @@ const RUNTIME_STREAM_PREFIXES = ['opencode', 'codex'] as const;
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
   const displayArtifacts = artifacts.filter(
     (artifact) =>
+      artifact.artifact_type !== 'codex_session_state' &&
       !RUNTIME_STREAM_PREFIXES.some(
         (prefix) =>
           artifact.artifact_type === `${prefix}_stdout_chunk` ||

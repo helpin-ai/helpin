@@ -329,8 +329,15 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 		return false
 	}
 	switch strings.TrimSpace(agent.RuntimeKind) {
-	case "opencode", "codex":
+	case "opencode":
 		return false
+	case "codex":
+		switch normalizePresetKey(agent.EffectivePresetKey()) {
+		case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
+			return true
+		default:
+			return false
+		}
 	case "native_sdk":
 		return true
 	}

@@ -643,7 +643,15 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	).SetModelProviderConfig(
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenRouterAPIKey,
+		cfg.CodexOpenAIAuthMode,
+		cfg.CodexEnableChatGPTOAuth,
+		cfg.CodexChatGPTAccessToken,
+		cfg.CodexChatGPTAccountID,
+	)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)

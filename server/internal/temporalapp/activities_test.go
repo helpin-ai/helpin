@@ -688,6 +688,29 @@ func TestResolveExecutionWaitState(t *testing.T) {
 	if !waitForApproval || waitForInput {
 		t.Fatalf("expected pending approval state to wait for approval, got approval=%v input=%v", waitForApproval, waitForInput)
 	}
+
+	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+		InvocationMode: model.InvocationModeAutonomous,
+		TargetType:     "story",
+		ApprovalState:  "not_required",
+	}, &workerpkg.HumanInputRequest{
+		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Pick one", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
+	}, nil)
+	if waitForApproval || !waitForInput {
+		t.Fatalf("expected autonomous human input tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
+
+	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+		InvocationMode: model.InvocationModeAutonomous,
+		TargetType:     "story",
+		ApprovalState:  "not_required",
+	}, nil, &model.ApprovalRequest{
+		Phase: "command_execution",
+		Title: "Approve command",
+	})
+	if !waitForApproval || waitForInput {
+		t.Fatalf("expected autonomous approval tool to pause for approval, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
 }
 
 func TestNormalizeApprovalStateAfterExecution(t *testing.T) {

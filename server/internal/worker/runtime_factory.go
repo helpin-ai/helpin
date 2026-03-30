@@ -5,8 +5,7 @@ import "github.com/helpin-ai/helpin/server/internal/repository"
 // NewDefaultRuntimeRegistry wires the supported runtime adapters for shared runners.
 func NewDefaultRuntimeRegistry(
 	opencodePath string,
-	codexPath string,
-	codexModel string,
+	codexConfig CodexRuntimeConfig,
 	anthropicAPIKey string,
 	anthropicBaseURL string,
 	openAIAPIKey string,
@@ -26,7 +25,7 @@ func NewDefaultRuntimeRegistry(
 		OpenRouterURL:   openRouterBaseURL,
 	}
 	opencodeAdapter := NewOpenCodeExecutor("opencode", opencodePath, anthropicAPIKey, anthropicBaseURL, openAIAPIKey, openAIBaseURL, openRouterAPIKey, openRouterBaseURL, runRepo, artifactRepo)
-	codexAdapter := NewCodexExecutor("codex", codexPath, codexModel, openAIAPIKey, openAIBaseURL, openRouterAPIKey, openRouterBaseURL, runRepo, artifactRepo)
+	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo)
 	// native_sdk is the only in-process SDK-backed runtime exposed today.
 	// A real terminal-backed claude_code runtime can be added later as a distinct adapter.
 	nativeAdapter := NewEinoExecutor("native_sdk", modelFactory, braveSearchClient, runRepo, artifactRepo)

@@ -72,7 +72,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
     [artifacts],
   );
   const otherArtifacts = useMemo(
-    () => artifacts.filter((a) => !isRuntimeOutputArtifact(a.artifact_type)),
+    () => artifacts.filter((a) => !isRuntimeOutputArtifact(a.artifact_type) && a.artifact_type !== 'codex_session_state'),
     [artifacts],
   );
 

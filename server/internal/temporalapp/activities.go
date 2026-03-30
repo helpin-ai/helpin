@@ -551,15 +551,16 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 		return false, false
 	}
 
-	waitForApproval = run.ApprovalState == "pending"
-	if run.InvocationMode != model.InvocationModeInteractive {
-		return waitForApproval, false
-	}
 	if approvalRequest != nil {
 		return true, false
 	}
 	if humanInputRequest != nil {
 		return false, true
+	}
+
+	waitForApproval = run.ApprovalState == "pending"
+	if run.InvocationMode != model.InvocationModeInteractive {
+		return waitForApproval, false
 	}
 	return waitForApproval, false
 }
@@ -1168,6 +1169,30 @@ func buildAssistantSequenceArtifactMetadata(sequenceNo int) json.RawMessage {
 	return payload
 }
 
+func mergeArtifactMetadata(parts ...json.RawMessage) json.RawMessage {
+	merged := map[string]any{}
+	for _, part := range parts {
+		if len(part) == 0 || string(part) == "null" {
+			continue
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(part, &decoded); err != nil {
+			continue
+		}
+		for key, value := range decoded {
+			merged[key] = value
+		}
+	}
+	if len(merged) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	payload, err := json.Marshal(merged)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return payload
+}
+
 func marshalExecutionBlocks(blocks []workerpkg.ExecutionBlock) (json.RawMessage, error) {
 	if len(blocks) == 0 {
 		return nil, nil
@@ -1278,19 +1303,22 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 	metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
 
 	if inputRequest := latestHumanInputRequestFromResult(result); inputRequest != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", humanInputArtifactFromWorker(inputRequest), metadata); err != nil {
+		inputMetadata := mergeArtifactMetadata(metadata, result.HumanInputMetadata)
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", humanInputArtifactFromWorker(inputRequest), inputMetadata); err != nil {
 			return err
 		}
 	}
 
 	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, metadata); err != nil {
+		approvalMetadata := mergeArtifactMetadata(metadata, result.HumanApprovalMetadata)
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, approvalMetadata); err != nil {
 			return err
 		}
 	}
 
 	if runPlan := latestRunPlanFromResult(result); runPlan != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, metadata); err != nil {
+		runPlanMetadata := mergeArtifactMetadata(metadata, result.RunPlanMetadata)
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, runPlanMetadata); err != nil {
 			return err
 		}
 	}

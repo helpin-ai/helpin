@@ -82,6 +82,10 @@ type AgentService struct {
 	anthropicAPIKey            string
 	openAIAPIKey               string
 	openRouterAPIKey           string
+	codexOpenAIAuthMode        string
+	codexChatGPTOAuthEnabled   bool
+	codexChatGPTAccessToken    string
+	codexChatGPTAccountID      string
 }
 
 // NewAgentService creates a new AgentService.
@@ -135,10 +139,20 @@ func NewAgentService(
 	}
 }
 
-func (s *AgentService) SetModelProviderConfig(anthropicAPIKey, openAIAPIKey, openRouterAPIKey string) *AgentService {
+func (s *AgentService) SetModelProviderConfig(
+	anthropicAPIKey, openAIAPIKey, openRouterAPIKey string,
+	codexOpenAIAuthMode string,
+	codexChatGPTOAuthEnabled bool,
+	codexChatGPTAccessToken string,
+	codexChatGPTAccountID string,
+) *AgentService {
 	s.anthropicAPIKey = strings.TrimSpace(anthropicAPIKey)
 	s.openAIAPIKey = strings.TrimSpace(openAIAPIKey)
 	s.openRouterAPIKey = strings.TrimSpace(openRouterAPIKey)
+	s.codexOpenAIAuthMode = strings.TrimSpace(codexOpenAIAuthMode)
+	s.codexChatGPTOAuthEnabled = codexChatGPTOAuthEnabled
+	s.codexChatGPTAccessToken = strings.TrimSpace(codexChatGPTAccessToken)
+	s.codexChatGPTAccountID = strings.TrimSpace(codexChatGPTAccountID)
 	return s
 }
 
@@ -2384,6 +2398,12 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := validateModelProvider(provider); err != nil {
 		return err
 	}
+	if strings.TrimSpace(agent.RuntimeKind) == "codex" && provider == model.AgentModelProviderOpenAI {
+		if !s.isCodexOpenAIConfigured() {
+			return fmt.Errorf("provider openai is not configured for codex (requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth)")
+		}
+		return nil
+	}
 	if !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
@@ -2405,16 +2425,16 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	if agent.Provider == nil || strings.TrimSpace(*agent.Provider) == "" {
-		if strings.TrimSpace(s.openAIAPIKey) == "" && strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY or OPENROUTER_API_KEY to be configured")
+		if !s.isCodexOpenAIConfigured() && strings.TrimSpace(s.openRouterAPIKey) == "" {
+			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY, Helpin-managed ChatGPT OAuth, or OPENROUTER_API_KEY to be configured")
 		}
 		return nil
 	}
 
 	switch normalizeModelProvider(*agent.Provider) {
 	case model.AgentModelProviderOpenAI:
-		if strings.TrimSpace(s.openAIAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY")
+		if !s.isCodexOpenAIConfigured() {
+			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth")
 		}
 	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(s.openRouterAPIKey) == "" {
@@ -2427,6 +2447,17 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	return nil
+}
+
+func (s *AgentService) isCodexOpenAIConfigured() bool {
+	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
+	case "", "api_key", "api-key", "api":
+		return strings.TrimSpace(s.openAIAPIKey) != ""
+	case "chatgpt_oauth", "oauth", "chatgpt", "chatgpt-auth":
+		return s.codexChatGPTOAuthEnabled && strings.TrimSpace(s.codexChatGPTAccessToken) != "" && strings.TrimSpace(s.codexChatGPTAccountID) != ""
+	default:
+		return false
+	}
 }
 
 func (s *AgentService) isModelProviderConfigured(provider string) bool {

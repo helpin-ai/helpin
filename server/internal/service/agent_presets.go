@@ -190,10 +190,12 @@ func allowedTriggerModesForPresetKey(presetKey string) []string {
 }
 
 func supportedModesForRuntime(runtimeKind string) []string {
-	if strings.TrimSpace(runtimeKind) == "native_sdk" {
+	switch strings.TrimSpace(runtimeKind) {
+	case "native_sdk", "codex":
 		return []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}
+	default:
+		return []string{model.InvocationModeAutonomous}
 	}
-	return []string{model.InvocationModeAutonomous}
 }
 
 func allowedRuntimeKindsForPresetKey(presetKey string) []string {

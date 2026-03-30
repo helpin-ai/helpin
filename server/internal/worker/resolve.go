@@ -120,6 +120,9 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 	case "opencode":
 		return "agent-opencode-autonomous"
 	case "codex":
+		if invocationMode == model.InvocationModeInteractive {
+			return "agent-codex-interactive"
+		}
 		return "agent-codex-autonomous"
 	default:
 		return "automation-default"

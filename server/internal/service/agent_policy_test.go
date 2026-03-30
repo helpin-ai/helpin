@@ -19,43 +19,43 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 	}{
 		{
 			name:   "epic planner can run on epics",
-			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner},
 			target: "epic",
 		},
 		{
 			name:   "epic planner can run on stories",
-			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner},
 			target: "story",
 		},
 		{
 			name:   "epic planner can run on crm deals",
-			agent:  model.Agent{PresetKey: model.AgentPresetEpicPlanner},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner},
 			target: "crm_deal",
 		},
 		{
 			name:   "code builder can run on stories",
-			agent:  model.Agent{PresetKey: model.AgentPresetCodeBuilder},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
 			target: "story",
 		},
 		{
 			name:      "code builder cannot run on epics",
-			agent:     model.Agent{PresetKey: model.AgentPresetCodeBuilder},
+			agent:     model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
 			target:    "epic",
 			shouldErr: true,
 		},
 		{
 			name:   "review agent can run on stories",
-			agent:  model.Agent{PresetKey: model.AgentPresetReviewAgent},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent},
 			target: "story",
 		},
 		{
 			name:   "support agent can run on support conversations",
-			agent:  model.Agent{PresetKey: model.AgentPresetSupportAgent},
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetSupportAgent},
 			target: "support_conversation",
 		},
 		{
 			name:      "unknown preset is not runnable",
-			agent:     model.Agent{PresetKey: "unknown"},
+			agent:     model.Agent{IsSystem: true, PresetKey: "unknown"},
 			target:    "story",
 			shouldErr: true,
 		},
@@ -203,6 +203,7 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		{
 			name: "native sdk planner supports interactive",
 			agent: model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetEpicPlanner,
 				RuntimeKind: "native_sdk",
 			},
@@ -211,22 +212,25 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		{
 			name: "native sdk code builder supports interactive",
 			agent: model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "native_sdk",
 			},
 			supported: true,
 		},
 		{
-			name: "codex does not support interactive",
+			name: "codex code builder supports interactive",
 			agent: model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "codex",
 			},
-			supported: false,
+			supported: true,
 		},
 		{
 			name: "opencode does not support interactive",
 			agent: model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "opencode",
 			},
@@ -259,31 +263,56 @@ func TestValidateRuntimeProviderCompatibilityRejectsAnthropicForCodex(t *testing
 	}
 }
 
+func TestValidateRuntimeProviderCompatibilityAllowsCodexOpenAIWithManagedOAuth(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetCodeBuilder,
+		RuntimeKind: "codex",
+		Provider:    &openAI,
+	}
+
+	svc := &AgentService{
+		codexOpenAIAuthMode:      "chatgpt_oauth",
+		codexChatGPTOAuthEnabled: true,
+		codexChatGPTAccessToken:  "token",
+		codexChatGPTAccountID:    "account-123",
+	}
+	if err := svc.validateRuntimeProviderCompatibility(agent); err != nil {
+		t.Fatalf("expected managed OAuth to satisfy Codex OpenAI runtime validation, got %v", err)
+	}
+	if err := svc.validateModelRouting(agent); err != nil {
+		t.Fatalf("expected managed OAuth to satisfy Codex OpenAI model routing validation, got %v", err)
+	}
+}
+
+func TestValidateRuntimeProviderCompatibilityRejectsCodexOpenAIWithoutManagedOAuth(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetCodeBuilder,
+		RuntimeKind: "codex",
+		Provider:    &openAI,
+	}
+
+	svc := &AgentService{
+		codexOpenAIAuthMode:      "chatgpt_oauth",
+		codexChatGPTOAuthEnabled: false,
+	}
+	if err := svc.validateRuntimeProviderCompatibility(agent); err == nil {
+		t.Fatal("expected codex openai provider without managed OAuth to be rejected")
+	}
+}
+
 func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
-		PresetKey:   model.AgentPresetReviewAgent,
-		RuntimeKind: "codex",
-		Provider:    &openAI,
-		AllowedTools: mustJSONStringSlice([]string{
-			"read_file",
-			"read_file_range",
-			"list_directory",
-			"search_files",
-			"ripgrep",
-			"grep",
-			"list_symbols",
-			"run_command",
-			"add_story_comment",
-			"list_story_checklist",
-		}),
-		AllowedCommands: mustJSONStringSlice([]string{
-			"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg",
-		}),
-		AllowedTargets:        mustJSONStringSlice([]string{"story"}),
+		IsSystem:              true,
+		PresetKey:             model.AgentPresetReviewAgent,
+		RuntimeKind:           "codex",
+		Provider:              &openAI,
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeAutonomous,
 	}
+	normalizeAgentRecord(agent)
 
 	if err := validateRuntimeForAgent(agent); err != nil {
 		t.Fatalf("expected review_agent codex runtime to be allowed, got %v", err)
@@ -293,6 +322,7 @@ func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 func TestValidateRuntimeForAgentRejectsCustomCodexPolicy(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
+		IsSystem:              true,
 		PresetKey:             model.AgentPresetCodeBuilder,
 		RuntimeKind:           "codex",
 		Provider:              &openAI,
@@ -311,6 +341,7 @@ func TestValidateRuntimeForAgentRejectsCustomCodexPolicy(t *testing.T) {
 func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
+		IsSystem:    true,
 		PresetKey:   model.AgentPresetReviewAgent,
 		RuntimeKind: "codex",
 		Provider:    &openAI,
@@ -326,6 +357,7 @@ func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
 func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
 	legacyPrompt := "You are Builder, an AI coding agent. You write clean, correct code and follow existing project conventions."
 	agent := &model.Agent{
+		IsSystem:     true,
 		PresetKey:    model.AgentPresetCodeBuilder,
 		RuntimeKind:  "codex",
 		SystemPrompt: &legacyPrompt,
@@ -371,6 +403,7 @@ func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonEpicPlanner(t *testing
 
 func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testing.T) {
 	agent := &model.Agent{
+		IsSystem:       true,
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
@@ -403,6 +436,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 
 func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testing.T) {
 	agent := &model.Agent{
+		IsSystem:       true,
 		PresetKey:      model.AgentPresetStoryPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
@@ -435,6 +469,7 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 
 func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T) {
 	agent := &model.Agent{
+		IsSystem:       true,
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",

@@ -334,7 +334,7 @@ function createEmptyCustomForm(): AgentFormData {
 }
 
 function supportedModesForForm(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
-  if (runtimeKind === 'native_sdk') {
+  if (runtimeKind === 'native_sdk' || runtimeKind === 'codex') {
     return ['autonomous', 'interactive'];
   }
   return ['autonomous'];

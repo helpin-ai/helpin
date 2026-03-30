@@ -208,4 +208,34 @@ describe('AgentRunDrawer tool parsing', () => {
       errorText: '',
     });
   });
+
+  it('falls back to raw Codex stdout when no structured stream entries are present', () => {
+    const display = buildAutonomousRuntimeStreamDisplay(
+      {
+        runtime_kind: 'codex',
+        invocation_mode: 'autonomous',
+        status: 'running',
+      },
+      [
+        {
+          id: 'artifact-1',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          artifact_type: 'codex_stdout',
+          format: 'text',
+          storage_mode: 'inline',
+          inline_content: 'Codex session started.\nCodex started the turn.',
+          metadata: {},
+          sequence_no: 1,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    );
+
+    expect(display).toEqual({
+      assistantText: '',
+      processingText: 'Codex session started.\nCodex started the turn.',
+      errorText: '',
+    });
+  });
 });

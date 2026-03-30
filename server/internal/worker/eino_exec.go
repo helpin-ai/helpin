@@ -64,13 +64,16 @@ type ExecutionEvent struct {
 }
 
 type ExecutionResult struct {
-	Messages             []ExecutionMessage
-	AssistantBlocks      []ExecutionBlock
-	AssistantText        string
-	ToolInvocations      []appmodel.ToolInvocation
-	Usage                ExecutionUsage
-	ProviderContinuation *ProviderContinuation
-	MaxStepsReached      bool
+	Messages              []ExecutionMessage
+	AssistantBlocks       []ExecutionBlock
+	AssistantText         string
+	ToolInvocations       []appmodel.ToolInvocation
+	Usage                 ExecutionUsage
+	ProviderContinuation  *ProviderContinuation
+	HumanInputMetadata    json.RawMessage
+	HumanApprovalMetadata json.RawMessage
+	RunPlanMetadata       json.RawMessage
+	MaxStepsReached       bool
 }
 
 type executedToolCall struct {
