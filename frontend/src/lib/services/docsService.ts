@@ -50,6 +50,8 @@ export const docsService = {
     api.post<DocsSpace>(`/docs/spaces/${spaceId}/restore${qs(wsId)}`),
 
   // ── Collections ─────────────────────────────────────────────────────────
+  listAllCollections: (wsId: string) =>
+    api.get<DocsCollection[]>(`/docs/collections${qs(wsId)}`),
   listCollections: (wsId: string, spaceId: string) =>
     api.get<DocsCollection[]>(`/docs/spaces/${spaceId}/collections${qs(wsId)}`),
   createCollection: (wsId: string, spaceId: string, payload: CreateDocsCollectionRequest) =>
