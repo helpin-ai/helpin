@@ -2,7 +2,21 @@ import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin/widget-core';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY, DEFAULT_ONLINE_REPLY_TEXT } from './constants';
 
-export type ChatSettingsDraft = Omit<SupportInboxSettings, 'ai_agent_id'> & {
+export type ChatSettingsDraft = Omit<
+  SupportInboxSettings,
+  | 'ai_agent_id'
+  | 'triage_enabled'
+  | 'triage_auto_move_enabled'
+  | 'triage_confidence_threshold'
+  | 'triage_widget_enabled'
+  | 'triage_email_enabled'
+  | 'triage_internal_enabled'
+  | 'triage_fallback_behavior'
+  | 'triage_rerun_on_meaning_change'
+  | 'triage_daily_budget'
+  | 'triage_skip_spam_conversations'
+  | 'triage_deduplicate_first_message'
+> & {
   ai_agent_id: string;
 };
 
@@ -98,11 +112,38 @@ export function sortHelpSpaceIds(ids?: string[] | null): string[] {
 }
 
 export function buildSettingsDraftFromServer(settings: SupportInboxSettings): ChatSettingsDraft {
+  const {
+    ai_agent_id,
+    triage_enabled,
+    triage_auto_move_enabled,
+    triage_confidence_threshold,
+    triage_widget_enabled,
+    triage_email_enabled,
+    triage_internal_enabled,
+    triage_fallback_behavior,
+    triage_rerun_on_meaning_change,
+    triage_daily_budget,
+    triage_skip_spam_conversations,
+    triage_deduplicate_first_message,
+    ...rest
+  } = settings;
+  void triage_enabled;
+  void triage_auto_move_enabled;
+  void triage_confidence_threshold;
+  void triage_widget_enabled;
+  void triage_email_enabled;
+  void triage_internal_enabled;
+  void triage_fallback_behavior;
+  void triage_rerun_on_meaning_change;
+  void triage_daily_budget;
+  void triage_skip_spam_conversations;
+  void triage_deduplicate_first_message;
+
   return {
-    ...settings,
-    ai_agent_id: settings.ai_agent_id ?? '',
-    business_hours_schedule: normalizeBusinessHoursSchedule(settings.business_hours_schedule),
-    widget_help_space_ids: sortHelpSpaceIds(settings.widget_help_space_ids),
+    ...rest,
+    ai_agent_id: ai_agent_id ?? '',
+    business_hours_schedule: normalizeBusinessHoursSchedule(rest.business_hours_schedule),
+    widget_help_space_ids: sortHelpSpaceIds(rest.widget_help_space_ids),
   };
 }
 

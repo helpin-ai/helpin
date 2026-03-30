@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
@@ -22,6 +23,8 @@ type MailboxFormState = {
   handle: string;
   icon: string;
   description: string;
+  routingPrompt: string;
+  triageEligible: boolean;
   linkedTeamId: string;
   assignmentMode: 'manual' | 'round_robin';
   workspaceMemberIds: string[];
@@ -32,6 +35,8 @@ const DEFAULT_FORM: MailboxFormState = {
   handle: '',
   icon: 'inbox',
   description: '',
+  routingPrompt: '',
+  triageEligible: true,
   linkedTeamId: 'none',
   assignmentMode: 'manual',
   workspaceMemberIds: [],
@@ -50,6 +55,8 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     handle: mailbox.handle,
     icon: mailbox.icon || 'inbox',
     description: mailbox.description ?? '',
+    routingPrompt: mailbox.routing_prompt ?? '',
+    triageEligible: mailbox.triage_eligible,
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
     workspaceMemberIds: [],
@@ -83,7 +90,7 @@ export function TeamInboxDialog({
   onOpenChange: (open: boolean) => void;
   mailbox?: SupportMailbox | null;
 }) {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
   const [memberSearch, setMemberSearch] = useState('');
 
@@ -168,6 +175,8 @@ export function TeamInboxDialog({
         handle: normalizeHandle(form.handle),
         icon: form.icon,
         description: form.description.trim() || null,
+        routing_prompt: form.routingPrompt.trim() || null,
+        triage_eligible: form.triageEligible,
         linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
         workspace_member_ids: form.workspaceMemberIds,
@@ -180,6 +189,8 @@ export function TeamInboxDialog({
         handle: normalizeHandle(form.handle),
         icon: form.icon,
         description: form.description.trim() || null,
+        routing_prompt: form.routingPrompt.trim() || null,
+        triage_eligible: form.triageEligible,
         linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
         workspace_member_ids: form.workspaceMemberIds,
@@ -213,10 +224,23 @@ export function TeamInboxDialog({
             }}
             className="flex items-center gap-2 text-sm font-medium"
           >
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 2 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              2
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 2 ? 'bg-primary text-primary-foreground' : step > 2 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+              {step > 2 ? <Check className="h-3.5 w-3.5" /> : '2'}
             </span>
             <span className={step === 2 ? 'text-foreground' : 'text-muted-foreground'}>Members</span>
+          </button>
+          <div className="mx-3 h-px w-8 bg-border" />
+          <button
+            type="button"
+            onClick={() => {
+              if (canProceedToStep2) setStep(3);
+            }}
+            className="flex items-center gap-2 text-sm font-medium"
+          >
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 3 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+              3
+            </span>
+            <span className={step === 3 ? 'text-foreground' : 'text-muted-foreground'}>Routing</span>
           </button>
         </div>
 
@@ -224,7 +248,7 @@ export function TeamInboxDialog({
           <div className="px-6 pb-2">
             <DialogHeader className="mb-4">
               <DialogTitle>{mailbox ? 'Edit Team Inbox' : 'Create Team Inbox'}</DialogTitle>
-              <DialogDescription>Set up the inbox identity and routing preferences.</DialogDescription>
+              <DialogDescription>Set up the inbox identity and team assignment.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
@@ -385,8 +409,61 @@ export function TeamInboxDialog({
           </div>
         )}
 
+        {step === 3 && (
+          <div className="px-6 pb-2">
+            <DialogHeader className="mb-4">
+              <DialogTitle>Routing</DialogTitle>
+              <DialogDescription>
+                Control how conversations get routed to this inbox. You can set up exact-match rules separately in Routing Settings.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">How it works:</span> When AI triage is enabled, the routing prompt below tells the AI what kind of conversations belong in this inbox. The AI reads all inbox prompts and picks the best match.
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-muted/20 p-3">
+                <div className="space-y-1">
+                  <FieldLabel tip="When enabled, AI triage can route conversations into this inbox. Disable to keep this inbox manual-only or rule-based only.">
+                    Eligible for AI Routing
+                  </FieldLabel>
+                  <p className="text-sm text-muted-foreground">
+                    Allow AI triage to suggest or auto-move conversations into this inbox.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.triageEligible}
+                  onCheckedChange={(checked) => setForm((current) => ({ ...current, triageEligible: checked }))}
+                />
+              </div>
+
+              {form.triageEligible && (
+                <div className="space-y-1.5">
+                  <FieldLabel
+                    htmlFor="team-inbox-routing-prompt"
+                    tip="Describe the types of conversations this inbox should receive. The AI uses this to decide where each conversation belongs."
+                  >
+                    Routing Prompt
+                  </FieldLabel>
+                  <Textarea
+                    id="team-inbox-routing-prompt"
+                    value={form.routingPrompt}
+                    onChange={(event) => setForm((current) => ({ ...current, routingPrompt: event.target.value }))}
+                    placeholder="e.g. Billing questions, refund requests, payment issues, and subscription changes."
+                    rows={4}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Be specific — describe the topics, not the team. The AI compares this against all other inbox prompts to pick the best match.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="border-t px-6 py-4">
-          {step === 1 ? (
+          {step === 1 && (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
@@ -396,9 +473,22 @@ export function TeamInboxDialog({
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </>
-          ) : (
+          )}
+          {step === 2 && (
             <>
               <Button variant="outline" onClick={() => setStep(1)} className="mr-auto gap-2">
+                <ChevronLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button onClick={() => setStep(3)} className="gap-2">
+                Continue
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <Button variant="outline" onClick={() => setStep(2)} className="mr-auto gap-2">
                 <ChevronLeft className="h-4 w-4" />
                 Back
               </Button>

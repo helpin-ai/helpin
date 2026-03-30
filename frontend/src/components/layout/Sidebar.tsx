@@ -50,6 +50,7 @@ export function Sidebar() {
     selectedMailboxId,
     setSelectedMailboxId,
     setTeamInboxDialogOpen,
+    activeContext,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
@@ -285,6 +286,7 @@ export function Sidebar() {
             {activeRail === 'support' && (
               <SupportRailNav
                 navFilter={navFilter}
+                activeContext={activeContext}
                 unreadStats={unreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}

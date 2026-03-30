@@ -113,6 +113,7 @@ export const queryKeys = {
     mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
     mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,
     emailRoutes: (wsId: string) => ['support', wsId, 'email-routes'] as const,
+    triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
     teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
     visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },

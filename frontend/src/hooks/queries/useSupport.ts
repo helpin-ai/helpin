@@ -21,6 +21,9 @@ import type {
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
   CreateSupportEmailRouteRequest,
+  SupportTriageRule,
+  CreateSupportTriageRuleRequest,
+  UpdateSupportTriageRuleRequest,
 } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
@@ -131,6 +134,15 @@ export function useSupportEmailRoutes(workspaceId: string) {
   });
 }
 
+export function useSupportTriageRules(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.triageRules(workspaceId),
+    queryFn: async (): Promise<SupportTriageRule[]> => unwrap(await supportService.listTriageRules(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
 export function useSupportTeammatePresence(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.teammatePresence(workspaceId),
@@ -166,6 +178,48 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to enable email forwarding', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportTriageRule(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportTriageRuleRequest) =>
+      supportService.createTriageRule(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create routing rule', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportTriageRule(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ruleId, payload }: { ruleId: string; payload: UpdateSupportTriageRuleRequest }) =>
+      supportService.updateTriageRule(workspaceId, ruleId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update routing rule', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportTriageRule(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: string) =>
+      supportService.deleteTriageRule(workspaceId, ruleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete routing rule', { description: error.message });
     },
   });
 }
@@ -437,6 +491,7 @@ export function useCreateMailbox(workspaceId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to create team inbox', { description: error.message });
@@ -453,6 +508,7 @@ export function useUpdateMailbox(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxMembers(workspaceId, variables.mailboxId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to update team inbox', { description: error.message });
@@ -469,6 +525,7 @@ export function useArchiveMailbox(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxMembers(workspaceId, mailboxId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to archive team inbox', { description: error.message });
@@ -504,6 +561,23 @@ export function useMoveConversation(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to move conversation', { description: error.message });
+    },
+  });
+}
+
+export function useDismissConversationTriage(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.dismissConversationTriage(workspaceId, conversationId).then(unwrap),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to dismiss routing suggestion', { description: error.message });
     },
   });
 }

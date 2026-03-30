@@ -32,6 +32,7 @@ type InboxScopes = {
 
 type SupportRailNavProps = {
   navFilter: SupportNavFilter;
+  activeContext: 'nav' | 'mailbox';
   unreadStats?: {
     my_inbox?: number;
     unassigned?: number;
@@ -47,6 +48,7 @@ type SupportRailNavProps = {
 
 export function SupportRailNav({
   navFilter,
+  activeContext,
   unreadStats,
   inboxScopes,
   selectedMailboxId,
@@ -73,7 +75,7 @@ export function SupportRailNav({
           return (
             <SidebarMenuItem key={item.key}>
               <SidebarMenuButton
-                isActive={navFilter === item.key}
+                isActive={navFilter === item.key && activeContext === 'nav'}
                 className="h-8 rounded-md px-2 text-[13px]"
                 onClick={() => onNavFilterChange(item.key)}
               >
@@ -98,7 +100,7 @@ export function SupportRailNav({
           {supportAiItems.map((item) => (
             <SidebarMenuItem key={item.key}>
               <SidebarMenuButton
-                isActive={navFilter === item.key}
+                isActive={navFilter === item.key && activeContext === 'nav'}
                 className="h-8 rounded-md px-2 text-[13px]"
                 onClick={() => onNavFilterChange(item.key)}
               >

@@ -4,6 +4,27 @@ export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved'
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
+export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
+export type SupportConversationTriageSource = 'rule' | 'ai';
+export type SupportConversationTriageFeedbackAction = 'accepted' | 'dismissed' | 'corrected';
+
+export interface SupportConversationTriage {
+  id: string;
+  workspace_id: string;
+  conversation_id: string;
+  status: SupportConversationTriageStatus;
+  intent?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  classifier_source: SupportConversationTriageSource;
+  suggested_mailbox_id?: string | null;
+  auto_moved: boolean;
+  locked_at?: string | null;
+  evaluated_at?: string | null;
+  feedback_action?: SupportConversationTriageFeedbackAction | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface SupportConversation {
   id: string;
@@ -36,6 +57,7 @@ export interface SupportConversation {
   mailbox_icon?: string | null;
   team_last_seen_at?: string;
   contact_last_seen_at?: string;
+  triage?: SupportConversationTriage | null;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +92,8 @@ export interface SupportMailbox {
   handle: string;
   icon: string;
   description?: string | null;
+  routing_prompt?: string | null;
+  triage_eligible: boolean;
   linked_team_id?: string | null;
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
@@ -120,6 +144,8 @@ export interface CreateSupportMailboxRequest {
   handle: string;
   icon: string;
   description?: string | null;
+  routing_prompt?: string | null;
+  triage_eligible?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids: string[];
   assignment_mode: 'manual' | 'round_robin';
@@ -131,10 +157,51 @@ export interface UpdateSupportMailboxRequest {
   handle?: string;
   icon?: string;
   description?: string | null;
+  routing_prompt?: string | null;
+  triage_eligible?: boolean;
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
   import_linked_team?: boolean;
+}
+
+export interface SupportTriageRuleConditions {
+  phrase_contains: string[];
+  email_domain_equals: string[];
+}
+
+export interface SupportTriageRule {
+  id: string;
+  workspace_id: string;
+  priority: number;
+  active: boolean;
+  name: string;
+  channels: TicketSource[];
+  conditions: SupportTriageRuleConditions;
+  target_mailbox_id: string;
+  target_mailbox_name?: string | null;
+  target_mailbox_handle?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportTriageRuleRequest {
+  priority: number;
+  active?: boolean;
+  name: string;
+  channels: TicketSource[];
+  conditions: SupportTriageRuleConditions;
+  target_mailbox_id: string;
+}
+
+export interface UpdateSupportTriageRuleRequest {
+  priority?: number;
+  active?: boolean;
+  name?: string;
+  channels?: TicketSource[];
+  conditions?: SupportTriageRuleConditions;
+  target_mailbox_id?: string;
 }
 
 export interface SupportTeammatePresenceStatus {
@@ -446,6 +513,17 @@ export interface SupportInboxSettings {
   handoff_team_id: string | null;
   default_mailbox_id: string | null;
   ai_handoff_mailbox_id: string | null;
+  triage_enabled: boolean;
+  triage_auto_move_enabled: boolean;
+  triage_confidence_threshold: number;
+  triage_widget_enabled: boolean;
+  triage_email_enabled: boolean;
+  triage_internal_enabled: boolean;
+  triage_fallback_behavior: 'shared' | 'default';
+  triage_rerun_on_meaning_change: boolean;
+  triage_daily_budget: number;
+  triage_skip_spam_conversations: boolean;
+  triage_deduplicate_first_message: boolean;
   business_hours_enabled: boolean;
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
@@ -478,4 +556,3 @@ export interface SupportInstallationResponse {
   created_at: string;
   updated_at: string;
 }
-

@@ -1049,6 +1049,12 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		Source:        "email",
 	}
 
+	if conversation.MailboxID == nil && s.supportInboxService != nil {
+		if mailboxID, _, mailboxErr := s.supportInboxService.maybeApplyMailboxRoutingForChannel(ctx, route.WorkspaceID, nil, true, "email"); mailboxErr == nil {
+			conversation.MailboxID = mailboxID
+		}
+	}
+
 	var (
 		mailbox *model.SupportMailbox
 		err     error
@@ -1168,6 +1174,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		"conversation_id", conversation.ID,
 		"route_key", route.RouteKey,
 	)
+	if s.supportInboxService != nil && s.supportInboxService.triageService != nil {
+		go func(workspaceID, conversationID, messageID string) {
+			if _, err := s.supportInboxService.triageService.EvaluateAndRoute(context.Background(), workspaceID, conversationID, messageID); err != nil {
+				s.logger.ErrorContext(context.Background(), "support triage failed for inbound email conversation", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
+			}
+		}(conversation.WorkspaceID, conversation.ID, message.ID)
+	}
 	return nil
 }
 
