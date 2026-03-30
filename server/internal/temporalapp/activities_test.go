@@ -1272,6 +1272,145 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	}
 }
 
+func TestPersistAssistantRunMessagePersistsRunPlanArtifact(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-plan-artifact-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "run-plan-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{run: run, agent: &model.Agent{ID: "agent-1", WorkspaceID: "ws-1"}}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Working through the plan.",
+			ToolInvocations: []model.ToolInvocation{
+				{
+					ToolName: workerpkg.ToolUpdatePlan,
+					Input: json.RawMessage(`{
+						"note":"Focus on repo context first",
+						"plan":[
+							{"step":"Review current PRD draft","status":"completed"},
+							{"step":"Inspect relevant modules","status":"in_progress"}
+						]
+					}`),
+				},
+			},
+		},
+	}
+
+	assistantMessage, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx)
+	if err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+	if assistantMessage == nil {
+		t.Fatal("expected assistant message to be persisted")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeRunPlan || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+		if !strings.Contains(*artifact.InlineContent, `"note":"Focus on repo context first"`) {
+			t.Fatalf("expected run_plan inline content, got %s", *artifact.InlineContent)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(1) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected run_plan artifact to be persisted")
+	}
+}
+
+func TestBuildArtifactContextEntriesIncludesLatestRunPlan(t *testing.T) {
+	runPlanOld, _ := json.Marshal(workerpkg.RunPlanArtifact{
+		Plan: []workerpkg.RunPlanStep{{Step: "Old", Status: workerpkg.PlanStepInProgress}},
+	})
+	runPlanNew, _ := json.Marshal(workerpkg.RunPlanArtifact{
+		Note: "Keep the current scope tight.",
+		Plan: []workerpkg.RunPlanStep{
+			{Step: "Review current PRD draft", Status: workerpkg.PlanStepCompleted},
+			{Step: "Inspect relevant modules", Status: workerpkg.PlanStepInProgress},
+		},
+	})
+
+	entries, err := buildArtifactContextEntries([]model.AgentRunArtifact{
+		{
+			ID:            "artifact-1",
+			ArtifactType:  model.AgentRunArtifactTypeRunPlan,
+			Format:        "json",
+			InlineContent: strPtr(string(runPlanOld)),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "artifact-2",
+			ArtifactType:  model.AgentRunArtifactTypeRunPlan,
+			Format:        "json",
+			InlineContent: strPtr(string(runPlanNew)),
+			SequenceNo:    2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildArtifactContextEntries returned error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one latest run_plan entry, got %#v", entries)
+	}
+	if entries[0].Source != model.AgentRunArtifactTypeRunPlan || entries[0].Label != "Current execution plan" {
+		t.Fatalf("unexpected run plan entry %#v", entries[0])
+	}
+	if !strings.Contains(entries[0].Content, "Keep the current scope tight.") || !strings.Contains(entries[0].Content, "[>] Inspect relevant modules") {
+		t.Fatalf("expected rendered run plan content, got %s", entries[0].Content)
+	}
+}
+
 func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T) {
 	state := &resolvedRunState{
 		run: &model.AgentRun{

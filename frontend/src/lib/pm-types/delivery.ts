@@ -87,6 +87,7 @@ export interface CreateGitIntegrationRequest {
 
 export interface GitHubInstallURLResponse {
   install_url: string;
+  action: 'install' | 'manage';
 }
 
 export interface UpdateGitRepositoryRequest {
@@ -104,4 +105,3 @@ export interface UpdateStoryDeliveryTargetRequest {
   base_branch?: string;
   working_branch?: string;
 }
-

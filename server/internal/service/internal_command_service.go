@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -17,7 +18,7 @@ type InternalCommandDefinition struct {
 	Module               string
 	Mutating             bool
 	SupportedTargetTypes []string
-	ExposeAsTool         bool
+	Tool                 *commandtools.RuntimeToolMetadata
 	Execute              func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
@@ -78,6 +79,23 @@ func (s *InternalCommandService) Definition(name string) (InternalCommandDefinit
 	return def, ok
 }
 
+func (d InternalCommandDefinition) ExposesTool() bool {
+	return d.Tool != nil && strings.TrimSpace(d.Tool.Alias) != ""
+}
+
+func (s *InternalCommandService) ToolDefinitions() []InternalCommandDefinition {
+	if s == nil {
+		return nil
+	}
+	defs := make([]InternalCommandDefinition, 0, len(s.definitions))
+	for _, def := range s.definitions {
+		if def.ExposesTool() {
+			defs = append(defs, def)
+		}
+	}
+	return defs
+}
+
 func (s *InternalCommandService) Execute(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
 	if s == nil {
 		return nil, fmt.Errorf("internal command service is not configured")
@@ -118,7 +136,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("docs.ensure_spec_doc"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			doc, err := s.agentService.EnsureEpicSpecDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
 			if err != nil {
@@ -132,7 +150,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"story"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("docs.ensure_story_plan_doc"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			doc, err := s.agentService.EnsureStoryPlanDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
 			if err != nil {
@@ -146,7 +164,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic"},
-		ExposeAsTool:         false,
+		Tool:                 mustCommandToolMetadata("pm.approve_epic_spec"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req model.ApproveEpicSpecRequest
 			if len(input) > 0 {
@@ -166,7 +184,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("pm.create_story_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				Stories []model.ProposedStory `json:"stories"`
@@ -218,7 +236,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic", "story"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("pm.set_story_dependencies"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				Dependencies []struct {
@@ -262,7 +280,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic", "story"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("pm.assign_story_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				StoryID string `json:"story_id"`
@@ -282,7 +300,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"story"},
-		ExposeAsTool:         true,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				Followups []model.StoryCompletionFollowupProposal `json:"followups"`
@@ -331,7 +348,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"story"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("pm.update_story_state"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				StoryID  string `json:"story_id"`
@@ -360,7 +377,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"document", "epic", "story", "crm_deal"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("docs.write_document_content"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				DocumentID string          `json:"document_id"`
@@ -402,7 +419,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic", "story", "crm_deal"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("docs.link_document_to_object"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				DocumentID       string  `json:"document_id"`
@@ -433,7 +450,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "crm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"crm_deal"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("crm.update_deal_stage"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				DealID  string `json:"deal_id"`
@@ -458,7 +475,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "crm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"crm_deal"},
-		ExposeAsTool:         true,
+		Tool:                 mustCommandToolMetadata("crm.add_deal_note"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				DealID  string `json:"deal_id"`
@@ -489,7 +506,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic", "story"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -522,7 +538,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"epic", "story"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -555,7 +570,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"sprint"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -569,7 +583,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "pm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"sprint"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -583,7 +596,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "delivery",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"story"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.gitService == nil {
 				return nil, fmt.Errorf("git service not configured")
@@ -615,7 +627,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "crm",
 		Mutating:             true,
 		SupportedTargetTypes: []string{"crm_deal"},
-		ExposeAsTool:         false,
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				RecommendedStageID *string `json:"recommended_stage_id,omitempty"`
@@ -664,6 +675,14 @@ func fallbackActor(meta model.InternalCommandContext) string {
 		return strings.TrimSpace(meta.AgentID)
 	}
 	return ""
+}
+
+func mustCommandToolMetadata(commandName string) *commandtools.RuntimeToolMetadata {
+	meta, ok := commandtools.ToolMetadataForCommand(commandName)
+	if !ok {
+		panic("missing runtime tool metadata for command " + commandName)
+	}
+	return meta
 }
 
 func commandTimePtr(value time.Time) *time.Time {

@@ -45,7 +45,7 @@ func TestListWorkspaceTeamsToolReturnsWorkspaceTeams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"id": "team-1"`) || !strings.Contains(output, `"name": "Growth"`) {
+	if !strings.Contains(output, `"id":"team-1"`) || !strings.Contains(output, `"name":"Growth"`) {
 		t.Fatalf("expected team list JSON output, got %s", output)
 	}
 }

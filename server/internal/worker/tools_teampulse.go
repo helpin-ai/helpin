@@ -37,6 +37,17 @@ func toolUpdateStoryState(ctx *ExecutionContext, input json.RawMessage) (string,
 		return "", fmt.Errorf("no story associated with this run")
 	}
 
+	commandInput, _ := json.Marshal(map[string]any{
+		"story_id": ctx.StoryID,
+		"state_id": params.StateID,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "story", ctx.StoryID, "pm.update_story_state", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("update story state: %w", err)
+		}
+		return string(output), nil
+	}
+
 	if err := ctx.Services.UpdateStoryState(ctx.Context, ctx.WorkspaceID, ctx.StoryID, params.StateID); err != nil {
 		return "", fmt.Errorf("update story state: %w", err)
 	}
@@ -67,8 +78,7 @@ func toolListStoryChecklist(ctx *ExecutionContext, input json.RawMessage) (strin
 		lines = append(lines, fmt.Sprintf("%s %s", status, item.Text))
 	}
 
-	result, _ := json.MarshalIndent(lines, "", "  ")
-	return string(result), nil
+	return toCompactJSONString(lines), nil
 }
 
 func toolListConversationMessages(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -101,8 +111,7 @@ func toolListConversationMessages(ctx *ExecutionContext, input json.RawMessage) 
 		})
 	}
 
-	payload, _ := json.MarshalIndent(result, "", "  ")
-	return string(payload), nil
+	return toCompactJSONString(result), nil
 }
 
 func toolDraftSupportReply(ctx *ExecutionContext, input json.RawMessage) (string, error) {

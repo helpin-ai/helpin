@@ -62,4 +62,5 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   git_status: 'Git Status',
   git_diff_stat: 'Git Diff Stat',
   git_persistence_result: 'Git Result',
+  run_plan: 'Execution Plan',
 };

@@ -1,11 +1,15 @@
 package worker
 
-import "github.com/helpin-ai/helpin/server/internal/model"
+import (
+	"github.com/helpin-ai/helpin/server/internal/commandtools"
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
 
 // toolCategory maps each tool name to its display category.
 var toolCategory = map[string]string{
 	// Filesystem
 	"read_file":       "Filesystem",
+	"read_files":      "Filesystem",
 	"write_file":      "Filesystem",
 	"list_directory":  "Filesystem",
 	"search_files":    "Filesystem",
@@ -30,6 +34,7 @@ var toolCategory = map[string]string{
 	// PM / Stories
 	"request_human_input":    "Interaction",
 	"request_human_approval": "Interaction",
+	"update_plan":            "Interaction",
 	"preview_md":             "Interaction",
 	"preview_json":           "Interaction",
 	"publish_prd_draft":      "Interaction",
@@ -37,13 +42,8 @@ var toolCategory = map[string]string{
 	"publish_story_plan_doc": "Interaction",
 	"publish_preview":        "Interaction",
 	"add_story_comment":      "PM / Stories",
-	"update_story_state":     "PM / Stories",
 	"list_story_checklist":   "PM / Stories",
-	"create_story_batch":     "PM / Stories",
-	"assign_story_agent":     "PM / Stories",
-	"set_story_dependencies": "PM / Stories",
 	"list_epic_stories":      "PM / Stories",
-	"approve_epic_spec":      "PM / Stories",
 	"list_workspace_teams":   "Workspace",
 
 	// Support
@@ -53,19 +53,13 @@ var toolCategory = map[string]string{
 
 	// CRM
 	"list_deals":         "CRM",
-	"update_deal_stage":  "CRM",
-	"add_deal_note":      "CRM",
 	"list_contacts":      "CRM",
 	"list_buyer_signals": "CRM",
 
 	// Docs
-	"list_documents":          "Docs",
-	"read_document":           "Docs",
-	"search_documents":        "Docs",
-	"write_document_content":  "Docs",
-	"link_document_to_object": "Docs",
-	"ensure_epic_spec_doc":    "Docs",
-	"ensure_story_plan_doc":   "Docs",
+	"list_documents":   "Docs",
+	"read_document":    "Docs",
+	"search_documents": "Docs",
 }
 
 var categoryOrder = []string{
@@ -128,7 +122,13 @@ func ListToolCatalog() model.ToolCatalogResponse {
 	entries := make([]model.ToolCatalogEntry, 0, len(defs)+1)
 
 	for _, def := range defs {
-		cat := toolCategory[def.Name]
+		cat := ""
+		if meta, ok := commandtools.ToolMetadataForAlias(def.Name); ok {
+			cat = meta.Category
+		}
+		if cat == "" {
+			cat = toolCategory[def.Name]
+		}
 		if cat == "" {
 			cat = "Other"
 		}

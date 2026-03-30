@@ -47,12 +47,11 @@ func toolRequestHumanInput(ctx *ExecutionContext, input json.RawMessage) (string
 		return "", err
 	}
 
-	payload, _ := json.MarshalIndent(map[string]any{
+	return toCompactJSONString(map[string]any{
 		"status":       appmodel.AgentRunStatusPaused,
 		"pause_reason": appmodel.AgentRunPauseReasonHumanInput,
 		"questions":    req.Questions,
-	}, "", "  ")
-	return string(payload), nil
+	}), nil
 }
 
 func toolRequestHumanApproval(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -64,14 +63,13 @@ func toolRequestHumanApproval(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", err
 	}
 
-	payload, _ := json.MarshalIndent(map[string]any{
+	return toCompactJSONString(map[string]any{
 		"status":       appmodel.AgentRunStatusPaused,
 		"pause_reason": appmodel.AgentRunPauseReasonHumanApproval,
 		"phase":        req.Phase,
 		"title":        req.Title,
 		"summary":      req.Summary,
-	}, "", "  ")
-	return string(payload), nil
+	}), nil
 }
 
 func validateHumanInputRequest(req *HumanInputRequest) error {

@@ -41,7 +41,7 @@ func TestApproveEpicSpecToolReturnsApprovedSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"spec_document_id": "doc-1"`) || !strings.Contains(output, `"spec_version_id": "ver-1"`) {
+	if !strings.Contains(output, `"spec_document_id":"doc-1"`) || !strings.Contains(output, `"spec_version_id":"ver-1"`) {
 		t.Fatalf("expected approved spec summary JSON, got %s", output)
 	}
 }
@@ -81,7 +81,7 @@ func TestEnsureStoryPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, marker := range []string{`"document_id": "doc-story-1"`, `"has_draft_content": true`} {
+	for _, marker := range []string{`"document_id":"doc-story-1"`, `"has_draft_content":true`} {
 		if !strings.Contains(output, marker) {
 			t.Fatalf("expected output to contain %q, got %s", marker, output)
 		}
@@ -127,7 +127,7 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"story_id": "story-db-1"`) {
+	if !strings.Contains(output, `"story_id":"story-db-1"`) {
 		t.Fatalf("expected created story batch result, got %s", output)
 	}
 }
@@ -197,5 +197,53 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 	}
 	if !strings.Contains(err.Error(), `create_story_batch stories are invalid: story 1 is missing name; use field "name"`) {
 		t.Fatalf("expected repair-oriented validation error, got %v", err)
+	}
+}
+
+func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	versionID := "ver-1"
+	called := false
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "epic",
+		TargetID:    "epic-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		Epic: &model.PMEpic{
+			ID:                    "epic-1",
+			ApprovedSpecVersionID: &versionID,
+		},
+		AllowedTools: map[string]bool{
+			"create_story_batch": true,
+		},
+		Services: &ServiceBridge{
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				called = true
+				if name != "pm.create_story_batch" {
+					t.Fatalf("unexpected command name %q", name)
+				}
+				if meta.WorkspaceID != "ws-1" || meta.TargetType != "epic" || meta.TargetID != "epic-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
+					t.Fatalf("unexpected command meta %#v", meta)
+				}
+				return json.RawMessage(`{"stories":[{"ref":"story_1","story_id":"story-db-1","name":"Story A"}]}`), nil
+			},
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "create_story_batch", json.RawMessage(`{
+		"stories": [
+			{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected internal command executor to be used")
+	}
+	if output != `{"stories":[{"ref":"story_1","story_id":"story-db-1","name":"Story A"}]}` {
+		t.Fatalf("unexpected output %q", output)
 	}
 }

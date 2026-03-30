@@ -810,6 +810,7 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 	applied := make(map[string]model.AppliedApprovedRunPreview)
 	latestRunPreview := make(map[string]workerpkg.PublishedPreview)
 	latestApproved := make(map[string]approvedPreviewContextEntry)
+	var latestRunPlan *workerpkg.ArtifactContextEntry
 	otherEntries := make([]workerpkg.ArtifactContextEntry, 0)
 
 	for _, artifact := range sorted {
@@ -844,6 +845,12 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 				Preview: preview,
 				Status:  status,
 			}
+		case model.AgentRunArtifactTypeRunPlan:
+			entry, err := buildRunPlanArtifactContextEntry(artifact)
+			if err != nil {
+				return nil, err
+			}
+			latestRunPlan = entry
 		default:
 			if entry := buildOtherArtifactContextEntry(artifact); entry != nil {
 				otherEntries = append(otherEntries, *entry)
@@ -900,6 +907,9 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 			})
 		}
 	}
+	if latestRunPlan != nil {
+		entries = append(entries, *latestRunPlan)
+	}
 	entries = append(entries, otherEntries...)
 	return entries, nil
 }
@@ -907,6 +917,31 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 type approvedPreviewContextEntry struct {
 	Preview model.ApprovedRunPreview
 	Status  string
+}
+
+func buildRunPlanArtifactContextEntry(artifact model.AgentRunArtifact) (*workerpkg.ArtifactContextEntry, error) {
+	content := strings.TrimSpace(derefString(artifact.InlineContent))
+	if content == "" {
+		return nil, nil
+	}
+	var plan workerpkg.RunPlanArtifact
+	if err := json.Unmarshal([]byte(content), &plan); err != nil {
+		return nil, fmt.Errorf("parse run plan artifact: %w", err)
+	}
+	if err := workerpkg.ValidateRunPlanArtifactForContext(&plan); err != nil {
+		return nil, nil
+	}
+	rendered := workerpkg.FormatRunPlanArtifactContentForContext(&plan)
+	if rendered == "" {
+		return nil, nil
+	}
+	return &workerpkg.ArtifactContextEntry{
+		Label:   "Current execution plan",
+		Source:  model.AgentRunArtifactTypeRunPlan,
+		Status:  "active",
+		Format:  "text",
+		Content: rendered,
+	}, nil
 }
 
 func buildOtherArtifactContextEntry(artifact model.AgentRunArtifact) *workerpkg.ArtifactContextEntry {
@@ -1254,6 +1289,12 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 		}
 	}
 
+	if runPlan := latestRunPlanFromResult(result); runPlan != nil {
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, metadata); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1269,6 +1310,13 @@ func latestHumanInputRequestFromResult(result *workerpkg.ExecutionResult) *worke
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanInputRequest(result.ToolInvocations)
+}
+
+func latestRunPlanFromResult(result *workerpkg.ExecutionResult) *workerpkg.RunPlanArtifact {
+	if result == nil {
+		return nil
+	}
+	return workerpkg.ExtractLatestRunPlan(result.ToolInvocations)
 }
 
 func humanInputArtifactFromWorker(req *workerpkg.HumanInputRequest) model.HumanInputArtifact {
@@ -3818,6 +3866,12 @@ func (a *AgentRunActivities) mintAccessToken(ctx context.Context, integration *m
 
 func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 	return &workerpkg.ServiceBridge{
+		ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+			if a.commandExecutor == nil {
+				return nil, fmt.Errorf("internal commands are not available")
+			}
+			return a.commandExecutor.Execute(ctx, meta, name, input)
+		},
 		AddComment: func(ctx context.Context, workspaceID, storyID, agentID, content string) error {
 			comment := &model.PMComment{
 				EntityType: "story",
