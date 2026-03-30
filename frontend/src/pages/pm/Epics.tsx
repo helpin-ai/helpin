@@ -196,7 +196,9 @@ function epicMatchesFilters(entry: EpicWithStats, filters: EpicFilterState) {
   const labelIds = new Set((entry.labels ?? []).map((label) => label.id));
   const objectiveIds = new Set((entry.objectives ?? []).map((objective) => objective.id));
 
-  if (!matchesSelectedValue(entry.epic.epic_state_id, filters.state)) return false;
+  // Skip state matching when viewing archived (already filtered server-side)
+  const stateFilter = filters.state?.filter((v) => v !== '__archived__');
+  if (stateFilter && stateFilter.length > 0 && !matchesSelectedValue(entry.epic.epic_state_id, stateFilter)) return false;
   if (!matchesSelectedValue(entry.epic.health, filters.health)) return false;
   if (!matchesSelectedValue(entry.epic.team_id, filters.team)) return false;
   if (!matchesSelectedValue(entry.epic.owner_member_id, filters.owner)) return false;
@@ -977,7 +979,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     {
       key: 'state',
       label: 'State',
-      options: epicStates.map((state) => ({ value: state.id, label: state.name })),
+      options: [
+        ...epicStates.map((state) => ({ value: state.id, label: state.name })),
+        { value: '__archived__', label: 'Archived' },
+      ],
     },
     {
       key: 'health',
@@ -1404,12 +1409,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     };
   }, [visibleColumns, isSingleTeam]);
 
+  const showArchived = filters.state?.includes('__archived__') ?? false;
+
   const loadData = useCallback(async () => {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
     const [epicsRes, labelsRes, objectivesRes] = await Promise.all([
-      pmEpicService.list(workspaceId, { archived: false, team_id: teamId }),
+      pmEpicService.list(workspaceId, { archived: showArchived, team_id: teamId }),
       pmLabelService.list(workspaceId),
       pmObjectiveService.list(workspaceId, { archived: false }),
     ]);
@@ -1422,7 +1429,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     setAllLabels(labelsRes.data ?? []);
     setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
     setLoading(false);
-  }, [teamId, workspaceId]);
+  }, [teamId, workspaceId, showArchived]);
 
   useEffect(() => {
     void loadData();
@@ -1538,7 +1545,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
         ) : <div />}
         {showHeaderActions && canEdit ? (
-          <Button size="sm" onClick={() => openCreate('epic', { teamId })}>
+          <Button size="sm" className="gap-2" onClick={() => openCreate('epic', { teamId })}>
+            <Plus className="h-4 w-4" />
             Create Epic
           </Button>
         ) : null}

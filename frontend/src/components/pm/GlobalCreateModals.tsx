@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
@@ -66,9 +67,11 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 // ── Story wrapper ────────────────────────────────────────────────────
 
 function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const qc = useQueryClient();
   const [workflow, setWorkflow] = useState<WorkflowWithStates | null>(null);
   const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
   const initialOwnerMemberId = useGlobalCreateStore((s) => s.initialOwnerMemberId);
+  const initialSprintId = useGlobalCreateStore((s) => s.initialSprintId);
 
   useEffect(() => {
     // Try board store first (already loaded if on stories page)
@@ -93,12 +96,16 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       initialStateId={workflow.states[0]?.id ?? ''}
       initialTeamId={initialTeamId}
       initialOwnerMemberId={initialOwnerMemberId}
+      initialSprintId={initialSprintId}
       onCreate={async (payload) => {
         const { data, error } = await pmStoryService.create(payload);
         if (error) throw new Error(error);
         // Refresh the board if it's loaded
         const boardWs = usePMBoardStore.getState().workspaceId;
         if (boardWs) usePMBoardStore.getState().refreshBoard();
+        // Invalidate TanStack Query caches
+        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] });
+        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
         window.dispatchEvent(new CustomEvent('story-created', {
           detail: { ownerMemberId: data?.story?.owner_member_id, teamId: data?.story?.team_id },
         }));
@@ -121,7 +128,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     name: '',
     description: '',
     stateId: '',
-    health: 'no_health' as EpicHealth,
     teamId: storeTeamId ?? teams[0]?.id ?? '',
     ownerMemberId: '',
     planningRepositoryId: '',
@@ -176,7 +182,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       epic_state_id: form.stateId || undefined,
       team_id: form.teamId || undefined,
       owner_member_id: form.ownerMemberId || undefined,
-      health: form.health,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
       planning_repository_id: showPlanningRepository ? (form.planningRepositoryId || undefined) : undefined,
@@ -245,7 +250,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   className="border-transparent shadow-none"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
@@ -308,21 +313,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     <SelectItem value="__none__">None</SelectItem>
                     {epicStates.map((s) => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Heart className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Health</span>
-                <Select value={form.health} onValueChange={(v) => setForm((f) => ({ ...f, health: v as EpicHealth }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {healthOptions.map((h) => (
-                      <SelectItem key={h} value={h}>
-                        <span className={healthConfig[h].color}>{healthConfig[h].label}</span>
-                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -686,7 +676,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"
@@ -929,7 +919,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"

@@ -614,7 +614,7 @@ export function StoryDetailPage() {
       setSaveError(err);
       return;
     }
-    navigate({ to: '/w/$slug/pm/stories', params: { slug } });
+    navigate({ to: '/w/$slug/pm/stories', params: { slug }, search: storyDetail.story.team_id ? { team: storyDetail.story.team_id } : {} });
   };
 
   // ── Copy link ───────────────────────────────────────────────────
@@ -680,7 +680,11 @@ export function StoryDetailPage() {
     })();
   }, [form?.team_id, storyLabels, storyDetail, workspaceId]);
 
-  const goBack = () => navigate({ to: '/w/$slug/pm/stories', params: { slug } });
+  const goBack = () => navigate({
+    to: '/w/$slug/pm/stories',
+    params: { slug },
+    search: storyDetail?.story.team_id ? { team: storyDetail.story.team_id } : {},
+  });
 
   if (loading) {
     return (

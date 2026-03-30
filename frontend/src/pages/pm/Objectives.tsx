@@ -213,7 +213,8 @@ export function ObjectivesPage() {
           <p className="text-sm text-muted-foreground">Set measurable goals and track key results across your team.</p>
         </div>
         {canEdit && (
-          <Button size="sm" onClick={() => openCreate('objective')}>
+          <Button size="sm" className="gap-2" onClick={() => openCreate('objective')}>
+            <Plus className="h-4 w-4" />
             Create Objective
           </Button>
         )}

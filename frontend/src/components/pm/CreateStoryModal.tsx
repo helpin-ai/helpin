@@ -62,6 +62,7 @@ import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { UserAvatar } from "@/components/pm/UserAvatar";
 import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
 import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
@@ -85,6 +86,7 @@ interface CreateStoryModalProps {
   initialStateId?: string;
   initialTeamId?: string;
   initialOwnerMemberId?: string;
+  initialSprintId?: string;
   onCreate?: (payload: CreateStoryRequest) => Promise<{ id: string } | void>;
   mode?: 'story' | 'template';
   editingTemplate?: StoryTemplate | null;
@@ -140,60 +142,6 @@ function MetadataRow({
       <span className="text-xs text-muted-foreground self-center">{label}</span>
       <div className="min-w-0 self-center">{children}</div>
     </>
-  );
-}
-
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-  renderOption,
-  optionClassName,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  renderOption?: (value: T) => React.ReactNode;
-  optionClassName?: (value: T) => string;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? "bg-accent text-foreground font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground"}
-              `}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {renderOption ? renderOption(option.value) : null}
-              <span className={`truncate ${optionClassName?.(option.value) ?? ''}`}>{option.label}</span>
-              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -296,6 +244,7 @@ export function CreateStoryModal({
   initialStateId,
   initialTeamId,
   initialOwnerMemberId,
+  initialSprintId,
   onCreate,
   mode = 'story',
   editingTemplate,
@@ -387,6 +336,7 @@ export function CreateStoryModal({
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         owner_member_id: initialOwnerMemberId ?? '',
+        sprint_id: initialSprintId ?? '',
       });
       setStoryTypeDirty(false);
       initialDescRef.current = '';
@@ -402,7 +352,7 @@ export function CreateStoryModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -691,6 +641,7 @@ export function CreateStoryModal({
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
+            sprint_id: initialSprintId ?? '',
           });
           setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
@@ -719,6 +670,7 @@ export function CreateStoryModal({
     currentMemberId,
     initialTeamId,
     initialOwnerMemberId,
+    initialSprintId,
     isTemplateMode,
     editingTemplate,
     onCreate,
