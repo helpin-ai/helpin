@@ -152,6 +152,17 @@ func (h *DocsHandler) ListCollections(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, colls)
 }
 
+// ListAllCollections returns all collections across all spaces in a workspace.
+func (h *DocsHandler) ListAllCollections(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	colls, err := h.collectionSvc.ListByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, colls)
+}
+
 func (h *DocsHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -706,7 +717,9 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	pubSpace, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
 	if pubSpace != nil && pubSpace.Type == model.SpaceTypeExternalCapable {
 		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
-			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
+			slog.ErrorContext(r.Context(), "PublishExternally failed", "doc_id", docID, "error", err)
+			writeError(w, http.StatusInternalServerError, "Article published internally but failed to publish to help center: "+err.Error())
+			return
 		}
 	}
 	h.queueEmbeddingSync(r.Context(), docID)

@@ -46,6 +46,17 @@ type PMSprintListFilters struct {
 	AccessibleTeamIDs []string
 }
 
+// PMSprintPlanningFilters applies filters when building the sprint planning workspace.
+type PMSprintPlanningFilters struct {
+	TeamID            *string
+	IncludeCompleted  bool
+	PreviewStoryLimit int
+	BacklogLimit      int
+	// AccessibleTeamIDs enforces team-based access boundaries.
+	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
+	AccessibleTeamIDs []string
+}
+
 // CreateSprintRequest is the payload for creating a sprint.
 type CreateSprintRequest struct {
 	WorkspaceID string    `json:"workspace_id"`
@@ -82,4 +93,41 @@ type SprintWithStats struct {
 	Sprint PMSprint      `json:"sprint"`
 	Labels []PMLabel     `json:"labels"`
 	Stats  PMSprintStats `json:"stats"`
+}
+
+// SprintPlanningStoryPreview is the lightweight story payload used by the sprint planning page.
+type SprintPlanningStoryPreview struct {
+	ID              string  `json:"id"`
+	DisplayID       int     `json:"display_id"`
+	Name            string  `json:"name"`
+	WorkflowStateID string  `json:"workflow_state_id"`
+	StateName       *string `json:"state_name,omitempty"`
+	StateType       *string `json:"state_type,omitempty"`
+	OwnerMemberID   *string `json:"owner_member_id,omitempty"`
+	Estimate        *int    `json:"estimate,omitempty"`
+	Priority        string  `json:"priority"`
+	SprintID        *string `json:"sprint_id,omitempty"`
+	TeamID          *string `json:"team_id,omitempty"`
+}
+
+// SprintPlanningCard is the sprint card payload for the planning page.
+type SprintPlanningCard struct {
+	Sprint               PMSprint                     `json:"sprint"`
+	Stats                PMSprintStats                `json:"stats"`
+	PreviewStories       []SprintPlanningStoryPreview `json:"preview_stories"`
+	StoryPreviewOverflow int                          `json:"story_preview_overflow"`
+}
+
+// SprintPlanningBucket groups planning cards by temporal bucket.
+type SprintPlanningBucket struct {
+	Key     string               `json:"key"`
+	Label   string               `json:"label"`
+	Sprints []SprintPlanningCard `json:"sprints"`
+}
+
+// SprintPlanningWorkspace is the top-level response for the sprint planning page.
+type SprintPlanningWorkspace struct {
+	Buckets        []SprintPlanningBucket       `json:"buckets"`
+	BacklogStories []SprintPlanningStoryPreview `json:"backlog_stories"`
+	BacklogTotal   int                          `json:"backlog_total"`
 }
