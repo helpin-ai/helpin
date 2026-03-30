@@ -97,6 +97,40 @@ type codexChatGPTAuthTokensRefreshParams struct {
 	PreviousAccountID *string `json:"previousAccountId,omitempty"`
 }
 
+type codexAccountReadResponse struct {
+	Account            *codexAccountInfo `json:"account,omitempty"`
+	RequiresOpenAIAuth bool              `json:"requiresOpenaiAuth"`
+}
+
+type codexAccountInfo struct {
+	Type     string  `json:"type"`
+	Email    *string `json:"email,omitempty"`
+	PlanType *string `json:"planType,omitempty"`
+}
+
+type codexLoginAccountResponse struct {
+	Type            string  `json:"type"`
+	LoginID         *string `json:"loginId,omitempty"`
+	VerificationURL *string `json:"verificationUrl,omitempty"`
+	UserCode        *string `json:"userCode,omitempty"`
+	AuthURL         *string `json:"authUrl,omitempty"`
+}
+
+type codexCancelLoginAccountResponse struct {
+	Status string `json:"status"`
+}
+
+type codexAccountUpdatedNotification struct {
+	AuthMode *string `json:"authMode,omitempty"`
+	PlanType *string `json:"planType,omitempty"`
+}
+
+type codexAccountLoginCompletedNotification struct {
+	LoginID *string `json:"loginId,omitempty"`
+	Success bool    `json:"success"`
+	Error   *string `json:"error,omitempty"`
+}
+
 type codexErrorNotification struct {
 	ThreadID  string          `json:"threadId"`
 	TurnID    string          `json:"turnId"`

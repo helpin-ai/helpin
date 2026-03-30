@@ -95,12 +95,13 @@ func codexHumanInputPause(params codexToolRequestUserInputParams, requestID json
 		},
 		metadata,
 		&codexPendingRequest{
-			Kind:        codexPendingRequestKindHumanInput,
-			RequestID:   codexRequestIDString(requestID),
-			TurnID:      strings.TrimSpace(params.TurnID),
-			ItemID:      strings.TrimSpace(params.ItemID),
-			QuestionIDs: questionIDs,
-			Payload:     rawParams,
+			Kind:         codexPendingRequestKindHumanInput,
+			RequestID:    codexRequestIDString(requestID),
+			RequestIDRaw: append(json.RawMessage(nil), requestID...),
+			TurnID:       strings.TrimSpace(params.TurnID),
+			ItemID:       strings.TrimSpace(params.ItemID),
+			QuestionIDs:  questionIDs,
+			Payload:      rawParams,
 		}
 }
 
@@ -126,12 +127,30 @@ func codexHumanApprovalPause(kind string, title, summary string, requestID json.
 		},
 		metadata,
 		&codexPendingRequest{
-			Kind:      strings.TrimSpace(kind),
-			RequestID: codexRequestIDString(requestID),
-			TurnID:    strings.TrimSpace(turnID),
-			ItemID:    strings.TrimSpace(itemID),
-			Payload:   append(json.RawMessage(nil), payload...),
+			Kind:         strings.TrimSpace(kind),
+			RequestID:    codexRequestIDString(requestID),
+			RequestIDRaw: append(json.RawMessage(nil), requestID...),
+			TurnID:       strings.TrimSpace(turnID),
+			ItemID:       strings.TrimSpace(itemID),
+			Payload:      append(json.RawMessage(nil), payload...),
 		}
+}
+
+func codexPendingRequestResponseID(pending *codexPendingRequest) json.RawMessage {
+	if pending == nil {
+		return nil
+	}
+	if raw := strings.TrimSpace(string(pending.RequestIDRaw)); raw != "" && raw != "null" {
+		return append(json.RawMessage(nil), pending.RequestIDRaw...)
+	}
+	if strings.TrimSpace(pending.RequestID) == "" {
+		return nil
+	}
+	encoded, err := json.Marshal(strings.TrimSpace(pending.RequestID))
+	if err != nil {
+		return nil
+	}
+	return json.RawMessage(encoded)
 }
 
 func codexQuestionPrompt(question codexToolRequestInputQuestion) string {

@@ -351,6 +351,10 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 }
 
 func validateRuntimeForAgent(agent *model.Agent) error {
+	return validateRuntimeForAgentWithPreset(agent, nil)
+}
+
+func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
 	if agent == nil {
 		return nil
 	}
@@ -362,16 +366,25 @@ func validateRuntimeForAgent(agent *model.Agent) error {
 		if presetKey == "" {
 			return fmt.Errorf("runtime_kind codex requires a system preset agent")
 		}
-		return validateCodexAgentPolicy(agent)
+		return validateCodexAgentPolicy(agent, presetOverride)
 	}
 	return nil
 }
 
-func validateCodexAgentPolicy(agent *model.Agent) error {
+func validateCodexAgentPolicy(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
 	if agent == nil {
 		return nil
 	}
-	preset, ok := agentPresetDefinition(agent.EffectivePresetKey())
+	var (
+		preset model.AgentPresetDefinition
+		ok     bool
+	)
+	if presetOverride != nil {
+		preset = *presetOverride
+		ok = true
+	} else {
+		preset, ok = presetDefinitionForAgent(agent)
+	}
 	if !ok {
 		return fmt.Errorf("runtime_kind codex requires a supported preset")
 	}

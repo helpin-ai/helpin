@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -124,12 +125,108 @@ func resolveCodexLaunch(commandPath, fallbackWorkDir string) (bin string, prefix
 	}
 	info, statErr := os.Stat(path)
 	if statErr == nil && info.IsDir() {
-		manifest := filepath.Join(path, "codex-rs", "Cargo.toml")
-		if _, manifestErr := os.Stat(manifest); manifestErr == nil {
-			return "cargo", []string{"run", "--quiet", "--manifest-path", manifest, "-p", "codex-cli", "--"}, path, nil
+		if binary := firstExistingCodexRepoBinary(path); binary != "" {
+			return binary, nil, fallbackWorkDir, nil
+		}
+		if launcher := codexRepoNodeLauncher(path); launcher != "" {
+			return "node", []string{launcher}, fallbackWorkDir, nil
+		}
+		if isCodexRepo(path) {
+			return "", nil, "", fmt.Errorf(
+				"codex path %q does not contain a runnable Codex binary; build Codex first and set CODEX_PATH to the binary, or populate codex-cli/vendor with the packaged native binary",
+				path,
+			)
 		}
 	}
 	return path, nil, fallbackWorkDir, nil
+}
+
+func isCodexRepo(root string) bool {
+	for _, candidate := range []string{
+		filepath.Join(root, "codex-rs", "Cargo.toml"),
+		filepath.Join(root, "codex-cli", "bin", "codex.js"),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func firstExistingCodexRepoBinary(root string) string {
+	for _, candidate := range codexRepoBinaryCandidates(root) {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if runtime.GOOS == "windows" || info.Mode()&0o111 != 0 {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func codexRepoBinaryCandidates(root string) []string {
+	name := codexNativeBinaryName()
+	return []string{
+		filepath.Join(root, "codex-rs", "target", "release", name),
+		filepath.Join(root, "codex-rs", "target", "debug", name),
+		filepath.Join(root, "target", "release", name),
+		filepath.Join(root, "target", "debug", name),
+	}
+}
+
+func codexRepoNodeLauncher(root string) string {
+	launcher := filepath.Join(root, "codex-cli", "bin", "codex.js")
+	if _, err := os.Stat(launcher); err != nil {
+		return ""
+	}
+	if _, err := os.Stat(codexRepoVendorBinary(root)); err != nil {
+		return ""
+	}
+	return launcher
+}
+
+func codexRepoVendorBinary(root string) string {
+	target := codexVendorTargetTriple()
+	if target == "" {
+		return ""
+	}
+	return filepath.Join(root, "codex-cli", "vendor", target, "codex", codexNativeBinaryName())
+}
+
+func codexNativeBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "codex.exe"
+	}
+	return "codex"
+}
+
+func codexVendorTargetTriple() string {
+	switch runtime.GOOS {
+	case "linux", "android":
+		switch runtime.GOARCH {
+		case "amd64":
+			return "x86_64-unknown-linux-musl"
+		case "arm64":
+			return "aarch64-unknown-linux-musl"
+		}
+	case "darwin":
+		switch runtime.GOARCH {
+		case "amd64":
+			return "x86_64-apple-darwin"
+		case "arm64":
+			return "aarch64-apple-darwin"
+		}
+	case "windows":
+		switch runtime.GOARCH {
+		case "amd64":
+			return "x86_64-pc-windows-msvc"
+		case "arm64":
+			return "aarch64-pc-windows-msvc"
+		}
+	}
+	return ""
 }
 
 func (c *codexAppServerClient) Close() error {
@@ -194,22 +291,50 @@ func (c *codexAppServerClient) Request(ctx context.Context, method string, param
 		return nil, err
 	}
 
-	for {
-		msg, err := c.Next(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if msg.Method != "" {
-			c.buffer = append(c.buffer, msg)
+	// A response can arrive while previous calls were handling other requests.
+	// Check buffered messages first and keep unrelated ones in place.
+	for i := 0; i < len(c.buffer); i++ {
+		msg := c.buffer[i]
+		if msg.Method != "" || !jsonRawEqual(msg.ID, requestID) {
 			continue
 		}
-		if !jsonRawEqual(msg.ID, requestID) {
-			continue
-		}
+		c.buffer = append(c.buffer[:i], c.buffer[i+1:]...)
 		if msg.Error != nil {
 			return nil, fmt.Errorf("codex app-server %s failed (%d): %s", method, msg.Error.Code, strings.TrimSpace(msg.Error.Message))
 		}
 		return msg.Result, nil
+	}
+
+	for {
+		select {
+		case msg, ok := <-c.lines:
+			if !ok {
+				select {
+				case err := <-c.done:
+					if err == nil {
+						return nil, io.EOF
+					}
+					return nil, err
+				default:
+					return nil, io.EOF
+				}
+			}
+			if msg.Method != "" || !jsonRawEqual(msg.ID, requestID) {
+				c.buffer = append(c.buffer, msg)
+				continue
+			}
+			if msg.Error != nil {
+				return nil, fmt.Errorf("codex app-server %s failed (%d): %s", method, msg.Error.Code, strings.TrimSpace(msg.Error.Message))
+			}
+			return msg.Result, nil
+		case err := <-c.done:
+			if err == nil {
+				return nil, io.EOF
+			}
+			return nil, err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 

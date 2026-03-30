@@ -5,6 +5,8 @@ import (
 
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // AgentRunWorkflowInput identifies the run to execute.
@@ -16,6 +18,7 @@ type AgentRunWorkflowInput struct {
 type ExecuteRunResult struct {
 	WaitForApproval   bool
 	AwaitingInput     bool
+	AwaitingAuth      bool
 	ContinueExecution bool
 }
 
@@ -157,6 +160,25 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			continue
 		}
 
+		if result.AwaitingAuth {
+			currentStage = "awaiting_auth"
+			for currentStage == "awaiting_auth" {
+				selector := workflow.NewSelector(ctx)
+				selector.AddReceive(resumeCh, func(c workflow.ReceiveChannel, more bool) {
+					var signal RunResumeSignal
+					c.Receive(ctx, &signal)
+					currentStage = workflowStageForResumeSignal(signal, false)
+				})
+				selector.AddReceive(handoffCh, func(c workflow.ReceiveChannel, more bool) {
+					var ignored any
+					c.Receive(ctx, &ignored)
+					currentStage = "handoff_recorded"
+				})
+				selector.Select(ctx)
+			}
+			continue
+		}
+
 		if result.ContinueExecution {
 			currentStage = "continuing"
 			continue
@@ -187,6 +209,8 @@ func workflowStageForResumeSignal(signal RunResumeSignal, waitingApproval bool) 
 			return "feedback_received"
 		}
 		return "input_received"
+	case model.AgentRunResumeIntentAuthCompleted:
+		return "auth_completed"
 	default:
 		if waitingApproval {
 			return "feedback_received"

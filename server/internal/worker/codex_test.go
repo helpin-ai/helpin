@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -127,6 +128,13 @@ func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
 	}
 	if openRouter.SupportsWebsockets {
 		t.Fatal("expected openrouter config to disable websockets")
+	}
+}
+
+func TestCodexApprovalPolicyForInteractiveRunUsesOnRequest(t *testing.T) {
+	run := &model.AgentRun{InvocationMode: model.InvocationModeInteractive}
+	if got := codexApprovalPolicyForRun(run); got != "on-request" {
+		t.Fatalf("expected interactive codex approval policy on-request, got %q", got)
 	}
 }
 
@@ -257,6 +265,43 @@ func TestExtractCodexEventFailureFromTurnFailedStream(t *testing.T) {
 	for _, snippet := range []string{"Model provider rejected the request", "Rate limit exceeded"} {
 		if !strings.Contains(summary, snippet) {
 			t.Fatalf("expected failure summary to contain %q, got %q", snippet, summary)
+		}
+	}
+}
+
+func TestIsUnhandledCodexServerRequest(t *testing.T) {
+	if !isUnhandledCodexServerRequest(codexRPCMessage{
+		ID:     json.RawMessage(`60`),
+		Method: "item/tool/call",
+	}) {
+		t.Fatal("expected unknown JSON-RPC request with an id to be treated as unhandled")
+	}
+
+	if isUnhandledCodexServerRequest(codexRPCMessage{
+		ID:     json.RawMessage(`61`),
+		Method: "item/tool/requestUserInput",
+	}) {
+		t.Fatal("expected pause requests to be excluded from the unhandled-request guard")
+	}
+
+	if isUnhandledCodexServerRequest(codexRPCMessage{
+		Method: "turn/started",
+	}) {
+		t.Fatal("expected notifications without ids to remain stream notifications")
+	}
+}
+
+func TestUnsupportedCodexServerRequestError(t *testing.T) {
+	err := unsupportedCodexServerRequestError(codexRPCMessage{
+		ID:     json.RawMessage(`62`),
+		Method: "mcpServer/elicitation/request",
+	})
+	if err == nil {
+		t.Fatal("expected an error for unsupported server requests")
+	}
+	for _, snippet := range []string{"mcpServer/elicitation/request", "waiting for a client response"} {
+		if !strings.Contains(err.Error(), snippet) {
+			t.Fatalf("expected error to contain %q, got %v", snippet, err)
 		}
 	}
 }

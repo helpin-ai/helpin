@@ -8,6 +8,7 @@ import type {
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
+  CodexAuthState,
   CreateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
@@ -69,6 +70,10 @@ export const agentService = {
     api.get<AgentRunArtifact[]>(`/pm/agent-runs/${runId}/artifacts${qs(workspaceId)}`),
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/pm/agent-runs/${runId}/cancel${qs(workspaceId)}`, {}),
+  startCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/start${qs(workspaceId)}`, {}),
+  cancelCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/cancel${qs(workspaceId)}`, {}),
   approveRun: (workspaceId: string, runId: string, payload?: ApproveAgentRunRequest) =>
     api.post<AgentRun>(`/pm/agent-runs/${runId}/approve${qs(workspaceId)}`, payload ?? {}),
   requestRunChanges: (workspaceId: string, runId: string, payload: SendAgentRunRequestChangesRequest) =>

@@ -30,6 +30,33 @@ func (s stubInternalCommandExecutor) Execute(ctx context.Context, meta model.Int
 	return json.RawMessage(`{}`), nil
 }
 
+func TestShouldPersistExecutionWorkspace(t *testing.T) {
+	if !shouldPersistExecutionWorkspace(&model.AgentRun{InvocationMode: model.InvocationModeInteractive}, "codex") {
+		t.Fatal("expected interactive codex runs to persist their workspace across approvals")
+	}
+	if shouldPersistExecutionWorkspace(&model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, "codex") {
+		t.Fatal("did not expect autonomous codex runs to persist their workspace")
+	}
+	if shouldPersistExecutionWorkspace(&model.AgentRun{InvocationMode: model.InvocationModeInteractive}, "opencode") {
+		t.Fatal("did not expect non-codex interactive runs to persist their workspace")
+	}
+}
+
+func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
+	state := &resolvedRunState{
+		run:   &model.AgentRun{RuntimeKind: "codex"},
+		agent: &model.Agent{RuntimeKind: "opencode"},
+	}
+	if got := executionRuntimeKind(state); got != "codex" {
+		t.Fatalf("expected run runtime kind override, got %q", got)
+	}
+
+	state.run.RuntimeKind = ""
+	if got := executionRuntimeKind(state); got != "opencode" {
+		t.Fatalf("expected agent runtime kind fallback, got %q", got)
+	}
+}
+
 func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -660,56 +687,63 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		ApprovalState:  "not_required",
 	}
 
-	waitForApproval, waitForInput := resolveExecutionWaitState(baseRun, nil, nil)
-	if waitForApproval || waitForInput {
-		t.Fatalf("expected no wait state without interaction tools, got approval=%v input=%v", waitForApproval, waitForInput)
+	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(baseRun, nil, nil, nil)
+	if waitForApproval || waitForInput || waitForAuth {
+		t.Fatalf("expected no wait state without interaction tools, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput = resolveExecutionWaitState(baseRun, &workerpkg.HumanInputRequest{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, &workerpkg.HumanInputRequest{
 		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Who is this for?", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
-	}, nil)
-	if waitForApproval || !waitForInput {
-		t.Fatalf("expected human input tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	}, nil, nil)
+	if waitForApproval || !waitForInput || waitForAuth {
+		t.Fatalf("expected human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput = resolveExecutionWaitState(baseRun, nil, &model.ApprovalRequest{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, nil, &model.ApprovalRequest{
 		Phase: "prd",
 		Title: "Approve PRD",
-	})
-	if !waitForApproval || waitForInput {
-		t.Fatalf("expected inline approval tool to pause for approval, got approval=%v input=%v", waitForApproval, waitForInput)
+	}, nil)
+	if !waitForApproval || waitForInput || waitForAuth {
+		t.Fatalf("expected inline approval tool to pause for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(&model.AgentRun{
 		InvocationMode: model.InvocationModeInteractive,
 		TargetType:     "epic",
 		ApprovalState:  "pending",
-	}, nil, nil)
-	if !waitForApproval || waitForInput {
-		t.Fatalf("expected pending approval state to wait for approval, got approval=%v input=%v", waitForApproval, waitForInput)
+	}, nil, nil, nil)
+	if !waitForApproval || waitForInput || waitForAuth {
+		t.Fatalf("expected pending approval state to wait for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(&model.AgentRun{
 		InvocationMode: model.InvocationModeAutonomous,
 		TargetType:     "story",
 		ApprovalState:  "not_required",
 	}, &workerpkg.HumanInputRequest{
 		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Pick one", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
-	}, nil)
-	if waitForApproval || !waitForInput {
-		t.Fatalf("expected autonomous human input tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	}, nil, nil)
+	if waitForApproval || !waitForInput || waitForAuth {
+		t.Fatalf("expected autonomous human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(&model.AgentRun{
 		InvocationMode: model.InvocationModeAutonomous,
 		TargetType:     "story",
 		ApprovalState:  "not_required",
 	}, nil, &model.ApprovalRequest{
 		Phase: "command_execution",
 		Title: "Approve command",
+	}, nil)
+	if !waitForApproval || waitForInput || waitForAuth {
+		t.Fatalf("expected autonomous approval tool to pause for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
+	}
+
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, nil, nil, &model.CodexAuthState{
+		State: model.CodexAuthStateRequired,
 	})
-	if !waitForApproval || waitForInput {
-		t.Fatalf("expected autonomous approval tool to pause for approval, got approval=%v input=%v", waitForApproval, waitForInput)
+	if waitForApproval || waitForInput || !waitForAuth {
+		t.Fatalf("expected codex auth state to pause for authentication, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 }
 

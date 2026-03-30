@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -412,4 +413,33 @@ func runGitCmd(t *testing.T, dir string, command string, args ...string) string 
 		t.Fatalf("%s %v failed: %v\n%s", command, args, err, string(output))
 	}
 	return string(output)
+}
+
+func TestWaitForOpenCodeRepoChangesDetectsDelayedChanges(t *testing.T) {
+	repoDir := t.TempDir()
+	runGitCmd(t, repoDir, "git", "init")
+	configureGitIdentity(t, repoDir)
+	writeTestFile(t, filepath.Join(repoDir, "README.md"), "hello\n")
+	runGitCmd(t, repoDir, "git", "add", "README.md")
+	runGitCmd(t, repoDir, "git", "commit", "-m", "initial")
+	runGitCmd(t, repoDir, "git", "branch", "-M", "main")
+
+	execCtx := &ExecutionContext{
+		Context:    context.Background(),
+		WorkDir:    repoDir,
+		BaseBranch: "main",
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = os.WriteFile(filepath.Join(repoDir, "changed.txt"), []byte("changed\n"), 0o644)
+	}()
+
+	changed, err := waitForOpenCodeRepoChanges(execCtx, 500*time.Millisecond, 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("wait for repo changes: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected delayed filesystem change to be detected")
+	}
 }

@@ -42,6 +42,7 @@ import (
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {
@@ -625,6 +626,19 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
+	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
+		Path:                      cfg.CodexPath,
+		DefaultModel:              cfg.CodexModel,
+		OpenAIAPIKey:              cfg.OpenAIAPIKey,
+		OpenAIBaseURL:             cfg.OpenAIBaseURL,
+		OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
+		EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
+		ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
+		ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
+		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
+		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
+		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
+	}, agentRunArtifactRepo)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -672,7 +686,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	)
+	).SetCodexAuthManager(codexAuthManager)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)

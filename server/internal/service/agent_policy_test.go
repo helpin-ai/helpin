@@ -302,6 +302,24 @@ func TestValidateRuntimeProviderCompatibilityRejectsCodexOpenAIWithoutManagedOAu
 	}
 }
 
+func TestListModelProvidersIncludesOpenAIForCodexDeviceCodeMode(t *testing.T) {
+	svc := &AgentService{
+		codexOpenAIAuthMode: "chatgpt_device_code",
+	}
+
+	options := svc.ListModelProviders()
+	foundOpenAI := false
+	for _, option := range options {
+		if option.Value == model.AgentModelProviderOpenAI {
+			foundOpenAI = true
+			break
+		}
+	}
+	if !foundOpenAI {
+		t.Fatalf("expected openai provider option when codex device-code mode is enabled, got %#v", options)
+	}
+}
+
 func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{

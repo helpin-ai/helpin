@@ -26,7 +26,11 @@ func (n *RunNotifier) PublishRunEvent(_ context.Context, run *model.AgentRun) {
 	if n == nil || n.publisher == nil || run == nil {
 		return
 	}
-	data, _ := json.Marshal(map[string]string{"status": run.Status})
+	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
+	data, _ := json.Marshal(map[string]string{
+		"status":       status,
+		"pause_reason": pauseReason,
+	})
 	n.publisher.Publish(Event{
 		Action:      "updated",
 		Entity:      "agent_run",

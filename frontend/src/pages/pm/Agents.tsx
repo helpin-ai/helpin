@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 import {
   Bot,
   ChevronDown,
@@ -926,6 +927,10 @@ export function AgentsPage() {
         setDialogOpen(false);
         setSystemDrawerOpen(false);
         await loadAgents();
+      } else {
+        toast.error(editingAgent.is_system ? 'Failed to save built-in agent' : 'Failed to save custom agent', {
+          description: res.error,
+        });
       }
     } else {
       const payload = buildCreatePayload(workspaceId, form, advancedOpen);
@@ -933,6 +938,8 @@ export function AgentsPage() {
       if (!res.error) {
         setDialogOpen(false);
         await loadAgents();
+      } else {
+        toast.error('Failed to create agent', { description: res.error });
       }
     }
     setSaving(false);
@@ -966,6 +973,8 @@ export function AgentsPage() {
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
       setVersionDescriptionDraft('');
+    } else if (res.error) {
+      toast.error('Failed to save workspace version', { description: res.error });
     }
     setCreatingVersion(false);
   };
@@ -1023,6 +1032,16 @@ export function AgentsPage() {
   const currentSystemVersionKey = editingSystemAgent
     ? (editingAgent?.preset_version_key?.trim() || selectedPreset?.version_key || fallbackPresetVersionKey(form.preset_key))
     : '';
+  const selectedSystemVersionKey = editingSystemAgent
+    ? (form.preset_version_key?.trim() || selectedPreset?.version_key || fallbackPresetVersionKey(form.preset_key))
+    : '';
+  const currentSystemPreset = editingSystemAgent
+    ? presetMetaForSelection(form.preset_key, currentSystemVersionKey, presets)
+    : null;
+  const hasPendingSystemVersionSelection = editingSystemAgent
+    && Boolean(selectedSystemVersionKey)
+    && Boolean(currentSystemVersionKey)
+    && selectedSystemVersionKey !== currentSystemVersionKey;
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen;
   const effectiveTargets =
     editingAgent && editingAgent.allowed_targets.length > 0
@@ -1243,10 +1262,17 @@ export function AgentsPage() {
                     <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'}>
                       {selectedPreset.scope === 'workspace' ? 'Workspace version' : 'Product version'}
                     </Badge>
-                    {selectedPreset.version_key === currentSystemVersionKey && (
+                    {hasPendingSystemVersionSelection ? (
+                      <Badge variant="secondary">Draft selection</Badge>
+                    ) : selectedPreset.version_key === currentSystemVersionKey ? (
                       <Badge variant="secondary">Current on agent</Badge>
-                    )}
+                    ) : null}
                   </div>
+                )}
+                {selectedPreset && hasPendingSystemVersionSelection && (
+                  <p className="text-xs text-muted-foreground">
+                    Current on agent: <span className="font-medium text-foreground">{currentSystemPreset?.version_label ?? currentSystemVersionKey}</span>. Save changes to switch to <span className="font-medium text-foreground">{selectedPreset.version_label}</span>.
+                  </p>
                 )}
               </div>
             </div>
@@ -1265,6 +1291,7 @@ export function AgentsPage() {
                   {selectedPresetVersions.map((presetVersion) => {
                     const isSelected = presetVersion.version_key === form.preset_version_key;
                     const isCurrent = presetVersion.version_key === currentSystemVersionKey;
+                    const isDraftSelection = isSelected && !isCurrent;
                     return (
                       <button
                         key={presetVersion.version_key}
@@ -1290,6 +1317,11 @@ export function AgentsPage() {
                             {isCurrent && (
                               <Badge variant="outline" className="text-[10px]">
                                 Current
+                              </Badge>
+                            )}
+                            {isDraftSelection && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                Draft
                               </Badge>
                             )}
                           </div>

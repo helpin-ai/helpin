@@ -16,12 +16,14 @@ export const STATUS_META: Record<string, { label: string; variant: 'default' | '
   paused: { label: 'Paused', variant: 'secondary' },
   awaiting_input: { label: 'Awaiting input', variant: 'secondary' },
   awaiting_approval: { label: 'Awaiting approval', variant: 'secondary' },
+  awaiting_auth: { label: 'Awaiting sign-in', variant: 'secondary' },
   completed: { label: 'Completed', variant: 'outline' },
   failed: { label: 'Failed', variant: 'destructive' },
   cancelled: { label: 'Cancelled', variant: 'secondary' },
 };
 
 export const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
+export const INTERNAL_RUN_ARTIFACT_TYPES = new Set(['codex_session_state', 'codex_auth_state']);
 
 export function getAgentRunPauseReason(run: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'>): AgentRunPauseReason {
   if (run.pause_reason && run.pause_reason !== 'none') return run.pause_reason;
@@ -32,14 +34,25 @@ export function getAgentRunPauseReason(run: Pick<AgentRun, 'status' | 'pause_rea
 
 export function getAgentRunDisplayStatus(run: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'>): string {
   if (run.status === 'paused') {
-    return getAgentRunPauseReason(run) === 'human_approval' ? 'awaiting_approval' : 'awaiting_input';
+    const pauseReason = getAgentRunPauseReason(run);
+    if (pauseReason === 'human_approval') return 'awaiting_approval';
+    if (pauseReason === 'authentication') return 'awaiting_auth';
+    return 'awaiting_input';
   }
   return run.status;
 }
 
 export function isPausedAgentRun(run: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'> | null | undefined): boolean {
   if (!run) return false;
-  return getAgentRunDisplayStatus(run) === 'awaiting_input' || getAgentRunDisplayStatus(run) === 'awaiting_approval';
+  return (
+    getAgentRunDisplayStatus(run) === 'awaiting_input' ||
+    getAgentRunDisplayStatus(run) === 'awaiting_approval' ||
+    getAgentRunDisplayStatus(run) === 'awaiting_auth'
+  );
+}
+
+export function isInternalAgentRunArtifactType(artifactType: string): boolean {
+  return INTERNAL_RUN_ARTIFACT_TYPES.has(artifactType);
 }
 
 export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
@@ -59,6 +72,7 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   codex_response: 'Response',
   codex_stdout: 'Output (stdout)',
   codex_stderr: 'Output (stderr)',
+  codex_auth_state: 'Authentication',
   git_status: 'Git Status',
   git_diff_stat: 'Git Diff Stat',
   git_persistence_result: 'Git Result',

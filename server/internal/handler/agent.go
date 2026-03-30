@@ -220,6 +220,34 @@ func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+// StartCodexDeviceCodeAuth handles POST /api/pm/agent-runs/{id}/codex-auth/device-code/start.
+func (h *AgentHandler) StartCodexDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	authState, err := h.agentService.StartCodexDeviceCodeAuth(r.Context(), workspaceID, runID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, authState)
+}
+
+// CancelCodexDeviceCodeAuth handles POST /api/pm/agent-runs/{id}/codex-auth/device-code/cancel.
+func (h *AgentHandler) CancelCodexDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	authState, err := h.agentService.CancelCodexDeviceCodeAuth(r.Context(), workspaceID, runID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, authState)
+}
+
 // ResumeRun handles POST /api/pm/agent-runs/{id}/resume.
 func (h *AgentHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

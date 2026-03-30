@@ -1,13 +1,14 @@
 import { type ComponentPropsWithoutRef, type CSSProperties, type ReactNode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format, formatDistanceToNow, isSameDay, parseISO } from 'date-fns';
-import { Bot, FileText, Loader2, Send, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
+import { Bot, Copy, ExternalLink, FileText, KeyRound, Loader2, Send, ShieldCheck, Sparkles, TriangleAlert, Wrench, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
 
 import { AgentRunDetail } from '@/components/pm/AgentRunDetail';
 import { StructuredQuestionCard } from '@/components/pm/StructuredQuestionCard';
-import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
-import { parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
+import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus, isInternalAgentRunArtifactType, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { parseLatestCodexAuthState, parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
 import { isPublishedPreviewToolName, parseArtifactPublishedPreview, parsePublishedPreviewRawInput, resolveMessagePublishedPreview, type PublishedPreview } from '@/components/pm/agentRunPreviews';
 import { StreamingTagRouter, INITIAL_SEGMENTS, type StreamSegments } from '@/components/pm/streamingTagRouter';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type {
   AgentRun,
   AgentRunArtifact,
+  CodexAuthState,
   AgentRunMessage,
   AgentRunStreamEvent,
 } from '@/lib/pmTypes';
@@ -567,7 +569,7 @@ function MarkdownContent({ content, className }: { content: string; className?: 
 }
 
 function isInlineApprovalRun(run: AgentRun | null): boolean {
-  return !!run && run.invocation_mode === 'interactive' && isPausedAgentRun(run);
+  return !!run && run.invocation_mode === 'interactive' && isPausedAgentRun(run) && getAgentRunDisplayStatus(run) !== 'awaiting_auth';
 }
 
 const RUNTIME_STREAM_PREFIXES = ['opencode', 'codex'] as const;
@@ -575,7 +577,7 @@ const RUNTIME_STREAM_PREFIXES = ['opencode', 'codex'] as const;
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
   const displayArtifacts = artifacts.filter(
     (artifact) =>
-      artifact.artifact_type !== 'codex_session_state' &&
+      !isInternalAgentRunArtifactType(artifact.artifact_type) &&
       !RUNTIME_STREAM_PREFIXES.some(
         (prefix) =>
           artifact.artifact_type === `${prefix}_stdout_chunk` ||
@@ -911,6 +913,154 @@ function StoryPlanPanel({
   );
 }
 
+function CodexAuthPanel({
+  authState,
+  canEdit,
+  acting,
+  onStart,
+  onCancel,
+  onCopyCode,
+  onOpenVerification,
+}: {
+  authState: CodexAuthState | null;
+  canEdit: boolean;
+  acting: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+  onCopyCode: () => void;
+  onOpenVerification: () => void;
+}) {
+  const state = authState?.state ?? 'required';
+  const statusLabel =
+    state === 'pending'
+      ? 'Waiting for sign-in'
+      : state === 'connected'
+        ? 'Connected'
+        : state === 'failed'
+          ? 'Sign-in failed'
+          : state === 'cancelled'
+            ? 'Sign-in cancelled'
+            : 'Sign-in required';
+  const toneClass =
+    state === 'failed'
+      ? 'border-red-300/60 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/20'
+      : state === 'cancelled'
+        ? 'border-zinc-300/60 bg-zinc-50/80 dark:border-zinc-800/80 dark:bg-zinc-950/30'
+        : 'border-amber-300/60 bg-[linear-gradient(135deg,rgba(251,191,36,0.16),rgba(249,115,22,0.06))] dark:border-amber-800/70 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.26),rgba(113,63,18,0.16))]';
+  const signInURL = authState?.verification_url ?? authState?.auth_url ?? null;
+  const verificationHost = signInURL
+    ? (() => {
+        try {
+          return new URL(signInURL).host;
+        } catch {
+          return signInURL;
+        }
+      })()
+    : null;
+
+  return (
+    <div className={cn('rounded-3xl border p-4 shadow-sm', toneClass)}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-background/80 text-amber-700 shadow-sm ring-1 ring-black/5 dark:text-amber-300">
+              {state === 'failed' ? <TriangleAlert className="h-4 w-4" /> : state === 'cancelled' ? <XCircle className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Codex Sign-In</p>
+              <p className="text-sm font-semibold text-foreground">ChatGPT authentication is required before this run can continue.</p>
+            </div>
+          </div>
+          <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
+            Start the ChatGPT sign-in flow in the browser. If this Codex runtime supports device code, you will also get a one-time code. The run resumes automatically in the same Codex session after sign-in completes.
+          </p>
+        </div>
+        <Badge variant="outline" className="w-fit shrink-0 bg-background/80 text-[11px]">
+          {statusLabel}
+        </Badge>
+      </div>
+
+      {authState?.error ? (
+        <div className="mt-4 rounded-2xl border border-red-300/60 bg-red-50/80 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+          {authState.error}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="space-y-3">
+          {authState?.user_code ? (
+            <div className="rounded-2xl border border-border/70 bg-background/85 p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.4)_inset]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Device Code</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.35em] text-foreground">
+                {authState.user_code}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Enter this code on {verificationHost || 'the ChatGPT verification page'}.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/70 bg-background/70 px-4 py-3 text-xs leading-5 text-muted-foreground">
+              {state === 'pending'
+                ? signInURL
+                  ? 'ChatGPT sign-in is ready in the browser. Complete it there and this run will resume automatically.'
+                  : 'Waiting for Codex to finish preparing the ChatGPT sign-in flow.'
+                : 'Start sign-in to generate the ChatGPT browser sign-in link for this run.'}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {authState?.provider ? <Badge variant="secondary">{toTitleCase(authState.provider)}</Badge> : null}
+            {authState?.auth_mode ? <Badge variant="secondary">{toTitleCase(authState.auth_mode)}</Badge> : null}
+            {authState?.plan_type ? <Badge variant="secondary">{toTitleCase(authState.plan_type)}</Badge> : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {canEdit ? (
+            <>
+              {state !== 'pending' ? (
+                <Button onClick={onStart} disabled={acting} className="gap-1.5">
+                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                  {state === 'failed' || state === 'cancelled' ? 'Restart sign-in' : 'Start sign-in'}
+                </Button>
+              ) : null}
+
+              {authState?.user_code ? (
+                <Button variant="outline" onClick={onCopyCode} disabled={acting} className="gap-1.5">
+                  <Copy className="h-4 w-4" />
+                  Copy code
+                </Button>
+              ) : null}
+
+              {signInURL ? (
+                <Button variant="outline" onClick={onOpenVerification} disabled={acting} className="gap-1.5">
+                  <ExternalLink className="h-4 w-4" />
+                  {authState?.verification_url ? 'Open verification page' : 'Open sign-in page'}
+                </Button>
+              ) : null}
+
+              {state === 'pending' ? (
+                <Button variant="ghost" onClick={onCancel} disabled={acting} className="gap-1.5">
+                  {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Cancel sign-in
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-xs leading-5 text-muted-foreground">
+              A workspace editor needs to complete ChatGPT sign-in for this run.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-4 text-[11px] leading-5 text-muted-foreground">
+        Keep this drawer open if you want to watch the run resume. The backend will continue automatically after Codex reports a successful sign-in.
+      </p>
+    </div>
+  );
+}
+
 export function AgentRunDrawer({
   workspaceId,
   runId,
@@ -1230,6 +1380,58 @@ export function AgentRunDrawer({
     }
   };
 
+  const handleStartCodexDeviceCodeAuth = useCallback(async () => {
+    if (!run) return;
+    setActingOnRun(run.id);
+    try {
+      const response = await agentService.startCodexDeviceCodeAuth(workspaceId, run.id);
+      if (response.error) {
+        toast.error(response.error);
+        return;
+      }
+      const authState = response.data;
+      const signInURL = authState?.verification_url ?? authState?.auth_url;
+      if (signInURL) {
+        window.open(signInURL, '_blank', 'noopener,noreferrer');
+      }
+      toast.success(authState?.user_code ? 'ChatGPT sign-in started' : 'Sign-in state refreshed');
+      await loadRun(run.id);
+    } finally {
+      setActingOnRun(null);
+    }
+  }, [loadRun, run, workspaceId]);
+
+  const handleCancelCodexDeviceCodeAuth = useCallback(async () => {
+    if (!run) return;
+    setActingOnRun(run.id);
+    try {
+      const response = await agentService.cancelCodexDeviceCodeAuth(workspaceId, run.id);
+      if (response.error) {
+        toast.error(response.error);
+        return;
+      }
+      toast.success('Sign-in cancelled');
+      await loadRun(run.id);
+    } finally {
+      setActingOnRun(null);
+    }
+  }, [loadRun, run, workspaceId]);
+
+  const handleCopyCodexDeviceCode = useCallback(async (userCode?: string) => {
+    if (!userCode) return;
+    try {
+      await navigator.clipboard.writeText(userCode);
+      toast.success('Device code copied');
+    } catch {
+      toast.error('Could not copy the device code');
+    }
+  }, []);
+
+  const handleOpenCodexVerification = useCallback((signInURL?: string) => {
+    if (!signInURL) return;
+    window.open(signInURL, '_blank', 'noopener,noreferrer');
+  }, []);
+
   const stopSplitDrag = useCallback(() => {
     if (!isDraggingSplitRef.current) return;
     isDraggingSplitRef.current = false;
@@ -1275,6 +1477,7 @@ export function AgentRunDrawer({
   }, [stopSplitDrag]);
 
   const displayArtifacts = useMemo(() => mergeArtifactsForDisplay(artifacts), [artifacts]);
+  const latestCodexAuthState = useMemo(() => parseLatestCodexAuthState(artifacts), [artifacts]);
   const autonomousRuntimeStream = useMemo(
     () => buildAutonomousRuntimeStreamDisplay(run, displayArtifacts),
     [displayArtifacts, run],
@@ -1375,6 +1578,16 @@ export function AgentRunDrawer({
   const transcriptEntries = useMemo(() => buildTranscriptEntries(messages), [messages]);
   const runDisplayStatus = run ? getAgentRunDisplayStatus(run) : null;
   const runStatusMeta = runDisplayStatus ? STATUS_META[runDisplayStatus] ?? STATUS_META.queued : null;
+  const effectiveCodexAuthState = useMemo<CodexAuthState | null>(() => {
+    if (latestCodexAuthState) return latestCodexAuthState;
+    if (!run || runDisplayStatus !== 'awaiting_auth') return null;
+    return {
+      state: 'required',
+      provider: 'openai',
+      auth_mode: 'chatgpt_device_code',
+      updated_at: run.updated_at,
+    };
+  }, [latestCodexAuthState, run, runDisplayStatus]);
   const inlineLiveToolHostMessageId =
     currentApprovalRequest?.messageId ??
     latestQuestionPrompt?.messageId ??
@@ -1444,7 +1657,9 @@ export function AgentRunDrawer({
                           <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
                             <Bot className="h-8 w-8 opacity-30" />
                             <p className="text-sm">
-                              {run.status === 'queued' || run.status === 'running'
+                              {runDisplayStatus === 'awaiting_auth'
+                                ? 'ChatGPT sign-in is required before this Codex run can start.'
+                                : run.status === 'queued' || run.status === 'running'
                                 ? 'The agent is starting. The transcript, questions, and artifacts will appear here.'
                                 : 'No run messages yet.'}
                             </p>
@@ -1625,7 +1840,11 @@ export function AgentRunDrawer({
                       </div>
                     </div>
 
-                    {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : getAgentRunDisplayStatus(run) === 'awaiting_input') && canEdit ? (
+                    {(
+                      run.invocation_mode === 'interactive'
+                        ? ACTIVE_RUN_STATUSES.has(run.status) && runDisplayStatus !== 'awaiting_auth'
+                        : runDisplayStatus === 'awaiting_input'
+                    ) && canEdit ? (
                       <div className="border-t bg-background px-3 py-3">
                         <ReplyForm onSubmit={(content) => void sendReplyContent(content)} />
                       </div>
@@ -1656,6 +1875,18 @@ export function AgentRunDrawer({
                     onApprove={handleApprove}
                     showArtifacts={false}
                   />
+
+                  {runDisplayStatus === 'awaiting_auth' ? (
+                    <CodexAuthPanel
+                      authState={effectiveCodexAuthState}
+                      canEdit={canEdit}
+                      acting={actingOnRun === run.id}
+                      onStart={() => void handleStartCodexDeviceCodeAuth()}
+                      onCancel={() => void handleCancelCodexDeviceCodeAuth()}
+                      onCopyCode={() => void handleCopyCodexDeviceCode(effectiveCodexAuthState?.user_code)}
+                      onOpenVerification={() => handleOpenCodexVerification(effectiveCodexAuthState?.verification_url ?? effectiveCodexAuthState?.auth_url)}
+                    />
+                  ) : null}
 
                   {getAgentRunDisplayStatus(run) === 'awaiting_approval' ? (
                     <div className="rounded-md border border-amber-300/50 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/20">

@@ -195,6 +195,26 @@ type resolvedRunState struct {
 	accessToken    string
 }
 
+func executionRuntimeKind(state *resolvedRunState) string {
+	if state == nil {
+		return ""
+	}
+	if state.run != nil && strings.TrimSpace(state.run.RuntimeKind) != "" {
+		return strings.TrimSpace(state.run.RuntimeKind)
+	}
+	if state.agent != nil {
+		return strings.TrimSpace(state.agent.RuntimeKind)
+	}
+	return ""
+}
+
+func shouldPersistExecutionWorkspace(run *model.AgentRun, runtimeKind string) bool {
+	if run == nil {
+		return false
+	}
+	return strings.TrimSpace(runtimeKind) == "codex" && strings.TrimSpace(run.InvocationMode) == model.InvocationModeInteractive
+}
+
 func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
 	defer func() {
 		if recover() != nil {
@@ -339,33 +359,58 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
 	)
-	workDir, err := workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
+	runtimeKind := executionRuntimeKind(state)
+	persistWorkspace := shouldPersistExecutionWorkspace(state.run, runtimeKind)
+	var (
+		workDir       string
+		reusedWorkDir bool
+	)
+	if persistWorkspace {
+		workDir, reusedWorkDir, err = workerpkg.PrepareWorkspaceForRun(ctx, state.integration, repoFullName(state), state.accessToken, state.run.ID)
+	} else {
+		workDir, err = workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
+	}
 	if err != nil {
 		_ = a.failRun(ctx, state, fmt.Sprintf("prepare workspace: %v", err))
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
-	defer os.RemoveAll(workDir)
+	if !persistWorkspace {
+		defer os.RemoveAll(workDir)
+	}
 	slog.InfoContext(ctx, "agent run workspace ready",
 		"workspace_id", state.run.WorkspaceID,
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
+		"reused", reusedWorkDir,
 	)
 
 	if state.repository != nil {
-		slog.InfoContext(ctx, "agent run checking out run ref",
-			"workspace_id", state.run.WorkspaceID,
-			"run_id", state.run.ID,
-			"repo", state.repository.FullName,
-		)
-		if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
-			_ = a.failRun(ctx, state, err.Error())
-			return ExecuteRunResult{}, nonRetryableRunError(err)
+		if !reusedWorkDir {
+			slog.InfoContext(ctx, "agent run checking out run ref",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+			)
+			if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
+				if persistWorkspace {
+					_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+				}
+				_ = a.failRun(ctx, state, err.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(err)
+			}
+			slog.InfoContext(ctx, "agent run checked out run ref",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+			)
+		} else {
+			slog.InfoContext(ctx, "agent run reusing existing workspace checkout",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+				"work_dir", workDir,
+			)
 		}
-		slog.InfoContext(ctx, "agent run checked out run ref",
-			"workspace_id", state.run.WorkspaceID,
-			"run_id", state.run.ID,
-			"repo", state.repository.FullName,
-		)
 	}
 
 	config := workerpkg.ParseWorkflowConfig(workDir)
@@ -441,18 +486,27 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		execCtx.ConversationID = state.conversation.ID
 	}
 
-	runtimeKind := state.run.RuntimeKind
-	if runtimeKind == "" {
-		runtimeKind = state.agent.RuntimeKind
-	}
 	adapter, err := a.runtimes.Get(runtimeKind)
 	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	slog.InfoContext(ctx, "agent run runtime execution starting",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"runtime_kind", runtimeKind,
+		"agent_id", state.run.AgentID,
+		"work_dir", workDir,
+	)
 
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		if err == workerpkg.ErrRunCancelled || ctx.Err() != nil {
 			bgCtx := context.Background()
 			_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
@@ -462,23 +516,41 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	slog.InfoContext(ctx, "agent run runtime execution completed",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"runtime_kind", runtimeKind,
+	)
 	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
 	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	if err := a.captureTranscriptPlanningArtifacts(ctx, state, execCtx, assistantMessage, planningInput); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	approvalRequest := latestExecutionApprovalRequest(execCtx)
 	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
+	authRequest := latestExecutionCodexAuthState(execCtx)
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	if err := a.finalizeSupportConversationRun(ctx, state); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -490,7 +562,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
-	waitForApproval, waitForInput := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest)
+	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, authRequest)
 	continueExecution := false
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
@@ -510,6 +582,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		state.run.PauseReason = model.AgentRunPauseReasonHumanInput
 		state.run.CompletedAt = nil
 		state.run.ExecutionStage = strPtr("awaiting_input")
+	} else if waitForAuth {
+		state.run.Status = model.AgentRunStatusPaused
+		state.run.PauseReason = model.AgentRunPauseReasonAuthentication
+		state.run.CompletedAt = nil
+		state.run.ExecutionStage = strPtr("awaiting_auth")
 	} else if continueExecution {
 		state.run.Status = model.AgentRunStatusRunning
 		state.run.PauseReason = model.AgentRunPauseReasonNone
@@ -528,8 +605,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	if persistWorkspace && !waitForApproval && !waitForInput && !waitForAuth && !continueExecution {
+		_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+	}
 
-	if waitForApproval || waitForInput {
+	if waitForApproval || waitForInput || waitForAuth {
 		if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
 			return ExecuteRunResult{}, err
 		}
@@ -542,27 +622,31 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	return ExecuteRunResult{
 		WaitForApproval:   waitForApproval,
 		AwaitingInput:     waitForInput && !waitForApproval,
-		ContinueExecution: continueExecution && !waitForApproval && !waitForInput,
+		AwaitingAuth:      waitForAuth && !waitForApproval && !waitForInput,
+		ContinueExecution: continueExecution && !waitForApproval && !waitForInput && !waitForAuth,
 	}, nil
 }
 
-func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.HumanInputRequest, approvalRequest *model.ApprovalRequest) (waitForApproval bool, waitForInput bool) {
+func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.HumanInputRequest, approvalRequest *model.ApprovalRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
 	if run == nil {
-		return false, false
+		return false, false, false
 	}
 
 	if approvalRequest != nil {
-		return true, false
+		return true, false, false
 	}
 	if humanInputRequest != nil {
-		return false, true
+		return false, true, false
+	}
+	if authRequest != nil {
+		return false, false, true
 	}
 
 	waitForApproval = run.ApprovalState == "pending"
 	if run.InvocationMode != model.InvocationModeInteractive {
-		return waitForApproval, false
+		return waitForApproval, false, false
 	}
-	return waitForApproval, false
+	return waitForApproval, false, false
 }
 
 func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
@@ -1316,6 +1400,13 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 		}
 	}
 
+	if authState := latestCodexAuthStateFromResult(result); authState != nil {
+		authMetadata := mergeArtifactMetadata(metadata, result.CodexAuthMetadata)
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeCodexAuthState, "json", authState, authMetadata); err != nil {
+			return err
+		}
+	}
+
 	if runPlan := latestRunPlanFromResult(result); runPlan != nil {
 		runPlanMetadata := mergeArtifactMetadata(metadata, result.RunPlanMetadata)
 		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, runPlanMetadata); err != nil {
@@ -1338,6 +1429,13 @@ func latestHumanInputRequestFromResult(result *workerpkg.ExecutionResult) *worke
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanInputRequest(result.ToolInvocations)
+}
+
+func latestCodexAuthStateFromResult(result *workerpkg.ExecutionResult) *model.CodexAuthState {
+	if result == nil || result.CodexAuthState == nil {
+		return nil
+	}
+	return result.CodexAuthState
 }
 
 func latestRunPlanFromResult(result *workerpkg.ExecutionResult) *workerpkg.RunPlanArtifact {
@@ -1459,6 +1557,13 @@ func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *work
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanInputRequest(execCtx.LastExecutionResult.ToolInvocations)
+}
+
+func latestExecutionCodexAuthState(execCtx *workerpkg.ExecutionContext) *model.CodexAuthState {
+	if execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	return execCtx.LastExecutionResult.CodexAuthState
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {

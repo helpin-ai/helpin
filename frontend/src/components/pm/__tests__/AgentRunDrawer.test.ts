@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildAutonomousRuntimeStreamDisplay, getVisibleLiveTools, parseToolMessage } from '../AgentRunDrawer';
+import { getAgentRunDisplayStatus } from '../agentRunConstants';
+import { parseLatestCodexAuthState } from '../agentRunInteractions';
 
 describe('AgentRunDrawer tool parsing', () => {
   it('extracts compact tool metadata from persisted tool-result blocks', () => {
@@ -237,5 +239,71 @@ describe('AgentRunDrawer tool parsing', () => {
       processingText: 'Codex session started.\nCodex started the turn.',
       errorText: '',
     });
+  });
+
+  it('parses the latest Codex auth state artifact for device-code sign-in', () => {
+    const authState = parseLatestCodexAuthState([
+      {
+        artifact_type: 'codex_auth_state',
+        inline_content: JSON.stringify({
+          state: 'required',
+          auth_mode: 'chatgpt_device_code',
+        }),
+        created_at: '2026-03-30T10:00:00Z',
+      },
+      {
+        artifact_type: 'codex_auth_state',
+        inline_content: JSON.stringify({
+          state: 'pending',
+          provider: 'openai',
+          auth_mode: 'chatgpt_device_code',
+          verification_url: 'https://chatgpt.com/device',
+          user_code: 'ABCD-EFGH',
+          updated_at: '2026-03-30T10:05:00Z',
+        }),
+        created_at: '2026-03-30T10:05:00Z',
+      },
+    ]);
+
+    expect(authState).toEqual({
+      state: 'pending',
+      provider: 'openai',
+      auth_mode: 'chatgpt_device_code',
+      verification_url: 'https://chatgpt.com/device',
+      user_code: 'ABCD-EFGH',
+      updated_at: '2026-03-30T10:05:00Z',
+    });
+  });
+
+  it('parses the latest Codex auth state artifact for browser sign-in', () => {
+    const authState = parseLatestCodexAuthState([
+      {
+        artifact_type: 'codex_auth_state',
+        inline_content: JSON.stringify({
+          state: 'pending',
+          provider: 'openai',
+          auth_mode: 'chatgpt_device_code',
+          auth_url: 'https://chatgpt.com/auth',
+          updated_at: '2026-03-30T10:06:00Z',
+        }),
+        created_at: '2026-03-30T10:06:00Z',
+      },
+    ]);
+
+    expect(authState).toEqual({
+      state: 'pending',
+      provider: 'openai',
+      auth_mode: 'chatgpt_device_code',
+      auth_url: 'https://chatgpt.com/auth',
+      updated_at: '2026-03-30T10:06:00Z',
+    });
+  });
+
+  it('maps authentication pauses to awaiting-auth display status', () => {
+    expect(getAgentRunDisplayStatus({
+      status: 'paused',
+      pause_reason: 'authentication',
+      approval_state: 'not_required',
+    })).toBe('awaiting_auth');
   });
 });

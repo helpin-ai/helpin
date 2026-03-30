@@ -79,6 +79,7 @@ type AgentService struct {
 	activitySvc                *PMActivityService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
+	codexAuthManager           *worker.CodexAuthManager
 	anthropicAPIKey            string
 	openAIAPIKey               string
 	openRouterAPIKey           string
@@ -153,6 +154,11 @@ func (s *AgentService) SetModelProviderConfig(
 	s.codexChatGPTOAuthEnabled = codexChatGPTOAuthEnabled
 	s.codexChatGPTAccessToken = strings.TrimSpace(codexChatGPTAccessToken)
 	s.codexChatGPTAccountID = strings.TrimSpace(codexChatGPTAccountID)
+	return s
+}
+
+func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *AgentService {
+	s.codexAuthManager = manager
 	return s
 }
 
@@ -550,7 +556,7 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 			ModelPlaceholder: "claude-sonnet-4-20250514",
 		})
 	}
-	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) {
+	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) || s.isCodexOpenAIConfigured() {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenAI,
 			Label:            "OpenAI",
@@ -686,9 +692,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != systemPresetKey {
 			return nil, fmt.Errorf("system agent preset cannot be changed")
 		}
-		if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" && strings.TrimSpace(*req.RuntimeKind) != defaultRuntimeKindForPresetKey(systemPresetKey) {
-			return nil, fmt.Errorf("system agent runtime cannot be changed")
-		}
 		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
 			return nil, fmt.Errorf("system agent cannot be restricted to a team")
 		}
@@ -735,6 +738,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		resolvedPresetVersionKey = defaultPresetVersionKeyForPresetKey(resolvedPresetKey)
 	}
 	preset, hasPreset := s.resolvePresetDefinition(ctx, workspaceID, resolvedPresetKey, resolvedPresetVersionKey)
+	if agent.IsSystem && req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
+		expectedRuntimeKind := defaultRuntimeKindForPresetKey(resolvedPresetKey)
+		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
+			expectedRuntimeKind = strings.TrimSpace(preset.RuntimeKind)
+		}
+		if strings.TrimSpace(*req.RuntimeKind) != expectedRuntimeKind {
+			return nil, fmt.Errorf("system agent runtime must match preset runtime %q", expectedRuntimeKind)
+		}
+	}
 	if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		if err := validateRuntimeKind(*req.RuntimeKind); err != nil {
 			return nil, err
@@ -863,7 +875,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
 		return nil, err
 	}
-	if err := validateRuntimeForAgent(agent); err != nil {
+	if hasPreset {
+		if err := validateRuntimeForAgentWithPreset(agent, &preset); err != nil {
+			return nil, err
+		}
+	} else if err := validateRuntimeForAgent(agent); err != nil {
 		return nil, err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
@@ -1282,6 +1298,57 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	return run, nil
 }
 
+func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
+	}
+
+	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
+		return nil, err
+	}
+
+	authState, err := s.codexAuthManager.StartDeviceCode(ctx, run, agent, func(callbackCtx context.Context, state *model.CodexAuthState) {
+		if state == nil {
+			return
+		}
+		if err := s.applyCodexAuthState(callbackCtx, workspaceID, runID, actorID, state, state.State == model.CodexAuthStateConnected); err != nil {
+			slog.ErrorContext(callbackCtx, "failed to apply codex auth state update",
+				"error", err,
+				"workspace_id", workspaceID,
+				"run_id", runID,
+				"state", state.State,
+			)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, authState != nil && authState.State == model.CodexAuthStateConnected); err != nil {
+		return nil, err
+	}
+	return authState, nil
+}
+
+func (s *AgentService) CancelCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
+	}
+
+	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
+		return nil, err
+	}
+
+	return s.codexAuthManager.CancelDeviceCode(ctx, runID)
+}
+
 // ResumeRun resumes a paused interactive run using one generic intent path.
 func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, error) {
 	run, _, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, req)
@@ -1335,6 +1402,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if !model.IsAgentRunPausedStatus(run.Status) {
 		return nil, nil, fmt.Errorf("run is not paused for human input")
 	}
+	if run.PauseReason == model.AgentRunPauseReasonAuthentication {
+		return nil, nil, fmt.Errorf("run is waiting for authentication")
+	}
 	model.NormalizeAgentRunPauseState(run)
 
 	var (
@@ -1344,6 +1414,12 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		stage       = "resuming"
 		approvalSet bool
 	)
+	previousStatus := run.Status
+	previousPauseReason := run.PauseReason
+	previousApprovalState := run.ApprovalState
+	previousCompletedAt := run.CompletedAt
+	previousExecutionStage := run.ExecutionStage
+	previousHeartbeatAt := run.LastHeartbeatAt
 
 	switch intent {
 	case model.AgentRunResumeIntentReply:
@@ -1442,7 +1518,29 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
 		return nil, nil, err
 	}
-	_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), signal)
+	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
+	if workflowID == "" {
+		workflowID = temporalapp.WorkflowIDForRun(run.ID)
+	}
+	if err := s.runEngine.SignalResume(ctx, workflowID, strings.TrimSpace(derefString(run.WorkflowRunID)), signal); err != nil {
+		slog.ErrorContext(ctx, "failed to signal agent run resume",
+			"run_id", run.ID,
+			"workflow_id", workflowID,
+			"workflow_run_id", strings.TrimSpace(derefString(run.WorkflowRunID)),
+			"intent", signal.Intent,
+			"error", err)
+		run.Status = previousStatus
+		run.PauseReason = previousPauseReason
+		run.ApprovalState = previousApprovalState
+		run.CompletedAt = previousCompletedAt
+		run.ExecutionStage = previousExecutionStage
+		run.LastHeartbeatAt = previousHeartbeatAt
+		if updateErr := s.runRepo.Update(ctx, run); updateErr != nil {
+			return nil, nil, updateErr
+		}
+		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
+		return nil, nil, fmt.Errorf("resume workflow signal failed: %w", err)
+	}
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
 }
@@ -1458,6 +1556,123 @@ func normalizeResumeIntent(intent string) string {
 	default:
 		return ""
 	}
+}
+
+func (s *AgentService) loadRunAndAgentForCodexAuth(ctx context.Context, workspaceID, runID string) (*model.AgentRun, *model.Agent, error) {
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, run.AgentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if agent == nil {
+		return nil, nil, fmt.Errorf("agent not found")
+	}
+	return run, agent, nil
+}
+
+func (s *AgentService) ensureRunSupportsCodexDeviceCode(run *model.AgentRun, agent *model.Agent) error {
+	if run == nil || agent == nil {
+		return fmt.Errorf("run and agent are required")
+	}
+	if strings.TrimSpace(run.RuntimeKind) != "codex" && strings.TrimSpace(agent.RuntimeKind) != "codex" {
+		return fmt.Errorf("run does not use the codex runtime")
+	}
+	if run.Status == model.AgentRunStatusCompleted || run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
+		return fmt.Errorf("run is not active")
+	}
+
+	provider := model.AgentModelProviderOpenAI
+	if agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
+		provider = normalizeModelProvider(strings.TrimSpace(*agent.Provider))
+	}
+	if provider != model.AgentModelProviderOpenAI {
+		return fmt.Errorf("codex device-code auth only supports provider openai")
+	}
+	if !s.isCodexOpenAIDeviceCodeEnabled() {
+		return fmt.Errorf("CODEX_OPENAI_AUTH_MODE must be %q to use device-code auth", "chatgpt_device_code")
+	}
+	return nil
+}
+
+func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, runID, actorID string, authState *model.CodexAuthState, autoResume bool) error {
+	if authState == nil {
+		return nil
+	}
+
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return err
+	}
+	if err := s.appendCodexAuthArtifact(ctx, run, authState); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	run.ErrorMessage = nil
+	switch strings.TrimSpace(authState.State) {
+	case model.CodexAuthStateConnected:
+		run.Status = model.AgentRunStatusRunning
+		run.PauseReason = model.AgentRunPauseReasonNone
+		run.ExecutionStage = strPtr("auth_completed")
+		run.LastHeartbeatAt = &now
+		run.CompletedAt = nil
+		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+			run.ApprovalState = "not_required"
+		}
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return err
+		}
+		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
+			return err
+		}
+		if autoResume && s.runEngine != nil {
+			_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), temporalapp.RunResumeSignal{
+				Intent: model.AgentRunResumeIntentAuthCompleted,
+			})
+		}
+	default:
+		run.Status = model.AgentRunStatusPaused
+		run.PauseReason = model.AgentRunPauseReasonAuthentication
+		run.ExecutionStage = strPtr("awaiting_auth")
+		run.LastHeartbeatAt = &now
+		run.CompletedAt = nil
+		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+			run.ApprovalState = "not_required"
+		}
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return err
+		}
+	}
+
+	s.publishRunEvent(run, actorID)
+	return nil
+}
+
+func (s *AgentService) appendCodexAuthArtifact(ctx context.Context, run *model.AgentRun, authState *model.CodexAuthState) error {
+	if s.artifactRepo == nil || run == nil || authState == nil {
+		return nil
+	}
+	sequenceNo, err := s.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	content, err := json.Marshal(authState)
+	if err != nil {
+		return fmt.Errorf("marshal codex auth artifact: %w", err)
+	}
+	return s.artifactRepo.Create(ctx, &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeCodexAuthState,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(content)),
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    sequenceNo,
+	})
 }
 
 func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Context, run *model.AgentRun, actorID, reply string) error {
@@ -2455,6 +2670,17 @@ func (s *AgentService) isCodexOpenAIConfigured() bool {
 		return strings.TrimSpace(s.openAIAPIKey) != ""
 	case "chatgpt_oauth", "oauth", "chatgpt", "chatgpt-auth":
 		return s.codexChatGPTOAuthEnabled && strings.TrimSpace(s.codexChatGPTAccessToken) != "" && strings.TrimSpace(s.codexChatGPTAccountID) != ""
+	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *AgentService) isCodexOpenAIDeviceCodeEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
+	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return true
 	default:
 		return false
 	}

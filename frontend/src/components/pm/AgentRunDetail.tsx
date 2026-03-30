@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { Bot, Clock, Loader2, CheckCircle2, MessageSquareMore, XCircle, ShieldCheck, StopCircle } from 'lucide-react';
+import { Bot, Clock, Loader2, CheckCircle2, KeyRound, MessageSquareMore, XCircle, ShieldCheck, StopCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { getAgentRunDisplayStatus, isPausedAgentRun, STATUS_META } from './agentRunConstants';
+import { getAgentRunDisplayStatus, isInternalAgentRunArtifactType, isPausedAgentRun, STATUS_META } from './agentRunConstants';
 import { AgentRunArtifactView } from './AgentRunArtifactView';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
 import { formatDistanceToNow, parseISO, differenceInSeconds } from 'date-fns';
@@ -23,6 +23,7 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   running: <Loader2 className="h-3 w-3 animate-spin" />,
   awaiting_input: <MessageSquareMore className="h-3 w-3" />,
   awaiting_approval: <ShieldCheck className="h-3 w-3" />,
+  awaiting_auth: <KeyRound className="h-3 w-3" />,
   completed: <CheckCircle2 className="h-3 w-3" />,
   failed: <XCircle className="h-3 w-3" />,
   cancelled: <XCircle className="h-3 w-3" />,
@@ -72,7 +73,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
     [artifacts],
   );
   const otherArtifacts = useMemo(
-    () => artifacts.filter((a) => !isRuntimeOutputArtifact(a.artifact_type) && a.artifact_type !== 'codex_session_state'),
+    () => artifacts.filter((a) => !isRuntimeOutputArtifact(a.artifact_type) && !isInternalAgentRunArtifactType(a.artifact_type)),
     [artifacts],
   );
 
@@ -192,7 +193,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
         </Tabs>
       )}
 
-      {showArtifacts && artifacts.length === 0 && !run.error_message && (
+      {showArtifacts && outputArtifacts.length === 0 && otherArtifacts.length === 0 && !run.error_message && (
         <p className="py-2 text-xs text-muted-foreground">No artifacts yet.</p>
       )}
     </div>

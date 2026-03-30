@@ -21,6 +21,8 @@ const (
 	openCodeChunkFlushInterval    = 2 * time.Second
 	openCodeChunkFlushBytes       = 4 * 1024
 	openCodePostRunTimeout        = 2 * time.Minute
+	openCodeRepoChangeWaitTimeout = 60 * time.Second
+	openCodeRepoChangePollEvery   = 2 * time.Second
 	openCodeScannerBufferSize     = 1024 * 1024
 	openCodeGracefulShutdownDelay = 10 * time.Second
 )
@@ -453,12 +455,23 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 		_ = execCtx.Heartbeat("persisting_changes")
 	}
 
-	changed, err := openCodeRunProducedRepoChanges(execCtx)
+	changed, err := waitForOpenCodeRepoChanges(execCtx, openCodeRepoChangeWaitTimeout, openCodeRepoChangePollEvery)
 	if err != nil {
 		return err
 	}
 	if !changed {
-		return fmt.Errorf("opencode completed without modifying the repository")
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for interactive opencode run",
+				"run_id", run.ID)
+			return nil
+		}
+		statusSummary, diffStatSummary := captureOpenCodeNoChangeDiagnostics(execCtx, artifactWriter)
+		return fmt.Errorf(
+			"opencode completed without modifying the repository within %s; git_status=%s; git_diff=%s",
+			openCodeRepoChangeWaitTimeout,
+			truncateSingleLine(statusSummary, 160),
+			truncateSingleLine(diffStatSummary, 160),
+		)
 	}
 
 	if out, err := runGit(execCtx, "add", "-A"); err != nil {
@@ -476,6 +489,11 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 	}
 	changedFiles := strings.Fields(filesOutput)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for interactive opencode run",
+				"run_id", run.ID)
+			return nil
+		}
 		return fmt.Errorf("opencode completed without producing a staged repository diff")
 	}
 
@@ -541,6 +559,10 @@ func isEngineerStoryRun(execCtx *ExecutionContext) bool {
 	return execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
 }
 
+func isInteractiveRunInvocation(run *model.AgentRun) bool {
+	return run != nil && strings.TrimSpace(run.InvocationMode) == model.InvocationModeInteractive
+}
+
 func resolveWorkingBranch(execCtx *ExecutionContext) (string, error) {
 	if execCtx != nil && strings.TrimSpace(execCtx.WorkingBranch) != "" {
 		return strings.TrimSpace(execCtx.WorkingBranch), nil
@@ -593,6 +615,76 @@ func openCodeRunProducedRepoChanges(execCtx *ExecutionContext) (bool, error) {
 	}
 
 	return false, fmt.Errorf("inspect repository diff: unable to compare HEAD against %q", baseBranch)
+}
+
+func waitForOpenCodeRepoChanges(execCtx *ExecutionContext, timeout, interval time.Duration) (bool, error) {
+	if execCtx == nil {
+		return false, nil
+	}
+	if timeout <= 0 {
+		timeout = openCodeRepoChangeWaitTimeout
+	}
+	if interval <= 0 {
+		interval = openCodeRepoChangePollEvery
+	}
+
+	checkCtx, cancel := context.WithTimeout(execCtx.Context, timeout)
+	defer cancel()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		changed, err := openCodeRunProducedRepoChanges(execCtx)
+		if err == nil {
+			lastErr = nil
+			if changed {
+				return true, nil
+			}
+		} else {
+			lastErr = err
+		}
+
+		if checkCtx.Err() != nil {
+			break
+		}
+		if execCtx.Heartbeat != nil {
+			_ = execCtx.Heartbeat("awaiting_repo_changes")
+		}
+		select {
+		case <-checkCtx.Done():
+		case <-ticker.C:
+		}
+	}
+
+	if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+		return false, nil
+	}
+	if lastErr != nil {
+		return false, lastErr
+	}
+	return false, checkCtx.Err()
+}
+
+func captureOpenCodeNoChangeDiagnostics(execCtx *ExecutionContext, artifactWriter *openCodeArtifactWriter) (string, string) {
+	if execCtx == nil || artifactWriter == nil {
+		return "", ""
+	}
+	var statusSummary string
+	if status, err := runGit(execCtx, "status", "--short", "--branch"); err == nil && strings.TrimSpace(status) != "" {
+		statusSummary = strings.TrimSpace(status)
+		artifactWriter.Save(execCtx.Context, "git_status", "text", status, false)
+	} else if err == nil {
+		statusSummary = "clean working tree"
+	}
+	var diffStatSummary string
+	if diffStat, err := runGit(execCtx, "diff", "--stat"); err == nil && strings.TrimSpace(diffStat) != "" {
+		diffStatSummary = strings.TrimSpace(diffStat)
+		artifactWriter.Save(execCtx.Context, "git_diff_stat", "text", diffStat, false)
+	} else if err == nil {
+		diffStatSummary = "no diff"
+	}
+	return statusSummary, diffStatSummary
 }
 
 func backgroundContextOnCancel(ctx context.Context) (context.Context, context.CancelFunc) {

@@ -22,10 +22,13 @@ const (
 	codexChunkFlushInterval    = 2 * time.Second
 	codexChunkFlushBytes       = 4 * 1024
 	codexPostRunTimeout        = 2 * time.Minute
+	codexRepoChangeWaitTimeout = 60 * time.Second
+	codexRepoChangePollEvery   = 2 * time.Second
 	codexScannerBufferSize     = 1024 * 1024
 	codexGracefulShutdownDelay = 10 * time.Second
 	codexOpenAIAuthModeAPIKey  = "api_key"
 	codexOpenAIAuthModeOAuth   = "chatgpt_oauth"
+	codexOpenAIAuthModeDevice  = "chatgpt_device_code"
 	codexForcedLoginMethodAPI  = "api"
 	codexForcedLoginMethodChat = "chatgpt"
 	codexOpenRouterDefaultURL  = "https://openrouter.ai/api/v1"
@@ -128,6 +131,11 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	if config == nil {
 		config = DefaultWorkflowConfig()
 	}
+	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
+	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
+	defer cancel()
+	runExecCtx := cloneExecutionContext(execCtx, ctx)
+
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
@@ -171,15 +179,19 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		}()
 	}
 
-	sessionHost := newCodexSessionHost(e, newCodexThreadStore(e.artifactRepo), artifactWriter, execCtx, run, developerInstructions)
+	sessionHost := newCodexSessionHost(e, newCodexThreadStore(e.artifactRepo), artifactWriter, runExecCtx, run, developerInstructions)
 	result, err := sessionHost.Execute()
 	stopHeartbeat()
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("codex runtime timed out after %s", timeout)
+		}
 		if execCtx.Context.Err() != nil {
 			return ErrRunCancelled
 		}
 		return err
 	}
+	runExecCtx.LastExecutionResult = result
 	execCtx.LastExecutionResult = result
 	if result == nil {
 		return fmt.Errorf("codex returned no response")
@@ -190,6 +202,10 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	}
 
 	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
+
+	if result.CodexAuthState != nil {
+		return nil
+	}
 
 	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
 		return nil
@@ -211,6 +227,12 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 
 	if isEngineerStoryRun(postRunExecCtx) {
 		if err := e.persistEngineerWorkspace(postRunExecCtx, run, artifactWriter, responseText, responseSource, "", ""); err != nil {
+			if errors.Is(err, ErrInteractiveRepoChangePending) {
+				appendInteractiveRepoFollowupInputRequest(result)
+				runExecCtx.LastExecutionResult = result
+				execCtx.LastExecutionResult = result
+				return nil
+			}
 			return normalizeCodexPostRunError(postRunCtx, err)
 		}
 	}
@@ -416,6 +438,8 @@ func normalizeCodexOpenAIAuthMode(mode string) string {
 		return codexOpenAIAuthModeAPIKey
 	case codexOpenAIAuthModeOAuth, "oauth", "chatgpt", "chatgpt-auth":
 		return codexOpenAIAuthModeOAuth
+	case codexOpenAIAuthModeDevice, "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return codexOpenAIAuthModeDevice
 	default:
 		return strings.ToLower(strings.TrimSpace(mode))
 	}
@@ -425,6 +449,8 @@ func (e *CodexExecutor) openAIConfigured() bool {
 	switch normalizeCodexOpenAIAuthMode(e.openAIAuthMode) {
 	case codexOpenAIAuthModeOAuth:
 		return e.chatGPTOAuth && e.chatGPTToken != "" && e.chatGPTAccountID != ""
+	case codexOpenAIAuthModeDevice:
+		return true
 	case codexOpenAIAuthModeAPIKey:
 		return strings.TrimSpace(e.openAIAPIKey) != ""
 	default:
@@ -461,6 +487,10 @@ func (e *CodexExecutor) resolveRuntimeProfile(agent *model.Agent) (codexResolved
 				return codexResolvedRuntimeProfile{}, fmt.Errorf("codex runtime requires Helpin-managed ChatGPT OAuth when CODEX_OPENAI_AUTH_MODE=%q", codexOpenAIAuthModeOAuth)
 			}
 			profile.AuthMode = codexOpenAIAuthModeOAuth
+			profile.ForcedLoginMethod = codexForcedLoginMethodChat
+			return profile, nil
+		case codexOpenAIAuthModeDevice:
+			profile.AuthMode = codexOpenAIAuthModeDevice
 			profile.ForcedLoginMethod = codexForcedLoginMethodChat
 			return profile, nil
 		default:
@@ -507,6 +537,8 @@ func (e *CodexExecutor) loginPayloadForProfile(profile codexResolvedRuntimeProfi
 			}
 			payload["type"] = "chatgptAuthTokens"
 			return payload, nil
+		case codexOpenAIAuthModeDevice:
+			return nil, nil
 		default:
 			return nil, fmt.Errorf("unsupported codex auth mode %q", strings.TrimSpace(profile.AuthMode))
 		}
@@ -586,13 +618,19 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 		_ = execCtx.Heartbeat("persisting_changes")
 	}
 
-	changed, err := openCodeRunProducedRepoChanges(execCtx)
+	changed, err := waitForOpenCodeRepoChanges(execCtx, codexRepoChangeWaitTimeout, codexRepoChangePollEvery)
 	if err != nil {
 		return err
 	}
 	if !changed {
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "interactive codex run produced no repository changes yet; requesting follow-up input",
+				"run_id", run.ID)
+			return ErrInteractiveRepoChangePending
+		}
 		statusSummary, diffStatSummary := e.captureCodexNoChangeDiagnostics(execCtx, artifactWriter)
-		return fmt.Errorf("codex completed without modifying the repository; response_source=%s; response=%s; codex_stdout=%s; codex_stderr=%s; git_status=%s; git_diff=%s",
+		return fmt.Errorf("codex completed without modifying the repository within %s; response_source=%s; response=%s; codex_stdout=%s; codex_stderr=%s; git_status=%s; git_diff=%s",
+			codexRepoChangeWaitTimeout,
 			truncateSingleLine(responseSource, 40),
 			truncateSingleLine(responseText, 240),
 			truncateSingleLine(summarizeCodexJSONLOutput(stdoutText), 200),
@@ -617,6 +655,11 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 	}
 	changedFiles := strings.Fields(filesOutput)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "interactive codex run ended without staged repository diff; requesting follow-up input",
+				"run_id", run.ID)
+			return ErrInteractiveRepoChangePending
+		}
 		return fmt.Errorf("codex completed without producing a staged repository diff")
 	}
 
@@ -727,6 +770,34 @@ func summarizeCodexJSONLOutput(stdoutText string) string {
 		return strings.TrimSpace(stdoutText)
 	}
 	return strings.Join(summaries, ", ")
+}
+
+func appendInteractiveRepoFollowupInputRequest(result *ExecutionResult) {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+		return
+	}
+	request := HumanInputRequest{
+		Questions: []HumanInputQuestion{
+			{
+				ID:   "next_action",
+				Type: QuestionTypeSingleSelect,
+				Text: "No repository changes were detected yet. How should the coding run continue?",
+				Options: []HumanInputOption{
+					{Value: "continue_coding", Label: "Continue coding now"},
+					{Value: "provide_guidance", Label: "I will provide additional guidance"},
+				},
+			},
+		},
+	}
+	input, _ := json.Marshal(request)
+	result.ToolInvocations = append(result.ToolInvocations, model.ToolInvocation{
+		ToolName:      ToolRequestHumanInput,
+		Input:         input,
+		OutputSummary: "interactive run paused: no repository changes detected",
+	})
+	if strings.TrimSpace(result.AssistantText) == "" {
+		result.AssistantText = "I did not produce repository changes yet. Reply with guidance to continue."
+	}
 }
 
 func extractCodexEventFailure(stdoutText string) (string, bool) {

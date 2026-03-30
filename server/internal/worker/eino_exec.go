@@ -68,10 +68,12 @@ type ExecutionResult struct {
 	AssistantBlocks       []ExecutionBlock
 	AssistantText         string
 	ToolInvocations       []appmodel.ToolInvocation
+	CodexAuthState        *appmodel.CodexAuthState
 	Usage                 ExecutionUsage
 	ProviderContinuation  *ProviderContinuation
 	HumanInputMetadata    json.RawMessage
 	HumanApprovalMetadata json.RawMessage
+	CodexAuthMetadata     json.RawMessage
 	RunPlanMetadata       json.RawMessage
 	MaxStepsReached       bool
 }
