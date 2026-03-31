@@ -957,6 +957,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     await pmAutomationService.upsert(workspaceId, {
                       automation_type: 'sprint_auto_create',
                       enabled: true,
+                      workspace_id: workspaceId,
                       team_id: selectedTeam.id,
                       config_int: data.auto_create_upcoming_count,
                       config_int2: data.auto_create_duration_weeks,
@@ -971,6 +972,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     await pmAutomationService.upsert(workspaceId, {
                       automation_type: 'sprint_move_unfinished',
                       enabled: true,
+                      workspace_id: workspaceId,
                       team_id: selectedTeam.id,
                     });
                   } else {
