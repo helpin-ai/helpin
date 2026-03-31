@@ -116,6 +116,110 @@ func TestDocsHelpcenterPublicLocale_SingleLocaleSpacesDoesNotRedirect(t *testing
 	}
 }
 
+func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 20, 8, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	if err := db.Exec(`
+		UPDATE docs_helpcenter_configs
+		SET default_locale = ?, enabled_locales = ?, show_language_switcher = ?, fallback_to_default_locale = ?
+		WHERE workspace_id = ?
+	`, "en", `["en"]`, false, true, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("restrict help center to single locale: %v", err)
+	}
+	if err := db.Exec(`UPDATE docs_collections SET slug = '' WHERE id = ?`, "collection-handler-i18n").Error; err != nil {
+		t.Fatalf("clear collection slug: %v", err)
+	}
+	if err := db.Exec(`UPDATE docs_helpcenter_collection_translations SET slug = NULL WHERE collection_id = ? AND locale = ?`, "collection-handler-i18n", "en").Error; err != nil {
+		t.Fatalf("clear collection translation slug: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS docs_helpcenter_article_publications (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			locale TEXT NOT NULL,
+			title TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			excerpt TEXT,
+			content JSON,
+			content_text TEXT,
+			seo_title TEXT,
+			seo_description TEXT,
+			published_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(document_id, locale),
+			UNIQUE(space_id, locale, slug)
+		)
+	`).Error; err != nil {
+		t.Fatalf("create article publications table: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO docs_helpcenter_article_publications (
+			id, document_id, workspace_id, space_id, collection_id, locale,
+			title, slug, excerpt, content, content_text, seo_title, seo_description,
+			published_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"pub-document-handler-i18n-en",
+		"document-handler-i18n",
+		"ws-handler-i18n",
+		"space-handler-i18n",
+		"collection-handler-i18n",
+		"en",
+		"Start Here",
+		"start-here",
+		"How to begin",
+		nil,
+		"Hello",
+		nil,
+		nil,
+		now,
+		now,
+		now,
+	).Error; err != nil {
+		t.Fatalf("seed article publication: %v", err)
+	}
+	h := newDocsHelpcenterPublicHandlerForTest(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/spaces/getting-started/navigation", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
+		"subdomain": "handler-i18n",
+		"spaceSlug": "getting-started",
+	})
+	rec := httptest.NewRecorder()
+
+	h.PublicGetSpaceNavigation(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var nav []model.PublicNavCollection
+	if err := json.Unmarshal(rec.Body.Bytes(), &nav); err != nil {
+		t.Fatalf("unmarshal nav: %v, body = %s", err, rec.Body.String())
+	}
+	if len(nav) == 0 {
+		t.Fatalf("len(nav) = %d, want at least 1, body = %s", len(nav), rec.Body.String())
+	}
+	if nav[0].Slug != "basics" {
+		t.Fatalf("nav[0].slug = %q, want %q", nav[0].Slug, "basics")
+	}
+
+	var storedCollection model.DocsCollection
+	if err := db.Where("id = ?", "collection-handler-i18n").First(&storedCollection).Error; err != nil {
+		t.Fatalf("load collection: %v", err)
+	}
+	if storedCollection.Slug != "basics" {
+		t.Fatalf("stored collection slug = %q, want %q", storedCollection.Slug, "basics")
+	}
+}
+
 func TestDocsHelpcenterPublicLocale_SearchOnlyReturnsRequestedLocale(t *testing.T) {
 	t.Parallel()
 

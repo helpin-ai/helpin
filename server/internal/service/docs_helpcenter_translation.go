@@ -846,6 +846,11 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 		defaultLocale = "en"
 	}
 
+	collectionSlug, err := s.ensureCollectionSourceSlug(ctx, collection)
+	if err != nil {
+		return err
+	}
+
 	_, err = s.translationRepo.UpsertCollectionTranslation(ctx, &model.DocsHelpcenterCollectionTranslation{
 		CollectionID:    collection.ID,
 		WorkspaceID:     collection.WorkspaceID,
@@ -853,7 +858,7 @@ func (s *DocsHelpcenterTranslationService) RefreshCollectionSource(ctx context.C
 		Locale:          defaultLocale,
 		Name:            collection.Name,
 		Description:     collection.Description,
-		Slug:            stringPointerOrNil(collection.Slug),
+		Slug:            stringPointerOrNil(collectionSlug),
 		Status:          model.DocsHelpcenterTranslationStatusPublished,
 		SourceUpdatedAt: &collection.UpdatedAt,
 		SourceSynced:    true,
@@ -1555,6 +1560,69 @@ func stringPointerOrNil(value string) *string {
 		return nil
 	}
 	return &normalized
+}
+
+func (s *DocsHelpcenterTranslationService) ensureCollectionSourceSlug(ctx context.Context, collection *model.DocsCollection) (string, error) {
+	if collection == nil {
+		return "", fmt.Errorf("collection not found")
+	}
+
+	existing := normalizeSlug(collection.Slug)
+	if existing != "" {
+		if collection.Slug != existing {
+			updated, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": existing})
+			if err != nil {
+				return "", fmt.Errorf("normalize collection slug: %w", err)
+			}
+			if updated != nil {
+				collection.Slug = updated.Slug
+			} else {
+				collection.Slug = existing
+			}
+		}
+		return existing, nil
+	}
+
+	base := normalizeSlug(collection.Name)
+	if base == "" {
+		base = "collection"
+	}
+
+	collections, err := s.collectionRepo.ListByWorkspace(ctx, collection.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf("list workspace collections for slug backfill: %w", err)
+	}
+
+	taken := make(map[string]struct{}, len(collections))
+	for _, candidate := range collections {
+		if candidate.ID == collection.ID {
+			continue
+		}
+		slug := normalizeSlug(candidate.Slug)
+		if slug == "" {
+			continue
+		}
+		taken[slug] = struct{}{}
+	}
+
+	slug := base
+	for i := 2; ; i++ {
+		if _, exists := taken[slug]; !exists {
+			break
+		}
+		slug = fmt.Sprintf("%s-%d", base, i)
+	}
+
+	updated, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": slug})
+	if err != nil {
+		return "", fmt.Errorf("backfill collection slug: %w", err)
+	}
+	if updated != nil {
+		collection.Slug = updated.Slug
+	} else {
+		collection.Slug = slug
+	}
+	return slug, nil
 }
 
 func normalizeSlug(value string) string {
