@@ -168,7 +168,7 @@ function StoryCardComponent({
     if (!story.blocked) return null;
     if (story.blocked_by_count && story.blocked_by_count > 0) {
       if (story.blocked_by_count === 1 && story.blocked_by_stories?.[0]) {
-        return `Blocked by TP-${story.blocked_by_stories[0].display_id}`;
+        return `Blocked by ${story.blocked_by_stories[0].display_id}`;
       }
       return `Blocked by ${story.blocked_by_count} stories`;
     }

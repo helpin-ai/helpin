@@ -32,7 +32,7 @@ export function TeamRepoDefaultForm({
 }) {
   const [repositoryId, setRepositoryId] = useState(initial?.repository_id ?? '');
   const [baseBranch, setBaseBranch] = useState(initial?.base_branch ?? '');
-  const [branchTemplate, setBranchTemplate] = useState(initial?.branch_template ?? 'tp-{display_id}-{slug}');
+  const [branchTemplate, setBranchTemplate] = useState(initial?.branch_template ?? '{display_id}-{slug}');
   const [autoSyncStates, setAutoSyncStates] = useState(initial?.auto_sync_states ?? true);
   const [reviewStateId, setReviewStateId] = useState(initial?.review_state_id ?? 'none');
   const [doneStateId, setDoneStateId] = useState(initial?.done_state_id ?? 'none');
@@ -40,7 +40,7 @@ export function TeamRepoDefaultForm({
   useEffect(() => {
     setRepositoryId(initial?.repository_id ?? '');
     setBaseBranch(initial?.base_branch ?? '');
-    setBranchTemplate(initial?.branch_template ?? 'tp-{display_id}-{slug}');
+    setBranchTemplate(initial?.branch_template ?? '{display_id}-{slug}');
     setAutoSyncStates(initial?.auto_sync_states ?? true);
     setReviewStateId(initial?.review_state_id ?? 'none');
     setDoneStateId(initial?.done_state_id ?? 'none');
@@ -84,7 +84,7 @@ export function TeamRepoDefaultForm({
         <Input
           value={branchTemplate}
           onChange={(event) => setBranchTemplate(event.target.value)}
-          placeholder="tp-{display_id}-{slug}"
+          placeholder="{display_id}-{slug}"
         />
         <p className="text-xs text-muted-foreground">Available tokens: {'{display_id}'} and {'{slug}'}.</p>
       </div>
@@ -142,7 +142,7 @@ export function TeamRepoDefaultForm({
           onClick={() => onSave({
             repository_id: repositoryId,
             base_branch: baseBranch || selectedRepository?.default_branch || 'main',
-            branch_template: branchTemplate || 'tp-{display_id}-{slug}',
+            branch_template: branchTemplate || '{display_id}-{slug}',
             auto_sync_states: autoSyncStates,
             review_state_id: reviewStateId !== 'none' ? reviewStateId : undefined,
             done_state_id: doneStateId !== 'none' ? doneStateId : undefined,

@@ -478,7 +478,7 @@ export function StoryRelationshipsSection({
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{story.name}</span>
                 {story.display_id ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
-                    TP-{story.display_id}
+                    {story.display_id}
                   </Badge>
                 ) : null}
               </button>
