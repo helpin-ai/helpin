@@ -47,6 +47,15 @@ function renderNode(
     return createElement(LoadingImage, props)
   }
 
+  // Enforce links open in new tab with consistent styling
+  if (tag === 'a') {
+    props.target = '_blank'
+    props.rel = 'noopener noreferrer'
+    if (!props.className) {
+      props.className = 'text-primary underline cursor-pointer'
+    }
+  }
+
   const children = Array.from(element.childNodes)
     .map((child, index) => renderNode(child, `${key}-${index}`, members, teams))
     .filter((child) => child !== null)
