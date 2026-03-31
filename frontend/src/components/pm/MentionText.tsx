@@ -47,7 +47,7 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
             : 'text-blue-600 dark:text-blue-400'
         }`}
       >
-        @{mention.handle}
+        @{mention.member?.display_name ?? mention.team?.name ?? mention.handle}
       </span>
       {showProfile && mention.member && (
         <span className="absolute bottom-full left-0 z-50 mb-1.5 flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md">

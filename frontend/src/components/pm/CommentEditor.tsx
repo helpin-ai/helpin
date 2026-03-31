@@ -97,6 +97,7 @@ export function CommentEditor({
   onUploadStateChangeRef.current = onUploadStateChange
   const pendingUploadsRef = useRef(0)
   const [pendingUploads, setPendingUploads] = useState(0)
+  const [hasContent, setHasContent] = useState(false)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -233,6 +234,9 @@ export function CommentEditor({
 
   const editor = useEditor({
     extensions,
+    onUpdate: ({ editor: e }) => {
+      setHasContent(!e.isEmpty)
+    },
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-sm',
@@ -385,8 +389,7 @@ export function CommentEditor({
 
   if (!editor) return null
 
-  const content = getContent(editor)
-  const canSubmit = !loading && pendingUploads === 0 && (content.trim().length > 0 || uploadedFiles.length > 0)
+  const canSubmit = !loading && pendingUploads === 0 && (hasContent || uploadedFiles.length > 0)
 
   return (
     <div className="rounded-lg border border-border/60 bg-background transition-colors focus-within:border-border">
