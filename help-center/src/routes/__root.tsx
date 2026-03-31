@@ -16,9 +16,29 @@ import type { RootRouteData } from '@/lib/rootLoader'
 import { buildRootHead } from '@/lib/seo'
 import type { HelpCenterContext } from '@/lib/types'
 
+function buildBrandColorStyle(hex: string | undefined | null): string {
+  if (!hex) return ''
+  const clean = hex.replace('#', '')
+  if (clean.length !== 6) return ''
+
+  const r = parseInt(clean.substring(0, 2), 16)
+  const g = parseInt(clean.substring(2, 4), 16)
+  const b = parseInt(clean.substring(4, 6), 16)
+
+  const lighten = (c: number, amount: number) => Math.round(c + (255 - c) * amount)
+  const lr = lighten(r, 0.35)
+  const lg = lighten(g, 0.35)
+  const lb = lighten(b, 0.35)
+  const lightColor = `rgb(${lr}, ${lg}, ${lb})`
+
+  return `:root{--primary:${hex};--ring:${hex};--sidebar-active:rgba(${r},${g},${b},0.08);--sidebar-active-foreground:${hex}}.dark{--primary:${lightColor};--ring:${lightColor};--sidebar-active:rgba(${lr},${lg},${lb},0.12);--sidebar-active-foreground:${lightColor}}`
+}
+
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
   head: ({ loaderData }) => {
     const rootHead = buildRootHead(loaderData)
+    const brandColor = loaderData?.config?.brand_color
+    const brandStyle = buildBrandColorStyle(brandColor)
 
     return {
       links: [
@@ -41,6 +61,9 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
         { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
         ...(rootHead.meta ?? []),
       ],
+      scripts: brandStyle
+        ? [{ tag: 'style', attrs: { id: 'brand-color-override' }, children: brandStyle }]
+        : [],
     }
   },
   loader: ({ context, location }) =>
@@ -59,48 +82,6 @@ function RootLayout() {
     spaces,
     subdomain,
   } = Route.useLoaderData() as RootRouteData
-
-  // Inject brand color as CSS custom property overrides
-  useEffect(() => {
-    if (!config?.brand_color) return
-
-    const hex = config.brand_color.replace('#', '')
-    if (hex.length !== 6) return
-
-    const r = parseInt(hex.substring(0, 2), 16)
-    const g = parseInt(hex.substring(2, 4), 16)
-    const b = parseInt(hex.substring(4, 6), 16)
-
-    // Lighter version for dark mode
-    const lighten = (c: number, amount: number) => Math.round(c + (255 - c) * amount)
-    const lr = lighten(r, 0.35)
-    const lg = lighten(g, 0.35)
-    const lb = lighten(b, 0.35)
-    const lightColor = `rgb(${lr}, ${lg}, ${lb})`
-
-    const style = document.createElement('style')
-    style.id = 'brand-color-override'
-    style.textContent = `
-      :root {
-        --primary: ${config.brand_color};
-        --ring: ${config.brand_color};
-        --sidebar-active: rgba(${r}, ${g}, ${b}, 0.08);
-        --sidebar-active-foreground: ${config.brand_color};
-      }
-      .dark {
-        --primary: ${lightColor};
-        --ring: ${lightColor};
-        --sidebar-active: rgba(${lr}, ${lg}, ${lb}, 0.12);
-        --sidebar-active-foreground: ${lightColor};
-      }
-    `
-    document.getElementById('brand-color-override')?.remove()
-    document.head.appendChild(style)
-
-    return () => {
-      document.getElementById('brand-color-override')?.remove()
-    }
-  }, [config?.brand_color])
 
   // Set favicon from config
   useEffect(() => {
