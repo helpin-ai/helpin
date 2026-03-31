@@ -49,21 +49,13 @@ export function MentionSuggestionsList({
               </span>
             )}
             <span className="min-w-0 flex-1">
-              {compact ? (
-                <span className="flex items-center gap-1.5 truncate">
-                  <span className="text-sm font-medium text-foreground">{item.label}</span>
-                  <span className="text-xs text-muted-foreground">@{item.handle}</span>
+              <span className="block truncate text-sm font-medium text-foreground">
+                {item.label}
+              </span>
+              {item.type === 'team' && (
+                <span className="block truncate text-xs text-muted-foreground">
+                  @{item.handle}
                 </span>
-              ) : (
-                <>
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {item.label}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    @{item.handle}
-                    {item.type === 'member' && item.secondaryText ? ` · ${item.secondaryText}` : ''}
-                  </span>
-                </>
               )}
             </span>
           </button>
