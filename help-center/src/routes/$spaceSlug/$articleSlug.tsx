@@ -56,7 +56,7 @@ export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
         params.spaceSlug,
         params.articleSlug,
       )
-      return { article, rootData }
+      return { article, rootData, alternates: [] }
     }
   },
   head: ({ loaderData, params }) =>
@@ -66,6 +66,7 @@ export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
           loaderData.article,
           params.spaceSlug,
           params.articleSlug,
+          loaderData.alternates,
         )
       : {},
   component: LegacyArticleRedirect,

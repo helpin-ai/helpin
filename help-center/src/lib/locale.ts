@@ -28,6 +28,14 @@ interface ResolveLocaleSwitchPathOptions {
   fallbackNavigation?: NavItem[]
 }
 
+interface ResolveExactLocalePathOptions {
+  multilingualEnabled: boolean
+  targetLocale: string
+  current: LocaleRouteState
+  targetSpaces: Space[]
+  targetNavigation?: NavItem[]
+}
+
 export function isMultilingualEnabled(enabledLocales: string[] = []) {
   return new Set(
     enabledLocales
@@ -268,5 +276,61 @@ export function resolveLocaleSwitchPath({
     }
     default:
       return buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+  }
+}
+
+export function resolveExactLocalePath({
+  multilingualEnabled,
+  targetLocale,
+  current,
+  targetSpaces,
+  targetNavigation = [],
+}: ResolveExactLocalePathOptions) {
+  switch (current.kind) {
+    case 'home':
+      return buildCanonicalHomePath(multilingualEnabled, targetLocale)
+    case 'search':
+      return buildCanonicalSearchPath(
+        multilingualEnabled,
+        targetLocale,
+        current.searchQuery,
+        findSpaceByID(targetSpaces, current.spaceId)?.slug,
+      )
+    case 'space': {
+      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
+      return targetSpace
+        ? buildCanonicalCollectionPath(
+            multilingualEnabled,
+            targetLocale,
+            targetSpace.slug,
+          )
+        : null
+    }
+    case 'collection': {
+      const targetCollection = findCollectionByID(
+        targetNavigation,
+        current.collectionId,
+      )
+      return targetCollection
+        ? buildCanonicalCollectionPath(
+            multilingualEnabled,
+            targetLocale,
+            targetCollection.slug,
+          )
+        : null
+    }
+    case 'article': {
+      const targetArticle = findArticleByID(targetNavigation, current.articleId)
+      return targetArticle
+        ? buildCanonicalArticlePath(
+            multilingualEnabled,
+            targetLocale,
+            targetArticle.collection.slug,
+            targetArticle.article.slug,
+          )
+        : null
+    }
+    default:
+      return null
   }
 }

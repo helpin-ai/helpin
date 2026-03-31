@@ -8,6 +8,7 @@ import {
   buildLocaleCollectionPath,
   isMultilingualEnabled,
   resolveActiveLocale,
+  resolveExactLocalePath,
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
 
@@ -160,6 +161,63 @@ describe('locale helpers', () => {
     })
 
     expect(path).toBe('/bases/bonjour-fr')
+  })
+
+  it('returns an exact locale path only when the translated entity exists', () => {
+    const path = resolveExactLocalePath({
+      multilingualEnabled: true,
+      targetLocale: 'fr',
+      current: {
+        kind: 'article',
+        spaceId: 'space-1',
+        collectionId: 'collection-1',
+        articleId: 'article-1',
+      },
+      targetSpaces: [
+        {
+          id: 'space-1',
+          name: 'Facturation',
+          slug: 'facturation',
+          icon: null,
+          description: null,
+        },
+      ],
+      targetNavigation: [
+        {
+          id: 'collection-1',
+          name: 'Bases',
+          slug: 'bases',
+          icon: null,
+          articles: [{ id: 'article-1', title: 'Bonjour', slug: 'bonjour-fr' }],
+        },
+      ],
+    })
+
+    expect(path).toBe('/fr/bases/bonjour-fr')
+  })
+
+  it('returns null for exact locale paths when the translation does not exist', () => {
+    const path = resolveExactLocalePath({
+      multilingualEnabled: true,
+      targetLocale: 'fr',
+      current: {
+        kind: 'collection',
+        spaceId: 'space-1',
+        collectionId: 'collection-1',
+      },
+      targetSpaces: [
+        {
+          id: 'space-1',
+          name: 'Facturation',
+          slug: 'facturation',
+          icon: null,
+          description: null,
+        },
+      ],
+      targetNavigation: [],
+    })
+
+    expect(path).toBeNull()
   })
 
   it('treats an enabled locale slug as the active locale on legacy root paths', () => {

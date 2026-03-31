@@ -51,10 +51,10 @@ export const Route = createFileRoute('/$spaceSlug')({
         rootData,
         params.spaceSlug,
       )
-      return { kind: 'collection' as const, rootData, collection }
+      return { kind: 'collection' as const, rootData, collection, alternates: [] }
     }
 
-    return { kind: 'home' as const, rootData, collection: null }
+    return { kind: 'home' as const, rootData, collection: null, alternates: [] }
   },
   head: ({ loaderData, params }) => {
     if (!loaderData) {
@@ -66,6 +66,7 @@ export const Route = createFileRoute('/$spaceSlug')({
           loaderData.rootData,
           loaderData.collection,
           params.spaceSlug,
+          loaderData.alternates,
         )
       : buildHomeHead(loaderData.rootData)
   },

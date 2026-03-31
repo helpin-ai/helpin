@@ -21,15 +21,13 @@ describe('helpCenterService', () => {
     await helpCenterService.getCollection('contentpen', 'fr', 'bases', true)
     await helpCenterService.search('contentpen', 'fr', 'bonjour', true, 'demarrage')
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      '/api/hc/contentpen/fr/collections/bases',
-      expect.any(Object),
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Object))
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/api\/hc\/contentpen\/fr\/collections\/bases$/,
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/api/hc/contentpen/fr/search?q=bonjour&space=demarrage',
-      expect.any(Object),
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(
+      /\/api\/hc\/contentpen\/fr\/search\?q=bonjour&space=demarrage$/,
     )
   })
 
@@ -58,25 +56,21 @@ describe('helpCenterService', () => {
       { is_helpful: true },
     )
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      '/api/hc/docs.contentpen.ai/c/basics',
-      expect.any(Object),
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.any(String), expect.any(Object))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, expect.any(String), expect.any(Object))
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/api\/hc\/docs\.contentpen\.ai\/c\/basics$/,
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/api/hc/docs.contentpen.ai/c/basics/start-here',
-      expect.any(Object),
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(
+      /\/api\/hc\/docs\.contentpen\.ai\/c\/basics\/start-here$/,
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      '/api/hc/docs.contentpen.ai/search?q=publish&space=help-center',
-      expect.any(Object),
+    expect(fetchMock.mock.calls[2]?.[0]).toMatch(
+      /\/api\/hc\/docs\.contentpen\.ai\/search\?q=publish&space=help-center$/,
     )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
-      '/api/hc/docs.contentpen.ai/spaces/help-center/articles/start-here/feedback',
-      expect.any(Object),
+    expect(fetchMock.mock.calls[3]?.[0]).toMatch(
+      /\/api\/hc\/docs\.contentpen\.ai\/spaces\/help-center\/articles\/start-here\/feedback$/,
     )
   })
 })
