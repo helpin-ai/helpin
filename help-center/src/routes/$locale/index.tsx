@@ -49,10 +49,10 @@ export const Route = createFileRoute('/$locale/')({
         rootData,
         params.locale,
       )
-      return { kind: 'collection' as const, collection, rootData }
+      return { kind: 'collection' as const, collection, rootData, alternates: [] }
     }
 
-    return { kind: 'home' as const, collection: null, rootData }
+    return { kind: 'home' as const, collection: null, rootData, alternates: [] }
   },
   head: ({ loaderData, params }) => {
     if (!loaderData) {
@@ -60,7 +60,12 @@ export const Route = createFileRoute('/$locale/')({
     }
 
     return loaderData.kind === 'collection' && loaderData.collection
-      ? buildCollectionHead(loaderData.rootData, loaderData.collection, params.locale)
+      ? buildCollectionHead(
+          loaderData.rootData,
+          loaderData.collection,
+          params.locale,
+          loaderData.alternates,
+        )
       : buildHomeHead(loaderData.rootData)
   },
   component: LocalizedHomeRoute,
