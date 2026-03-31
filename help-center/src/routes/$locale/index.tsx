@@ -3,7 +3,7 @@ import { LocalizedHomePage } from '@/components/home/LocalizedHomePage'
 import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { prefetchCollectionRouteData } from '@/lib/routeData'
+import { prefetchCollectionRouteData, prefetchHomeRouteData } from '@/lib/routeData'
 import { loadRootRouteData } from '@/lib/rootLoader'
 import { buildCollectionHead, buildHomeHead } from '@/lib/seo'
 import {
@@ -52,6 +52,7 @@ export const Route = createFileRoute('/$locale/')({
       return { kind: 'collection' as const, collection, rootData, alternates: [] }
     }
 
+    await prefetchHomeRouteData(context.queryClient, rootData)
     return { kind: 'home' as const, collection: null, rootData, alternates: [] }
   },
   head: ({ loaderData, params }) => {

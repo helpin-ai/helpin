@@ -3,6 +3,7 @@ import { LoadingState } from '@/components/LoadingState'
 import { LocalizedHomePage } from '@/components/home/LocalizedHomePage'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { loadRootRouteData } from '@/lib/rootLoader'
+import { prefetchHomeRouteData } from '@/lib/routeData'
 import { buildHomeHead } from '@/lib/seo'
 import { buildCanonicalHomePath, isMultilingualEnabled } from '@/lib/locale'
 
@@ -17,8 +18,11 @@ export const Route = createFileRoute('/')({
       })
     }
   },
-  loader: async ({ context, location }) =>
-    loadRootRouteData(context.queryClient, location.pathname),
+  loader: async ({ context, location }) => {
+    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    await prefetchHomeRouteData(context.queryClient, rootData)
+    return rootData
+  },
   head: ({ loaderData }) =>
     loaderData ? buildHomeHead(loaderData) : {},
   component: RootLocaleRedirect,
