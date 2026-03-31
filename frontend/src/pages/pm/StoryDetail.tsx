@@ -983,6 +983,7 @@ export function StoryDetailPage() {
                   generatedCount={recurringSummary.generated_count}
                   occurrenceNumber={recurringSummary.occurrence_number}
                   lastError={recurringSummary.last_error}
+                  lastGeneratedStory={recurringSummary.last_generated_story ?? null}
                   compact
                   actions={
                     <Button type="button" variant="ghost" size="xs" onClick={() => void openRecurringDialog()}>
