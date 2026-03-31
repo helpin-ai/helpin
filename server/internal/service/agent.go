@@ -32,6 +32,7 @@ type supportDraftReply struct {
 
 const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
+const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
 
 func defaultSystemAgentNameForPresetKey(presetKey string) string {
@@ -1406,6 +1407,10 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		return nil, nil, fmt.Errorf("run is waiting for authentication")
 	}
 	model.NormalizeAgentRunPauseState(run)
+	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var (
 		message     *model.AgentRunMessage
@@ -1504,14 +1509,21 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	}
 
 	now := time.Now()
-	run.Status = model.AgentRunStatusRunning
-	run.PauseReason = model.AgentRunPauseReasonNone
 	run.ExecutionStage = strPtr(stage)
 	run.LastHeartbeatAt = &now
 	run.CompletedAt = nil
 	if !approvalSet && intent != model.AgentRunResumeIntentRequestChanges && run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
 		run.ApprovalState = "not_required"
 	}
+	if liveCodexPause {
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return nil, nil, err
+		}
+		s.publishRunEvent(run, actorID)
+		return run, message, nil
+	}
+	run.Status = model.AgentRunStatusRunning
+	run.PauseReason = model.AgentRunPauseReasonNone
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, nil, err
 	}
@@ -1543,6 +1555,31 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	}
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
+}
+
+func (s *AgentService) shouldUseLiveCodexPausePath(ctx context.Context, run *model.AgentRun) (bool, error) {
+	if s == nil || run == nil || s.artifactRepo == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(run.RuntimeKind) != "codex" {
+		return false, nil
+	}
+	if !model.IsAgentRunPausedStatus(run.Status) {
+		return false, nil
+	}
+	switch run.PauseReason {
+	case model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonHumanInput:
+	default:
+		return false, nil
+	}
+	if run.LastHeartbeatAt == nil || time.Since(run.LastHeartbeatAt.UTC()) > liveCodexPauseHeartbeatFreshThreshold {
+		return false, nil
+	}
+	snapshot, err := worker.LoadCodexSessionSnapshot(ctx, s.artifactRepo, run)
+	if err != nil {
+		return false, err
+	}
+	return snapshot != nil && snapshot.HasPendingRequest, nil
 }
 
 func normalizeResumeIntent(intent string) string {

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -31,8 +32,9 @@ import (
 var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
 const (
-	productSpecsSpaceSlug = "product-specs"
-	productSpecsSpaceName = "Product Specs"
+	productSpecsSpaceSlug   = "product-specs"
+	productSpecsSpaceName   = "Product Specs"
+	codexLivePausePollEvery = time.Second
 )
 
 type planningRunInput struct {
@@ -485,6 +487,27 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if state.conversation != nil {
 		execCtx.ConversationID = state.conversation.ID
 	}
+	heartbeatStage := "codex_running"
+	var heartbeatStageMu sync.RWMutex
+	setHeartbeatStage := func(stage string) {
+		heartbeatStageMu.Lock()
+		defer heartbeatStageMu.Unlock()
+		if strings.TrimSpace(stage) == "" {
+			heartbeatStage = "codex_running"
+			return
+		}
+		heartbeatStage = strings.TrimSpace(stage)
+	}
+	execCtx.HeartbeatStageProvider = func() string {
+		heartbeatStageMu.RLock()
+		defer heartbeatStageMu.RUnlock()
+		return heartbeatStage
+	}
+	if runtimeKind == "codex" && state.run.InvocationMode == model.InvocationModeInteractive {
+		execCtx.HandleInteractivePause = func(result *workerpkg.ExecutionResult) (*workerpkg.LiveExecutionResumeSignal, error) {
+			return a.handleLiveCodexInteractivePause(ctx, state, execCtx, result, setHeartbeatStage)
+		}
+	}
 
 	adapter, err := a.runtimes.Get(runtimeKind)
 	if err != nil {
@@ -507,10 +530,30 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		if persistWorkspace {
 			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 		}
-		if err == workerpkg.ErrRunCancelled || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			bgCtx := context.Background()
 			_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
 			return ExecuteRunResult{}, nil
+		}
+		if err == workerpkg.ErrRunCancelled {
+			bgCtx := context.Background()
+			explicitlyCancelled, lookupErr := a.isRunExplicitlyCancelled(bgCtx, state.run.ID)
+			if lookupErr != nil {
+				_ = a.failRun(bgCtx, state, lookupErr.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(lookupErr)
+			}
+			if explicitlyCancelled {
+				_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
+				return ExecuteRunResult{}, nil
+			}
+			unexpectedErr := fmt.Errorf("runtime reported cancellation without a cancelled run state")
+			slog.ErrorContext(ctx, "agent run runtime cancelled unexpectedly",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"runtime_kind", runtimeKind,
+			)
+			_ = a.failRun(bgCtx, state, unexpectedErr.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
 		_ = a.failRun(bgCtx, state, err.Error())
@@ -1564,6 +1607,215 @@ func latestExecutionCodexAuthState(execCtx *workerpkg.ExecutionContext) *model.C
 		return nil
 	}
 	return execCtx.LastExecutionResult.CodexAuthState
+}
+
+func (a *AgentRunActivities) handleLiveCodexInteractivePause(
+	ctx context.Context,
+	state *resolvedRunState,
+	execCtx *workerpkg.ExecutionContext,
+	result *workerpkg.ExecutionResult,
+	setHeartbeatStage func(string),
+) (*workerpkg.LiveExecutionResumeSignal, error) {
+	if state == nil || state.run == nil || execCtx == nil || result == nil {
+		return nil, fmt.Errorf("live codex pause context is incomplete")
+	}
+
+	pauseReason, pauseStage, err := liveCodexPauseState(result)
+	if err != nil {
+		return nil, err
+	}
+
+	execCtx.LastExecutionResult = result
+	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	state.run.Status = model.AgentRunStatusPaused
+	state.run.PauseReason = pauseReason
+	state.run.ExecutionStage = strPtr(pauseStage)
+	state.run.LastHeartbeatAt = &now
+	state.run.CompletedAt = nil
+	if pauseReason == model.AgentRunPauseReasonHumanApproval {
+		state.run.ApprovalState = "pending"
+	} else if state.run.ApprovalState != "approved" {
+		state.run.ApprovalState = "not_required"
+	}
+	if err := a.runRepo.Update(ctx, state.run); err != nil {
+		return nil, err
+	}
+	a.runRepo.Notify(ctx, state.run)
+	if setHeartbeatStage != nil {
+		setHeartbeatStage(pauseStage)
+	}
+
+	afterSequenceNo := 0
+	if assistantMessage != nil {
+		afterSequenceNo = assistantMessage.SequenceNo
+	}
+	signal, err := a.waitForLiveCodexResumeSignal(ctx, state.run, afterSequenceNo, pauseReason)
+	if err != nil {
+		return nil, err
+	}
+	return &workerpkg.LiveExecutionResumeSignal{
+		Intent:  signal.Intent,
+		Content: signal.Content,
+		Acknowledge: func() error {
+			if setHeartbeatStage != nil {
+				setHeartbeatStage("codex_running")
+			}
+			now := time.Now()
+			state.run.Status = model.AgentRunStatusRunning
+			state.run.PauseReason = model.AgentRunPauseReasonNone
+			state.run.ExecutionStage = strPtr(liveCodexResumeStage(signal, pauseReason))
+			state.run.LastHeartbeatAt = &now
+			state.run.CompletedAt = nil
+			switch strings.TrimSpace(signal.Intent) {
+			case model.AgentRunResumeIntentApprove:
+				state.run.ApprovalState = "approved"
+			case model.AgentRunResumeIntentRequestChanges:
+				state.run.ApprovalState = "rejected"
+			default:
+				if pauseReason != model.AgentRunPauseReasonHumanApproval && state.run.ApprovalState != "pending" && state.run.ApprovalState != "rejected" {
+					state.run.ApprovalState = "not_required"
+				}
+			}
+			if err := a.runRepo.Update(ctx, state.run); err != nil {
+				return err
+			}
+			a.runRepo.Notify(ctx, state.run)
+			return nil
+		},
+	}, nil
+}
+
+func liveCodexPauseState(result *workerpkg.ExecutionResult) (pauseReason, stage string, err error) {
+	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
+		stage = "awaiting_approval"
+		if strings.TrimSpace(approvalRequest.Phase) != "" {
+			stage = strings.TrimSpace(approvalRequest.Phase)
+		}
+		return model.AgentRunPauseReasonHumanApproval, stage, nil
+	}
+	if latestHumanInputRequestFromResult(result) != nil {
+		return model.AgentRunPauseReasonHumanInput, "awaiting_input", nil
+	}
+	return "", "", fmt.Errorf("execution result did not include a live human interaction request")
+}
+
+func liveCodexResumeStage(signal *workerpkg.LiveExecutionResumeSignal, pauseReason string) string {
+	if signal == nil {
+		return "resuming"
+	}
+	switch strings.TrimSpace(signal.Intent) {
+	case model.AgentRunResumeIntentApprove:
+		return "approved"
+	case model.AgentRunResumeIntentRequestChanges:
+		return "feedback_received"
+	case model.AgentRunResumeIntentReply:
+		if pauseReason == model.AgentRunPauseReasonHumanApproval {
+			return "feedback_received"
+		}
+		return "input_received"
+	default:
+		return "resuming"
+	}
+}
+
+func (a *AgentRunActivities) waitForLiveCodexResumeSignal(ctx context.Context, run *model.AgentRun, afterSequenceNo int, pauseReason string) (*workerpkg.LiveExecutionResumeSignal, error) {
+	ticker := time.NewTicker(codexLivePausePollEvery)
+	defer ticker.Stop()
+
+	for {
+		if ctx.Err() != nil {
+			return nil, workerpkg.ErrRunCancelled
+		}
+
+		currentRun, err := a.runRepo.GetByIDAny(ctx, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		if currentRun == nil {
+			return nil, fmt.Errorf("agent run %s was not found while waiting for live codex input", run.ID)
+		}
+		model.NormalizeAgentRunPauseState(currentRun)
+
+		switch currentRun.Status {
+		case model.AgentRunStatusCancelled:
+			return nil, workerpkg.ErrRunCancelled
+		case model.AgentRunStatusFailed:
+			return nil, fmt.Errorf("agent run failed while waiting for live codex input")
+		case model.AgentRunStatusCompleted:
+			return nil, fmt.Errorf("agent run completed while waiting for live codex input")
+		}
+
+		if pauseReason == model.AgentRunPauseReasonHumanApproval {
+			switch strings.TrimSpace(currentRun.ApprovalState) {
+			case "approved":
+				content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(content) == "" {
+					content = "approve"
+				}
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentApprove,
+					Content: content,
+				}, nil
+			case "rejected":
+				content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(content) == "" {
+					return nil, fmt.Errorf("approval feedback message is missing for live codex resume")
+				}
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentRequestChanges,
+					Content: content,
+				}, nil
+			}
+		} else {
+			content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(content) != "" {
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentReply,
+					Content: content,
+				}, nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, workerpkg.ErrRunCancelled
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run *model.AgentRun, afterSequenceNo int) (string, error) {
+	if a.runMessageRepo == nil || run == nil {
+		return "", nil
+	}
+	messages, err := a.runMessageRepo.ListByRunAfterSequence(ctx, run.WorkspaceID, run.ID, afterSequenceNo)
+	if err != nil {
+		return "", err
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(messages[i].Role) != "user" {
+			continue
+		}
+		content := strings.TrimSpace(messages[i].Content)
+		if content != "" {
+			return content, nil
+		}
+	}
+	return "", nil
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
@@ -4412,6 +4664,20 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) isRunExplicitlyCancelled(ctx context.Context, runID string) (bool, error) {
+	if a == nil || a.runRepo == nil || strings.TrimSpace(runID) == "" {
+		return false, nil
+	}
+	currentRun, err := a.runRepo.GetByIDAny(ctx, runID)
+	if err != nil {
+		return false, err
+	}
+	if currentRun == nil {
+		return false, nil
+	}
+	return currentRun.Status == model.AgentRunStatusCancelled, nil
 }
 
 func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, errMsg string) error {

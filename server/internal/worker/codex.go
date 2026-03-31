@@ -169,7 +169,13 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			for {
 				select {
 				case <-ticker.C:
-					_ = execCtx.Heartbeat("codex_running")
+					stage := "codex_running"
+					if execCtx.HeartbeatStageProvider != nil {
+						if provided := strings.TrimSpace(execCtx.HeartbeatStageProvider()); provided != "" {
+							stage = provided
+						}
+					}
+					_ = execCtx.Heartbeat(stage)
 				case <-done:
 					return
 				case <-execCtx.Context.Done():
@@ -655,6 +661,13 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 	}
 	changedFiles := strings.Fields(filesOutput)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
+		committedChange, err := detectCommittedEngineerChange(execCtx)
+		if err != nil {
+			return err
+		}
+		if committedChange != nil {
+			return persistExistingEngineerCommit(execCtx, artifactWriter, committedChange)
+		}
 		if isInteractiveRunInvocation(run) {
 			slog.InfoContext(execCtx.Context, "interactive codex run ended without staged repository diff; requesting follow-up input",
 				"run_id", run.ID)

@@ -391,6 +391,69 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 	}
 }
 
+func TestPersistEngineerWorkspacePushesExistingLocalCommit(t *testing.T) {
+	tempDir := t.TempDir()
+	remoteDir := filepath.Join(tempDir, "remote.git")
+	runGitCmd(t, tempDir, "git", "init", "--bare", remoteDir)
+
+	seedDir := filepath.Join(tempDir, "seed")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, seedDir)
+	configureGitIdentity(t, seedDir)
+	writeTestFile(t, filepath.Join(seedDir, "README.md"), "hello\n")
+	runGitCmd(t, seedDir, "git", "add", "README.md")
+	runGitCmd(t, seedDir, "git", "commit", "-m", "initial commit")
+	runGitCmd(t, seedDir, "git", "branch", "-M", "main")
+	runGitCmd(t, seedDir, "git", "push", "-u", "origin", "main")
+
+	workDir := filepath.Join(tempDir, "work")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, workDir)
+	configureGitIdentity(t, workDir)
+	runGitCmd(t, workDir, "git", "checkout", "-B", "main", "origin/main")
+	runGitCmd(t, workDir, "git", "checkout", "-b", "tp-123-implement")
+	writeTestFile(t, filepath.Join(workDir, "README.md"), "hello\nupdated\n")
+	runGitCmd(t, workDir, "git", "add", "README.md")
+	runGitCmd(t, workDir, "git", "commit", "-m", "agent created local commit")
+	localSHA := strings.TrimSpace(runGitCmd(t, workDir, "git", "rev-parse", "HEAD"))
+
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	var pushedBranch string
+	var pushedSHA string
+	execCtx := &ExecutionContext{
+		Context:       context.Background(),
+		WorkDir:       workDir,
+		BaseBranch:    "main",
+		WorkingBranch: "tp-123-implement",
+		Agent:         &model.Agent{AllowedTools: []byte(`["write_file","commit_and_push","open_pr"]`)},
+		Story:         &model.PMStory{DisplayID: 123, Name: "Implement notification preferences"},
+		OnGitPush: func(branch, sha string) error {
+			pushedBranch = branch
+			pushedSHA = sha
+			return nil
+		},
+	}
+
+	if err := executor.persistEngineerWorkspace(execCtx, &model.AgentRun{}, &openCodeArtifactWriter{}); err != nil {
+		t.Fatalf("persist engineer workspace with existing commit: %v", err)
+	}
+
+	if pushedBranch != "tp-123-implement" {
+		t.Fatalf("expected pushed branch to be recorded, got %q", pushedBranch)
+	}
+	if pushedSHA != localSHA {
+		t.Fatalf("expected pushed sha %q to match local sha %q", pushedSHA, localSHA)
+	}
+
+	remoteSHA := strings.TrimSpace(runGitCmd(t, tempDir, "git", "--git-dir", remoteDir, "rev-parse", "refs/heads/tp-123-implement"))
+	if remoteSHA != localSHA {
+		t.Fatalf("expected remote SHA %q to match local SHA %q", remoteSHA, localSHA)
+	}
+
+	status := strings.TrimSpace(runGitCmd(t, workDir, "git", "status", "--porcelain"))
+	if status != "" {
+		t.Fatalf("expected clean working tree after persistence, got %q", status)
+	}
+}
+
 func configureGitIdentity(t *testing.T, dir string) {
 	t.Helper()
 	runGitCmd(t, dir, "git", "config", "user.email", "test@example.com")

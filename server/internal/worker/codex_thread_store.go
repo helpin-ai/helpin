@@ -45,6 +45,11 @@ type codexPendingRequest struct {
 	Payload      json.RawMessage `json:"payload,omitempty"`
 }
 
+type CodexSessionSnapshot struct {
+	HasPendingRequest  bool
+	PendingRequestKind string
+}
+
 type codexThreadStore struct {
 	artifactRepo *repository.AgentRunArtifactRepository
 }
@@ -114,4 +119,20 @@ func (s *codexThreadStore) Clear(ctx context.Context, run *model.AgentRun) error
 
 func timePtr(value time.Time) *time.Time {
 	return &value
+}
+
+func LoadCodexSessionSnapshot(ctx context.Context, artifactRepo *repository.AgentRunArtifactRepository, run *model.AgentRun) (*CodexSessionSnapshot, error) {
+	state, err := newCodexThreadStore(artifactRepo).Load(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return &CodexSessionSnapshot{}, nil
+	}
+	snapshot := &CodexSessionSnapshot{}
+	if state.PendingRequest != nil {
+		snapshot.HasPendingRequest = true
+		snapshot.PendingRequestKind = strings.TrimSpace(state.PendingRequest.Kind)
+	}
+	return snapshot, nil
 }

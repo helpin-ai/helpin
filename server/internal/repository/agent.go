@@ -231,6 +231,17 @@ func (r *AgentRunMessageRepository) ListByRun(ctx context.Context, workspaceID, 
 	return messages, nil
 }
 
+func (r *AgentRunMessageRepository) ListByRunAfterSequence(ctx context.Context, workspaceID, runID string, afterSequenceNo int) ([]model.AgentRunMessage, error) {
+	var messages []model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND run_id = ? AND sequence_no > ?", workspaceID, runID, afterSequenceNo).
+		Order("sequence_no ASC, created_at ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list agent run messages after sequence: %w", err)
+	}
+	return messages, nil
+}
+
 func (r *AgentRunMessageRepository) NextSequence(ctx context.Context, workspaceID, runID string) (int, error) {
 	type result struct {
 		Max int

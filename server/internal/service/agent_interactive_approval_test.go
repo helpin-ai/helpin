@@ -52,6 +52,26 @@ func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifa
 	}
 }
 
+func seedCodexPendingSessionState(t *testing.T, artifactRepo *repository.AgentRunArtifactRepository, workspaceID, runID string, now time.Time) {
+	t.Helper()
+
+	content := `{"thread_id":"thread-1","pending_request":{"kind":"command_execution","request_id":"7","request_id_raw":7,"turn_id":"turn-1","item_id":"item-1","payload":{"command":"git commit"}}}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            fmt.Sprintf("artifact-codex-session-%s", runID),
+		WorkspaceID:   workspaceID,
+		RunID:         runID,
+		ArtifactType:  "codex_session_state",
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &content,
+		Metadata:      json.RawMessage(`{"internal":true}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create codex session artifact: %v", err)
+	}
+}
+
 func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1029,6 +1049,75 @@ func TestApproveRunRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) 
 	}
 }
 
+func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-codex", "ws-1", false, "Forge", model.AgentPresetCodeBuilder, "Engineer", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:              "run-live-codex-approve",
+		WorkspaceID:     "ws-1",
+		AgentID:         "agent-codex",
+		TargetType:      "story",
+		TargetID:        "story-1",
+		RuntimeKind:     "codex",
+		InvocationMode:  model.InvocationModeInteractive,
+		ApprovalState:   "pending",
+		PauseReason:     model.AgentRunPauseReasonHumanApproval,
+		Status:          model.AgentRunStatusPaused,
+		LastHeartbeatAt: &now,
+		OutputSummary:   []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	seedCodexPendingSessionState(t, artifactRepo, "ws-1", run.ID, now)
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{SendMessage: true})
+	if err != nil {
+		t.Fatalf("ApproveRun returned error: %v", err)
+	}
+	if updated.ApprovalState != "approved" {
+		t.Fatalf("expected approval_state approved, got %q", updated.ApprovalState)
+	}
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected live codex run to remain paused until the worker consumes approval, got %q", updated.Status)
+	}
+	if updated.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected pause reason human_approval, got %q", updated.PauseReason)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].MessageType != "approval" {
+		t.Fatalf("expected one persisted approval message, got %#v", messages)
+	}
+}
+
 func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1215,6 +1304,69 @@ func TestRequestRunChangesRecoversAwaitingApprovalWithStaleApprovalState(t *test
 	}
 	if updated.Status != model.AgentRunStatusRunning {
 		t.Fatalf("expected run status running, got %q", updated.Status)
+	}
+}
+
+func TestRequestRunChangesKeepsPausedStateForLiveCodexSession(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-codex", "ws-1", false, "Forge", model.AgentPresetCodeBuilder, "Engineer", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:              "run-live-codex-feedback",
+		WorkspaceID:     "ws-1",
+		AgentID:         "agent-codex",
+		TargetType:      "story",
+		TargetID:        "story-1",
+		RuntimeKind:     "codex",
+		InvocationMode:  model.InvocationModeInteractive,
+		ApprovalState:   "pending",
+		PauseReason:     model.AgentRunPauseReasonHumanApproval,
+		Status:          model.AgentRunStatusPaused,
+		LastHeartbeatAt: &now,
+		OutputSummary:   []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	seedCodexPendingSessionState(t, artifactRepo, "ws-1", run.ID, now)
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	updated, err := svc.RequestRunChanges(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunRequestChangesRequest{
+		Content: "Please split the helper from the middleware.",
+	})
+	if err != nil {
+		t.Fatalf("RequestRunChanges returned error: %v", err)
+	}
+	if updated.ApprovalState != "rejected" {
+		t.Fatalf("expected approval_state rejected, got %q", updated.ApprovalState)
+	}
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected live codex run to remain paused until the worker consumes feedback, got %q", updated.Status)
+	}
+	if updated.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected pause reason human_approval, got %q", updated.PauseReason)
 	}
 }
 

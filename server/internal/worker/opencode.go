@@ -488,7 +488,15 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 		return fmt.Errorf("inspect staged files: %s", strings.TrimSpace(firstNonEmptyText(filesOutput, err.Error())))
 	}
 	changedFiles := strings.Fields(filesOutput)
+	commitMessage := buildEngineerCommitMessage(execCtx.Story)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
+		committedChange, err := detectCommittedEngineerChange(execCtx)
+		if err != nil {
+			return err
+		}
+		if committedChange != nil {
+			return persistExistingEngineerCommit(execCtx, artifactWriter, committedChange)
+		}
 		if isInteractiveRunInvocation(run) {
 			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for interactive opencode run",
 				"run_id", run.ID)
@@ -500,7 +508,6 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 	artifactWriter.Save(execCtx.Context, "diff", "patch", diff, false)
 	artifactWriter.Save(execCtx.Context, "file_bundle", "json", toJSONString(changedFiles), false)
 
-	commitMessage := buildEngineerCommitMessage(execCtx.Story)
 	if out, err := runGit(execCtx, "commit", "-m", commitMessage); err != nil {
 		return fmt.Errorf("commit repository changes: %s", strings.TrimSpace(firstNonEmptyText(out, err.Error())))
 	}
@@ -588,6 +595,139 @@ func buildEngineerCommitMessage(story *model.PMStory) string {
 	return fmt.Sprintf("tp: story %s", story.Name)
 }
 
+type engineerCommittedChange struct {
+	Diff          string
+	ChangedFiles  []string
+	CommitSHA     string
+	CommitMessage string
+}
+
+func detectCommittedEngineerChange(execCtx *ExecutionContext) (*engineerCommittedChange, error) {
+	if execCtx == nil || strings.TrimSpace(execCtx.WorkDir) == "" {
+		return nil, nil
+	}
+
+	statusOutput, err := runGit(execCtx, "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("inspect repository status: %s", strings.TrimSpace(firstNonEmptyText(statusOutput, err.Error())))
+	}
+	if strings.TrimSpace(statusOutput) != "" {
+		return nil, nil
+	}
+
+	diffOutput, filesOutput, err := repoDiffAgainstBase(execCtx)
+	if err != nil {
+		return nil, err
+	}
+	changedFiles := strings.Fields(filesOutput)
+	if strings.TrimSpace(diffOutput) == "" || len(changedFiles) == 0 {
+		return nil, nil
+	}
+
+	shaOutput, err := runGit(execCtx, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("resolve existing commit SHA: %s", strings.TrimSpace(firstNonEmptyText(shaOutput, err.Error())))
+	}
+	messageOutput, err := runGit(execCtx, "log", "-1", "--pretty=%s")
+	if err != nil {
+		return nil, fmt.Errorf("resolve existing commit message: %s", strings.TrimSpace(firstNonEmptyText(messageOutput, err.Error())))
+	}
+
+	return &engineerCommittedChange{
+		Diff:          diffOutput,
+		ChangedFiles:  changedFiles,
+		CommitSHA:     strings.TrimSpace(shaOutput),
+		CommitMessage: strings.TrimSpace(messageOutput),
+	}, nil
+}
+
+func repoDiffAgainstBase(execCtx *ExecutionContext) (diffOutput string, filesOutput string, err error) {
+	if execCtx == nil {
+		return "", "", nil
+	}
+
+	var lastErr error
+	for _, ref := range repoComparisonRefs(execCtx) {
+		files, diff, diffErr := repoDiffForRef(execCtx, ref)
+		if diffErr != nil {
+			lastErr = diffErr
+			continue
+		}
+		return diff, files, nil
+	}
+	if lastErr != nil {
+		return "", "", lastErr
+	}
+
+	baseBranch := strings.TrimSpace(execCtx.BaseBranch)
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	return "", "", fmt.Errorf("inspect repository diff: unable to compare HEAD against %q", baseBranch)
+}
+
+func repoComparisonRefs(execCtx *ExecutionContext) []string {
+	baseBranch := strings.TrimSpace(execCtx.BaseBranch)
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	return []string{"origin/" + baseBranch, baseBranch}
+}
+
+func repoDiffForRef(execCtx *ExecutionContext, ref string) (filesOutput string, diffOutput string, err error) {
+	filesOutput, err = runGit(execCtx, "diff", "--name-only", ref+"...HEAD")
+	if err != nil {
+		return "", "", nil
+	}
+	if strings.TrimSpace(filesOutput) == "" {
+		return "", "", nil
+	}
+	diffOutput, err = runGit(execCtx, "diff", ref+"...HEAD")
+	if err != nil {
+		return "", "", fmt.Errorf("inspect committed diff: %s", strings.TrimSpace(firstNonEmptyText(diffOutput, err.Error())))
+	}
+	return filesOutput, diffOutput, nil
+}
+
+func persistExistingEngineerCommit(execCtx *ExecutionContext, artifactWriter interface {
+	Save(context.Context, string, string, string, bool)
+}, change *engineerCommittedChange) error {
+	if execCtx == nil || change == nil {
+		return nil
+	}
+
+	artifactWriter.Save(execCtx.Context, "diff", "patch", change.Diff, false)
+	artifactWriter.Save(execCtx.Context, "file_bundle", "json", toJSONString(change.ChangedFiles), false)
+
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("pushing_changes")
+	}
+
+	branch, err := resolveWorkingBranch(execCtx)
+	if err != nil {
+		return err
+	}
+	if out, err := runGit(execCtx, "push", "-u", "origin", branch); err != nil {
+		return fmt.Errorf("push repository changes: %s", strings.TrimSpace(firstNonEmptyText(out, err.Error())))
+	}
+
+	execCtx.WorkingBranch = branch
+	if execCtx.OnGitPush != nil {
+		if err := execCtx.OnGitPush(branch, change.CommitSHA); err != nil {
+			return fmt.Errorf("record pushed branch: %w", err)
+		}
+	}
+
+	persistenceResult := map[string]any{
+		"branch":         branch,
+		"commit_sha":     change.CommitSHA,
+		"commit_message": change.CommitMessage,
+		"changed_files":  change.ChangedFiles,
+	}
+	artifactWriter.Save(execCtx.Context, "git_persistence_result", "json", toJSONString(persistenceResult), false)
+	return nil
+}
+
 func openCodeRunProducedRepoChanges(execCtx *ExecutionContext) (bool, error) {
 	if execCtx == nil || strings.TrimSpace(execCtx.WorkDir) == "" {
 		return false, nil
@@ -601,20 +741,11 @@ func openCodeRunProducedRepoChanges(execCtx *ExecutionContext) (bool, error) {
 		return true, nil
 	}
 
-	baseBranch := strings.TrimSpace(execCtx.BaseBranch)
-	if baseBranch == "" {
-		baseBranch = "main"
+	_, filesOutput, err := repoDiffAgainstBase(execCtx)
+	if err != nil {
+		return false, err
 	}
-
-	for _, ref := range []string{baseBranch, "origin/" + baseBranch} {
-		diffOutput, err := runGit(execCtx, "diff", "--name-only", ref+"...HEAD")
-		if err != nil {
-			continue
-		}
-		return strings.TrimSpace(diffOutput) != "", nil
-	}
-
-	return false, fmt.Errorf("inspect repository diff: unable to compare HEAD against %q", baseBranch)
+	return strings.TrimSpace(filesOutput) != "", nil
 }
 
 func waitForOpenCodeRepoChanges(execCtx *ExecutionContext, timeout, interval time.Duration) (bool, error) {

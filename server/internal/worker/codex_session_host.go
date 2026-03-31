@@ -17,7 +17,8 @@ import (
 
 const codexAppServerRequestTimeout = 30 * time.Second
 const codexTurnEventIdleTimeout = 5 * time.Minute
-const codexPendingReplayGraceTimeout = 2 * time.Second
+
+var codexPendingReplayGraceTimeout = 2 * time.Second
 
 type codexSessionHost struct {
 	executor              *CodexExecutor
@@ -373,7 +374,7 @@ func (h *codexSessionHost) startFreshTurn(ctx context.Context, client *codexAppS
 	if err := h.threadStore.Save(ctx, h.run, state); err != nil {
 		return nil, err
 	}
-	return h.processTurn(ctx, client)
+	return h.processTurn(ctx, client, state)
 }
 
 func (h *codexSessionHost) resumePendingRequest(ctx context.Context, client *codexAppServerClient, state *codexSessionState) (*codexEventMapper, error) {
@@ -409,44 +410,11 @@ func (h *codexSessionHost) resumePendingRequest(ctx context.Context, client *cod
 		return nil, err
 	}
 
-	mapper, err := h.processTurn(ctx, client)
+	mapper, err := h.processTurn(ctx, client, state)
 	if err != nil {
 		return mapper, err
 	}
-	if followupSequenceNo <= 0 || strings.TrimSpace(followupInput) == "" {
-		return mapper, nil
-	}
-	completedTurn := mapper.CompletedTurn()
-	if completedTurn == nil || strings.ToLower(strings.TrimSpace(completedTurn.Status)) != "interrupted" {
-		return mapper, nil
-	}
-
-	h.appendRuntimeProgress(ctx, "Starting follow-up Codex turn.\n")
-	requestCtx, cancel := context.WithTimeout(ctx, codexAppServerRequestTimeout)
-	defer cancel()
-	raw, err := client.Request(requestCtx, "turn/start", map[string]any{
-		"threadId": state.ThreadID,
-		"input": []map[string]any{{
-			"type":          "text",
-			"text":          followupInput,
-			"text_elements": []any{},
-		}},
-	})
-	if err != nil {
-		return mapper, err
-	}
-	var response codexTurnResponse
-	if err := json.Unmarshal(raw, &response); err != nil {
-		return mapper, fmt.Errorf("decode codex follow-up turn response: %w", err)
-	}
-	if strings.TrimSpace(response.Turn.ID) == "" {
-		return mapper, fmt.Errorf("codex follow-up turn/start returned an empty turn id")
-	}
-	state.LastSubmittedMessageSeqNo = followupSequenceNo
-	if err := h.threadStore.Save(ctx, h.run, state); err != nil {
-		return mapper, err
-	}
-	return h.processTurn(ctx, client)
+	return h.startFollowupTurn(ctx, client, state, mapper, followupInput, followupSequenceNo)
 }
 
 func (h *codexSessionHost) pendingResponseRequestID(ctx context.Context, client *codexAppServerClient, pending *codexPendingRequest) (json.RawMessage, error) {
@@ -466,21 +434,25 @@ func (h *codexSessionHost) pendingResponseRequestID(ctx context.Context, client 
 	defer cancel()
 	replayedRequest, err := h.awaitPendingRequestReplay(replayCtx, client)
 	if err == nil {
+		if len(storedID) > 0 && !jsonRawEqual(replayedRequest.ID, storedID) {
+			slog.WarnContext(ctx, "codex pending request replayed with a different request id",
+				"run_id", h.run.ID,
+				"request_kind", strings.TrimSpace(pending.Kind),
+				"stored_request_id", strings.TrimSpace(string(storedID)),
+				"replayed_request_id", strings.TrimSpace(string(replayedRequest.ID)))
+		}
 		return replayedRequest.ID, nil
 	}
 	if ctx.Err() != nil {
 		return nil, ErrRunCancelled
 	}
 	if isCodexPendingReplayTimeout(err) {
-		slog.InfoContext(ctx, "codex pending request replay did not arrive within grace window; responding with stored request id",
-			"run_id", h.run.ID,
-			"request_kind", strings.TrimSpace(pending.Kind))
-		return storedID, nil
+		return nil, codexPendingReplayProtocolError(pending)
 	}
 	return nil, err
 }
 
-func (h *codexSessionHost) processTurn(ctx context.Context, client *codexAppServerClient) (*codexEventMapper, error) {
+func (h *codexSessionHost) processTurn(ctx context.Context, client *codexAppServerClient, state *codexSessionState) (*codexEventMapper, error) {
 	mapper := newCodexEventMapper(h.execCtx, h.run, h.writer)
 	for {
 		msg, err := h.nextTurnMessage(ctx, client, "turn execution")
@@ -506,6 +478,55 @@ func (h *codexSessionHost) processTurn(ctx context.Context, client *codexAppServ
 			if err := mapper.HandleRequest(msg.Method, msg.ID, msg.Params); err != nil {
 				return mapper, err
 			}
+			if h.execCtx != nil && h.execCtx.HandleInteractivePause != nil {
+				pending := mapper.PendingRequest()
+				if pending == nil {
+					return mapper, fmt.Errorf("codex pause request did not produce pending request state")
+				}
+				if state != nil && h.threadStore != nil {
+					h.persistWorkspaceAuth(ctx, state)
+					state.PendingRequest = pending
+					if err := h.threadStore.Save(ctx, h.run, state); err != nil {
+						return mapper, err
+					}
+				}
+				signal, err := h.execCtx.HandleInteractivePause(mapper.Result())
+				if err != nil {
+					return mapper, err
+				}
+				responsePayload, followupInput, err := h.pendingResponsePayloadForSignal(pending, signal)
+				if err != nil {
+					return mapper, err
+				}
+				if state != nil && h.threadStore != nil {
+					state.PendingRequest = nil
+					if err := h.threadStore.Save(ctx, h.run, state); err != nil {
+						return mapper, err
+					}
+				}
+				respondCtx, cancel := context.WithTimeout(ctx, codexAppServerRequestTimeout)
+				err = client.Respond(respondCtx, msg.ID, responsePayload)
+				cancel()
+				if err != nil {
+					return mapper, err
+				}
+				if signal.Acknowledge != nil {
+					if err := signal.Acknowledge(); err != nil {
+						return mapper, err
+					}
+				}
+				resumedMapper, err := h.processTurn(ctx, client, state)
+				if resumedMapper == nil {
+					return mapper, err
+				}
+				if resumedMapper.result.Usage == (ExecutionUsage{}) {
+					resumedMapper.result.Usage = mapper.result.Usage
+				}
+				if strings.TrimSpace(resumedMapper.latestDiff) == "" {
+					resumedMapper.latestDiff = mapper.latestDiff
+				}
+				return h.startFollowupTurn(ctx, client, state, resumedMapper, followupInput, 0)
+			}
 			return mapper, nil
 		}
 		if isUnhandledCodexServerRequest(msg) {
@@ -525,7 +546,7 @@ func (h *codexSessionHost) awaitPendingRequestReplay(ctx context.Context, client
 	for {
 		msg, err := h.nextTurnMessage(ctx, client, "pending request replay")
 		if err != nil {
-			if ctx.Err() != nil {
+			if h.execCtx != nil && h.execCtx.Context != nil && h.execCtx.Context.Err() != nil {
 				return codexRPCMessage{}, ErrRunCancelled
 			}
 			return codexRPCMessage{}, fmt.Errorf("await codex pending request replay: %w", err)
@@ -575,6 +596,14 @@ func isCodexPendingReplayTimeout(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "timed out waiting for codex app-server events during pending request replay")
+}
+
+func codexPendingReplayProtocolError(pending *codexPendingRequest) error {
+	kind := "server request"
+	if pending != nil && strings.TrimSpace(pending.Kind) != "" {
+		kind = strings.TrimSpace(pending.Kind)
+	}
+	return fmt.Errorf("codex did not replay the pending %s after thread/resume; Helpin starts a fresh app-server process for resumed runs, but Codex only replays pending server requests when reattaching to a still-running thread", kind)
 }
 
 func (h *codexSessionHost) handleManagedRequest(ctx context.Context, client *codexAppServerClient, msg codexRPCMessage) (bool, error) {
@@ -631,6 +660,80 @@ func (h *codexSessionHost) pendingResponsePayload(pending *codexPendingRequest, 
 	default:
 		return nil, 0, "", 0, fmt.Errorf("unsupported pending request kind %q", pending.Kind)
 	}
+}
+
+func (h *codexSessionHost) pendingResponsePayloadForSignal(pending *codexPendingRequest, signal *LiveExecutionResumeSignal) (response any, followupInput string, err error) {
+	if pending == nil {
+		return nil, "", fmt.Errorf("missing pending request state")
+	}
+	if signal == nil {
+		return nil, "", fmt.Errorf("missing live resume signal")
+	}
+
+	switch pending.Kind {
+	case codexPendingRequestKindHumanInput:
+		if strings.TrimSpace(signal.Intent) != appmodel.AgentRunResumeIntentReply {
+			return nil, "", fmt.Errorf("human input request requires reply intent, got %q", strings.TrimSpace(signal.Intent))
+		}
+		response, err := codexParseUserInputResponse(pending, signal.Content)
+		if err != nil {
+			return nil, "", err
+		}
+		return response, "", nil
+	case codexPendingRequestKindCommandApproval, codexPendingRequestKindFileApproval, codexPendingRequestKindPermissions:
+		intent := strings.TrimSpace(signal.Intent)
+		approved := intent == appmodel.AgentRunResumeIntentApprove
+		requestChanges := intent == appmodel.AgentRunResumeIntentRequestChanges && strings.TrimSpace(signal.Content) != ""
+		response, err := codexApprovalResponse(pending, approved, requestChanges)
+		if err != nil {
+			return nil, "", err
+		}
+		if requestChanges {
+			return response, strings.TrimSpace(signal.Content), nil
+		}
+		return response, "", nil
+	default:
+		return nil, "", fmt.Errorf("unsupported pending request kind %q", pending.Kind)
+	}
+}
+
+func (h *codexSessionHost) startFollowupTurn(ctx context.Context, client *codexAppServerClient, state *codexSessionState, mapper *codexEventMapper, followupInput string, followupSequenceNo int) (*codexEventMapper, error) {
+	if mapper == nil || strings.TrimSpace(followupInput) == "" {
+		return mapper, nil
+	}
+	completedTurn := mapper.CompletedTurn()
+	if completedTurn == nil || strings.ToLower(strings.TrimSpace(completedTurn.Status)) != "interrupted" {
+		return mapper, nil
+	}
+
+	h.appendRuntimeProgress(ctx, "Starting follow-up Codex turn.\n")
+	requestCtx, cancel := context.WithTimeout(ctx, codexAppServerRequestTimeout)
+	defer cancel()
+	raw, err := client.Request(requestCtx, "turn/start", map[string]any{
+		"threadId": state.ThreadID,
+		"input": []map[string]any{{
+			"type":          "text",
+			"text":          followupInput,
+			"text_elements": []any{},
+		}},
+	})
+	if err != nil {
+		return mapper, err
+	}
+	var response codexTurnResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return mapper, fmt.Errorf("decode codex follow-up turn response: %w", err)
+	}
+	if strings.TrimSpace(response.Turn.ID) == "" {
+		return mapper, fmt.Errorf("codex follow-up turn/start returned an empty turn id")
+	}
+	if followupSequenceNo > 0 {
+		state.LastSubmittedMessageSeqNo = followupSequenceNo
+	}
+	if err := h.threadStore.Save(ctx, h.run, state); err != nil {
+		return mapper, err
+	}
+	return h.processTurn(ctx, client, state)
 }
 
 func (h *codexSessionHost) persistRuntimeArtifacts(ctx context.Context, client *codexAppServerClient, mapper *codexEventMapper) {

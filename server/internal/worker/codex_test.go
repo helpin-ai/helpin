@@ -1,10 +1,13 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	toml "github.com/pelletier/go-toml/v2"
@@ -135,6 +138,65 @@ func TestCodexApprovalPolicyForInteractiveRunUsesOnRequest(t *testing.T) {
 	run := &model.AgentRun{InvocationMode: model.InvocationModeInteractive}
 	if got := codexApprovalPolicyForRun(run); got != "on-request" {
 		t.Fatalf("expected interactive codex approval policy on-request, got %q", got)
+	}
+}
+
+func TestPendingResponseRequestIDFailsFastWhenReplayDoesNotArrive(t *testing.T) {
+	previousTimeout := codexPendingReplayGraceTimeout
+	codexPendingReplayGraceTimeout = time.Millisecond
+	defer func() {
+		codexPendingReplayGraceTimeout = previousTimeout
+	}()
+
+	host := &codexSessionHost{
+		execCtx: &ExecutionContext{Context: context.Background()},
+		run:     &model.AgentRun{ID: "run-1"},
+	}
+	client := &codexAppServerClient{
+		lines: make(chan codexRPCMessage),
+		done:  make(chan error, 1),
+	}
+	pending := &codexPendingRequest{
+		Kind:         codexPendingRequestKindCommandApproval,
+		RequestID:    "7",
+		RequestIDRaw: json.RawMessage(`7`),
+	}
+
+	_, err := host.pendingResponseRequestID(context.Background(), client, pending)
+	if err == nil {
+		t.Fatal("expected replay timeout to fail")
+	}
+	if !strings.Contains(err.Error(), "did not replay the pending command_execution") {
+		t.Fatalf("expected protocol replay error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "still-running thread") {
+		t.Fatalf("expected protocol explanation in error, got %v", err)
+	}
+}
+
+func TestPendingResponsePayloadForSignalReturnsFollowupInputForRequestChanges(t *testing.T) {
+	host := &codexSessionHost{}
+	pending := &codexPendingRequest{
+		Kind:    codexPendingRequestKindCommandApproval,
+		Payload: json.RawMessage(`{"command":"git commit"}`),
+	}
+
+	response, followupInput, err := host.pendingResponsePayloadForSignal(pending, &LiveExecutionResumeSignal{
+		Intent:  model.AgentRunResumeIntentRequestChanges,
+		Content: "Please adjust the commit message.",
+	})
+	if err != nil {
+		t.Fatalf("pendingResponsePayloadForSignal returned error: %v", err)
+	}
+	decoded, ok := response.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map response, got %#v", response)
+	}
+	if got := strings.TrimSpace(fmt.Sprint(decoded["decision"])); got != "cancel" {
+		t.Fatalf("expected cancel decision, got %q", got)
+	}
+	if followupInput != "Please adjust the commit message." {
+		t.Fatalf("expected followup input to be preserved, got %q", followupInput)
 	}
 }
 
