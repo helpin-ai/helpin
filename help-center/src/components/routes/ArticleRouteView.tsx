@@ -37,10 +37,16 @@ export function ArticleRouteView({
     locale,
     collectionSlug,
     articleSlug,
+    multilingualEnabled,
   )
   const resolvedSpaceSlug = article?.space_slug ?? ''
   const { data: navigation = [], isLoading: navigationLoading } =
-    useSpaceNavigation(subdomain, locale, resolvedSpaceSlug)
+    useSpaceNavigation(
+      subdomain,
+      locale,
+      resolvedSpaceSlug,
+      multilingualEnabled,
+    )
 
   useEffect(() => {
     if (article || isLoading || !matchingSpace) {
@@ -112,8 +118,10 @@ export function ArticleRouteView({
           excerpt={article.excerpt}
           collectionName={article.collection_name}
           collectionSlug={article.collection_slug}
+          spaceSlug={article.space_slug}
           articleSlug={articleSlug}
           pager={pager}
+          multilingualEnabled={multilingualEnabled}
         >
           <ArticleContent html={article.content_html} />
         </ArticleShell>

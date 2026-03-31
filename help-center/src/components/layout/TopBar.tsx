@@ -16,7 +16,6 @@ import type { LocaleRouteState } from '@/lib/locale'
 import {
   buildCanonicalCollectionPath,
   buildCanonicalHomePath,
-  isMultilingualEnabled,
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
 import { LocaleSwitcher } from './LocaleSwitcher'
@@ -62,9 +61,15 @@ function findSpaceId(spaces: Space[], spaceSlug?: string) {
 }
 
 export function TopBar({ onSearchClick }: TopBarProps) {
-  const { config, subdomain, locale, defaultLocale, enabledLocales, spaces } =
-    useDocsContext()
-  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const {
+    config,
+    subdomain,
+    locale,
+    defaultLocale,
+    enabledLocales,
+    spaces,
+    multilingualEnabled,
+  } = useDocsContext()
   const params = useParams({ strict: false }) as {
     locale?: string
     spaceSlug?: string
@@ -83,6 +88,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     subdomain,
     locale,
     activeSpaceSlug ?? '',
+    multilingualEnabled,
   )
   const needsCrossSpaceLookup =
     !activeSpaceSlug && (!!canonicalCollectionSlug || !!canonicalArticleSlug)
@@ -93,7 +99,12 @@ export function TopBar({ onSearchClick }: TopBarProps) {
           queryKey: queryKeys.spaces.navigation(subdomain, locale, space.slug),
           queryFn: async () =>
             unwrap(
-              await helpCenterService.getSpaceNavigation(subdomain, locale, space.slug),
+              await helpCenterService.getSpaceNavigation(
+                subdomain,
+                locale,
+                space.slug,
+                multilingualEnabled,
+              ),
             ),
           enabled: !!subdomain && !!locale && !!space.slug,
           staleTime: 60_000,
@@ -234,7 +245,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
   const localeSpaceQueries = useQueries({
     queries: enabledLocales.map((code) => ({
       queryKey: queryKeys.helpCenter.spaces(subdomain, code),
-      queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, code)),
+      queryFn: async () =>
+        unwrap(await helpCenterService.getSpaces(subdomain, code, multilingualEnabled)),
       enabled:
         config.show_language_switcher &&
         multilingualEnabled &&
@@ -263,6 +275,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               subdomain,
               code,
               targetSpace!.slug,
+              multilingualEnabled,
             ),
           ),
         enabled:

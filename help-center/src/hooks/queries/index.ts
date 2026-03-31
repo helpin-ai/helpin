@@ -15,11 +15,17 @@ export function useHelpCenterConfig(subdomain: string) {
   })
 }
 
-export function useSpaces(subdomain: string, locale: string) {
+export function useSpaces(
+  subdomain: string,
+  locale: string,
+  multilingualEnabled: boolean,
+  enabled = true,
+) {
   return useQuery({
     queryKey: queryKeys.helpCenter.spaces(subdomain, locale),
-    queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, locale)),
-    enabled: !!subdomain && !!locale,
+    queryFn: async () =>
+      unwrap(await helpCenterService.getSpaces(subdomain, locale, multilingualEnabled)),
+    enabled: enabled && !!subdomain && !!locale,
   })
 }
 
@@ -27,12 +33,18 @@ export function useSpaceNavigation(
   subdomain: string,
   locale: string,
   spaceSlug: string,
+  multilingualEnabled: boolean,
 ) {
   return useQuery({
     queryKey: queryKeys.spaces.navigation(subdomain, locale, spaceSlug),
     queryFn: async () =>
       unwrap(
-        await helpCenterService.getSpaceNavigation(subdomain, locale, spaceSlug),
+        await helpCenterService.getSpaceNavigation(
+          subdomain,
+          locale,
+          spaceSlug,
+          multilingualEnabled,
+        ),
       ),
     enabled: !!subdomain && !!locale && !!spaceSlug,
   })
@@ -42,6 +54,7 @@ export function useCollection(
   subdomain: string,
   locale: string,
   collectionSlug: string,
+  multilingualEnabled: boolean,
 ) {
   return useQuery({
     queryKey: queryKeys.collections.bySlug(subdomain, locale, collectionSlug),
@@ -51,6 +64,7 @@ export function useCollection(
           subdomain,
           locale,
           collectionSlug,
+          multilingualEnabled,
         ),
       ),
     enabled: !!subdomain && !!locale && !!collectionSlug,
@@ -62,6 +76,7 @@ export function useArticle(
   locale: string,
   collectionSlug: string,
   articleSlug: string,
+  multilingualEnabled: boolean,
 ) {
   return useQuery({
     queryKey: queryKeys.articles.bySlug(subdomain, locale, collectionSlug, articleSlug),
@@ -72,6 +87,7 @@ export function useArticle(
           locale,
           collectionSlug,
           articleSlug,
+          multilingualEnabled,
         ),
       ),
     enabled: !!subdomain && !!locale && !!collectionSlug && !!articleSlug,
@@ -92,12 +108,21 @@ export function useSearchArticles(
   subdomain: string,
   locale: string,
   query: string,
+  multilingualEnabled: boolean,
   spaceSlug?: string,
 ) {
   return useQuery({
     queryKey: queryKeys.articles.search(subdomain, locale, query, spaceSlug),
     queryFn: async () =>
-      unwrap(await helpCenterService.search(subdomain, locale, query, spaceSlug)),
+      unwrap(
+        await helpCenterService.search(
+          subdomain,
+          locale,
+          query,
+          multilingualEnabled,
+          spaceSlug,
+        ),
+      ),
     enabled: !!subdomain && !!locale && query.length >= 2,
   })
 }

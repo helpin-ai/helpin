@@ -15,11 +15,12 @@ export function SearchRouteView({
   query,
   space,
 }: SearchRouteViewProps) {
-  const { subdomain } = useDocsContext()
+  const { subdomain, multilingualEnabled } = useDocsContext()
   const { data: results, isLoading } = useSearchArticles(
     subdomain,
     locale,
     query,
+    multilingualEnabled,
     space,
   )
 

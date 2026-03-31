@@ -2,23 +2,24 @@ import { useState, useCallback } from 'react'
 import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
-import { buildCanonicalCollectionPath, isMultilingualEnabled } from '@/lib/locale'
+import { buildCanonicalCollectionPath } from '@/lib/locale'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { PhIcon } from '@/components/PhIcon'
 import type { HomepageFeaturedCard } from '@/lib/types'
 
 export function LocalizedHomePage() {
-  const { config, spaces, subdomain, locale, enabledLocales } = useDocsContext()
+  const { config, spaces, subdomain, locale, multilingualEnabled } =
+    useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
-  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
   const firstSpace = spaces[0]
   const { data: navigation } = useSpaceNavigation(
     subdomain,
     locale,
     firstSpace?.slug ?? '',
+    multilingualEnabled,
   )
   const nav = navigation ?? []
 

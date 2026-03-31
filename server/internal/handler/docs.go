@@ -1055,6 +1055,26 @@ func publicDefaultLocale(cfg *model.DocsHelpcenterConfig) string {
 	return "en"
 }
 
+func publicMultilingualEnabled(cfg *model.DocsHelpcenterConfig) bool {
+	if cfg == nil {
+		return false
+	}
+
+	seen := make(map[string]struct{}, len(cfg.EnabledLocales))
+	for _, locale := range cfg.EnabledLocales {
+		normalized := strings.TrimSpace(strings.ToLower(locale))
+		if normalized == "" {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		if len(seen) > 1 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 	if cfg == nil {
 		return false
@@ -1134,7 +1154,7 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}
@@ -1155,7 +1175,7 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}
@@ -1315,7 +1335,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}

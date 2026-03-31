@@ -21,7 +21,7 @@ export const Route = createFileRoute('/preview/$docId')({
 function PreviewPage() {
   const { docId } = Route.useParams()
   const { token } = Route.useSearch()
-  const { subdomain, defaultLocale } = useDocsContext()
+  const { subdomain, defaultLocale, multilingualEnabled } = useDocsContext()
 
   const { data: article, isLoading, error } = usePreviewArticle(subdomain, docId, token)
 
@@ -31,6 +31,7 @@ function PreviewPage() {
     subdomain,
     defaultLocale,
     spaceSlug,
+    multilingualEnabled,
   )
 
   useDocumentTitle(article ? `Preview: ${article.title}` : 'Article Preview')
