@@ -67,7 +67,11 @@ func (s *SupportInboxService) requireMailboxAccess(ctx context.Context, workspac
 }
 
 func (s *SupportInboxService) loadConversationAccessible(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversation, error) {
-	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	actor := supportActorFromContext(ctx, workspaceID)
+	if actor == nil || strings.TrimSpace(actor.WorkspaceMemberID) == "" {
+		return s.loadConversationUnscoped(ctx, workspaceID, conversationID)
+	}
+	workspaceMemberID, role := actor.WorkspaceMemberID, actor.Role
 	return s.conversationRepo.GetByID(ctx, workspaceID, conversationID, workspaceMemberID, role)
 }
 

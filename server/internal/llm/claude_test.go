@@ -49,6 +49,42 @@ func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeMessageRequestUsesCustomJSONSchemaWhenProvided(t *testing.T) {
+	customSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"target_mailbox_handle": map[string]any{"type": "string"},
+			"reason":                map[string]any{"type": "string"},
+		},
+		"required":             []string{"target_mailbox_handle", "reason"},
+		"additionalProperties": false,
+	}
+
+	req := buildClaudeMessageRequest(ChatRequest{
+		Messages:   []Message{{Role: "user", Content: "Need refund help"}},
+		JSONMode:   true,
+		JSONSchema: customSchema,
+	})
+
+	if len(req.Tools) != 1 {
+		t.Fatalf("expected one tool, got %d", len(req.Tools))
+	}
+	gotSchema, ok := req.Tools[0].InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map schema, got %#v", req.Tools[0].InputSchema)
+	}
+	if gotSchema["additionalProperties"] != false {
+		t.Fatalf("expected additionalProperties=false, got %#v", gotSchema["additionalProperties"])
+	}
+	required, ok := gotSchema["required"].([]string)
+	if !ok {
+		t.Fatalf("expected required fields, got %#v", gotSchema["required"])
+	}
+	if len(required) != 2 || required[0] != "target_mailbox_handle" || required[1] != "reason" {
+		t.Fatalf("unexpected required fields: %#v", required)
+	}
+}
+
 func TestBuildClaudeMessageRequestOmitsToolChoiceForPlainText(t *testing.T) {
 	req := buildClaudeMessageRequest(ChatRequest{
 		Messages: []Message{

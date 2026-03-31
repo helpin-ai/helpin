@@ -427,6 +427,106 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
 		}
 	})
+
+	t.Run("Mailbox unread counts exclude AI-managed conversations that stay in AI views", func(t *testing.T) {
+		ctx := context.Background()
+		now := time.Now()
+		customerMessageAt := now.Add(-time.Minute)
+		mailboxRepo := repository.NewSupportMailboxRepository(db)
+
+		billingMailbox := &model.SupportMailbox{
+			WorkspaceID:    workspaceID,
+			Name:           "Billing",
+			Handle:         "billing",
+			Icon:           "inbox",
+			TriageEligible: true,
+			VisibilityMode: "members_only",
+			AssignmentMode: "manual",
+			Active:         true,
+			CreatedByID:    "user-123",
+		}
+		if err := mailboxRepo.Create(ctx, billingMailbox); err != nil {
+			t.Fatalf("create billing mailbox: %v", err)
+		}
+
+		humanConv := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			MailboxID:   &billingMailbox.ID,
+			Subject:     "Billing refund",
+			Status:      "open",
+		}
+		if err := repo.Create(ctx, humanConv); err != nil {
+			t.Fatalf("create human billing conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, humanConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed human billing read cursor: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-billing-human-unread", workspaceID, humanConv.ID, "Need a refund", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed human billing unread message: %v", err)
+		}
+
+		aiPending := "pending"
+		aiPendingConv := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			MailboxID:   &billingMailbox.ID,
+			Subject:     "AI pending billing conversation",
+			Status:      "open",
+			AIState:     &aiPending,
+		}
+		if err := repo.Create(ctx, aiPendingConv); err != nil {
+			t.Fatalf("create AI pending billing conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, aiPendingConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed AI pending billing state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-billing-ai-pending-unread", workspaceID, aiPendingConv.ID, "Can AI handle this billing question?", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed AI pending billing unread message: %v", err)
+		}
+
+		aiEscalated := "escalated"
+		aiEscalatedConv := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			MailboxID:   &billingMailbox.ID,
+			Subject:     "Escalated billing conversation",
+			Status:      "open",
+			AIState:     &aiEscalated,
+		}
+		if err := repo.Create(ctx, aiEscalatedConv); err != nil {
+			t.Fatalf("create escalated billing conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, aiEscalatedConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed escalated billing state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-billing-ai-escalated-unread", workspaceID, aiEscalatedConv.ID, "Need a human for billing", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed escalated billing unread message: %v", err)
+		}
+
+		count, err := mailboxRepo.CountUnread(ctx, workspaceID, &billingMailbox.ID)
+		if err != nil {
+			t.Fatalf("count billing mailbox unread: %v", err)
+		}
+		if count != 2 {
+			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ const (
 	supportTriageEventDismissed = "dismissed"
 	supportTriageEventCorrected = "corrected"
 	supportTriageEventAutoMoved = "auto_moved"
+	supportTriageProvider       = "anthropic"
+	supportTriageModel          = "claude-haiku-4-5"
 )
 
 type SupportInboxTriageService struct {
@@ -212,7 +215,16 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 		settings = parseSettings(inst.Settings)
 	}
 
-	if !settings.TriageEnabled || !triageChannelEnabled(settings, supportConversationChannel(conversation)) {
+	channel := supportConversationChannel(conversation)
+	if !settings.TriageEnabled || !triageChannelEnabled(settings, channel) {
+		slog.InfoContext(ctx, "support triage skipped",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"triage_enabled", settings.TriageEnabled,
+			"channel", channel,
+			"widget_enabled", settings.TriageWidgetEnabled,
+			"email_enabled", settings.TriageEmailEnabled,
+		)
 		return nil, nil
 	}
 	if settings.TriageSkipSpamConversations && strings.EqualFold(strings.TrimSpace(conversation.Status), "spam") {
@@ -247,8 +259,11 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 		return nil, nil
 	}
 	if firstCustomerReply.ID != message.ID && !settings.TriageRerunOnMeaningChange {
+		slog.DebugContext(ctx, "support triage skipped: not first customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "first_reply_id", firstCustomerReply.ID)
 		return existing, nil
 	}
+
+	slog.InfoContext(ctx, "support triage evaluating", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID)
 
 	inputContent := strings.TrimSpace(firstCustomerReply.Content)
 	if settings.TriageRerunOnMeaningChange && firstCustomerReply.ID != message.ID {
@@ -341,7 +356,7 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 			}); err != nil {
 				return nil, err
 			}
-			s.createSystemMessage(ctx, workspaceID, conversationID, nil, "ai", "AI triage", autoMoveMessage(result.ClassifierSource, triage.SuggestedMailboxID, s.loadMailboxName(ctx, workspaceID, triage.SuggestedMailboxID)))
+			s.createSystemMessage(ctx, workspaceID, conversationID, nil, "ai", "AI triage", autoMoveMessage(result.ClassifierSource, triage.SuggestedMailboxID, s.loadMailboxName(ctx, workspaceID, triage.SuggestedMailboxID)), true)
 		} else {
 			slog.ErrorContext(ctx, "support triage auto-move failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", moveErr)
 		}
@@ -385,7 +400,7 @@ func (s *SupportInboxTriageService) DismissConversationTriage(ctx context.Contex
 		return nil, err
 	}
 
-	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed")
+	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed", false)
 	s.publishConversationUpdated(workspaceID, conversationID, actorUserID)
 	return triage, nil
 }
@@ -539,6 +554,19 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 	channel := supportConversationChannel(conversation)
 	combinedText := strings.ToLower(strings.TrimSpace(strings.Join([]string{conversation.Subject, inputContent}, "\n")))
 	emailDomain := supportEmailDomain(conversation.CustomerEmail)
+	slog.InfoContext(ctx, "support triage rules evaluating",
+		"workspace_id", workspaceID,
+		"conversation_id", derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.ID
+		}()),
+		"channel", channel,
+		"active_rule_count", len(rules),
+		"email_domain", emailDomain,
+		"combined_text_preview", safeLogPreview(combinedText, 160),
+	)
 
 	for _, rule := range rules {
 		if len(rule.Channels) > 0 && !containsTriageChannel(rule.Channels, channel) {
@@ -552,6 +580,19 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		confidence := 1.0
 		reason := fmt.Sprintf("Matched rule %q", rule.Name)
 		targetMailboxID := strings.TrimSpace(rule.TargetMailboxID)
+		slog.InfoContext(ctx, "support triage rule matched",
+			"workspace_id", workspaceID,
+			"conversation_id", derefString(func() *string {
+				if conversation == nil {
+					return nil
+				}
+				return &conversation.ID
+			}()),
+			"rule_id", rule.ID,
+			"rule_name", rule.Name,
+			"target_mailbox_id", targetMailboxID,
+			"channels", rule.Channels,
+		)
 		return &supportInboxTriageResult{
 			Intent:             &intent,
 			Confidence:         &confidence,
@@ -561,6 +602,17 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		}, nil
 	}
 
+	slog.InfoContext(ctx, "support triage rules no match",
+		"workspace_id", workspaceID,
+		"conversation_id", derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.ID
+		}()),
+		"channel", channel,
+		"active_rule_count", len(rules),
+	)
 	return nil, nil
 }
 
@@ -577,6 +629,18 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 		if cachedEvent != nil {
 			if cached := triageResultFromPayload(cachedEvent.Payload); cached != nil {
 				cached.Cached = true
+				slog.InfoContext(ctx, "support triage AI cache hit",
+					"workspace_id", workspaceID,
+					"conversation_id", derefString(func() *string {
+						if conversation == nil {
+							return nil
+						}
+						return &conversation.ID
+					}()),
+					"input_hash", inputHash,
+					"suggested_mailbox_id", derefString(cached.SuggestedMailboxID),
+					"classifier_source", cached.ClassifierSource,
+				)
 				return cached, nil
 			}
 		}
@@ -599,11 +663,33 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 		return nil, err
 	}
 	if len(options) == 0 {
+		slog.InfoContext(ctx, "support triage AI skipped: no mailbox options",
+			"workspace_id", workspaceID,
+			"conversation_id", derefString(func() *string {
+				if conversation == nil {
+					return nil
+				}
+				return &conversation.ID
+			}()),
+		)
 		return nil, nil
 	}
+	slog.InfoContext(ctx, "support triage AI mailbox options prepared",
+		"workspace_id", workspaceID,
+		"conversation_id", derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.ID
+		}()),
+		"option_count", len(options),
+		"options", summarizeTriageMailboxOptions(options),
+	)
 
 	prompt := buildSupportTriagePrompt(conversation, inputContent, options)
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		Provider:     supportTriageProvider,
+		Model:        supportTriageModel,
 		SystemPrompt: supportTriageSystemPrompt,
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
@@ -611,6 +697,7 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 		Temperature: 0.1,
 		MaxTokens:   400,
 		JSONMode:    true,
+		JSONSchema:  supportTriageJSONSchema(),
 	})
 	if err != nil {
 		return nil, err
@@ -618,21 +705,93 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 
 	var parsed supportTriageLLMResponse
 	if err := llm.UnmarshalResponse(resp.Content, &parsed); err != nil {
+		slog.WarnContext(ctx, "support triage AI response parse failed",
+			"workspace_id", workspaceID,
+			"conversation_id", derefString(func() *string {
+				if conversation == nil {
+					return nil
+				}
+				return &conversation.ID
+			}()),
+			"raw_response_preview", safeLogPreview(resp.Content, 240),
+			"error", err,
+		)
 		return nil, err
 	}
 
 	handle := strings.ToLower(strings.TrimSpace(parsed.TargetMailboxHandle))
+	slog.InfoContext(ctx, "support triage AI response received",
+		"workspace_id", workspaceID,
+		"conversation_id", derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.ID
+		}()),
+		"target_mailbox_handle", handle,
+		"intent", parsed.Intent,
+		"confidence", parsed.Confidence,
+		"reason", strings.TrimSpace(parsed.Reason),
+	)
 	if handle == "" || handle == "shared" {
+		if fallback := resolveLexicalTriageFallback(conversation, inputContent, options, handleToID); fallback != nil {
+			slog.InfoContext(ctx, "support triage AI lexical fallback resolved mailbox",
+				"workspace_id", workspaceID,
+				"conversation_id", derefString(func() *string {
+					if conversation == nil {
+						return nil
+					}
+					return &conversation.ID
+				}()),
+				"target_mailbox_handle", fallback.SuggestedHandle,
+				"target_mailbox_id", derefString(fallback.SuggestedMailboxID),
+				"reason", derefString(fallback.Reason),
+				"confidence", derefFloat64(fallback.Confidence),
+			)
+			return fallback, nil
+		}
+		slog.InfoContext(ctx, "support triage AI selected shared inbox",
+			"workspace_id", workspaceID,
+			"conversation_id", derefString(func() *string {
+				if conversation == nil {
+					return nil
+				}
+				return &conversation.ID
+			}()),
+			"target_mailbox_handle", handle,
+		)
 		return nil, nil
 	}
 	targetMailboxID, ok := handleToID[handle]
 	if !ok {
+		slog.WarnContext(ctx, "support triage AI returned unknown mailbox handle",
+			"workspace_id", workspaceID,
+			"conversation_id", derefString(func() *string {
+				if conversation == nil {
+					return nil
+				}
+				return &conversation.ID
+			}()),
+			"target_mailbox_handle", handle,
+			"available_handles", sortedMapKeys(handleToID),
+		)
 		return nil, nil
 	}
 
 	intent := normalizeSupportTriageIntent(parsed.Intent)
 	reason := strings.TrimSpace(parsed.Reason)
 	confidence := parsed.Confidence
+	slog.InfoContext(ctx, "support triage AI mailbox resolved",
+		"workspace_id", workspaceID,
+		"conversation_id", derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.ID
+		}()),
+		"target_mailbox_handle", handle,
+		"target_mailbox_id", targetMailboxID,
+	)
 	return &supportInboxTriageResult{
 		Intent:             &intent,
 		Confidence:         &confidence,
@@ -681,6 +840,167 @@ func (s *SupportInboxTriageService) aiMailboxOptions(ctx context.Context, worksp
 	return options, handleToID, nil
 }
 
+func summarizeTriageMailboxOptions(options []supportTriageMailboxOption) []string {
+	if len(options) == 0 {
+		return nil
+	}
+	summary := make([]string, 0, len(options))
+	for _, option := range options {
+		summary = append(summary, strings.TrimSpace(option.Handle)+":"+safeLogPreview(strings.TrimSpace(option.Prompt), 120))
+	}
+	return summary
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func resolveLexicalTriageFallback(conversation *model.SupportConversation, inputContent string, options []supportTriageMailboxOption, handleToID map[string]string) *supportInboxTriageResult {
+	messageText := strings.ToLower(strings.TrimSpace(strings.Join([]string{
+		derefString(func() *string {
+			if conversation == nil {
+				return nil
+			}
+			return &conversation.Subject
+		}()),
+		inputContent,
+	}, "\n")))
+	if messageText == "" {
+		return nil
+	}
+
+	messageTerms := triageKeywordSet(messageText)
+	bestScore := 0
+	var bestOption *supportTriageMailboxOption
+	var bestOverlap []string
+
+	for idx := range options {
+		option := &options[idx]
+		handle := strings.ToLower(strings.TrimSpace(option.Handle))
+		if handle == "" || handle == "shared" {
+			continue
+		}
+		score, overlap := triageMailboxLexicalScore(messageText, messageTerms, *option)
+		if score <= 0 {
+			continue
+		}
+		if score > bestScore {
+			bestScore = score
+			bestOption = option
+			bestOverlap = overlap
+		}
+	}
+
+	if bestOption == nil {
+		return nil
+	}
+	targetMailboxID, ok := handleToID[strings.ToLower(strings.TrimSpace(bestOption.Handle))]
+	if !ok {
+		return nil
+	}
+	intent := normalizeSupportTriageIntent(bestOption.Handle)
+	reasonText := "lexical prompt match"
+	if len(bestOverlap) > 0 {
+		reasonText = fmt.Sprintf("Lexical prompt match on %s", strings.Join(bestOverlap, ", "))
+	}
+	confidence := 0.86
+	return &supportInboxTriageResult{
+		Intent:             &intent,
+		Confidence:         &confidence,
+		Reason:             &reasonText,
+		ClassifierSource:   model.SupportConversationTriageSourceAI,
+		SuggestedMailboxID: &targetMailboxID,
+		SuggestedHandle:    strings.ToLower(strings.TrimSpace(bestOption.Handle)),
+	}
+}
+
+func triageMailboxLexicalScore(messageText string, messageTerms map[string]struct{}, option supportTriageMailboxOption) (int, []string) {
+	score := 0
+	overlap := make([]string, 0)
+	seenOverlap := make(map[string]struct{})
+
+	candidates := []string{
+		strings.TrimSpace(option.Name),
+		strings.TrimSpace(option.Handle),
+		strings.TrimSpace(option.Prompt),
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(messageText, strings.ToLower(candidate)) {
+			score += 8
+			key := strings.ToLower(candidate)
+			if _, seen := seenOverlap[key]; !seen {
+				seenOverlap[key] = struct{}{}
+				overlap = append(overlap, key)
+			}
+		}
+		for term := range triageKeywordSet(candidate) {
+			if _, ok := messageTerms[term]; !ok {
+				continue
+			}
+			score += 3
+			if _, seen := seenOverlap[term]; !seen {
+				seenOverlap[term] = struct{}{}
+				overlap = append(overlap, term)
+			}
+		}
+	}
+	return score, overlap
+}
+
+func triageKeywordSet(text string) map[string]struct{} {
+	terms := make(map[string]struct{})
+	for _, token := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if _, skip := triageKeywordStopwords[token]; skip {
+			continue
+		}
+		if len(token) <= 2 {
+			continue
+		}
+		terms[token] = struct{}{}
+		if strings.HasSuffix(token, "s") && len(token) > 4 {
+			terms[strings.TrimSuffix(token, "s")] = struct{}{}
+		}
+	}
+	return terms
+}
+
+var triageKeywordStopwords = map[string]struct{}{
+	"and":       {},
+	"for":       {},
+	"with":      {},
+	"the":       {},
+	"that":      {},
+	"this":      {},
+	"help":      {},
+	"need":      {},
+	"question":  {},
+	"questions": {},
+	"request":   {},
+	"requests":  {},
+	"issue":     {},
+	"issues":    {},
+	"change":    {},
+	"changes":   {},
+	"inbox":     {},
+}
+
 func (s *SupportInboxTriageService) shouldAutoMove(settings model.SupportInboxSettings, conversation *model.SupportConversation, messages []model.SupportMessage, triage *model.SupportConversationTriage) bool {
 	if triage == nil || triage.SuggestedMailboxID == nil {
 		return false
@@ -720,7 +1040,7 @@ func (s *SupportInboxTriageService) publishConversationUpdated(workspaceID, conv
 	})
 }
 
-func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, workspaceID, conversationID string, actorUserID *string, senderType, fallbackDisplayName, content string) {
+func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, workspaceID, conversationID string, actorUserID *string, senderType, fallbackDisplayName, content string, isInternal bool) {
 	if s == nil || s.supportService == nil || s.supportService.messageRepo == nil || strings.TrimSpace(content) == "" {
 		return
 	}
@@ -746,7 +1066,7 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
 		Content:           strings.TrimSpace(content),
-		IsInternal:        false,
+		IsInternal:        isInternal,
 		MessageType:       "system",
 	}
 	if err := s.supportService.messageRepo.Create(ctx, msg); err != nil {
@@ -1042,6 +1362,28 @@ Rules:
 - If none of the provided mailboxes is a clear fit, return "shared".
 - Confidence must be between 0 and 1.
 - Reason must be short and concrete.`
+
+func supportTriageJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"intent": map[string]any{
+				"type": "string",
+			},
+			"target_mailbox_handle": map[string]any{
+				"type": "string",
+			},
+			"confidence": map[string]any{
+				"type": "number",
+			},
+			"reason": map[string]any{
+				"type": "string",
+			},
+		},
+		"required":             []string{"intent", "target_mailbox_handle", "confidence", "reason"},
+		"additionalProperties": false,
+	}
+}
 
 func buildSupportTriagePrompt(conversation *model.SupportConversation, inputContent string, options []supportTriageMailboxOption) string {
 	var mailboxLines []string
