@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { Link } from '@tanstack/react-router'
 import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
@@ -169,8 +170,8 @@ function FeaturedCard({
 
   if (card.link_type === 'space') {
     return (
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
           card.link_value,
@@ -178,14 +179,14 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </a>
+      </Link>
     )
   }
 
   if (card.link_type === 'collection' && card.space_slug) {
     return (
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
           card.link_value,
@@ -193,14 +194,14 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </a>
+      </Link>
     )
   }
 
   const spaceSlug = card.space_slug || card.link_value
   return (
-    <a
-      href={buildCanonicalCollectionPath(
+    <Link
+      to={buildCanonicalCollectionPath(
         multilingualEnabled,
         locale,
         spaceSlug,
@@ -208,6 +209,6 @@ function FeaturedCard({
       className={cls}
     >
       {inner}
-    </a>
+    </Link>
   )
 }

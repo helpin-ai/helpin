@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ArrowRight, Menu } from 'lucide-react'
 import { useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
@@ -181,9 +182,9 @@ export function CollectionRouteView({
           ) : (
             <div className="mt-8 space-y-3">
               {articles.map((article) => (
-                <a
+                <Link
                   key={article.id}
-                  href={buildCanonicalArticlePath(
+                  to={buildCanonicalArticlePath(
                     multilingualEnabled,
                     locale,
                     collection.slug,
@@ -200,7 +201,7 @@ export function CollectionRouteView({
                     size={16}
                     className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                   />
-                </a>
+                </Link>
               ))}
             </div>
           )}

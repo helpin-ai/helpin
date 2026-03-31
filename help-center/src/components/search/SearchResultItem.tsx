@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { FileText, ArrowRight } from 'lucide-react'
 import {
   buildCanonicalArticlePath,
@@ -62,8 +63,8 @@ export function SearchResultItem({
 
   if (!collectionSlug) {
     return (
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           targetLocale,
           result.space_slug,
@@ -72,13 +73,13 @@ export function SearchResultItem({
         className={className}
       >
         {content}
-      </a>
+      </Link>
     )
   }
 
   return (
-    <a
-      href={buildCanonicalArticlePath(
+    <Link
+      to={buildCanonicalArticlePath(
         multilingualEnabled,
         targetLocale,
         collectionSlug,
@@ -88,6 +89,6 @@ export function SearchResultItem({
       className={className}
     >
       {content}
-    </a>
+    </Link>
   )
 }
