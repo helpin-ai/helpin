@@ -41,7 +41,7 @@ function renderNode(
 
   const element = node as HTMLElement
   const tag = element.tagName.toLowerCase()
-  const props = { key, ...mapAttributes(element) }
+  const props: Record<string, string> = { key, ...mapAttributes(element) }
 
   if (tag === 'img') {
     return createElement(LoadingImage, props)

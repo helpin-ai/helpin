@@ -234,9 +234,6 @@ export function CommentEditor({
 
   const editor = useEditor({
     extensions,
-    onUpdate: ({ editor: e }) => {
-      setHasContent(!e.isEmpty)
-    },
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-sm',
@@ -321,7 +318,8 @@ export function CommentEditor({
         return false
       },
     },
-    onUpdate: () => {
+    onUpdate: ({ editor: e }) => {
+      setHasContent(!e.isEmpty)
       const html = editorRef.current?.getHTML() ?? ''
       if (skipNextCleanupRef.current) {
         skipNextCleanupRef.current = false

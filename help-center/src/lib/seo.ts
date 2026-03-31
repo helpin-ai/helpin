@@ -5,6 +5,7 @@ import type {
   PreviewArticleDetail,
 } from '@/lib/types'
 import type { RootRouteData } from '@/lib/rootLoader'
+import type { AlternateLink } from '@/lib/alternateLinks'
 import {
   buildCanonicalArticlePath,
   buildCanonicalCollectionPath,
@@ -97,6 +98,7 @@ export function buildCollectionHead(
   rootData: RootRouteData,
   collection: CollectionPage,
   fallbackSlug: string,
+  alternateLinks: AlternateLink[] = [],
 ) {
   const title = `${collection.collection.name} | ${rootData.config.brand_name}`
   const description =
@@ -111,7 +113,7 @@ export function buildCollectionHead(
   )
 
   return {
-    links: createCanonicalLinks(canonicalUrl),
+    links: [...createCanonicalLinks(canonicalUrl), ...alternateLinks],
     meta: [
       ...createBaseMeta(title, description),
       { property: 'og:type', content: 'website' },
@@ -126,6 +128,7 @@ export function buildArticleHead(
   article: ArticleDetail,
   fallbackCollectionSlug: string,
   fallbackArticleSlug: string,
+  alternateLinks: AlternateLink[] = [],
 ) {
   const title = article.seo_title || `${article.title} | ${rootData.config.brand_name}`
   const description =
@@ -144,7 +147,7 @@ export function buildArticleHead(
   )
 
   return {
-    links: createCanonicalLinks(canonicalUrl),
+    links: [...createCanonicalLinks(canonicalUrl), ...alternateLinks],
     meta: [
       ...createBaseMeta(title, description),
       { property: 'og:type', content: 'article' },

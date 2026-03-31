@@ -17,7 +17,7 @@ export function MentionSuggestionsList({
   selectedIndex,
   onSelect,
   className,
-  compact = false,
+  compact: _compact = false,
 }: MentionSuggestionsListProps) {
   return (
     <div className={cn('space-y-0.5', className)} role="listbox" aria-label="Mention suggestions">

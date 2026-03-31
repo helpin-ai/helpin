@@ -7,6 +7,7 @@ import {
   prefetchArticleRouteData,
   prefetchCollectionRouteData,
 } from '@/lib/routeData'
+import { loadAlternateLinks } from '@/lib/alternateLinks'
 import { loadRootRouteData } from '@/lib/rootLoader'
 import { buildArticleHead, buildCollectionHead } from '@/lib/seo'
 import {
@@ -58,7 +59,13 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
         params.locale,
         params.spaceSlug,
       )
-      return { kind: 'article' as const, article, collection: null, rootData }
+      return {
+        kind: 'article' as const,
+        article,
+        collection: null,
+        rootData,
+        alternates: [],
+      }
     }
 
     if (isValidLocaleParam && rootData.multilingualEnabled) {
@@ -67,7 +74,23 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
         rootData,
         params.spaceSlug,
       )
-      return { kind: 'collection' as const, article: null, collection, rootData }
+      const alternates = collection
+        ? await loadAlternateLinks(context.queryClient, rootData, {
+            kind: 'collection',
+            spaceId: rootData.spaces.find(
+              (space) => space.slug === (collection.space_slug || params.spaceSlug),
+            )?.id,
+            collectionId: collection.collection.id,
+          })
+        : []
+
+      return {
+        kind: 'collection' as const,
+        article: null,
+        collection,
+        rootData,
+        alternates,
+      }
     }
   },
   head: ({ loaderData, params }) => {
@@ -81,6 +104,7 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
         loaderData.article,
         params.locale,
         params.spaceSlug,
+        loaderData.alternates,
       )
     }
 
@@ -89,6 +113,7 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
         loaderData.rootData,
         loaderData.collection,
         params.spaceSlug,
+        loaderData.alternates,
       )
     }
 

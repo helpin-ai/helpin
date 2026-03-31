@@ -3,6 +3,7 @@ import { ArticleRouteView } from '@/components/routes/ArticleRouteView'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
 import { prefetchArticleRouteData } from '@/lib/routeData'
+import { loadAlternateLinks } from '@/lib/alternateLinks'
 import { loadRootRouteData } from '@/lib/rootLoader'
 import { buildArticleHead } from '@/lib/seo'
 import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
@@ -33,7 +34,18 @@ export const Route = createFileRoute('/$locale/$spaceSlug/$collectionSlug/')({
         params.spaceSlug,
         params.collectionSlug,
       )
-      return { article, rootData }
+      const alternates = article
+        ? await loadAlternateLinks(context.queryClient, rootData, {
+            kind: 'article',
+            spaceId: rootData.spaces.find(
+              (space) => space.slug === article.space_slug,
+            )?.id,
+            collectionId: article.collection_id ?? undefined,
+            articleId: article.id,
+          })
+        : []
+
+      return { article, rootData, alternates }
     }
   },
   head: ({ loaderData, params }) =>
@@ -43,6 +55,7 @@ export const Route = createFileRoute('/$locale/$spaceSlug/$collectionSlug/')({
           loaderData.article,
           params.spaceSlug,
           params.collectionSlug,
+          loaderData.alternates,
         )
       : {},
   component: LocalizedArticleOrLegacyCollectionRoute,
