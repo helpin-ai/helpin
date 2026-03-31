@@ -1391,12 +1391,19 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		return nil, nil
 	}
 
-	// Resolve collection name if present.
+	// Resolve collection name, slug, and space slug if present.
 	var collectionName *string
+	var resolvedCollSlug *string
+	var spaceSlug string
 	if doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
 		if err == nil && coll != nil {
 			collectionName = &coll.Name
+			slug := coll.Slug
+			resolvedCollSlug = &slug
+			if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
+				spaceSlug = space.Slug
+			}
 		}
 	}
 
@@ -1428,8 +1435,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		Excerpt:         doc.Excerpt,
 		Icon:            doc.Icon,
 		Status:          doc.Status,
+		SpaceSlug:       spaceSlug,
 		CollectionID:    doc.CollectionID,
 		CollectionName:  collectionName,
+		CollectionSlug:  resolvedCollSlug,
 		PublishedAt:     publishedAt,
 		SEOTitle:        ha.SEOTitle,
 		SEODescription:  ha.SEODescription,
@@ -1440,9 +1449,20 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	}, nil
 }
 
-// GetPublicCollection returns a collection and its published articles by workspace and collection slug.
-func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
-	return s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+// GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection slug.
+func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
+	coll, articles, err := s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if coll == nil {
+		return nil, nil, "", nil
+	}
+	var spaceSlug string
+	if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
+		spaceSlug = space.Slug
+	}
+	return coll, articles, spaceSlug, nil
 }
 
 // PreviewArticleHTML renders a document's TipTap content as HTML for preview, regardless of status.

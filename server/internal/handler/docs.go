@@ -1245,6 +1245,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
+			"space_slug": coll.SpaceSlug,
 		})
 		return
 	}
@@ -1262,11 +1263,12 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
+			"space_slug": coll.SpaceSlug,
 		})
 		return
 	}
 	collectionSlug := chi.URLParam(r, "collectionSlug")
-	coll, articles, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
+	coll, articles, spaceSlug, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1278,6 +1280,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"collection": coll,
 		"articles":   articles,
+		"space_slug": spaceSlug,
 	})
 }
 
