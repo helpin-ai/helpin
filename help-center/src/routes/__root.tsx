@@ -10,7 +10,7 @@ import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { DocsProvider } from '@/contexts/DocsContext'
 import { useHelpCenterConfig, useSpaces } from '@/hooks/queries'
-import { resolveActiveLocale } from '@/lib/locale'
+import { isMultilingualEnabled, resolveActiveLocale } from '@/lib/locale'
 import type { HelpCenterContext } from '@/lib/types'
 
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
@@ -35,9 +35,12 @@ function RootLayout() {
     enabledLocales: config?.enabled_locales,
     defaultLocale: config?.default_locale || 'en',
   })
+  const multilingualEnabled = isMultilingualEnabled(config?.enabled_locales)
   const { data: spaces, isLoading: spacesLoading } = useSpaces(
     subdomain,
     activeLocale,
+    multilingualEnabled,
+    !!config,
   )
 
   // Inject brand color as CSS custom property overrides
@@ -126,6 +129,7 @@ function RootLayout() {
       locale={activeLocale}
       defaultLocale={config!.default_locale}
       enabledLocales={config!.enabled_locales ?? [config!.default_locale]}
+      multilingualEnabled={multilingualEnabled}
       config={config!}
       spaces={spaces ?? []}
     >

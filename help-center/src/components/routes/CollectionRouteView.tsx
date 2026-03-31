@@ -25,14 +25,24 @@ export function CollectionRouteView({
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const matchingSpace = spaces.find((space) => space.slug === collectionOrSpaceSlug)
   const { data: spaceNavigation = [], isLoading: spaceNavigationLoading } =
-    useSpaceNavigation(subdomain, locale, matchingSpace?.slug ?? '')
+    useSpaceNavigation(
+      subdomain,
+      locale,
+      matchingSpace?.slug ?? '',
+      multilingualEnabled,
+    )
   const { data: collectionData, isLoading: collectionLoading, error: collectionError } =
-    useCollection(subdomain, locale, collectionOrSpaceSlug)
+    useCollection(subdomain, locale, collectionOrSpaceSlug, multilingualEnabled)
   const collection = collectionData?.collection
   const articles = collectionData?.articles ?? []
   const collectionSpaceSlug = collectionData?.space_slug ?? ''
   const { data: collectionNavigation = [], isLoading: collectionNavigationLoading } =
-    useSpaceNavigation(subdomain, locale, collectionSpaceSlug)
+    useSpaceNavigation(
+      subdomain,
+      locale,
+      collectionSpaceSlug,
+      multilingualEnabled,
+    )
   const activeNavigation = collection ? collectionNavigation : spaceNavigation
   const activeHeading = collection?.name ?? matchingSpace?.name ?? ''
 

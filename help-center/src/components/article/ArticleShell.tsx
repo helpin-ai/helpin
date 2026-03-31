@@ -9,10 +9,12 @@ interface ArticleShellProps {
   title: string
   excerpt?: string | null
   spaceName?: string
+  spaceSlug?: string
   collectionName?: string | null
   collectionSlug?: string | null
   articleSlug: string
   pager: { prev?: ArticlePagerLink; next?: ArticlePagerLink }
+  multilingualEnabled: boolean
   children: ReactNode
 }
 
@@ -21,10 +23,12 @@ export function ArticleShell({
   title,
   excerpt,
   spaceName: _spaceName,
+  spaceSlug,
   collectionName,
   collectionSlug,
   articleSlug,
   pager,
+  multilingualEnabled,
   children,
 }: ArticleShellProps) {
   return (
@@ -57,8 +61,10 @@ export function ArticleShell({
 
       <ArticleFeedback
         locale={locale}
+        spaceSlug={spaceSlug}
         collectionSlug={collectionSlug}
         articleSlug={articleSlug}
+        multilingualEnabled={multilingualEnabled}
       />
       <ArticlePager locale={locale} prev={pager.prev} next={pager.next} />
     </article>

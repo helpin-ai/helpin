@@ -77,6 +77,45 @@ func TestDocsHelpcenterPublicLocale_DisabledLocaleRedirectsToDefault(t *testing.
 	}
 }
 
+func TestDocsHelpcenterPublicLocale_SingleLocaleSpacesDoesNotRedirect(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 20, 5, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	if err := db.Exec(`
+		UPDATE docs_helpcenter_configs
+		SET default_locale = ?, enabled_locales = ?, show_language_switcher = ?, fallback_to_default_locale = ?
+		WHERE workspace_id = ?
+	`, "en", `["en"]`, false, true, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("restrict help center to single locale: %v", err)
+	}
+	h := newDocsHelpcenterPublicHandlerForTest(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/spaces", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
+		"subdomain": "handler-i18n",
+	})
+	rec := httptest.NewRecorder()
+
+	h.PublicGetSpaces(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var spaces []model.PublicSpaceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &spaces); err != nil {
+		t.Fatalf("unmarshal spaces: %v, body = %s", err, rec.Body.String())
+	}
+	if len(spaces) == 0 {
+		t.Fatalf("len(spaces) = %d, want at least 1, body = %s", len(spaces), rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); location != "" {
+		t.Fatalf("location = %q, want empty", location)
+	}
+}
+
 func TestDocsHelpcenterPublicLocale_SearchOnlyReturnsRequestedLocale(t *testing.T) {
 	t.Parallel()
 
