@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: helpcenter
-          image: ghcr.io/helpin-ai/helpin/helpcenter:v0.95.1
+          image: ghcr.io/helpin-ai/helpin/helpcenter:v0.95.2
           ports:
             - containerPort: 3000
           securityContext:
