@@ -389,6 +389,7 @@ function StoryDetailPanelBody({
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const teamSprintsEnabled = useMemo(() => teams.find((t) => t.id === form.team_id)?.sprints_enabled !== false, [teams, form.team_id]);
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
     [teams, form.team_id],
@@ -693,7 +694,7 @@ function StoryDetailPanelBody({
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && (
+          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && teamSprintsEnabled && (
             <>
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
@@ -1223,7 +1224,7 @@ function StoryDetailPanelBody({
             )}
 
             {/* ── Planning ── */}
-            {(fieldVis.epic || fieldVis.sprint || fieldVis.estimate || fieldVis.due_date || fieldVis.blocked) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+            {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled) || fieldVis.estimate || fieldVis.due_date || fieldVis.blocked) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
             {/* Epic */}
             {fieldVis.epic && (
@@ -1244,7 +1245,7 @@ function StoryDetailPanelBody({
             )}
 
             {/* Sprint */}
-            {fieldVis.sprint && (
+            {fieldVis.sprint && teamSprintsEnabled && (
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}

@@ -3,10 +3,10 @@ import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
 import { useInvalidateSettings } from '@/hooks/queries/useSettings';
 import { SettingsPageFrame, type SettingsPageContext } from './SettingsPageFrame';
 
-export function TeamsSettingsPage({ initialTeamId }: { initialTeamId?: string }) {
+export function TeamsSettingsPage({ initialTeamId, initialSection }: { initialTeamId?: string; initialSection?: string }) {
   return (
     <SettingsPageFrame section="teams">
-      {(context) => <TeamsSettingsContent {...context} initialTeamId={initialTeamId} />}
+      {(context) => <TeamsSettingsContent {...context} initialTeamId={initialTeamId} initialSection={initialSection} />}
     </SettingsPageFrame>
   );
 }
@@ -17,8 +17,10 @@ function TeamsSettingsContent({
   access,
   permissions,
   initialTeamId,
+  initialSection,
 }: SettingsPageContext & {
   initialTeamId?: string;
+  initialSection?: string;
 }) {
   const invalidateSettings = useInvalidateSettings(workspaceId);
 
@@ -37,6 +39,7 @@ function TeamsSettingsContent({
         invalidateSettings();
       }}
       initialTeamId={initialTeamId}
+      initialSection={initialSection}
       access={access}
     />
   );

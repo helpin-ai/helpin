@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,9 +56,25 @@ export function HelpCenterImportSection({
   const [jobId, setJobId] = useState('');
   const [jobStatus, setJobStatus] = useState<ImportStatusResponse | null>(null);
   const [starting, setStarting] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: spaces } = useDocsSpaces(workspaceId);
+  const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
+
+  const startPolling = useCallback((id: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      const { data } = await docsImportService.getStatus(workspaceId, id);
+      if (data) {
+        setJobStatus(data);
+        if (data.status === 'done' || data.status === 'failed') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    }, 2000);
+  }, [workspaceId]);
 
   // Resume active import job on mount
   useEffect(() => {
@@ -82,7 +98,17 @@ export function HelpCenterImportSection({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [workspaceId]);
+  }, [STORAGE_KEY, startPolling, workspaceId]);
+
+  useEffect(() => {
+    if (step !== 2 || isFinished || !jobStatus?.started_at || jobStatus.completed === 0) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isFinished, jobStatus?.completed, jobStatus?.started_at, step]);
 
   const handleConnect = async () => {
     if (!apiKey.trim()) {
@@ -136,20 +162,6 @@ export function HelpCenterImportSection({
     }
   };
 
-  const startPolling = (id: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const { data } = await docsImportService.getStatus(workspaceId, id);
-      if (data) {
-        setJobStatus(data);
-        if (data.status === 'done' || data.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }
-    }, 2000);
-  };
-
   const handleRetry = async () => {
     const { error } = await docsImportService.retry(workspaceId, jobId, apiKey);
     if (error) {
@@ -190,7 +202,6 @@ export function HelpCenterImportSection({
     setJobStatus(null);
   };
 
-  const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
   const progressPercent = jobStatus && jobStatus.total > 0
     ? Math.round(((jobStatus.completed + jobStatus.failed) / jobStatus.total) * 100)
     : 0;
@@ -362,18 +373,18 @@ export function HelpCenterImportSection({
                 : `Importing... ${jobStatus ? jobStatus.completed + jobStatus.failed : 0} of ${jobStatus?.total ?? '...'} articles`}
             </p>
             {!isFinished && jobStatus && jobStatus.completed > 0 && jobStatus.started_at && (() => {
-              const elapsed = (Date.now() - new Date(jobStatus.started_at).getTime()) / 1000
-              const done = jobStatus.completed + jobStatus.failed
-              const remaining = jobStatus.total - done
-              const perItem = elapsed / done
-              const etaSeconds = Math.round(remaining * perItem)
-              const etaMin = Math.floor(etaSeconds / 60)
-              const etaSec = etaSeconds % 60
+              const elapsed = (nowMs - new Date(jobStatus.started_at).getTime()) / 1000;
+              const done = jobStatus.completed + jobStatus.failed;
+              const remaining = jobStatus.total - done;
+              const perItem = elapsed / done;
+              const etaSeconds = Math.round(remaining * perItem);
+              const etaMin = Math.floor(etaSeconds / 60);
+              const etaSec = etaSeconds % 60;
               return (
                 <p className="text-xs text-muted-foreground/60 text-center">
                   ~{etaMin > 0 ? `${etaMin}m ` : ''}{etaSec}s remaining
                 </p>
-              )
+              );
             })()}
             {!isFinished && (
               <p className="text-xs text-muted-foreground/50 text-center">
@@ -386,21 +397,56 @@ export function HelpCenterImportSection({
             <Card>
               <CardContent className="pt-4 space-y-3">
                 {jobStatus.summary && (
-                  <p className="text-sm text-muted-foreground">
-                    Created {jobStatus.summary.collections_created}{' '}
-                    {jobStatus.summary.collections_created === 1 ? 'collection' : 'collections'} and{' '}
-                    {jobStatus.completed}{' '}
-                    {jobStatus.completed === 1 ? 'article' : 'articles'}
-                    {(jobStatus.summary.articles_published > 0 || jobStatus.summary.articles_drafted > 0) && (
-                      <> ({jobStatus.summary.articles_published} published, {jobStatus.summary.articles_drafted} draft)</>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Created {jobStatus.summary.collections_created}{' '}
+                      {jobStatus.summary.collections_created === 1 ? 'collection' : 'collections'} and{' '}
+                      {jobStatus.completed}{' '}
+                      {jobStatus.completed === 1 ? 'article' : 'articles'}
+                      {(jobStatus.summary.articles_published > 0 || jobStatus.summary.articles_drafted > 0) && (
+                        <> ({jobStatus.summary.articles_published} published, {jobStatus.summary.articles_drafted} draft)</>
+                      )}
+                      . {jobStatus.summary.redirects_created} URL{' '}
+                      {jobStatus.summary.redirects_created === 1 ? 'redirect' : 'redirects'} set up
+                      {jobStatus.started_at && jobStatus.completed_at && (
+                        <>. Completed in {formatDuration(jobStatus.started_at, jobStatus.completed_at)}</>
+                      )}
+                      .
+                    </p>
+                    {(jobStatus.summary.articles_uncategorized > 0 ||
+                      jobStatus.summary.articles_with_conversion_warnings > 0 ||
+                      jobStatus.summary.html_block_fallbacks > 0 ||
+                      jobStatus.summary.image_rewrite_failures > 0 ||
+                      jobStatus.summary.normalized_note_blocks > 0) && (
+                      <div className="flex flex-wrap gap-2">
+                        {jobStatus.summary.normalized_note_blocks > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {jobStatus.summary.normalized_note_blocks} note blocks normalized
+                          </Badge>
+                        )}
+                        {jobStatus.summary.articles_uncategorized > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {jobStatus.summary.articles_uncategorized} uncategorized
+                          </Badge>
+                        )}
+                        {jobStatus.summary.html_block_fallbacks > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {jobStatus.summary.html_block_fallbacks} HTML fallbacks
+                          </Badge>
+                        )}
+                        {jobStatus.summary.image_rewrite_failures > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {jobStatus.summary.image_rewrite_failures} image URLs kept
+                          </Badge>
+                        )}
+                        {jobStatus.summary.articles_with_conversion_warnings > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {jobStatus.summary.articles_with_conversion_warnings} articles with warnings
+                          </Badge>
+                        )}
+                      </div>
                     )}
-                    . {jobStatus.summary.redirects_created} URL{' '}
-                    {jobStatus.summary.redirects_created === 1 ? 'redirect' : 'redirects'} set up
-                    {jobStatus.started_at && jobStatus.completed_at && (
-                      <>. Completed in {formatDuration(jobStatus.started_at, jobStatus.completed_at)}</>
-                    )}
-                    .
-                  </p>
+                  </div>
                 )}
                 <p className="text-sm">
                   {jobStatus.completed} succeeded, {jobStatus.failed} failed
@@ -472,7 +518,13 @@ function ImportHistory({ workspaceId }: { workspaceId: string }) {
     if (error) {
       toast.error(error);
     } else if (data) {
-      toast.success(`Re-converted ${data.converted} of ${data.total} documents${data.failed > 0 ? ` (${data.failed} failed)` : ''}`);
+      const qualityBits = [
+        data.articles_with_warnings > 0 ? `${data.articles_with_warnings} with warnings` : '',
+        data.normalized_note_blocks > 0 ? `${data.normalized_note_blocks} note blocks normalized` : '',
+      ].filter(Boolean)
+      toast.success(
+        `Re-converted ${data.converted} of ${data.total} documents${data.failed > 0 ? ` (${data.failed} failed)` : ''}${qualityBits.length > 0 ? `. ${qualityBits.join(', ')}` : ''}`,
+      );
     }
   };
 
