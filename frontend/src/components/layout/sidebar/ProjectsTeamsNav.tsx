@@ -1,5 +1,6 @@
 import { Collapsible } from 'radix-ui';
-import { ChevronRight, EllipsisVertical, Settings } from 'lucide-react';
+import { ChevronRight, EllipsisVertical, RefreshCw, Settings } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ import { teamSubItems } from './config';
 type Team = {
   id: string;
   name: string;
+  sprints_enabled?: boolean;
 };
 
 type ProjectsTeamsNavProps = {
@@ -30,6 +32,7 @@ type ProjectsTeamsNavProps = {
   isTeamSubActive: (teamId: string, subPath: string) => boolean;
   toggleTeam: (teamId: string) => void;
   onNavigate: (args: { to: string; params?: Record<string, string>; search?: Record<string, string> }) => void;
+  canManageTeams?: boolean;
 };
 
 export function ProjectsTeamsNav({
@@ -39,6 +42,7 @@ export function ProjectsTeamsNav({
   isTeamSubActive,
   toggleTeam,
   onNavigate,
+  canManageTeams = false,
 }: ProjectsTeamsNavProps) {
   return (
     <SidebarGroup className="p-0 pb-3">
@@ -90,35 +94,80 @@ export function ProjectsTeamsNav({
                 </div>
                 <Collapsible.Content>
                   <SidebarMenuSub>
-                    {teamSubItems.map((sub) => {
-                      const link = `/w/${wsSlug}/pm/${sub.path}?team=${team.id}`;
-                      const active = isTeamSubActive(team.id, sub.path);
+                    {teamSubItems
+                      .filter((sub) => {
+                        if (sub.key !== 'sprints') return true;
+                        // Sprints enabled → show normally
+                        if (team.sprints_enabled !== false) return true;
+                        // Sprints disabled + can manage → show as nudge
+                        if (canManageTeams) return true;
+                        // Sprints disabled + no permission → hide
+                        return false;
+                      })
+                      .map((sub) => {
+                        const sprintsDisabled = sub.key === 'sprints' && team.sprints_enabled === false;
+                        const link = `/w/${wsSlug}/pm/${sub.path}?team=${team.id}`;
+                        const active = !sprintsDisabled && isTeamSubActive(team.id, sub.path);
 
-                      return (
-                        <SidebarMenuSubItem key={sub.key}>
-                          <SidebarMenuSubButton
-                            asChild
-                            size="sm"
-                            isActive={active}
-                          >
-                            <a
-                              href={link}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                onNavigate({
-                                  to: `/w/$slug/pm/${sub.path}`,
-                                  params: { slug: wsSlug },
-                                  search: { team: team.id },
-                                });
-                              }}
+                        if (sprintsDisabled) {
+                          return (
+                            <SidebarMenuSubItem key={sub.key}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    size="sm"
+                                    className="opacity-40"
+                                  >
+                                    <a
+                                      href={`/w/${wsSlug}/settings/teams?team=${team.id}&section=sprints`}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        onNavigate({
+                                          to: '/w/$slug/settings/teams',
+                                          params: { slug: wsSlug },
+                                          search: { team: team.id, section: 'sprints' },
+                                        });
+                                      }}
+                                    >
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                      <span>Sprints</span>
+                                    </a>
+                                  </SidebarMenuSubButton>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="text-xs">
+                                  Sprints disabled — click to enable in settings
+                                </TooltipContent>
+                              </Tooltip>
+                            </SidebarMenuSubItem>
+                          );
+                        }
+
+                        return (
+                          <SidebarMenuSubItem key={sub.key}>
+                            <SidebarMenuSubButton
+                              asChild
+                              size="sm"
+                              isActive={active}
                             >
-                              <sub.icon className="h-3.5 w-3.5" />
-                              <span>{sub.label}</span>
-                            </a>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      );
-                    })}
+                              <a
+                                href={link}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  onNavigate({
+                                    to: `/w/$slug/pm/${sub.path}`,
+                                    params: { slug: wsSlug },
+                                    search: { team: team.id },
+                                  });
+                                }}
+                              >
+                                <sub.icon className="h-3.5 w-3.5" />
+                                <span>{sub.label}</span>
+                              </a>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
                   </SidebarMenuSub>
                 </Collapsible.Content>
               </SidebarMenuItem>

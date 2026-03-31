@@ -6,72 +6,172 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
-)
 
-// imgSrcRe matches src attributes inside <img> tags.
-var imgSrcRe = regexp.MustCompile(`<img[^>]+src="([^"]+)"`)
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
+)
 
 // ImageUploader abstracts S3 upload for testing.
 type ImageUploader interface {
 	UploadImage(ctx context.Context, workspaceID, filename string, data io.Reader, contentType string) (string, error)
 }
 
+var downloadAndUploadImage = downloadAndUpload
+
 // ExtractImageURLs parses HTML and returns unique image URLs found in <img src="..."> tags.
-func ExtractImageURLs(html string) []string {
-	matches := imgSrcRe.FindAllStringSubmatch(html, -1)
-	if len(matches) == 0 {
+func ExtractImageURLs(rawHTML string) []string {
+	doc, err := htmlpkgParse(rawHTML)
+	if err != nil {
 		return nil
 	}
 
-	seen := make(map[string]struct{}, len(matches))
-	urls := make([]string, 0, len(matches))
-	for _, m := range matches {
-		u := m[1]
-		if _, ok := seen[u]; ok {
-			continue
+	seen := make(map[string]struct{})
+	var urls []string
+	walkElements(findBody(doc), func(n *html.Node) {
+		if n.Type != html.ElementNode || n.DataAtom != atom.Img {
+			return
 		}
-		seen[u] = struct{}{}
-		urls = append(urls, u)
-	}
+		if _, src := getImageSource(n); src != "" {
+			if _, ok := seen[src]; ok {
+				return
+			}
+			seen[src] = struct{}{}
+			urls = append(urls, src)
+		}
+	})
 	return urls
 }
 
 // ReplaceImageURLs replaces all occurrences of old URLs with new URLs in the HTML string.
-func ReplaceImageURLs(html string, urlMap map[string]string) string {
-	for oldURL, newURL := range urlMap {
-		html = strings.ReplaceAll(html, oldURL, newURL)
+func ReplaceImageURLs(rawHTML string, urlMap map[string]string) string {
+	doc, err := htmlpkgParse(rawHTML)
+	if err != nil {
+		return rawHTML
 	}
-	return html
+	walkElements(findBody(doc), func(n *html.Node) {
+		if n.Type != html.ElementNode || n.DataAtom != atom.Img {
+			return
+		}
+		key, src := getImageSource(n)
+		if src == "" {
+			return
+		}
+		if newURL, ok := urlMap[src]; ok {
+			setAttr(n, key, newURL)
+		}
+	})
+	return renderBodyChildren(doc)
 }
 
-// ProcessImages downloads images referenced in HTML, re-uploads them via the
-// provided uploader, and returns the HTML with URLs replaced. Individual image
-// failures are logged and skipped (the original URL is kept).
-func ProcessImages(ctx context.Context, html string, uploader ImageUploader, workspaceID string) (string, error) {
-	urls := ExtractImageURLs(html)
+// ProcessImagesDetailed downloads images referenced in HTML, re-uploads them
+// via the provided uploader, and returns the rewritten HTML plus any URLs that
+// had to be kept because rewrite failed.
+func ProcessImagesDetailed(ctx context.Context, rawHTML string, uploader ImageUploader, workspaceID string) (string, []string, error) {
+	urls := ExtractImageURLs(rawHTML)
 	if len(urls) == 0 {
-		return html, nil
+		return rawHTML, nil, nil
 	}
 
 	urlMap := make(map[string]string, len(urls))
+	var kept []string
 	for _, srcURL := range urls {
-		newURL, err := downloadAndUpload(ctx, srcURL, uploader, workspaceID)
+		newURL, err := downloadAndUploadImage(ctx, srcURL, uploader, workspaceID)
 		if err != nil {
 			slog.WarnContext(ctx, "skip image download",
 				"url", srcURL,
 				"error", err,
 			)
+			kept = append(kept, srcURL)
 			continue
 		}
 		urlMap[srcURL] = newURL
 	}
 
 	if len(urlMap) == 0 {
-		return html, nil
+		return rawHTML, kept, nil
 	}
-	return ReplaceImageURLs(html, urlMap), nil
+	return ReplaceImageURLs(rawHTML, urlMap), kept, nil
+}
+
+// ProcessImages downloads images referenced in HTML, re-uploads them via the
+// provided uploader, and returns the HTML with URLs replaced. Individual image
+// failures are logged and skipped (the original URL is kept).
+func ProcessImages(ctx context.Context, rawHTML string, uploader ImageUploader, workspaceID string) (string, error) {
+	rewritten, _, err := ProcessImagesDetailed(ctx, rawHTML, uploader, workspaceID)
+	return rewritten, err
+}
+
+func htmlpkgParse(raw string) (*html.Node, error) {
+	return html.Parse(strings.NewReader(raw))
+}
+
+func findBody(doc *html.Node) *html.Node {
+	var body *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.DataAtom == atom.Body {
+			body = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+			if body != nil {
+				return
+			}
+		}
+	}
+	walk(doc)
+	if body != nil {
+		return body
+	}
+	return doc
+}
+
+func walkElements(n *html.Node, fn func(*html.Node)) {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode {
+			fn(c)
+			walkElements(c, fn)
+		}
+	}
+}
+
+func renderBodyChildren(doc *html.Node) string {
+	var builder strings.Builder
+	for child := findBody(doc).FirstChild; child != nil; child = child.NextSibling {
+		_ = html.Render(&builder, child)
+	}
+	return builder.String()
+}
+
+func getImageSource(n *html.Node) (string, string) {
+	if src := getAttr(n, "src"); src != "" {
+		return "src", src
+	}
+	if src := getAttr(n, "data-src"); src != "" {
+		return "data-src", src
+	}
+	return "", ""
+}
+
+func getAttr(n *html.Node, key string) string {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return attr.Val
+		}
+	}
+	return ""
+}
+
+func setAttr(n *html.Node, key, value string) {
+	for i := range n.Attr {
+		if n.Attr[i].Key == key {
+			n.Attr[i].Val = value
+			return
+		}
+	}
+	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: value})
 }
 
 // downloadAndUpload fetches an image from srcURL and uploads it via the uploader.

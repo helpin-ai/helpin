@@ -375,25 +375,27 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 		}
 
 		now := toDay(time.Now().UTC())
-		futureCount := 0
+		upcomingCount := 0
 		var latestEnd time.Time
 		for _, sp := range sprints {
 			if sp.Archived {
 				continue
 			}
-			if sp.EndDate == nil {
+			if sp.EndDate == nil || sp.StartDate == nil {
 				continue
 			}
+			spStart := toDay(*sp.StartDate)
 			spEnd := toDay(*sp.EndDate)
-			if spEnd.After(now) || spEnd.Equal(now) {
-				futureCount++
+			// Only count truly unstarted sprints (start date in the future)
+			if spStart.After(now) {
+				upcomingCount++
 			}
 			if spEnd.After(latestEnd) {
 				latestEnd = spEnd
 			}
 		}
 
-		needed := targetCount - futureCount
+		needed := targetCount - upcomingCount
 		if needed <= 0 {
 			continue
 		}

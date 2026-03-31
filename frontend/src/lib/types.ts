@@ -216,6 +216,8 @@ export interface WorkspaceTeam {
   manager_id?: string;
   team_type?: 'engineering' | 'product' | 'design' | 'support' | 'marketing' | 'sales' | 'hr' | 'operations' | 'custom';
   default_story_type?: 'feature' | 'bug' | 'chore';
+  docs_publisher_enabled?: boolean;
+  sprints_enabled?: boolean;
 }
 
 export interface WorkspacePerson {

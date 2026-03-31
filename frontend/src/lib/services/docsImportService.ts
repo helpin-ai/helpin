@@ -25,6 +25,11 @@ export interface ImportSummary {
   articles_published: number;
   articles_drafted: number;
   redirects_created: number;
+  articles_uncategorized: number;
+  articles_with_conversion_warnings: number;
+  html_block_fallbacks: number;
+  image_rewrite_failures: number;
+  normalized_note_blocks: number;
 }
 
 export interface ImportStatusResponse {
@@ -68,5 +73,12 @@ export const docsImportService = {
     api.get<unknown>(`/docs/import/${jobId}/redirect-map${qs(workspaceId)}`),
 
   reconvert: (workspaceId: string, jobId: string) =>
-    api.post<{ total: number; converted: number; failed: number }>(`/docs/import/${jobId}/reconvert${qs(workspaceId)}`, {}),
+    api.post<{
+      total: number;
+      converted: number;
+      failed: number;
+      articles_with_warnings: number;
+      html_block_fallbacks: number;
+      normalized_note_blocks: number;
+    }>(`/docs/import/${jobId}/reconvert${qs(workspaceId)}`, {}),
 };

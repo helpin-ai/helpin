@@ -46,6 +46,7 @@ type WorkspaceTeam struct {
 	TeamType             string    `json:"team_type" gorm:"not null;default:'engineering'"`
 	DefaultStoryType     string    `json:"default_story_type" gorm:"not null;default:'feature'"`
 	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
+	SprintsEnabled       bool      `json:"sprints_enabled" gorm:"not null;default:true"`
 	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -261,6 +262,7 @@ type UpdateTeamRequest struct {
 	ManagerID        *string `json:"manager_id"`
 	TeamType         *string `json:"team_type"`
 	DefaultStoryType *string `json:"default_story_type"`
+	SprintsEnabled   *bool   `json:"sprints_enabled"`
 }
 
 // UpdateTeamRepoDefaultRequest configures the delivery repository default for a team.

@@ -272,6 +272,8 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 		if err != nil {
 			return err
 		}
+		// Default sprints enabled for engineering teams, disabled for others
+		sprintsEnabled := req.TeamType == "engineering"
 		t := &model.WorkspaceTeam{
 			WorkspaceID:      req.WorkspaceID,
 			Name:             req.Name,
@@ -280,6 +282,7 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 			ManagerID:        managerID,
 			TeamType:         req.TeamType,
 			DefaultStoryType: req.DefaultStoryType,
+			SprintsEnabled:   sprintsEnabled,
 		}
 		if err := tx.Create(t).Error; err != nil {
 			return fmt.Errorf("create team: %w", err)
@@ -328,6 +331,9 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 		if req.DefaultStoryType != nil {
 			updates["default_story_type"] = *req.DefaultStoryType
 		}
+		if req.SprintsEnabled != nil {
+			updates["sprints_enabled"] = *req.SprintsEnabled
+		}
 
 		if err := tx.Model(&model.WorkspaceTeam{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return fmt.Errorf("update team: %w", err)
@@ -364,6 +370,10 @@ func (r *SettingsRepository) DeleteTeam(ctx context.Context, id string) error {
 			if err := tx.Where("id IN ?", workflowIDs).Delete(&model.PMWorkflow{}).Error; err != nil {
 				return fmt.Errorf("delete team workflows: %w", err)
 			}
+		}
+		// Delete team automations (no FK cascade on pm_automations.team_id)
+		if err := tx.Where("team_id = ?", id).Delete(&model.PMAutomation{}).Error; err != nil {
+			return fmt.Errorf("delete team automations: %w", err)
 		}
 		// Delete the team — FK cascades handle memberships, estimate settings, etc.
 		if err := tx.Where("id = ?", id).Delete(&model.WorkspaceTeam{}).Error; err != nil {

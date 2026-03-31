@@ -285,9 +285,11 @@ export function CreateStoryModal({
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
+  const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
   const selectedTeamDefaultStoryType = useMemo(
-    () => (teams.find((team) => team.id === form.team_id)?.default_story_type as StoryType | undefined) ?? 'feature',
-    [teams, form.team_id],
+    () => (selectedTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+    [selectedTeam],
   );
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
@@ -1312,7 +1314,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* ── Planning ── */}
-                {(fieldVis.epic || fieldVis.sprint) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled)) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
@@ -1335,7 +1337,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* Sprint */}
-                {fieldVis.sprint && (
+                {fieldVis.sprint && teamSprintsEnabled && (
                 <MetadataRow icon={SprintIcon} label="Sprint">
                   <GroupedSidebarPopoverSelect
                     value={form.sprint_id || "__none__"}

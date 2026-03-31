@@ -177,9 +177,42 @@
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
+.hc-prose h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  @apply text-foreground;
+  margin: 1.125rem 0 0.375rem;
+  scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
+}
+
+.hc-prose h5 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  @apply text-foreground;
+  margin: 1rem 0 0.375rem;
+  scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
+}
+
+.hc-prose h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  @apply text-foreground;
+  margin: 0.875rem 0 0.25rem;
+  scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
+}
+
 .hc-prose p {
   margin: 0 0 1rem;
   line-height: 1.65;
+}
+
+.hc-prose h3 + p,
+.hc-prose h4 + p,
+.hc-prose h5 + p,
+.hc-prose h6 + p {
+  margin-top: 0;
 }
 
 .hc-prose a {
@@ -302,9 +335,27 @@
 }
 
 .hc-prose img {
+  display: block;
   border-radius: 0.5rem;
   max-width: 100%;
-  margin-bottom: 1.25rem;
+  margin: 0.875rem 0 1.35rem;
+  @apply border border-border/70 bg-card shadow-sm;
+}
+
+.hc-prose h2 + img,
+.hc-prose h3 + img,
+.hc-prose h4 + img,
+.hc-prose h5 + img,
+.hc-prose h6 + img {
+  margin-top: 0.625rem;
+}
+
+.hc-prose img + h2,
+.hc-prose img + h3,
+.hc-prose img + h4,
+.hc-prose img + h5,
+.hc-prose img + h6 {
+  margin-top: 1.5rem;
 }
 
 .hc-prose table {
