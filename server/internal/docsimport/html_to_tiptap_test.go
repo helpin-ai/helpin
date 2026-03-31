@@ -2,6 +2,8 @@ package docsimport
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,6 +24,23 @@ func toJSON(t *testing.T, result *ConversionResult) string {
 		t.Fatalf("json.Marshal failed: %v", err)
 	}
 	return string(b)
+}
+
+func readFixture(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return string(data)
+}
+
+func convertHelpScout(t *testing.T, name string) *ConversionResult {
+	t.Helper()
+	normalized, warnings := PreprocessHelpScoutHTML(readFixture(t, name))
+	result := convert(t, normalized)
+	result.Warnings = append(warnings, result.Warnings...)
+	return result
 }
 
 func TestConvert_Paragraph(t *testing.T) {
@@ -69,6 +88,99 @@ func TestConvert_OrderedList(t *testing.T) {
 	j := toJSON(t, r)
 	if !strings.Contains(j, `"type":"orderedList"`) {
 		t.Errorf("expected ordered list, got: %s", j)
+	}
+}
+
+func TestConvert_ListItemKeepsInlineBoldWithinSingleParagraph(t *testing.T) {
+	r := convert(t, `<ul><li>Click the “<strong>White-Label</strong>” option to rebrand dashboard.</li></ul>`)
+	j := toJSON(t, r)
+	if strings.Count(j, `"type":"paragraph"`) != 1 {
+		t.Fatalf("expected a single paragraph inside list item, got: %s", j)
+	}
+	if !strings.Contains(j, `"type":"bold"`) {
+		t.Fatalf("expected bold mark to be preserved, got: %s", j)
+	}
+	if !strings.Contains(j, `Click the`) || !strings.Contains(j, `White-Label`) || !strings.Contains(j, `option to rebrand dashboard.`) {
+		t.Fatalf("expected inline text to remain together, got: %s", j)
+	}
+}
+
+func TestConvert_ListItemKeepsMultipleInlineMarkedSpansWithinSingleParagraph(t *testing.T) {
+	r := convert(t, `<ol><li>Navigate to Manage on <strong>Replug Dashboard</strong>, hover over to <strong>Replug Links</strong> and click on it.</li></ol>`)
+	j := toJSON(t, r)
+	if strings.Count(j, `"type":"paragraph"`) != 1 {
+		t.Fatalf("expected a single paragraph inside list item, got: %s", j)
+	}
+	if strings.Count(j, `"type":"bold"`) != 2 {
+		t.Fatalf("expected both bold spans to be preserved inline, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphNormalizesWhitespaceAroundInlineFormatting(t *testing.T) {
+	r := convert(t, "<p>Go to the \n\t<strong>Integrations</strong>page from profile settings.</p>")
+	j := toJSON(t, r)
+	if strings.Contains(j, `\n`) || strings.Contains(j, `\t`) {
+		t.Fatalf("expected newline and tab noise to be removed, got: %s", j)
+	}
+	if !strings.Contains(j, `Go to the `) || !strings.Contains(j, `Integrations`) || !strings.Contains(j, `page from profile settings.`) {
+		t.Fatalf("expected paragraph content to be preserved, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphTrimsSpacerBreakNoise(t *testing.T) {
+	r := convert(t, `<p><br> Please note the size and format for Favicons. <br><br> <strong>Size:</strong> 16x16 pixels.</p>`)
+	j := toJSON(t, r)
+	if strings.Contains(j, `"content":[{"type":"hardBreak"}`) {
+		t.Fatalf("expected leading hard break to be removed, got: %s", j)
+	}
+	if strings.Contains(j, `"type":"hardBreak"},{"type":"hardBreak"`) {
+		t.Fatalf("expected consecutive hard breaks to be collapsed, got: %s", j)
+	}
+	if strings.Contains(j, `\n`) || strings.Contains(j, `\t`) {
+		t.Fatalf("expected whitespace noise around hard breaks to be removed, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphPreservesSpaceAfterLinkText(t *testing.T) {
+	r := convert(t, `<p>Check our blog on <a href="https://example.com">Bio Links&nbsp;</a>for the latest market trends.</p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"text":"Bio Links "`) {
+		t.Fatalf("expected trailing space inside linked text to be preserved, got: %s", j)
+	}
+	if !strings.Contains(j, `"text":"for the latest market trends."`) {
+		t.Fatalf("expected trailing text after link, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphInsertsSeparatorAfterMarkedSpanWhenMissing(t *testing.T) {
+	r := convert(t, `<p>Click on the <strong>Save</strong>button.</p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"text":"Save "`) && !strings.Contains(j, `"text":" button."`) {
+		t.Fatalf("expected a separator space to be preserved or inferred around marked span, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphInsertsSeparatorBetweenAdjacentMarkedSpansWhenMissing(t *testing.T) {
+	r := convert(t, `<p>Configure the <a href="https://example.com">RSS Feed</a><strong>of your choice</strong> for the audience.</p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"text":"RSS Feed "`) && !strings.Contains(j, `"text":" of your choice"`) {
+		t.Fatalf("expected a separator space between adjacent marked spans, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphPreservesSpaceBeforeMarkedSpan(t *testing.T) {
+	r := convert(t, `<p>Log into your<strong> Replug account.</strong></p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"text":"Log into your "`) && !strings.Contains(j, `"text":" Replug account."`) {
+		t.Fatalf("expected separator space before marked span, got: %s", j)
+	}
+}
+
+func TestConvert_ParagraphInsertsSeparatorBeforeMarkedSpanWhenMissing(t *testing.T) {
+	r := convert(t, `<p>Open<strong>Settings</strong>to continue.</p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"text":"Open "`) && !strings.Contains(j, `"text":" Settings"`) {
+		t.Fatalf("expected separator space before marked span when source omits it, got: %s", j)
 	}
 }
 
@@ -310,5 +422,44 @@ func TestConvert_MixedContent(t *testing.T) {
 		if !strings.Contains(j, check) {
 			t.Errorf("missing %s in output: %s", check, j)
 		}
+	}
+}
+
+func TestConvertHelpScoutFixture_AltTextNormalizesEscapedAside(t *testing.T) {
+	r := convertHelpScout(t, "replug_alt_text.html")
+	j := toJSON(t, r)
+	if strings.Contains(j, "&lt;aside&gt;") || strings.Contains(j, "<aside>") {
+		t.Fatalf("expected escaped aside markers to be normalized, got: %s", j)
+	}
+	if !strings.Contains(j, `"type":"callout"`) {
+		t.Fatalf("expected help scout aside content to become a callout, got: %s", j)
+	}
+}
+
+func TestConvertHelpScoutFixture_FirstCommentDropsEmptyHeadingAndLeadingNoise(t *testing.T) {
+	r := convertHelpScout(t, "replug_first_comment.html")
+	j := toJSON(t, r)
+	if strings.Contains(j, `"type":"heading","attrs":{"level":2}`) {
+		t.Fatalf("expected empty heading to be dropped, got: %s", j)
+	}
+	if strings.Contains(j, `"text":" The `) || strings.Contains(j, `"text":" Go to the`) {
+		t.Fatalf("expected leading import whitespace to be trimmed, got: %s", j)
+	}
+	if !strings.Contains(j, `"level":4`) {
+		t.Fatalf("expected h4 step headings to be preserved, got: %s", j)
+	}
+}
+
+func TestConvertHelpScoutFixture_BioLinksPreservesCalloutsAndLowerHeadings(t *testing.T) {
+	r := convertHelpScout(t, "replug_bio_links.html")
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"type":"callout"`) {
+		t.Fatalf("expected helpscout callout to survive, got: %s", j)
+	}
+	if !strings.Contains(j, `"level":4`) || !strings.Contains(j, `"level":5`) {
+		t.Fatalf("expected h4/h5 hierarchy to be preserved, got: %s", j)
+	}
+	if strings.Contains(j, `"type":"heading","attrs":{"level":3}`) && !strings.Contains(j, "Step 1") {
+		t.Fatalf("expected empty nested heading to be dropped, got: %s", j)
 	}
 }

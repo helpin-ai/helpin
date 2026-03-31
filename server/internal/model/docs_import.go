@@ -48,10 +48,15 @@ type ImportFailure struct {
 
 // ImportSummary holds high-level stats shown to the user when an import completes.
 type ImportSummary struct {
-	CollectionsCreated int `json:"collections_created"`
-	ArticlesPublished  int `json:"articles_published"`
-	ArticlesDrafted    int `json:"articles_drafted"`
-	RedirectsCreated   int `json:"redirects_created"`
+	CollectionsCreated             int `json:"collections_created"`
+	ArticlesPublished              int `json:"articles_published"`
+	ArticlesDrafted                int `json:"articles_drafted"`
+	RedirectsCreated               int `json:"redirects_created"`
+	ArticlesUncategorized          int `json:"articles_uncategorized"`
+	ArticlesWithConversionWarnings int `json:"articles_with_conversion_warnings"`
+	HTMLBlockFallbacks             int `json:"html_block_fallbacks"`
+	ImageRewriteFailures           int `json:"image_rewrite_failures"`
+	NormalizedNoteBlocks           int `json:"normalized_note_blocks"`
 }
 
 // DocsImportPreviewRequest is the payload for previewing available collections from an external source.
