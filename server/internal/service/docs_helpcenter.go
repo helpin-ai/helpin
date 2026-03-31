@@ -399,6 +399,9 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 	if err != nil || cfg == nil {
 		return cfg, err
 	}
+	if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
+		return nil, err
+	}
 	s.enrichFeaturedCardTitles(ctx, cfg)
 	return cfg, nil
 }
@@ -411,6 +414,9 @@ func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier st
 		return nil, err
 	}
 	if cfg != nil {
+		if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
+			return nil, err
+		}
 		s.enrichFeaturedCardTitles(ctx, cfg)
 		return cfg, nil
 	}
@@ -421,6 +427,9 @@ func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier st
 		return nil, err
 	}
 	if cfg != nil {
+		if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
+			return nil, err
+		}
 		s.enrichFeaturedCardTitles(ctx, cfg)
 		return cfg, nil
 	}
@@ -449,10 +458,10 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 
 	changed := false
 	for i, card := range hpCfg.FeaturedCards {
-		if card.LinkType != "collection" || card.LinkValue == "" {
+		if card.LinkType != "collection" {
 			continue
 		}
-		col, err := s.collectionRepo.GetByID(ctx, card.LinkValue)
+		col, err := s.resolveFeaturedCardCollection(ctx, cfg.WorkspaceID, card)
 		if err != nil || col == nil {
 			continue
 		}
@@ -488,6 +497,46 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 			cfg.HomepageConfig = enriched
 		}
 	}
+}
+
+func (s *DocsHelpcenterService) resolveFeaturedCardCollection(ctx context.Context, workspaceID string, card model.HomepageFeaturedCard) (*model.DocsCollection, error) {
+	if card.LinkValue != "" {
+		col, err := s.collectionRepo.GetByID(ctx, card.LinkValue)
+		if err != nil {
+			return nil, err
+		}
+		if col != nil {
+			return col, nil
+		}
+	}
+
+	if card.SpaceSlug == "" {
+		return nil, nil
+	}
+
+	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, card.SpaceSlug)
+	if err != nil || space == nil {
+		return nil, err
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	linkValue := strings.TrimSpace(card.LinkValue)
+	title := strings.TrimSpace(card.Title)
+	for i := range collections {
+		collection := collections[i]
+		if linkValue != "" && (collection.ID == linkValue || collection.Slug == linkValue) {
+			return &collection, nil
+		}
+		if linkValue == "" && title != "" && strings.EqualFold(strings.TrimSpace(collection.Name), title) {
+			return &collection, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func defaultHelpcenterLocale(cfg *model.DocsHelpcenterConfig) string {
