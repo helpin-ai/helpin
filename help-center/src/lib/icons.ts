@@ -1,39 +1,167 @@
-import { lazy, type ComponentType } from 'react'
-import type { IconProps } from '@phosphor-icons/react'
+import type { ComponentType, SVGProps } from 'react'
+import {
+  Airplay,
+  Archive,
+  Bookmark,
+  Box,
+  Calendar,
+  ChartBar,
+  CheckCircle,
+  CircleDot,
+  Cloud,
+  Code,
+  Cog,
+  Compass,
+  CreditCard,
+  Database,
+  Download,
+  File,
+  FileText,
+  Filter,
+  Flag,
+  Folder,
+  FolderOpen,
+  Globe,
+  HardDrive,
+  Hash,
+  Heart,
+  Home,
+  Image,
+  Inbox,
+  Info,
+  Key,
+  Layers,
+  Layout,
+  Link,
+  List,
+  Lock,
+  Mail,
+  Map,
+  MessageCircle,
+  Monitor,
+  Package,
+  Pen,
+  Phone,
+  Play,
+  Plus,
+  Puzzle,
+  Rocket,
+  Search,
+  Send,
+  Settings,
+  Shield,
+  ShoppingCart,
+  Sparkles,
+  Star,
+  Tag,
+  Target,
+  Terminal,
+  ThumbsUp,
+  Trash,
+  TrendingUp,
+  Upload,
+  User,
+  Users,
+  Video,
+  Wand,
+  Wrench,
+  Zap,
+} from 'lucide-react'
 
-function kebabToPascal(s: string): string {
-  return s
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('')
-}
-
-const iconCache = new Map<string, ComponentType<IconProps>>()
+type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number | string }>
 
 /**
- * Returns a lazy-loaded Phosphor icon component for a given kebab-case name.
- * Each icon is imported individually (~2KB) from the SSR dist instead of
- * loading the full package (~5MB barrel export).
+ * Static icon map — Phosphor kebab-case names mapped to Lucide components.
+ * Each icon is tree-shaken individually (~500 bytes). No lazy loading,
+ * no Suspense, renders synchronously during SSR.
  */
-export function getIconComponent(
-  name: string,
-): ComponentType<IconProps> | null {
-  if (!name || !/^[a-z]/.test(name)) return null
+const ICON_MAP: Record<string, IconComponent> = {
+  // Direct name matches
+  airplay: Airplay,
+  archive: Archive,
+  bookmark: Bookmark,
+  calendar: Calendar,
+  cloud: Cloud,
+  code: Code,
+  compass: Compass,
+  database: Database,
+  download: Download,
+  filter: Filter,
+  flag: Flag,
+  folder: Folder,
+  'folder-open': FolderOpen,
+  globe: Globe,
+  hash: Hash,
+  heart: Heart,
+  home: Home,
+  image: Image,
+  inbox: Inbox,
+  info: Info,
+  key: Key,
+  layers: Layers,
+  layout: Layout,
+  link: Link,
+  list: List,
+  lock: Lock,
+  mail: Mail,
+  map: Map,
+  monitor: Monitor,
+  package: Package,
+  phone: Phone,
+  play: Play,
+  plus: Plus,
+  rocket: Rocket,
+  search: Search,
+  send: Send,
+  shield: Shield,
+  star: Star,
+  tag: Tag,
+  target: Target,
+  terminal: Terminal,
+  trash: Trash,
+  upload: Upload,
+  user: User,
+  users: Users,
+  video: Video,
+  zap: Zap,
 
-  const cached = iconCache.get(name)
-  if (cached) return cached
+  // Phosphor → Lucide name mappings
+  'chart-bar': ChartBar,
+  'chart-line': TrendingUp,
+  'check-circle': CheckCircle,
+  'credit-card': CreditCard,
+  'circle-dashed': CircleDot,
+  'file-text': FileText,
+  file: File,
+  'gear': Cog,
+  'gear-six': Cog,
+  'hard-drive': HardDrive,
+  'hard-drives': HardDrive,
+  'chat-circle': MessageCircle,
+  'chat-text': MessageCircle,
+  'chat-dots': MessageCircle,
+  'chats': MessageCircle,
+  'envelope': Mail,
+  'envelope-simple': Mail,
+  'magic-wand': Wand,
+  'sparkle': Sparkles,
+  'shopping-cart': ShoppingCart,
+  'shopping-bag': ShoppingCart,
+  'thumbs-up': ThumbsUp,
+  'trending-up': TrendingUp,
+  'pencil-simple': Pen,
+  'pencil': Pen,
+  'note-pencil': Pen,
+  'wrench': Wrench,
+  'puzzle-piece': Puzzle,
+  'cube': Box,
+  'box': Box,
+  'settings': Settings,
+  'sliders': Settings,
+  'sliders-horizontal': Settings,
+}
 
-  const pascal = kebabToPascal(name)
-  const LazyIcon = lazy(() =>
-    import(`@phosphor-icons/react/dist/ssr/${pascal}.es.js`)
-      .then((mod) => ({
-        default: (mod.default ?? mod[pascal]) as ComponentType<IconProps>,
-      }))
-      .catch(() => ({
-        default: (() => null) as unknown as ComponentType<IconProps>,
-      })),
-  )
-
-  iconCache.set(name, LazyIcon)
-  return LazyIcon
+export function getIconComponent(name: string): IconComponent | null {
+  if (!name) return null
+  return ICON_MAP[name.toLowerCase()] ?? null
 }
