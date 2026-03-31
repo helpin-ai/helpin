@@ -4,6 +4,9 @@ import { useDocsContext } from '@/contexts/DocsContext'
 import { usePreviewArticle, useSpaceNavigation } from '@/hooks/queries'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useScrollSpy } from '@/hooks/useScrollSpy'
+import { prefetchPreviewRouteData } from '@/lib/routeData'
+import { loadRootRouteData } from '@/lib/rootLoader'
+import { buildPreviewHead } from '@/lib/seo'
 import { extractTocFromHtml } from '@/lib/toc'
 import { ArticleContent } from '@/components/ArticleContent'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -15,6 +18,28 @@ export const Route = createFileRoute('/preview/$docId')({
   validateSearch: (search: Record<string, unknown>) => ({
     token: (search.token as string) || '',
   }),
+  loader: async ({ context, location, params }) => {
+    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    const routeSearch = location.search as { token?: string }
+
+    if (!routeSearch.token) {
+      return null
+    }
+
+    return prefetchPreviewRouteData(
+      context.queryClient,
+      rootData,
+      params.docId,
+      routeSearch.token,
+    )
+  },
+  head: ({ matches, loaderData }) => {
+    const rootData = matches[0]?.loaderData as
+      | import('@/lib/rootLoader').RootRouteData
+      | undefined
+
+    return rootData ? buildPreviewHead(rootData, loaderData) : {}
+  },
   component: PreviewPage,
 })
 

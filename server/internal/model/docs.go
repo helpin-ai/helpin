@@ -584,19 +584,20 @@ type PublicSpaceResponse struct {
 
 // PublicNavArticle is a published article within a collection for sidebar navigation.
 type PublicNavArticle struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	PublishedAt *string `json:"published_at"`
 }
 
 // PublicNavCollection is a collection with its published articles for sidebar navigation.
 type PublicNavCollection struct {
-	ID       string             `json:"id"`
-	Name     string             `json:"name"`
-	Slug     string             `json:"slug"`
-	SpaceSlug string            `json:"space_slug,omitempty"`
-	Icon     *string            `json:"icon"`
-	Articles []PublicNavArticle `json:"articles"`
+	ID        string             `json:"id"`
+	Name      string             `json:"name"`
+	Slug      string             `json:"slug"`
+	SpaceSlug string             `json:"space_slug,omitempty"`
+	Icon      *string            `json:"icon"`
+	Articles  []PublicNavArticle `json:"articles"`
 }
 
 // PublicArticleResponse is the full article detail for the help center content area.
