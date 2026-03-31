@@ -1,5 +1,6 @@
 import { createRouter } from '@tanstack/react-router'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
+import { LoadingState } from '@/components/LoadingState'
 import { createHelpCenterQueryClient } from '@/lib/queryClient'
 import { routeTree } from './routeTree.gen'
 
@@ -10,6 +11,8 @@ export function getRouter() {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreload: 'intent',
+    defaultPendingComponent: () => <LoadingState fullScreen />,
+    defaultPendingMinMs: 300,
   })
 
   setupRouterSsrQueryIntegration({
