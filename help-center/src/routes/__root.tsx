@@ -37,9 +37,6 @@ function buildBrandColorStyle(hex: string | undefined | null): string {
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
   head: ({ loaderData }) => {
     const rootHead = buildRootHead(loaderData)
-    const brandColor = (loaderData as RootRouteData | undefined)?.config?.brand_color
-    const brandStyle = buildBrandColorStyle(brandColor)
-
     return {
       links: [
         { rel: 'stylesheet', href: appCss },
@@ -61,9 +58,6 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
         { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
         ...(rootHead.meta ?? []),
       ],
-      scripts: brandStyle
-        ? [{ tag: 'style', attrs: { id: 'brand-color-override' }, children: brandStyle }]
-        : [],
     }
   },
   loader: ({ context, location }) =>
@@ -107,7 +101,7 @@ function RootLayout() {
   }
 
   return (
-    <RootDocument lang={activeLocale || config.default_locale || 'en'}>
+    <RootDocument lang={activeLocale || config.default_locale || 'en'} brandColor={config?.brand_color}>
       <DocsProvider
         subdomain={subdomain}
         locale={activeLocale}
@@ -139,11 +133,17 @@ const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('hc-theme'
 function RootDocument({
   children,
   lang = 'en',
-}: Readonly<{ children: ReactNode; lang?: string }>) {
+  brandColor,
+}: Readonly<{ children: ReactNode; lang?: string; brandColor?: string | null }>) {
+  const brandStyle = buildBrandColorStyle(brandColor)
+
   return (
     <html lang={lang}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {brandStyle && (
+          <style id="brand-color-override" dangerouslySetInnerHTML={{ __html: brandStyle }} />
+        )}
         <HeadContent />
       </head>
       <body>
