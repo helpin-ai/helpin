@@ -153,6 +153,8 @@ function RootLayout() {
   )
 }
 
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('hc-theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()`
+
 function RootDocument({
   children,
   lang = 'en',
@@ -160,6 +162,7 @@ function RootDocument({
   return (
     <html lang={lang}>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
