@@ -8,6 +8,25 @@ import {
 } from '@/hooks/queries'
 import type { RootRouteData } from '@/lib/rootLoader'
 
+export async function prefetchHomeRouteData(
+  queryClient: QueryClient,
+  rootData: RootRouteData,
+) {
+  const firstSpace = rootData.spaces[0]
+  if (firstSpace?.slug) {
+    await queryClient
+      .prefetchQuery(
+        spaceNavigationQueryOptions(
+          rootData.subdomain,
+          rootData.activeLocale,
+          firstSpace.slug,
+          rootData.multilingualEnabled,
+        ),
+      )
+      .catch(() => undefined)
+  }
+}
+
 export async function prefetchArticleRouteData(
   queryClient: QueryClient,
   rootData: RootRouteData,
