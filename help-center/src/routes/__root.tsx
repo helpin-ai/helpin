@@ -37,7 +37,7 @@ function buildBrandColorStyle(hex: string | undefined | null): string {
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
   head: ({ loaderData }) => {
     const rootHead = buildRootHead(loaderData)
-    const brandColor = loaderData?.config?.brand_color
+    const brandColor = (loaderData as RootRouteData | undefined)?.config?.brand_color
     const brandStyle = buildBrandColorStyle(brandColor)
 
     return {
