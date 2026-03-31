@@ -37,13 +37,16 @@ import {
   type TeamType,
 } from '@/lib/teamPresets';
 import { EstimateSettingsForm } from './teams/EstimateSettingsForm';
+import { SprintSettingsForm } from '@/components/settings/teams/SprintSettingsForm';
+import { pmAutomationService } from '@/lib/services/pmAutomationService';
+import type { PMAutomation } from '@/lib/pmTypes';
 import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
 import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
 import { TeamWorkflowStateEditor } from './teams/TeamWorkflowStateEditor';
 
 /* ── Teams Tab ── */
 
-export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh, initialTeamId, access }: {
+export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh, initialTeamId, initialSection, access }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
@@ -54,6 +57,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   editable: boolean;
   onRefresh: (silent?: boolean) => void | Promise<void>;
   initialTeamId?: string;
+  initialSection?: string;
   access?: import('@/lib/types').WorkspaceAccess | null;
 }) {
   const navigate = useNavigate();
@@ -81,6 +85,17 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
   const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
   const [estimateSaving, setEstimateSaving] = useState(false);
+
+  const [sprintDialogOpen, setSprintDialogOpen] = useState(false);
+  const [sprintSaving, setSprintSaving] = useState(false);
+  const [automations, setAutomations] = useState<PMAutomation[]>([]);
+
+  // Auto-open sprint dialog when navigated with ?section=sprints
+  useEffect(() => {
+    if (initialSection === 'sprints' && selectedTeamId) {
+      setSprintDialogOpen(true);
+    }
+  }, [initialSection, selectedTeamId]);
 
   const [fieldVisDialogOpen, setFieldVisDialogOpen] = useState(false);
   const [fieldVisSaving, setFieldVisSaving] = useState(false);
@@ -172,6 +187,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   // Load agents for pipeline builder
   useEffect(() => {
     agentService.list(workspaceId).then((res) => { if (res.data) setPipelineAgents(res.data); });
+  }, [workspaceId]);
+
+  // Load automations for sprint settings
+  useEffect(() => {
+    pmAutomationService.list(workspaceId).then((res) => { if (res.data) setAutomations(res.data); });
   }, [workspaceId]);
 
   const filteredTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));
@@ -477,6 +497,15 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             description: 'Configure estimate scale and options',
             meta: estimateMeta,
             action: () => setEstimateDialogOpen(true),
+            disabled: !teamEditable,
+          },
+          {
+            key: 'sprints',
+            icon: RefreshCw,
+            title: 'Sprints',
+            description: 'Enable sprints and configure automation',
+            meta: selectedTeam?.sprints_enabled !== false ? 'Enabled' : 'Disabled',
+            action: () => setSprintDialogOpen(true),
             disabled: !teamEditable,
           },
         ],
@@ -899,6 +928,67 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   toast.success('Estimate settings updated');
                   setEstimateDialogOpen(false);
                   await onRefresh();
+                }
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Sprint Settings Dialog */}
+        <Dialog open={sprintDialogOpen} onOpenChange={setSprintDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Sprint Settings</DialogTitle>
+            </DialogHeader>
+            <SprintSettingsForm
+              teamId={selectedTeam?.id ?? ''}
+              sprintsEnabled={selectedTeam?.sprints_enabled !== false}
+              autoCreateConfig={automations.find((a) => a.automation_type === 'sprint_auto_create' && a.team_id === selectedTeam?.id) ?? null}
+              moveUnfinishedConfig={automations.find((a) => a.automation_type === 'sprint_move_unfinished' && a.team_id === selectedTeam?.id) ?? null}
+              saving={sprintSaving}
+              onSave={async (data) => {
+                if (!workspaceId || !selectedTeam) return;
+                setSprintSaving(true);
+                try {
+                  // Update sprints_enabled on team
+                  await settingsService.updateTeam(workspaceId, selectedTeam.id, { sprints_enabled: data.sprints_enabled });
+                  // Upsert auto-create automation
+                  if (data.sprints_enabled && data.auto_create_enabled) {
+                    await pmAutomationService.upsert(workspaceId, {
+                      automation_type: 'sprint_auto_create',
+                      enabled: true,
+                      team_id: selectedTeam.id,
+                      config_int: data.auto_create_upcoming_count,
+                      config_int2: data.auto_create_duration_weeks,
+                      config_int3: data.auto_create_start_day,
+                    });
+                  } else {
+                    const existing = automations.find((a) => a.automation_type === 'sprint_auto_create' && a.team_id === selectedTeam.id);
+                    if (existing) await pmAutomationService.upsert(workspaceId, { ...existing, enabled: false });
+                  }
+                  // Upsert move-unfinished automation
+                  if (data.sprints_enabled && data.move_unfinished_enabled) {
+                    await pmAutomationService.upsert(workspaceId, {
+                      automation_type: 'sprint_move_unfinished',
+                      enabled: true,
+                      team_id: selectedTeam.id,
+                    });
+                  } else {
+                    const existing = automations.find((a) => a.automation_type === 'sprint_move_unfinished' && a.team_id === selectedTeam.id);
+                    if (existing) await pmAutomationService.upsert(workspaceId, { ...existing, enabled: false });
+                  }
+                  // Refresh automations + parent data
+                  const refreshed = await pmAutomationService.list(workspaceId);
+                  if (refreshed.data) setAutomations(refreshed.data);
+                  await onRefresh();
+                } catch {
+                  // Error handled silently, data refreshed
+                }
+                setSprintSaving(false);
+                setSprintDialogOpen(false);
+                // Clear section param so dialog doesn't re-open on next render
+                if (initialSection && currentWorkspace?.slug) {
+                  navigate({ to: '/w/$slug/settings/teams', params: { slug: currentWorkspace.slug }, search: { team: selectedTeamId ?? undefined }, replace: true });
                 }
               }}
             />

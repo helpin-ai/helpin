@@ -43,7 +43,7 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { isAdmin, canManageSettings } = usePermissions(access);
+  const { isAdmin, canManageSettings, canManageTeams } = usePermissions(access);
   const {
     navFilter,
     setNavFilter,
@@ -305,6 +305,7 @@ export function Sidebar() {
                 isTeamSubActive={isTeamSubActive}
                 toggleTeam={toggleTeam}
                 onNavigate={handleNavigate}
+                canManageTeams={canManageTeams}
               />
             )}
 

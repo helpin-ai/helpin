@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -382,7 +381,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     description: '',
     startDate: '',
     endDate: '',
-    teamId: storeTeamId ?? teams[0]?.id ?? '',
+    teamId: storeTeamId ?? teams.find((t) => t.sprints_enabled !== false)?.id ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
@@ -436,7 +435,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
           setAutomationPrompt({
             teamId: form.teamId,
             teamName: team?.name ?? 'this team',
-            sprintCount: 2, // current sprint + 1 ahead
+            sprintCount: 1, // 1 unstarted sprint ahead
             weeks,
             startDay: 1, // Monday
             moveUnfinished: true,
@@ -542,37 +541,29 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Always keep</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={automationPrompt.sprintCount}
-                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, sprintCount: Number(e.target.value) } : p)}
-                  className="w-20 h-8 text-xs"
-                />
-                <span className="text-xs text-muted-foreground">{automationPrompt.sprintCount === 1 ? 'active sprint' : 'active sprints'}</span>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Each sprint lasts</Label>
+                <Select
+                  value={String(automationPrompt.weeks)}
+                  onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, weeks: Number(val) } : p)}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4].map((w) => (
+                      <SelectItem key={w} value={String(w)}>{w} {w === 1 ? 'week' : 'weeks'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Sprint length</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={automationPrompt.weeks}
-                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, weeks: Number(e.target.value) } : p)}
-                  className="w-20 h-8 text-xs"
-                />
-                <span className="text-xs text-muted-foreground">{automationPrompt.weeks === 1 ? 'week' : 'weeks'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Starts on</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Sprints start on</Label>
                 <Select
                   value={String(automationPrompt.startDay)}
                   onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, startDay: Number(val) } : p)}
                 >
-                  <SelectTrigger className="h-8 text-xs flex-1">
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -582,10 +573,26 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Upcoming sprints to create</Label>
+                <Select
+                  value={String(automationPrompt.sprintCount)}
+                  onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, sprintCount: Number(val) } : p)}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n} {n === 1 ? 'sprint' : 'sprints'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-center justify-between pt-1">
                 <div>
-                  <p className="text-xs font-medium">Move unfinished stories</p>
-                  <p className="text-[11px] text-muted-foreground">Carry over incomplete stories to the next sprint</p>
+                  <p className="text-sm font-medium">Roll over unfinished work</p>
+                  <p className="text-xs text-muted-foreground">When a sprint ends, move incomplete stories to the next sprint</p>
                 </div>
                 <Switch
                   checked={automationPrompt.moveUnfinished}
@@ -595,7 +602,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
 
             <p className="text-[11px] text-muted-foreground">
-              You can change this anytime in Settings &gt; Automations.
+              You can change this anytime in Team Settings.
             </p>
 
             <div className="flex justify-end gap-2">
@@ -690,7 +697,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
-                    {teams.map((t) => (
+                    {teams.filter((t) => t.sprints_enabled !== false).map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
                   </SelectContent>
