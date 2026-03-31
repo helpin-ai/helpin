@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, GitBranch, ListTodo, PlayCircle } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, ListTodo, PlayCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { RecurringRun, RecurringTemplateStatus, Story } from '@/lib/pmTypes';
+import type { RecurringRun, RecurringTemplateStatus } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 interface RecurringTemplateSummaryProps {
@@ -14,7 +14,6 @@ interface RecurringTemplateSummaryProps {
   generatedCount?: number;
   occurrenceNumber?: number;
   lastError?: string;
-  lastGeneratedStory?: Pick<Story, 'id' | 'display_id' | 'name'> | null;
   runs?: RecurringRun[];
   actions?: ReactNode;
   compact?: boolean;
@@ -108,7 +107,6 @@ export function RecurringTemplateSummary({
   generatedCount,
   occurrenceNumber,
   lastError,
-  lastGeneratedStory,
   runs,
   actions,
   compact = false,
@@ -144,15 +142,6 @@ export function RecurringTemplateSummary({
           <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{formatRelative(nextRunAt)}</span>
         </div>
-
-        {lastGeneratedStory ? (
-          <div className="flex items-start gap-2 text-muted-foreground">
-            <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 truncate">
-              Last generated: TP-{lastGeneratedStory.display_id} {lastGeneratedStory.name}
-            </span>
-          </div>
-        ) : null}
 
         {lastError ? (
           <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-destructive">

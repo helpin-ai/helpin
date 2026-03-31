@@ -32,7 +32,7 @@ export function Footer() {
         )}
         <span>
           Powered by{' '}
-          <span className="font-medium text-muted-foreground/80">Helpin</span>
+          <a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" className="font-medium text-muted-foreground/80 transition-colors hover:text-foreground">Helpin</a>
         </span>
       </div>
     </footer>
