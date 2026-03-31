@@ -32,7 +32,7 @@ describe('RecurringTemplateSummary', () => {
     expect(container.textContent).toContain('Every 2 weeks on Mon, Wed');
     expect(container.textContent).toContain('Occurrence #3');
     expect(container.textContent).toContain('8 generated');
-    expect(container.textContent).toContain('TP-321 Weekly Ops Review');
+    expect(container.textContent).toContain('321 Weekly Ops Review');
 
     act(() => {
       root.unmount();

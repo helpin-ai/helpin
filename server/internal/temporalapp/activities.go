@@ -4382,7 +4382,7 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 }
 
 func buildWorkingBranch(story *model.PMStory, teamDefault *model.PMTeamRepoDefault) string {
-	template := "tp-{display_id}-{slug}"
+	template := "{display_id}-{slug}"
 	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
 		template = teamDefault.BranchTemplate
 	}
@@ -4396,7 +4396,7 @@ func buildWorkingBranch(story *model.PMStory, teamDefault *model.PMTeamRepoDefau
 	template = strings.ToLower(strings.TrimSpace(template))
 	template = strings.Trim(template, "/-")
 	if template == "" {
-		return fmt.Sprintf("tp-%d-%s", story.DisplayID, slugifyBranchToken(story.Name))
+		return fmt.Sprintf("%d-%s", story.DisplayID, slugifyBranchToken(story.Name))
 	}
 	return template
 }

@@ -521,7 +521,7 @@ func uniqueStrings(values []string) []string {
 }
 
 func storyAssociationSummary(associationID string, story model.PMStory) model.AssociationObjectSummary {
-	displayID := fmt.Sprintf("TP-%d", story.DisplayID)
+	displayID := fmt.Sprintf("%d", story.DisplayID)
 	workflowStateID := story.WorkflowStateID
 	storyType := story.StoryType
 	return model.AssociationObjectSummary{
