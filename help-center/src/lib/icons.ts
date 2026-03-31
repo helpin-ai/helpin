@@ -1,24 +1,39 @@
-import * as PhosphorIcons from '@phosphor-icons/react'
-import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
+import { lazy, type ComponentType } from 'react'
+import type { IconProps } from '@phosphor-icons/react'
 
-function pascalToKebab(s: string): string {
-  return s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+function kebabToPascal(s: string): string {
+  return s
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
 }
 
-const SKIP = new Set(['IconContext', 'IconBase', 'IconWeight'])
+const iconCache = new Map<string, ComponentType<IconProps>>()
 
-// Build ICON_MAP dynamically from all Phosphor exports so any icon
-// chosen in the admin settings will render on the public help center.
-export const ICON_MAP: Record<string, PhosphorIcon> = (() => {
-  const map: Record<string, PhosphorIcon> = {}
-  for (const [name, exported] of Object.entries(PhosphorIcons)) {
-    // Skip non-component exports
-    if (SKIP.has(name)) continue
-    // Icon components are PascalCase starting with uppercase
-    if (!/^[A-Z][a-z]/.test(name)) continue
-    if (typeof exported !== 'object' && typeof exported !== 'function') continue
-    if (exported === null) continue
-    map[pascalToKebab(name)] = exported as unknown as PhosphorIcon
-  }
-  return map
-})()
+/**
+ * Returns a lazy-loaded Phosphor icon component for a given kebab-case name.
+ * Each icon is imported individually (~2KB) from the SSR dist instead of
+ * loading the full package (~5MB barrel export).
+ */
+export function getIconComponent(
+  name: string,
+): ComponentType<IconProps> | null {
+  if (!name || !/^[a-z]/.test(name)) return null
+
+  const cached = iconCache.get(name)
+  if (cached) return cached
+
+  const pascal = kebabToPascal(name)
+  const LazyIcon = lazy(() =>
+    import(`@phosphor-icons/react/dist/ssr/${pascal}.es.js`)
+      .then((mod) => ({
+        default: (mod.default ?? mod[pascal]) as ComponentType<IconProps>,
+      }))
+      .catch(() => ({
+        default: (() => null) as unknown as ComponentType<IconProps>,
+      })),
+  )
+
+  iconCache.set(name, LazyIcon)
+  return LazyIcon
+}
