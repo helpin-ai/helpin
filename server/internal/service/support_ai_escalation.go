@@ -530,14 +530,6 @@ func checkHardEscalation(content string) string {
 		}
 	}
 
-	// Billing/refund/account deletion topics.
-	billingPatterns := []string{"refund", "billing", "cancel my account", "delete my account", "charge"}
-	for _, pattern := range billingPatterns {
-		if strings.Contains(lower, pattern) {
-			return "billing_topic"
-		}
-	}
-
 	return ""
 }
 

@@ -338,6 +338,9 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	if len(systemMessages) == 0 {
 		t.Fatal("expected auto-move system message")
 	}
+	if !systemMessages[len(systemMessages)-1].IsInternal {
+		t.Fatal("expected auto-move system message to be internal")
+	}
 	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Conversation moved to Billing by routing rule") {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 	}

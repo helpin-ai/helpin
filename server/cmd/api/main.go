@@ -870,6 +870,7 @@ func main() {
 	)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
+	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetSupportAIService(supportAIService)
 

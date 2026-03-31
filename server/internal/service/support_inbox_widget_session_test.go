@@ -270,3 +270,65 @@ func TestSupportInboxServiceSessionConversationLifecycle(t *testing.T) {
 		t.Fatal("expected selecting another visitor's conversation to fail")
 	}
 }
+
+func TestSupportInboxServiceListConversationMessages_AllowsWidgetValidatedContextWithoutActor(t *testing.T) {
+	db := newTestDB(t)
+
+	workspaceID := "ws-widget-messages"
+	seedWorkspace(t, db, workspaceID, "Widget Messages WS", "widget-messages-ws", "user-123")
+
+	ctx := context.Background()
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget conversation",
+		Status:      "open",
+		AnonymousID: strPtr("anon-1"),
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	message := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversation.ID,
+		SenderType:     "customer",
+		MessageType:    "reply",
+		Content:        "Need help with refund",
+		IsInternal:     false,
+	}
+	if err := messageRepo.Create(ctx, message); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	messages, err := svc.ListConversationMessages(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		t.Fatalf("ListConversationMessages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if messages[0].ID != message.ID {
+		t.Fatalf("message id = %q, want %q", messages[0].ID, message.ID)
+	}
+}
