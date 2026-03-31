@@ -28,6 +28,8 @@ function isHtmlRequest(request, url) {
   }
 
   if (
+    url.pathname === '/api' ||
+    url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/preview/') ||
     url.pathname.startsWith('/assets/') ||
     url.pathname === '/robots.txt' ||
@@ -88,6 +90,59 @@ function writeCachedResponse(nodeResponse, cached) {
   nodeResponse.end(cached.body)
 }
 
+function isApiRequest(url) {
+  return url.pathname === '/api' || url.pathname.startsWith('/api/')
+}
+
+function buildProxyHeaders(request) {
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (value == null) {
+      continue
+    }
+    headers.set(name, normalizeHeaderValue(value))
+  }
+  headers.delete('host')
+  headers.delete('connection')
+  headers.delete('content-length')
+  return headers
+}
+
+function buildApiProxyUrl(url) {
+  const apiBase = process.env.INTERNAL_API_URL
+  if (!apiBase) {
+    return null
+  }
+
+  const target = new URL(apiBase)
+  const apiBasePath = target.pathname.replace(/\/$/, '')
+  const requestPath = url.pathname.replace(/^\/api/, '')
+  target.pathname = `${apiBasePath}${requestPath || ''}`
+  target.search = url.search
+  return target
+}
+
+async function proxyApiRequest(request, nodeResponse, url) {
+  const targetUrl = buildApiProxyUrl(url)
+  if (!targetUrl) {
+    nodeResponse.statusCode = 502
+    nodeResponse.setHeader('Cache-Control', 'no-store')
+    nodeResponse.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    nodeResponse.end('API proxy is not configured')
+    return
+  }
+
+  const proxyRequest = new Request(targetUrl, {
+    method: request.method,
+    headers: buildProxyHeaders(request),
+    body: shouldReadBody(request.method || 'GET') ? Readable.toWeb(request) : undefined,
+    duplex: 'half',
+  })
+
+  const proxyResponse = await fetch(proxyRequest)
+  await writeFetchResponse(nodeResponse, proxyResponse, targetUrl)
+}
+
 async function writeFetchResponse(nodeResponse, response, url) {
   nodeResponse.statusCode = response.status
 
@@ -131,6 +186,11 @@ async function handleRequest(request, response) {
   const protocol = forwardedProto || 'http'
   const url = new URL(request.url || '/', `${protocol}://${host}`)
   const cacheKey = getCacheKey(url, request)
+
+  if (isApiRequest(url)) {
+    await proxyApiRequest(request, response, url)
+    return
+  }
 
   if (isHtmlRequest(request, url)) {
     const cached = getCachedResponse(cacheKey)

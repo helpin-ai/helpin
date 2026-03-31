@@ -399,9 +399,6 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 	if err != nil || cfg == nil {
 		return cfg, err
 	}
-	if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
-		return nil, err
-	}
 	s.enrichFeaturedCardTitles(ctx, cfg)
 	return cfg, nil
 }
@@ -414,9 +411,6 @@ func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier st
 		return nil, err
 	}
 	if cfg != nil {
-		if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
-			return nil, err
-		}
 		s.enrichFeaturedCardTitles(ctx, cfg)
 		return cfg, nil
 	}
@@ -427,9 +421,6 @@ func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier st
 		return nil, err
 	}
 	if cfg != nil {
-		if err := s.ensureDefaultLocaleMirrors(ctx, cfg.WorkspaceID); err != nil {
-			return nil, err
-		}
 		s.enrichFeaturedCardTitles(ctx, cfg)
 		return cfg, nil
 	}
@@ -718,6 +709,47 @@ func (s *DocsHelpcenterService) ensureDefaultLocaleMirrors(ctx context.Context, 
 	return s.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID)
 }
 
+func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForSpace(ctx context.Context, spaceID string) error {
+	if s.translationSvc == nil {
+		return nil
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, spaceID)
+	if err != nil {
+		return err
+	}
+
+	for _, collection := range collections {
+		if err := s.translationSvc.RefreshCollectionSource(ctx, collection.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx context.Context, workspaceID string) error {
+	if s.translationSvc == nil {
+		return nil
+	}
+
+	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	for _, space := range spaces {
+		if space.Type != model.SpaceTypeExternalCapable {
+			continue
+		}
+		if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, space.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *DocsHelpcenterService) resolvePublicSpaceTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterSpaceTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
@@ -763,6 +795,18 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 		return translation, requestedLocale, false, nil
 	}
 
+	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceID); err != nil {
+		return nil, "", false, err
+	}
+
+	translation, err = s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
 	defaultLocale := defaultHelpcenterLocale(cfg)
 	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
 		return nil, "", false, fmt.Errorf("collection not found")
@@ -780,6 +824,18 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 
 func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	if err := s.ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx, workspaceID); err != nil {
+		return nil, "", false, err
+	}
+
+	translation, err = s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -904,6 +960,10 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceTranslation.SpaceID); err != nil {
 		return nil, err
 	}
 

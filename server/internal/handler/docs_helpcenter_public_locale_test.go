@@ -116,6 +116,48 @@ func TestDocsHelpcenterPublicLocale_SingleLocaleSpacesDoesNotRedirect(t *testing
 	}
 }
 
+func TestDocsHelpcenterPublicLocale_ConfigDoesNotMutateCollectionMirrors(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 3, 25, 20, 7, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	if err := db.Exec(`
+		UPDATE docs_helpcenter_configs
+		SET default_locale = ?, enabled_locales = ?, show_language_switcher = ?, fallback_to_default_locale = ?
+		WHERE workspace_id = ?
+	`, "en", `["en"]`, false, true, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("restrict help center to single locale: %v", err)
+	}
+	if err := db.Exec(`UPDATE docs_collections SET slug = '' WHERE id = ?`, "collection-handler-i18n").Error; err != nil {
+		t.Fatalf("clear collection slug: %v", err)
+	}
+	if err := db.Exec(`UPDATE docs_helpcenter_collection_translations SET slug = NULL WHERE collection_id = ? AND locale = ?`, "collection-handler-i18n", "en").Error; err != nil {
+		t.Fatalf("clear collection translation slug: %v", err)
+	}
+	h := newDocsHelpcenterPublicHandlerForTest(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/config", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
+		"subdomain": "handler-i18n",
+	})
+	rec := httptest.NewRecorder()
+
+	h.PublicGetConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var storedCollection model.DocsCollection
+	if err := db.Where("id = ?", "collection-handler-i18n").First(&storedCollection).Error; err != nil {
+		t.Fatalf("load collection: %v", err)
+	}
+	if storedCollection.Slug != "" {
+		t.Fatalf("stored collection slug = %q, want empty", storedCollection.Slug)
+	}
+}
+
 func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *testing.T) {
 	t.Parallel()
 
