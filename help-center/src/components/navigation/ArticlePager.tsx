@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
@@ -18,8 +19,8 @@ export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
   return (
     <nav className="flex items-stretch gap-4 mt-12 pt-8 border-t border-border">
       {prev ? (
-        <a
-          href={buildCanonicalArticlePath(
+        <Link
+          to={buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
             prev.collectionSlug,
@@ -34,13 +35,13 @@ export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
           <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
             {prev.title}
           </div>
-        </a>
+        </Link>
       ) : (
         <div className="flex-1" />
       )}
       {next ? (
-        <a
-          href={buildCanonicalArticlePath(
+        <Link
+          to={buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
             next.collectionSlug,
@@ -55,7 +56,7 @@ export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
           <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">
             {next.title}
           </div>
-        </a>
+        </Link>
       ) : (
         <div className="flex-1" />
       )}

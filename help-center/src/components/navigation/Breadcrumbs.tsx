@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalCollectionPath, isMultilingualEnabled } from '@/lib/locale'
 
@@ -27,8 +28,8 @@ export function Breadcrumbs({
 
   return (
     <nav className="flex items-center text-[14px]">
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
           collectionSlug,
@@ -36,7 +37,7 @@ export function Breadcrumbs({
         className="font-medium text-primary transition-colors hover:text-primary/80"
       >
         {collectionName}
-      </a>
+      </Link>
     </nav>
   )
 }
