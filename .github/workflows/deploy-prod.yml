@@ -23,83 +23,130 @@ env:
   IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
 
 jobs:
-  version:
-    name: Determine Release Version
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
-    # Skip version bump commits
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     outputs:
-      release_tag: ${{ steps.release_version.outputs.release_tag }}
-      prev_tag: ${{ steps.release_version.outputs.prev_tag }}
+      server: ${{ steps.filter.outputs.server }}
+      helpcenter: ${{ steps.filter.outputs.helpcenter }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: filter
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          SERVER=false
+          HELPCENTER=false
+          FRONTEND=false
+
+          if echo "$CHANGED" | grep -qE '^server/'; then
+            SERVER=true
+          fi
+          if echo "$CHANGED" | grep -qE '^help-center/'; then
+            HELPCENTER=true
+          fi
+          if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
+            FRONTEND=true
+          fi
+          if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+            HELPCENTER=true
+            FRONTEND=true
+          fi
+
+          echo "server=$SERVER" >> "$GITHUB_OUTPUT"
+          echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER helpcenter=$HELPCENTER frontend=$FRONTEND"
+
+  version:
+    name: Determine Release Versions
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.server == 'true' || needs.changes.outputs.helpcenter == 'true'
+    outputs:
+      server_tag: ${{ steps.versions.outputs.server_tag }}
+      server_prev: ${{ steps.versions.outputs.server_prev }}
+      helpcenter_tag: ${{ steps.versions.outputs.helpcenter_tag }}
+      helpcenter_prev: ${{ steps.versions.outputs.helpcenter_prev }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-          path: prod-version
 
-      - name: Determine release version
-        id: release_version
-        working-directory: prod-version
+      - name: Compute per-service release versions
+        id: versions
         run: |
-          # Check if there's an RC tag to promote
-          LATEST_RC=$(git tag -l 'v*-rc.*' --sort=-v:refname | head -n1 || echo "")
+          compute_release_version() {
+            local PREFIX=$1
+            local CHANGED=$2
 
-          if [ -n "$LATEST_RC" ]; then
-            # Promote RC to stable: v1.2.0-rc.3 → v1.2.0
-            RELEASE_TAG=$(echo "$LATEST_RC" | sed 's/-rc\.[0-9]*//')
-            PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "v0.0.0")
-            echo "Promoting RC $LATEST_RC → $RELEASE_TAG"
-          else
-            # No RC found — compute version from commits
-            PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "v0.0.0")
-            echo "No RC tag found, computing from commits since $PREV_TAG"
+            if [ "$CHANGED" != "true" ]; then
+              echo "tag="
+              echo "prev="
+              return
+            fi
 
-            if [ "$PREV_TAG" = "v0.0.0" ]; then
-              COMMITS=$(git log --pretty=format:"%s" -20)
+            # Check for RC to promote
+            LATEST_RC=$(git tag -l "${PREFIX}-v*-rc.*" --sort=-v:refname | head -n1 || echo "")
+            PREV_STABLE=$(git tag -l "${PREFIX}-v*" --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "")
+
+            if [ -n "$LATEST_RC" ]; then
+              # Promote RC: server-v1.2.3-rc.2 → server-v1.2.3
+              RELEASE_TAG=$(echo "$LATEST_RC" | sed 's/-rc\.[0-9]*//')
+            elif [ -n "$PREV_STABLE" ]; then
+              # No RC — bump patch from latest stable
+              VERSION=${PREV_STABLE#${PREFIX}-v}
+              IFS='.' read -ra P <<< "$VERSION"
+              MAJOR=${P[0]:-0}; MINOR=${P[1]:-0}; PATCH=${P[2]:-0}
+              PATCH=$((PATCH + 1))
+              RELEASE_TAG="${PREFIX}-v${MAJOR}.${MINOR}.${PATCH}"
             else
-              COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"%s")
+              RELEASE_TAG="${PREFIX}-v0.1.0"
             fi
 
-            BUMP_TYPE="patch"
-            if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|breaking|major):"; then
-              BUMP_TYPE="major"
-            elif echo "$COMMITS" | grep -qiE "^(feat|feature|minor):"; then
-              BUMP_TYPE="minor"
+            # Guard: don't re-release an existing tag
+            if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "tag="
+              echo "prev=$PREV_STABLE"
+              return
             fi
 
-            VERSION=${PREV_TAG#v}
-            IFS='.' read -ra PARTS <<< "$VERSION"
-            MAJOR=${PARTS[0]:-0}
-            MINOR=${PARTS[1]:-0}
-            PATCH=${PARTS[2]:-0}
+            echo "tag=$RELEASE_TAG"
+            echo "prev=$PREV_STABLE"
+          }
 
-            case $BUMP_TYPE in
-              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-              patch) PATCH=$((PATCH + 1)) ;;
-            esac
+          SERVER_OUT=$(compute_release_version "server" "${{ needs.changes.outputs.server }}")
+          SERVER_TAG=$(echo "$SERVER_OUT" | grep '^tag=' | cut -d= -f2)
+          SERVER_PREV=$(echo "$SERVER_OUT" | grep '^prev=' | cut -d= -f2)
 
-            RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
-          fi
+          HELPCENTER_OUT=$(compute_release_version "helpcenter" "${{ needs.changes.outputs.helpcenter }}")
+          HELPCENTER_TAG=$(echo "$HELPCENTER_OUT" | grep '^tag=' | cut -d= -f2)
+          HELPCENTER_PREV=$(echo "$HELPCENTER_OUT" | grep '^prev=' | cut -d= -f2)
 
-          # Guard: don't re-release an existing tag
-          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG already exists — skipping"
-            echo "release_tag=" >> "$GITHUB_OUTPUT"
-          else
-            echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          fi
+          echo "server_tag=$SERVER_TAG" >> "$GITHUB_OUTPUT"
+          echo "server_prev=$SERVER_PREV" >> "$GITHUB_OUTPUT"
+          echo "helpcenter_tag=$HELPCENTER_TAG" >> "$GITHUB_OUTPUT"
+          echo "helpcenter_prev=$HELPCENTER_PREV" >> "$GITHUB_OUTPUT"
 
-          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
-          echo "Release tag: $RELEASE_TAG"
+          echo "Server release: ${SERVER_TAG:-skipped}"
+          echo "Helpcenter release: ${HELPCENTER_TAG:-skipped}"
 
   build-server:
     name: Build Server Image
     runs-on: ubuntu-latest
-    needs: version
-    if: needs.version.outputs.release_tag != ''
+    needs: [version, changes]
+    if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -113,7 +160,7 @@ jobs:
         run: |
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
-            -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.release_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server:prod-latest \
             --push \
@@ -122,8 +169,8 @@ jobs:
   build-helpcenter:
     name: Build Help Center Image
     runs-on: ubuntu-latest
-    needs: version
-    if: needs.version.outputs.release_tag != ''
+    needs: [version, changes]
+    if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -137,64 +184,17 @@ jobs:
         run: |
           docker buildx build \
             -f build-prod-helpcenter/help-center/Dockerfile \
-            -t ${{ env.IMAGE_PREFIX }}/helpcenter:${{ needs.version.outputs.release_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/helpcenter:${{ needs.version.outputs.helpcenter_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:prod-latest \
             --push \
             build-prod-helpcenter/help-center/
 
-  # Temporarily paused Debian package release path.
-  # build-worker-deb:
-  #   name: Build Temporal Worker Debian Package
-  #   runs-on: ubuntu-latest
-  #   needs: version
-  #   if: needs.version.outputs.release_tag != ''
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #       with:
-  #         path: build-prod-worker
-  #
-  #     - name: Setup Go
-  #       uses: actions/setup-go@v5
-  #       with:
-  #         go-version: "1.24"
-  #
-  #     - name: Add Go bin to PATH
-  #       run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-  #
-  #     - name: Install nfpm
-  #       run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.1
-  #
-  #     - name: Build worker binary
-  #       working-directory: build-prod-worker/server
-  #       env:
-  #         CGO_ENABLED: 0
-  #         GOOS: linux
-  #         GOARCH: amd64
-  #       run: |
-  #         mkdir -p dist
-  #         go build -trimpath -ldflags="-w -s" -o dist/temporal-worker ./cmd/temporal-worker
-  #
-  #     - name: Package worker .deb
-  #       working-directory: build-prod-worker/server
-  #       run: |
-  #         VERSION="${{ needs.version.outputs.release_tag }}"
-  #         VERSION="${VERSION#v}"
-  #         export VERSION
-  #         nfpm package --packager deb --target "dist/helpin-temporal-worker_${VERSION}_amd64.deb"
-  #
-  #     - name: Upload worker package artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: helpin-temporal-worker-deb
-  #         path: build-prod-worker/server/dist/helpin-temporal-worker_*_amd64.deb
-
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
     runs-on: ubuntu-latest
-    needs: version
-    if: needs.version.outputs.release_tag != ''
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -241,8 +241,11 @@ jobs:
   release:
     name: Create Official Release
     runs-on: ubuntu-latest
-    needs: [version, build-server, build-helpcenter]
-    if: needs.version.outputs.release_tag != ''
+    needs: [version, changes, build-server, build-helpcenter]
+    if: |
+      always() &&
+      needs.version.result == 'success' &&
+      (needs.build-server.result == 'success' || needs.build-helpcenter.result == 'success')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -250,12 +253,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           path: prod-release
-      # Debian package artifact download paused with the build-worker-deb job.
-      # - name: Download worker package artifact
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: helpin-temporal-worker-deb
-      #     path: prod-release/dist
 
       - name: Configure git
         working-directory: prod-release
@@ -263,29 +260,47 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create and push release tag
+      - name: Create and push per-service release tags
         working-directory: prod-release
         run: |
-          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
-          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
+          SERVER_TAG="${{ needs.version.outputs.server_tag }}"
+          HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
+
+          for TAG in "$SERVER_TAG" "$HELPCENTER_TAG"; do
+            if [ -n "$TAG" ]; then
+              git tag -a "$TAG" -m "Release $TAG"
+              git push origin "$TAG"
+              echo "Created tag: $TAG"
+            fi
+          done
 
       - name: Generate release notes
-        id: release_notes
         working-directory: prod-release
         run: |
-          PREV_TAG="${{ needs.version.outputs.prev_tag }}"
-          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
-          RELEASE_VERSION="${RELEASE_TAG#v}"
+          SERVER_TAG="${{ needs.version.outputs.server_tag }}"
+          HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
+          SERVER_PREV="${{ needs.version.outputs.server_prev }}"
+          HELPCENTER_PREV="${{ needs.version.outputs.helpcenter_prev }}"
+
+          TITLE_PARTS=""
+          [ -n "$SERVER_TAG" ] && TITLE_PARTS="$SERVER_TAG"
+          [ -n "$HELPCENTER_TAG" ] && TITLE_PARTS="${TITLE_PARTS:+$TITLE_PARTS, }$HELPCENTER_TAG"
+
+          RELEASE_NAME=""
+          [ -n "$SERVER_TAG" ] && RELEASE_NAME="$SERVER_TAG"
+          [ -z "$RELEASE_NAME" ] && RELEASE_NAME="$HELPCENTER_TAG"
+
+          # Use the oldest prev tag for commit log range
+          PREV_TAG="$SERVER_PREV"
+          [ -z "$PREV_TAG" ] && PREV_TAG="$HELPCENTER_PREV"
 
           echo "## What's Changed" > release_notes.md
           echo "" >> release_notes.md
 
-          # Add commit log
-          if [ "$PREV_TAG" = "v0.0.0" ]; then
-            COMMITS=$(git log --pretty=format:"- %s (%h)" -20)
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)")
           else
-            COMMITS=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)")
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -20)
           fi
 
           echo "<details>" >> release_notes.md
@@ -296,52 +311,47 @@ jobs:
           echo "</details>" >> release_notes.md
           echo "" >> release_notes.md
           echo "### Images" >> release_notes.md
-          echo "- \`${{ env.IMAGE_PREFIX }}/server:$RELEASE_TAG\`" >> release_notes.md
-          echo "- \`${{ env.IMAGE_PREFIX }}/helpcenter:$RELEASE_TAG\`" >> release_notes.md
+          [ -n "$SERVER_TAG" ] && echo "- \`${{ env.IMAGE_PREFIX }}/server:$SERVER_TAG\`" >> release_notes.md
+          [ -n "$HELPCENTER_TAG" ] && echo "- \`${{ env.IMAGE_PREFIX }}/helpcenter:$HELPCENTER_TAG\`" >> release_notes.md
           echo "" >> release_notes.md
-          # Debian package notes paused with the build-worker-deb job.
-          # echo "### Packages" >> release_notes.md
-          # echo "- \`helpin-temporal-worker_${RELEASE_VERSION}_amd64.deb\`" >> release_notes.md
-          # echo "" >> release_notes.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$RELEASE_TAG" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-HEAD~10}...$RELEASE_NAME" >> release_notes.md
+
+          echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
         working-directory: prod-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ needs.version.outputs.release_tag }}" \
-            --title "Release ${{ needs.version.outputs.release_tag }}" \
+          gh release create "$RELEASE_NAME" \
+            --title "Release: $RELEASE_NAME" \
             --notes-file release_notes.md \
             --latest
-
-      # Debian package upload paused with the build-worker-deb job.
-      # - name: Upload worker package to release
-      #   working-directory: prod-release
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   run: gh release upload "${{ needs.version.outputs.release_tag }}" dist/*.deb --clobber
 
       - name: Update K8s manifests
         working-directory: prod-release
         run: |
-          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
-          SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${RELEASE_TAG}"
-          HELPCENTER_IMAGE="${{ env.IMAGE_PREFIX }}/helpcenter:${RELEASE_TAG}"
-
+          SERVER_TAG="${{ needs.version.outputs.server_tag }}"
+          HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
           MANIFEST_DIR="k8s/prod"
+          UPDATED=""
 
-          # Update server image references
-          find "$MANIFEST_DIR" -name "*.yaml" -exec \
-            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
+          if [ -n "$SERVER_TAG" ]; then
+            SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${SERVER_TAG}"
+            find "$MANIFEST_DIR" -name "*.yaml" -exec \
+              sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
+            UPDATED="${UPDATED:+$UPDATED, }server→$SERVER_TAG"
+          fi
 
-          # Update helpcenter image references
-          find "$MANIFEST_DIR" -name "*.yaml" -exec \
-            sed -i -E "s|ghcr\.io/helpin-ai/helpin/helpcenter:[^ \"]+|${HELPCENTER_IMAGE}|g" {} +
+          if [ -n "$HELPCENTER_TAG" ]; then
+            HELPCENTER_IMAGE="${{ env.IMAGE_PREFIX }}/helpcenter:${HELPCENTER_TAG}"
+            find "$MANIFEST_DIR" -name "*.yaml" -exec \
+              sed -i -E "s|ghcr\.io/helpin-ai/helpin/helpcenter:[^ \"]+|${HELPCENTER_IMAGE}|g" {} +
+            UPDATED="${UPDATED:+$UPDATED, }helpcenter→$HELPCENTER_TAG"
+          fi
 
-          # Commit and push
           git add k8s/
-          git commit -m "chore: update helpin prod images to ${RELEASE_TAG} [skip ci]" || echo "No manifest changes"
+          git commit -m "chore: update prod images ($UPDATED) [skip ci]" || echo "No manifest changes"
 
       - name: Push all changes
         working-directory: prod-release
@@ -354,12 +364,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Delete RC pre-releases and tags for this version
-          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
-          PRERELEASE_TAGS=$(git tag -l "${RELEASE_TAG}-rc.*" "${RELEASE_TAG}-dev.*")
+          SERVER_TAG="${{ needs.version.outputs.server_tag }}"
+          HELPCENTER_TAG="${{ needs.version.outputs.helpcenter_tag }}"
 
-          for tag in $PRERELEASE_TAGS; do
-            echo "Cleaning up pre-release tag: $tag"
-            gh release delete "$tag" --yes 2>/dev/null || true
-            git push origin --delete "$tag" 2>/dev/null || true
+          for TAG in "$SERVER_TAG" "$HELPCENTER_TAG"; do
+            if [ -n "$TAG" ]; then
+              RC_TAGS=$(git tag -l "${TAG}-rc.*" "${TAG}-dev.*" 2>/dev/null || echo "")
+              for rc in $RC_TAGS; do
+                echo "Cleaning up: $rc"
+                gh release delete "$rc" --yes 2>/dev/null || true
+                git push origin --delete "$rc" 2>/dev/null || true
+              done
+            fi
           done
