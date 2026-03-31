@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query'
+
 // ─── Help Center Config ─────────────────────────────────────────────────────
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system'
@@ -151,6 +153,7 @@ export interface NavArticle {
   id: string
   title: string
   slug: string
+  published_at?: string | null
 }
 
 // ─── Search ─────────────────────────────────────────────────────────────────
@@ -173,5 +176,5 @@ export interface SearchResult {
 // ─── Router Context ─────────────────────────────────────────────────────────
 
 export interface HelpCenterContext {
-  subdomain: string
+  queryClient: QueryClient
 }

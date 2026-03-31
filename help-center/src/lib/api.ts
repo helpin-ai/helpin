@@ -1,9 +1,20 @@
-const BASE_URL = import.meta.env.VITE_API_URL || '/api'
-
 interface ApiResponse<T> {
   data: T | null
   error: string | null
   status: number
+}
+
+function getBaseUrl() {
+  if (typeof window === 'undefined') {
+    return (
+      process.env.INTERNAL_API_URL ||
+      import.meta.env.INTERNAL_API_URL ||
+      import.meta.env.VITE_API_URL ||
+      'http://127.0.0.1:8080/api'
+    )
+  }
+
+  return import.meta.env.VITE_API_URL || '/api'
 }
 
 async function request<T>(
@@ -12,7 +23,7 @@ async function request<T>(
   body?: unknown,
 ): Promise<ApiResponse<T>> {
   try {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(`${getBaseUrl()}${path}`, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,

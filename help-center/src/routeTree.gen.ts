@@ -9,7 +9,10 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
+import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as SpaceSlugRouteImport } from './routes/$spaceSlug'
 import { Route as LocaleRouteImport } from './routes/$locale'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,9 +26,24 @@ import { Route as LocaleSpaceSlugIndexRouteImport } from './routes/$locale/$spac
 import { Route as LocaleSpaceSlugCollectionSlugIndexRouteImport } from './routes/$locale/$spaceSlug/$collectionSlug/index'
 import { Route as LocaleSpaceSlugCollectionSlugArticleSlugRouteImport } from './routes/$locale/$spaceSlug/$collectionSlug/$articleSlug'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpaceSlugRoute = SpaceSlugRouteImport.update({
@@ -95,7 +113,10 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$locale': typeof LocaleRouteWithChildren
   '/$spaceSlug': typeof SpaceSlugRouteWithChildren
+  '/healthz': typeof HealthzRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/search': typeof SearchRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/$locale/$spaceSlug': typeof LocaleSpaceSlugRouteWithChildren
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
@@ -108,7 +129,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/healthz': typeof HealthzRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/search': typeof SearchRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
   '/preview/$docId': typeof PreviewDocIdRoute
@@ -123,7 +147,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$locale': typeof LocaleRouteWithChildren
   '/$spaceSlug': typeof SpaceSlugRouteWithChildren
+  '/healthz': typeof HealthzRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/search': typeof SearchRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/$locale/$spaceSlug': typeof LocaleSpaceSlugRouteWithChildren
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
@@ -140,7 +167,10 @@ export interface FileRouteTypes {
     | '/'
     | '/$locale'
     | '/$spaceSlug'
+    | '/healthz'
+    | '/robots.txt'
     | '/search'
+    | '/sitemap.xml'
     | '/$locale/$spaceSlug'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
@@ -153,7 +183,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/healthz'
+    | '/robots.txt'
     | '/search'
+    | '/sitemap.xml'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
     | '/preview/$docId'
@@ -167,7 +200,10 @@ export interface FileRouteTypes {
     | '/'
     | '/$locale'
     | '/$spaceSlug'
+    | '/healthz'
+    | '/robots.txt'
     | '/search'
+    | '/sitemap.xml'
     | '/$locale/$spaceSlug'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
@@ -183,17 +219,41 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LocaleRoute: typeof LocaleRouteWithChildren
   SpaceSlugRoute: typeof SpaceSlugRouteWithChildren
+  HealthzRoute: typeof HealthzRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
   SearchRoute: typeof SearchRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   PreviewDocIdRoute: typeof PreviewDocIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/search': {
       id: '/search'
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$spaceSlug': {
@@ -334,9 +394,21 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LocaleRoute: LocaleRouteWithChildren,
   SpaceSlugRoute: SpaceSlugRouteWithChildren,
+  HealthzRoute: HealthzRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
   SearchRoute: SearchRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   PreviewDocIdRoute: PreviewDocIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

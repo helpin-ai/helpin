@@ -968,7 +968,12 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			}
 		}
 
-		article := model.PublicNavArticle{ID: doc.ID, Title: translation.Title, Slug: stringValue(translation.Slug)}
+		article := model.PublicNavArticle{
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
+		}
 		if doc.CollectionID == nil {
 			uncategorized = append(uncategorized, article)
 			continue
@@ -1072,11 +1077,7 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		}
 	}
 
-	var publishedAt *string
-	if translation.PublishedAt != nil {
-		formatted := translation.PublishedAt.Format(time.RFC3339)
-		publishedAt = &formatted
-	}
+	publishedAt := formatPublicPublishedAt(translation.PublishedAt)
 
 	go func() {
 		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
@@ -1166,9 +1167,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 			}
 		}
 		articles = append(articles, model.PublicNavArticle{
-			ID:    doc.ID,
-			Title: translation.Title,
-			Slug:  stringValue(translation.Slug),
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
 
@@ -1253,9 +1255,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 			}
 		}
 		articles = append(articles, model.PublicNavArticle{
-			ID:    doc.ID,
-			Title: translation.Title,
-			Slug:  stringValue(translation.Slug),
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
 
@@ -1609,4 +1612,13 @@ func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, doc
 		return nil
 	}
 	return s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful)
+}
+
+func formatPublicPublishedAt(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+
+	formatted := value.Format(time.RFC3339)
+	return &formatted
 }

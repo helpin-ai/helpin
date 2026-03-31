@@ -518,6 +518,7 @@ func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Reques
 // PublicPreviewArticle returns a preview of a document for the help center app.
 // Requires a valid preview JWT token as query parameter.
 func (h *DocsHandler) PublicPreviewArticle(w http.ResponseWriter, r *http.Request) {
+	setHelpcenterCacheHeader(w, "no-store")
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
 		return
@@ -1087,6 +1088,10 @@ func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 	return false
 }
 
+func setHelpcenterCacheHeader(w http.ResponseWriter, value string) {
+	w.Header().Set("Cache-Control", value)
+}
+
 func (h *DocsHandler) publicLocaleRedirectTarget(r *http.Request, cfg *model.DocsHelpcenterConfig) string {
 	subdomain := chi.URLParam(r, "subdomain")
 	base := "/api/hc/" + subdomain
@@ -1146,6 +1151,7 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -1167,6 +1173,7 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, spaces)
 }
 
@@ -1189,6 +1196,7 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, nav)
 }
 
@@ -1218,6 +1226,7 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, article)
 }
 
@@ -1242,6 +1251,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
@@ -1260,6 +1270,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
@@ -1277,6 +1288,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "collection not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"collection": coll,
 		"articles":   articles,
@@ -1301,6 +1313,7 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, article)
 }
 
@@ -1360,6 +1373,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=60")
 	writeJSON(w, http.StatusOK, results)
 }
 

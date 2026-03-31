@@ -1,47 +1,64 @@
+import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import {
+  HeadContent,
+  Scripts,
   createRootRouteWithContext,
-  useParams,
   useRouterState,
 } from '@tanstack/react-router'
 import { Eye } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
-import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { DocsProvider } from '@/contexts/DocsContext'
-import { useHelpCenterConfig, useSpaces } from '@/hooks/queries'
-import { isMultilingualEnabled, resolveActiveLocale } from '@/lib/locale'
+import appCss from '@/app.css?url'
+import { loadRootRouteData } from '@/lib/rootLoader'
+import type { RootRouteData } from '@/lib/rootLoader'
+import { buildRootHead } from '@/lib/seo'
 import type { HelpCenterContext } from '@/lib/types'
 
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
+  head: ({ loaderData }) => {
+    const rootHead = buildRootHead(loaderData)
+
+    return {
+      links: [
+        { rel: 'stylesheet', href: appCss },
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
+        {
+          rel: 'preload',
+          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+          as: 'style',
+        },
+        {
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+        },
+        ...(rootHead.links ?? []),
+      ],
+      meta: [
+        { charSet: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
+        ...(rootHead.meta ?? []),
+      ],
+    }
+  },
+  loader: ({ context, location }) =>
+    loadRootRouteData(context.queryClient, location.pathname),
   component: RootLayout,
+  errorComponent: RootErrorBoundary,
 })
 
 function RootLayout() {
-  const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
-  const params = useParams({ strict: false }) as { locale?: string; spaceSlug?: string }
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPreview = pathname.startsWith('/preview/')
-
   const {
-    data: config,
-    isLoading: configLoading,
-    error: configError,
-  } = useHelpCenterConfig(subdomain)
-
-  const activeLocale = resolveActiveLocale({
-    paramsLocale: params.locale,
-    paramsSpaceSlug: params.spaceSlug,
-    enabledLocales: config?.enabled_locales,
-    defaultLocale: config?.default_locale || 'en',
-  })
-  const multilingualEnabled = isMultilingualEnabled(config?.enabled_locales)
-  const { data: spaces, isLoading: spacesLoading } = useSpaces(
-    subdomain,
     activeLocale,
+    config,
     multilingualEnabled,
-    !!config,
-  )
+    spaces,
+    subdomain,
+  } = Route.useLoaderData() as RootRouteData
 
   // Inject brand color as CSS custom property overrides
   useEffect(() => {
@@ -97,21 +114,6 @@ function RootLayout() {
     link.href = config.favicon_url
   }, [config?.favicon_url])
 
-  if (configLoading || spacesLoading) {
-    return <LoadingState message="Loading help center..." fullScreen />
-  }
-
-  if (configError) {
-    return (
-      <ErrorState
-        title="Help Center not found"
-        message="This help center does not exist or is not currently available."
-        statusCode={404}
-        fullScreen
-      />
-    )
-  }
-
   // Allow preview routes even when help center is not published
   if (config && !config.is_published && !isPreview) {
     return (
@@ -124,27 +126,59 @@ function RootLayout() {
   }
 
   return (
-    <DocsProvider
-      subdomain={subdomain}
-      locale={activeLocale}
-      defaultLocale={config!.default_locale}
-      enabledLocales={config!.enabled_locales ?? [config!.default_locale]}
-      multilingualEnabled={multilingualEnabled}
-      config={config!}
-      spaces={spaces ?? []}
-    >
-      {isPreview && (
-        <div className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-center">
-          <Eye size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-            Preview Mode
-          </span>
-          <span className="text-xs text-amber-600/70 dark:text-amber-400/60">
-            — This is how your article will appear in the help center.
-          </span>
-        </div>
-      )}
-      <AppShell />
-    </DocsProvider>
+    <RootDocument lang={activeLocale || config.default_locale || 'en'}>
+      <DocsProvider
+        subdomain={subdomain}
+        locale={activeLocale}
+        defaultLocale={config.default_locale}
+        enabledLocales={config.enabled_locales ?? [config.default_locale]}
+        multilingualEnabled={multilingualEnabled}
+        config={config}
+        spaces={spaces}
+      >
+        {isPreview && (
+          <div className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-center">
+            <Eye size={14} className="shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              Preview Mode
+            </span>
+            <span className="text-xs text-amber-600/70 dark:text-amber-400/60">
+              - This is how your article will appear in the help center.
+            </span>
+          </div>
+        )}
+        <AppShell />
+      </DocsProvider>
+    </RootDocument>
+  )
+}
+
+function RootDocument({
+  children,
+  lang = 'en',
+}: Readonly<{ children: ReactNode; lang?: string }>) {
+  return (
+    <html lang={lang}>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  )
+}
+
+function RootErrorBoundary({ error }: { error: Error }) {
+  return (
+    <RootDocument>
+      <ErrorState
+        title="Help Center unavailable"
+        message={error.message || 'This help center is not currently available.'}
+        statusCode={404}
+        fullScreen
+      />
+    </RootDocument>
   )
 }

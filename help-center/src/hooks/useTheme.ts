@@ -11,6 +11,7 @@ function getStoredTheme(): Theme {
 }
 
 function applyTheme(theme: Theme) {
+  if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('dark', theme === 'dark')
 }
 
@@ -34,7 +35,9 @@ export function useTheme(configThemeMode?: HelpcenterThemeMode) {
 
   const setTheme = useCallback((t: Theme) => {
     if (isForced) return
-    localStorage.setItem('hc-theme', t)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hc-theme', t)
+    }
     setThemeState(t)
   }, [isForced])
 

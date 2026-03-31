@@ -5,9 +5,12 @@ export interface TocItem {
 }
 
 function extractPlainText(html: string): string {
-  const template = document.createElement('template')
-  template.innerHTML = html
-  return template.content.textContent?.trim() ?? ''
+  if (typeof DOMParser !== 'undefined') {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    return doc.body.textContent?.trim() ?? ''
+  }
+
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function slugify(text: string): string {
