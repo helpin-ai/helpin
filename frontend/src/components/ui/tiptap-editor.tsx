@@ -185,7 +185,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         heading: { levels: [1, 2, 3] },
         link: {
           openOnClick: false,
-          HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+          HTMLAttributes: { class: 'text-primary underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
       Placeholder.configure({

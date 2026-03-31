@@ -166,6 +166,18 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		}
 	}
 
+	// Prepend actor name to title if available (e.g. "mentioned you" → "Waqar Azeem mentioned you")
+	if event.ActorID != "" && event.ActorSnapshot != nil {
+		if rawName, ok := event.ActorSnapshot["name"]; ok {
+			if name, ok := rawName.(string); ok && strings.TrimSpace(name) != "" {
+				// Only prepend if title doesn't already start with the actor name
+				if !strings.HasPrefix(event.Title, name) {
+					event.Title = name + " " + event.Title
+				}
+			}
+		}
+	}
+
 	// Remove actor (don't self-notify)
 	delete(recipientSet, event.ActorID)
 
@@ -546,7 +558,7 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	if strings.TrimSpace(event.Body) != "" {
 		textBody += "\n\n" + event.Body
 	}
-	textBody += fmt.Sprintf("\n\nBy: %s\nWorkspace: %s", actorName, workspaceName)
+	textBody += fmt.Sprintf("\n\nWorkspace: %s", workspaceName)
 	if entityURL != "" {
 		textBody += "\n\nView in Helpin: " + entityURL
 	}
@@ -638,13 +650,6 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
                       <!-- Body -->
                       %s
 
-                      <!-- Actor -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 28px;">
-                          <p style="margin: 0; font-size: 13px; color: #a1a1aa;">By %s</p>
-                        </td>
-                      </tr>
-
                       %s
 
                     </table>
@@ -677,7 +682,6 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
 		bodyHTML,
-		html.EscapeString(actorName),
 		ctaHTML,
 	)
 
