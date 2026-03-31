@@ -28,6 +28,11 @@ spec:
       containers:
         - name: helpcenter
           image: ghcr.io/helpin-ai/helpin/helpcenter:v0.94.7
+          env:
+            - name: INTERNAL_API_URL
+              value: http://helpin-server-svc:8080/api
+            - name: PORT
+              value: "3000"
           ports:
             - containerPort: 3000
           securityContext:
