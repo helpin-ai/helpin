@@ -1,6 +1,51 @@
 import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import serverEntry from './dist/server/server.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
+
+const MIME_TYPES = {
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json',
+}
+
+function serveStaticFile(response, filePath) {
+  const ext = path.extname(filePath)
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+  const stat = fs.statSync(filePath)
+  response.statusCode = 200
+  response.setHeader('Content-Type', contentType)
+  response.setHeader('Content-Length', stat.size)
+  response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  fs.createReadStream(filePath).pipe(response)
+}
+
+function tryServeStatic(url, response) {
+  if (!url.pathname.startsWith('/assets/')) return false
+  const safePath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '')
+  const filePath = path.join(CLIENT_DIR, safePath)
+  if (!filePath.startsWith(CLIENT_DIR)) return false
+  if (!fs.existsSync(filePath)) return false
+  serveStaticFile(response, filePath)
+  return true
+}
 
 const PORT = Number.parseInt(process.env.PORT || '3000', 10)
 const HTML_CACHE_TTL_MS = Number.parseInt(
@@ -171,6 +216,119 @@ async function writeFetchResponse(nodeResponse, response, url) {
   })
 }
 
+function resolveHostInfo(request) {
+  const forwardedHost = normalizeHeaderValue(request.headers['x-forwarded-host'])
+  const host = forwardedHost || normalizeHeaderValue(request.headers.host) || 'localhost'
+  const forwardedProto = normalizeHeaderValue(request.headers['x-forwarded-proto'])
+  const protocol = forwardedProto || 'http'
+  return { host, protocol, origin: `${protocol}://${host}` }
+}
+
+function resolveSubdomainFromHost(host) {
+  const hostname = host.split(':')[0]
+  const parts = hostname.split('.')
+  if (parts.length >= 3) return parts[0]
+  if (parts.length === 2 && parts[1] !== 'localhost') return parts[0]
+  return hostname
+}
+
+function xmlEscape(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+async function handleRobotsTxt(request, response) {
+  const { host, origin } = resolveHostInfo(request)
+  const body = [
+    'User-agent: *',
+    'Disallow: /preview/',
+    'Crawl-delay: 1',
+    `Sitemap: ${origin}/sitemap.xml`,
+  ].join('\n')
+  response.statusCode = 200
+  response.setHeader('Cache-Control', 'public, max-age=3600')
+  response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  response.end(body)
+}
+
+async function handleSitemapXml(request, response) {
+  try {
+    const { host, origin } = resolveHostInfo(request)
+    const apiBase = process.env.INTERNAL_API_URL
+    if (!apiBase) {
+      response.statusCode = 503
+      response.setHeader('Content-Type', 'text/plain')
+      response.end('Sitemap unavailable')
+      return
+    }
+    const subdomain = resolveSubdomainFromHost(host)
+    const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
+    if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
+    const config = await configRes.json()
+    const locales = config.enabled_locales?.length > 1
+      ? config.enabled_locales
+      : [config.default_locale || 'en']
+    const multilingual = config.enabled_locales?.length > 1
+    const urls = new Map()
+    urls.set(`${origin}${multilingual ? `/${config.default_locale}` : '/'}`, null)
+
+    for (const locale of locales) {
+      const spacesPath = multilingual
+        ? `/hc/${subdomain}/${locale}/spaces`
+        : `/hc/${subdomain}/spaces`
+      const spacesRes = await fetch(`${apiBase}${spacesPath}`)
+      if (!spacesRes.ok) continue
+      const spaces = await spacesRes.json()
+
+      for (const space of spaces) {
+        const navPath = multilingual
+          ? `/hc/${subdomain}/${locale}/spaces/${space.slug}/navigation`
+          : `/hc/${subdomain}/spaces/${space.slug}/navigation`
+        const navRes = await fetch(`${apiBase}${navPath}`)
+        if (!navRes.ok) continue
+        const navigation = await navRes.json()
+
+        for (const coll of navigation) {
+          const collPath = multilingual
+            ? `/${locale}/${coll.slug}`
+            : `/${coll.slug}`
+          urls.set(`${origin}${collPath}`, null)
+
+          for (const article of coll.articles || []) {
+            const artPath = multilingual
+              ? `/${locale}/${coll.slug}/${article.slug}`
+              : `/${coll.slug}/${article.slug}`
+            urls.set(`${origin}${artPath}`, article.published_at || null)
+          }
+        }
+      }
+    }
+
+    const entries = Array.from(urls.entries())
+      .map(([loc, lastmod]) => {
+        const lastmodTag = lastmod ? `<lastmod>${xmlEscape(new Date(lastmod).toISOString())}</lastmod>` : ''
+        return `  <url><loc>${xmlEscape(loc)}</loc>${lastmodTag}</url>`
+      })
+      .join('\n')
+    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>`
+
+    response.statusCode = 200
+    response.setHeader('Cache-Control', 'public, max-age=3600')
+    response.setHeader('Content-Type', 'application/xml; charset=utf-8')
+    response.end(body)
+  } catch (error) {
+    console.error('failed to generate sitemap', error)
+    response.statusCode = 503
+    response.setHeader('Cache-Control', 'no-store')
+    response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    response.end('Sitemap unavailable')
+  }
+}
+
 async function handleRequest(request, response) {
   if (request.url === '/healthz') {
     response.statusCode = 200
@@ -180,12 +338,23 @@ async function handleRequest(request, response) {
     return
   }
 
-  const forwardedHost = normalizeHeaderValue(request.headers['x-forwarded-host'])
-  const host = forwardedHost || normalizeHeaderValue(request.headers.host) || 'localhost'
-  const forwardedProto = normalizeHeaderValue(request.headers['x-forwarded-proto'])
-  const protocol = forwardedProto || 'http'
+  if (request.url === '/robots.txt') {
+    await handleRobotsTxt(request, response)
+    return
+  }
+
+  if (request.url === '/sitemap.xml') {
+    await handleSitemapXml(request, response)
+    return
+  }
+
+  const { host, protocol } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
   const cacheKey = getCacheKey(url, request)
+
+  if (tryServeStatic(url, response)) {
+    return
+  }
 
   if (isApiRequest(url)) {
     await proxyApiRequest(request, response, url)
