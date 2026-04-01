@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckSquare, GripVertical, Plus, Trash2, X } from 'lucide-react';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import {
   DndContext,
   closestCenter,
@@ -103,7 +104,7 @@ function SortableItem({
       </span>
 
       {/* Assignee avatar / picker */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <MemberPickerPopover
           value={item.assignee_id || '__none__'}
           members={members}
@@ -115,7 +116,7 @@ function SortableItem({
           align="end"
           triggerClassName={assignee
             ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
-            : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:border-foreground/40'
+            : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-foreground hover:border-foreground/40'
           }
           contentClassName="w-[220px]"
           renderTrigger={() => assignee ? (
@@ -129,26 +130,30 @@ function SortableItem({
           )}
         />
         {assignee ? (
-          <button
-            type="button"
-            className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-            onClick={(event) => {
-              event.stopPropagation();
-              onAssigneeChange(item.id, null);
-            }}
-          >
-            <X className="h-2.5 w-2.5" />
-          </button>
+          <QuickTooltip label="Unassign">
+            <button
+              type="button"
+              className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAssigneeChange(item.id, null);
+              }}
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </QuickTooltip>
         ) : null}
       </div>
 
-      <button
-        type="button"
-        className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive cursor-pointer"
-        onClick={() => onDelete(item.id)}
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      <QuickTooltip label="Delete">
+        <button
+          type="button"
+          className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-destructive cursor-pointer"
+          onClick={() => onDelete(item.id)}
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </QuickTooltip>
     </div>
   );
 }

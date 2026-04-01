@@ -42,7 +42,7 @@ import { BoardToolbarSlot } from './BoardToolbarSlot';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
-import { DragPreviewManager, useActiveStory, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from './KanbanBoard.dnd';
+import { DragPreviewManager, useActiveStory, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 import { getVisibleStoryListGroupOptions, type StoryListGroupByOption } from '@/components/pm/story-detail/storyListGrouping';
@@ -734,6 +734,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
+      dragManager.clearColumnOverrides();
       const allStories = groupBy === 'members'
         ? memberColumns.flatMap((col) => col.stories)
         : columns.flatMap((column) => column.stories);
@@ -766,7 +767,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           if (colStories.some((s) => s.id === activeId)) fromKey = key;
           if (key === overId || colStories.some((s) => s.id === overId)) toKey = key;
         }
-        if (!fromKey || !toKey || fromKey === toKey) return;
+        if (!fromKey || !toKey || fromKey === toKey) {
+          dragManager.clearColumnOverrides();
+          return;
+        }
 
         const fromBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
         const toBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
@@ -778,9 +782,18 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const idx = fromStories.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
         const [story] = fromStories.splice(idx, 1);
+        const previousTarget = dragManager.getDropTarget();
         let insertIdx: number;
         if (overId === toKey) {
-          insertIdx = toStories.length;
+          insertIdx = getStableCrossColumnPreviewIndex({
+            previewTarget: previousTarget,
+            fromColumnId: fromKey,
+            toColumnId: toKey,
+            overId,
+            containerId: toKey,
+            computedIndex: toStories.length,
+            columnLength: toStories.length,
+          });
         } else {
           const overIdx = toStories.findIndex((s) => s.id === overId);
           insertIdx = overIdx >= 0 ? overIdx : toStories.length;
@@ -796,7 +809,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const currentFrom = dragManager.getColumnStories(fromKey);
         if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
 
-        dragManager.updatePreview(fromKey, toKey, fromStories, toStories);
+        dragManager.updatePreview(fromKey, toKey, fromStories, toStories, insertIdx);
       } else {
         // State board path
         let fromStateId: string | null = null;
@@ -806,7 +819,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           if (colStories.some((s) => s.id === activeId)) fromStateId = col.state.id;
           if (col.state.id === overId || colStories.some((s) => s.id === overId)) toStateId = col.state.id;
         }
-        if (!fromStateId || !toStateId || fromStateId === toStateId) return;
+        if (!fromStateId || !toStateId || fromStateId === toStateId) {
+          dragManager.clearColumnOverrides();
+          return;
+        }
 
         const fromStories = [...(dragManager.getColumnStories(fromStateId) ?? columns.find((c) => c.state.id === fromStateId)!.stories)];
         const toStories = [...(dragManager.getColumnStories(toStateId) ?? columns.find((c) => c.state.id === toStateId)!.stories)];
@@ -818,7 +834,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const r = active.rect.current.translated;
         const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
         const toCol = columns.find((c) => c.state.id === toStateId)!;
-        const insertIdx = getStateBoardPreviewInsertIndex({
+        const computedInsertIdx = getStateBoardPreviewInsertIndex({
           toStateType: toCol.state.state_type,
           overId,
           toStateId,
@@ -826,13 +842,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           columnLength: toStories.length,
           pointerBelowMid: belowMid,
         });
+        const insertIdx = getStableCrossColumnPreviewIndex({
+          previewTarget: dragManager.getDropTarget(),
+          fromColumnId: fromStateId,
+          toColumnId: toStateId,
+          overId,
+          containerId: toStateId,
+          computedIndex: computedInsertIdx,
+          columnLength: toStories.length,
+        });
         toStories.splice(insertIdx, 0, story);
 
         // Skip no-op updates
         const currentFrom = dragManager.getColumnStories(fromStateId);
         if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
 
-        dragManager.updatePreview(fromStateId, toStateId, fromStories, toStories);
+        dragManager.updatePreview(fromStateId, toStateId, fromStories, toStories, insertIdx);
       }
     },
     [groupBy, columns, memberColumns, dragManager],
@@ -864,14 +889,26 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         // Find target column: first check preview, then use over event
         let toKey: string | null = null;
         let toIdx = 0;
+        const storedMemberTarget = getStoredCrossColumnDropTarget({
+          previewTarget: dragManager.getDropTarget(),
+          fromColumnId: fromKey,
+          validColumnIds: memberColumns.map((col) => col.member?.id ?? '__unassigned__'),
+        });
+
+        if (storedMemberTarget) {
+          toKey = storedMemberTarget.toColumnId;
+          toIdx = storedMemberTarget.toIndex;
+        }
 
         // Check preview overrides for cross-column move
-        for (const col of memberColumns) {
-          const key = col.member?.id ?? '__unassigned__';
-          const previewStories = dragManager.getColumnStories(key);
-          if (previewStories) {
-            const idx = previewStories.findIndex((s) => s.id === activeId);
-            if (idx >= 0 && key !== fromKey) { toKey = key; toIdx = idx; break; }
+        if (!toKey) {
+          for (const col of memberColumns) {
+            const key = col.member?.id ?? '__unassigned__';
+            const previewStories = dragManager.getColumnStories(key);
+            if (previewStories) {
+              const idx = previewStories.findIndex((s) => s.id === activeId);
+              if (idx >= 0 && key !== fromKey) { toKey = key; toIdx = idx; break; }
+            }
           }
         }
 
@@ -915,18 +952,30 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (!fromStateId) { clearDragPreview(); return; }
       const debugTraceID = createPMDnDTraceID();
 
-      // Find target: first check preview, then use over event
-      let crossStateId: string | null = null;
-      let crossIdx = 0;
+        // Find target: first check preview, then use over event
+        let crossStateId: string | null = null;
+        let crossIdx = 0;
+        const storedStateTarget = getStoredCrossColumnDropTarget({
+          previewTarget: dragManager.getDropTarget(),
+          fromColumnId: fromStateId,
+          validColumnIds: columns.map((col) => col.state.id),
+        });
 
-      // Check preview overrides for cross-column move
-      for (const col of columns) {
-        const previewStories = dragManager.getColumnStories(col.state.id);
-        if (previewStories) {
-          const idx = previewStories.findIndex((s) => s.id === activeId);
-          if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
+        if (storedStateTarget) {
+          crossStateId = storedStateTarget.toColumnId;
+          crossIdx = storedStateTarget.toIndex;
         }
-      }
+
+        // Check preview overrides for cross-column move
+        if (!crossStateId) {
+          for (const col of columns) {
+            const previewStories = dragManager.getColumnStories(col.state.id);
+            if (previewStories) {
+              const idx = previewStories.findIndex((s) => s.id === activeId);
+              if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
+            }
+          }
+        }
 
       // If preview didn't capture it (throttle), compute from the over event
       if (!crossStateId) {

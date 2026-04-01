@@ -254,7 +254,7 @@ export function SprintDetailPage() {
   }, [sprint]);
 
   const currentTeamName = useMemo(
-    () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
+    () => (form?.team_id ? findTeamName(form.team_id) ?? 'Select team' : 'Select team'),
     [form?.team_id, findTeamName],
   );
 
@@ -530,7 +530,7 @@ export function SprintDetailPage() {
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No team' },
+                  { value: '__none__', label: 'Select team' },
                   ...teams.map((t) => ({ value: t.id, label: t.name })),
                 ]}
                 onChange={(v) => {
@@ -547,6 +547,7 @@ export function SprintDetailPage() {
                 value={form.start_date}
                 onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
                 placeholder="None"
+                hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -557,6 +558,8 @@ export function SprintDetailPage() {
                 value={form.end_date}
                 onChange={(v) => updateField('end_date', v, { end_date: v || undefined })}
                 placeholder="None"
+                hideIcon
+                urgencyColor
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>

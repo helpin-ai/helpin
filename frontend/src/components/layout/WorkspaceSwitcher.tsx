@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
@@ -72,7 +71,7 @@ export function WorkspaceSwitcher() {
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
-            <div className="p-2">
+            <div className="px-2 pt-2 pb-1.5">
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -80,8 +79,7 @@ export function WorkspaceSwitcher() {
                 className="h-8"
               />
             </div>
-            <Separator />
-            <div className="max-h-[320px] overflow-auto p-1">
+            <div className="max-h-[320px] overflow-auto px-1 pb-1">
               {filtered.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">No workspaces found.</p>
               ) : (
@@ -114,8 +112,7 @@ export function WorkspaceSwitcher() {
                 })
               )}
             </div>
-            <Separator />
-            <div className="grid grid-cols-2 gap-1.5 p-1.5">
+            <div className="grid grid-cols-2 gap-1.5 border-t border-border px-1.5 py-1">
               <button
                 type="button"
                 onClick={() => {

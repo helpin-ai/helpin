@@ -216,9 +216,9 @@ function MetadataRow({
 }) {
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
+      <span className="text-xs text-muted-foreground mt-0.5">{label}</span>
+      <div className="min-w-0">{children}</div>
     </>
   );
 }
@@ -404,25 +404,14 @@ function StoryDetailPanelBody({
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
     [teams, form.team_id],
   );
-  const storyDisplayId = storyDetail.story.display_id;
-
-  // ── URL sync ───────────────────────────────────────────────────
-  useEffect(() => {
+  // ── URL sync (imperative, no effect loop) ──────────────────────
+  const lastSyncedStoryRef = useRef<string | null>(null);
+  if (storyDetail.story.id !== lastSyncedStoryRef.current) {
+    lastSyncedStoryRef.current = storyDetail.story.id;
     const url = new URL(window.location.href);
-    const nextStory = `${storyDisplayId}`;
-    if (url.searchParams.get('story') !== nextStory) {
-      url.searchParams.set('story', nextStory);
-      window.history.replaceState(window.history.state, '', url.toString());
-    }
-
-    return () => {
-      const cleanupUrl = new URL(window.location.href);
-      if (cleanupUrl.searchParams.get('story') === nextStory) {
-        cleanupUrl.searchParams.delete('story');
-        window.history.replaceState(window.history.state, '', cleanupUrl.toString());
-      }
-    };
-  }, [storyDisplayId]);
+    url.searchParams.set('story', `${storyDetail.story.display_id}`);
+    window.history.replaceState({}, '', url.toString());
+  }
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {
@@ -446,11 +435,12 @@ function StoryDetailPanelBody({
       savedDescriptionRef.current = storyDetail.story.description ?? '';
       void reloadActivity();
       // Only reset form if no unsaved edits
-      if (Object.keys(pendingPatch).length === 0 && !saving) {
+      if (Object.keys(pendingPatchRef.current).length === 0) {
         setForm(buildFormState(storyDetail));
       }
     }
-  }, [storyDetail, pendingPatch, reloadActivity, saving]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- use ref for pendingPatch to avoid resetting form mid-edit
+  }, [storyDetail, reloadActivity]);
 
   // Re-fetch comments when comment events arrive; activity on any story change
   useEffect(() => {
@@ -716,18 +706,18 @@ function StoryDetailPanelBody({
   );
 
   const currentEpicName = useMemo(() => {
-    if (!form.epic_id) return 'No epic';
-    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'No epic';
+    if (!form.epic_id) return 'None';
+    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'None';
   }, [form.epic_id, epics]);
 
   const currentSprintName = useMemo(() => {
-    if (!form.sprint_id) return 'No sprint';
-    return sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint.name ?? 'No sprint';
+    if (!form.sprint_id) return 'None';
+    return sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint.name ?? 'None';
   }, [form.sprint_id, sprints]);
 
   const currentTeamName = useMemo(() => {
-    if (!form.team_id) return 'No team';
-    return teams.find((t) => t.id === form.team_id)?.name ?? 'No team';
+    if (!form.team_id) return 'Select team';
+    return teams.find((t) => t.id === form.team_id)?.name ?? 'Select team';
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
@@ -885,9 +875,9 @@ function StoryDetailPanelBody({
       </div>
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-5 pb-40">
+        <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
           {hasPipeline && (
             <div className="mb-4 flex items-center gap-0">
@@ -1156,7 +1146,7 @@ function StoryDetailPanelBody({
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5 pb-40">
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
           <StorySidebarIdRow displayId={storyDetail.story.display_id} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
@@ -1165,7 +1155,7 @@ function StoryDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
-                  ...(teams.length === 0 ? [{ value: '__none__', label: 'No team' }] : []),
+                  ...(teams.length === 0 ? [{ value: '__none__', label: 'Select team' }] : []),
                   ...teams.map((t) => ({ value: t.id, label: t.name })),
                 ]}
                 onChange={(v) => {
@@ -1360,14 +1350,14 @@ function StoryDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No epic' },
+                  { value: '__none__', label: 'None' },
                   ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
                 }}
-                renderTrigger={() => <span>{currentEpicName}</span>}
+                renderTrigger={() => <span className="truncate">{currentEpicName}</span>}
               />
             </MetadataRow>
             )}
@@ -1378,14 +1368,14 @@ function StoryDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No sprint' },
+                  { value: '__none__', label: 'None' },
                   ...availableSprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('sprint_id', val, { sprint_id: val });
                 }}
-                renderTrigger={() => <span>{currentSprintName}</span>}
+                renderTrigger={() => <span className="truncate">{currentSprintName}</span>}
               />
             </MetadataRow>
             )}
@@ -1400,7 +1390,7 @@ function StoryDetailPanelBody({
                 teamId={form.team_id}
                 onChange={(displayValue, apiValue) => {
                   updateField('estimate', displayValue, {
-                    estimate: apiValue,
+                    estimate: apiValue ?? -1,
                   });
                 }}
               />
@@ -1415,6 +1405,9 @@ function StoryDetailPanelBody({
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
                 placeholder="None"
                 disablePast
+                hideIcon
+                urgencyColor
+                completed={storyDetail.story.completed}
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -1620,7 +1613,7 @@ export function StoryDetailPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[80vw] !max-w-[80vw] p-0"
+        className="w-[80vw] !max-w-[1200px] p-0"
         showCloseButton={false}
         onPointerDownOutside={(event) => {
           if (shouldSuppressStoryOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
