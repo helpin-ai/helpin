@@ -12,6 +12,7 @@ type Config struct {
 	JWTSecret             string
 	Port                  string
 	LogLevel              string
+	RunAutoMigrate        bool
 	CORSOrigins           []string
 	TemporalAddress       string
 	TemporalNamespace     string
@@ -136,6 +137,7 @@ func Load() (*Config, error) {
 		JWTSecret:                    jwtSecret,
 		Port:                         port,
 		LogLevel:                     strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
+		RunAutoMigrate:               parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                  corsOrigins,
 		TemporalAddress:              temporalAddress,
 		TemporalNamespace:            temporalNamespace,
@@ -226,4 +228,12 @@ func parseBoolEnv(value string) bool {
 	default:
 		return false
 	}
+}
+
+func parseBoolEnvDefaultTrue(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return true
+	}
+	return parseBoolEnv(trimmed)
 }

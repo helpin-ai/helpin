@@ -111,17 +111,19 @@ export class DragPreviewManager {
  * Subscribe to drag preview for a specific column.
  * Returns override stories during drag, or baseStories otherwise.
  */
+const NOOP_UNSUB = () => {};
+
 export function useColumnDragPreview(
-  manager: DragPreviewManager,
+  manager: DragPreviewManager | null | undefined,
   columnId: string,
   baseStories: Story[],
 ): Story[] {
   const subscribe = useCallback(
-    (cb: () => void) => manager.subscribeColumn(columnId, cb),
+    (cb: () => void) => manager ? manager.subscribeColumn(columnId, cb) : NOOP_UNSUB,
     [manager, columnId],
   );
   const getSnapshot = useCallback(
-    () => manager.getColumnStories(columnId),
+    () => manager ? manager.getColumnStories(columnId) : null,
     [manager, columnId],
   );
   const override = useSyncExternalStore(subscribe, getSnapshot, () => null);
@@ -131,13 +133,13 @@ export function useColumnDragPreview(
 /**
  * Subscribe to the active dragged story (for DragOverlay).
  */
-export function useActiveStory(manager: DragPreviewManager): Story | null {
+export function useActiveStory(manager: DragPreviewManager | null | undefined): Story | null {
   const subscribe = useCallback(
-    (cb: () => void) => manager.subscribeGlobal(cb),
+    (cb: () => void) => manager ? manager.subscribeGlobal(cb) : NOOP_UNSUB,
     [manager],
   );
   const getSnapshot = useCallback(
-    () => manager.getActiveStory(),
+    () => manager ? manager.getActiveStory() : null,
     [manager],
   );
   return useSyncExternalStore(subscribe, getSnapshot, () => null);
