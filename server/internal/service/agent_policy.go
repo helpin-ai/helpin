@@ -205,7 +205,7 @@ func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMe
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		migrated = append(migrated, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan)
-	case model.AgentPresetStoryPlanner:
+	case model.AgentPresetTaskPlanner:
 		migrated = append(migrated, worker.ToolPublishStoryPlanDoc)
 	}
 	return mustJSONStringSlice(migrated)
@@ -258,7 +258,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			"assign_story_agent",
 			"set_story_dependencies",
 		}
-	case model.AgentPresetStoryPlanner:
+	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
 			worker.ToolPublishStoryPlanDoc,

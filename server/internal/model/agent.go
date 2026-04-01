@@ -8,7 +8,7 @@ import (
 
 const (
 	AgentPresetEpicPlanner  = "epic_planner"
-	AgentPresetStoryPlanner = "story_planner"
+	AgentPresetTaskPlanner  = "task_planner"
 	AgentPresetCRMOperator  = "crm_operator"
 	AgentPresetSupportAgent = "support_agent"
 	AgentPresetCodeBuilder  = "code_builder"
@@ -101,7 +101,7 @@ type AgentRun struct {
 	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
 	StoryID           *string         `json:"story_id" gorm:"type:uuid"`
 	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
-	TargetType        string          `json:"target_type" gorm:"not null;default:'story';index"`
+	TargetType        string          `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
 	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
 	InvocationMode    string          `json:"invocation_mode" gorm:"not null;default:'autonomous'"`

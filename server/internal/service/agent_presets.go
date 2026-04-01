@@ -23,7 +23,7 @@ func ListAgentPresets() []model.AgentPresetDefinition {
 func builtInPresetKeys() []string {
 	return []string{
 		model.AgentPresetEpicPlanner,
-		model.AgentPresetStoryPlanner,
+		model.AgentPresetTaskPlanner,
 		model.AgentPresetCRMOperator,
 		model.AgentPresetSupportAgent,
 		model.AgentPresetCodeBuilder,
@@ -58,8 +58,8 @@ func normalizePresetKey(key string) string {
 		return ""
 	case "planner", "product_planner", model.AgentPresetEpicPlanner:
 		return model.AgentPresetEpicPlanner
-	case model.AgentPresetStoryPlanner:
-		return model.AgentPresetStoryPlanner
+	case model.AgentPresetTaskPlanner:
+		return model.AgentPresetTaskPlanner
 	case "crm", "crm_agent", model.AgentPresetCRMOperator:
 		return model.AgentPresetCRMOperator
 	case "support", model.AgentPresetSupportAgent:
@@ -88,8 +88,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		return "epic_planner_default"
-	case model.AgentPresetStoryPlanner:
-		return "story_planner_default"
+	case model.AgentPresetTaskPlanner:
+		return "task_planner_default"
 	case model.AgentPresetCRMOperator:
 		return "crm_operator_default"
 	case model.AgentPresetSupportAgent:
@@ -206,7 +206,7 @@ func allowedRuntimeKindsForPresetKey(presetKey string) []string {
 	case model.AgentPresetReviewAgent:
 		// native_sdk remains available for compatibility with existing agents.
 		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetEpicPlanner, model.AgentPresetStoryPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent:
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent:
 		return []string{"native_sdk"}
 	default:
 		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
@@ -227,7 +227,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
-	storyPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetStoryPlanner)
+	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	crmOperatorPrompt := defaultSystemPromptForPreset(model.AgentPresetCRMOperator)
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
@@ -239,7 +239,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,
 	)
-	storyPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
+	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishStoryPlanDoc,
 		worker.ToolRequestUserInput,
@@ -268,24 +268,24 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          epicPlannerPrompt,
 		},
 		{
-			Key:                   model.AgentPresetStoryPlanner,
-			FamilyKey:             model.AgentPresetStoryPlanner,
-			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner),
+			Key:                   model.AgentPresetTaskPlanner,
+			FamilyKey:             model.AgentPresetTaskPlanner,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Label:                 "Story Planner",
-			Description:           "Interactive decomposition and story refinement across existing specs and code context.",
-			DefaultRole:           "Story Planner",
+			Label:                 "Task Planner",
+			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
+			DefaultRole:           "Task Planner",
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          storyPlannerTools,
+			AllowedTools:          taskPlannerTools,
 			AllowedCommands:       slices.Clone(productPlannerProfile.AllowedCommands),
-			AllowedTargetTypes:    []string{"story", "epic"},
+			AllowedTargetTypes:    []string{"task", "epic"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
-			SystemPrompt:          storyPlannerPrompt,
+			SystemPrompt:          taskPlannerPrompt,
 		},
 		{
 			Key:                   model.AgentPresetCRMOperator,

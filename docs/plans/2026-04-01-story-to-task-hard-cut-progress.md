@@ -9,7 +9,7 @@
 | Schema and migrations | In Progress | Forward SQL hard-cut migration exists and dry-run validates in a rollback transaction; do not merge until task-era code is ready |
 | Data backfill rewrites | In Progress | Core entity/preset rewrites are in the migration; automation/prompt payload sweep still pending |
 | Backend contracts | Pending | Models, handlers, services, repositories, routes |
-| Agent and automation surfaces | Pending | Preset keys, target types, prompts, planner payloads |
+| Agent and automation surfaces | In Progress | `task_planner` preset family and default target-type slice landed; planner payload/task-context renames still pending |
 | Frontend routes and PM UI | Pending | `/pm/tasks`, task detail, services, stores, copy |
 | Cross-product integrations | Pending | Support, CRM, docs, notifications, search |
 | Documentation | Pending | CLAUDE.md, AGENTS.md, internal docs |
@@ -66,9 +66,9 @@
 
 ### 3. Agent and automation surfaces
 
-- [ ] Rename preset key `story_planner` to `task_planner`
-- [ ] Rename model constant `AgentPresetStoryPlanner` -> `AgentPresetTaskPlanner` in `model/agent.go`
-- [ ] Rename preset/UI label to `Task Planner`
+- [x] Rename preset key `story_planner` to `task_planner`
+- [x] Rename model constant `AgentPresetStoryPlanner` -> `AgentPresetTaskPlanner` in `model/agent.go`
+- [x] Rename preset/UI label to `Task Planner`
 - [ ] Rename agent target type `story` to `task`
 - [ ] Rename agent-run task/story linkage columns and fields to task equivalents
 - [ ] Rename worker execution context: `execCtx.Story` -> `execCtx.Task`, `execCtx.StoryID` -> `execCtx.TaskID` in `worker/eino_executor.go`

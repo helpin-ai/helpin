@@ -575,7 +575,7 @@ func inferPreviewPanelKeyFromContext(ctx *ExecutionContext, req *PublishedPrevie
 		if format == PreviewFormatMarkdown || strings.Contains(title, "story plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
 			return "story_plan_doc"
 		}
-	case presetKey == appmodel.AgentPresetStoryPlanner:
+	case presetKey == appmodel.AgentPresetTaskPlanner:
 		if format == PreviewFormatMarkdown || strings.Contains(title, "story plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
 			return "story_plan_doc"
 		}

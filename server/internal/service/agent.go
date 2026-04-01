@@ -39,7 +39,7 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		return defaultSystemEpicPlannerName
-	case model.AgentPresetStoryPlanner:
+	case model.AgentPresetTaskPlanner:
 		return "Scribe"
 	case model.AgentPresetCRMOperator:
 		return "CRM Operator"

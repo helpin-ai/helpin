@@ -3486,7 +3486,7 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 		return planningRunInput{}, err
 	}
 
-	if state.run.TargetType == "story" && state.story != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetStoryPlanner) {
+	if state.run.TargetType == "task" && state.story != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
 		if input.Stage == "" {
 			input.Stage = model.PlanningStageStoryPlanDoc
 		}
@@ -3557,7 +3557,7 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	if strings.TrimSpace(input.FlowOutputKind) != "" {
 		return a.buildFlowOutputInstructions(ctx, state, input)
 	}
-	if state.run.TargetType == "story" && state.story != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetStoryPlanner) {
+	if state.run.TargetType == "task" && state.story != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
 		return a.buildStoryPlannerInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
