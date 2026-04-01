@@ -1147,7 +1147,7 @@ function StoryDetailPanelBody({
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5 pb-40">
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
           <StorySidebarIdRow displayId={storyDetail.story.display_id} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
