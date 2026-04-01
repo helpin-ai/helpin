@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   DndContext,
@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { Agent, CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import type { AssignableMember } from '@/lib/types';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -43,10 +42,21 @@ import { BoardToolbarSlot } from './BoardToolbarSlot';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
-import { commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from './KanbanBoard.dnd';
+import { DragPreviewManager, useActiveStory, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from './KanbanBoard.dnd';
+import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 import { getVisibleStoryListGroupOptions, type StoryListGroupByOption } from '@/components/pm/story-detail/storyListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function storyListChanged(a: Story[], b: Story[]): boolean {
+  if (a.length !== b.length) return true;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return true;
+  }
+  return false;
+}
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -56,28 +66,24 @@ interface KanbanBoardProps {
 interface ColumnProps {
   column: StoryStateColumn;
   collapsed: boolean;
-  onToggleCollapse: (stateId: string) => void;
-  onCreate: (stateId: string) => void;
-  onOpen: (story: Story) => void;
-  findTeamName: (teamId: string | undefined) => string | undefined;
-  workspaceId: string;
-  assignableMembers: AssignableMember[];
-  ownerNameMap: Map<string, string>;
-  agentById: Map<string, Agent>;
-  onOwnerChanged: (story: Story) => void;
-  onPriorityChanged: (story: Story) => void;
-  onSeverityChanged: (story: Story) => void;
-  onEstimateChanged: (story: Story) => void;
-  automatedStateIds?: Set<string>;
-  onLoadMore: (stateId: string) => void;
   isLoadingMore: boolean;
 }
 
-const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, agentById, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
+const Column = memo(function Column({ column, collapsed, isLoadingMore }: ColumnProps) {
+  const { automatedStateIds, findTeamName } = useContext(BoardDataContext)!;
+  const { onCreate, onToggleCollapse, onLoadMore } = useContext(BoardCallbacksContext)!;
+  const dragManager = useContext(DragPreviewContext)!;
+
+  // Subscribe to drag preview for this column only
+  const stories = useColumnDragPreview(dragManager, column.state.id, column.stories);
+
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const groupedStories = column.state.state_type === 'done' ? column.story_groups ?? [] : [];
+
+  // Memoize sortable items from preview stories
+  const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
 
   useEffect(() => {
     if (!column.has_more || isLoadingMore || !scrollRef.current || !loadMoreRef.current) return;
@@ -195,7 +201,7 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
         </div>
       </header>
 
-      <SortableContext items={column.stories.map((story) => story.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
         <div
           ref={(node) => {
             setNodeRef(node);
@@ -215,35 +221,17 @@ const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCre
                   <StoryCard
                     key={story.id}
                     story={story}
-                    onOpen={onOpen}
                     teamName={findTeamName(story.team_id)}
-                    workspaceId={workspaceId}
-                    assignableMembers={assignableMembers}
-                    ownerNameMap={ownerNameMap}
-                    assignedAgent={story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null}
-                    onOwnerChanged={onOwnerChanged}
-                    onPriorityChanged={onPriorityChanged}
-                    onSeverityChanged={onSeverityChanged}
-                    onEstimateChanged={onEstimateChanged}
                   />
                 ))}
               </div>
             ))
           ) : (
-            column.stories.map((story) => (
+            stories.map((story) => (
               <StoryCard
                 key={story.id}
                 story={story}
-                onOpen={onOpen}
                 teamName={findTeamName(story.team_id)}
-                workspaceId={workspaceId}
-                assignableMembers={assignableMembers}
-                ownerNameMap={ownerNameMap}
-                assignedAgent={story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null}
-                onOwnerChanged={onOwnerChanged}
-                onPriorityChanged={onPriorityChanged}
-                onSeverityChanged={onSeverityChanged}
-                onEstimateChanged={onEstimateChanged}
               />
             ))
           )}
@@ -282,41 +270,40 @@ Column.displayName = 'Column';
 interface MemberColumnProps {
   column: StoryMemberColumn;
   collapsed: boolean;
-  onToggleCollapse: (key: string) => void;
-  onCreate: (memberId: string | null) => void;
-  onOpen: (story: Story) => void;
-  findTeamName: (teamId: string | undefined) => string | undefined;
-  workspaceId: string;
-  assignableMembers: AssignableMember[];
-  ownerNameMap: Map<string, string>;
-  onOwnerChanged: (story: Story) => void;
-  onPriorityChanged: (story: Story) => void;
-  onSeverityChanged: (story: Story) => void;
-  onEstimateChanged: (story: Story) => void;
-  onLoadMore: (memberId: string | null) => void;
   isLoadingMore: boolean;
 }
 
-const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore }: MemberColumnProps) {
+const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMore }: MemberColumnProps) {
+  const { findTeamName } = useContext(BoardDataContext)!;
+  const { onCreateForMember, onToggleCollapse, onLoadMoreMember } = useContext(BoardCallbacksContext)!;
+  const dragManager = useContext(DragPreviewContext)!;
+
   const colKey = column.member?.id ?? '__unassigned__';
+
+  // Subscribe to drag preview for this column only
+  const stories = useColumnDragPreview(dragManager, colKey, column.stories);
+
   const { setNodeRef, isOver } = useDroppable({ id: colKey });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const displayName = column.member?.display_name ?? 'Unassigned';
+
+  // Memoize sortable items from preview stories
+  const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
 
   useEffect(() => {
     if (!column.has_more || isLoadingMore || !scrollRef.current || !loadMoreRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          onLoadMore(column.member?.id ?? null);
+          onLoadMoreMember(column.member?.id ?? null);
         }
       },
       { root: scrollRef.current, rootMargin: '0px 0px 160px 0px' },
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [column.has_more, column.member?.id, column.stories.length, isLoadingMore, onLoadMore]);
+  }, [column.has_more, column.member?.id, column.stories.length, isLoadingMore, onLoadMoreMember]);
 
   if (collapsed) {
     return (
@@ -383,14 +370,14 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create story">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.member?.id ?? null)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreateForMember(column.member?.id ?? null)}>
               <Plus className="h-4 w-4" />
             </Button>
           </QuickTooltip>
         </div>
       </header>
 
-      <SortableContext items={column.stories.map((story) => story.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
         <div
           ref={(node) => {
             setNodeRef(node);
@@ -398,19 +385,11 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
           }}
           className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-primary/10 ring-2 ring-inset ring-primary/30 gap-4' : 'gap-2'}`}
         >
-          {column.stories.map((story) => (
+          {stories.map((story) => (
             <StoryCard
               key={story.id}
               story={story}
-              onOpen={onOpen}
               teamName={findTeamName(story.team_id)}
-              workspaceId={workspaceId}
-              assignableMembers={assignableMembers}
-              ownerNameMap={ownerNameMap}
-              onOwnerChanged={onOwnerChanged}
-              onPriorityChanged={onPriorityChanged}
-              onSeverityChanged={onSeverityChanged}
-              onEstimateChanged={onEstimateChanged}
               showStateBadge
             />
           ))}
@@ -428,7 +407,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
           <Button
             variant="ghost"
             className="w-full justify-start text-xs text-muted-foreground"
-            onClick={() => onCreate(column.member?.id ?? null)}
+            onClick={() => onCreateForMember(column.member?.id ?? null)}
           >
             <Plus className="h-3.5 w-3.5" />
             Add story
@@ -439,6 +418,31 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
   );
 });
 MemberColumn.displayName = 'MemberColumn';
+
+const DragOverlayCard = memo(function DragOverlayCard({
+  manager,
+  resolveTeamName,
+  agentById,
+  groupBy,
+}: {
+  manager: DragPreviewManager;
+  resolveTeamName: (id?: string) => string | undefined;
+  agentById: Map<string, Agent>;
+  groupBy: string;
+}) {
+  const activeStory = useActiveStory(manager);
+  if (!activeStory) return null;
+  return (
+    <StoryCard
+      story={activeStory}
+      isOverlay
+      teamName={resolveTeamName(activeStory.team_id)}
+      assignedAgent={activeStory.assigned_agent_id ? agentById.get(activeStory.assigned_agent_id) ?? null : null}
+      showStateBadge={groupBy === 'members'}
+    />
+  );
+});
+DragOverlayCard.displayName = 'DragOverlayCard';
 
 export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const navigate = useNavigate();
@@ -531,11 +535,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [agents],
   );
 
-  const [activeStory, setActiveStory] = useState<Story | null>(null);
-  const [dragPreviewColumns, setDragPreviewColumns] = useState<StoryStateColumn[] | null>(null);
-  const [dragPreviewMemberColumns, setDragPreviewMemberColumns] = useState<StoryMemberColumn[] | null>(null);
-  const displayColumns = dragPreviewColumns ?? columns;
-  const displayMemberColumns = dragPreviewMemberColumns ?? memberColumns;
+  const dragManager = useRef(new DragPreviewManager()).current;
+  const isDragging = useActiveStory(dragManager) !== null;
+  const lastDragOverTime = useRef(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
@@ -731,37 +733,24 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [columns]
   );
 
-  const findMemberKeyByItemId = useCallback(
-    (id: string): string | null => {
-      for (const column of memberColumns) {
-        const colKey = column.member?.id ?? '__unassigned__';
-        if (colKey === id) return colKey;
-        if (column.stories.some((story) => story.id === id)) return colKey;
-      }
-      return null;
-    },
-    [memberColumns]
-  );
-
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
       const allStories = groupBy === 'members'
         ? memberColumns.flatMap((col) => col.stories)
         : columns.flatMap((column) => column.stories);
       const story = allStories.find((item) => item.id === String(event.active.id));
-      setActiveStory(story ?? null);
-      // Initialize preview columns for cross-column displacement
-      if (groupBy === 'members') {
-        setDragPreviewMemberColumns(memberColumns.map((c) => ({ ...c, stories: [...c.stories] })));
-      } else {
-        setDragPreviewColumns(columns.map((c) => ({ ...c, stories: [...c.stories], story_groups: c.story_groups?.map((g) => ({ ...g, stories: [...g.stories] })) ?? [] })));
-      }
+      dragManager.setActiveStory(story ?? null);
     },
-    [columns, memberColumns, groupBy]
+    [columns, memberColumns, groupBy, dragManager]
   );
 
   const onDragOver = useCallback(
     (event: DragOverEvent) => {
+      // Throttle to ~20fps
+      const now = performance.now();
+      if (now - lastDragOverTime.current < 50) return;
+      lastDragOverTime.current = now;
+
       const { active, over } = event;
       if (!over) return;
       const activeId = String(active.id);
@@ -769,86 +758,93 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (activeId === overId) return;
 
       if (groupBy === 'members') {
-        const cols = dragPreviewMemberColumns;
-        if (!cols) return;
+        // Find source/target columns using manager overrides or base data
         let fromKey: string | null = null;
         let toKey: string | null = null;
-        for (const col of cols) {
+        for (const col of memberColumns) {
           const key = col.member?.id ?? '__unassigned__';
-          if (col.stories.some((s) => s.id === activeId)) fromKey = key;
-          if (key === overId || col.stories.some((s) => s.id === overId)) toKey = key;
+          const colStories = dragManager.getColumnStories(key) ?? col.stories;
+          if (colStories.some((s) => s.id === activeId)) fromKey = key;
+          if (key === overId || colStories.some((s) => s.id === overId)) toKey = key;
         }
         if (!fromKey || !toKey || fromKey === toKey) return;
 
-        const next = cols.map((c) => ({ ...c, stories: [...c.stories] }));
-        const fromCol = next.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
-        const toCol = next.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
-        if (!fromCol || !toCol) return;
-        const idx = fromCol.stories.findIndex((s) => s.id === activeId);
+        const fromBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
+        const toBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
+        if (!fromBase || !toBase) return;
+
+        const fromStories = [...(dragManager.getColumnStories(fromKey) ?? fromBase.stories)];
+        const toStories = [...(dragManager.getColumnStories(toKey) ?? toBase.stories)];
+
+        const idx = fromStories.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
-        const [story] = fromCol.stories.splice(idx, 1);
+        const [story] = fromStories.splice(idx, 1);
         let insertIdx: number;
         if (overId === toKey) {
-          insertIdx = toCol.stories.length;
+          insertIdx = toStories.length;
         } else {
-          const overIdx = toCol.stories.findIndex((s) => s.id === overId);
-          insertIdx = overIdx >= 0 ? overIdx : toCol.stories.length;
+          const overIdx = toStories.findIndex((s) => s.id === overId);
+          insertIdx = overIdx >= 0 ? overIdx : toStories.length;
           if (overIdx >= 0) {
             const r = active.rect.current.translated;
             const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
             if (belowMid) insertIdx = overIdx + 1;
           }
         }
-        toCol.stories.splice(insertIdx, 0, story);
-        setDragPreviewMemberColumns(next);
+        toStories.splice(insertIdx, 0, story);
+
+        // Skip no-op updates
+        const currentFrom = dragManager.getColumnStories(fromKey);
+        if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
+
+        dragManager.updatePreview(fromKey, toKey, fromStories, toStories);
       } else {
-        const cols = dragPreviewColumns;
-        if (!cols) return;
+        // State board path
         let fromStateId: string | null = null;
         let toStateId: string | null = null;
-        for (const col of cols) {
-          if (col.stories.some((s) => s.id === activeId)) fromStateId = col.state.id;
-          if (col.state.id === overId || col.stories.some((s) => s.id === overId)) toStateId = col.state.id;
+        for (const col of columns) {
+          const colStories = dragManager.getColumnStories(col.state.id) ?? col.stories;
+          if (colStories.some((s) => s.id === activeId)) fromStateId = col.state.id;
+          if (col.state.id === overId || colStories.some((s) => s.id === overId)) toStateId = col.state.id;
         }
         if (!fromStateId || !toStateId || fromStateId === toStateId) return;
 
-        const next = cols.map((c) => ({ ...c, stories: [...c.stories], story_groups: c.story_groups?.map((g) => ({ ...g, stories: [...g.stories] })) ?? [] }));
-        const fromCol = next.find((c) => c.state.id === fromStateId);
-        const toCol = next.find((c) => c.state.id === toStateId);
-        if (!fromCol || !toCol) return;
-        const idx = fromCol.stories.findIndex((s) => s.id === activeId);
+        const fromStories = [...(dragManager.getColumnStories(fromStateId) ?? columns.find((c) => c.state.id === fromStateId)!.stories)];
+        const toStories = [...(dragManager.getColumnStories(toStateId) ?? columns.find((c) => c.state.id === toStateId)!.stories)];
+
+        const idx = fromStories.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
-        const [story] = fromCol.stories.splice(idx, 1);
-        const overIdx = toCol.stories.findIndex((s) => s.id === overId);
+        const [story] = fromStories.splice(idx, 1);
+        const overIdx = toStories.findIndex((s) => s.id === overId);
         const r = active.rect.current.translated;
         const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const toCol = columns.find((c) => c.state.id === toStateId)!;
         const insertIdx = getStateBoardPreviewInsertIndex({
           toStateType: toCol.state.state_type,
           overId,
           toStateId,
           overIdx,
-          columnLength: toCol.stories.length,
+          columnLength: toStories.length,
           pointerBelowMid: belowMid,
         });
-        toCol.stories.splice(insertIdx, 0, story);
-        setDragPreviewColumns(next);
+        toStories.splice(insertIdx, 0, story);
+
+        // Skip no-op updates
+        const currentFrom = dragManager.getColumnStories(fromStateId);
+        if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
+
+        dragManager.updatePreview(fromStateId, toStateId, fromStories, toStories);
       }
     },
-    [groupBy, dragPreviewColumns, dragPreviewMemberColumns],
+    [groupBy, columns, memberColumns, dragManager],
   );
 
   const clearDragPreview = useCallback(() => {
-    setActiveStory(null);
-    setDragPreviewColumns(null);
-    setDragPreviewMemberColumns(null);
-  }, []);
+    dragManager.clear();
+  }, [dragManager]);
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
-      // Capture preview state before clearing — it tells us where the story ended up
-      const savedPreviewCols = dragPreviewColumns;
-      const savedPreviewMemCols = dragPreviewMemberColumns;
-
       const { active, over } = event;
       if (!over) {
         clearDragPreview();
@@ -858,38 +854,50 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       const overId = String(over.id);
 
       if (groupBy === 'members') {
-        const fromKey = findMemberKeyByItemId(activeId);
-        if (!fromKey) {
-          clearDragPreview();
-          return;
+        // Find original column from BASE store data
+        let fromKey: string | null = null;
+        for (const col of memberColumns) {
+          const key = col.member?.id ?? '__unassigned__';
+          if (col.stories.some((s) => s.id === activeId)) { fromKey = key; break; }
+        }
+        if (!fromKey) { clearDragPreview(); return; }
+
+        // Find target column: first check preview, then use over event
+        let toKey: string | null = null;
+        let toIdx = 0;
+
+        // Check preview overrides for cross-column move
+        for (const col of memberColumns) {
+          const key = col.member?.id ?? '__unassigned__';
+          const previewStories = dragManager.getColumnStories(key);
+          if (previewStories) {
+            const idx = previewStories.findIndex((s) => s.id === activeId);
+            if (idx >= 0 && key !== fromKey) { toKey = key; toIdx = idx; break; }
+          }
         }
 
-        // Check if onDragOver moved story cross-column in preview
-        let crossKey: string | null = null;
-        let crossIdx = 0;
-        if (savedPreviewMemCols) {
-          for (const col of savedPreviewMemCols) {
+        // If preview didn't capture it (throttle), compute from the over event
+        if (!toKey) {
+          for (const col of memberColumns) {
             const key = col.member?.id ?? '__unassigned__';
-            const idx = col.stories.findIndex((s) => s.id === activeId);
-            if (idx >= 0 && key !== fromKey) { crossKey = key; crossIdx = idx; break; }
+            if (key === overId || col.stories.some((s) => s.id === overId)) {
+              if (key !== fromKey) { toKey = key; toIdx = 0; }
+              break;
+            }
           }
         }
 
-        if (crossKey) {
-          // Cross-member: use preview target
+        if (toKey) {
           const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
-          const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === crossKey);
-          if (!fromColumn || !toColumn) {
-            clearDragPreview();
-            return;
-          }
+          const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
+          if (!fromColumn || !toColumn) { clearDragPreview(); return; }
           await commitDropBeforeClearingPreview({
             commit: () => moveMemberStory({
               workspaceId,
               storyId: activeId,
               fromMemberId: fromColumn.member?.id ?? null,
               toMemberId: toColumn.member?.id ?? null,
-              toIndex: crossIdx,
+              toIndex: toIdx,
             }),
             clearPreview: clearDragPreview,
           });
@@ -900,25 +908,52 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       }
 
       // ── State board ──
-      const fromStateId = findStateIdByItemId(activeId);
-      if (!fromStateId) {
-        clearDragPreview();
-        return;
+      // Find original column from BASE store data
+      let fromStateId: string | null = null;
+      for (const col of columns) {
+        if (col.stories.some((s) => s.id === activeId)) { fromStateId = col.state.id; break; }
       }
+      if (!fromStateId) { clearDragPreview(); return; }
       const debugTraceID = createPMDnDTraceID();
 
-      // Check if onDragOver moved story cross-column in preview
+      // Find target: first check preview, then use over event
       let crossStateId: string | null = null;
       let crossIdx = 0;
-      if (savedPreviewCols) {
-        for (const col of savedPreviewCols) {
-          const idx = col.stories.findIndex((s) => s.id === activeId);
+
+      // Check preview overrides for cross-column move
+      for (const col of columns) {
+        const previewStories = dragManager.getColumnStories(col.state.id);
+        if (previewStories) {
+          const idx = previewStories.findIndex((s) => s.id === activeId);
           if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
         }
       }
 
+      // If preview didn't capture it (throttle), compute from the over event
+      if (!crossStateId) {
+        for (const col of columns) {
+          if (col.state.id === overId || col.stories.some((s) => s.id === overId)) {
+            if (col.state.id !== fromStateId) {
+              crossStateId = col.state.id;
+              // Compute insert index from the over position
+              const overIdx = col.stories.findIndex((s) => s.id === overId);
+              const r = active.rect.current.translated;
+              const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+              crossIdx = getStateBoardPreviewInsertIndex({
+                toStateType: col.state.state_type,
+                overId,
+                toStateId: col.state.id,
+                overIdx,
+                columnLength: col.stories.length,
+                pointerBelowMid: belowMid,
+              });
+            }
+            break;
+          }
+        }
+      }
+
       if (crossStateId) {
-        // Cross-column: use preview target
         logPMDnD('drag_end_cross_state', {
           trace_id: debugTraceID,
           story_id: activeId,
@@ -939,28 +974,14 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           clearPreview: clearDragPreview,
         });
       } else {
-        // Same-column reorder: use over.id with arrayMove semantics
-        if (activeId === overId) {
-          clearDragPreview();
-          return;
-        }
+        // Same-column reorder
+        if (activeId === overId) { clearDragPreview(); return; }
         const toStateId = findStateIdByItemId(overId);
-        if (!toStateId || fromStateId !== toStateId) {
-          clearDragPreview();
-          return;
-        }
+        if (!toStateId || fromStateId !== toStateId) { clearDragPreview(); return; }
         const fromColumn = columns.find((c) => c.state.id === fromStateId);
-        if (!fromColumn) {
-          clearDragPreview();
-          return;
-        }
+        if (!fromColumn) { clearDragPreview(); return; }
         if (fromColumn.state.state_type === 'done') {
-          logPMDnD('drag_end_done_column_noop', {
-            trace_id: debugTraceID,
-            story_id: activeId,
-            state_id: fromStateId,
-            over_id: overId,
-          });
+          logPMDnD('drag_end_done_column_noop', { trace_id: debugTraceID, story_id: activeId, state_id: fromStateId, over_id: overId });
           clearDragPreview();
           return;
         }
@@ -968,40 +989,16 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const overIndex = overId === toStateId
           ? fromColumn.stories.length - 1
           : fromColumn.stories.findIndex((s) => s.id === overId);
-        const toIndex = getSameStateBoardDropIndex({
-          overId,
-          stateId: toStateId,
-          overIndex,
-          columnLength: fromColumn.stories.length,
-        });
-        if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) {
-          clearDragPreview();
-          return;
-        }
-        logPMDnD('drag_end_same_state', {
-          trace_id: debugTraceID,
-          story_id: activeId,
-          over_id: overId,
-          state_id: toStateId,
-          state_type: fromColumn.state.state_type,
-          from_index: fromIndex,
-          over_index: overIndex,
-          to_index: toIndex,
-        });
+        const toIndex = getSameStateBoardDropIndex({ overId, stateId: toStateId, overIndex, columnLength: fromColumn.stories.length });
+        if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
+        logPMDnD('drag_end_same_state', { trace_id: debugTraceID, story_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
         await commitDropBeforeClearingPreview({
-          commit: () => moveStory({
-            workspaceId,
-            storyId: activeId,
-            fromStateId,
-            toStateId,
-            toIndex,
-            debugTraceID,
-          }),
+          commit: () => moveStory({ workspaceId, storyId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
           clearPreview: clearDragPreview,
         });
       }
     },
-    [columns, memberColumns, groupBy, findStateIdByItemId, findMemberKeyByItemId, moveStory, moveMemberStory, workspaceId, clearDragPreview, dragPreviewColumns, dragPreviewMemberColumns]
+    [columns, memberColumns, groupBy, findStateIdByItemId, moveStory, moveMemberStory, workspaceId, clearDragPreview, dragManager]
   );
 
   const handleCreate = useCallback(
@@ -1020,8 +1017,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (ownerName) story = { ...story, owner_name: ownerName };
     }
     if (groupBy === 'members') {
-      // Enrich with state info from workflow columns
-      const stateCol = columns.find((c) => c.state.id === story.workflow_state_id);
+      // Enrich with state info from workflow columns (read from store directly to avoid dep)
+      const stateColumns = usePMBoardStore.getState().columns;
+      const stateCol = stateColumns.find((c) => c.state.id === story.workflow_state_id);
       if (stateCol) {
         story = { ...story, state_name: stateCol.state.name, state_type: stateCol.state.state_type, state_color: stateCol.state.color };
       }
@@ -1041,7 +1039,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         refreshBoard();
       }
     }
-  }, [patchStory, refreshBoard, ownerNameMap, groupBy, columns]);
+  }, [patchStory, refreshBoard, ownerNameMap, groupBy]);
+
+  // Memoize context values to avoid re-rendering all consumers
+  const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({
+    workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, findTeamName: resolveTeamName,
+  }), [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName]);
+
+  const boardCallbacks = useMemo<import('./KanbanBoard.contexts').BoardCallbacksContextValue>(() => ({
+    onStoryPatched: handleStoryPatched,
+    onOpen: openStory,
+    onCreate: handleCreateForState,
+    onCreateForMember: handleCreateForMember,
+    onToggleCollapse: toggleCollapse,
+    onLoadMore: loadMoreColumn,
+    onLoadMoreMember: loadMoreMemberColumn,
+  }), [handleStoryPatched, openStory, handleCreateForState, handleCreateForMember, toggleCollapse, loadMoreColumn, loadMoreMemberColumn]);
 
   return (
     <StoryFilterProvider
@@ -1159,6 +1172,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       ) : null}
 
       {!loading && viewMode === 'board' ? (
+        <BoardDataContext.Provider value={boardData}>
+        <BoardCallbacksContext.Provider value={boardCallbacks}>
+        <DragPreviewContext.Provider value={dragManager}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1170,50 +1186,24 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           <div className="min-h-0 flex-1 overflow-x-auto">
             <div className="flex h-full min-w-full gap-3 pb-2">
               {groupBy === 'members' ? (
-                displayMemberColumns.filter((col) => showEmptyColumns || !!activeStory || col.story_count > 0).map((col) => {
+                memberColumns.filter((col) => showEmptyColumns || isDragging || col.story_count > 0).map((col) => {
                   const colKey = col.member?.id ?? '__unassigned__';
                   return (
                     <MemberColumn
                       key={colKey}
                       column={col}
                       collapsed={collapsedColumns.has(colKey)}
-                      onToggleCollapse={toggleCollapse}
-                      onCreate={handleCreateForMember}
-                      onOpen={openStory}
-                      findTeamName={resolveTeamName}
-                      workspaceId={workspaceId}
-                      assignableMembers={assignableMembers}
-                      ownerNameMap={ownerNameMap}
-                      onOwnerChanged={handleStoryPatched}
-                      onPriorityChanged={handleStoryPatched}
-                      onSeverityChanged={handleStoryPatched}
-                      onEstimateChanged={handleStoryPatched}
-                      onLoadMore={loadMoreMemberColumn}
                       isLoadingMore={!!memberColumnLoading[colKey]}
                     />
                   );
                 })
               ) : (
-                displayColumns.filter((column) => showEmptyColumns || !!activeStory || column.story_count > 0).map((column) => (
+                columns.filter((column) => showEmptyColumns || isDragging || column.story_count > 0).map((column) => (
                   <Column
                     key={column.state.id}
                     column={column}
                     collapsed={collapsedColumns.has(column.state.id)}
-                    onToggleCollapse={toggleCollapse}
-                    onCreate={handleCreateForState}
-                    onOpen={openStory}
-                    findTeamName={resolveTeamName}
-                    workspaceId={workspaceId}
-                    assignableMembers={assignableMembers}
-                    ownerNameMap={ownerNameMap}
-                    agentById={agentById}
-                    onOwnerChanged={handleStoryPatched}
-                    onPriorityChanged={handleStoryPatched}
-                    onSeverityChanged={handleStoryPatched}
-                    onEstimateChanged={handleStoryPatched}
-                    onLoadMore={loadMoreColumn}
                     isLoadingMore={!!columnLoading[column.state.id]}
-                    automatedStateIds={automatedStateIds}
                   />
                 ))
               )}
@@ -1221,19 +1211,12 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            {activeStory ? (
-              <StoryCard
-                story={activeStory}
-                onOpen={() => {}}
-                isOverlay
-                teamName={resolveTeamName(activeStory.team_id)}
-                ownerNameMap={ownerNameMap}
-                assignedAgent={activeStory.assigned_agent_id ? agentById.get(activeStory.assigned_agent_id) ?? null : null}
-                showStateBadge={groupBy === 'members'}
-              />
-            ) : null}
+            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} agentById={agentById} groupBy={groupBy} />
           </DragOverlay>
         </DndContext>
+        </DragPreviewContext.Provider>
+        </BoardCallbacksContext.Provider>
+        </BoardDataContext.Provider>
       ) : null}
 
       {!loading && viewMode === 'list' && workflow ? (
