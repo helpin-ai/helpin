@@ -33,24 +33,30 @@ export function SidebarRail({
               type="button"
               aria-label={item.label}
               onClick={() => onRailSelect(item.defaultLink)}
-              className={`flex w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-2 transition-colors ${
+              className={`flex w-12 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-colors ${
                 activeRail === item.id
-                  ? 'bg-foreground/10 text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <div className="relative">
-                <item.icon className="h-3.5 w-3.5" />
+              <div className={`relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${
+                activeRail === item.id
+                  ? 'bg-foreground text-background'
+                  : 'hover:bg-muted/80'
+              }`}>
+                <item.icon className="h-4 w-4" />
                 {item.indicator && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-600" />
+                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
                 )}
                 {!!item.badge && (
-                  <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold leading-none text-white">
+                  <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] leading-none">{item.label}</span>
+              <span className={`text-[10px] leading-none ${
+                activeRail === item.id ? 'font-medium' : ''
+              }`}>{item.label}</span>
             </button>
           ))}
       </div>

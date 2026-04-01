@@ -165,7 +165,7 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
         ) : (
           <div className="space-y-2">
             {filteredWorkflows.map((workflow) => (
-              <div key={workflow.workflow.id} className="rounded-none border border-border px-4 py-3">
+              <div key={workflow.workflow.id} className="rounded-xl border border-border px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -247,7 +247,7 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+              <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
                 <div>
                   <Label>Auto assign owner when moved to started state</Label>
                   <p className="text-xs text-muted-foreground">Assign current user when story enters a started state and has no owner.</p>

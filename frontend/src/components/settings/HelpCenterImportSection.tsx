@@ -242,7 +242,7 @@ export function HelpCenterImportSection({
 
       {/* Step 0: Connect */}
       {step === 0 && (
-        <div className="mx-auto max-w-md rounded-none border border-border bg-card p-6 space-y-4">
+        <div className="mx-auto max-w-md rounded-xl border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
             <Label>Source</Label>
             <Select value="helpscout" disabled>
@@ -277,7 +277,7 @@ export function HelpCenterImportSection({
 
       {/* Step 1: Configure */}
       {step === 1 && (
-        <div className="mx-auto max-w-md rounded-none border border-border bg-card p-6 space-y-4">
+        <div className="mx-auto max-w-md rounded-xl border border-border bg-card p-6 space-y-4">
           {preview && preview.collections.length > 0 && (
             <div className="space-y-2">
               <Label>Collection</Label>
@@ -359,7 +359,7 @@ export function HelpCenterImportSection({
 
       {/* Step 2: Import Progress */}
       {step === 2 && (
-        <div className="mx-auto max-w-md rounded-none border border-border bg-card p-6 space-y-4">
+        <div className="mx-auto max-w-md rounded-xl border border-border bg-card p-6 space-y-4">
           <div className="space-y-3">
             {!isFinished && (
               <div className="flex justify-center">
