@@ -13,7 +13,7 @@
 | Frontend routes and PM UI | Pending | `/pm/tasks`, task detail, services, stores, copy |
 | Cross-product integrations | Pending | Support, CRM, docs, notifications, search |
 | Documentation | Pending | CLAUDE.md, AGENTS.md, internal docs |
-| Validation and rollout | Pending | Migration rehearsal, test coverage, release notes, rollback script |
+| Validation and rollout | In Progress | Forward and rollback SQL exist and validate in rollback transactions; staging rehearsal and app cutover remain |
 
 ## Checklist
 
@@ -152,9 +152,10 @@
 
 ### 7. Validation and rollout
 
-- [ ] Write reverse migration SQL script (tables/columns back to story-era names) and test on staging
+- [x] Write reverse migration SQL script (tables/columns back to story-era names)
 - [ ] Add migration verification test coverage for seeded existing story data
 - [x] Dry-run the forward SQL against the configured database inside a transaction and fix current-schema mismatches before merge
+- [x] Dry-run the forward + reverse SQL together inside a single transaction to validate rollback shape
 - [ ] Run `./migrate status` in staging after applying the Story -> Task SQL and confirm the version is recorded in `schema_migrations`
 - [ ] Verify end-to-end task CRUD and board flows against migrated data
 - [ ] Verify agent assignment/run and automation triggers against `task`
@@ -174,6 +175,7 @@
 - `pm_comments.entity_type` CHECK constraint is hardcoded — must be altered, not just data-backfilled.
 - The forward SQL migration is now executable, so merging it before task-era application code is ready would cause the ArgoCD `PreSync` hook to attempt the hard cutover early.
 - No rollback path without a pre-tested reverse migration script and database snapshot.
+- The rollback SQL now exists, but it is manual-only and still needs a real staged rollback rehearsal against a task-era deployment before production use.
 - Worker execution context (`eino_executor.go`) passes Story object to LLM prompt builder — a missed rename here breaks all agent runs silently.
 - Frontend has 80+ files and 3,000+ story references — recommend automated find-and-replace with manual verification rather than hand-editing.
 - `repository/agent_schema.go` contains inline SQL with `'story'` enum — easy to miss as it's not in the migrations directory.

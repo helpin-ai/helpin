@@ -16,6 +16,7 @@ Use this file as the operational runbook for the migration runner and ArgoCD hoo
 - Binary: `server/cmd/migrate`
 - Package: `server/internal/dbmigrate`
 - Migration source: embedded SQL files in `server/internal/dbmigrate/sql/`
+- Manual rollback scripts: `server/internal/dbmigrate/rollback/`
 - Version ledger: `schema_migrations`
 - Safety: Postgres advisory lock prevents concurrent migration runners
 
@@ -76,6 +77,13 @@ Important:
 - enum/check-constraint updates
 - contract-changing migrations
 - anything that must be applied in a controlled release order
+
+### Use manual rollback SQL for:
+
+- rehearsed emergency rollback scripts for hard-cut migrations
+- reverse renames and reverse data rewrites that must not run automatically
+
+Rollback scripts must not live under `server/internal/dbmigrate/sql/`, or the runtime runner will try to apply them as forward migrations.
 
 ## Release Flow
 
@@ -194,7 +202,9 @@ These items must be done before the actual rename rollout:
 2. Set `RUN_AUTO_MIGRATE=false` on the cutover API Deployment
 3. Rehearse the full flow on staging
 4. Verify `./migrate status` shows the applied Story -> Task migration version
+5. Keep the paired rollback script ready under `server/internal/dbmigrate/rollback/` and validate the forward+reverse round trip before release
 
 ## Caveats
 
 - Historical files under `server/migrations/` remain historical artifacts. New controlled migrations should go under `server/internal/dbmigrate/sql/`.
+- Rollback scripts are manual runbooks, not runner inputs. Store them under `server/internal/dbmigrate/rollback/` and execute them only in a controlled rollback procedure.
