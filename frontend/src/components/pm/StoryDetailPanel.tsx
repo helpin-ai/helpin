@@ -878,7 +878,7 @@ function StoryDetailPanelBody({
       {/* ── Two-column grid ─────────────────────────────────────── */}
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-5 pb-40">
+        <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
           {hasPipeline && (
             <div className="mb-4 flex items-center gap-0">
