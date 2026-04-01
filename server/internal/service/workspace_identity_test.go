@@ -184,6 +184,8 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 		storyRepo,
 		workspaceRepo,
 		workflowRepo,
+		repository.NewPMEpicRepository(db),
+		repository.NewPMSprintRepository(db),
 		nil,
 		nil,
 		nil,

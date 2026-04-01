@@ -20,6 +20,8 @@ type PMStoryService struct {
 	storyRepo           *repository.PMStoryRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
+	epicRepo            *repository.PMEpicRepository
+	sprintRepo          *repository.PMSprintRepository
 	labelRepo           *repository.PMLabelRepository
 	checklistRepo       *repository.PMChecklistItemRepository
 	externalLinkRepo    *repository.PMExternalLinkRepository
@@ -36,11 +38,13 @@ type PMStoryService struct {
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:           storyRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
+		epicRepo:            epicRepo,
+		sprintRepo:          sprintRepo,
 		labelRepo:           labelRepo,
 		checklistRepo:       checklistRepo,
 		externalLinkRepo:    externalLinkRepo,
@@ -270,6 +274,12 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		TemplateID:        req.TemplateID,
 		ExternalID:        req.ExternalID,
 	}
+	if err := validateEpicScope(ctx, s.epicRepo, req.WorkspaceID, story.EpicID, story.TeamID); err != nil {
+		return nil, err
+	}
+	if err := validateSprintScope(ctx, s.sprintRepo, req.WorkspaceID, story.SprintID, story.TeamID); err != nil {
+		return nil, err
+	}
 	if req.Position != nil {
 		story.Position = *req.Position
 	} else {
@@ -472,11 +482,22 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		return nil, err
 	}
 
+	previousDetail, err := s.storyRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if previousDetail == nil {
+		return nil, fmt.Errorf("story not found")
+	}
+
 	stateChanged := false
 	oldPriority := current.Priority
 	oldSeverity := current.Severity
 	oldStoryType := current.StoryType
 	oldBlocked := current.Blocked
+	oldEstimate := current.Estimate
+	oldDeadline := current.Deadline
+	oldBlocker := current.Blocker
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -525,6 +546,12 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 	if req.TeamID != nil {
 		current.TeamID = nullableString(req.TeamID)
+	}
+	if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
+		return nil, err
+	}
+	if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
+		return nil, err
 	}
 	if req.OwnerID != nil {
 		// Handled below via workspace member resolution.
@@ -661,6 +688,14 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 
+	updatedDetail, err := s.storyRepo.GetByID(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+	if updatedDetail == nil {
+		return nil, fmt.Errorf("story not found")
+	}
+
 	// Only log meaningful field changes with descriptive messages
 	if stateChanged {
 		newName := current.WorkflowStateID
@@ -704,6 +739,54 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	if req.Archived != nil && *req.Archived {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil); err != nil {
 			s.logger.ErrorContext(ctx, "failed to log activity for story archived", "error", err, "story_id", current.ID)
+		}
+	}
+	oldTeamName, err := resolveStoryTeamName(ctx, s.workspaceRepo, current.WorkspaceID, previousDetail.Story.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	newTeamName, err := resolveStoryTeamName(ctx, s.workspaceRepo, current.WorkspaceID, updatedDetail.Story.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	if action := teamActivityAction(oldTeamName, newTeamName); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story team change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := memberActivityAction("owner", storyMemberName(previousDetail.OwnerMember), storyMemberName(updatedDetail.OwnerMember)); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story owner change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := memberActivityAction("requester", storyMemberName(previousDetail.RequesterMember), storyMemberName(updatedDetail.RequesterMember)); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story requester change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := planningLinkActivityAction("epic", derefString(previousDetail.EpicName), derefString(updatedDetail.EpicName)); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story epic change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := planningLinkActivityAction("sprint", derefString(previousDetail.SprintName), derefString(updatedDetail.SprintName)); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story sprint change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := estimateActivityAction(oldEstimate, current.Estimate); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story estimate change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := deadlineActivityAction(oldDeadline, current.Deadline); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story due date change", "error", err, "story_id", current.ID)
+		}
+	}
+	if action := blockerReasonActivityAction(oldBlocker, current.Blocker, oldBlocked, current.Blocked); action != "" {
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story blocker change", "error", err, "story_id", current.ID)
 		}
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
@@ -779,7 +862,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	s.logger.InfoContext(ctx, "story updated", "story_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
-	return s.storyRepo.GetByID(ctx, current.ID)
+	return updatedDetail, nil
 }
 
 func nullableString(value *string) *string {

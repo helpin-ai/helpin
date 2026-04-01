@@ -646,6 +646,12 @@ export function StoryDetailPage() {
     return sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint.name ?? 'No sprint';
   }, [form?.sprint_id, sprints]);
 
+  const teamSprintsEnabled = useMemo(() => {
+    if (!form?.team_id) return true;
+    const team = teams.find((t) => t.id === form.team_id);
+    return team?.sprints_enabled !== false;
+  }, [form?.team_id, teams]);
+
   const currentTeamName = useMemo(() => {
     if (!form?.team_id) return 'No team';
     return teams.find((t) => t.id === form.team_id)?.name ?? 'No team';
@@ -743,7 +749,7 @@ export function StoryDetailPage() {
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {currentSprintName !== 'No sprint' && form.sprint_id && (
+          {teamSprintsEnabled && currentSprintName !== 'No sprint' && form.sprint_id && (
             <>
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
@@ -1248,6 +1254,7 @@ export function StoryDetailPage() {
             </MetadataRow>
 
             {/* Sprint */}
+            {teamSprintsEnabled && (
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
@@ -1262,6 +1269,7 @@ export function StoryDetailPage() {
                 renderTrigger={() => <span>{currentSprintName}</span>}
               />
             </MetadataRow>
+            )}
 
             {/* Estimate */}
             <MetadataRow icon={LayoutGrid} label="Estimate">

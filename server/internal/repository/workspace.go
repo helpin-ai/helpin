@@ -94,6 +94,21 @@ func (r *WorkspaceRepository) GetBySlug(ctx context.Context, slug string) (*mode
 	return ws, nil
 }
 
+// GetTeamByID returns a workspace team by its ID.
+func (r *WorkspaceRepository) GetTeamByID(ctx context.Context, workspaceID, teamID string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id = ?", workspaceID, teamID).
+		First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace team: %w", err)
+	}
+	return team, nil
+}
+
 // Update modifies workspace fields.
 func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}

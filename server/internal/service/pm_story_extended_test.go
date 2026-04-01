@@ -81,7 +81,22 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	activityService := NewPMActivityService(activityRepo)
 
 	// wsPublisher is nil-safe (Publish is a no-op on nil receiver).
-	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, nil, nil, repository.NewPMAttachmentRepository(db), activityService, nil, nil, nil, nil)
+	svc := NewPMStoryService(
+		storyRepo,
+		workspaceRepo,
+		workflowRepo,
+		repository.NewPMEpicRepository(db),
+		repository.NewPMSprintRepository(db),
+		labelRepo,
+		nil,
+		nil,
+		repository.NewPMAttachmentRepository(db),
+		activityService,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
 
 	return storyTestEnv{
 		svc:          svc,
@@ -108,6 +123,46 @@ func createTestStory(t *testing.T, env storyTestEnv, name string) *model.StoryDe
 		t.Fatalf("createTestStory(%q): %v", name, err)
 	}
 	return story
+}
+
+func seedStoryTeam(t *testing.T, env storyTestEnv, teamID, name string) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, env.db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		teamID, env.wsID, name, now, now)
+}
+
+func seedStoryEpic(t *testing.T, env storyTestEnv, epicID, teamID, name string) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, env.db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		epicID, env.wsID, name, nullableTestString(teamID), now, now)
+}
+
+func seedStorySprint(t *testing.T, env storyTestEnv, sprintID, teamID, name string) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, env.db, `INSERT INTO pm_sprints (id, workspace_id, name, team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		sprintID, env.wsID, name, nullableTestString(teamID), now, now)
+}
+
+func nullableTestString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func latestStoryActivityAction(t *testing.T, env storyTestEnv, storyID string) string {
+	t.Helper()
+	entries, total, err := env.svc.ListActivity(context.Background(), storyID, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("ListActivity: %v", err)
+	}
+	if total == 0 || len(entries) == 0 {
+		t.Fatal("expected activity entries")
+	}
+	return entries[0].Activity.Action
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +244,48 @@ func TestPMStoryService_Create(t *testing.T) {
 		}
 		if story.Story.StoryType != model.PMStoryTypeBug {
 			t.Errorf("story_type = %q, want %q", story.Story.StoryType, model.PMStoryTypeBug)
+		}
+	})
+
+	t.Run("create rejects epic from another team", func(t *testing.T) {
+		teamA := "team-story-a"
+		teamB := "team-story-b"
+		epicB := "epic-story-b"
+		seedStoryTeam(t, env, teamA, "Team A")
+		seedStoryTeam(t, env, teamB, "Team B")
+		seedStoryEpic(t, env, epicB, teamB, "Epic B")
+
+		_, err := env.svc.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Scoped Story",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			TeamID:          stringPtr(teamA),
+			EpicID:          stringPtr(epicB),
+		}, env.userID)
+		if err == nil {
+			t.Fatal("expected error for cross-team epic assignment")
+		}
+	})
+
+	t.Run("create rejects sprint from another team", func(t *testing.T) {
+		teamA := "team-story-c"
+		teamB := "team-story-d"
+		sprintB := "sprint-story-b"
+		seedStoryTeam(t, env, teamA, "Team C")
+		seedStoryTeam(t, env, teamB, "Team D")
+		seedStorySprint(t, env, sprintB, teamB, "Sprint B")
+
+		_, err := env.svc.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Scoped Story Sprint",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			TeamID:          stringPtr(teamA),
+			SprintID:        stringPtr(sprintB),
+		}, env.userID)
+		if err == nil {
+			t.Fatal("expected error for cross-team sprint assignment")
 		}
 	})
 
@@ -668,6 +765,7 @@ func TestPMStoryService_Update(t *testing.T) {
 
 	t.Run("clear epic with empty string", func(t *testing.T) {
 		epicID := "epic-001"
+		seedStoryEpic(t, env, epicID, "", "Shared Epic")
 		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
 			EpicID: &epicID,
 		}, env.userID)
@@ -687,6 +785,40 @@ func TestPMStoryService_Update(t *testing.T) {
 		}
 		if cleared.Story.EpicID != nil {
 			t.Fatalf("expected epic_id to be cleared, got %v", *cleared.Story.EpicID)
+		}
+	})
+
+	t.Run("update rejects epic from another team", func(t *testing.T) {
+		teamA := "team-story-upd-a"
+		teamB := "team-story-upd-b"
+		epicB := "epic-story-upd-b"
+		seedStoryTeam(t, env, teamA, "Update Team A")
+		seedStoryTeam(t, env, teamB, "Update Team B")
+		seedStoryEpic(t, env, epicB, teamB, "Update Epic B")
+
+		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
+			TeamID: stringPtr(teamA),
+			EpicID: stringPtr(epicB),
+		}, env.userID)
+		if err == nil {
+			t.Fatal("expected error for cross-team epic assignment")
+		}
+	})
+
+	t.Run("update rejects sprint from another team", func(t *testing.T) {
+		teamA := "team-story-upd-c"
+		teamB := "team-story-upd-d"
+		sprintB := "sprint-story-upd-b"
+		seedStoryTeam(t, env, teamA, "Update Team C")
+		seedStoryTeam(t, env, teamB, "Update Team D")
+		seedStorySprint(t, env, sprintB, teamB, "Update Sprint B")
+
+		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
+			TeamID:   stringPtr(teamA),
+			SprintID: stringPtr(sprintB),
+		}, env.userID)
+		if err == nil {
+			t.Fatal("expected error for cross-team sprint assignment")
 		}
 	})
 
@@ -792,6 +924,144 @@ func TestPMStoryService_Update(t *testing.T) {
 		}, viewerID)
 		if err == nil {
 			t.Fatal("expected forbidden error for viewer role")
+		}
+	})
+}
+
+func TestPMStoryService_UpdateActivityLogging(t *testing.T) {
+	t.Parallel()
+	env := newStoryTestEnv(t)
+	ctx := context.Background()
+
+	teamID := "team-activity-001"
+	seedStoryTeam(t, env, teamID, "Growth")
+	epicID := "epic-activity-001"
+	seedStoryEpic(t, env, epicID, "", "Launch")
+	sprintID := "sprint-activity-001"
+	seedStorySprint(t, env, sprintID, "", "Sprint 8")
+
+	ownerUserID := "user-owner-activity-001"
+	ownerMemberID := "member-owner-activity-001"
+	seedUser(t, env.db, ownerUserID, "owner@test.com", "Alice Owner", "hash")
+	seedWorkspaceMember(t, env.db, ownerMemberID, env.wsID, ownerUserID, "owner@test.com", "Alice Owner", model.RoleMember)
+
+	requesterUserID := "user-requester-activity-001"
+	requesterMemberID := "member-requester-activity-001"
+	seedUser(t, env.db, requesterUserID, "requester@test.com", "Rita Requester", "hash")
+	seedWorkspaceMember(t, env.db, requesterMemberID, env.wsID, requesterUserID, "requester@test.com", "Rita Requester", model.RoleMember)
+
+	t.Run("team assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Team Activity Story")
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			TeamID: stringPtr(teamID),
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update team: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "assigned this story to team Growth" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("owner assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Owner Activity Story")
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			OwnerMemberID: stringPtr(ownerMemberID),
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update owner: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "assigned owner Alice Owner" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("requester assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Requester Activity Story")
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			RequesterMemberID: stringPtr(requesterMemberID),
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update requester: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "changed requester from Story Admin to Rita Requester" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("epic assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Epic Activity Story")
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			EpicID: stringPtr(epicID),
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update epic: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "added this story to epic Launch" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("sprint assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Sprint Activity Story")
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			SprintID: stringPtr(sprintID),
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update sprint: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "added this story to sprint Sprint 8" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("estimate assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Estimate Activity Story")
+		estimate := 5
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			Estimate: &estimate,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update estimate: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "set estimate to 5" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("deadline assignment logs activity", func(t *testing.T) {
+		story := createTestStory(t, env, "Deadline Activity Story")
+		deadline := time.Date(2026, time.April, 3, 0, 0, 0, 0, time.UTC)
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			Deadline: &deadline,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update deadline: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "set due date to 2026-04-03" {
+			t.Fatalf("latest activity = %q", got)
+		}
+	})
+
+	t.Run("blocker text update logs activity when already blocked", func(t *testing.T) {
+		story := createTestStory(t, env, "Blocker Activity Story")
+		initialBlocker := "Waiting on API"
+		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			Blocker: &initialBlocker,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Set blocker: %v", err)
+		}
+
+		nextBlocker := "Waiting on API review"
+		_, err = env.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+			Blocker: &nextBlocker,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update blocker: %v", err)
+		}
+		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "updated blocker reason" {
+			t.Fatalf("latest activity = %q", got)
 		}
 	})
 }
