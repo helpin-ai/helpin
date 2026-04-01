@@ -6,8 +6,8 @@
 
 | Workstream | Status | Notes |
 | --- | --- | --- |
-| Schema and migrations | In Progress | Migration runner foundation landed; Story -> Task SQL rename still pending |
-| Data backfill rewrites | Pending | Entity type values, JSONB payloads, trigger strings |
+| Schema and migrations | In Progress | Forward SQL hard-cut migration exists and dry-run validates in a rollback transaction; do not merge until task-era code is ready |
+| Data backfill rewrites | In Progress | Core entity/preset rewrites are in the migration; automation/prompt payload sweep still pending |
 | Backend contracts | Pending | Models, handlers, services, repositories, routes |
 | Agent and automation surfaces | Pending | Preset keys, target types, prompts, planner payloads |
 | Frontend routes and PM UI | Pending | `/pm/tasks`, task detail, services, stores, copy |
@@ -29,25 +29,25 @@
 
 ### 1. Schema and migrations
 
-- [ ] Add the Story -> Task forward rename SQL file(s) under `server/internal/dbmigrate/sql/`
-- [ ] Create the SQL migration set for table renames (`pm_stories` -> `pm_tasks`, related join/template/link tables)
-- [ ] Rename FK columns (`story_id` -> `task_id`, `linked_story_id` -> `linked_task_id`, `active_story_id` -> `active_task_id`, recurring lineage columns, etc.)
-- [ ] Rename `story_type` to `task_type`
-- [ ] Rename `workspace_teams.default_story_type` to `default_task_type`
-- [ ] Rename sequence `pm_story_display_id_seq` -> `pm_task_display_id_seq` and re-point column default
+- [x] Add the Story -> Task forward rename SQL file(s) under `server/internal/dbmigrate/sql/`
+- [x] Create the SQL migration set for table renames (`pm_stories` -> `pm_tasks`, related join/template/link tables)
+- [x] Rename FK columns (`story_id` -> `task_id`, `linked_story_id` -> `linked_task_id`, `active_story_id` -> `active_task_id`, recurring lineage columns, etc.)
+- [x] Rename `story_type` to `task_type`
+- [x] Rename `workspace_teams.default_story_type` to `default_task_type`
+- [x] Rename sequence `pm_story_display_id_seq` -> `pm_task_display_id_seq` and re-point column default
 - [ ] Rename or recreate indexes, constraints, and FK names for task-era clarity
-- [ ] Update `pm_comments.entity_type` CHECK constraint from `('story', 'epic', 'doc')` to `('task', 'epic', 'doc')`
+- [x] Update `pm_comments.entity_type` CHECK constraint from `('story', 'epic', 'doc')` to `('task', 'epic', 'doc')`
 - [ ] Rehearse migration on staging data with existing story records
-- [ ] Confirm historical migration files (013, 014, 017, 020, 024, 038, 040, 042, 043, 044, 045, 057) are left as-is
+- [x] Confirm historical migration files (013, 014, 017, 020, 024, 038, 040, 042, 043, 044, 045, 057) are left as-is
 
 ### 1b. Data backfill rewrites
 
-- [ ] `pm_comments` rows: `entity_type = 'story'` -> `'task'`
-- [ ] `notifications` rows: `entity_type = 'story'` -> `'task'`
-- [ ] Follower/association rows: `object_type = 'story'` -> `'task'`
-- [ ] `agents.allowed_targets` JSONB: `"story"` -> `"task"`
+- [x] `pm_comments` rows: `entity_type = 'story'` -> `'task'`
+- [x] `notifications` rows: `entity_type = 'story'` -> `'task'`
+- [x] Follower/association rows: `object_type = 'story'` -> `'task'`
+- [x] `agents.allowed_targets` JSONB: `"story"` -> `"task"`
 - [ ] Automation trigger strings: `story.*` -> `task.*`
-- [ ] Preset keys: `story_planner` -> `task_planner`
+- [x] Preset keys: `story_planner` -> `task_planner`
 - [ ] Rewrite any other persisted JSONB/text values containing `story` -> `task`
 
 ### 2. Backend contracts
@@ -154,6 +154,7 @@
 
 - [ ] Write reverse migration SQL script (tables/columns back to story-era names) and test on staging
 - [ ] Add migration verification test coverage for seeded existing story data
+- [x] Dry-run the forward SQL against the configured database inside a transaction and fix current-schema mismatches before merge
 - [ ] Run `./migrate status` in staging after applying the Story -> Task SQL and confirm the version is recorded in `schema_migrations`
 - [ ] Verify end-to-end task CRUD and board flows against migrated data
 - [ ] Verify agent assignment/run and automation triggers against `task`
@@ -171,6 +172,7 @@
 - `AutoMigrate` must not be treated as sufficient for the rename; schema and data rewrites need explicit SQL.
 - `pm_story_display_id_seq` sequence is not cascaded by `ALTER TABLE RENAME` — requires explicit rename and column default re-point.
 - `pm_comments.entity_type` CHECK constraint is hardcoded — must be altered, not just data-backfilled.
+- The forward SQL migration is now executable, so merging it before task-era application code is ready would cause the ArgoCD `PreSync` hook to attempt the hard cutover early.
 - No rollback path without a pre-tested reverse migration script and database snapshot.
 - Worker execution context (`eino_executor.go`) passes Story object to LLM prompt builder — a missed rename here breaks all agent runs silently.
 - Frontend has 80+ files and 3,000+ story references — recommend automated find-and-replace with manual verification rather than hand-editing.
