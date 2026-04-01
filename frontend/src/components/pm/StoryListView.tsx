@@ -77,6 +77,11 @@ import {
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { getStoryListPinnedOffsets, type StoryListPinnedOffsets } from '@/components/pm/story-detail/storyListPinnedOffsets';
+import {
+  getVisibleStoryListGroupOptions,
+  type StoryListGroupByOption,
+} from '@/components/pm/story-detail/storyListGrouping';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
@@ -94,33 +99,13 @@ interface StoryListViewProps {
   /** When provided, use these stories instead of fetching internally. */
   externalStories?: Story[];
   onOpenStory: (story: Story) => void;
+  groupBy?: StoryListGroupByOption;
+  onGroupByChange?: (groupBy: StoryListGroupByOption) => void;
+  showToolbar?: boolean;
 }
 
-type GroupByOption =
-  | 'none'
-  | 'workflow_state'
-  | 'story_type'
-  | 'priority'
-  | 'severity'
-  | 'epic'
-  | 'sprint'
-  | 'owner'
-  | 'team';
-
-const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'workflow_state', label: 'Workflow State' },
-  { value: 'story_type', label: 'Story Type' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'severity', label: 'Severity' },
-  { value: 'epic', label: 'Epic' },
-  { value: 'sprint', label: 'Sprint' },
-  { value: 'owner', label: 'Owner' },
-  { value: 'team', label: 'Team' },
-];
-
 // Column accessor ID used for each group-by option
-const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
+const GROUP_COLUMN_MAP: Record<StoryListGroupByOption, string | null> = {
   none: null,
   workflow_state: 'stateName',
   story_type: 'typeName',
@@ -129,7 +114,6 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
   epic: 'epicName',
   sprint: 'sprintName',
   owner: 'ownerName',
-  team: 'teamName',
 };
 
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
@@ -149,6 +133,9 @@ export function StoryListView({
   teamId,
   externalStories,
   onOpenStory,
+  groupBy: controlledGroupBy,
+  onGroupByChange,
+  showToolbar = true,
 }: StoryListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
@@ -172,7 +159,9 @@ export function StoryListView({
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
+  const [uncontrolledGroupBy, setUncontrolledGroupBy] = useState<StoryListGroupByOption>('workflow_state');
+  const groupBy = controlledGroupBy ?? uncontrolledGroupBy;
+  const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -434,6 +423,7 @@ export function StoryListView({
         ...storyDetail.story,
         labels: storyDetail.labels,
         epic_name: storyDetail.epic_name ?? storyDetail.story.epic_name,
+        sprint_name: storyDetail.sprint_name ?? storyDetail.story.sprint_name,
         owner_name: storyDetail.owner_member
           ? (storyDetail.owner_member.display_name ?? storyDetail.owner_member.email)
           : storyDetail.story.owner_name,
@@ -769,6 +759,25 @@ export function StoryListView({
     return keys;
   }, [fieldVis, teamId]);
 
+  const visibleGroupOptions = useMemo(
+    () =>
+      getVisibleStoryListGroupOptions({
+        story_type: fieldVis.story_type,
+        priority: fieldVis.priority,
+        severity: fieldVis.severity,
+        epic: fieldVis.epic,
+        sprint: fieldVis.sprint,
+      }),
+    [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.story_type],
+  );
+
+  useEffect(() => {
+    if (visibleGroupOptions.some((option) => option.value === groupBy)) {
+      return;
+    }
+    setGroupBy('workflow_state');
+  }, [groupBy, setGroupBy, visibleGroupOptions]);
+
   const columnVisibility = useMemo(() => {
     const vis: Record<string, boolean> = {};
     for (const c of HIDDEN_GROUP_COLUMNS) vis[c] = false;
@@ -831,6 +840,15 @@ export function StoryListView({
   });
 
   const { rows } = table.getRowModel();
+  const pinnedOffsets = useMemo(
+    () =>
+      getStoryListPinnedOffsets({
+        displayIdWidth: table.getColumn('displayId')?.getSize() ?? 90,
+        typeIconWidth: table.getColumn('typeIcon')?.getSize() ?? 40,
+        showTypeIcon: table.getColumn('typeIcon')?.getIsVisible() ?? false,
+      }),
+    [columnSizing, columnVisibility, table],
+  );
   const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
 
   const estimateSize = useCallback(
@@ -866,37 +884,29 @@ export function StoryListView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control + Display settings */}
-      <div className="flex items-center gap-2 px-3 pt-2">
-        <span className="text-xs text-muted-foreground">Group by:</span>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
-          <SelectTrigger className="h-7 w-[160px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GROUP_BY_OPTIONS
-              .filter((opt) => {
-                if (opt.value === 'story_type') return fieldVis.story_type;
-                if (opt.value === 'priority') return fieldVis.priority;
-                if (opt.value === 'severity') return fieldVis.severity;
-                if (opt.value === 'epic') return fieldVis.epic;
-                if (opt.value === 'sprint') return fieldVis.sprint;
-                return true;
-              })
-              .map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground">
-          {displayStoryCount} {displayStoryCount === 1 ? 'story' : 'stories'}{!isPerGroupMode && hasMore ? '+' : ''}
-        </span>
-        <div className="ml-auto">
-          <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+      {showToolbar ? (
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <span className="text-xs text-muted-foreground">Group by:</span>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as StoryListGroupByOption)}>
+            <SelectTrigger className="h-7 w-[160px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {visibleGroupOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">
+            {displayStoryCount} {displayStoryCount === 1 ? 'story' : 'stories'}{!isPerGroupMode && hasMore ? '+' : ''}
+          </span>
+          <div className="ml-auto">
+            <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Table */}
       <div
@@ -950,9 +960,9 @@ export function StoryListView({
                 const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
                   ? TABLE_PINNED_HEADER_LEFT
                   : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
-                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
-                  : colId === 'typeIcon' ? pinnedStyle('left', 90)
-                  : colId === 'name' ? pinnedStyle('left', 130)
+                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+                  : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
+                  : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
                   : colId === 'actions' ? pinnedStyle('right', 0) : {};
                 return (
                   <div
@@ -1038,7 +1048,12 @@ export function StoryListView({
                     <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(row)} />
                   ) : (
                     <>
-                      <MemoDataRow row={row} onOpenStory={onOpenStory} columnSizingVersion={columnSizingVersion} />
+                      <MemoDataRow
+                        row={row}
+                        onOpenStory={onOpenStory}
+                        columnSizingVersion={columnSizingVersion}
+                        pinnedOffsets={pinnedOffsets}
+                      />
                       {showGroupLoadMore && (
                         <GroupLoadSentinel
                           stateId={groupStateId}
@@ -1071,7 +1086,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   totalStoryCount,
 }: {
   row: Row<Story>;
-  groupBy: GroupByOption;
+  groupBy: StoryListGroupByOption;
   stateMap: Map<string, { name: string; stateType: string }>;
   totalStoryCount?: number;
 }) {
@@ -1120,10 +1135,12 @@ const MemoDataRow = memo(function DataRow({
   row,
   onOpenStory,
   columnSizingVersion,
+  pinnedOffsets,
 }: {
   row: Row<Story>;
   onOpenStory: (story: Story) => void;
   columnSizingVersion: string;
+  pinnedOffsets: StoryListPinnedOffsets;
 }) {
   return (
     <div
@@ -1142,9 +1159,9 @@ const MemoDataRow = memo(function DataRow({
         const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
-        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
-          : colId === 'typeIcon' ? pinnedStyle('left', 90)
-          : colId === 'name' ? pinnedStyle('left', 130)
+        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+          : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
+          : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div

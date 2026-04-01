@@ -71,6 +71,7 @@ import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
 import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
 import { buildSprintOptionGroups } from "@/lib/pmSprintOptions";
+import { isEpicSelectableForStoryTeam } from '@/components/pm/story-detail/storyPlanningScope';
 import { htmlToMarkdown, markdownToHtml } from "@/lib/tiptapMarkdown";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -417,6 +418,14 @@ export function CreateStoryModal({
     setForm((current) => (current.sprint_id ? { ...current, sprint_id: '' } : current));
   }, [form.sprint_id, form.team_id, sprints]);
 
+  useEffect(() => {
+    if (!form.epic_id) return;
+    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+    if (!selectedEpic) return;
+    if (isEpicSelectableForStoryTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) return;
+    setForm((current) => (current.epic_id ? { ...current, epic_id: '' } : current));
+  }, [epics, form.epic_id, form.team_id]);
+
   const canSubmit = useMemo(
     () =>
       descriptionPendingUploads === 0 &&
@@ -435,6 +444,14 @@ export function CreateStoryModal({
     if (!form.epic_id) return "None";
     return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? "None";
   }, [form.epic_id, epics]);
+
+  const availableEpics = useMemo(
+    () =>
+      epics.filter((entry) =>
+        isEpicSelectableForStoryTeam(entry.epic.team_id ?? null, form.team_id || null),
+      ),
+    [epics, form.team_id],
+  );
 
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return "None";
@@ -1323,7 +1340,7 @@ export function CreateStoryModal({
                     value={form.epic_id || "__none__"}
                     options={[
                       { value: "__none__", label: "No epic" },
-                      ...epics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
+                      ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
                     ]}
                     onChange={(value) =>
                       setForm((prev) => ({

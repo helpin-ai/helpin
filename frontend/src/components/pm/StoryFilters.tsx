@@ -13,12 +13,13 @@ import {
 } from '@/components/ui/command';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
 import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import type { AssignableMember } from '@/lib/types';
+import type { AssignableMember, TeamUserMembership } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { filterAssignableMembersForTeam } from '@/components/pm/story-detail/storyFilterMembers';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -70,6 +71,8 @@ interface FilterContextValue {
   filterState: FilterState;
   definitions: FilterDefinition[];
   assignableMembers: AssignableMember[];
+  activeTeamId?: string | null;
+  userMemberships: TeamUserMembership[];
   activeKeys: Set<FilterKey>;
   activeCount: number;
   handleAdd: (key: FilterKey) => void;
@@ -172,6 +175,8 @@ function FilterPill({
 interface StoryFilterProviderProps {
   workspaceId: string;
   assignableMembers: AssignableMember[];
+  activeTeamId?: string | null;
+  userMemberships?: TeamUserMembership[];
   labels: Label[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
@@ -180,7 +185,18 @@ interface StoryFilterProviderProps {
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({ workspaceId, assignableMembers, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
+export function StoryFilterProvider({
+  workspaceId,
+  assignableMembers,
+  activeTeamId,
+  userMemberships = [],
+  labels,
+  epics,
+  sprints,
+  onChange,
+  externalFilters,
+  children,
+}: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
   const internalChangeRef = useRef(false);
   const { data: contactsRes } = useContacts(workspaceId, { page: 1, per_page: 100 });
@@ -360,13 +376,15 @@ export function StoryFilterProvider({ workspaceId, assignableMembers, labels, ep
     filterState,
     definitions,
     assignableMembers,
+    activeTeamId,
+    userMemberships,
     activeKeys,
     activeCount: activeKeys.size,
     handleAdd,
     handleToggle,
     handleRemove,
     handleClearAll,
-  }), [filterState, definitions, assignableMembers, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+  }), [filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }
@@ -467,11 +485,11 @@ export function StoryFilterBar() {
 }
 
 export function StoryOwnerAvatarFilterRow() {
-  const { assignableMembers, filterState, handleToggle } = useFilterContext();
+  const { assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const ownerFilters = filterState.owner_member_id ?? [];
   const members = useMemo(
-    () => assignableMembers.filter((member) => member.status === 'active'),
-    [assignableMembers],
+    () => filterAssignableMembersForTeam(assignableMembers, activeTeamId, userMemberships),
+    [assignableMembers, activeTeamId, userMemberships],
   );
 
   if (members.length === 0) return null;

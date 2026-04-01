@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, PlayCircle, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import type { RecurringRun, RecurringTemplateDetail } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { toast } from 'sonner';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 const RUN_PAGE_SIZE = 10;
 
@@ -84,6 +85,7 @@ interface RecurringTemplatesSettingsProps {
 
 export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editable = false }: RecurringTemplatesSettingsProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members } = useAssignableWorkspaceMembers(workspaceId);
@@ -153,10 +155,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
 
   const handleOpenStory = (storyId?: string) => {
     if (!storyId || !workspace?.slug) return;
-    navigate({
-      to: '/w/$slug/pm/stories/$storyId',
-      params: { slug: workspace.slug, storyId },
-    });
+    openStoryRoute(navigate as never, location as never, workspace.slug, storyId);
   };
 
   const handleEditSubmit = async (value: RecurringTemplateFormValue) => {

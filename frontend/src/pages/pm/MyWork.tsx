@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { differenceInDays, parseISO, format } from 'date-fns';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   AlertCircle,
   BarChart3,
@@ -17,10 +17,10 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmStoryService } from '@/lib/services/pmStoryService';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
 import type { Story, StateType } from '@/lib/pmTypes';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 type Mode = 'assigned' | 'requested';
 type DeadlineStatus = 'overdue' | 'approaching' | 'normal';
@@ -42,10 +42,10 @@ const DEADLINE_TOOLTIP: Record<DeadlineStatus, string> = {
 export function MyWorkPage() {
   useTitle('My Work');
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const wsSlug = workspace?.slug ?? '';
-  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   const { data: access } = useWorkspaceAccess(workspaceId);
   const memberId = access?.membership?.id;
@@ -170,7 +170,10 @@ export function MyWorkPage() {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
-  const openStory = (s: Story) => openStoryPanel(s.id);
+  const openStory = (story: Story) => {
+    if (!wsSlug) return;
+    openStoryRoute(navigate as never, location as never, wsSlug, story.id);
+  };
 
   return (
     <div className="max-w-4xl mx-auto">
