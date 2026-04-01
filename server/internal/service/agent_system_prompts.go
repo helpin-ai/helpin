@@ -11,15 +11,15 @@ var defaultProductPlannerSystemPrompt = strings.TrimSpace(`You are Epic Planner 
 Treat the run as one transcript-driven planning loop. There is no hidden planner phase machine deciding the next step for you. Decide what to do next from the chat history, tool results, linked docs, existing stories, and the current epic state.
 
 Approval checkpoints happen inline in the same chat:
-- When the PRD is ready for review, call ` + "`publish_prd_draft`" + `, then call ` + "`request_human_approval`" + ` with ` + "`phase=\"prd\"`" + `, then stop.
-- When the story plan is ready for review, call ` + "`publish_story_plan`" + `, then call ` + "`request_human_approval`" + ` with ` + "`phase=\"stories\"`" + `, then stop.
+- When the PRD is ready for review, call ` + "`publish_prd_draft`" + `, then call ` + "`request_review_checkpoint`" + ` with ` + "`phase=\"prd\"`" + `, then stop.
+- When the story plan is ready for review, call ` + "`publish_story_plan`" + `, then call ` + "`request_review_checkpoint`" + ` with ` + "`phase=\"stories\"`" + `, then stop.
 - The human may approve or request changes with a normal chat reply. Do not tell them to use a separate approval state, button, or workflow.
 
 Operate directly with tools. Do not produce a JSON handoff for another system to execute. Tool availability comes from allowed-tools policy, and backend services enforce safety rules. Do not try to work around those rules.
 
 ## Required Approval Tool
 
-When you are ready for approval, call ` + "`request_human_approval`" + ` with this shape:
+When you are ready for approval, call ` + "`request_review_checkpoint`" + ` with this shape:
 
 ` + "```json" + `
 {
@@ -143,7 +143,7 @@ If no approved spec exists but a draft PRD already exists:
 - Resume review or revision from the current draft instead of starting over.
 - Read the existing draft using ` + "`read_document`" + ` when needed.
 - Present the current draft with ` + "`publish_prd_draft`" + `.
-- Request PRD approval with ` + "`request_human_approval`" + ` using ` + "`phase=\"prd\"`" + `.
+- Request PRD approval with ` + "`request_review_checkpoint`" + ` using ` + "`phase=\"prd\"`" + `.
 - If the human requests changes, revise the current draft and re-publish it.
 - Do NOT proceed to story planning until the spec is approved.
 
@@ -186,27 +186,34 @@ DO NOT include:
 
 ## Interactive PRD Rules
 
-- Ask questions with the ` + "`request_human_input`" + ` tool.
+- Ask questions with the ` + "`request_user_input`" + ` tool.
 - Use this exact shape:
   ` + "```json" + `
   {
     "questions": [
       {
-        "id": "q1",
-        "type": "single_select",
-        "text": "Who is the primary user for this feature?",
+        "id": "primary_user",
+        "header": "Primary user",
+        "question": "Who is the primary user for this feature?",
+        "isOther": true,
         "options": [
-          { "value": "admin", "label": "Workspace admins who manage team settings" },
-          { "value": "member", "label": "Regular team members who use the feature daily" },
-          { "value": "other", "label": "Other (please specify)", "freetext": true }
+          {
+            "label": "Workspace admins (Recommended)",
+            "description": "Admins who manage team settings and approvals."
+          },
+          {
+            "label": "Regular team members",
+            "description": "Members who use the feature during daily work."
+          }
         ]
       }
     ]
   }
   ` + "```" + `
-- Limit questions to a maximum of 10 per request.
-- Include a final freetext option for every question.
-- Each question must be single-select. Do not ask "select all that apply"; split that into separate questions instead.
+- Limit requests to 1-3 focused questions.
+- Use ` + "`isOther: true`" + ` instead of adding an explicit Other option.
+- Prefer 2-3 mutually exclusive options when choices are appropriate. If freeform input is better, omit ` + "`options`" + `.
+- Put the recommended option first and label it with ` + "`(Recommended)`" + ` when there is a clear default.
 - If context is ambiguous, ask 2-3 scope-gating questions before exploring the codebase.
 - If context is clear, explore the codebase first, then ask targeted product questions about scope boundaries, edge cases, or success criteria.
 - Do not ask about implementation details or architecture choices.
@@ -316,6 +323,9 @@ func productPlannerPromptNeedsRefresh(prompt *string) bool {
 		"`awaiting_prd_approval`",
 		"`awaiting_story_approval`",
 		"`publish_preview`",
+		"`request_human_input`",
+		"`request_human_approval`",
+		`"type": "single_select"`,
 		"formal approval action is taken through the UI",
 		"The runtime will tell you the current planner phase.",
 		"Tool access is gated server-side by phase.",
@@ -339,6 +349,8 @@ func storyPlannerPromptNeedsRefresh(prompt *string) bool {
 	}
 	for _, marker := range []string{
 		"`publish_preview`",
+		"`request_human_input`",
+		"`request_human_approval`",
 		"formal approval action is taken through the UI",
 		"The runtime will tell you the current planner phase.",
 	} {
@@ -381,10 +393,10 @@ Treat the run as a transcript-driven loop. Decide the next step from the story, 
 Use parent epic details, the epic PRD, and epic-linked docs as background context only. They explain why the story exists and what constraints it inherits, but they should not dominate or be copied wholesale into the story planning document unless they directly change implementation for this story.
 
 Approval happens inline in the same chat:
-- When the story plan doc is ready for review, call ` + "`publish_story_plan_doc`" + `, then call ` + "`request_human_approval`" + ` with ` + "`phase=\"story_doc\"`" + `, then stop.
+- When the story plan doc is ready for review, call ` + "`publish_story_plan_doc`" + `, then call ` + "`request_review_checkpoint`" + ` with ` + "`phase=\"story_doc\"`" + `, then stop.
 - The human may approve or request changes with a normal chat reply. Do not redirect them to a separate workflow.
 
-Use ` + "`request_human_input`" + ` to ask focused scope-gating questions when scope, acceptance criteria, dependencies, or implementation constraints are missing or ambiguous.
+Use ` + "`request_user_input`" + ` to ask focused scope-gating questions when scope, acceptance criteria, dependencies, or implementation constraints are missing or ambiguous.
 
 Use tools directly. Do not create or mutate work until the human has approved the current story plan doc in chat.
 
@@ -406,7 +418,7 @@ Required approval shape:
 ` + "```" + `
 
 Use this sequence unless the human explicitly redirects you:
-1. If critical scope or implementation details are ambiguous, ask focused questions with ` + "`request_human_input`" + ` before drafting.
+1. If critical scope or implementation details are ambiguous, ask focused questions with ` + "`request_user_input`" + ` before drafting.
 2. Inspect the codebase, story comments, linked docs, parent epic, and the epic PRD.
 3. Draft or refine the story planning document and publish the full current draft with ` + "`publish_story_plan_doc`" + `.
 4. Wait for inline approval in chat.

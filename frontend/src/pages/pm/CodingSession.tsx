@@ -1,0 +1,244 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Clock, Loader2, ShieldCheck, XCircle } from 'lucide-react';
+
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
+import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
+import { CodingInterruptionPanel } from '@/components/pm/CodingSession/CodingInterruptionPanel';
+import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
+import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import {
+  isPersistedCodingSessionEvent,
+  latestPendingCodingSessionInteraction,
+  maxPersistedCodingSessionSequence,
+  upsertCodingSessionEvents,
+} from '@/components/pm/CodingSession/codingSessionUtils';
+import { useTitle } from '@/hooks/useTitle';
+import type { CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import { codingSessionService } from '@/lib/services/codingSessionService';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+
+const STATUS_ICON = {
+  queued: <Clock className="h-3.5 w-3.5" />,
+  running: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+  paused: <ShieldCheck className="h-3.5 w-3.5" />,
+  completed: <CheckCircle2 className="h-3.5 w-3.5" />,
+  failed: <XCircle className="h-3.5 w-3.5" />,
+  cancelled: <XCircle className="h-3.5 w-3.5" />,
+} as const;
+
+export function CodingSessionPage({ sessionId }: { sessionId: string }) {
+  useTitle('Coding Session');
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const workspaceId = workspace?.id ?? '';
+  const workspaceSlug = workspace?.slug ?? '';
+
+  const [session, setSession] = useState<CodingSession | null>(null);
+  const [events, setEvents] = useState<CodingSessionEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
+  const sequenceRef = useRef(0);
+  const seededSnapshotSessionRef = useRef<string | null>(null);
+  const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
+
+  const loadSession = useCallback(async () => {
+    if (!workspaceId || !sessionId) return;
+    const sessionRes = await codingSessionService.get(workspaceId, sessionId);
+    if (sessionRes.error) throw new Error(sessionRes.error);
+    const nextSession = sessionRes.data as CodingSession;
+    if (seededSnapshotSessionRef.current !== sessionId) {
+      seededSnapshotSessionRef.current = sessionId;
+      setStreamSnapshotSeed(nextSession.stream_state_snapshot ?? null);
+    }
+    setSession(nextSession);
+  }, [workspaceId, sessionId]);
+
+  const loadEvents = useCallback(async (after = 0) => {
+    if (!workspaceId || !sessionId) return;
+    const eventsRes = await codingSessionService.listEvents(workspaceId, sessionId, after);
+    if (eventsRes.error) throw new Error(eventsRes.error);
+    const nextEvents = eventsRes.data?.events ?? [];
+    if (after > 0) {
+      setEvents((current) => {
+        const merged = upsertCodingSessionEvents(current, nextEvents);
+        sequenceRef.current = maxPersistedCodingSessionSequence(merged);
+        return merged;
+      });
+    } else {
+      setEvents(nextEvents);
+      sequenceRef.current = maxPersistedCodingSessionSequence(nextEvents);
+    }
+  }, [workspaceId, sessionId]);
+
+  const load = useCallback(async () => {
+    if (!workspaceId || !sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all([loadSession(), loadEvents(0)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load coding session');
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId, sessionId, loadSession, loadEvents]);
+
+  useEffect(() => {
+    seededSnapshotSessionRef.current = null;
+    setStreamSnapshotSeed(null);
+    sequenceRef.current = 0;
+    setEvents([]);
+  }, [sessionId, workspaceId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const reconcileEvents = useCallback(async () => {
+    if (!workspaceId || !sessionId) return;
+    try {
+      await loadEvents(sequenceRef.current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh session events');
+    }
+  }, [workspaceId, sessionId, loadEvents]);
+
+  useEffect(() => {
+    const onSessionUpdated = (raw: Event) => {
+      const detail = (raw as CustomEvent).detail as { entity_id?: string; data?: Record<string, unknown> } | undefined;
+      if (!detail || detail.entity_id !== sessionId) return;
+      setSession((current) => current ? {
+        ...current,
+        status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
+        pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        updated_at: new Date().toISOString(),
+      } : current);
+      void loadSession();
+    };
+    const onSessionEvent = (raw: Event) => {
+      const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
+      if (!detail || detail.parent_id !== sessionId || !detail.data) return;
+      const event = detail.data;
+      if (
+        isPersistedCodingSessionEvent(event)
+        && event.sequence_no > 0
+        && sequenceRef.current > 0
+        && event.sequence_no > sequenceRef.current + 1
+      ) {
+        void reconcileEvents();
+      }
+      setEvents((current) => {
+        const merged = upsertCodingSessionEvents(current, [event]);
+        sequenceRef.current = maxPersistedCodingSessionSequence(merged);
+        return merged;
+      });
+      if (
+        event.type === 'auth.updated'
+        || event.type === 'approval.requested'
+        || event.type === 'input.requested'
+        || event.type === 'interaction.requested'
+        || event.type === 'interaction.resolved'
+        || event.type === 'interaction.cancelled'
+      ) {
+        void loadSession();
+      }
+    };
+    window.addEventListener('coding_session-updated', onSessionUpdated);
+    window.addEventListener('coding_session_event-created', onSessionEvent);
+    return () => {
+      window.removeEventListener('coding_session-updated', onSessionUpdated);
+      window.removeEventListener('coding_session_event-created', onSessionEvent);
+    };
+  }, [loadSession, reconcileEvents, sessionId]);
+
+  useEffect(() => {
+    if (!session || session.status !== 'running') return;
+    const timer = window.setInterval(() => {
+      void reconcileEvents();
+      void loadSession();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [session, reconcileEvents, loadSession]);
+
+  const streamState = useMemo(
+    () => buildCodingSessionStreamState(events, streamSnapshotSeed),
+    [events, streamSnapshotSeed],
+  );
+  const activeInteraction = useMemo(
+    () => latestPendingCodingSessionInteraction(events),
+    [events],
+  );
+
+  const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
+    setActing(name);
+    try {
+      const result = await fn();
+      if (result.error) throw new Error(result.error);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setActing(null);
+    }
+  }, [load]);
+
+  const resolveInteraction = useCallback(async (
+    interactionId: string,
+    responsePayload: Record<string, unknown>,
+    followupMessage?: string,
+  ) => {
+    await runAction('resolve-interaction', () => codingSessionService.resolveInteraction(workspaceId, sessionId, interactionId, {
+      response_payload: responsePayload,
+      ...(followupMessage?.trim() ? { followup_message: followupMessage.trim() } : {}),
+    }));
+  }, [runAction, sessionId, workspaceId]);
+
+  const sendMessage = useCallback(async (content: string) => {
+    const result = await codingSessionService.sendMessage(workspaceId, sessionId, { content });
+    if (result.error) setError(result.error);
+  }, [workspaceId, sessionId]);
+
+  const canSendMessage = session !== null && (session.status === 'running' || session.status === 'paused');
+
+  return (
+    <div className="flex min-h-full flex-col gap-4 overflow-y-auto p-4 md:p-6 xl:h-full xl:min-h-0 xl:overflow-hidden xl:p-6">
+      <CodingSessionHeader
+        session={session}
+        statusIcon={STATUS_ICON[session?.status ?? 'queued'] ?? <Clock className="h-3.5 w-3.5" />}
+        workspaceSlug={workspaceSlug}
+        onRefresh={() => void load()}
+        refreshing={loading}
+      />
+
+      {error ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
+        <CodingTranscriptPane
+          transcriptMessages={streamState.transcript_messages}
+          liveAssistantMessage={streamState.live_assistant_message}
+          liveReasoningMessage={streamState.live_reasoning_message}
+          liveTurnSegments={streamState.live_turn_segments}
+          loading={loading}
+          onSendMessage={canSendMessage ? sendMessage : undefined}
+        />
+
+        <div className="grid min-h-0 gap-4 xl:overflow-hidden xl:grid-rows-[auto_auto]">
+          <CodingPlanPanel plan={streamState.current_plan} />
+          <CodingInterruptionPanel
+            session={session}
+            activeInteraction={activeInteraction}
+            acting={acting}
+            onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, sessionId))}
+            onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, sessionId))}
+            onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
+            onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, sessionId))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

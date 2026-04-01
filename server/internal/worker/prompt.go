@@ -91,6 +91,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 
 // BuildUserPrompt creates the initial user message for the run.
 func BuildUserPrompt(
+	agent *model.Agent,
 	story *model.PMStory,
 	epic *model.PMEpic,
 	epicStories []model.PMStory,
@@ -101,79 +102,84 @@ func BuildUserPrompt(
 	planningStage string,
 	initialInstructions string,
 ) string {
-	var parts []string
+	var sections []string
+	var contextParts []string
+
+	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
+		sections = append(sections, strings.TrimSpace(*agent.SystemPrompt))
+	}
 
 	if story != nil {
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
-			parts = append(parts, fmt.Sprintf("Please draft or refine the canonical story planning document for story: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical story planning document for story: **%s**", story.Name))
 		} else {
-			parts = append(parts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
 		}
 		if story.Description != nil && *story.Description != "" {
-			parts = append(parts, "\nDescription:\n"+*story.Description)
+			contextParts = append(contextParts, "\nDescription:\n"+*story.Description)
 		}
 	}
 	if epic != nil {
-		parts = append(parts, fmt.Sprintf("Please work on epic: **%s**", epic.Name))
+		contextParts = append(contextParts, fmt.Sprintf("Please work on epic: **%s**", epic.Name))
 		if epic.Description != nil && *epic.Description != "" {
-			parts = append(parts, "\nDescription:\n"+*epic.Description)
+			contextParts = append(contextParts, "\nDescription:\n"+*epic.Description)
 		}
 		if len(epicStories) > 0 {
-			parts = append(parts, "\nExisting stories already linked to this epic:")
+			contextParts = append(contextParts, "\nExisting stories already linked to this epic:")
 			for _, story := range epicStories {
 				storyType := story.StoryType
 				if storyType == "" {
 					storyType = "feature"
 				}
-				parts = append(parts, fmt.Sprintf("- %s (type=%s)", story.Name, storyType))
+				contextParts = append(contextParts, fmt.Sprintf("- %s (type=%s)", story.Name, storyType))
 			}
 		}
 	}
 	if ticket != nil {
-		parts = append(parts, fmt.Sprintf("Please work on support ticket: **%s**", ticket.Subject))
+		contextParts = append(contextParts, fmt.Sprintf("Please work on support ticket: **%s**", ticket.Subject))
 		if ticket.CustomerEmail != nil && *ticket.CustomerEmail != "" {
-			parts = append(parts, "Customer email: "+*ticket.CustomerEmail)
+			contextParts = append(contextParts, "Customer email: "+*ticket.CustomerEmail)
 		}
 		if len(ticketMessages) > 0 {
-			parts = append(parts, "\nConversation so far:")
+			contextParts = append(contextParts, "\nConversation so far:")
 			for _, message := range ticketMessages {
 				scope := "public"
 				if message.IsInternal {
 					scope = "internal"
 				}
-				parts = append(parts, fmt.Sprintf("- [%s/%s] %s", message.SenderType, scope, message.Content))
+				contextParts = append(contextParts, fmt.Sprintf("- [%s/%s] %s", message.SenderType, scope, message.Content))
 			}
 		}
 	}
 
 	if len(checklist) > 0 {
-		parts = append(parts, "\nChecklist items:")
+		contextParts = append(contextParts, "\nChecklist items:")
 		for _, item := range checklist {
 			status := "[ ]"
 			if item.Completed {
 				status = "[x]"
 			}
-			parts = append(parts, fmt.Sprintf("- %s %s", status, item.Text))
+			contextParts = append(contextParts, fmt.Sprintf("- %s %s", status, item.Text))
 		}
 	}
 
 	if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
-		parts = append(parts, artifactSection)
+		contextParts = append(contextParts, artifactSection)
 	}
 
 	if strings.TrimSpace(initialInstructions) != "" {
-		parts = append(parts, "\nAdditional instructions:\n"+strings.TrimSpace(initialInstructions))
+		contextParts = append(contextParts, "\nAdditional instructions:\n"+strings.TrimSpace(initialInstructions))
 	}
 
 	if ticket != nil {
-		parts = append(parts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
-	} else if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
-		// The story planner system prompt already defines the document shape and approval flow.
-	} else {
-		parts = append(parts, "\nPlease complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.")
+		contextParts = append(contextParts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
 	}
 
-	return strings.Join(parts, "\n")
+	if len(contextParts) > 0 {
+		sections = append(sections, "Context:\n"+strings.Join(contextParts, "\n"))
+	}
+
+	return strings.Join(sections, "\n\n")
 }
 
 func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext) string {
@@ -182,7 +188,9 @@ func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]str
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		parts = append(parts, "This is an interactive transcript that may resume after a human reply.")
 		parts = append(parts, "If the latest human message answers a question, gives feedback, or requests changes, continue the work from that reply.")
-		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, ask another focused question with request_human_input, request approval with request_human_approval, or reach a durable final outcome.")
+		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, ask another focused question with request_user_input, request a product review checkpoint with request_review_checkpoint, or reach a durable final outcome.")
+		parts = append(parts, "If you need more information from the human, do not end the turn with prose questions or an open-questions list. Call request_user_input with the blocking questions and stop so the session stays interactive.")
+		parts = append(parts, "If an approval is denied or the human requests changes, continue from that feedback. If you are blocked afterward, ask the next blocking questions with request_user_input instead of finishing the run.")
 	}
 
 	if factsSection := formatRunFacts(runFacts); factsSection != "" {

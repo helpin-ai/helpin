@@ -141,7 +141,7 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 		definition.RuntimeKind = runtime
 	}
 	if len(version.AllowedTools) > 0 {
-		definition.AllowedTools = parseJSONStringSlice(version.AllowedTools)
+		definition.AllowedTools = worker.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
 	}
 	if len(version.SupportedModes) > 0 {
 		definition.SupportedModes = parseJSONStringSlice(version.SupportedModes)
@@ -190,10 +190,12 @@ func allowedTriggerModesForPresetKey(presetKey string) []string {
 }
 
 func supportedModesForRuntime(runtimeKind string) []string {
-	if strings.TrimSpace(runtimeKind) == "native_sdk" {
+	switch strings.TrimSpace(runtimeKind) {
+	case "native_sdk", "codex":
 		return []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}
+	default:
+		return []string{model.InvocationModeAutonomous}
 	}
-	return []string{model.InvocationModeAutonomous}
 }
 
 func allowedRuntimeKindsForPresetKey(presetKey string) []string {
@@ -233,13 +235,13 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishStoryPlan,
-		worker.ToolRequestHumanInput,
-		worker.ToolRequestHumanApproval,
+		worker.ToolRequestUserInput,
+		worker.ToolRequestReviewCheckpoint,
 	)
 	storyPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolPublishStoryPlanDoc,
-		worker.ToolRequestHumanInput,
-		worker.ToolRequestHumanApproval,
+		worker.ToolRequestUserInput,
+		worker.ToolRequestReviewCheckpoint,
 	)
 
 	return []model.AgentPresetDefinition{

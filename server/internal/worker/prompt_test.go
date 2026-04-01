@@ -42,6 +42,7 @@ func TestBuildSystemPromptDirectEpicRunUsesAgentSystemPrompt(t *testing.T) {
 func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
+		nil,
 		&model.PMEpic{Name: "Billing refresh"},
 		nil,
 		nil,
@@ -55,9 +56,13 @@ func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 	if !strings.Contains(prompt, "Please work on epic: **Billing refresh**") {
 		t.Fatalf("expected epic context in prompt\n%s", prompt)
 	}
+	if !strings.Contains(prompt, "Context:") {
+		t.Fatalf("expected explicit context heading in prompt\n%s", prompt)
+	}
 	for _, unexpected := range []string{
 		"Use the planner tools to create or update the canonical PRD",
 		"Please plan and execute the epic setup directly",
+		"Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.",
 	} {
 		if strings.Contains(prompt, unexpected) {
 			t.Fatalf("did not expect direct epic user prompt to contain %q\n%s", unexpected, prompt)
@@ -70,6 +75,7 @@ func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 
 func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	prompt := BuildUserPrompt(
+		nil,
 		nil,
 		&model.PMEpic{Name: "Billing refresh"},
 		nil,
@@ -104,6 +110,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 
 func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	prompt := BuildUserPrompt(
+		nil,
 		&model.PMStory{Name: "Inbox triage automation"},
 		nil,
 		nil,
@@ -133,6 +140,33 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	}
 	if strings.Contains(prompt, "Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.") {
 		t.Fatalf("did not expect implementation-oriented story prompt\n%s", prompt)
+	}
+}
+
+func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
+	systemPrompt := "Use the repo conventions and keep changes incremental."
+
+	prompt := BuildUserPrompt(
+		&model.Agent{SystemPrompt: &systemPrompt},
+		&model.PMStory{Name: "Inbox triage automation"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+	)
+
+	if !strings.HasPrefix(prompt, systemPrompt) {
+		t.Fatalf("expected prompt to start with saved system prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "\n\nContext:\nPlease work on the story: **Inbox triage automation**") {
+		t.Fatalf("expected context section after saved system prompt\n%s", prompt)
+	}
+	if strings.Index(prompt, "Context:") < strings.Index(prompt, systemPrompt) {
+		t.Fatalf("expected saved system prompt before context heading\n%s", prompt)
 	}
 }
 

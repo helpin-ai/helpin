@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareMore, Play } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,8 +18,10 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface EpicPlannerPanelProps {
   workspaceId: string;
@@ -44,6 +47,8 @@ export function EpicPlannerPanel({
   canEdit,
   onRunCompleted,
 }: EpicPlannerPanelProps) {
+  const navigate = useNavigate();
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -177,7 +182,17 @@ export function EpicPlannerPanel({
       await loadRuns();
       if (res.data?.id) {
         setSelectedRunId(res.data.id);
-        setDrawerOpen(true);
+        const sessionPath = canOpenCodingSession(res.data)
+          ? buildCodingSessionPath(workspaceSlug, res.data.id)
+          : null;
+        if (sessionPath && workspaceSlug) {
+          navigate({
+            to: '/w/$slug/pm/coding-sessions/$sessionId',
+            params: { slug: workspaceSlug, sessionId: res.data.id },
+          });
+        } else {
+          setDrawerOpen(true);
+        }
       }
       setAdditionalContext('');
       setAdditionalContextOpen(false);

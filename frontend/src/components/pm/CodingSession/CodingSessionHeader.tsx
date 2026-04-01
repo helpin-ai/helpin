@@ -1,0 +1,92 @@
+import type { ReactNode } from 'react';
+import { GitBranch } from 'lucide-react';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import type { CodingSession } from '@/lib/pmTypes';
+import { formatCodingSessionRelative } from './codingSessionUtils';
+
+export function CodingSessionHeader({
+  session,
+  statusIcon,
+  workspaceSlug,
+  onRefresh,
+  refreshing = false,
+}: {
+  session: CodingSession | null;
+  statusIcon: ReactNode;
+  workspaceSlug?: string;
+  onRefresh: () => void;
+  refreshing?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <h1 className="text-xl font-semibold">
+            {session?.title ?? 'Coding Session'}
+          </h1>
+          {session?.summary ? (
+            <p className="text-sm text-muted-foreground">
+              {session.summary}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {workspaceSlug ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={`/w/${workspaceSlug}/pm/agent-runs`}>
+                Back to runs
+              </a>
+            </Button>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="gap-1.5 text-xs">
+          {statusIcon}
+          {session?.status ?? 'Loading'}
+        </Badge>
+        {session?.pause_reason && session.pause_reason !== 'none' ? (
+          <Badge variant="secondary" className="text-xs">
+            {session.pause_reason.replaceAll('_', ' ')}
+          </Badge>
+        ) : null}
+        {session ? (
+          <Badge variant="secondary" className="text-xs">
+            {session.runtime_kind}
+          </Badge>
+        ) : null}
+        {session ? (
+          <Badge variant="secondary" className="text-xs">
+            {session.invocation_mode}
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <span>{session?.repo.repo_name ?? 'No repository linked'}</span>
+        {session?.repo.branch ? (
+          <>
+            <span>•</span>
+            <span className="inline-flex items-center gap-1">
+              <GitBranch className="h-3 w-3" />
+              {session.repo.branch}
+            </span>
+          </>
+        ) : null}
+        {session?.updated_at ? (
+          <>
+            <span>•</span>
+            <span>Updated {formatCodingSessionRelative(session.updated_at)}</span>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}

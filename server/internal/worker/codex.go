@@ -9,24 +9,75 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 const (
 	codexChunkFlushInterval    = 2 * time.Second
 	codexChunkFlushBytes       = 4 * 1024
 	codexPostRunTimeout        = 2 * time.Minute
+	codexRepoChangeWaitTimeout = 60 * time.Second
+	codexRepoChangePollEvery   = 2 * time.Second
 	codexScannerBufferSize     = 1024 * 1024
 	codexGracefulShutdownDelay = 10 * time.Second
+	codexOpenAIAuthModeAPIKey  = "api_key"
+	codexOpenAIAuthModeOAuth   = "chatgpt_oauth"
+	codexOpenAIAuthModeDevice  = "chatgpt_device_code"
+	codexForcedLoginMethodAPI  = "api"
+	codexForcedLoginMethodChat = "chatgpt"
+	codexOpenRouterDefaultURL  = "https://openrouter.ai/api/v1"
 )
+
+var codexPlainTextQuestionLinePattern = regexp.MustCompile(`^(?:\d+[\.\)]|[-*])\s+(.+\?)$`)
+
+type CodexRuntimeConfig struct {
+	Path                      string
+	DefaultModel              string
+	OpenAIAPIKey              string
+	OpenAIBaseURL             string
+	OpenAIAuthMode            string
+	EnableManagedChatGPTOAuth bool
+	ChatGPTAccessToken        string
+	ChatGPTAccountID          string
+	ChatGPTPlanType           string
+	OpenRouterAPIKey          string
+	OpenRouterBaseURL         string
+}
+
+type codexResolvedRuntimeProfile struct {
+	Provider          string
+	Model             string
+	AuthMode          string
+	ForcedLoginMethod string
+	OpenAIBaseURL     string
+	OpenRouterBaseURL string
+}
+
+type codexConfigArtifact struct {
+	Model             string                                  `toml:"model,omitempty"`
+	ApprovalPolicy    string                                  `toml:"approval_policy"`
+	ApprovalsReviewer string                                  `toml:"approvals_reviewer,omitempty"`
+	SandboxMode       string                                  `toml:"sandbox_mode"`
+	ModelProvider     string                                  `toml:"model_provider"`
+	OpenAIBaseURL     string                                  `toml:"openai_base_url,omitempty"`
+	ForcedLoginMethod string                                  `toml:"forced_login_method,omitempty"`
+	ModelProviders    map[string]codexConfigModelProviderInfo `toml:"model_providers,omitempty"`
+}
+
+type codexConfigModelProviderInfo struct {
+	Name               string `toml:"name"`
+	BaseURL            string `toml:"base_url,omitempty"`
+	EnvKey             string `toml:"env_key,omitempty"`
+	WireAPI            string `toml:"wire_api,omitempty"`
+	SupportsWebsockets bool   `toml:"supports_websockets"`
+}
 
 // CodexExecutor shells out to the codex CLI for autonomous coder and reviewer runs.
 type CodexExecutor struct {
@@ -35,6 +86,11 @@ type CodexExecutor struct {
 	defaultModel     string
 	openAIAPIKey     string
 	openAIBaseURL    string
+	openAIAuthMode   string
+	chatGPTOAuth     bool
+	chatGPTToken     string
+	chatGPTAccountID string
+	chatGPTPlanType  string
 	openRouterAPIKey string
 	openRouterURL    string
 	runRepo          *repository.AgentRunRepository
@@ -43,26 +99,27 @@ type CodexExecutor struct {
 
 func NewCodexExecutor(
 	kind string,
-	commandPath string,
-	defaultModel string,
-	openAIAPIKey string,
-	openAIBaseURL string,
-	openRouterAPIKey string,
-	openRouterURL string,
+	config CodexRuntimeConfig,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *CodexExecutor {
+	commandPath := strings.TrimSpace(config.Path)
 	if strings.TrimSpace(commandPath) == "" {
 		commandPath = "codex"
 	}
 	return &CodexExecutor{
 		kind:             kind,
 		commandPath:      commandPath,
-		defaultModel:     strings.TrimSpace(defaultModel),
-		openAIAPIKey:     strings.TrimSpace(openAIAPIKey),
-		openAIBaseURL:    strings.TrimSpace(openAIBaseURL),
-		openRouterAPIKey: strings.TrimSpace(openRouterAPIKey),
-		openRouterURL:    strings.TrimSpace(openRouterURL),
+		defaultModel:     strings.TrimSpace(config.DefaultModel),
+		openAIAPIKey:     strings.TrimSpace(config.OpenAIAPIKey),
+		openAIBaseURL:    strings.TrimSpace(config.OpenAIBaseURL),
+		openAIAuthMode:   normalizeCodexOpenAIAuthMode(config.OpenAIAuthMode),
+		chatGPTOAuth:     config.EnableManagedChatGPTOAuth,
+		chatGPTToken:     strings.TrimSpace(config.ChatGPTAccessToken),
+		chatGPTAccountID: strings.TrimSpace(config.ChatGPTAccountID),
+		chatGPTPlanType:  strings.TrimSpace(config.ChatGPTPlanType),
+		openRouterAPIKey: strings.TrimSpace(config.OpenRouterAPIKey),
+		openRouterURL:    strings.TrimSpace(config.OpenRouterBaseURL),
 		runRepo:          runRepo,
 		artifactRepo:     artifactRepo,
 	}
@@ -77,118 +134,27 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	if config == nil {
 		config = DefaultWorkflowConfig()
 	}
-
-	var checklist []model.PMChecklistItem
-	if execCtx.StoryID != "" && execCtx.Services != nil && execCtx.Services.ListChecklist != nil {
-		items, err := execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.StoryID)
-		if err != nil {
-			slog.WarnContext(execCtx.Context, "failed to list checklist for codex run",
-				"error", err, "story_id", execCtx.StoryID)
-		} else {
-			checklist = items
-		}
-	}
-
-	var ticketMessages []model.SupportMessage
-	if execCtx.ConversationID != "" && execCtx.Services != nil && execCtx.Services.ListConversationMessages != nil {
-		messages, err := execCtx.Services.ListConversationMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.ConversationID)
-		if err != nil {
-			slog.WarnContext(execCtx.Context, "failed to list ticket messages for codex run",
-				"error", err, "conversation_id", execCtx.ConversationID)
-		} else {
-			ticketMessages = messages
-		}
-	}
+	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
+	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
+	defer cancel()
+	runExecCtx := cloneExecutionContext(execCtx, ctx)
 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	if execCtx.Conversation != nil {
+		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
+			`{"status":"open|in_progress|pending|resolved|closed","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
+	}
 	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
-	userPrompt := BuildUserPrompt(
-		execCtx.Story,
-		execCtx.Epic,
-		execCtx.EpicStories,
-		execCtx.Conversation,
-		ticketMessages,
-		checklist,
-		execCtx.ArtifactContext,
-		execCtx.PlanningStage,
-		execCtx.InitialInstructions,
-	)
-	combinedPrompt := buildCodexPrompt(execCtx, systemPrompt, userPrompt)
-
-	modelID := e.requestedModelID(execCtx.Agent)
-	provider := e.resolveProvider(execCtx.Agent)
-	authMode := "account_default"
-	if modelID != "" {
-		authMode = "api_key_forced"
+	developerInstructions := strings.TrimSpace(systemPrompt)
+	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx); runtimeInstructions != "" {
+		developerInstructions = strings.TrimSpace(developerInstructions + "\n\n## Codex Runtime Instructions\n" + runtimeInstructions)
 	}
-	configContent := e.buildConfigArtifact(execCtx, modelID, provider, authMode)
-
-	lastMessageFile, err := os.CreateTemp("", "codex-last-message-*.txt")
-	if err != nil {
-		return fmt.Errorf("create codex output file: %w", err)
-	}
-	lastMessagePath := lastMessageFile.Name()
-	if err := lastMessageFile.Close(); err != nil {
-		return fmt.Errorf("close codex output file: %w", err)
-	}
-	defer os.Remove(lastMessagePath)
-
-	args := []string{
-		"exec",
-		"--json",
-		"--full-auto",
-		"--skip-git-repo-check",
-		"--color", "never",
-		"--sandbox", codexSandboxMode(execCtx),
-		"-C", execCtx.WorkDir,
-		"--output-last-message", lastMessagePath,
-	}
-	execEnv, cleanupExecEnv, err := e.buildExecEnv(execCtx.Context, execCtx.Agent, modelID != "")
-	if err != nil {
-		return err
-	}
-	defer cleanupExecEnv()
-	if modelID != "" {
-		args = append(args, "--model", modelID)
-	}
-	args = append(args, combinedPrompt)
-
-	cmd := exec.CommandContext(execCtx.Context, e.commandPath, args...)
-	cmd.Dir = execCtx.WorkDir
-	cmd.Env = execEnv
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-	}
-	cmd.WaitDelay = codexGracefulShutdownDelay
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("create codex stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("create codex stderr pipe: %w", err)
-	}
-
 	artifactWriter := newCodexArtifactWriter(e, run)
-	artifactWriter.Save(execCtx.Context, "codex_config", "json", configContent, true)
-	artifactWriter.Save(execCtx.Context, "codex_prompt", "markdown", combinedPrompt, false)
 
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("codex_starting")
-	}
-
-	if err := cmd.Start(); err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return fmt.Errorf("codex executable %q was not found on PATH", e.commandPath)
-		}
-		return fmt.Errorf("start codex run: %w", err)
 	}
 
 	done := make(chan struct{})
@@ -206,7 +172,13 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			for {
 				select {
 				case <-ticker.C:
-					_ = execCtx.Heartbeat("codex_running")
+					stage := "codex_running"
+					if execCtx.HeartbeatStageProvider != nil {
+						if provided := strings.TrimSpace(execCtx.HeartbeatStageProvider()); provided != "" {
+							stage = provided
+						}
+					}
+					_ = execCtx.Heartbeat(stage)
 				case <-done:
 					return
 				case <-execCtx.Context.Done():
@@ -216,89 +188,47 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		}()
 	}
 
-	streamCollector := newCodexStreamCollector(run.ID, artifactWriter)
-	streamErrs := make(chan error, 2)
-	var streamWG sync.WaitGroup
-	streamWG.Add(2)
-	go consumeCodexTextStream(stdoutPipe, "stdout", execCtx.Context, streamCollector, &streamWG, streamErrs)
-	go consumeCodexTextStream(stderrPipe, "stderr", execCtx.Context, streamCollector, &streamWG, streamErrs)
-
-	flushDone := make(chan struct{})
-	go streamCollector.FlushLoop(execCtx.Context, flushDone)
-
-	waitErr := cmd.Wait()
+	sessionHost := newCodexSessionHost(e, newCodexThreadStore(e.artifactRepo), artifactWriter, runExecCtx, run, developerInstructions)
+	result, err := sessionHost.Execute()
 	stopHeartbeat()
-	close(flushDone)
-
-	streamWG.Wait()
-	close(streamErrs)
-
-	artifactCtx, cancelArtifacts := backgroundContextOnCancel(execCtx.Context)
-	defer cancelArtifacts()
-
-	streamCollector.FlushPending(artifactCtx, true)
-	stdoutText, stderrText := streamCollector.Outputs()
-	streamResponseText := streamCollector.ResponseText()
-	artifactWriter.Save(artifactCtx, "codex_stdout", "text", stdoutText, false)
-	artifactWriter.Save(artifactCtx, "codex_stderr", "text", stderrText, false)
-	if failureSummary, failed := extractCodexEventFailure(stdoutText); failed {
-		return fmt.Errorf("codex run failed: %s", strings.TrimSpace(firstNonEmptyText(failureSummary, stderrText, "turn.failed")))
-	}
-
-	for streamErr := range streamErrs {
-		if streamErr == nil {
-			continue
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("codex runtime timed out after %s", timeout)
 		}
-		if waitErr == nil {
-			waitErr = streamErr
-			continue
-		}
-		slog.WarnContext(execCtx.Context, "failed to stream codex output",
-			"error", streamErr, "run_id", run.ID)
-	}
-
-	missingLastMessageWarning := isCodexMissingLastMessageWarning(stderrText)
-
-	if waitErr != nil {
 		if execCtx.Context.Err() != nil {
 			return ErrRunCancelled
 		}
-		if !canRecoverCodexMissingLastMessage(waitErr, stderrText, streamResponseText) {
-			return fmt.Errorf("codex run failed: %s", strings.TrimSpace(firstNonEmptyText(stderrText, waitErr.Error())))
-		}
-		slog.WarnContext(execCtx.Context, "codex exited without a final last-message payload; continuing with streamed/fallback output",
-			"run_id", run.ID)
+		return err
+	}
+	runExecCtx.LastExecutionResult = result
+	execCtx.LastExecutionResult = result
+	if result == nil {
+		return fmt.Errorf("codex returned no response")
 	}
 
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("codex_finished")
 	}
 
-	responseBytes, err := os.ReadFile(lastMessagePath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read codex final response: %w", err)
+	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
+
+	if result.CodexAuthState != nil {
+		return nil
 	}
-	responseSource := "last_message"
-	responseText := strings.TrimSpace(string(responseBytes))
-	if responseText == "" {
-		responseText = streamResponseText
-		if responseText != "" {
-			responseSource = "stream"
-		}
+
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
+		appendInteractivePlainTextQuestionInputRequest(result)
 	}
-	if responseText == "" {
-		if missingLastMessageWarning {
-			responseText = codexFallbackSummary(execCtx)
-			if responseText != "" {
-				responseSource = "fallback"
-			}
-		}
+
+	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+		return nil
 	}
+
+	responseSource := "assistant_turn"
+	responseText := strings.TrimSpace(result.AssistantText)
 	if responseText == "" {
-		responseText = sanitizeOpenCodeOutput(firstNonEmptyText(stdoutText, stderrText))
-		if responseText != "" {
-			responseSource = "raw_output"
-		}
+		responseText = codexFallbackSummary(execCtx)
+		responseSource = "fallback"
 	}
 	if strings.TrimSpace(responseText) == "" {
 		return fmt.Errorf("codex returned no response")
@@ -309,7 +239,13 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	postRunExecCtx := cloneExecutionContext(execCtx, postRunCtx)
 
 	if isEngineerStoryRun(postRunExecCtx) {
-		if err := e.persistEngineerWorkspace(postRunExecCtx, run, artifactWriter, responseText, responseSource, stdoutText, stderrText); err != nil {
+		if err := e.persistEngineerWorkspace(postRunExecCtx, run, artifactWriter, responseText, responseSource, "", ""); err != nil {
+			if errors.Is(err, ErrInteractiveRepoChangePending) {
+				appendInteractiveRepoFollowupInputRequest(result)
+				runExecCtx.LastExecutionResult = result
+				execCtx.LastExecutionResult = result
+				return nil
+			}
 			return normalizeCodexPostRunError(postRunCtx, err)
 		}
 	}
@@ -420,7 +356,7 @@ func (e *CodexExecutor) resolveProvider(agent *model.Agent) string {
 			return model.AgentModelProviderOpenAI
 		}
 	}
-	if e.openAIAPIKey != "" {
+	if e.openAIConfigured() {
 		return model.AgentModelProviderOpenAI
 	}
 	if e.openRouterAPIKey != "" {
@@ -440,62 +376,6 @@ func (e *CodexExecutor) requestedModelID(agent *model.Agent) string {
 	return normalizeOpenCodeConfiguredModelName(e.resolveProvider(agent), modelName)
 }
 
-func (e *CodexExecutor) buildExecEnv(ctx context.Context, agent *model.Agent, forceAPIAuth bool) ([]string, func(), error) {
-	env := e.buildBaseEnv()
-	if !forceAPIAuth {
-		return env, func() {}, nil
-	}
-
-	provider := e.resolveProvider(agent)
-	apiKey := strings.TrimSpace(e.apiKeyForProvider(provider))
-	if apiKey == "" {
-		switch provider {
-		case model.AgentModelProviderOpenRouter:
-			return nil, nil, fmt.Errorf("codex explicit model selection requires OPENROUTER_API_KEY")
-		default:
-			return nil, nil, fmt.Errorf("codex explicit model selection requires OPENAI_API_KEY")
-		}
-	}
-
-	tempHome, err := os.MkdirTemp("", "codex-api-home-*")
-	if err != nil {
-		return nil, nil, fmt.Errorf("create isolated codex home: %w", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(tempHome)
-	}
-
-	codexHome := filepath.Join(tempHome, ".codex")
-	if err := os.MkdirAll(codexHome, 0o755); err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("create isolated CODEX_HOME: %w", err)
-	}
-
-	env = upsertEnv(env, "HOME", tempHome)
-	env = upsertEnv(env, "CODEX_HOME", codexHome)
-	env = e.upsertAPIEnv(env, agent)
-
-	loginCmd := exec.CommandContext(ctx, e.commandPath, "login", "--with-api-key")
-	loginCmd.Env = env
-	loginCmd.Stdin = strings.NewReader(apiKey + "\n")
-	loginOutput, loginErr := loginCmd.CombinedOutput()
-	if loginErr != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("initialize codex API auth: %s", strings.TrimSpace(firstNonEmptyText(string(loginOutput), loginErr.Error())))
-	}
-
-	return env, cleanup, nil
-}
-
-func (e *CodexExecutor) apiKeyForProvider(provider string) string {
-	switch provider {
-	case model.AgentModelProviderOpenRouter:
-		return e.openRouterAPIKey
-	default:
-		return e.openAIAPIKey
-	}
-}
-
 func (e *CodexExecutor) buildBaseEnv() []string {
 	env := os.Environ()
 	env = removeEnvKeys(env,
@@ -508,18 +388,10 @@ func (e *CodexExecutor) buildBaseEnv() []string {
 	return env
 }
 
-func (e *CodexExecutor) upsertAPIEnv(env []string, agent *model.Agent) []string {
-	switch e.resolveProvider(agent) {
+func (e *CodexExecutor) upsertProviderEnv(env []string, provider string) []string {
+	switch normalizeOpenCodeProvider(provider) {
 	case model.AgentModelProviderOpenRouter:
-		env = upsertEnv(env, "OPENAI_API_KEY", e.openRouterAPIKey)
-		if e.openRouterURL != "" {
-			env = upsertEnv(env, "OPENAI_BASE_URL", e.openRouterURL)
-		}
-	default:
-		env = upsertEnv(env, "OPENAI_API_KEY", e.openAIAPIKey)
-		if e.openAIBaseURL != "" {
-			env = upsertEnv(env, "OPENAI_BASE_URL", e.openAIBaseURL)
-		}
+		env = upsertEnv(env, "OPENROUTER_API_KEY", e.openRouterAPIKey)
 	}
 	return env
 }
@@ -543,17 +415,166 @@ func removeEnvKeys(env []string, keys ...string) []string {
 	return filtered
 }
 
-func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, modelID, provider, authMode string) string {
-	payload := map[string]any{
-		"runtime_kind":    e.kind,
-		"provider":        provider,
-		"requested_model": modelID,
-		"model_selection": map[bool]string{true: "explicit", false: "codex_cli_default"}[modelID != ""],
-		"auth_mode":       authMode,
-		"sandbox":         codexSandboxMode(execCtx),
-		"cwd":             execCtx.WorkDir,
+func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile codexResolvedRuntimeProfile, approvalPolicy string) (string, error) {
+	config := codexConfigArtifact{
+		Model:             strings.TrimSpace(profile.Model),
+		ApprovalPolicy:    strings.TrimSpace(approvalPolicy),
+		ApprovalsReviewer: "user",
+		SandboxMode:       codexSandboxMode(execCtx),
+		ModelProvider:     strings.TrimSpace(profile.Provider),
+		ForcedLoginMethod: strings.TrimSpace(profile.ForcedLoginMethod),
 	}
-	return toJSONString(payload)
+	if strings.TrimSpace(profile.OpenAIBaseURL) != "" {
+		config.OpenAIBaseURL = strings.TrimSpace(profile.OpenAIBaseURL)
+	}
+	if strings.TrimSpace(profile.Provider) == model.AgentModelProviderOpenRouter {
+		config.ModelProviders = map[string]codexConfigModelProviderInfo{
+			model.AgentModelProviderOpenRouter: {
+				Name:               "OpenRouter",
+				BaseURL:            firstNonEmptyText(strings.TrimSpace(profile.OpenRouterBaseURL), codexOpenRouterDefaultURL),
+				EnvKey:             "OPENROUTER_API_KEY",
+				WireAPI:            "responses",
+				SupportsWebsockets: false,
+			},
+		}
+	}
+	payload, err := toml.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshal codex config.toml: %w", err)
+	}
+	return strings.TrimSpace(string(payload)) + "\n", nil
+}
+
+func normalizeCodexOpenAIAuthMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", codexOpenAIAuthModeAPIKey, "api", "api-key":
+		return codexOpenAIAuthModeAPIKey
+	case codexOpenAIAuthModeOAuth, "oauth", "chatgpt", "chatgpt-auth":
+		return codexOpenAIAuthModeOAuth
+	case codexOpenAIAuthModeDevice, "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return codexOpenAIAuthModeDevice
+	default:
+		return strings.ToLower(strings.TrimSpace(mode))
+	}
+}
+
+func (e *CodexExecutor) openAIConfigured() bool {
+	switch normalizeCodexOpenAIAuthMode(e.openAIAuthMode) {
+	case codexOpenAIAuthModeOAuth:
+		return e.chatGPTOAuth && e.chatGPTToken != "" && e.chatGPTAccountID != ""
+	case codexOpenAIAuthModeDevice:
+		return true
+	case codexOpenAIAuthModeAPIKey:
+		return strings.TrimSpace(e.openAIAPIKey) != ""
+	default:
+		return false
+	}
+}
+
+func (e *CodexExecutor) resolveRuntimeProfile(agent *model.Agent) (codexResolvedRuntimeProfile, error) {
+	profile := codexResolvedRuntimeProfile{
+		Provider: e.resolveProvider(agent),
+		Model:    e.selectedModelID(agent),
+	}
+
+	switch profile.Provider {
+	case model.AgentModelProviderOpenRouter:
+		if strings.TrimSpace(e.openRouterAPIKey) == "" {
+			return codexResolvedRuntimeProfile{}, fmt.Errorf("codex runtime requires OPENROUTER_API_KEY for provider %q", profile.Provider)
+		}
+		profile.AuthMode = codexOpenAIAuthModeAPIKey
+		profile.OpenRouterBaseURL = firstNonEmptyText(strings.TrimSpace(e.openRouterURL), codexOpenRouterDefaultURL)
+		return profile, nil
+	case model.AgentModelProviderOpenAI:
+		switch normalizeCodexOpenAIAuthMode(e.openAIAuthMode) {
+		case codexOpenAIAuthModeAPIKey:
+			if strings.TrimSpace(e.openAIAPIKey) == "" {
+				return codexResolvedRuntimeProfile{}, fmt.Errorf("codex runtime requires OPENAI_API_KEY for provider %q", profile.Provider)
+			}
+			profile.AuthMode = codexOpenAIAuthModeAPIKey
+			profile.ForcedLoginMethod = codexForcedLoginMethodAPI
+			profile.OpenAIBaseURL = strings.TrimSpace(e.openAIBaseURL)
+			return profile, nil
+		case codexOpenAIAuthModeOAuth:
+			if !e.chatGPTOAuth || e.chatGPTToken == "" || e.chatGPTAccountID == "" {
+				return codexResolvedRuntimeProfile{}, fmt.Errorf("codex runtime requires Helpin-managed ChatGPT OAuth when CODEX_OPENAI_AUTH_MODE=%q", codexOpenAIAuthModeOAuth)
+			}
+			profile.AuthMode = codexOpenAIAuthModeOAuth
+			profile.ForcedLoginMethod = codexForcedLoginMethodChat
+			return profile, nil
+		case codexOpenAIAuthModeDevice:
+			profile.AuthMode = codexOpenAIAuthModeDevice
+			profile.ForcedLoginMethod = codexForcedLoginMethodChat
+			return profile, nil
+		default:
+			return codexResolvedRuntimeProfile{}, fmt.Errorf("unsupported CODEX_OPENAI_AUTH_MODE %q", strings.TrimSpace(e.openAIAuthMode))
+		}
+	default:
+		return codexResolvedRuntimeProfile{}, fmt.Errorf("codex runtime requires provider openai or openrouter")
+	}
+}
+
+func (e *CodexExecutor) loginSession(ctx context.Context, client *codexAppServerClient, profile codexResolvedRuntimeProfile) error {
+	if client == nil {
+		return fmt.Errorf("codex app-server client is required")
+	}
+	params, err := e.loginPayloadForProfile(profile)
+	if err != nil {
+		return err
+	}
+	if params == nil {
+		return nil
+	}
+	_, err = client.Request(ctx, "account/login/start", params)
+	return err
+}
+
+func (e *CodexExecutor) loginPayloadForProfile(profile codexResolvedRuntimeProfile) (map[string]any, error) {
+	switch strings.TrimSpace(profile.Provider) {
+	case model.AgentModelProviderOpenRouter:
+		return nil, nil
+	case model.AgentModelProviderOpenAI:
+		switch strings.TrimSpace(profile.AuthMode) {
+		case codexOpenAIAuthModeAPIKey:
+			if strings.TrimSpace(e.openAIAPIKey) == "" {
+				return nil, fmt.Errorf("codex runtime requires OPENAI_API_KEY for OpenAI API-key auth")
+			}
+			return map[string]any{
+				"type":   "apiKey",
+				"apiKey": strings.TrimSpace(e.openAIAPIKey),
+			}, nil
+		case codexOpenAIAuthModeOAuth:
+			payload, err := e.chatGPTAuthPayload()
+			if err != nil {
+				return nil, err
+			}
+			payload["type"] = "chatgptAuthTokens"
+			return payload, nil
+		case codexOpenAIAuthModeDevice:
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unsupported codex auth mode %q", strings.TrimSpace(profile.AuthMode))
+		}
+	default:
+		return nil, nil
+	}
+}
+
+func (e *CodexExecutor) chatGPTAuthPayload() (map[string]any, error) {
+	if !e.chatGPTOAuth {
+		return nil, fmt.Errorf("Helpin-managed ChatGPT OAuth is disabled")
+	}
+	if e.chatGPTToken == "" || e.chatGPTAccountID == "" {
+		return nil, fmt.Errorf("Helpin-managed ChatGPT OAuth requires CODEX_CHATGPT_ACCESS_TOKEN and CODEX_CHATGPT_ACCOUNT_ID")
+	}
+	payload := map[string]any{
+		"accessToken":      e.chatGPTToken,
+		"chatgptAccountId": e.chatGPTAccountID,
+	}
+	if e.chatGPTPlanType != "" {
+		payload["chatgptPlanType"] = e.chatGPTPlanType
+	}
+	return payload, nil
 }
 
 func (e *CodexExecutor) saveArtifact(ctx context.Context, run *model.AgentRun, artifactType, format, content string, seqNo int) {
@@ -610,13 +631,19 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 		_ = execCtx.Heartbeat("persisting_changes")
 	}
 
-	changed, err := openCodeRunProducedRepoChanges(execCtx)
+	changed, err := waitForOpenCodeRepoChanges(execCtx, codexRepoChangeWaitTimeout, codexRepoChangePollEvery)
 	if err != nil {
 		return err
 	}
 	if !changed {
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "interactive codex run produced no repository changes yet; requesting follow-up input",
+				"run_id", run.ID)
+			return ErrInteractiveRepoChangePending
+		}
 		statusSummary, diffStatSummary := e.captureCodexNoChangeDiagnostics(execCtx, artifactWriter)
-		return fmt.Errorf("codex completed without modifying the repository; response_source=%s; response=%s; codex_stdout=%s; codex_stderr=%s; git_status=%s; git_diff=%s",
+		return fmt.Errorf("codex completed without modifying the repository within %s; response_source=%s; response=%s; codex_stdout=%s; codex_stderr=%s; git_status=%s; git_diff=%s",
+			codexRepoChangeWaitTimeout,
 			truncateSingleLine(responseSource, 40),
 			truncateSingleLine(responseText, 240),
 			truncateSingleLine(summarizeCodexJSONLOutput(stdoutText), 200),
@@ -641,6 +668,18 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 	}
 	changedFiles := strings.Fields(filesOutput)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
+		committedChange, err := detectCommittedEngineerChange(execCtx)
+		if err != nil {
+			return err
+		}
+		if committedChange != nil {
+			return persistExistingEngineerCommit(execCtx, artifactWriter, committedChange)
+		}
+		if isInteractiveRunInvocation(run) {
+			slog.InfoContext(execCtx.Context, "interactive codex run ended without staged repository diff; requesting follow-up input",
+				"run_id", run.ID)
+			return ErrInteractiveRepoChangePending
+		}
 		return fmt.Errorf("codex completed without producing a staged repository diff")
 	}
 
@@ -751,6 +790,95 @@ func summarizeCodexJSONLOutput(stdoutText string) string {
 		return strings.TrimSpace(stdoutText)
 	}
 	return strings.Join(summaries, ", ")
+}
+
+func appendInteractiveRepoFollowupInputRequest(result *ExecutionResult) {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+		return
+	}
+	request := HumanInputRequest{
+		Questions: []HumanInputQuestion{
+			{
+				ID:   "next_action",
+				Type: QuestionTypeSingleSelect,
+				Text: "No repository changes were detected yet. How should the coding run continue?",
+				Options: []HumanInputOption{
+					{Value: "continue_coding", Label: "Continue coding now"},
+					{Value: "provide_guidance", Label: "I will provide additional guidance"},
+				},
+			},
+		},
+	}
+	input, _ := json.Marshal(request)
+	result.ToolInvocations = append(result.ToolInvocations, model.ToolInvocation{
+		ToolName:      ToolRequestHumanInput,
+		Input:         input,
+		OutputSummary: "interactive run paused: no repository changes detected",
+	})
+	if strings.TrimSpace(result.AssistantText) == "" {
+		result.AssistantText = "I did not produce repository changes yet. Reply with guidance to continue."
+	}
+}
+
+func appendInteractivePlainTextQuestionInputRequest(result *ExecutionResult) {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil {
+		return
+	}
+	questions := extractInteractivePlainTextQuestions(result.AssistantText)
+	if len(questions) == 0 {
+		return
+	}
+
+	request := UserInputRequest{
+		Questions: make([]UserInputQuestion, 0, len(questions)),
+	}
+	for index, question := range questions {
+		request.Questions = append(request.Questions, UserInputQuestion{
+			ID:       fmt.Sprintf("followup_question_%d", index+1),
+			Question: question,
+		})
+	}
+
+	input, _ := json.Marshal(request)
+	result.ToolInvocations = append(result.ToolInvocations, model.ToolInvocation{
+		ToolName:      ToolRequestUserInput,
+		Input:         input,
+		OutputSummary: "waiting for human input",
+	})
+}
+
+func extractInteractivePlainTextQuestions(text string) []string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	questions := make([]string, 0, len(lines))
+	seen := map[string]struct{}{}
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		match := codexPlainTextQuestionLinePattern.FindStringSubmatch(line)
+		if len(match) != 2 {
+			continue
+		}
+		question := strings.TrimSpace(match[1])
+		if question == "" {
+			continue
+		}
+		if _, exists := seen[question]; exists {
+			continue
+		}
+		seen[question] = struct{}{}
+		questions = append(questions, question)
+	}
+	if len(questions) >= 2 {
+		return questions
+	}
+	return nil
 }
 
 func extractCodexEventFailure(stdoutText string) (string, bool) {
