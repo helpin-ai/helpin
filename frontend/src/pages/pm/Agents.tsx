@@ -1247,7 +1247,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-6xl">
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[92vw] sm:!max-w-[92vw] 2xl:w-[1800px] 2xl:!max-w-[1800px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <div className="flex items-start gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />

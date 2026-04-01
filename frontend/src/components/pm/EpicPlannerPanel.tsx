@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareMore, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -18,10 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface EpicPlannerPanelProps {
   workspaceId: string;
@@ -47,8 +44,6 @@ export function EpicPlannerPanel({
   canEdit,
   onRunCompleted,
 }: EpicPlannerPanelProps) {
-  const navigate = useNavigate();
-  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -182,17 +177,7 @@ export function EpicPlannerPanel({
       await loadRuns();
       if (res.data?.id) {
         setSelectedRunId(res.data.id);
-        const sessionPath = canOpenCodingSession(res.data)
-          ? buildCodingSessionPath(workspaceSlug, res.data.id)
-          : null;
-        if (sessionPath && workspaceSlug) {
-          navigate({
-            to: '/w/$slug/pm/coding-sessions/$sessionId',
-            params: { slug: workspaceSlug, sessionId: res.data.id },
-          });
-        } else {
-          setDrawerOpen(true);
-        }
+        setDrawerOpen(true);
       }
       setAdditionalContext('');
       setAdditionalContextOpen(false);
@@ -343,12 +328,10 @@ export function EpicPlannerPanel({
         )}
       </div>
 
-      <AgentRunDrawer
-        workspaceId={workspaceId}
-        runId={selectedRunId}
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
         onOpenChange={setDrawerOpen}
-        canEdit={canEdit}
         title={selectedRunId ? `${agentNameById[runs.find((run) => run.id === selectedRunId)?.agent_id ?? ''] ?? 'Epic Agent'} Run` : 'Epic Agent Run'}
         description="Interactive agent chat, artifacts, and live tool activity for this epic."
       />

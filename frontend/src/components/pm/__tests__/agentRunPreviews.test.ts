@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, resolveMessagePublishedPreview } from '../agentRunPreviews';
+import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, resolveMessagePublishedPreview } from '../runPreviews';
 
-describe('agentRunPreviews', () => {
+describe('runPreviews', () => {
   it('parses published preview payloads from tool invocations', () => {
     const parsed = parseMessagePublishedPreview({
       content: 'Review the draft in the preview pane.',
@@ -104,6 +104,27 @@ describe('agentRunPreviews', () => {
 
     expect(parsed?.panelKey).toBe('story_plan');
     expect(parsed?.format).toBe('json');
+  });
+
+  it('parses fixed preview tools when panel metadata is implied by the tool name', () => {
+    const parsed = parseMessagePublishedPreview({
+      content: 'Review the current draft.',
+      tool_invocations: [
+        {
+          tool_name: 'publish_prd_draft',
+          input: {
+            content: '# Problem\n\nDraft body',
+          },
+        },
+      ],
+    } as never);
+
+    expect(parsed).toMatchObject({
+      panelKey: 'prd_draft',
+      title: 'PRD Draft',
+      format: 'markdown',
+      content: '# Problem\n\nDraft body',
+    });
   });
 
   it('prefers assistant-linked preview artifacts over message tool invocations', () => {

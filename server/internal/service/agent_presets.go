@@ -233,12 +233,14 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
+		worker.ToolUpdatePlan,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishStoryPlan,
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,
 	)
 	storyPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
+		worker.ToolUpdatePlan,
 		worker.ToolPublishStoryPlanDoc,
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,

@@ -11,6 +11,7 @@ interface Props {
   interaction: CodingSessionInteraction;
   acting: string | null;
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  compact?: boolean;
 }
 
 interface QuestionAnswerState {
@@ -18,13 +19,15 @@ interface QuestionAnswerState {
   freetext?: string;
 }
 
-export function CodingInteractionCard({ interaction, acting, onResolve }: Props) {
+export function CodingInteractionCard({ interaction, acting, onResolve, compact = false }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
   useEffect(() => {
     setQuestionAnswers({});
     setFollowupMessage('');
+    setCurrentQuestionIndex(0);
   }, [interaction.interaction_id]);
 
   const isBusy = acting !== null;
@@ -33,24 +36,27 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
   if (interaction.interaction_kind === 'request_user_input') {
     const codexQuestions = parseCodexUserInputQuestions(requestPayload);
     if (interaction.request_schema_version === 'codex.v2' && codexQuestions.length > 0) {
-      const allAnswered = codexQuestions.every((question) => {
-        const answer = questionAnswers[question.id];
-        if (!answer) return false;
-        if (!question.options.length || answer.value === '__other__') {
-          return Boolean(answer.freetext?.trim());
-        }
-        return Boolean(answer.value?.trim());
-      });
+      const allAnswered = codexQuestions.every((question) => isCodexQuestionAnswered(question, questionAnswers[question.id]));
+      const showStepper = compact && codexQuestions.length > 1;
+      const visibleQuestions = showStepper ? [codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)]] : codexQuestions;
+      const currentQuestion = codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)];
+      const currentAnswered = currentQuestion ? isCodexQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
 
       return (
-        <InteractionShell
+        <InteractionShell compact={compact}
           icon={<CheckCircle2 className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
           summary={interaction.summary}
         >
+          {showStepper ? (
+            <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Question {currentQuestionIndex + 1} of {codexQuestions.length}</span>
+              <span>{Object.values(questionAnswers).filter((answer) => Boolean(answer?.value || answer?.freetext?.trim())).length} answered</span>
+            </div>
+          ) : null}
           <div className="space-y-4">
-            {codexQuestions.map((question) => {
+            {visibleQuestions.map((question) => {
               const answer = questionAnswers[question.id];
               const isSecret = question.isSecret;
               return (
@@ -59,7 +65,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                     {question.header ? (
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
                     ) : null}
-                    <div className="mt-1 text-sm font-medium text-foreground">{question.question}</div>
+                    <div className={cn('mt-1 font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{question.question}</div>
                   </div>
                   {question.options.length > 0 ? (
                     <div className="space-y-2">
@@ -81,7 +87,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                             )}
                             disabled={isBusy}
                           >
-                            <div className="text-sm font-medium text-foreground">{option.label}</div>
+                            <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{option.label}</div>
                             {option.description ? (
                               <div className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</div>
                             ) : null}
@@ -103,7 +109,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                           )}
                           disabled={isBusy}
                         >
-                          <div className="text-sm font-medium text-foreground">Other</div>
+                          <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>Other</div>
                           <div className="mt-1 text-xs leading-5 text-muted-foreground">Provide a custom reply.</div>
                         </button>
                       ) : null}
@@ -119,6 +125,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                         [question.id]: { ...current[question.id], freetext: event.target.value },
                       }))}
                       placeholder="Type your answer"
+                      className={compact ? 'text-[13px]' : undefined}
                       disabled={isBusy}
                     />
                   ) : null}
@@ -126,14 +133,34 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
               );
             })}
           </div>
-          <div className="mt-4">
-            <Button
-              size="sm"
-              disabled={!allAnswered || isBusy}
-              onClick={() => onResolve(interaction.interaction_id, buildCodexUserInputResponsePayload(codexQuestions, questionAnswers))}
-            >
-              Submit answers
-            </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {showStepper ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={currentQuestionIndex === 0 || isBusy}
+                onClick={() => setCurrentQuestionIndex((current) => Math.max(0, current - 1))}
+              >
+                Back
+              </Button>
+            ) : null}
+            {showStepper && currentQuestionIndex < codexQuestions.length - 1 ? (
+              <Button
+                size="sm"
+                disabled={!currentAnswered || isBusy}
+                onClick={() => setCurrentQuestionIndex((current) => Math.min(codexQuestions.length - 1, current + 1))}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={!allAnswered || isBusy}
+                onClick={() => onResolve(interaction.interaction_id, buildCodexUserInputResponsePayload(codexQuestions, questionAnswers))}
+              >
+                Submit answers
+              </Button>
+            )}
           </div>
         </InteractionShell>
       );
@@ -141,30 +168,32 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
 
     const helpinQuestions = parseHelpinQuestions(requestPayload);
     if (helpinQuestions.length > 0) {
-      const allAnswered = helpinQuestions.every((question) => {
-        const answer = questionAnswers[question.id];
-        if (!answer?.value) return false;
-        const selectedOption = question.options.find((option) => option.value === answer.value);
-        if (selectedOption?.freetext) {
-          return Boolean(answer.freetext?.trim());
-        }
-        return true;
-      });
+      const allAnswered = helpinQuestions.every((question) => isHelpinQuestionAnswered(question, questionAnswers[question.id]));
+      const showStepper = compact && helpinQuestions.length > 1;
+      const visibleQuestions = showStepper ? [helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)]] : helpinQuestions;
+      const currentQuestion = helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)];
+      const currentAnswered = currentQuestion ? isHelpinQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
 
       return (
-        <InteractionShell
+        <InteractionShell compact={compact}
           icon={<CheckCircle2 className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
           summary={interaction.summary}
         >
+          {showStepper ? (
+            <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Question {currentQuestionIndex + 1} of {helpinQuestions.length}</span>
+              <span>{Object.values(questionAnswers).filter((answer) => Boolean(answer?.value || answer?.freetext?.trim())).length} answered</span>
+            </div>
+          ) : null}
           <div className="space-y-4">
-            {helpinQuestions.map((question) => {
+            {visibleQuestions.map((question) => {
               const answer = questionAnswers[question.id];
               const selectedOption = question.options.find((option) => option.value === answer?.value);
               return (
                 <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
-                  <div className="text-sm font-medium text-foreground">{question.text}</div>
+                  <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{question.text}</div>
                   <div className="space-y-2">
                     {question.options.map((option) => {
                       const selected = answer?.value === option.value;
@@ -184,7 +213,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                           )}
                           disabled={isBusy}
                         >
-                          <div className="text-sm font-medium text-foreground">{option.label}</div>
+                          <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{option.label}</div>
                         </button>
                       );
                     })}
@@ -197,6 +226,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
                         [question.id]: { ...current[question.id], freetext: event.target.value },
                       }))}
                       placeholder="Please specify"
+                      className={compact ? 'text-[13px]' : undefined}
                       disabled={isBusy}
                     />
                   ) : null}
@@ -204,14 +234,34 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
               );
             })}
           </div>
-          <div className="mt-4">
-            <Button
-              size="sm"
-              disabled={!allAnswered || isBusy}
-              onClick={() => onResolve(interaction.interaction_id, buildHelpinUserInputResponsePayload(helpinQuestions, questionAnswers))}
-            >
-              Submit answers
-            </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {showStepper ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={currentQuestionIndex === 0 || isBusy}
+                onClick={() => setCurrentQuestionIndex((current) => Math.max(0, current - 1))}
+              >
+                Back
+              </Button>
+            ) : null}
+            {showStepper && currentQuestionIndex < helpinQuestions.length - 1 ? (
+              <Button
+                size="sm"
+                disabled={!currentAnswered || isBusy}
+                onClick={() => setCurrentQuestionIndex((current) => Math.min(helpinQuestions.length - 1, current + 1))}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={!allAnswered || isBusy}
+                onClick={() => onResolve(interaction.interaction_id, buildHelpinUserInputResponsePayload(helpinQuestions, questionAnswers))}
+              >
+                Submit answers
+              </Button>
+            )}
           </div>
         </InteractionShell>
       );
@@ -221,7 +271,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
   if (interaction.interaction_kind === 'review_checkpoint') {
     const checkpoint = parseReviewCheckpointRequest(requestPayload);
     return (
-      <InteractionShell
+      <InteractionShell compact={compact}
         icon={<ShieldCheck className="h-4 w-4" />}
         eyebrow={checkpoint?.phase ? `${checkpoint.phase} review checkpoint` : 'Review checkpoint'}
         title={interaction.title ?? checkpoint?.title ?? 'Review required'}
@@ -266,13 +316,13 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
     const permissions = parsePermissionsRequest(requestPayload);
     const requestedPermissions = permissions?.permissions ?? {};
     return (
-      <InteractionShell
+      <InteractionShell compact={compact}
         icon={<ShieldCheck className="h-4 w-4" />}
         eyebrow="Permissions approval"
         title={interaction.title ?? 'Approve additional permissions'}
         summary={interaction.summary}
       >
-        <div className="space-y-2 rounded-lg border border-border bg-muted/25 p-3 text-sm">
+        <div className={cn('space-y-2 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
           <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{permissions?.reason ?? 'No reason provided.'}</span></div>
           <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100">
             {JSON.stringify(requestedPermissions, null, 2)}
@@ -316,13 +366,13 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
         : ['accept', 'acceptForSession', 'decline', 'cancel'];
 
     return (
-      <InteractionShell
+      <InteractionShell compact={compact}
         icon={<GitCommitHorizontal className="h-4 w-4" />}
         eyebrow={interaction.interaction_kind === 'command_execution_approval' ? 'Command approval' : 'File-change approval'}
         title={interaction.title ?? runtimeApproval.title}
         summary={interaction.summary ?? runtimeApproval.summary}
       >
-        <div className="space-y-2 rounded-lg border border-border bg-muted/25 p-3 text-sm">
+        <div className={cn('space-y-2 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
           {runtimeApproval.command ? (
             <div><span className="font-medium text-foreground">Command:</span> <span className="text-muted-foreground"><code>{runtimeApproval.command}</code></span></div>
           ) : null}
@@ -361,7 +411,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve }: Props)
   }
 
   return (
-    <InteractionShell
+    <InteractionShell compact={compact}
       icon={<ShieldCheck className="h-4 w-4" />}
       eyebrow="Interaction"
       title={interaction.title ?? interaction.interaction_kind.replaceAll('_', ' ')}
@@ -380,26 +430,39 @@ function InteractionShell({
   title,
   summary,
   children,
+  compact = false,
 }: {
   icon: ReactNode;
   eyebrow: string;
   title: string;
   summary?: string;
   children: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div className={cn('rounded-xl border border-border bg-card', compact ? 'p-3' : 'p-4')}>
+      <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-[11px]')}>
         {icon}
         {eyebrow}
       </div>
-      <div className="text-base font-semibold">{title}</div>
+      <div className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
       {summary ? (
-        <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
+        <p className={cn('mt-1 text-muted-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{summary}</p>
       ) : null}
-      <div className="mt-4">{children}</div>
+      <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </div>
   );
+}
+
+function isCodexQuestionAnswered(
+  question: ReturnType<typeof parseCodexUserInputQuestions>[number],
+  answer?: QuestionAnswerState,
+) {
+  if (!answer) return false;
+  if (!question.options.length || answer.value === '__other__') {
+    return Boolean(answer.freetext?.trim());
+  }
+  return Boolean(answer.value?.trim());
 }
 
 function parseCodexUserInputQuestions(payload: Record<string, unknown>) {
@@ -445,6 +508,18 @@ function buildCodexUserInputResponsePayload(
     payload[question.id] = { answers: [value] };
   }
   return { answers: payload };
+}
+
+function isHelpinQuestionAnswered(
+  question: ReturnType<typeof parseHelpinQuestions>[number],
+  answer?: QuestionAnswerState,
+) {
+  if (!answer?.value) return false;
+  const selectedOption = question.options.find((option) => option.value === answer.value);
+  if (selectedOption?.freetext) {
+    return Boolean(answer.freetext?.trim());
+  }
+  return true;
 }
 
 function parseHelpinQuestions(payload: Record<string, unknown>) {

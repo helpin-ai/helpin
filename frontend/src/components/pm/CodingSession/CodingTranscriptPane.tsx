@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bot,
   FileCode2,
@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+  CodingSession,
+  CodingSessionInteraction,
   CodingSessionLiveAssistantMessage,
   CodingSessionLiveReasoningMessage,
   CodingSessionLiveToolCall,
@@ -25,6 +27,7 @@ import type {
 } from '@/lib/pmTypes';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
+import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 
 export function CodingTranscriptPane({
@@ -35,6 +38,12 @@ export function CodingTranscriptPane({
   loading = false,
   onSendMessage,
   sendingMessage = false,
+  session,
+  activeInteraction,
+  acting,
+  onAuthStart,
+  onAuthCancel,
+  onResolveInteraction,
 }: {
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
@@ -43,7 +52,16 @@ export function CodingTranscriptPane({
   loading?: boolean;
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
+  session?: CodingSession | null;
+  activeInteraction?: CodingSessionInteraction | null;
+  acting?: string | null;
+  onAuthStart?: () => void;
+  onAuthCancel?: () => void;
+  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const followAnimationFrameRef = useRef<number | null>(null);
+  const lastAutoScrollAtRef = useRef(0);
   const visibleLiveSegments = liveTurnSegments.filter((segment) => {
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
@@ -51,6 +69,56 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const scrollKey = useMemo(() => {
+    const lastTranscript = transcriptMessages[transcriptMessages.length - 1];
+    const lastLiveSegment = visibleLiveSegments[visibleLiveSegments.length - 1];
+    const lastLiveSignature = lastLiveSegment
+      ? lastLiveSegment.kind === 'assistant_message'
+        ? `${lastLiveSegment.segment_id}:${lastLiveSegment.assistant_message.content.length}:${lastLiveSegment.assistant_message.status}`
+        : `${lastLiveSegment.segment_id}:${lastLiveSegment.tool_call.status}:${lastLiveSegment.tool_call.result?.content.length ?? 0}`
+      : '';
+
+    return [
+      transcriptMessages.length,
+      lastTranscript?.event_id ?? '',
+      lastTranscript?.content.length ?? 0,
+      liveAssistantMessage?.message_id ?? '',
+      liveAssistantMessage?.content.length ?? 0,
+      liveReasoningMessage?.message_id ?? '',
+      liveReasoningMessage?.content.length ?? 0,
+      visibleLiveSegments.length,
+      lastLiveSignature,
+      showLivePlaceholder ? 1 : 0,
+    ].join('|');
+  }, [transcriptMessages, liveAssistantMessage, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    if (followAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(followAnimationFrameRef.current);
+    }
+    followAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      const now = window.performance.now();
+      const useSmooth = now - lastAutoScrollAtRef.current > 120;
+      if (typeof container.scrollTo === 'function') {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: useSmooth ? 'smooth' : 'auto',
+        });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+      lastAutoScrollAtRef.current = now;
+      followAnimationFrameRef.current = null;
+    });
+    return () => {
+      if (followAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(followAnimationFrameRef.current);
+        followAnimationFrameRef.current = null;
+      }
+    };
+  }, [scrollKey]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -64,7 +132,7 @@ export function CodingTranscriptPane({
         </Badge>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto px-4 py-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-2">
           {transcriptMessages.map((message) => (
             <TranscriptEntry key={message.event_id} message={message} />
@@ -121,10 +189,97 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
+      {(session?.pause_reason === 'authentication' || activeInteraction) ? (
+        <InterruptionOverlay
+          session={session ?? null}
+          activeInteraction={activeInteraction ?? null}
+          acting={acting ?? null}
+          onAuthStart={onAuthStart ?? (() => {})}
+          onAuthCancel={onAuthCancel ?? (() => {})}
+          onResolveInteraction={onResolveInteraction ?? (() => {})}
+        />
+      ) : null}
+
       {onSendMessage ? (
         <MessageInput onSend={onSendMessage} sending={sendingMessage} />
       ) : null}
     </section>
+  );
+}
+
+function InterruptionOverlay({
+  session,
+  activeInteraction,
+  acting,
+  onAuthStart,
+  onAuthCancel,
+  onResolveInteraction,
+}: {
+  session: CodingSession | null;
+  activeInteraction: CodingSessionInteraction | null;
+  acting: string | null;
+  onAuthStart: () => void;
+  onAuthCancel: () => void;
+  onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+}) {
+  return (
+    <div className="relative">
+      {/* Stacked gradient-blur scrim — each layer covers a slice with increasing blur toward the bottom */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-10" style={{ backdropFilter: 'blur(1px)', maskImage: 'linear-gradient(to bottom, transparent, black)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-20" style={{ backdropFilter: 'blur(4px)', maskImage: 'linear-gradient(to bottom, transparent 0%, transparent 50%, black 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, transparent 50%, black 100%)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-36" style={{ backdropFilter: 'blur(8px)', maskImage: 'linear-gradient(to bottom, transparent 0%, transparent 70%, black 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, transparent 70%, black 100%)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48" style={{ backdropFilter: 'blur(14px)', maskImage: 'linear-gradient(to bottom, transparent 0%, transparent 80%, black 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, transparent 80%, black 100%)' }} />
+      {/* Colour fade on top of the blur layers */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48" style={{ background: 'linear-gradient(to top, color-mix(in oklch, var(--card) 85%, transparent), transparent)' }} />
+
+      <div className="border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
+      {session?.pause_reason === 'authentication' ? (
+        <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            <LockKeyhole className="h-3.5 w-3.5" />
+            Authentication required
+          </div>
+          <div className="text-sm font-semibold">ChatGPT sign-in required</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {session.auth_state?.verification_url
+              ? 'Complete device sign-in to continue this session.'
+              : 'Start sign-in to continue this session.'}
+          </p>
+          {session.auth_state?.user_code ? (
+            <div className="mt-3 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm tracking-widest">
+              {session.auth_state.user_code}
+            </div>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" onClick={onAuthStart} disabled={acting !== null}>
+              Start sign-in
+            </Button>
+            {session.auth_state?.verification_url ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={session.auth_state.verification_url} target="_blank" rel="noreferrer">
+                  Open verification page
+                </a>
+              </Button>
+            ) : null}
+            {session.auth_state?.state === 'pending' ? (
+              <Button variant="outline" size="sm" onClick={onAuthCancel} disabled={acting !== null}>
+                Cancel sign-in
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {activeInteraction ? (
+        <CodingInteractionCard
+          interaction={activeInteraction}
+          acting={acting}
+          onResolve={onResolveInteraction}
+          compact
+        />
+      ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -264,14 +419,14 @@ function AssistantMessageBubble({
 }) {
   return (
     <div className={cn(
-      'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
+      'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm',
       isAssistant
         ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
         : 'rounded-br-sm border border-blue-200/80 bg-blue-50 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-50',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
-      {isAssistant && !placeholder
-        ? <MarkdownContent content={content} />
+      {!placeholder
+        ? <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
         : <div className="whitespace-pre-wrap">{content}</div>}
     </div>
   );
@@ -393,7 +548,7 @@ function ThinkingStrip({
         </div>
       </summary>
 
-      <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">
+      <div className="mt-3 border-t border-border pt-3 text-[13px] text-muted-foreground">
         {hasVisibleContent ? (
           <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
         ) : (

@@ -3,11 +3,16 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestListCodingSessionEventsSkipsLegacyInteractionArtifactsWhenInteractionsExist(t *testing.T) {
@@ -325,6 +330,152 @@ func TestListCodingSessionEventsIncludesPersistedTurnSegmentsOnAssistantMessages
 	}
 }
 
+func TestListCodingSessionEventsEmitsResolvedInteractionAfterPreviousSequence(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-events-interaction-update",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	interaction := &model.AgentRunInteraction{
+		ID:                   "interaction-lifecycle-1",
+		WorkspaceID:          run.WorkspaceID,
+		RunID:                run.ID,
+		RuntimeKind:          "native_sdk",
+		InteractionKind:      model.AgentRunInteractionKindReviewCheckpoint,
+		Status:               model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload:       json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the draft."}`),
+		RuntimeMetadata:      json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		Title:                strPtr("Approve PRD"),
+		Summary:              strPtr("Review the draft."),
+		CreatedAt:            now.Add(time.Millisecond),
+		UpdatedAt:            now.Add(time.Millisecond),
+	}
+	if err := interactionRepo.Create(context.Background(), interaction); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+
+	initialEvents, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+	if codingSessionEventTypes(initialEvents.Events, "interaction.requested") != 1 {
+		t.Fatalf("expected one interaction.requested event, got %#v", initialEvents.Events)
+	}
+
+	resolvedAt := now.Add(2 * time.Second)
+	responseSchemaVersion := model.AgentRunInteractionSchemaVersionHelpinV1
+	interaction.Status = model.AgentRunInteractionStatusResolved
+	interaction.ResponseSchemaVersion = &responseSchemaVersion
+	interaction.ResponsePayload = json.RawMessage(`{"decision":"approve"}`)
+	interaction.ResolvedBy = strPtr("user-1")
+	interaction.ResolvedAt = &resolvedAt
+	interaction.UpdatedAt = resolvedAt
+	if err := interactionRepo.Update(context.Background(), interaction); err != nil {
+		t.Fatalf("update interaction: %v", err)
+	}
+
+	nextEvents, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, initialEvents.NextSequenceNo)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents after resolved update returned error: %v", err)
+	}
+	if len(nextEvents.Events) != 1 || nextEvents.Events[0].Type != "interaction.resolved" {
+		t.Fatalf("expected only interaction.resolved after previous sequence, got %#v", nextEvents.Events)
+	}
+}
+
+func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-diff-session-workdir",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "codex",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	defer func() {
+		_ = worker.CleanupWorkspaceForRun(run.ID)
+	}()
+	workDir := worker.PersistentWorkspacePathForRun(run.ID)
+	_ = os.RemoveAll(filepath.Dir(workDir))
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("mkdir workdir: %v", err)
+	}
+	runGitCommand(t, workDir, "init")
+	filePath := filepath.Join(workDir, "session.txt")
+	if err := os.WriteFile(filePath, []byte("before\n"), 0o644); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	runGitCommand(t, workDir, "add", "session.txt")
+	runGitCommand(t, workDir, "-c", "user.name=Test Runner", "-c", "user.email=test@example.com", "commit", "-m", "init")
+	if err := os.WriteFile(filePath, []byte("after\n"), 0o644); err != nil {
+		t.Fatalf("write modified file: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+	}
+
+	diff, err := svc.GetCodingSessionDiff(context.Background(), run.WorkspaceID, run.ID, "session.txt")
+	if err != nil {
+		t.Fatalf("GetCodingSessionDiff returned error: %v", err)
+	}
+	if !strings.Contains(diff.Diff, "session.txt") || !strings.Contains(diff.Diff, "-before") || !strings.Contains(diff.Diff, "+after") {
+		t.Fatalf("expected diff from session checkout, got %q", diff.Diff)
+	}
+}
+
 func codingSessionEventTypes(events []model.CodingSessionEvent, eventType string) int {
 	count := 0
 	for _, event := range events {
@@ -333,4 +484,14 @@ func codingSessionEventTypes(events []model.CodingSessionEvent, eventType string
 		}
 	}
 	return count
+}
+
+func runGitCommand(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -398,6 +399,197 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 	}
 	if len(messages) != 0 {
 		t.Fatalf("expected no follow-up messages for a straight approval, got %#v", messages)
+	}
+}
+
+func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStaleResume(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Code Builder", model.AgentPresetCodeBuilder, "Builder", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	staleHeartbeat := now.Add(-10 * time.Minute)
+	run := &model.AgentRun{
+		ID:              "run-codex-stale-resume",
+		WorkspaceID:     "ws-1",
+		AgentID:         "agent-1",
+		TargetType:      "story",
+		TargetID:        "story-1",
+		RuntimeKind:     "codex",
+		InvocationMode:  model.InvocationModeInteractive,
+		ApprovalState:   "pending",
+		PauseReason:     model.AgentRunPauseReasonHumanApproval,
+		Status:          model.AgentRunStatusPaused,
+		WorkflowID:      strPtr("workflow-run-codex-stale"),
+		LastHeartbeatAt: &staleHeartbeat,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	requestPayload := json.RawMessage(`{
+		"threadId":"thread-1",
+		"turnId":"turn-1",
+		"itemId":"item-1",
+		"reason":"Need broader access",
+		"permissions":{"network":{"enabled":true}}
+	}`)
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                   "interaction-stale-codex-1",
+		WorkspaceID:          run.WorkspaceID,
+		RunID:                run.ID,
+		RuntimeKind:          "codex",
+		InteractionKind:      model.AgentRunInteractionKindPermissionsApproval,
+		Status:               model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionCodexV2,
+		RequestID:            strPtr("7"),
+		ThreadID:             strPtr("thread-1"),
+		TurnID:               strPtr("turn-1"),
+		ItemID:               strPtr("item-1"),
+		Title:                strPtr("Approve additional permissions"),
+		RequestPayload:       requestPayload,
+		RuntimeMetadata:      json.RawMessage(`{"runtime_kind":"codex"}`),
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	temporalClient := &capturingTemporalClient{}
+	svc := &AgentService{
+		agentRepo:       agentRepo,
+		runRepo:         runRepo,
+		interactionRepo: interactionRepo,
+		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	responsePayload := json.RawMessage(`{"permissions":{"network":{"enabled":true}},"scope":"session"}`)
+	interaction, err := svc.ResolveCodingSessionInteraction(context.Background(), run.WorkspaceID, run.ID, "interaction-stale-codex-1", "user-1", model.ResolveAgentRunInteractionRequest{
+		ResponsePayload: responsePayload,
+	})
+	if err != nil {
+		t.Fatalf("ResolveCodingSessionInteraction returned error: %v", err)
+	}
+	if interaction == nil || interaction.Status != model.AgentRunInteractionStatusResolved {
+		t.Fatalf("expected resolved interaction, got %#v", interaction)
+	}
+	if temporalClient.signalName != temporalapp.WorkflowSignalResume {
+		t.Fatalf("expected resume workflow signal, got %q", temporalClient.signalName)
+	}
+	if temporalClient.resumeSignal.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent, got %#v", temporalClient.resumeSignal)
+	}
+	if got := string(temporalClient.resumeSignal.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected exact native response payload on resume signal, got %s", got)
+	}
+	if temporalClient.resumeSignal.Content != "" {
+		t.Fatalf("expected no follow-up content on straight approval, got %#v", temporalClient.resumeSignal)
+	}
+}
+
+func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodexPauseIsPresent(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:              "run-codex-review-checkpoint",
+		WorkspaceID:     "ws-1",
+		AgentID:         "agent-1",
+		TargetType:      "epic",
+		TargetID:        "epic-1",
+		RuntimeKind:     "codex",
+		InvocationMode:  model.InvocationModeInteractive,
+		ApprovalState:   "pending",
+		PauseReason:     model.AgentRunPauseReasonHumanApproval,
+		Status:          model.AgentRunStatusPaused,
+		WorkflowID:      strPtr("workflow-run-codex-review"),
+		LastHeartbeatAt: &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Simulate an unrelated live codex pending-request snapshot still being present.
+	seedCodexPendingSessionState(t, artifactRepo, run.WorkspaceID, run.ID, now)
+
+	requestPayload := json.RawMessage(`{
+		"phase":"prd",
+		"title":"PRD Review: Increase Kafka throughput",
+		"summary":"Review the current PRD draft."
+	}`)
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-review-1",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: intPtr(3),
+		Title:                      strPtr("PRD Review"),
+		Summary:                    strPtr("Review the current PRD draft."),
+		RequestPayload:             requestPayload,
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"codex"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	temporalClient := &capturingTemporalClient{}
+	svc := &AgentService{
+		agentRepo:       agentRepo,
+		runRepo:         runRepo,
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	responsePayload := json.RawMessage(`{"decision":"approve"}`)
+	interaction, err := svc.ResolveCodingSessionInteraction(context.Background(), run.WorkspaceID, run.ID, "interaction-review-1", "user-1", model.ResolveAgentRunInteractionRequest{
+		ResponsePayload: responsePayload,
+	})
+	if err != nil {
+		t.Fatalf("ResolveCodingSessionInteraction returned error: %v", err)
+	}
+	if interaction == nil || interaction.Status != model.AgentRunInteractionStatusResolved {
+		t.Fatalf("expected resolved interaction, got %#v", interaction)
+	}
+	if temporalClient.signalName != temporalapp.WorkflowSignalResume {
+		t.Fatalf("expected resume workflow signal, got %q", temporalClient.signalName)
+	}
+	if temporalClient.resumeSignal.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent, got %#v", temporalClient.resumeSignal)
+	}
+	if got := string(temporalClient.resumeSignal.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected exact review checkpoint response payload on resume signal, got %s", got)
 	}
 }
 
@@ -1332,6 +1524,71 @@ func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	}
 }
 
+func TestApproveRunPersistsProvidedApprovalContent(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-approve-content",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{
+		Content:     "PRD approved. Continue to stories.",
+		SendMessage: true,
+	})
+	if err != nil {
+		t.Fatalf("ApproveRun returned error: %v", err)
+	}
+	if updated.ApprovalState != "approved" {
+		t.Fatalf("expected approval_state approved, got %q", updated.ApprovalState)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 approval message, got %d", len(messages))
+	}
+	if messages[0].MessageType != "approval" || messages[0].Content != "PRD approved. Continue to stories." {
+		t.Fatalf("unexpected approval message: %#v", messages[0])
+	}
+}
+
 func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1746,4 +2003,24 @@ func mustMarshalTestJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return payload
+}
+
+type capturingTemporalClient struct {
+	tclient.Client
+	signalName    string
+	workflowID    string
+	workflowRunID string
+	resumeSignal  temporalapp.RunResumeSignal
+}
+
+func (c *capturingTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
+	c.workflowID = workflowID
+	c.workflowRunID = workflowRunID
+	c.signalName = signalName
+	payload, ok := arg.(temporalapp.RunResumeSignal)
+	if !ok {
+		return fmt.Errorf("unexpected workflow signal payload type %T", arg)
+	}
+	c.resumeSignal = payload
+	return nil
 }

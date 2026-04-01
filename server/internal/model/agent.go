@@ -225,7 +225,8 @@ type AssignAgentRequest struct {
 
 // ApproveAgentRunRequest approves a pending run outcome.
 type ApproveAgentRunRequest struct {
-	SendMessage bool `json:"send_message"`
+	Content     string `json:"content,omitempty"`
+	SendMessage bool   `json:"send_message"`
 }
 
 const (
@@ -341,9 +342,10 @@ type SendAgentRunRequestChangesRequest struct {
 }
 
 type ResumeAgentRunRequest struct {
-	Intent      string `json:"intent"`
-	Content     string `json:"content,omitempty"`
-	SendMessage bool   `json:"send_message,omitempty"`
+	Intent          string          `json:"intent"`
+	Content         string          `json:"content,omitempty"`
+	SendMessage     bool            `json:"send_message,omitempty"`
+	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.
