@@ -405,18 +405,14 @@ function StoryDetailPanelBody({
     [teams, form.team_id],
   );
 
-  // ── URL sync ───────────────────────────────────────────────────
-  useEffect(() => {
+  // ── URL sync (imperative, no effect loop) ──────────────────────
+  const lastSyncedStoryRef = useRef<string | null>(null);
+  if (storyDetail.story.id !== lastSyncedStoryRef.current) {
+    lastSyncedStoryRef.current = storyDetail.story.id;
     const url = new URL(window.location.href);
     url.searchParams.set('story', `${storyDetail.story.display_id}`);
     window.history.replaceState({}, '', url.toString());
-
-    return () => {
-      const cleanupUrl = new URL(window.location.href);
-      cleanupUrl.searchParams.delete('story');
-      window.history.replaceState({}, '', cleanupUrl.toString());
-    };
-  }, [storyDetail]);
+  }
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {

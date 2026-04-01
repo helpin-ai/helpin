@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
@@ -40,10 +40,16 @@ export function GlobalStoryPanel({ workspaceId }: GlobalStoryPanelProps) {
     [activeStoryId, loadedStory],
   );
 
+  // Use refs for close handler to avoid re-triggering story load effect
+  const locationRef = useRef(overlayLocation);
+  locationRef.current = overlayLocation;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
   const handleClose = useCallback(() => {
     if (!workspaceSlug) return;
-    closeStoryRoute(navigate as never, overlayLocation, workspaceSlug);
-  }, [navigate, overlayLocation, workspaceSlug]);
+    closeStoryRoute(navigateRef.current as never, locationRef.current, workspaceSlug);
+  }, [workspaceSlug]);
 
   useEffect(() => {
     if (activeStoryRoute && contextualStoryId) {

@@ -51,9 +51,7 @@ function renderNode(
   if (tag === 'a') {
     props.target = '_blank'
     props.rel = 'noopener noreferrer'
-    if (!props.className) {
-      props.className = 'text-primary underline cursor-pointer'
-    }
+    props.className = 'text-blue-600 dark:text-blue-400 underline cursor-pointer'
   }
 
   const children = Array.from(element.childNodes)
