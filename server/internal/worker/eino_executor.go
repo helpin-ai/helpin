@@ -87,6 +87,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 
 	userPrompt := BuildUserPrompt(
+		execCtx.Agent,
 		execCtx.Story,
 		execCtx.Epic,
 		execCtx.EpicStories,

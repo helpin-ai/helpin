@@ -7,6 +7,7 @@ import (
 )
 
 var ErrRunCancelled = errors.New("run was cancelled")
+var ErrInteractiveRepoChangePending = errors.New("interactive run has no repository changes yet")
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

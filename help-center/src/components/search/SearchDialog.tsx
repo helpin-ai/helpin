@@ -15,13 +15,14 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onClose }: SearchDialogProps) {
-  const { subdomain, locale } = useDocsContext()
+  const { subdomain, locale, multilingualEnabled } = useDocsContext()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: results, isLoading } = useSearchArticles(
     subdomain,
     locale,
     query,
+    multilingualEnabled,
   )
 
   // Focus input and reset query on open

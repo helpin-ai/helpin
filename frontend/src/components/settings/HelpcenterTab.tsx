@@ -479,7 +479,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Publish Status Bar ── */}
-      <div className="flex items-center justify-between rounded-none border border-border bg-card p-4">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
         <div>
           <p className="text-sm font-medium">Help Center</p>
           <p className="text-xs text-muted-foreground mt-0.5">

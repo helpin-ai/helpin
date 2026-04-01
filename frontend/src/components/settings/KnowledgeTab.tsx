@@ -75,9 +75,9 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   if (chatSettingsLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-28 w-full rounded-none" />
-        <Skeleton className="h-64 w-full rounded-none" />
-        <Skeleton className="h-64 w-full rounded-none" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
@@ -118,8 +118,8 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         <CardContent>
           {docsSpacesLoading || knowledgeSourcesLoading ? (
             <div className="space-y-3">
-              <Skeleton className="h-16 rounded-none" />
-              <Skeleton className="h-16 rounded-none" />
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
             </div>
           ) : (
             <SupportKnowledgeSourcesField

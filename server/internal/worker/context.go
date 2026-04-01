@@ -45,6 +45,8 @@ type ExecutionContext struct {
 	OnExecutionEvent       func(event ExecutionEvent)
 	OnGitPush              func(branch, sha string) error
 	OnPROpen               func(metadata PRMetadata, title string) error
+	HeartbeatStageProvider func() string
+	HandleInteractivePause func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
 	PlanningTurnKind       string
 	PlanningTurnAttempt    int
 	RunFacts               map[string]string
@@ -56,6 +58,13 @@ type ExecutionContext struct {
 	toolFileStateMu        sync.Mutex
 	PublishedPreviews      map[string]PublishedPreview
 	CurrentAssistantText   string
+}
+
+type LiveExecutionResumeSignal struct {
+	Intent          string
+	Content         string
+	ResponsePayload json.RawMessage
+	Acknowledge     func() error
 }
 
 type ArtifactContext struct {

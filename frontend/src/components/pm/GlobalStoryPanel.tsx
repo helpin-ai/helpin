@@ -15,7 +15,7 @@ import { buildPatchedStoryFromDetail } from '@/components/pm/story-detail/storyD
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
-import type { StoryDetail, StoryRecurringSummary, WorkflowState } from '@/lib/pmTypes';
+import type { StoryDetail, StoryRecurringSummary } from '@/lib/pmTypes';
 import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 

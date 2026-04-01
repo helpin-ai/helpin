@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ArrowRight, Menu } from 'lucide-react'
 import { useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
@@ -25,14 +26,24 @@ export function CollectionRouteView({
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const matchingSpace = spaces.find((space) => space.slug === collectionOrSpaceSlug)
   const { data: spaceNavigation = [], isLoading: spaceNavigationLoading } =
-    useSpaceNavigation(subdomain, locale, matchingSpace?.slug ?? '')
+    useSpaceNavigation(
+      subdomain,
+      locale,
+      matchingSpace?.slug ?? '',
+      multilingualEnabled,
+    )
   const { data: collectionData, isLoading: collectionLoading, error: collectionError } =
-    useCollection(subdomain, locale, collectionOrSpaceSlug)
+    useCollection(subdomain, locale, collectionOrSpaceSlug, multilingualEnabled)
   const collection = collectionData?.collection
   const articles = collectionData?.articles ?? []
   const collectionSpaceSlug = collectionData?.space_slug ?? ''
   const { data: collectionNavigation = [], isLoading: collectionNavigationLoading } =
-    useSpaceNavigation(subdomain, locale, collectionSpaceSlug)
+    useSpaceNavigation(
+      subdomain,
+      locale,
+      collectionSpaceSlug,
+      multilingualEnabled,
+    )
   const activeNavigation = collection ? collectionNavigation : spaceNavigation
   const activeHeading = collection?.name ?? matchingSpace?.name ?? ''
 
@@ -171,9 +182,9 @@ export function CollectionRouteView({
           ) : (
             <div className="mt-8 space-y-3">
               {articles.map((article) => (
-                <a
+                <Link
                   key={article.id}
-                  href={buildCanonicalArticlePath(
+                  to={buildCanonicalArticlePath(
                     multilingualEnabled,
                     locale,
                     collection.slug,
@@ -190,7 +201,7 @@ export function CollectionRouteView({
                     size={16}
                     className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                   />
-                </a>
+                </Link>
               ))}
             </div>
           )}

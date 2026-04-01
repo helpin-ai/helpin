@@ -6,7 +6,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useQuery } from '@tanstack/react-query';
 import { useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
+import { agentService } from '@/lib/services/agentService';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
@@ -58,6 +60,20 @@ export function Sidebar() {
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
     [inboxScopes],
+  );
+
+  const { data: agentRunsData } = useQuery({
+    queryKey: ['agent_runs', workspaceId],
+    queryFn: async () => {
+      const res = await agentService.listWorkspaceRuns(workspaceId!, 1, 100);
+      return res.data?.data ?? [];
+    },
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+  const agentAttentionCount = useMemo(
+    () => (agentRunsData ?? []).filter((r) => r.status === 'paused' || r.approval_state === 'pending').length,
+    [agentRunsData],
   );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '');
@@ -126,7 +142,7 @@ export function Sidebar() {
 
   const panelNavGroups = useMemo(() => buildPanelNavGroups(wsSlug, canManageSettings), [wsSlug, canManageSettings]);
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
+  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread, agentAttentionCount), [wsSlug, totalSupportUnread, agentAttentionCount]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {

@@ -42,6 +42,7 @@ import (
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {
@@ -187,6 +188,8 @@ func main() {
 		&model.AgentRun{},
 		&model.AgentRunMessage{},
 		&model.AgentRunArtifact{},
+		&model.AgentRunInteraction{},
+		&model.CodingSessionStateSnapshot{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
 		&model.SupportConversationTriage{},
@@ -478,6 +481,8 @@ func main() {
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
+	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
+	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
@@ -643,6 +648,19 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
+	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
+		Path:                      cfg.CodexPath,
+		DefaultModel:              cfg.CodexModel,
+		OpenAIAPIKey:              cfg.OpenAIAPIKey,
+		OpenAIBaseURL:             cfg.OpenAIBaseURL,
+		OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
+		EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
+		ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
+		ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
+		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
+		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
+		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
+	}, agentRunArtifactRepo)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -665,6 +683,8 @@ func main() {
 		agentRunRepo,
 		agentRunMessageRepo,
 		agentRunArtifactRepo,
+		agentRunInteractionRepo,
+		codingSessionStateSnapshotRepo,
 		pmStoryRepo,
 		pmStoryLinkRepo,
 		pmEpicRepo,
@@ -682,7 +702,15 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	).SetModelProviderConfig(
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenRouterAPIKey,
+		cfg.CodexOpenAIAuthMode,
+		cfg.CodexEnableChatGPTOAuth,
+		cfg.CodexChatGPTAccessToken,
+		cfg.CodexChatGPTAccountID,
+	).SetCodexAuthManager(codexAuthManager)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)

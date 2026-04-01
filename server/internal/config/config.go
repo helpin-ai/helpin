@@ -29,20 +29,25 @@ type Config struct {
 	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey      string
-	AnthropicBaseURL     string
-	OpenAIAPIKey         string
-	OpenAIBaseURL        string
-	OpenAIEmbeddingModel string
-	OpenRouterAPIKey     string
-	OpenRouterBaseURL    string
-	OpenCodePath         string
-	CodexPath            string
-	CodexModel           string
-	BraveSearchAPIKey    string
-	CloudflareAccountID  string
-	CloudflareAPIToken   string
-	CloudflareAPIBaseURL string
+	AnthropicAPIKey         string
+	AnthropicBaseURL        string
+	OpenAIAPIKey            string
+	OpenAIBaseURL           string
+	OpenAIEmbeddingModel    string
+	OpenRouterAPIKey        string
+	OpenRouterBaseURL       string
+	OpenCodePath            string
+	CodexPath               string
+	CodexModel              string
+	CodexOpenAIAuthMode     string
+	CodexEnableChatGPTOAuth bool
+	CodexChatGPTAccessToken string
+	CodexChatGPTAccountID   string
+	CodexChatGPTPlanType    string
+	BraveSearchAPIKey       string
+	CloudflareAccountID     string
+	CloudflareAPIToken      string
+	CloudflareAPIBaseURL    string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -154,6 +159,11 @@ func Load() (*Config, error) {
 		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
 		CodexPath:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
 		CodexModel:                   strings.TrimSpace(os.Getenv("CODEX_MODEL")),
+		CodexOpenAIAuthMode:          strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
+		CodexEnableChatGPTOAuth:      parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
+		CodexChatGPTAccessToken:      strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
+		CodexChatGPTAccountID:        strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
+		CodexChatGPTPlanType:         strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
 		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -34,6 +35,8 @@ const (
 	productSpecsSpaceSlug = "product-specs"
 	productSpecsSpaceName = "Product Specs"
 )
+
+var codexLivePausePollEvery = time.Second
 
 type planningRunInput struct {
 	Stage               string   `json:"stage,omitempty"`
@@ -78,37 +81,39 @@ type InternalCommandExecutor interface {
 
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
-	runRepo          *repository.AgentRunRepository
-	runMessageRepo   *repository.AgentRunMessageRepository
-	agentRepo        *repository.AgentRepository
-	artifactRepo     *repository.AgentRunArtifactRepository
-	storyRepo        *repository.PMStoryRepository
-	storyLinkRepo    *repository.PMStoryLinkRepository
-	epicRepo         *repository.PMEpicRepository
-	conversationRepo *repository.SupportConversationRepository
-	commentRepo      *repository.PMCommentRepository
-	checklistRepo    *repository.PMChecklistItemRepository
-	messageRepo      *repository.SupportMessageRepository
-	gitIntRepo       *repository.GitIntegrationRepository
-	gitRepo          *repository.GitRepositoryRepository
-	gitLinkRepo      *repository.StoryGitLinkRepository
-	deliveryRepo     *repository.StoryDeliveryTargetRepository
-	settingsRepo     *repository.SettingsRepository
-	docsSpaceRepo    *repository.DocsSpaceRepository
-	docsDocRepo      *repository.DocsDocumentRepository
-	docsContentRepo  *repository.DocsContentRepository
-	docsVersionRepo  *repository.DocsVersionRepository
-	docsLinkRepo     *repository.DocsLinkRepository
-	docsSearchRepo   *repository.DocsSearchRepository
-	crmDealRepo      *repository.CRMDealRepository
-	crmContactRepo   *repository.CRMContactRepository
-	crmSignalRepo    *repository.CRMSignalRepository
-	crmActivityRepo  *repository.CRMActivityRepository
-	commandExecutor  InternalCommandExecutor
-	wsPublisher      websocket.EventPublisher
-	runtimes         *workerpkg.RuntimeRegistry
-	githubApp        *githubapp.Client
-	runEngine        *RunEngine
+	runRepo             *repository.AgentRunRepository
+	runMessageRepo      *repository.AgentRunMessageRepository
+	agentRepo           *repository.AgentRepository
+	artifactRepo        *repository.AgentRunArtifactRepository
+	interactionRepo     *repository.AgentRunInteractionRepository
+	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
+	storyRepo           *repository.PMStoryRepository
+	storyLinkRepo       *repository.PMStoryLinkRepository
+	epicRepo            *repository.PMEpicRepository
+	conversationRepo    *repository.SupportConversationRepository
+	commentRepo         *repository.PMCommentRepository
+	checklistRepo       *repository.PMChecklistItemRepository
+	messageRepo         *repository.SupportMessageRepository
+	gitIntRepo          *repository.GitIntegrationRepository
+	gitRepo             *repository.GitRepositoryRepository
+	gitLinkRepo         *repository.StoryGitLinkRepository
+	deliveryRepo        *repository.StoryDeliveryTargetRepository
+	settingsRepo        *repository.SettingsRepository
+	docsSpaceRepo       *repository.DocsSpaceRepository
+	docsDocRepo         *repository.DocsDocumentRepository
+	docsContentRepo     *repository.DocsContentRepository
+	docsVersionRepo     *repository.DocsVersionRepository
+	docsLinkRepo        *repository.DocsLinkRepository
+	docsSearchRepo      *repository.DocsSearchRepository
+	crmDealRepo         *repository.CRMDealRepository
+	crmContactRepo      *repository.CRMContactRepository
+	crmSignalRepo       *repository.CRMSignalRepository
+	crmActivityRepo     *repository.CRMActivityRepository
+	commandExecutor     InternalCommandExecutor
+	wsPublisher         websocket.EventPublisher
+	runtimes            *workerpkg.RuntimeRegistry
+	githubApp           *githubapp.Client
+	runEngine           *RunEngine
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -117,6 +122,8 @@ func NewAgentRunActivities(
 	runMessageRepo *repository.AgentRunMessageRepository,
 	agentRepo *repository.AgentRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	interactionRepo *repository.AgentRunInteractionRepository,
+	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
@@ -146,37 +153,39 @@ func NewAgentRunActivities(
 	runEngine *RunEngine,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
-		runRepo:          runRepo,
-		runMessageRepo:   runMessageRepo,
-		agentRepo:        agentRepo,
-		artifactRepo:     artifactRepo,
-		storyRepo:        storyRepo,
-		storyLinkRepo:    storyLinkRepo,
-		epicRepo:         epicRepo,
-		conversationRepo: conversationRepo,
-		commentRepo:      commentRepo,
-		checklistRepo:    checklistRepo,
-		messageRepo:      messageRepo,
-		gitIntRepo:       gitIntRepo,
-		gitRepo:          gitRepo,
-		gitLinkRepo:      gitLinkRepo,
-		deliveryRepo:     deliveryRepo,
-		settingsRepo:     settingsRepo,
-		docsSpaceRepo:    docsSpaceRepo,
-		docsDocRepo:      docsDocRepo,
-		docsContentRepo:  docsContentRepo,
-		docsVersionRepo:  docsVersionRepo,
-		docsLinkRepo:     docsLinkRepo,
-		docsSearchRepo:   docsSearchRepo,
-		crmDealRepo:      crmDealRepo,
-		crmContactRepo:   crmContactRepo,
-		crmSignalRepo:    crmSignalRepo,
-		crmActivityRepo:  crmActivityRepo,
-		commandExecutor:  commandExecutor,
-		wsPublisher:      wsPublisher,
-		runtimes:         runtimes,
-		githubApp:        githubApp,
-		runEngine:        runEngine,
+		runRepo:             runRepo,
+		runMessageRepo:      runMessageRepo,
+		agentRepo:           agentRepo,
+		artifactRepo:        artifactRepo,
+		interactionRepo:     interactionRepo,
+		sessionSnapshotRepo: sessionSnapshotRepo,
+		storyRepo:           storyRepo,
+		storyLinkRepo:       storyLinkRepo,
+		epicRepo:            epicRepo,
+		conversationRepo:    conversationRepo,
+		commentRepo:         commentRepo,
+		checklistRepo:       checklistRepo,
+		messageRepo:         messageRepo,
+		gitIntRepo:          gitIntRepo,
+		gitRepo:             gitRepo,
+		gitLinkRepo:         gitLinkRepo,
+		deliveryRepo:        deliveryRepo,
+		settingsRepo:        settingsRepo,
+		docsSpaceRepo:       docsSpaceRepo,
+		docsDocRepo:         docsDocRepo,
+		docsContentRepo:     docsContentRepo,
+		docsVersionRepo:     docsVersionRepo,
+		docsLinkRepo:        docsLinkRepo,
+		docsSearchRepo:      docsSearchRepo,
+		crmDealRepo:         crmDealRepo,
+		crmContactRepo:      crmContactRepo,
+		crmSignalRepo:       crmSignalRepo,
+		crmActivityRepo:     crmActivityRepo,
+		commandExecutor:     commandExecutor,
+		wsPublisher:         wsPublisher,
+		runtimes:            runtimes,
+		githubApp:           githubApp,
+		runEngine:           runEngine,
 	}
 }
 
@@ -193,6 +202,26 @@ type resolvedRunState struct {
 	integration    *model.GitIntegration
 	teamDefault    *model.PMTeamRepoDefault
 	accessToken    string
+}
+
+func executionRuntimeKind(state *resolvedRunState) string {
+	if state == nil {
+		return ""
+	}
+	if state.run != nil && strings.TrimSpace(state.run.RuntimeKind) != "" {
+		return strings.TrimSpace(state.run.RuntimeKind)
+	}
+	if state.agent != nil {
+		return strings.TrimSpace(state.agent.RuntimeKind)
+	}
+	return ""
+}
+
+func shouldPersistExecutionWorkspace(run *model.AgentRun, runtimeKind string) bool {
+	if run == nil {
+		return false
+	}
+	return strings.TrimSpace(runtimeKind) == "codex" && strings.TrimSpace(run.InvocationMode) == model.InvocationModeInteractive
 }
 
 func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
@@ -339,33 +368,58 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
 	)
-	workDir, err := workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
+	runtimeKind := executionRuntimeKind(state)
+	persistWorkspace := shouldPersistExecutionWorkspace(state.run, runtimeKind)
+	var (
+		workDir       string
+		reusedWorkDir bool
+	)
+	if persistWorkspace {
+		workDir, reusedWorkDir, err = workerpkg.PrepareWorkspaceForRun(ctx, state.integration, repoFullName(state), state.accessToken, state.run.ID)
+	} else {
+		workDir, err = workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
+	}
 	if err != nil {
 		_ = a.failRun(ctx, state, fmt.Sprintf("prepare workspace: %v", err))
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
-	defer os.RemoveAll(workDir)
+	if !persistWorkspace {
+		defer os.RemoveAll(workDir)
+	}
 	slog.InfoContext(ctx, "agent run workspace ready",
 		"workspace_id", state.run.WorkspaceID,
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
+		"reused", reusedWorkDir,
 	)
 
 	if state.repository != nil {
-		slog.InfoContext(ctx, "agent run checking out run ref",
-			"workspace_id", state.run.WorkspaceID,
-			"run_id", state.run.ID,
-			"repo", state.repository.FullName,
-		)
-		if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
-			_ = a.failRun(ctx, state, err.Error())
-			return ExecuteRunResult{}, nonRetryableRunError(err)
+		if !reusedWorkDir {
+			slog.InfoContext(ctx, "agent run checking out run ref",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+			)
+			if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
+				if persistWorkspace {
+					_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+				}
+				_ = a.failRun(ctx, state, err.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(err)
+			}
+			slog.InfoContext(ctx, "agent run checked out run ref",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+			)
+		} else {
+			slog.InfoContext(ctx, "agent run reusing existing workspace checkout",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"repo", state.repository.FullName,
+				"work_dir", workDir,
+			)
 		}
-		slog.InfoContext(ctx, "agent run checked out run ref",
-			"workspace_id", state.run.WorkspaceID,
-			"run_id", state.run.ID,
-			"repo", state.repository.FullName,
-		)
 	}
 
 	config := workerpkg.ParseWorkflowConfig(workDir)
@@ -440,45 +494,113 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if state.conversation != nil {
 		execCtx.ConversationID = state.conversation.ID
 	}
-
-	runtimeKind := state.run.RuntimeKind
-	if runtimeKind == "" {
-		runtimeKind = state.agent.RuntimeKind
+	heartbeatStage := "codex_running"
+	var heartbeatStageMu sync.RWMutex
+	setHeartbeatStage := func(stage string) {
+		heartbeatStageMu.Lock()
+		defer heartbeatStageMu.Unlock()
+		if strings.TrimSpace(stage) == "" {
+			heartbeatStage = "codex_running"
+			return
+		}
+		heartbeatStage = strings.TrimSpace(stage)
 	}
+	execCtx.HeartbeatStageProvider = func() string {
+		heartbeatStageMu.RLock()
+		defer heartbeatStageMu.RUnlock()
+		return heartbeatStage
+	}
+	if runtimeKind == "codex" && state.run.InvocationMode == model.InvocationModeInteractive {
+		execCtx.HandleInteractivePause = func(result *workerpkg.ExecutionResult) (*workerpkg.LiveExecutionResumeSignal, error) {
+			return a.handleLiveCodexInteractivePause(ctx, state, execCtx, result, setHeartbeatStage)
+		}
+	}
+
 	adapter, err := a.runtimes.Get(runtimeKind)
 	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	slog.InfoContext(ctx, "agent run runtime execution starting",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"runtime_kind", runtimeKind,
+		"agent_id", state.run.AgentID,
+		"work_dir", workDir,
+	)
 
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
-		if err == workerpkg.ErrRunCancelled || ctx.Err() != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
+		if ctx.Err() != nil {
 			bgCtx := context.Background()
 			_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
 			return ExecuteRunResult{}, nil
+		}
+		if err == workerpkg.ErrRunCancelled {
+			bgCtx := context.Background()
+			explicitlyCancelled, lookupErr := a.isRunExplicitlyCancelled(bgCtx, state.run.ID)
+			if lookupErr != nil {
+				_ = a.failRun(bgCtx, state, lookupErr.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(lookupErr)
+			}
+			if explicitlyCancelled {
+				_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
+				return ExecuteRunResult{}, nil
+			}
+			unexpectedErr := fmt.Errorf("runtime reported cancellation without a cancelled run state")
+			slog.ErrorContext(ctx, "agent run runtime cancelled unexpectedly",
+				"workspace_id", state.run.WorkspaceID,
+				"run_id", state.run.ID,
+				"runtime_kind", runtimeKind,
+			)
+			_ = a.failRun(bgCtx, state, unexpectedErr.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	slog.InfoContext(ctx, "agent run runtime execution completed",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"runtime_kind", runtimeKind,
+	)
 	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
 	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	if err := a.captureTranscriptPlanningArtifacts(ctx, state, execCtx, assistantMessage, planningInput); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	approvalRequest := latestExecutionApprovalRequest(execCtx)
 	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
+	authRequest := latestExecutionCodexAuthState(execCtx)
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	if err := a.finalizeSupportConversationRun(ctx, state); err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -490,7 +612,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
-	waitForApproval, waitForInput := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest)
+	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, authRequest)
 	continueExecution := false
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
@@ -510,6 +632,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		state.run.PauseReason = model.AgentRunPauseReasonHumanInput
 		state.run.CompletedAt = nil
 		state.run.ExecutionStage = strPtr("awaiting_input")
+	} else if waitForAuth {
+		state.run.Status = model.AgentRunStatusPaused
+		state.run.PauseReason = model.AgentRunPauseReasonAuthentication
+		state.run.CompletedAt = nil
+		state.run.ExecutionStage = strPtr("awaiting_auth")
 	} else if continueExecution {
 		state.run.Status = model.AgentRunStatusRunning
 		state.run.PauseReason = model.AgentRunPauseReasonNone
@@ -528,8 +655,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	if persistWorkspace && !waitForApproval && !waitForInput && !waitForAuth && !continueExecution {
+		_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+	}
 
-	if waitForApproval || waitForInput {
+	if waitForApproval || waitForInput || waitForAuth {
 		if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
 			return ExecuteRunResult{}, err
 		}
@@ -542,26 +672,31 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	return ExecuteRunResult{
 		WaitForApproval:   waitForApproval,
 		AwaitingInput:     waitForInput && !waitForApproval,
-		ContinueExecution: continueExecution && !waitForApproval && !waitForInput,
+		AwaitingAuth:      waitForAuth && !waitForApproval && !waitForInput,
+		ContinueExecution: continueExecution && !waitForApproval && !waitForInput && !waitForAuth,
 	}, nil
 }
 
-func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.HumanInputRequest, approvalRequest *model.ApprovalRequest) (waitForApproval bool, waitForInput bool) {
+func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.UserInputRequest, approvalRequest *model.ApprovalRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
 	if run == nil {
-		return false, false
+		return false, false, false
+	}
+
+	if approvalRequest != nil {
+		return true, false, false
+	}
+	if humanInputRequest != nil {
+		return false, true, false
+	}
+	if authRequest != nil {
+		return false, false, true
 	}
 
 	waitForApproval = run.ApprovalState == "pending"
 	if run.InvocationMode != model.InvocationModeInteractive {
-		return waitForApproval, false
+		return waitForApproval, false, false
 	}
-	if approvalRequest != nil {
-		return true, false
-	}
-	if humanInputRequest != nil {
-		return false, true
-	}
-	return waitForApproval, false
+	return waitForApproval, false, false
 }
 
 func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
@@ -666,7 +801,7 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil)
+		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -701,6 +836,7 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 	}
 
 	return workerpkg.BuildUserPrompt(
+		state.agent,
 		state.story,
 		state.epic,
 		state.epicStories,
@@ -1054,7 +1190,7 @@ func (a *AgentRunActivities) ensureRunBootstrapStatusMessage(ctx context.Context
 	if len(messages) > 0 {
 		return nil
 	}
-	_, err = a.createRunMessage(ctx, run, "assistant", "status", strings.TrimSpace(content), nil, nil, nil)
+	_, err = a.createRunMessage(ctx, run, "assistant", "status", strings.TrimSpace(content), nil, nil, nil, nil)
 	return err
 }
 
@@ -1063,7 +1199,11 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 		return nil, nil
 	}
 	result := execCtx.LastExecutionResult
-	assistantMessageInput, err := buildPersistedAssistantRunMessage(result)
+	snapshot, err := a.loadCodingSessionStreamSnapshot(ctx, state.run)
+	if err != nil {
+		return nil, err
+	}
+	assistantMessageInput, err := buildPersistedAssistantRunMessage(result, snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -1078,6 +1218,7 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 		assistantMessageInput.MessageType,
 		assistantMessageInput.Content,
 		assistantMessageInput.ContentBlocks,
+		assistantMessageInput.TurnSegments,
 		assistantMessageInput.ToolInvocations,
 		assistantMessageInput.TokenUsage,
 	)
@@ -1092,7 +1233,7 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 	}
 
 	for _, toolMessage := range buildPersistedToolResultMessages(result.Messages) {
-		if _, err := a.createRunMessage(ctx, state.run, toolMessage.Role, toolMessage.MessageType, toolMessage.Content, toolMessage.ContentBlocks, nil, nil); err != nil {
+		if _, err := a.createRunMessage(ctx, state.run, toolMessage.Role, toolMessage.MessageType, toolMessage.Content, toolMessage.ContentBlocks, nil, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -1105,11 +1246,12 @@ type persistedRunMessageInput struct {
 	MessageType     string
 	Content         string
 	ContentBlocks   json.RawMessage
+	TurnSegments    json.RawMessage
 	ToolInvocations json.RawMessage
 	TokenUsage      json.RawMessage
 }
 
-func buildPersistedAssistantRunMessage(result *workerpkg.ExecutionResult) (*persistedRunMessageInput, error) {
+func buildPersistedAssistantRunMessage(result *workerpkg.ExecutionResult, snapshot *model.CodingSessionStreamSnapshot) (*persistedRunMessageInput, error) {
 	if result == nil {
 		return nil, nil
 	}
@@ -1121,6 +1263,10 @@ func buildPersistedAssistantRunMessage(result *workerpkg.ExecutionResult) (*pers
 	blocks, err := marshalExecutionBlocks(result.AssistantBlocks)
 	if err != nil {
 		return nil, fmt.Errorf("marshal assistant blocks: %w", err)
+	}
+	turnSegments, err := marshalCodingSessionTurnSegments(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("marshal turn segments: %w", err)
 	}
 	invocations, err := marshalToolInvocations(result.ToolInvocations)
 	if err != nil {
@@ -1136,6 +1282,7 @@ func buildPersistedAssistantRunMessage(result *workerpkg.ExecutionResult) (*pers
 		MessageType:     "assistant_turn",
 		Content:         content,
 		ContentBlocks:   blocks,
+		TurnSegments:    turnSegments,
 		ToolInvocations: invocations,
 		TokenUsage:      usagePayload,
 	}, nil
@@ -1168,11 +1315,46 @@ func buildAssistantSequenceArtifactMetadata(sequenceNo int) json.RawMessage {
 	return payload
 }
 
+func mergeArtifactMetadata(parts ...json.RawMessage) json.RawMessage {
+	merged := map[string]any{}
+	for _, part := range parts {
+		if len(part) == 0 || string(part) == "null" {
+			continue
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(part, &decoded); err != nil {
+			continue
+		}
+		for key, value := range decoded {
+			merged[key] = value
+		}
+	}
+	if len(merged) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	payload, err := json.Marshal(merged)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return payload
+}
+
 func marshalExecutionBlocks(blocks []workerpkg.ExecutionBlock) (json.RawMessage, error) {
 	if len(blocks) == 0 {
 		return nil, nil
 	}
 	payload, err := json.Marshal(workerpkg.NormalizeExecutionBlocks(blocks))
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func marshalCodingSessionTurnSegments(snapshot *model.CodingSessionStreamSnapshot) (json.RawMessage, error) {
+	if snapshot == nil || len(snapshot.LiveTurnSegments) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(snapshot.LiveTurnSegments)
 	if err != nil {
 		return nil, err
 	}
@@ -1271,31 +1453,244 @@ func (a *AgentRunActivities) persistProviderResponseCheckpoint(ctx context.Conte
 }
 
 func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Context, state *resolvedRunState, result *workerpkg.ExecutionResult, assistantMessage *model.AgentRunMessage) error {
-	if a.artifactRepo == nil || state == nil || state.run == nil || result == nil || assistantMessage == nil {
+	if (a.artifactRepo == nil && a.interactionRepo == nil) || state == nil || state.run == nil || result == nil || assistantMessage == nil {
 		return nil
 	}
 
 	metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
 
 	if inputRequest := latestHumanInputRequestFromResult(result); inputRequest != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", humanInputArtifactFromWorker(inputRequest), metadata); err != nil {
+		inputMetadata := mergeArtifactMetadata(metadata, result.HumanInputMetadata)
+		artifactPayload := humanInputArtifactFromWorker(inputRequest)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", artifactPayload, inputMetadata); err != nil {
+				return err
+			}
+		}
+		interaction, err := a.persistHumanInputInteraction(ctx, state, inputRequest, inputMetadata, assistantMessage.SequenceNo)
+		if err != nil {
 			return err
+		}
+		if interaction != nil {
+			a.publishCodingSessionInteractionEvent(state.run, interaction)
+		} else {
+			a.publishCodingSessionEvent(state.run, "input.requested", map[string]any{
+				"content": artifactPayload,
+			})
 		}
 	}
 
 	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, metadata); err != nil {
+		approvalMetadata := mergeArtifactMetadata(metadata, result.HumanApprovalMetadata)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, approvalMetadata); err != nil {
+				return err
+			}
+		}
+		interaction, err := a.persistHumanApprovalInteraction(ctx, state, approvalRequest, approvalMetadata, assistantMessage.SequenceNo)
+		if err != nil {
 			return err
 		}
+		if interaction != nil {
+			a.publishCodingSessionInteractionEvent(state.run, interaction)
+		} else {
+			a.publishCodingSessionEvent(state.run, "approval.requested", map[string]any{
+				"content": approvalRequest,
+			})
+		}
+	}
+
+	if authState := latestCodexAuthStateFromResult(result); authState != nil {
+		authMetadata := mergeArtifactMetadata(metadata, result.CodexAuthMetadata)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeCodexAuthState, "json", authState, authMetadata); err != nil {
+				return err
+			}
+		}
+		a.publishCodingSessionEvent(state.run, "auth.updated", map[string]any{
+			"content": authState,
+		})
 	}
 
 	if runPlan := latestRunPlanFromResult(result); runPlan != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, metadata); err != nil {
-			return err
+		runPlanMetadata := mergeArtifactMetadata(metadata, result.RunPlanMetadata)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeRunPlan, "json", runPlan, runPlanMetadata); err != nil {
+				return err
+			}
 		}
+		a.publishCodingSessionEvent(state.run, "activity.updated", map[string]any{
+			"content": runPlan,
+		})
 	}
 
 	return nil
+}
+
+type interactionRuntimeMetadata struct {
+	AssistantMessageSequenceNo int             `json:"assistant_message_sequence_no,omitempty"`
+	RuntimeKind                string          `json:"runtime_kind,omitempty"`
+	CodexRequestKind           string          `json:"codex_request_kind,omitempty"`
+	CodexRequestID             string          `json:"codex_request_id,omitempty"`
+	CodexThreadID              string          `json:"codex_thread_id,omitempty"`
+	CodexTurnID                string          `json:"codex_turn_id,omitempty"`
+	CodexItemID                string          `json:"codex_item_id,omitempty"`
+	CodexApprovalID            *string         `json:"codex_approval_id,omitempty"`
+	CodexRequestPayload        json.RawMessage `json:"codex_request_payload,omitempty"`
+}
+
+func (a *AgentRunActivities) persistHumanInputInteraction(ctx context.Context, state *resolvedRunState, inputRequest *workerpkg.UserInputRequest, metadata json.RawMessage, assistantSequenceNo int) (*model.AgentRunInteraction, error) {
+	if a.interactionRepo == nil || state == nil || state.run == nil || inputRequest == nil {
+		return nil, nil
+	}
+
+	runtimeMetadata := decodeInteractionRuntimeMetadata(metadata)
+	interaction := &model.AgentRunInteraction{
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                firstNonEmptyString(strings.TrimSpace(runtimeMetadata.RuntimeKind), executionRuntimeKind(state), strings.TrimSpace(state.run.RuntimeKind)),
+		InteractionKind:            model.AgentRunInteractionKindRequestUserInput,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionCodexV2,
+		RequestPayload:             mustMarshalJSON(inputRequest),
+		RuntimeMetadata:            defaultInteractionRuntimeMetadata(metadata),
+		AssistantMessageSequenceNo: intPtrIfPositive(firstPositiveInt(runtimeMetadata.AssistantMessageSequenceNo, assistantSequenceNo)),
+		Title:                      strPtr("User input required"),
+	}
+
+	if interaction.RuntimeKind == "codex" && len(runtimeMetadata.CodexRequestPayload) > 0 {
+		interaction.RequestSchemaVersion = model.AgentRunInteractionSchemaVersionCodexV2
+		interaction.RequestPayload = copyRawJSON(runtimeMetadata.CodexRequestPayload)
+		interaction.RequestID = strPtrIfNotEmpty(runtimeMetadata.CodexRequestID)
+		interaction.ThreadID = strPtrIfNotEmpty(runtimeMetadata.CodexThreadID)
+		interaction.TurnID = strPtrIfNotEmpty(runtimeMetadata.CodexTurnID)
+		interaction.ItemID = strPtrIfNotEmpty(runtimeMetadata.CodexItemID)
+	}
+
+	interaction.Summary = strPtrIfNotEmpty(workerpkg.UserInputSummary(inputRequest))
+
+	if err := a.appendRunInteraction(ctx, interaction); err != nil {
+		return nil, err
+	}
+	return interaction, nil
+}
+
+func (a *AgentRunActivities) persistHumanApprovalInteraction(ctx context.Context, state *resolvedRunState, approvalRequest *model.ApprovalRequest, metadata json.RawMessage, assistantSequenceNo int) (*model.AgentRunInteraction, error) {
+	if a.interactionRepo == nil || state == nil || state.run == nil || approvalRequest == nil {
+		return nil, nil
+	}
+
+	runtimeMetadata := decodeInteractionRuntimeMetadata(metadata)
+	interaction := &model.AgentRunInteraction{
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                firstNonEmptyString(strings.TrimSpace(runtimeMetadata.RuntimeKind), executionRuntimeKind(state), strings.TrimSpace(state.run.RuntimeKind)),
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload:             mustMarshalJSON(approvalRequest),
+		RuntimeMetadata:            defaultInteractionRuntimeMetadata(metadata),
+		AssistantMessageSequenceNo: intPtrIfPositive(firstPositiveInt(runtimeMetadata.AssistantMessageSequenceNo, assistantSequenceNo)),
+		Title:                      strPtrIfNotEmpty(strings.TrimSpace(approvalRequest.Title)),
+		Summary:                    strPtrIfNotEmpty(strings.TrimSpace(approvalRequest.Summary)),
+	}
+
+	if interaction.RuntimeKind == "codex" && len(runtimeMetadata.CodexRequestPayload) > 0 {
+		interaction.RequestSchemaVersion = model.AgentRunInteractionSchemaVersionCodexV2
+		interaction.RequestPayload = copyRawJSON(runtimeMetadata.CodexRequestPayload)
+		interaction.RequestID = strPtrIfNotEmpty(runtimeMetadata.CodexRequestID)
+		interaction.ThreadID = strPtrIfNotEmpty(runtimeMetadata.CodexThreadID)
+		interaction.TurnID = strPtrIfNotEmpty(runtimeMetadata.CodexTurnID)
+		interaction.ItemID = strPtrIfNotEmpty(runtimeMetadata.CodexItemID)
+		interaction.ApprovalID = runtimeMetadata.CodexApprovalID
+		switch strings.TrimSpace(runtimeMetadata.CodexRequestKind) {
+		case "command_execution":
+			interaction.InteractionKind = model.AgentRunInteractionKindCommandExecutionApproval
+		case "file_change":
+			interaction.InteractionKind = model.AgentRunInteractionKindFileChangeApproval
+		case "permissions":
+			interaction.InteractionKind = model.AgentRunInteractionKindPermissionsApproval
+		}
+	}
+
+	if err := a.appendRunInteraction(ctx, interaction); err != nil {
+		return nil, err
+	}
+	return interaction, nil
+}
+
+func (a *AgentRunActivities) appendRunInteraction(ctx context.Context, interaction *model.AgentRunInteraction) error {
+	if a.interactionRepo == nil || interaction == nil {
+		return nil
+	}
+	if len(interaction.RequestPayload) == 0 {
+		interaction.RequestPayload = json.RawMessage(`{}`)
+	}
+	if len(interaction.RuntimeMetadata) == 0 {
+		interaction.RuntimeMetadata = json.RawMessage(`{}`)
+	}
+	if strings.TrimSpace(interaction.Status) == "" {
+		interaction.Status = model.AgentRunInteractionStatusPending
+	}
+	if strings.TrimSpace(interaction.RequestSchemaVersion) == "" {
+		interaction.RequestSchemaVersion = model.AgentRunInteractionSchemaVersionHelpinV1
+	}
+	return a.interactionRepo.Create(ctx, interaction)
+}
+
+func decodeInteractionRuntimeMetadata(raw json.RawMessage) interactionRuntimeMetadata {
+	var metadata interactionRuntimeMetadata
+	if len(raw) == 0 || string(raw) == "null" {
+		return metadata
+	}
+	_ = json.Unmarshal(raw, &metadata)
+	return metadata
+}
+
+func defaultInteractionRuntimeMetadata(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.RawMessage(`{}`)
+	}
+	return copyRawJSON(raw)
+}
+
+func mustMarshalJSON(value any) json.RawMessage {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return payload
+}
+
+func copyRawJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), raw...)
+}
+
+func intPtrIfPositive(value int) *int {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func strPtrIfNotEmpty(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func latestHumanApprovalRequestFromResult(result *workerpkg.ExecutionResult) *model.ApprovalRequest {
@@ -1305,11 +1700,18 @@ func latestHumanApprovalRequestFromResult(result *workerpkg.ExecutionResult) *mo
 	return workerpkg.ExtractLatestHumanApprovalRequest(result.ToolInvocations)
 }
 
-func latestHumanInputRequestFromResult(result *workerpkg.ExecutionResult) *workerpkg.HumanInputRequest {
+func latestHumanInputRequestFromResult(result *workerpkg.ExecutionResult) *workerpkg.UserInputRequest {
 	if result == nil {
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanInputRequest(result.ToolInvocations)
+}
+
+func latestCodexAuthStateFromResult(result *workerpkg.ExecutionResult) *model.CodexAuthState {
+	if result == nil || result.CodexAuthState == nil {
+		return nil
+	}
+	return result.CodexAuthState
 }
 
 func latestRunPlanFromResult(result *workerpkg.ExecutionResult) *workerpkg.RunPlanArtifact {
@@ -1319,33 +1721,11 @@ func latestRunPlanFromResult(result *workerpkg.ExecutionResult) *workerpkg.RunPl
 	return workerpkg.ExtractLatestRunPlan(result.ToolInvocations)
 }
 
-func humanInputArtifactFromWorker(req *workerpkg.HumanInputRequest) model.HumanInputArtifact {
-	if req == nil {
-		return model.HumanInputArtifact{}
-	}
-	out := model.HumanInputArtifact{
-		Questions: make([]model.HumanInputArtifactQuestion, 0, len(req.Questions)),
-	}
-	for _, question := range req.Questions {
-		item := model.HumanInputArtifactQuestion{
-			ID:      strings.TrimSpace(question.ID),
-			Type:    strings.TrimSpace(question.Type),
-			Text:    strings.TrimSpace(question.Text),
-			Options: make([]model.HumanInputArtifactOption, 0, len(question.Options)),
-		}
-		for _, option := range question.Options {
-			item.Options = append(item.Options, model.HumanInputArtifactOption{
-				Value:    strings.TrimSpace(option.Value),
-				Label:    strings.TrimSpace(option.Label),
-				Freetext: option.Freetext,
-			})
-		}
-		out.Questions = append(out.Questions, item)
-	}
-	return out
+func humanInputArtifactFromWorker(req *workerpkg.UserInputRequest) model.HumanInputArtifact {
+	return workerpkg.HumanInputArtifactFromUserInputRequest(req)
 }
 
-func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string, blocks, toolInvocations, tokenUsage json.RawMessage) (*model.AgentRunMessage, error) {
+func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string, blocks, turnSegments, toolInvocations, tokenUsage json.RawMessage) (*model.AgentRunMessage, error) {
 	if a.runMessageRepo == nil {
 		return nil, nil
 	}
@@ -1360,12 +1740,22 @@ func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.Ag
 		Content:         content,
 		MessageType:     messageType,
 		ContentBlocks:   blocks,
+		TurnSegments:    turnSegments,
 		ToolInvocations: toolInvocations,
 		TokenUsage:      tokenUsage,
 		SequenceNo:      sequenceNo,
 	}
 	if err := a.runMessageRepo.Create(ctx, message); err != nil {
 		return nil, err
+	}
+	if shouldClearCodingSessionStreamSnapshot(role, messageType) {
+		if err := a.clearCodingSessionStreamSnapshot(ctx, run); err != nil {
+			slog.WarnContext(ctx, "clear coding session stream snapshot failed",
+				"run_id", run.ID,
+				"workspace_id", run.WorkspaceID,
+				"error", err,
+			)
+		}
 	}
 	a.publishRunMessageEvent(run, message)
 	return message, nil
@@ -1385,24 +1775,77 @@ func (a *AgentRunActivities) publishRunMessageEvent(run *model.AgentRun, message
 		ParentID:    run.ID,
 		Data:        data,
 	})
+	eventType := "user.message.completed"
+	switch strings.TrimSpace(message.Role) {
+	case "assistant":
+		eventType = "assistant.message.completed"
+	case "tool":
+		eventType = "tool.call.completed"
+	}
+	a.publishCodingSessionEvent(run, eventType, map[string]any{
+		"message_id":       message.ID,
+		"role":             message.Role,
+		"message_type":     message.MessageType,
+		"content":          message.Content,
+		"sequence_no":      message.SequenceNo,
+		"content_blocks":   json.RawMessage(message.ContentBlocks),
+		"turn_segments":    json.RawMessage(message.TurnSegments),
+		"tool_invocations": json.RawMessage(message.ToolInvocations),
+	})
 }
 
 func (a *AgentRunActivities) publishRunStreamEvent(run *model.AgentRun, event workerpkg.ExecutionEvent) {
-	if a.wsPublisher == nil || run == nil {
+	if run == nil {
+		return
+	}
+
+	sentAt := time.Now().UTC()
+	codingEventType := codingSessionEventTypeFromExecutionEvent(event)
+	codingPayload := map[string]any{
+		"message_id":        strings.TrimSpace(event.MessageID),
+		"parent_message_id": strings.TrimSpace(event.ParentMessageID),
+		"result_message_id": strings.TrimSpace(event.ResultMessageID),
+		"text":              event.Text,
+		"content":           coalesceRaw(event.Content, event.Text),
+		"tool_call_id":      event.ToolCallID,
+		"tool_name":         event.ToolName,
+		"tool_input":        event.ToolInput,
+		"args_delta":        event.ArgsDelta,
+		"args_text":         event.ArgsText,
+		"activity_id":       event.ActivityID,
+		"activity_type":     event.ActivityType,
+		"encrypted_value":   event.EncryptedValue,
+		"output_summary":    event.OutputSummary,
+		"duration_ms":       event.DurationMs,
+		"error":             event.Error,
+	}
+	if codingEventType != "" {
+		a.persistCodingSessionStreamSnapshot(context.Background(), run, codingEventType, codingPayload, sentAt)
+	}
+	if a.wsPublisher == nil {
 		return
 	}
 
 	payload, err := json.Marshal(model.AgentRunStreamEvent{
-		SentAt:        time.Now().UTC(),
-		Type:          event.Type,
-		RunID:         run.ID,
-		Text:          event.Text,
-		ToolCallID:    event.ToolCallID,
-		ToolName:      event.ToolName,
-		ToolInput:     event.ToolInput,
-		OutputSummary: event.OutputSummary,
-		DurationMs:    event.DurationMs,
-		Error:         event.Error,
+		SentAt:          sentAt,
+		Type:            event.Type,
+		RunID:           run.ID,
+		MessageID:       event.MessageID,
+		ParentMessageID: event.ParentMessageID,
+		ResultMessageID: event.ResultMessageID,
+		Text:            event.Text,
+		Content:         event.Content,
+		ToolCallID:      event.ToolCallID,
+		ToolName:        event.ToolName,
+		ToolInput:       event.ToolInput,
+		ArgsDelta:       event.ArgsDelta,
+		ArgsText:        event.ArgsText,
+		ActivityID:      event.ActivityID,
+		ActivityType:    event.ActivityType,
+		EncryptedValue:  event.EncryptedValue,
+		OutputSummary:   event.OutputSummary,
+		DurationMs:      event.DurationMs,
+		Error:           event.Error,
 	})
 	if err != nil {
 		return
@@ -1417,6 +1860,219 @@ func (a *AgentRunActivities) publishRunStreamEvent(run *model.AgentRun, event wo
 		ParentID:    run.ID,
 		Data:        payload,
 	})
+	if codingEventType != "" {
+		a.publishCodingSessionEvent(run, codingEventType, codingPayload)
+	}
+}
+
+func shouldClearCodingSessionStreamSnapshot(role, messageType string) bool {
+	return strings.TrimSpace(role) == "assistant" && strings.TrimSpace(messageType) == "assistant_turn"
+}
+
+func (a *AgentRunActivities) clearCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun) error {
+	if a == nil || a.sessionSnapshotRepo == nil || run == nil {
+		return nil
+	}
+	return a.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID)
+}
+
+func (a *AgentRunActivities) loadCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun) (*model.CodingSessionStreamSnapshot, error) {
+	if a == nil || a.sessionSnapshotRepo == nil || run == nil {
+		return nil, nil
+	}
+	record, err := a.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	return model.DecodeCodingSessionStreamSnapshot(record.SnapshotPayload)
+}
+
+func (a *AgentRunActivities) persistCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun, eventType string, payload map[string]any, timestamp time.Time) {
+	if a == nil || a.sessionSnapshotRepo == nil || run == nil || strings.TrimSpace(eventType) == "" {
+		return
+	}
+
+	record, err := a.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"error", err,
+		)
+		return
+	}
+
+	var snapshot *model.CodingSessionStreamSnapshot
+	if record != nil {
+		snapshot, err = model.DecodeCodingSessionStreamSnapshot(record.SnapshotPayload)
+		if err != nil {
+			slog.WarnContext(ctx, "decode coding session stream snapshot failed",
+				"run_id", run.ID,
+				"workspace_id", run.WorkspaceID,
+				"error", err,
+			)
+			record = nil
+		}
+	}
+
+	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, payload, timestamp)
+	if snapshot == nil || snapshot.IsEmpty() {
+		if record != nil {
+			if err := a.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
+				slog.WarnContext(ctx, "delete empty coding session stream snapshot failed",
+					"run_id", run.ID,
+					"workspace_id", run.WorkspaceID,
+					"error", err,
+				)
+			}
+		}
+		return
+	}
+
+	encoded, err := model.EncodeCodingSessionStreamSnapshot(snapshot)
+	if err != nil {
+		slog.WarnContext(ctx, "encode coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"error", err,
+		)
+		return
+	}
+
+	nextRecord := &model.CodingSessionStateSnapshot{
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		SnapshotPayload: encoded,
+	}
+	if record != nil {
+		nextRecord.ID = record.ID
+		nextRecord.CreatedAt = record.CreatedAt
+	}
+	if err := a.sessionSnapshotRepo.Upsert(ctx, nextRecord); err != nil {
+		slog.WarnContext(ctx, "persist coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"error", err,
+		)
+	}
+}
+
+func (a *AgentRunActivities) publishCodingSessionEvent(run *model.AgentRun, eventType string, payload map[string]any) {
+	if a.wsPublisher == nil || run == nil || strings.TrimSpace(eventType) == "" {
+		return
+	}
+	envelope, _ := json.Marshal(model.CodingSessionEvent{
+		ID:          fmt.Sprintf("%s:%d", run.ID, time.Now().UTC().UnixNano()),
+		SessionID:   run.ID,
+		RunID:       run.ID,
+		SequenceNo:  int(time.Now().UTC().UnixMilli()),
+		Timestamp:   time.Now().UTC(),
+		Type:        eventType,
+		RuntimeKind: run.RuntimeKind,
+		Payload:     payload,
+	})
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    fmt.Sprintf("%s:%d", run.ID, time.Now().UTC().UnixNano()),
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        envelope,
+	})
+}
+
+func (a *AgentRunActivities) publishCodingSessionInteractionEvent(run *model.AgentRun, interaction *model.AgentRunInteraction) {
+	if interaction == nil {
+		return
+	}
+	eventType, payload := codingSessionInteractionEventPayload(interaction)
+	a.publishCodingSessionEvent(run, eventType, payload)
+}
+
+func codingSessionInteractionEventPayload(interaction *model.AgentRunInteraction) (string, map[string]any) {
+	if interaction == nil {
+		return "", nil
+	}
+
+	eventType := "interaction.updated"
+	switch strings.TrimSpace(interaction.Status) {
+	case model.AgentRunInteractionStatusPending:
+		eventType = "interaction.requested"
+	case model.AgentRunInteractionStatusResolved:
+		eventType = "interaction.resolved"
+	case model.AgentRunInteractionStatusCancelled:
+		eventType = "interaction.cancelled"
+	}
+
+	payload := map[string]any{
+		"interaction_id":         interaction.ID,
+		"interaction_kind":       interaction.InteractionKind,
+		"status":                 interaction.Status,
+		"request_schema_version": interaction.RequestSchemaVersion,
+		"request_payload":        json.RawMessage(interaction.RequestPayload),
+		"title":                  derefString(interaction.Title),
+		"summary":                derefString(interaction.Summary),
+		"request_id":             derefString(interaction.RequestID),
+		"thread_id":              derefString(interaction.ThreadID),
+		"turn_id":                derefString(interaction.TurnID),
+		"item_id":                derefString(interaction.ItemID),
+		"approval_id":            derefString(interaction.ApprovalID),
+	}
+	if interaction.AssistantMessageSequenceNo != nil {
+		payload["assistant_message_sequence_no"] = *interaction.AssistantMessageSequenceNo
+	}
+	if interaction.ResponseSchemaVersion != nil && strings.TrimSpace(*interaction.ResponseSchemaVersion) != "" {
+		payload["response_schema_version"] = strings.TrimSpace(*interaction.ResponseSchemaVersion)
+	}
+	if len(interaction.ResponsePayload) > 0 && string(interaction.ResponsePayload) != "null" {
+		payload["response_payload"] = json.RawMessage(interaction.ResponsePayload)
+	}
+	if interaction.ResolvedAt != nil {
+		payload["resolved_at"] = interaction.ResolvedAt.UTC()
+	}
+	if interaction.ResolvedBy != nil && strings.TrimSpace(*interaction.ResolvedBy) != "" {
+		payload["resolved_by"] = strings.TrimSpace(*interaction.ResolvedBy)
+	}
+
+	return eventType, payload
+}
+
+func codingSessionEventTypeFromExecutionEvent(event workerpkg.ExecutionEvent) string {
+	switch strings.TrimSpace(event.Type) {
+	case "assistant_message_started":
+		return "assistant.message.started"
+	case "assistant_message_delta":
+		return "assistant.message.delta"
+	case "assistant_message_completed":
+		return "assistant.message.completed"
+	case "reasoning_message_started":
+		return "reasoning.message.started"
+	case "reasoning_message_delta":
+		return "reasoning.message.delta"
+	case "reasoning_message_completed":
+		return "reasoning.message.completed"
+	case "tool_call_started":
+		return "tool.call.started"
+	case "tool_call_args_delta":
+		return "tool.call.args.delta"
+	case "tool_call_result":
+		return "tool.call.result"
+	case "tool_call_finished":
+		if strings.TrimSpace(event.Error) != "" {
+			return "tool.call.failed"
+		}
+		return "tool.call.completed"
+	case "activity_snapshot":
+		return "activity.snapshot"
+	case "activity_delta":
+		return "activity.delta"
+	case "plan_updated":
+		return "plan.updated"
+	default:
+		return ""
+	}
 }
 
 func latestExecutionApprovalRequest(execCtx *workerpkg.ExecutionContext) *model.ApprovalRequest {
@@ -1426,11 +2082,310 @@ func latestExecutionApprovalRequest(execCtx *workerpkg.ExecutionContext) *model.
 	return workerpkg.ExtractLatestHumanApprovalRequest(execCtx.LastExecutionResult.ToolInvocations)
 }
 
-func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *workerpkg.HumanInputRequest {
+func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *workerpkg.UserInputRequest {
 	if execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanInputRequest(execCtx.LastExecutionResult.ToolInvocations)
+}
+
+func latestExecutionCodexAuthState(execCtx *workerpkg.ExecutionContext) *model.CodexAuthState {
+	if execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	return execCtx.LastExecutionResult.CodexAuthState
+}
+
+func (a *AgentRunActivities) handleLiveCodexInteractivePause(
+	ctx context.Context,
+	state *resolvedRunState,
+	execCtx *workerpkg.ExecutionContext,
+	result *workerpkg.ExecutionResult,
+	setHeartbeatStage func(string),
+) (*workerpkg.LiveExecutionResumeSignal, error) {
+	if state == nil || state.run == nil || execCtx == nil || result == nil {
+		return nil, fmt.Errorf("live codex pause context is incomplete")
+	}
+
+	pauseReason, pauseStage, err := liveCodexPauseState(result)
+	if err != nil {
+		return nil, err
+	}
+
+	execCtx.LastExecutionResult = result
+	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
+	if err != nil {
+		return nil, err
+	}
+	afterSequenceNo, err := a.currentRunMessageSequence(ctx, state.run)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	state.run.Status = model.AgentRunStatusPaused
+	state.run.PauseReason = pauseReason
+	state.run.ExecutionStage = strPtr(pauseStage)
+	state.run.LastHeartbeatAt = &now
+	state.run.CompletedAt = nil
+	if pauseReason == model.AgentRunPauseReasonHumanApproval {
+		state.run.ApprovalState = "pending"
+	} else if state.run.ApprovalState != "approved" {
+		state.run.ApprovalState = "not_required"
+	}
+	if err := a.runRepo.Update(ctx, state.run); err != nil {
+		return nil, err
+	}
+	a.runRepo.Notify(ctx, state.run)
+	if setHeartbeatStage != nil {
+		setHeartbeatStage(pauseStage)
+	}
+
+	if assistantMessage != nil && assistantMessage.SequenceNo > afterSequenceNo {
+		afterSequenceNo = assistantMessage.SequenceNo
+	}
+	signal, err := a.waitForLiveCodexResumeSignal(ctx, state.run, afterSequenceNo, pauseReason)
+	if err != nil {
+		return nil, err
+	}
+	return &workerpkg.LiveExecutionResumeSignal{
+		Intent:          signal.Intent,
+		Content:         signal.Content,
+		ResponsePayload: copyRawJSON(signal.ResponsePayload),
+		Acknowledge: func() error {
+			if setHeartbeatStage != nil {
+				setHeartbeatStage("codex_running")
+			}
+			now := time.Now()
+			state.run.Status = model.AgentRunStatusRunning
+			state.run.PauseReason = model.AgentRunPauseReasonNone
+			state.run.ExecutionStage = strPtr(liveCodexResumeStage(signal, pauseReason))
+			state.run.LastHeartbeatAt = &now
+			state.run.CompletedAt = nil
+			switch strings.TrimSpace(signal.Intent) {
+			case model.AgentRunResumeIntentApprove:
+				state.run.ApprovalState = "approved"
+			case model.AgentRunResumeIntentRequestChanges:
+				state.run.ApprovalState = "rejected"
+			default:
+				if pauseReason != model.AgentRunPauseReasonHumanApproval && state.run.ApprovalState != "pending" && state.run.ApprovalState != "rejected" {
+					state.run.ApprovalState = "not_required"
+				}
+			}
+			if err := a.runRepo.Update(ctx, state.run); err != nil {
+				return err
+			}
+			a.runRepo.Notify(ctx, state.run)
+			return nil
+		},
+	}, nil
+}
+
+func (a *AgentRunActivities) currentRunMessageSequence(ctx context.Context, run *model.AgentRun) (int, error) {
+	if a == nil || a.runMessageRepo == nil || run == nil {
+		return 0, nil
+	}
+	nextSequenceNo, err := a.runMessageRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return 0, err
+	}
+	if nextSequenceNo <= 1 {
+		return 0, nil
+	}
+	return nextSequenceNo - 1, nil
+}
+
+func liveCodexPauseState(result *workerpkg.ExecutionResult) (pauseReason, stage string, err error) {
+	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
+		stage = "awaiting_approval"
+		if strings.TrimSpace(approvalRequest.Phase) != "" {
+			stage = strings.TrimSpace(approvalRequest.Phase)
+		}
+		return model.AgentRunPauseReasonHumanApproval, stage, nil
+	}
+	if latestHumanInputRequestFromResult(result) != nil {
+		return model.AgentRunPauseReasonHumanInput, "awaiting_input", nil
+	}
+	return "", "", fmt.Errorf("execution result did not include a live human interaction request")
+}
+
+func liveCodexResumeStage(signal *workerpkg.LiveExecutionResumeSignal, pauseReason string) string {
+	if signal == nil {
+		return "resuming"
+	}
+	switch strings.TrimSpace(signal.Intent) {
+	case model.AgentRunResumeIntentApprove:
+		return "approved"
+	case model.AgentRunResumeIntentRequestChanges:
+		return "feedback_received"
+	case model.AgentRunResumeIntentReply:
+		if pauseReason == model.AgentRunPauseReasonHumanApproval {
+			return "feedback_received"
+		}
+		return "input_received"
+	default:
+		return "resuming"
+	}
+}
+
+func (a *AgentRunActivities) waitForLiveCodexResumeSignal(ctx context.Context, run *model.AgentRun, afterSequenceNo int, pauseReason string) (*workerpkg.LiveExecutionResumeSignal, error) {
+	ticker := time.NewTicker(codexLivePausePollEvery)
+	defer ticker.Stop()
+
+	for {
+		if ctx.Err() != nil {
+			return nil, workerpkg.ErrRunCancelled
+		}
+
+		currentRun, err := a.runRepo.GetByIDAny(ctx, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		if currentRun == nil {
+			return nil, fmt.Errorf("agent run %s was not found while waiting for live codex input", run.ID)
+		}
+		model.NormalizeAgentRunPauseState(currentRun)
+
+		switch currentRun.Status {
+		case model.AgentRunStatusCancelled:
+			return nil, workerpkg.ErrRunCancelled
+		case model.AgentRunStatusFailed:
+			return nil, fmt.Errorf("agent run failed while waiting for live codex input")
+		case model.AgentRunStatusCompleted:
+			return nil, fmt.Errorf("agent run completed while waiting for live codex input")
+		}
+
+		if signal, err := a.latestResolvedLiveCodexInteractionSignal(ctx, currentRun, afterSequenceNo); err != nil {
+			return nil, err
+		} else if signal != nil {
+			return signal, nil
+		}
+
+		if pauseReason == model.AgentRunPauseReasonHumanApproval {
+			switch strings.TrimSpace(currentRun.ApprovalState) {
+			case "approved":
+				content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(content) == "" {
+					content = "approve"
+				}
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentApprove,
+					Content: content,
+				}, nil
+			case "rejected":
+				content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(content) == "" {
+					return nil, fmt.Errorf("approval feedback message is missing for live codex resume")
+				}
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentRequestChanges,
+					Content: content,
+				}, nil
+			}
+		} else {
+			content, err := a.latestLiveCodexUserMessage(ctx, currentRun, afterSequenceNo)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(content) != "" {
+				return &workerpkg.LiveExecutionResumeSignal{
+					Intent:  model.AgentRunResumeIntentReply,
+					Content: content,
+				}, nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, workerpkg.ErrRunCancelled
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *AgentRunActivities) latestResolvedLiveCodexInteractionSignal(ctx context.Context, run *model.AgentRun, afterSequenceNo int) (*workerpkg.LiveExecutionResumeSignal, error) {
+	if a == nil || a.interactionRepo == nil || run == nil {
+		return nil, nil
+	}
+
+	interaction, err := a.interactionRepo.GetLatestResolvedByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil || interaction == nil {
+		return nil, err
+	}
+	if len(interaction.ResponsePayload) == 0 {
+		return nil, nil
+	}
+	if interaction.AssistantMessageSequenceNo != nil && *interaction.AssistantMessageSequenceNo < afterSequenceNo {
+		return nil, nil
+	}
+
+	followupInput, err := a.latestLiveCodexUserMessage(ctx, run, afterSequenceNo)
+	if err != nil {
+		return nil, err
+	}
+	return &workerpkg.LiveExecutionResumeSignal{
+		Intent:          liveCodexResumeIntentForInteraction(interaction),
+		Content:         strings.TrimSpace(followupInput),
+		ResponsePayload: copyRawJSON(interaction.ResponsePayload),
+	}, nil
+}
+
+func liveCodexResumeIntentForInteraction(interaction *model.AgentRunInteraction) string {
+	if interaction == nil {
+		return model.AgentRunResumeIntentReply
+	}
+
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindRequestUserInput:
+		return model.AgentRunResumeIntentReply
+	case model.AgentRunInteractionKindPermissionsApproval:
+		var payload struct {
+			Permissions map[string]any `json:"permissions"`
+		}
+		if err := json.Unmarshal(interaction.ResponsePayload, &payload); err == nil && len(payload.Permissions) > 0 {
+			return model.AgentRunResumeIntentApprove
+		}
+		return model.AgentRunResumeIntentRequestChanges
+	case model.AgentRunInteractionKindCommandExecutionApproval, model.AgentRunInteractionKindFileChangeApproval:
+		var payload struct {
+			Decision string `json:"decision"`
+		}
+		if err := json.Unmarshal(interaction.ResponsePayload, &payload); err == nil {
+			switch strings.TrimSpace(payload.Decision) {
+			case "accept", "acceptForSession", "acceptWithExecpolicyAmendment", "applyNetworkPolicyAmendment":
+				return model.AgentRunResumeIntentApprove
+			}
+		}
+		return model.AgentRunResumeIntentRequestChanges
+	default:
+		return model.AgentRunResumeIntentRequestChanges
+	}
+}
+
+func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run *model.AgentRun, afterSequenceNo int) (string, error) {
+	if a.runMessageRepo == nil || run == nil {
+		return "", nil
+	}
+	messages, err := a.runMessageRepo.ListByRunAfterSequence(ctx, run.WorkspaceID, run.ID, afterSequenceNo)
+	if err != nil {
+		return "", err
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(messages[i].Role) != "user" {
+			continue
+		}
+		content := strings.TrimSpace(messages[i].Content)
+		if content != "" {
+			return content, nil
+		}
+	}
+	return "", nil
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
@@ -2027,7 +2982,7 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 
 	createdCount := len(result.Stories)
 	summaryText := fmt.Sprintf("Applied the approved story plan and created %d stories.", createdCount)
-	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil); err != nil {
+	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil, nil); err != nil {
 		return err
 	}
 
@@ -2115,7 +3070,7 @@ func (a *AgentRunActivities) applyApprovedStoryDocPreview(ctx context.Context, s
 	})
 
 	summaryText := "Persisted the approved story plan to Docs and linked it to the story."
-	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil); err != nil {
+	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil, nil); err != nil {
 		return err
 	}
 
@@ -2697,7 +3652,7 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 	}
 	sections = append(sections, "Choose the next step from the transcript, story details, parent epic context, linked docs, comments, code context, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the story planning doc, publish it with publish_story_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical story planning doc automatically.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_human_approval with phase=\"story_doc\" and stop after the request.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"story_doc\" and stop after the request.")
 	sections = append(sections, "Use publish_story_plan_doc for reviewable right-pane story planning documents.")
 	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the story planning document unless they directly affect this story's implementation.")
 	sections = append(sections, "Ground the planning document primarily in the story description, story comments, story-linked docs, and the current codebase context. Keep the output focused on this story's implementation plan.")
@@ -2808,7 +3763,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	}
 	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing stories, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation story plan, publish it with publish_story_plan, wait for inline story approval, then let the platform apply the approved story plan artifact and create stories.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_human_approval with phase=\"prd\" or phase=\"stories\" and stop after the request.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"stories\" and stop after the request.")
 	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_story_plan for story plan JSON previews.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or story plans through mutation tools.")
 
@@ -3680,6 +4635,18 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
+// coalesceRaw returns the first non-empty string without trimming whitespace.
+// Use this instead of firstNonEmptyString when the value may contain meaningful
+// leading/trailing whitespace (e.g. LLM streaming token deltas like " found").
+func coalesceRaw(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func validatePlanningProposalStories(stories []model.ProposedStory) error {
 	return model.NormalizeProposedStories(stories)
 }
@@ -4281,6 +5248,20 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 	return nil
 }
 
+func (a *AgentRunActivities) isRunExplicitlyCancelled(ctx context.Context, runID string) (bool, error) {
+	if a == nil || a.runRepo == nil || strings.TrimSpace(runID) == "" {
+		return false, nil
+	}
+	currentRun, err := a.runRepo.GetByIDAny(ctx, runID)
+	if err != nil {
+		return false, err
+	}
+	if currentRun == nil {
+		return false, nil
+	}
+	return currentRun.Status == model.AgentRunStatusCancelled, nil
+}
+
 func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, errMsg string) error {
 	if a == nil || a.runRepo == nil {
 		return nil
@@ -4382,7 +5363,7 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 }
 
 func buildWorkingBranch(story *model.PMStory, teamDefault *model.PMTeamRepoDefault) string {
-	template := "tp-{display_id}-{slug}"
+	template := "{display_id}-{slug}"
 	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
 		template = teamDefault.BranchTemplate
 	}
@@ -4396,7 +5377,7 @@ func buildWorkingBranch(story *model.PMStory, teamDefault *model.PMTeamRepoDefau
 	template = strings.ToLower(strings.TrimSpace(template))
 	template = strings.Trim(template, "/-")
 	if template == "" {
-		return fmt.Sprintf("tp-%d-%s", story.DisplayID, slugifyBranchToken(story.Name))
+		return fmt.Sprintf("%d-%s", story.DisplayID, slugifyBranchToken(story.Name))
 	}
 	return template
 }

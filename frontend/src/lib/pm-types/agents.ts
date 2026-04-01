@@ -18,7 +18,8 @@ export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'reje
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
-export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication';
+export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
 
 export interface Agent {
   id: string;
@@ -135,9 +136,22 @@ export interface SendAgentRunRequestChangesRequest {
 }
 
 export interface ResumeAgentRunRequest {
-  intent: 'reply' | 'approve' | 'request_changes';
+  intent: 'reply' | 'approve' | 'request_changes' | 'auth_completed';
   content?: string;
   send_message?: boolean;
+}
+
+export interface CodexAuthState {
+  provider?: string;
+  auth_mode?: string;
+  state: CodexAuthStateStatus;
+  login_id?: string;
+  auth_url?: string;
+  verification_url?: string;
+  user_code?: string;
+  plan_type?: string;
+  error?: string;
+  updated_at: string;
 }
 
 export interface StoryImplementationBrief {

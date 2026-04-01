@@ -32,19 +32,21 @@ var toolCategory = map[string]string{
 	"open_pr":         "Git",
 
 	// PM / Stories
-	"request_human_input":    "Interaction",
-	"request_human_approval": "Interaction",
-	"update_plan":            "Interaction",
-	"preview_md":             "Interaction",
-	"preview_json":           "Interaction",
-	"publish_prd_draft":      "Interaction",
-	"publish_story_plan":     "Interaction",
-	"publish_story_plan_doc": "Interaction",
-	"publish_preview":        "Interaction",
-	"add_story_comment":      "PM / Stories",
-	"list_story_checklist":   "PM / Stories",
-	"list_epic_stories":      "PM / Stories",
-	"list_workspace_teams":   "Workspace",
+	"request_user_input":        "Interaction",
+	"request_review_checkpoint": "Interaction",
+	"request_human_input":       "Interaction",
+	"request_human_approval":    "Interaction",
+	"update_plan":               "Interaction",
+	"preview_md":                "Interaction",
+	"preview_json":              "Interaction",
+	"publish_prd_draft":         "Interaction",
+	"publish_story_plan":        "Interaction",
+	"publish_story_plan_doc":    "Interaction",
+	"publish_preview":           "Interaction",
+	"add_story_comment":         "PM / Stories",
+	"list_story_checklist":      "PM / Stories",
+	"list_epic_stories":         "PM / Stories",
+	"list_workspace_teams":      "Workspace",
 
 	// Support
 	"list_conversation_messages": "Support",
@@ -74,6 +76,11 @@ var categoryOrder = []string{
 	"Support",
 	"CRM",
 	"Docs",
+}
+
+var hiddenToolCatalogAliases = map[string]bool{
+	ToolRequestHumanInput:    true,
+	ToolRequestHumanApproval: true,
 }
 
 // webSearchDefinition returns the catalog entry for web_search_brave, which is
@@ -122,6 +129,9 @@ func ListToolCatalog() model.ToolCatalogResponse {
 	entries := make([]model.ToolCatalogEntry, 0, len(defs)+1)
 
 	for _, def := range defs {
+		if hiddenToolCatalogAliases[def.Name] {
+			continue
+		}
 		cat := ""
 		if meta, ok := commandtools.ToolMetadataForAlias(def.Name); ok {
 			cat = meta.Category

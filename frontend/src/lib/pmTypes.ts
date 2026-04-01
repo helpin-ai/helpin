@@ -6,3 +6,4 @@ export * from './pm-types/support';
 export * from './pm-types/delivery';
 export * from './pm-types/orchestration';
 export * from './pm-types/visitor';
+export * from './pm-types/codingSession';

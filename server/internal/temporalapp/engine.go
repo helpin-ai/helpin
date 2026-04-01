@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -123,10 +124,27 @@ func (e *RunEngine) SignalMessage(ctx context.Context, workflowID, workflowRunID
 
 // SignalResume resumes a paused workflow with a generic human intent.
 func (e *RunEngine) SignalResume(ctx context.Context, workflowID, workflowRunID string, payload RunResumeSignal) error {
-	if e == nil || e.client == nil || workflowID == "" {
+	if e == nil || e.client == nil {
 		return nil
 	}
-	return e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalResume, payload)
+	workflowID = strings.TrimSpace(workflowID)
+	workflowRunID = strings.TrimSpace(workflowRunID)
+	if workflowID == "" {
+		return fmt.Errorf("temporal workflow id is required")
+	}
+	err := e.client.SignalWorkflow(ctx, workflowID, workflowRunID, WorkflowSignalResume, payload)
+	if shouldRetrySignalWithoutRunID(err, workflowRunID) {
+		return e.client.SignalWorkflow(ctx, workflowID, "", WorkflowSignalResume, payload)
+	}
+	return err
+}
+
+func shouldRetrySignalWithoutRunID(err error, workflowRunID string) bool {
+	if err == nil || strings.TrimSpace(workflowRunID) == "" {
+		return false
+	}
+	var notFound *serviceerror.NotFound
+	return errors.As(err, &notFound)
 }
 
 // DescribeRun returns the Temporal execution state for a workflow-backed run.

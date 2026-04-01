@@ -345,7 +345,7 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -390,6 +390,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -422,6 +423,55 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	}
 	if updated.ApprovalMode != "never" {
 		t.Fatalf("expected system agent approval mode never, got %q", updated.ApprovalMode)
+	}
+}
+
+func TestUpdateAgent_AllowsSystemPresetVersionRuntimeFromSelectedVersion(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if err := workspacePresetVersionRepo.Create(context.Background(), &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetCodeBuilder,
+		VersionKey:            "code_builder_workspace_codex",
+		Label:                 "Workspace Codex",
+		RuntimeKind:           "codex",
+		SystemPrompt:          agentTestStringPtr("Use Codex for code builder runs."),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}); err != nil {
+		t.Fatalf("Create workspace preset version returned error: %v", err)
+	}
+
+	versionKey := "code_builder_workspace_codex"
+	runtimeKind := "codex"
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &versionKey,
+		RuntimeKind:      &runtimeKind,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.PresetVersionKey != versionKey {
+		t.Fatalf("expected selected preset version %q, got %q", versionKey, updated.PresetVersionKey)
+	}
+	if updated.RuntimeKind != runtimeKind {
+		t.Fatalf("expected runtime kind %q, got %q", runtimeKind, updated.RuntimeKind)
 	}
 }
 
@@ -523,7 +573,7 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 		Label:                 "Ops Variant",
 		RuntimeKind:           "native_sdk",
 		SystemPrompt:          agentTestStringPtr("Plan with explicit operational checkpoints."),
-		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_human_input"}),
+		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_user_input"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeInteractive,

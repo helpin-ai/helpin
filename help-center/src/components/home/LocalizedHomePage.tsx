@@ -1,24 +1,26 @@
 import { useState, useCallback } from 'react'
+import { Link } from '@tanstack/react-router'
 import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
-import { buildCanonicalCollectionPath, isMultilingualEnabled } from '@/lib/locale'
+import { buildCanonicalCollectionPath } from '@/lib/locale'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { PhIcon } from '@/components/PhIcon'
 import type { HomepageFeaturedCard } from '@/lib/types'
 
 export function LocalizedHomePage() {
-  const { config, spaces, subdomain, locale, enabledLocales } = useDocsContext()
+  const { config, spaces, subdomain, locale, multilingualEnabled } =
+    useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
-  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
   const firstSpace = spaces[0]
   const { data: navigation } = useSpaceNavigation(
     subdomain,
     locale,
     firstSpace?.slug ?? '',
+    multilingualEnabled,
   )
   const nav = navigation ?? []
 
@@ -168,8 +170,8 @@ function FeaturedCard({
 
   if (card.link_type === 'space') {
     return (
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
           card.link_value,
@@ -177,14 +179,14 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </a>
+      </Link>
     )
   }
 
   if (card.link_type === 'collection' && card.space_slug) {
     return (
-      <a
-        href={buildCanonicalCollectionPath(
+      <Link
+        to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
           card.link_value,
@@ -192,14 +194,14 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </a>
+      </Link>
     )
   }
 
   const spaceSlug = card.space_slug || card.link_value
   return (
-    <a
-      href={buildCanonicalCollectionPath(
+    <Link
+      to={buildCanonicalCollectionPath(
         multilingualEnabled,
         locale,
         spaceSlug,
@@ -207,6 +209,6 @@ function FeaturedCard({
       className={cls}
     >
       {inner}
-    </a>
+    </Link>
   )
 }

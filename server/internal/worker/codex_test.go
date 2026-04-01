@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 func TestExtractCodexAssistantTextFromJSONL(t *testing.T) {
@@ -69,58 +72,292 @@ func TestBuildCodexPromptIncludesRuntimeSpecificEngineerInstructions(t *testing.
 	}
 }
 
-func TestBuildCodexConfigArtifactUsesRequestedModelOnly(t *testing.T) {
-	executor := NewCodexExecutor("codex", "codex", "gpt-5-mini", "", "", "", "", nil, nil)
-	payload := executor.buildConfigArtifact(&ExecutionContext{WorkDir: "/tmp/work"}, "gpt-5-mini", model.AgentModelProviderOpenAI, "api_key_forced")
+func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
+	provider := model.AgentModelProviderOpenRouter
+	modelName := "qwen/qwen3.5-122b-a10b"
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:      "gpt-5-mini",
+		OpenRouterAPIKey:  "openrouter-secret",
+		OpenRouterBaseURL: "https://openrouter.ai/api/v1",
+	}, nil, nil)
 
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+	profile, err := executor.resolveRuntimeProfile(&model.Agent{
+		Provider: &provider,
+		Model:    &modelName,
+	})
+	if err != nil {
+		t.Fatalf("resolve runtime profile: %v", err)
+	}
+	payload, err := executor.buildConfigArtifact(&ExecutionContext{}, profile, "on-request")
+	if err != nil {
+		t.Fatalf("build config artifact: %v", err)
+	}
+
+	var decoded struct {
+		Model          string `toml:"model"`
+		ApprovalPolicy string `toml:"approval_policy"`
+		ModelProvider  string `toml:"model_provider"`
+		ModelProviders map[string]struct {
+			BaseURL            string `toml:"base_url"`
+			EnvKey             string `toml:"env_key"`
+			WireAPI            string `toml:"wire_api"`
+			SupportsWebsockets bool   `toml:"supports_websockets"`
+		} `toml:"model_providers"`
+	}
+	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("unmarshal config artifact: %v", err)
 	}
-	if decoded["requested_model"] != "gpt-5-mini" {
-		t.Fatalf("expected requested_model to be preserved, got %#v", decoded["requested_model"])
+	if decoded.Model != "qwen/qwen3.5-122b-a10b" {
+		t.Fatalf("expected model to be preserved, got %q", decoded.Model)
 	}
-	if decoded["model_selection"] != "explicit" {
-		t.Fatalf("expected model_selection to note explicit model behavior, got %#v", decoded["model_selection"])
+	if decoded.ApprovalPolicy != "on-request" {
+		t.Fatalf("expected approval policy to be written, got %q", decoded.ApprovalPolicy)
 	}
-	if decoded["auth_mode"] != "api_key_forced" {
-		t.Fatalf("expected auth_mode to note api-key behavior, got %#v", decoded["auth_mode"])
+	if decoded.ModelProvider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("expected model provider %q, got %q", model.AgentModelProviderOpenRouter, decoded.ModelProvider)
 	}
-	if _, exists := decoded["model"]; exists {
-		t.Fatalf("did not expect config artifact to claim an enforced model: %#v", decoded["model"])
+	openRouter, ok := decoded.ModelProviders[model.AgentModelProviderOpenRouter]
+	if !ok {
+		t.Fatalf("expected openrouter provider block in config: %#v", decoded.ModelProviders)
+	}
+	if openRouter.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("expected openrouter base URL, got %q", openRouter.BaseURL)
+	}
+	if openRouter.EnvKey != "OPENROUTER_API_KEY" {
+		t.Fatalf("expected openrouter env key, got %q", openRouter.EnvKey)
+	}
+	if openRouter.WireAPI != "responses" {
+		t.Fatalf("expected responses wire API, got %q", openRouter.WireAPI)
+	}
+	if openRouter.SupportsWebsockets {
+		t.Fatal("expected openrouter config to disable websockets")
+	}
+}
+
+func TestCodexApprovalPolicyForInteractiveRunUsesOnRequest(t *testing.T) {
+	run := &model.AgentRun{InvocationMode: model.InvocationModeInteractive}
+	if got := codexApprovalPolicyForRun(run); got != "on-request" {
+		t.Fatalf("expected interactive codex approval policy on-request, got %q", got)
+	}
+}
+
+func TestPendingResponseRequestIDFailsFastWhenReplayDoesNotArrive(t *testing.T) {
+	previousTimeout := codexPendingReplayGraceTimeout
+	codexPendingReplayGraceTimeout = time.Millisecond
+	defer func() {
+		codexPendingReplayGraceTimeout = previousTimeout
+	}()
+
+	host := &codexSessionHost{
+		execCtx: &ExecutionContext{Context: context.Background()},
+		run:     &model.AgentRun{ID: "run-1"},
+	}
+	client := &codexAppServerClient{
+		lines: make(chan codexRPCMessage),
+		done:  make(chan error, 1),
+	}
+	pending := &codexPendingRequest{
+		Kind:         codexPendingRequestKindCommandApproval,
+		RequestID:    "7",
+		RequestIDRaw: json.RawMessage(`7`),
+	}
+
+	_, err := host.pendingResponseRequestID(context.Background(), client, pending)
+	if err == nil {
+		t.Fatal("expected replay timeout to fail")
+	}
+	if !strings.Contains(err.Error(), "did not replay the pending command_execution") {
+		t.Fatalf("expected protocol replay error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "still-running thread") {
+		t.Fatalf("expected protocol explanation in error, got %v", err)
+	}
+}
+
+func TestPendingResponsePayloadForSignalReturnsFollowupInputForRequestChanges(t *testing.T) {
+	host := &codexSessionHost{}
+	pending := &codexPendingRequest{
+		Kind:    codexPendingRequestKindCommandApproval,
+		Payload: json.RawMessage(`{"command":"git commit"}`),
+	}
+
+	response, followupInput, err := host.pendingResponsePayloadForSignal(pending, &LiveExecutionResumeSignal{
+		Intent:  model.AgentRunResumeIntentRequestChanges,
+		Content: "Please adjust the commit message.",
+	})
+	if err != nil {
+		t.Fatalf("pendingResponsePayloadForSignal returned error: %v", err)
+	}
+	decoded, ok := response.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map response, got %#v", response)
+	}
+	if got := strings.TrimSpace(fmt.Sprint(decoded["decision"])); got != "cancel" {
+		t.Fatalf("expected cancel decision, got %q", got)
+	}
+	if followupInput != "Please adjust the commit message." {
+		t.Fatalf("expected followup input to be preserved, got %q", followupInput)
+	}
+}
+
+func TestShouldStartCodexFollowupTurnAllowsCompletedAndInterruptedTurns(t *testing.T) {
+	for _, status := range []string{"completed", "interrupted"} {
+		if !shouldStartCodexFollowupTurn(&codexTurn{Status: status}, "Please revise the auth path.") {
+			t.Fatalf("expected follow-up turn to start for status %q", status)
+		}
+	}
+	if shouldStartCodexFollowupTurn(&codexTurn{Status: "failed"}, "Please revise the auth path.") {
+		t.Fatal("did not expect follow-up turn to start for failed turns")
+	}
+	if shouldStartCodexFollowupTurn(&codexTurn{Status: "completed"}, "") {
+		t.Fatal("did not expect follow-up turn without input")
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestCreatesStructuredPause(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. When both api_key and token are present but conflict, should auth prioritize token or allow either one to pass?
+2. For pipeline_auth_duration_seconds, do you want result labels or no labels at all?
+3. For requests with no credentials, should behavior stay 401 Unauthorized or continue downstream?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(result)
+
+	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
+	if request == nil {
+		t.Fatal("expected a structured human-input request")
+	}
+	if len(request.Questions) != 3 {
+		t.Fatalf("expected 3 questions, got %#v", request.Questions)
+	}
+	if request.Questions[0].Question != "When both api_key and token are present but conflict, should auth prioritize token or allow either one to pass?" {
+		t.Fatalf("unexpected first question %#v", request.Questions[0])
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestIgnoresNormalCompletionText(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: "Implemented the auth changes and added tests. Anything else?",
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(result)
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request, got %#v", request)
 	}
 }
 
 func TestRequestedModelIDReturnsEmptyWhenAgentModelIsUnset(t *testing.T) {
-	executor := NewCodexExecutor("codex", "codex", "gpt-5-mini", "", "", "", "", nil, nil)
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{DefaultModel: "gpt-5-mini"}, nil, nil)
 	if got := executor.requestedModelID(&model.Agent{}); got != "" {
 		t.Fatalf("expected empty requested model, got %q", got)
 	}
 }
 
-func TestBuildExecEnvWithoutModelDoesNotInjectAPIKey(t *testing.T) {
+func TestUpsertProviderEnvForOpenRouterDoesNotInjectOpenAIKeys(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "inherited-openai-key")
 	t.Setenv("OPENAI_BASE_URL", "https://api.openai.example")
 	t.Setenv("OPENROUTER_API_KEY", "inherited-openrouter-key")
 	t.Setenv("OPENROUTER_BASE_URL", "https://openrouter.example")
 
-	executor := NewCodexExecutor("codex", "codex", "gpt-5-mini", "openai-secret", "", "openrouter-secret", "https://openrouter.ai/api/v1", nil, nil)
-	env, cleanup, err := executor.buildExecEnv(context.Background(), &model.Agent{}, false)
-	if err != nil {
-		t.Fatalf("build exec env: %v", err)
-	}
-	defer cleanup()
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:      "gpt-5-mini",
+		OpenAIAPIKey:      "openai-secret",
+		OpenRouterAPIKey:  "openrouter-secret",
+		OpenRouterBaseURL: "https://openrouter.ai/api/v1",
+	}, nil, nil)
+	env := executor.buildBaseEnv()
+	env = executor.upsertProviderEnv(env, model.AgentModelProviderOpenRouter)
 
+	sawOpenRouterKey := false
 	for _, entry := range env {
 		switch entry {
 		case "OPENAI_API_KEY=openai-secret",
-			"OPENAI_API_KEY=openrouter-secret",
 			"OPENAI_API_KEY=inherited-openai-key",
 			"OPENAI_BASE_URL=https://api.openai.example",
-			"OPENROUTER_API_KEY=inherited-openrouter-key",
 			"OPENROUTER_BASE_URL=https://openrouter.example":
-			t.Fatalf("did not expect API auth env when model is unset: %q", entry)
+			t.Fatalf("did not expect inherited OpenAI/OpenRouter env entry in session env: %q", entry)
+		case "OPENROUTER_API_KEY=openrouter-secret":
+			sawOpenRouterKey = true
 		}
+	}
+	if !sawOpenRouterKey {
+		t.Fatal("expected openrouter API key to be injected for custom provider auth")
+	}
+}
+
+func TestResolveProviderDefaultsToOpenAIWhenManagedOAuthConfigured(t *testing.T) {
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:              "gpt-5-mini",
+		OpenAIAuthMode:            codexOpenAIAuthModeOAuth,
+		EnableManagedChatGPTOAuth: true,
+		ChatGPTAccessToken:        "token",
+		ChatGPTAccountID:          "account-123",
+		OpenRouterAPIKey:          "openrouter-secret",
+	}, nil, nil)
+
+	if got := executor.resolveProvider(&model.Agent{}); got != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected OpenAI to remain the default provider when managed OAuth is configured, got %q", got)
+	}
+}
+
+func TestBuildCodexConfigArtifactForOAuthForcesChatGPTLogin(t *testing.T) {
+	provider := model.AgentModelProviderOpenAI
+	modelName := "gpt-5-mini"
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:              "gpt-5-mini",
+		OpenAIBaseURL:             "https://api.openai.example",
+		OpenAIAuthMode:            codexOpenAIAuthModeOAuth,
+		EnableManagedChatGPTOAuth: true,
+		ChatGPTAccessToken:        "token",
+		ChatGPTAccountID:          "account-123",
+		ChatGPTPlanType:           "pro",
+	}, nil, nil)
+
+	profile, err := executor.resolveRuntimeProfile(&model.Agent{
+		Provider: &provider,
+		Model:    &modelName,
+	})
+	if err != nil {
+		t.Fatalf("resolve runtime profile: %v", err)
+	}
+	payload, err := executor.buildConfigArtifact(&ExecutionContext{}, profile, "on-request")
+	if err != nil {
+		t.Fatalf("build config artifact: %v", err)
+	}
+	loginPayload, err := executor.loginPayloadForProfile(profile)
+	if err != nil {
+		t.Fatalf("build login payload: %v", err)
+	}
+
+	var decoded struct {
+		Model             string `toml:"model"`
+		ModelProvider     string `toml:"model_provider"`
+		ForcedLoginMethod string `toml:"forced_login_method"`
+		OpenAIBaseURL     string `toml:"openai_base_url"`
+	}
+	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config artifact: %v", err)
+	}
+	if decoded.Model != "gpt-5-mini" {
+		t.Fatalf("expected model to be preserved, got %q", decoded.Model)
+	}
+	if decoded.ModelProvider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected model provider %q, got %q", model.AgentModelProviderOpenAI, decoded.ModelProvider)
+	}
+	if decoded.ForcedLoginMethod != codexForcedLoginMethodChat {
+		t.Fatalf("expected forced login method %q, got %q", codexForcedLoginMethodChat, decoded.ForcedLoginMethod)
+	}
+	if decoded.OpenAIBaseURL != "" {
+		t.Fatalf("expected OAuth mode to rely on Codex's ChatGPT backend, got openai_base_url=%q", decoded.OpenAIBaseURL)
+	}
+	if loginPayload["type"] != "chatgptAuthTokens" {
+		t.Fatalf("expected chatgptAuthTokens login payload, got %#v", loginPayload["type"])
+	}
+	if loginPayload["accessToken"] != "token" || loginPayload["chatgptAccountId"] != "account-123" || loginPayload["chatgptPlanType"] != "pro" {
+		t.Fatalf("expected managed ChatGPT auth payload, got %#v", loginPayload)
 	}
 }
 
@@ -139,6 +376,43 @@ func TestExtractCodexEventFailureFromTurnFailedStream(t *testing.T) {
 	for _, snippet := range []string{"Model provider rejected the request", "Rate limit exceeded"} {
 		if !strings.Contains(summary, snippet) {
 			t.Fatalf("expected failure summary to contain %q, got %q", snippet, summary)
+		}
+	}
+}
+
+func TestIsUnhandledCodexServerRequest(t *testing.T) {
+	if !isUnhandledCodexServerRequest(codexRPCMessage{
+		ID:     json.RawMessage(`60`),
+		Method: "item/tool/call",
+	}) {
+		t.Fatal("expected unknown JSON-RPC request with an id to be treated as unhandled")
+	}
+
+	if isUnhandledCodexServerRequest(codexRPCMessage{
+		ID:     json.RawMessage(`61`),
+		Method: "item/tool/requestUserInput",
+	}) {
+		t.Fatal("expected pause requests to be excluded from the unhandled-request guard")
+	}
+
+	if isUnhandledCodexServerRequest(codexRPCMessage{
+		Method: "turn/started",
+	}) {
+		t.Fatal("expected notifications without ids to remain stream notifications")
+	}
+}
+
+func TestUnsupportedCodexServerRequestError(t *testing.T) {
+	err := unsupportedCodexServerRequestError(codexRPCMessage{
+		ID:     json.RawMessage(`62`),
+		Method: "mcpServer/elicitation/request",
+	})
+	if err == nil {
+		t.Fatal("expected an error for unsupported server requests")
+	}
+	for _, snippet := range []string{"mcpServer/elicitation/request", "waiting for a client response"} {
+		if !strings.Contains(err.Error(), snippet) {
+			t.Fatalf("expected error to contain %q, got %v", snippet, err)
 		}
 	}
 }

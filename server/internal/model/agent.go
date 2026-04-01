@@ -232,6 +232,7 @@ const (
 	AgentRunResumeIntentReply          = "reply"
 	AgentRunResumeIntentApprove        = "approve"
 	AgentRunResumeIntentRequestChanges = "request_changes"
+	AgentRunResumeIntentAuthCompleted  = "auth_completed"
 )
 
 const (
@@ -244,9 +245,10 @@ const (
 )
 
 const (
-	AgentRunPauseReasonNone          = "none"
-	AgentRunPauseReasonHumanInput    = "human_input"
-	AgentRunPauseReasonHumanApproval = "human_approval"
+	AgentRunPauseReasonNone           = "none"
+	AgentRunPauseReasonHumanInput     = "human_input"
+	AgentRunPauseReasonHumanApproval  = "human_approval"
+	AgentRunPauseReasonAuthentication = "authentication"
 )
 
 func NormalizeAgentRunPauseState(run *AgentRun) {
@@ -289,7 +291,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {
@@ -300,6 +302,8 @@ func normalizeAgentRunPauseReason(status string, pauseReason string, approvalSta
 		return AgentRunPauseReasonHumanApproval
 	case "awaiting_input":
 		return AgentRunPauseReasonHumanInput
+	case "awaiting_auth":
+		return AgentRunPauseReasonAuthentication
 	}
 	if strings.TrimSpace(status) == AgentRunStatusPaused {
 		return AgentRunPauseReasonHumanInput

@@ -21,7 +21,7 @@ const STAGE_TYPE_LABEL: Record<PipelineStageType, string> = {
   won: 'Won',
   lost: 'Lost',
 };
-const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
+const LINEAR_CARD_CLASS = 'rounded-xl border-border shadow-none';
 
 const DEFAULT_STAGES = [
   { name: 'Qualification', stage_type: 'open' as PipelineStageType, position: 0, probability: 10 },
@@ -250,7 +250,7 @@ export function PipelineSettings() {
             const hasDealCount = pipeline.deal_count > 0;
 
             return (
-              <div key={pipeline.id} className="rounded-none border border-border">
+              <div key={pipeline.id} className="rounded-xl border border-border">
                 {/* Pipeline row */}
                 <div className="flex items-center justify-between px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -313,13 +313,13 @@ export function PipelineSettings() {
                             </Button>
                           </div>
                           {groupStages.length === 0 ? (
-                            <div className="rounded-none border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                            <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
                               No stages in this group.
                             </div>
                           ) : (
                             <div className="space-y-1.5">
                               {groupStages.map((stage, idx) => (
-                                <div key={stage.id} className="rounded-none border border-border px-2.5 py-1.5">
+                                <div key={stage.id} className="rounded-xl border border-border px-2.5 py-1.5">
                                   <div className="flex items-start justify-between gap-2">
                                     <div>
                                       <div className="flex items-center gap-1.5">

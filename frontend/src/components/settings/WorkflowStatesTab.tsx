@@ -217,7 +217,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
               </div>
               {selectedWorkflow && (
                 <div className="flex items-end">
-                  <div className="flex w-full items-center justify-between rounded-none border border-border px-3 py-2.5">
+                  <div className="flex w-full items-center justify-between rounded-xl border border-border px-3 py-2.5">
                     <div>
                       <Label>Auto assign owner</Label>
                       <p className="text-xs text-muted-foreground">Assign current user when stories move into started state without owner.</p>
@@ -248,13 +248,13 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                       )}
                     </div>
                     {statesByType[type].length === 0 ? (
-                      <div className="rounded-none border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                      <div className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
                         No states in this group.
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {statesByType[type].map((state, idx) => (
-                          <div key={state.id} className="rounded-none border border-border px-3 py-2.5">
+                          <div key={state.id} className="rounded-xl border border-border px-3 py-2.5">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="flex items-center gap-2">
@@ -334,7 +334,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                   <Input type="number" min={0} value={stateWIP} onChange={(e) => setStateWIP(e.target.value)} />
                 </div>
               </div>
-              <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+              <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
                 <div>
                   <Label>Default state</Label>
                   <p className="text-xs text-muted-foreground">Stories are created in this state by default.</p>

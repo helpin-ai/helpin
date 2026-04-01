@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
 import {
+  Link,
   useParams,
   useRouterState,
   useSearch,
@@ -16,7 +17,6 @@ import type { LocaleRouteState } from '@/lib/locale'
 import {
   buildCanonicalCollectionPath,
   buildCanonicalHomePath,
-  isMultilingualEnabled,
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
 import { LocaleSwitcher } from './LocaleSwitcher'
@@ -62,9 +62,15 @@ function findSpaceId(spaces: Space[], spaceSlug?: string) {
 }
 
 export function TopBar({ onSearchClick }: TopBarProps) {
-  const { config, subdomain, locale, defaultLocale, enabledLocales, spaces } =
-    useDocsContext()
-  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const {
+    config,
+    subdomain,
+    locale,
+    defaultLocale,
+    enabledLocales,
+    spaces,
+    multilingualEnabled,
+  } = useDocsContext()
   const params = useParams({ strict: false }) as {
     locale?: string
     spaceSlug?: string
@@ -83,6 +89,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     subdomain,
     locale,
     activeSpaceSlug ?? '',
+    multilingualEnabled,
   )
   const needsCrossSpaceLookup =
     !activeSpaceSlug && (!!canonicalCollectionSlug || !!canonicalArticleSlug)
@@ -93,7 +100,12 @@ export function TopBar({ onSearchClick }: TopBarProps) {
           queryKey: queryKeys.spaces.navigation(subdomain, locale, space.slug),
           queryFn: async () =>
             unwrap(
-              await helpCenterService.getSpaceNavigation(subdomain, locale, space.slug),
+              await helpCenterService.getSpaceNavigation(
+                subdomain,
+                locale,
+                space.slug,
+                multilingualEnabled,
+              ),
             ),
           enabled: !!subdomain && !!locale && !!space.slug,
           staleTime: 60_000,
@@ -234,7 +246,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
   const localeSpaceQueries = useQueries({
     queries: enabledLocales.map((code) => ({
       queryKey: queryKeys.helpCenter.spaces(subdomain, code),
-      queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, code)),
+      queryFn: async () =>
+        unwrap(await helpCenterService.getSpaces(subdomain, code, multilingualEnabled)),
       enabled:
         config.show_language_switcher &&
         multilingualEnabled &&
@@ -263,6 +276,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               subdomain,
               code,
               targetSpace!.slug,
+              multilingualEnabled,
             ),
           ),
         enabled:
@@ -339,8 +353,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
       {/* Left: Brand + Space tabs */}
       <div className="flex items-center min-w-0">
-        <a
-          href={buildCanonicalHomePath(multilingualEnabled, locale)}
+        <Link
+          to={buildCanonicalHomePath(multilingualEnabled, locale)}
           className="flex items-center gap-2.5 shrink-0"
         >
           {config.brand_logo_url ? (
@@ -366,7 +380,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               {config.brand_name || 'Docs'}
             </span>
           )}
-        </a>
+        </Link>
 
         {spaces.length > 1 && (
           <>
@@ -375,9 +389,9 @@ export function TopBar({ onSearchClick }: TopBarProps) {
             {spaces.map((space) => {
               const isActive = currentResolvedSpaceSlug === space.slug
               return (
-                <a
+                <Link
                   key={space.id}
-                  href={buildCanonicalCollectionPath(
+                  to={buildCanonicalCollectionPath(
                     multilingualEnabled,
                     locale,
                     space.slug,
@@ -391,7 +405,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                 >
                   {space.icon && <span className="mr-1.5">{space.icon}</span>}
                   {space.name}
-                </a>
+                </Link>
               )
             })}
           </nav>

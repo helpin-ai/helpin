@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { helpCenterService } from '@/lib/services'
 
@@ -7,19 +7,61 @@ function unwrap<T>(res: { data: T | null; error: string | null }): T {
   return res.data as T
 }
 
-export function useHelpCenterConfig(subdomain: string) {
-  return useQuery({
+export function helpCenterConfigQueryOptions(subdomain: string) {
+  return queryOptions({
     queryKey: queryKeys.helpCenter.config(subdomain),
     queryFn: async () => unwrap(await helpCenterService.getConfig(subdomain)),
+  })
+}
+
+export function useHelpCenterConfig(subdomain: string) {
+  return useQuery({
+    ...helpCenterConfigQueryOptions(subdomain),
     enabled: !!subdomain,
   })
 }
 
-export function useSpaces(subdomain: string, locale: string) {
-  return useQuery({
+export function spacesQueryOptions(
+  subdomain: string,
+  locale: string,
+  multilingualEnabled: boolean,
+) {
+  return queryOptions({
     queryKey: queryKeys.helpCenter.spaces(subdomain, locale),
-    queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain, locale)),
-    enabled: !!subdomain && !!locale,
+    queryFn: async () =>
+      unwrap(await helpCenterService.getSpaces(subdomain, locale, multilingualEnabled)),
+  })
+}
+
+export function useSpaces(
+  subdomain: string,
+  locale: string,
+  multilingualEnabled: boolean,
+  enabled = true,
+) {
+  return useQuery({
+    ...spacesQueryOptions(subdomain, locale, multilingualEnabled),
+    enabled: enabled && !!subdomain && !!locale,
+  })
+}
+
+export function spaceNavigationQueryOptions(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return queryOptions({
+    queryKey: queryKeys.spaces.navigation(subdomain, locale, spaceSlug),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getSpaceNavigation(
+          subdomain,
+          locale,
+          spaceSlug,
+          multilingualEnabled,
+        ),
+      ),
   })
 }
 
@@ -27,23 +69,26 @@ export function useSpaceNavigation(
   subdomain: string,
   locale: string,
   spaceSlug: string,
+  multilingualEnabled: boolean,
 ) {
   return useQuery({
-    queryKey: queryKeys.spaces.navigation(subdomain, locale, spaceSlug),
-    queryFn: async () =>
-      unwrap(
-        await helpCenterService.getSpaceNavigation(subdomain, locale, spaceSlug),
-      ),
+    ...spaceNavigationQueryOptions(
+      subdomain,
+      locale,
+      spaceSlug,
+      multilingualEnabled,
+    ),
     enabled: !!subdomain && !!locale && !!spaceSlug,
   })
 }
 
-export function useCollection(
+export function collectionQueryOptions(
   subdomain: string,
   locale: string,
   collectionSlug: string,
+  multilingualEnabled: boolean,
 ) {
-  return useQuery({
+  return queryOptions({
     queryKey: queryKeys.collections.bySlug(subdomain, locale, collectionSlug),
     queryFn: async () =>
       unwrap(
@@ -51,9 +96,53 @@ export function useCollection(
           subdomain,
           locale,
           collectionSlug,
+          multilingualEnabled,
         ),
       ),
+  })
+}
+
+export function useCollection(
+  subdomain: string,
+  locale: string,
+  collectionSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return useQuery({
+    ...collectionQueryOptions(
+      subdomain,
+      locale,
+      collectionSlug,
+      multilingualEnabled,
+    ),
     enabled: !!subdomain && !!locale && !!collectionSlug,
+  })
+}
+
+export function articleQueryOptions(
+  subdomain: string,
+  locale: string,
+  collectionSlug: string,
+  articleSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return queryOptions({
+    queryKey: queryKeys.articles.bySlug(
+      subdomain,
+      locale,
+      collectionSlug,
+      articleSlug,
+    ),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getArticle(
+          subdomain,
+          locale,
+          collectionSlug,
+          articleSlug,
+          multilingualEnabled,
+        ),
+      ),
   })
 }
 
@@ -62,29 +151,55 @@ export function useArticle(
   locale: string,
   collectionSlug: string,
   articleSlug: string,
+  multilingualEnabled: boolean,
 ) {
   return useQuery({
-    queryKey: queryKeys.articles.bySlug(subdomain, locale, collectionSlug, articleSlug),
-    queryFn: async () =>
-      unwrap(
-        await helpCenterService.getArticle(
-          subdomain,
-          locale,
-          collectionSlug,
-          articleSlug,
-        ),
-      ),
+    ...articleQueryOptions(
+      subdomain,
+      locale,
+      collectionSlug,
+      articleSlug,
+      multilingualEnabled,
+    ),
     enabled: !!subdomain && !!locale && !!collectionSlug && !!articleSlug,
+  })
+}
+
+export function previewArticleQueryOptions(subdomain: string, docId: string, token: string) {
+  return queryOptions({
+    queryKey: ['preview', subdomain, docId],
+    queryFn: async () => unwrap(await helpCenterService.getPreview(subdomain, docId, token)),
+    staleTime: 0,
+    retry: false,
   })
 }
 
 export function usePreviewArticle(subdomain: string, docId: string, token: string) {
   return useQuery({
-    queryKey: ['preview', subdomain, docId],
-    queryFn: async () => unwrap(await helpCenterService.getPreview(subdomain, docId, token)),
+    ...previewArticleQueryOptions(subdomain, docId, token),
     enabled: !!subdomain && !!docId && !!token,
-    staleTime: 0,
-    retry: false,
+  })
+}
+
+export function searchArticlesQueryOptions(
+  subdomain: string,
+  locale: string,
+  query: string,
+  multilingualEnabled: boolean,
+  spaceSlug?: string,
+) {
+  return queryOptions({
+    queryKey: queryKeys.articles.search(subdomain, locale, query, spaceSlug),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.search(
+          subdomain,
+          locale,
+          query,
+          multilingualEnabled,
+          spaceSlug,
+        ),
+      ),
   })
 }
 
@@ -92,12 +207,17 @@ export function useSearchArticles(
   subdomain: string,
   locale: string,
   query: string,
+  multilingualEnabled: boolean,
   spaceSlug?: string,
 ) {
   return useQuery({
-    queryKey: queryKeys.articles.search(subdomain, locale, query, spaceSlug),
-    queryFn: async () =>
-      unwrap(await helpCenterService.search(subdomain, locale, query, spaceSlug)),
+    ...searchArticlesQueryOptions(
+      subdomain,
+      locale,
+      query,
+      multilingualEnabled,
+      spaceSlug,
+    ),
     enabled: !!subdomain && !!locale && query.length >= 2,
   })
 }

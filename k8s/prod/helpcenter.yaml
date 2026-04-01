@@ -27,9 +27,14 @@ spec:
           type: RuntimeDefault
       containers:
         - name: helpcenter
-          image: ghcr.io/helpin-ai/helpin/helpcenter:v0.94.3
+          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.12
+          env:
+            - name: INTERNAL_API_URL
+              value: http://helpin-server-svc:8080/api
+            - name: PORT
+              value: "3000"
           ports:
-            - containerPort: 8080
+            - containerPort: 3000
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -41,33 +46,25 @@ spec:
               cpu: 100m
               memory: 128Mi
             limits:
-              cpu: 500m
+              cpu: 300m
               memory: 256Mi
           livenessProbe:
             httpGet:
-              path: /
-              port: 8080
+              path: /healthz
+              port: 3000
             initialDelaySeconds: 5
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /
-              port: 8080
+              path: /healthz
+              port: 3000
             initialDelaySeconds: 3
             periodSeconds: 10
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            - name: nginx-cache
-              mountPath: /var/cache/nginx
-            - name: nginx-run
-              mountPath: /var/run
       volumes:
         - name: tmp
-          emptyDir: {}
-        - name: nginx-cache
-          emptyDir: {}
-        - name: nginx-run
           emptyDir: {}
 ---
 apiVersion: v1
@@ -80,5 +77,5 @@ spec:
     app: helpin-helpcenter
   ports:
     - port: 80
-      targetPort: 8080
+      targetPort: 3000
   type: ClusterIP

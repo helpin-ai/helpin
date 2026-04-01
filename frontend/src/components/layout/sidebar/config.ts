@@ -59,12 +59,12 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
 ];
 
-export function buildRailItems(wsSlug: string, totalSupportUnread: number): RailItem[] {
+export function buildRailItems(wsSlug: string, totalSupportUnread: number, agentAttentionCount: number): RailItem[] {
   return [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs` },
+    { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agent-runs`, indicator: Boolean(agentAttentionCount) },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];

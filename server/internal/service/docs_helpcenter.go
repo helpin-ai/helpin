@@ -449,10 +449,10 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 
 	changed := false
 	for i, card := range hpCfg.FeaturedCards {
-		if card.LinkType != "collection" || card.LinkValue == "" {
+		if card.LinkType != "collection" {
 			continue
 		}
-		col, err := s.collectionRepo.GetByID(ctx, card.LinkValue)
+		col, err := s.resolveFeaturedCardCollection(ctx, cfg.WorkspaceID, card)
 		if err != nil || col == nil {
 			continue
 		}
@@ -488,6 +488,63 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 			cfg.HomepageConfig = enriched
 		}
 	}
+}
+
+func looksLikeUUID(s string) bool {
+	// UUID v4: 8-4-4-4-12 hex chars
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *DocsHelpcenterService) resolveFeaturedCardCollection(ctx context.Context, workspaceID string, card model.HomepageFeaturedCard) (*model.DocsCollection, error) {
+	if card.LinkValue != "" && looksLikeUUID(card.LinkValue) {
+		col, err := s.collectionRepo.GetByID(ctx, card.LinkValue)
+		if err != nil {
+			return nil, err
+		}
+		if col != nil {
+			return col, nil
+		}
+	}
+
+	if card.SpaceSlug == "" {
+		return nil, nil
+	}
+
+	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, card.SpaceSlug)
+	if err != nil || space == nil {
+		return nil, err
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	linkValue := strings.TrimSpace(card.LinkValue)
+	title := strings.TrimSpace(card.Title)
+	for i := range collections {
+		collection := collections[i]
+		if linkValue != "" && (collection.ID == linkValue || collection.Slug == linkValue) {
+			return &collection, nil
+		}
+		if linkValue == "" && title != "" && strings.EqualFold(strings.TrimSpace(collection.Name), title) {
+			return &collection, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func defaultHelpcenterLocale(cfg *model.DocsHelpcenterConfig) string {
@@ -669,6 +726,47 @@ func (s *DocsHelpcenterService) ensureDefaultLocaleMirrors(ctx context.Context, 
 	return s.translationSvc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID)
 }
 
+func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForSpace(ctx context.Context, spaceID string) error {
+	if s.translationSvc == nil {
+		return nil
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, spaceID)
+	if err != nil {
+		return err
+	}
+
+	for _, collection := range collections {
+		if err := s.translationSvc.RefreshCollectionSource(ctx, collection.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *DocsHelpcenterService) ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx context.Context, workspaceID string) error {
+	if s.translationSvc == nil {
+		return nil
+	}
+
+	spaces, err := s.spaceRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	for _, space := range spaces {
+		if space.Type != model.SpaceTypeExternalCapable {
+			continue
+		}
+		if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, space.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *DocsHelpcenterService) resolvePublicSpaceTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterSpaceTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicSpaceTranslationBySlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
@@ -714,6 +812,18 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 		return translation, requestedLocale, false, nil
 	}
 
+	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceID); err != nil {
+		return nil, "", false, err
+	}
+
+	translation, err = s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
 	defaultLocale := defaultHelpcenterLocale(cfg)
 	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
 		return nil, "", false, fmt.Errorf("collection not found")
@@ -731,6 +841,18 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 
 func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
 	translation, err := s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	if err := s.ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx, workspaceID); err != nil {
+		return nil, "", false, err
+	}
+
+	translation, err = s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -858,6 +980,10 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 		return nil, err
 	}
 
+	if err := s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceTranslation.SpaceID); err != nil {
+		return nil, err
+	}
+
 	requestedCollections, err := s.hcRepo.ListPublicCollectionTranslations(ctx, spaceTranslation.SpaceID, requestedLocale)
 	if err != nil {
 		return nil, err
@@ -919,7 +1045,12 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			}
 		}
 
-		article := model.PublicNavArticle{ID: doc.ID, Title: translation.Title, Slug: stringValue(translation.Slug)}
+		article := model.PublicNavArticle{
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
+		}
 		if doc.CollectionID == nil {
 			uncategorized = append(uncategorized, article)
 			continue
@@ -1023,11 +1154,7 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		}
 	}
 
-	var publishedAt *string
-	if translation.PublishedAt != nil {
-		formatted := translation.PublishedAt.Format(time.RFC3339)
-		publishedAt = &formatted
-	}
+	publishedAt := formatPublicPublishedAt(translation.PublishedAt)
 
 	go func() {
 		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
@@ -1117,9 +1244,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 			}
 		}
 		articles = append(articles, model.PublicNavArticle{
-			ID:    doc.ID,
-			Title: translation.Title,
-			Slug:  stringValue(translation.Slug),
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
 
@@ -1204,9 +1332,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 			}
 		}
 		articles = append(articles, model.PublicNavArticle{
-			ID:    doc.ID,
-			Title: translation.Title,
-			Slug:  stringValue(translation.Slug),
+			ID:          doc.ID,
+			Title:       translation.Title,
+			Slug:        stringValue(translation.Slug),
+			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
 
@@ -1342,12 +1471,19 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		return nil, nil
 	}
 
-	// Resolve collection name if present.
+	// Resolve collection name, slug, and space slug if present.
 	var collectionName *string
+	var resolvedCollSlug *string
+	var spaceSlug string
 	if doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
 		if err == nil && coll != nil {
 			collectionName = &coll.Name
+			slug := coll.Slug
+			resolvedCollSlug = &slug
+			if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
+				spaceSlug = space.Slug
+			}
 		}
 	}
 
@@ -1379,8 +1515,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		Excerpt:         doc.Excerpt,
 		Icon:            doc.Icon,
 		Status:          doc.Status,
+		SpaceSlug:       spaceSlug,
 		CollectionID:    doc.CollectionID,
 		CollectionName:  collectionName,
+		CollectionSlug:  resolvedCollSlug,
 		PublishedAt:     publishedAt,
 		SEOTitle:        ha.SEOTitle,
 		SEODescription:  ha.SEODescription,
@@ -1391,9 +1529,20 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	}, nil
 }
 
-// GetPublicCollection returns a collection and its published articles by workspace and collection slug.
-func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
-	return s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+// GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection slug.
+func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
+	coll, articles, err := s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if coll == nil {
+		return nil, nil, "", nil
+	}
+	var spaceSlug string
+	if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
+		spaceSlug = space.Slug
+	}
+	return coll, articles, spaceSlug, nil
 }
 
 // PreviewArticleHTML renders a document's TipTap content as HTML for preview, regardless of status.
@@ -1540,4 +1689,13 @@ func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, doc
 		return nil
 	}
 	return s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful)
+}
+
+func formatPublicPublishedAt(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+
+	formatted := value.Format(time.RFC3339)
+	return &formatted
 }

@@ -41,7 +41,7 @@ export function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
         ) : (
           <div className="space-y-4">
             {jobRoles.map(role => (
-              <div key={role} className="border border-border rounded-none p-4">
+              <div key={role} className="border border-border rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-medium">{role}</h3>
                   <div className="flex items-center gap-2">

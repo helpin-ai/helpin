@@ -280,7 +280,7 @@ func TestExecuteToolCallsForRoundRunsSafeReadsInParallel(t *testing.T) {
 	}
 
 	start := time.Now()
-	results := executeToolCallsForRound(execCtx, registry, toolCalls, nil)
+	results := executeToolCallsForRound(execCtx, registry, toolCalls, "", nil)
 	elapsed := time.Since(start)
 
 	if len(results) != 2 {
@@ -317,7 +317,7 @@ func TestExecuteToolCallsForRoundEmitsSequentialToolEventsWhenParallelDisabled(t
 	}
 
 	var events []string
-	results := executeToolCallsForRound(execCtx, registry, toolCalls, func(event ExecutionEvent) {
+	results := executeToolCallsForRound(execCtx, registry, toolCalls, "assistant-1", func(event ExecutionEvent) {
 		events = append(events, fmt.Sprintf("%s:%s", event.Type, event.ToolCallID))
 	})
 
@@ -327,8 +327,12 @@ func TestExecuteToolCallsForRoundEmitsSequentialToolEventsWhenParallelDisabled(t
 
 	want := []string{
 		"tool_call_started:call-1",
+		"tool_call_args_delta:call-1",
+		"tool_call_result:call-1",
 		"tool_call_finished:call-1",
 		"tool_call_started:call-2",
+		"tool_call_args_delta:call-2",
+		"tool_call_result:call-2",
 		"tool_call_finished:call-2",
 	}
 	if len(events) != len(want) {
@@ -338,5 +342,48 @@ func TestExecuteToolCallsForRoundEmitsSequentialToolEventsWhenParallelDisabled(t
 		if events[i] != want[i] {
 			t.Fatalf("unexpected event order %v", events)
 		}
+	}
+}
+
+func TestChunkReasoningDeltaReadsReasoningPartsAndSignature(t *testing.T) {
+	chunk := &schema.Message{
+		Role:             schema.Assistant,
+		ReasoningContent: "Think ",
+		AssistantGenMultiContent: []schema.MessageOutputPart{
+			{
+				Type: schema.ChatMessagePartTypeReasoning,
+				Reasoning: &schema.MessageOutputReasoning{
+					Text:      "more.",
+					Signature: "sig_123",
+				},
+			},
+		},
+	}
+
+	reasoning := chunkReasoningDelta(chunk)
+	if reasoning.Text != "Think more." {
+		t.Fatalf("expected reasoning text to be combined, got %#v", reasoning)
+	}
+	if reasoning.EncryptedValue != "sig_123" {
+		t.Fatalf("expected reasoning signature, got %#v", reasoning)
+	}
+}
+
+func TestExtractReasoningFromAgenticMessageReadsReasoningBlocks(t *testing.T) {
+	msg := &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeAssistant,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.Reasoning{Text: "Step 1: ", Signature: "sig_a"}),
+			schema.NewContentBlock(&schema.Reasoning{Text: "analyze."}),
+			schema.NewContentBlock(&schema.AssistantGenText{Text: "Final answer"}),
+		},
+	}
+
+	reasoning := extractReasoningFromAgenticMessage(msg)
+	if reasoning.Text != "Step 1: analyze." {
+		t.Fatalf("expected reasoning text, got %#v", reasoning)
+	}
+	if reasoning.EncryptedValue != "sig_a" {
+		t.Fatalf("expected reasoning signature, got %#v", reasoning)
 	}
 }

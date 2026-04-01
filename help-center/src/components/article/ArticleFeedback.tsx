@@ -5,14 +5,18 @@ import { useDocsContext } from '@/contexts/DocsContext'
 
 interface ArticleFeedbackProps {
   locale: string
+  spaceSlug?: string
   collectionSlug?: string | null
   articleSlug: string
+  multilingualEnabled: boolean
 }
 
 export function ArticleFeedback({
   locale,
+  spaceSlug,
   collectionSlug,
   articleSlug,
+  multilingualEnabled,
 }: ArticleFeedbackProps) {
   const { subdomain } = useDocsContext()
   const [submitted, setSubmitted] = useState<boolean | null>(null)
@@ -20,14 +24,16 @@ export function ArticleFeedback({
   const handleFeedback = useCallback(
     async (isHelpful: boolean) => {
       if (submitted !== null) return
-      if (!collectionSlug) return
+      if (!spaceSlug || !collectionSlug) return
       setSubmitted(isHelpful)
       try {
         await helpCenterService.submitFeedback(
           subdomain,
           locale,
+          spaceSlug,
           collectionSlug,
           articleSlug,
+          multilingualEnabled,
           {
             is_helpful: isHelpful,
           },
@@ -36,7 +42,7 @@ export function ArticleFeedback({
         // Feedback is best-effort
       }
     },
-    [subdomain, locale, collectionSlug, articleSlug, submitted],
+    [subdomain, locale, spaceSlug, collectionSlug, articleSlug, multilingualEnabled, submitted],
   )
 
   return (
@@ -54,7 +60,7 @@ export function ArticleFeedback({
           <div className="flex gap-2">
             <button
               onClick={() => handleFeedback(true)}
-              disabled={!collectionSlug}
+              disabled={!spaceSlug || !collectionSlug}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             >
               <ThumbsUp size={13} />
@@ -62,7 +68,7 @@ export function ArticleFeedback({
             </button>
             <button
               onClick={() => handleFeedback(false)}
-              disabled={!collectionSlug}
+              disabled={!spaceSlug || !collectionSlug}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             >
               <ThumbsDown size={13} />

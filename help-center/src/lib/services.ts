@@ -9,23 +9,64 @@ import type {
   NavItem,
 } from './types'
 
+function buildHelpCenterPath(
+  subdomain: string,
+  locale: string,
+  multilingualEnabled: boolean,
+  localizedPath: string,
+  canonicalPath: string,
+) {
+  if (multilingualEnabled) {
+    return `/hc/${subdomain}/${locale}${localizedPath}`
+  }
+  return `/hc/${subdomain}${canonicalPath}`
+}
+
 export const helpCenterService = {
   getConfig: (subdomain: string) =>
     api.get<HelpCenterConfig>(`/hc/${subdomain}/config`),
 
-  getSpaces: (subdomain: string, locale: string) =>
-    api.get<Space[]>(`/hc/${subdomain}/${locale}/spaces`),
+  getSpaces: (subdomain: string, locale: string, multilingualEnabled: boolean) =>
+    api.get<Space[]>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        '/spaces',
+        '/spaces',
+      ),
+    ),
 
-  getSpaceNavigation: (subdomain: string, locale: string, spaceSlug: string) =>
-    api.get<NavItem[]>(`/hc/${subdomain}/${locale}/spaces/${spaceSlug}/navigation`),
+  getSpaceNavigation: (
+    subdomain: string,
+    locale: string,
+    spaceSlug: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.get<NavItem[]>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/spaces/${spaceSlug}/navigation`,
+        `/spaces/${spaceSlug}/navigation`,
+      ),
+    ),
 
   getCollection: (
     subdomain: string,
     locale: string,
     collectionSlug: string,
+    multilingualEnabled: boolean,
   ) =>
     api.get<CollectionPage>(
-      `/hc/${subdomain}/${locale}/collections/${collectionSlug}`,
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/collections/${collectionSlug}`,
+        `/c/${collectionSlug}`,
+      ),
     ),
 
   getArticle: (
@@ -33,25 +74,52 @@ export const helpCenterService = {
     locale: string,
     collectionSlug: string,
     articleSlug: string,
+    multilingualEnabled: boolean,
   ) =>
     api.get<ArticleDetail>(
-      `/hc/${subdomain}/${locale}/collections/${collectionSlug}/articles/${articleSlug}`,
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/collections/${collectionSlug}/articles/${articleSlug}`,
+        `/c/${collectionSlug}/${articleSlug}`,
+      ),
     ),
 
-  search: (subdomain: string, locale: string, query: string, spaceSlug?: string) =>
+  search: (
+    subdomain: string,
+    locale: string,
+    query: string,
+    multilingualEnabled: boolean,
+    spaceSlug?: string,
+  ) =>
     api.get<SearchResult[]>(
-      `/hc/${subdomain}/${locale}/search?q=${encodeURIComponent(query)}${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
+      `${buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        '/search',
+        '/search',
+      )}?q=${encodeURIComponent(query)}${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
     ),
 
   submitFeedback: (
     subdomain: string,
     locale: string,
+    spaceSlug: string,
     collectionSlug: string,
     articleSlug: string,
+    multilingualEnabled: boolean,
     payload: { is_helpful: boolean; comment?: string },
   ) =>
     api.post(
-      `/hc/${subdomain}/${locale}/collections/${collectionSlug}/articles/${articleSlug}/feedback`,
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/collections/${collectionSlug}/articles/${articleSlug}/feedback`,
+        `/spaces/${spaceSlug}/articles/${articleSlug}/feedback`,
+      ),
       payload,
     ),
 

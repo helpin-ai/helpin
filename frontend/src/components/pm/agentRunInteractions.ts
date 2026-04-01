@@ -1,4 +1,4 @@
-import type { AgentRunArtifact, AgentRunMessage, StructuredQuestion } from '@/lib/pmTypes';
+import type { AgentRunArtifact, AgentRunMessage, CodexAuthState, StructuredQuestion } from '@/lib/pmTypes';
 export interface ParsedQuestions {
   questions: StructuredQuestion[];
   surroundingText: string;
@@ -18,6 +18,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return asString(value) ?? undefined;
 }
 
 function parseArtifactAssistantMessageSequenceNo(
@@ -119,4 +123,39 @@ export function parseMessageApprovalRequest(
   artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'metadata'>> = [],
 ): ParsedApprovalRequest | null {
   return parseApprovalRequestFromArtifact(message, artifacts);
+}
+
+export function parseLatestCodexAuthState(
+  artifacts: Array<Pick<AgentRunArtifact, 'artifact_type' | 'inline_content' | 'created_at'>> = [],
+): CodexAuthState | null {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (artifact.artifact_type !== 'codex_auth_state' || !artifact.inline_content) continue;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(artifact.inline_content);
+    } catch {
+      continue;
+    }
+
+    const record = asRecord(payload);
+    const state = asString(record?.state);
+    if (!record || !state) continue;
+
+    return {
+      provider: asOptionalString(record.provider),
+      auth_mode: asOptionalString(record.auth_mode),
+      state: state as CodexAuthState['state'],
+      login_id: asOptionalString(record.login_id),
+      auth_url: asOptionalString(record.auth_url),
+      verification_url: asOptionalString(record.verification_url),
+      user_code: asOptionalString(record.user_code),
+      plan_type: asOptionalString(record.plan_type),
+      error: asOptionalString(record.error),
+      updated_at: asOptionalString(record.updated_at) ?? artifact.created_at,
+    };
+  }
+
+  return null;
 }

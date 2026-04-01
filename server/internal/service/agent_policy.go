@@ -115,6 +115,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	if hasPreset {
 		agent.SystemPrompt = storedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes)
+		agent.AllowedTools = normalizeAllowedToolsJSON(agent.AllowedTools)
 		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
 		agent.AllowedTools = sanitizePlannerAgentTools(agent.AllowedTools, presetKey)
 		if jsonSliceIsEmpty(agent.AllowedTools) {
@@ -208,6 +209,21 @@ func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMe
 		migrated = append(migrated, worker.ToolPublishStoryPlanDoc)
 	}
 	return mustJSONStringSlice(migrated)
+}
+
+func normalizeAllowedToolsJSON(raw json.RawMessage) json.RawMessage {
+	tools := parseJSONStringSlice(raw)
+	if len(tools) == 0 {
+		return raw
+	}
+	normalized := worker.NormalizeToolNames(tools)
+	if len(normalized) == 0 {
+		return json.RawMessage("[]")
+	}
+	if slices.Equal(normalized, tools) {
+		return raw
+	}
+	return mustJSONStringSlice(normalized)
 }
 
 func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMessage {
@@ -329,8 +345,15 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 		return false
 	}
 	switch strings.TrimSpace(agent.RuntimeKind) {
-	case "opencode", "codex":
+	case "opencode":
 		return false
+	case "codex":
+		switch normalizePresetKey(agent.EffectivePresetKey()) {
+		case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
+			return true
+		default:
+			return false
+		}
 	case "native_sdk":
 		return true
 	}
@@ -344,6 +367,10 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 }
 
 func validateRuntimeForAgent(agent *model.Agent) error {
+	return validateRuntimeForAgentWithPreset(agent, nil)
+}
+
+func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
 	if agent == nil {
 		return nil
 	}
@@ -355,16 +382,25 @@ func validateRuntimeForAgent(agent *model.Agent) error {
 		if presetKey == "" {
 			return fmt.Errorf("runtime_kind codex requires a system preset agent")
 		}
-		return validateCodexAgentPolicy(agent)
+		return validateCodexAgentPolicy(agent, presetOverride)
 	}
 	return nil
 }
 
-func validateCodexAgentPolicy(agent *model.Agent) error {
+func validateCodexAgentPolicy(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
 	if agent == nil {
 		return nil
 	}
-	preset, ok := agentPresetDefinition(agent.EffectivePresetKey())
+	var (
+		preset model.AgentPresetDefinition
+		ok     bool
+	)
+	if presetOverride != nil {
+		preset = *presetOverride
+		ok = true
+	} else {
+		preset, ok = presetDefinitionForAgent(agent)
+	}
 	if !ok {
 		return fmt.Errorf("runtime_kind codex requires a supported preset")
 	}

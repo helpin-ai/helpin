@@ -1,4 +1,4 @@
-import { useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
 import { cn } from '@/lib/utils'
@@ -70,9 +70,9 @@ function CollectionGroup({
           const isActive = pathname === href
 
           return (
-            <a
+            <Link
               key={article.id}
-              href={href}
+              to={href}
               onClick={onArticleClick}
               className={cn(
                 'block rounded-lg px-3 py-[7px] text-[13px] transition-colors',
@@ -82,7 +82,7 @@ function CollectionGroup({
               )}
             >
               {article.title}
-            </a>
+            </Link>
           )
         })}
       </div>

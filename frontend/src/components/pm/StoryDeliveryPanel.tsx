@@ -615,7 +615,7 @@ function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: str
 }
 
 function buildBranchPreview(displayId: number, storyName: string) {
-  return `tp-${displayId}-${slugify(storyName)}`;
+  return `${displayId}-${slugify(storyName)}`;
 }
 
 function slugify(value: string) {

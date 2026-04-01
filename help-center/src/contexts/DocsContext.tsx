@@ -6,6 +6,7 @@ interface DocsContextValue {
   locale: string
   defaultLocale: string
   enabledLocales: string[]
+  multilingualEnabled: boolean
   config: HelpCenterConfig
   spaces: Space[]
 }
@@ -18,12 +19,21 @@ export function DocsProvider({
   locale,
   defaultLocale,
   enabledLocales,
+  multilingualEnabled,
   config,
   spaces,
 }: DocsContextValue & { children: ReactNode }) {
   return (
     <DocsContext.Provider
-      value={{ subdomain, locale, defaultLocale, enabledLocales, config, spaces }}
+      value={{
+        subdomain,
+        locale,
+        defaultLocale,
+        enabledLocales,
+        multilingualEnabled,
+        config,
+        spaces,
+      }}
     >
       {children}
     </DocsContext.Provider>

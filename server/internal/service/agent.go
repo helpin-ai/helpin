@@ -32,6 +32,7 @@ type supportDraftReply struct {
 
 const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
+const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
 
 func defaultSystemAgentNameForPresetKey(presetKey string) string {
@@ -60,6 +61,8 @@ type AgentService struct {
 	runRepo                    *repository.AgentRunRepository
 	runMessageRepo             *repository.AgentRunMessageRepository
 	artifactRepo               *repository.AgentRunArtifactRepository
+	interactionRepo            *repository.AgentRunInteractionRepository
+	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
 	storyRepo                  *repository.PMStoryRepository
 	storyLinkRepo              *repository.PMStoryLinkRepository
 	epicRepo                   *repository.PMEpicRepository
@@ -79,9 +82,14 @@ type AgentService struct {
 	activitySvc                *PMActivityService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
+	codexAuthManager           *worker.CodexAuthManager
 	anthropicAPIKey            string
 	openAIAPIKey               string
 	openRouterAPIKey           string
+	codexOpenAIAuthMode        string
+	codexChatGPTOAuthEnabled   bool
+	codexChatGPTAccessToken    string
+	codexChatGPTAccountID      string
 }
 
 // NewAgentService creates a new AgentService.
@@ -91,6 +99,8 @@ func NewAgentService(
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	interactionRepo *repository.AgentRunInteractionRepository,
+	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
@@ -115,6 +125,8 @@ func NewAgentService(
 		runRepo:                    runRepo,
 		runMessageRepo:             runMessageRepo,
 		artifactRepo:               artifactRepo,
+		interactionRepo:            interactionRepo,
+		sessionSnapshotRepo:        sessionSnapshotRepo,
 		storyRepo:                  storyRepo,
 		storyLinkRepo:              storyLinkRepo,
 		epicRepo:                   epicRepo,
@@ -135,10 +147,25 @@ func NewAgentService(
 	}
 }
 
-func (s *AgentService) SetModelProviderConfig(anthropicAPIKey, openAIAPIKey, openRouterAPIKey string) *AgentService {
+func (s *AgentService) SetModelProviderConfig(
+	anthropicAPIKey, openAIAPIKey, openRouterAPIKey string,
+	codexOpenAIAuthMode string,
+	codexChatGPTOAuthEnabled bool,
+	codexChatGPTAccessToken string,
+	codexChatGPTAccountID string,
+) *AgentService {
 	s.anthropicAPIKey = strings.TrimSpace(anthropicAPIKey)
 	s.openAIAPIKey = strings.TrimSpace(openAIAPIKey)
 	s.openRouterAPIKey = strings.TrimSpace(openRouterAPIKey)
+	s.codexOpenAIAuthMode = strings.TrimSpace(codexOpenAIAuthMode)
+	s.codexChatGPTOAuthEnabled = codexChatGPTOAuthEnabled
+	s.codexChatGPTAccessToken = strings.TrimSpace(codexChatGPTAccessToken)
+	s.codexChatGPTAccountID = strings.TrimSpace(codexChatGPTAccountID)
+	return s
+}
+
+func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *AgentService {
+	s.codexAuthManager = manager
 	return s
 }
 
@@ -220,7 +247,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.PresetVersionKey = presetVersionKey
 			changed = true
 		}
-		expectedAllowedTools := mustJSONStringSlice(preset.AllowedTools)
+		expectedAllowedTools := normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 		expectedAllowedCommands := mustJSONStringSlice(preset.AllowedCommands)
 		expectedAllowedTargets := mustJSONStringSlice(preset.AllowedTargetTypes)
 		if string(existing.AllowedTools) != string(expectedAllowedTools) {
@@ -278,7 +305,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		TriggerMode:           preset.DefaultTriggerMode,
 		SystemPrompt:          systemPrompt,
 		PlanningNotes:         nil,
-		AllowedTools:          mustJSONStringSlice(preset.AllowedTools),
+		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
 		AllowedCommands:       mustJSONStringSlice(preset.AllowedCommands),
 		AllowedTargets:        mustJSONStringSlice(preset.AllowedTargetTypes),
 		ApprovalMode:          preset.ApprovalMode,
@@ -480,14 +507,14 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Provider:              trimPtr(req.Provider),
 		Model:                 trimPtr(req.Model),
 		SystemPrompt:          trimPtr(req.SystemPrompt),
-		AllowedTools:          mustJSONStringSlice(basePreset.AllowedTools),
+		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		SupportedModes:        mustJSONStringSlice(normalizedSupportedModes),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: defaultInvocationMode,
 		CreatedBy:             trimPtr(&actorID),
 	}
 	if len(req.AllowedTools) > 0 {
-		version.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
 	if version.SystemPrompt == nil {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
@@ -536,7 +563,7 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 			ModelPlaceholder: "claude-sonnet-4-20250514",
 		})
 	}
-	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) {
+	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) || s.isCodexOpenAIConfigured() {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenAI,
 			Label:            "OpenAI",
@@ -613,7 +640,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		PlanningNotes:          nil,
 		MonthlyTokenBudget:     normalizeTokenBudget(req.MonthlyTokenBudget),
 		TeamID:                 trimPtr(req.TeamID),
-		AllowedTools:           normalizeJSONSlice(req.AllowedTools),
+		AllowedTools:           normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
 		AllowedCommands:        normalizeJSONSlice(req.AllowedCommands),
 		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"story"}),
 		Schedule:               trimPtr(req.Schedule),
@@ -672,9 +699,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != systemPresetKey {
 			return nil, fmt.Errorf("system agent preset cannot be changed")
 		}
-		if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" && strings.TrimSpace(*req.RuntimeKind) != defaultRuntimeKindForPresetKey(systemPresetKey) {
-			return nil, fmt.Errorf("system agent runtime cannot be changed")
-		}
 		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
 			return nil, fmt.Errorf("system agent cannot be restricted to a team")
 		}
@@ -721,6 +745,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		resolvedPresetVersionKey = defaultPresetVersionKeyForPresetKey(resolvedPresetKey)
 	}
 	preset, hasPreset := s.resolvePresetDefinition(ctx, workspaceID, resolvedPresetKey, resolvedPresetVersionKey)
+	if agent.IsSystem && req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
+		expectedRuntimeKind := defaultRuntimeKindForPresetKey(resolvedPresetKey)
+		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
+			expectedRuntimeKind = strings.TrimSpace(preset.RuntimeKind)
+		}
+		if strings.TrimSpace(*req.RuntimeKind) != expectedRuntimeKind {
+			return nil, fmt.Errorf("system agent runtime must match preset runtime %q", expectedRuntimeKind)
+		}
+	}
 	if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		if err := validateRuntimeKind(*req.RuntimeKind); err != nil {
 			return nil, err
@@ -780,9 +813,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		agent.TeamID = trimPtr(req.TeamID)
 	}
 	if req.AllowedTools != nil {
-		agent.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+		agent.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	} else if presetChanged && hasPreset {
-		agent.AllowedTools = mustJSONStringSlice(preset.AllowedTools)
+		agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 	}
 	if req.AllowedCommands != nil {
 		agent.AllowedCommands = normalizeJSONSlice(req.AllowedCommands)
@@ -849,7 +882,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
 		return nil, err
 	}
-	if err := validateRuntimeForAgent(agent); err != nil {
+	if hasPreset {
+		if err := validateRuntimeForAgentWithPreset(agent, &preset); err != nil {
+			return nil, err
+		}
+	} else if err := validateRuntimeForAgent(agent); err != nil {
 		return nil, err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
@@ -1268,6 +1305,57 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	return run, nil
 }
 
+func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
+	}
+
+	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
+		return nil, err
+	}
+
+	authState, err := s.codexAuthManager.StartDeviceCode(ctx, run, agent, func(callbackCtx context.Context, state *model.CodexAuthState) {
+		if state == nil {
+			return
+		}
+		if err := s.applyCodexAuthState(callbackCtx, workspaceID, runID, actorID, state, state.State == model.CodexAuthStateConnected); err != nil {
+			slog.ErrorContext(callbackCtx, "failed to apply codex auth state update",
+				"error", err,
+				"workspace_id", workspaceID,
+				"run_id", runID,
+				"state", state.State,
+			)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, authState != nil && authState.State == model.CodexAuthStateConnected); err != nil {
+		return nil, err
+	}
+	return authState, nil
+}
+
+func (s *AgentService) CancelCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
+	}
+
+	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
+		return nil, err
+	}
+
+	return s.codexAuthManager.CancelDeviceCode(ctx, runID)
+}
+
 // ResumeRun resumes a paused interactive run using one generic intent path.
 func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, error) {
 	run, _, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, req)
@@ -1321,7 +1409,14 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if !model.IsAgentRunPausedStatus(run.Status) {
 		return nil, nil, fmt.Errorf("run is not paused for human input")
 	}
+	if run.PauseReason == model.AgentRunPauseReasonAuthentication {
+		return nil, nil, fmt.Errorf("run is waiting for authentication")
+	}
 	model.NormalizeAgentRunPauseState(run)
+	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var (
 		message     *model.AgentRunMessage
@@ -1330,6 +1425,12 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		stage       = "resuming"
 		approvalSet bool
 	)
+	previousStatus := run.Status
+	previousPauseReason := run.PauseReason
+	previousApprovalState := run.ApprovalState
+	previousCompletedAt := run.CompletedAt
+	previousExecutionStage := run.ExecutionStage
+	previousHeartbeatAt := run.LastHeartbeatAt
 
 	switch intent {
 	case model.AgentRunResumeIntentReply:
@@ -1414,23 +1515,95 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	}
 
 	now := time.Now()
-	run.Status = model.AgentRunStatusRunning
-	run.PauseReason = model.AgentRunPauseReasonNone
 	run.ExecutionStage = strPtr(stage)
 	run.LastHeartbeatAt = &now
 	run.CompletedAt = nil
 	if !approvalSet && intent != model.AgentRunResumeIntentRequestChanges && run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
 		run.ApprovalState = "not_required"
 	}
+	if liveCodexPause {
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return nil, nil, err
+		}
+		if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+			slog.ErrorContext(ctx, "failed to resolve run interaction",
+				"error", err,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"pause_reason", previousPauseReason,
+				"intent", signal.Intent,
+			)
+		}
+		s.publishRunEvent(run, actorID)
+		return run, message, nil
+	}
+	run.Status = model.AgentRunStatusRunning
+	run.PauseReason = model.AgentRunPauseReasonNone
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, nil, err
 	}
 	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
 		return nil, nil, err
 	}
-	_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), signal)
+	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
+	if workflowID == "" {
+		workflowID = temporalapp.WorkflowIDForRun(run.ID)
+	}
+	if err := s.runEngine.SignalResume(ctx, workflowID, strings.TrimSpace(derefString(run.WorkflowRunID)), signal); err != nil {
+		slog.ErrorContext(ctx, "failed to signal agent run resume",
+			"run_id", run.ID,
+			"workflow_id", workflowID,
+			"workflow_run_id", strings.TrimSpace(derefString(run.WorkflowRunID)),
+			"intent", signal.Intent,
+			"error", err)
+		run.Status = previousStatus
+		run.PauseReason = previousPauseReason
+		run.ApprovalState = previousApprovalState
+		run.CompletedAt = previousCompletedAt
+		run.ExecutionStage = previousExecutionStage
+		run.LastHeartbeatAt = previousHeartbeatAt
+		if updateErr := s.runRepo.Update(ctx, run); updateErr != nil {
+			return nil, nil, updateErr
+		}
+		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
+		return nil, nil, fmt.Errorf("resume workflow signal failed: %w", err)
+	}
+	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+		slog.ErrorContext(ctx, "failed to resolve run interaction",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"pause_reason", previousPauseReason,
+			"intent", signal.Intent,
+		)
+	}
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
+}
+
+func (s *AgentService) shouldUseLiveCodexPausePath(ctx context.Context, run *model.AgentRun) (bool, error) {
+	if s == nil || run == nil || s.artifactRepo == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(run.RuntimeKind) != "codex" {
+		return false, nil
+	}
+	if !model.IsAgentRunPausedStatus(run.Status) {
+		return false, nil
+	}
+	switch run.PauseReason {
+	case model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonHumanInput:
+	default:
+		return false, nil
+	}
+	if run.LastHeartbeatAt == nil || time.Since(run.LastHeartbeatAt.UTC()) > liveCodexPauseHeartbeatFreshThreshold {
+		return false, nil
+	}
+	snapshot, err := worker.LoadCodexSessionSnapshot(ctx, s.artifactRepo, run)
+	if err != nil {
+		return false, err
+	}
+	return snapshot != nil && snapshot.HasPendingRequest, nil
 }
 
 func normalizeResumeIntent(intent string) string {
@@ -1444,6 +1617,236 @@ func normalizeResumeIntent(intent string) string {
 	default:
 		return ""
 	}
+}
+
+func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run *model.AgentRun, actorID, pauseReason, signalIntent, content string) error {
+	if s == nil || s.interactionRepo == nil || run == nil {
+		return nil
+	}
+
+	interaction, err := s.interactionRepo.GetLatestPendingByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil || interaction == nil {
+		return err
+	}
+
+	responsePayload, responseSchemaVersion, err := buildInteractionResponsePayload(interaction, normalizeResolvedInteractionIntent(pauseReason, signalIntent), content)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	interaction.Status = model.AgentRunInteractionStatusResolved
+	interaction.ResponsePayload = responsePayload
+	interaction.ResponseSchemaVersion = stringPtrIfNotEmpty(responseSchemaVersion)
+	interaction.ResolvedBy = stringPtrIfNotEmpty(actorID)
+	interaction.ResolvedAt = &now
+	return s.interactionRepo.Update(ctx, interaction)
+}
+
+func normalizeResolvedInteractionIntent(pauseReason, signalIntent string) string {
+	switch normalizeResumeIntent(signalIntent) {
+	case model.AgentRunResumeIntentApprove:
+		return model.AgentRunResumeIntentApprove
+	case model.AgentRunResumeIntentRequestChanges:
+		return model.AgentRunResumeIntentRequestChanges
+	case model.AgentRunResumeIntentReply:
+		if strings.TrimSpace(pauseReason) == model.AgentRunPauseReasonHumanApproval {
+			return model.AgentRunResumeIntentRequestChanges
+		}
+		return model.AgentRunResumeIntentReply
+	default:
+		return strings.TrimSpace(signalIntent)
+	}
+}
+
+func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, resolvedIntent, content string) (json.RawMessage, string, error) {
+	if interaction == nil {
+		return nil, "", nil
+	}
+
+	switch strings.TrimSpace(interaction.RequestSchemaVersion) {
+	case model.AgentRunInteractionSchemaVersionCodexV2:
+		switch strings.TrimSpace(interaction.InteractionKind) {
+		case model.AgentRunInteractionKindRequestUserInput:
+			payload, err := worker.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
+			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
+		case model.AgentRunInteractionKindCommandExecutionApproval, model.AgentRunInteractionKindFileChangeApproval, model.AgentRunInteractionKindPermissionsApproval:
+			payload, err := worker.BuildCodexApprovalResponseFromPayload(
+				codexPendingKindForInteraction(strings.TrimSpace(interaction.InteractionKind)),
+				interaction.RequestPayload,
+				resolvedIntent == model.AgentRunResumeIntentApprove,
+				resolvedIntent == model.AgentRunResumeIntentRequestChanges,
+			)
+			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
+		}
+	}
+
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindRequestUserInput:
+		payload, err := json.Marshal(map[string]any{
+			"content": strings.TrimSpace(content),
+		})
+		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		payload := map[string]any{}
+		switch resolvedIntent {
+		case model.AgentRunResumeIntentApprove:
+			payload["decision"] = "approve"
+		default:
+			payload["decision"] = "request_changes"
+			if trimmed := strings.TrimSpace(content); trimmed != "" {
+				payload["message"] = trimmed
+			}
+		}
+		raw, err := json.Marshal(payload)
+		return raw, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	default:
+		payload, err := json.Marshal(map[string]any{
+			"intent":  strings.TrimSpace(resolvedIntent),
+			"content": strings.TrimSpace(content),
+		})
+		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	}
+}
+
+func codexPendingKindForInteraction(interactionKind string) string {
+	switch strings.TrimSpace(interactionKind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval:
+		return "command_execution"
+	case model.AgentRunInteractionKindFileChangeApproval:
+		return "file_change"
+	case model.AgentRunInteractionKindPermissionsApproval:
+		return "permissions"
+	default:
+		return ""
+	}
+}
+
+func (s *AgentService) loadRunAndAgentForCodexAuth(ctx context.Context, workspaceID, runID string) (*model.AgentRun, *model.Agent, error) {
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, run.AgentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if agent == nil {
+		return nil, nil, fmt.Errorf("agent not found")
+	}
+	return run, agent, nil
+}
+
+func (s *AgentService) ensureRunSupportsCodexDeviceCode(run *model.AgentRun, agent *model.Agent) error {
+	if run == nil || agent == nil {
+		return fmt.Errorf("run and agent are required")
+	}
+	if strings.TrimSpace(run.RuntimeKind) != "codex" && strings.TrimSpace(agent.RuntimeKind) != "codex" {
+		return fmt.Errorf("run does not use the codex runtime")
+	}
+	if run.Status == model.AgentRunStatusCompleted || run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
+		return fmt.Errorf("run is not active")
+	}
+
+	provider := model.AgentModelProviderOpenAI
+	if agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
+		provider = normalizeModelProvider(strings.TrimSpace(*agent.Provider))
+	}
+	if provider != model.AgentModelProviderOpenAI {
+		return fmt.Errorf("codex device-code auth only supports provider openai")
+	}
+	if !s.isCodexOpenAIDeviceCodeEnabled() {
+		return fmt.Errorf("CODEX_OPENAI_AUTH_MODE must be %q to use device-code auth", "chatgpt_device_code")
+	}
+	return nil
+}
+
+func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, runID, actorID string, authState *model.CodexAuthState, autoResume bool) error {
+	if authState == nil {
+		return nil
+	}
+
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return err
+	}
+	if err := s.appendCodexAuthArtifact(ctx, run, authState); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	run.ErrorMessage = nil
+	switch strings.TrimSpace(authState.State) {
+	case model.CodexAuthStateConnected:
+		run.Status = model.AgentRunStatusRunning
+		run.PauseReason = model.AgentRunPauseReasonNone
+		run.ExecutionStage = strPtr("auth_completed")
+		run.LastHeartbeatAt = &now
+		run.CompletedAt = nil
+		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+			run.ApprovalState = "not_required"
+		}
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return err
+		}
+		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
+			return err
+		}
+		if autoResume && s.runEngine != nil {
+			_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), temporalapp.RunResumeSignal{
+				Intent: model.AgentRunResumeIntentAuthCompleted,
+			})
+		}
+	default:
+		run.Status = model.AgentRunStatusPaused
+		run.PauseReason = model.AgentRunPauseReasonAuthentication
+		run.ExecutionStage = strPtr("awaiting_auth")
+		run.LastHeartbeatAt = &now
+		run.CompletedAt = nil
+		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
+			run.ApprovalState = "not_required"
+		}
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return err
+		}
+	}
+
+	s.publishRunEvent(run, actorID)
+	s.publishCodingSessionEvent(run, "auth.updated", map[string]any{
+		"state":            authState.State,
+		"provider":         authState.Provider,
+		"auth_mode":        authState.AuthMode,
+		"login_id":         derefString(authState.LoginID),
+		"auth_url":         derefString(authState.AuthURL),
+		"verification_url": derefString(authState.VerificationURL),
+		"user_code":        derefString(authState.UserCode),
+		"error":            derefString(authState.Error),
+	}, actorID)
+	return nil
+}
+
+func (s *AgentService) appendCodexAuthArtifact(ctx context.Context, run *model.AgentRun, authState *model.CodexAuthState) error {
+	if s.artifactRepo == nil || run == nil || authState == nil {
+		return nil
+	}
+	sequenceNo, err := s.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	content, err := json.Marshal(authState)
+	if err != nil {
+		return fmt.Errorf("marshal codex auth artifact: %w", err)
+	}
+	return s.artifactRepo.Create(ctx, &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeCodexAuthState,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(content)),
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    sequenceNo,
+	})
 }
 
 func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Context, run *model.AgentRun, actorID, reply string) error {
@@ -1951,6 +2354,7 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 		Data:        data,
 	}
 	s.wsPublisher.Publish(event)
+	s.publishCodingSessionUpdated(run, actorID)
 }
 
 func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
@@ -1968,6 +2372,23 @@ func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *mode
 		ParentID:    run.ID,
 		Data:        data,
 	})
+	eventType := "user.message.completed"
+	switch strings.TrimSpace(message.Role) {
+	case "assistant":
+		eventType = "assistant.message.completed"
+	case "tool":
+		eventType = "tool.call.completed"
+	}
+	s.publishCodingSessionEvent(run, eventType, map[string]any{
+		"message_id":       message.ID,
+		"role":             message.Role,
+		"message_type":     message.MessageType,
+		"content":          message.Content,
+		"sequence_no":      message.SequenceNo,
+		"content_blocks":   json.RawMessage(message.ContentBlocks),
+		"turn_segments":    json.RawMessage(message.TurnSegments),
+		"tool_invocations": json.RawMessage(message.ToolInvocations),
+	}, actorID)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {
@@ -2384,6 +2805,12 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := validateModelProvider(provider); err != nil {
 		return err
 	}
+	if strings.TrimSpace(agent.RuntimeKind) == "codex" && provider == model.AgentModelProviderOpenAI {
+		if !s.isCodexOpenAIConfigured() {
+			return fmt.Errorf("provider openai is not configured for codex (requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth)")
+		}
+		return nil
+	}
 	if !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
@@ -2405,16 +2832,16 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	if agent.Provider == nil || strings.TrimSpace(*agent.Provider) == "" {
-		if strings.TrimSpace(s.openAIAPIKey) == "" && strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY or OPENROUTER_API_KEY to be configured")
+		if !s.isCodexOpenAIConfigured() && strings.TrimSpace(s.openRouterAPIKey) == "" {
+			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY, Helpin-managed ChatGPT OAuth, or OPENROUTER_API_KEY to be configured")
 		}
 		return nil
 	}
 
 	switch normalizeModelProvider(*agent.Provider) {
 	case model.AgentModelProviderOpenAI:
-		if strings.TrimSpace(s.openAIAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY")
+		if !s.isCodexOpenAIConfigured() {
+			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth")
 		}
 	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(s.openRouterAPIKey) == "" {
@@ -2427,6 +2854,28 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	return nil
+}
+
+func (s *AgentService) isCodexOpenAIConfigured() bool {
+	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
+	case "", "api_key", "api-key", "api":
+		return strings.TrimSpace(s.openAIAPIKey) != ""
+	case "chatgpt_oauth", "oauth", "chatgpt", "chatgpt-auth":
+		return s.codexChatGPTOAuthEnabled && strings.TrimSpace(s.codexChatGPTAccessToken) != "" && strings.TrimSpace(s.codexChatGPTAccountID) != ""
+	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *AgentService) isCodexOpenAIDeviceCodeEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
+	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *AgentService) isModelProviderConfigured(provider string) bool {

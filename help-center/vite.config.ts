@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import { resolve } from 'path'
 
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    port: 5174,
+  },
   plugins: [
-    TanStackRouterVite({ autoCodeSplitting: true }),
+    tanstackStart(),
     react(),
     tailwindcss(),
   ],

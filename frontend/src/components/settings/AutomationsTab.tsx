@@ -8,12 +8,10 @@ import type { EpicWorkflowState, PMAutomation, AutomationType } from '@/lib/pmTy
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Info, X } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -96,16 +94,6 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
     } catch {
       setAutomations(snapshot);
       toast.error('Failed to save automation');
-    }
-  };
-
-  const removeAuto = async (type: AutomationType, teamId?: string) => {
-    const snapshot = automations;
-    setAutomations((prev) => prev.filter((a) => !(a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id))));
-    const res = await pmAutomationService.remove(workspaceId, type, teamId);
-    if (res.error) {
-      setAutomations(snapshot);
-      toast.error(res.error);
     }
   };
 

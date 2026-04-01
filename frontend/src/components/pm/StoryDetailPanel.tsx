@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Archive,
@@ -286,6 +287,7 @@ function StoryDetailPanelBody({
   onStoryArchived: (storyId: string) => void;
 }) {
   const confirm = useConfirm();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
