@@ -404,19 +404,25 @@ function StoryDetailPanelBody({
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
     [teams, form.team_id],
   );
+  const storyDisplayId = storyDetail.story.display_id;
 
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
     const url = new URL(window.location.href);
-    url.searchParams.set('story', `${storyDetail.story.display_id}`);
-    window.history.replaceState({}, '', url.toString());
+    const nextStory = `${storyDisplayId}`;
+    if (url.searchParams.get('story') !== nextStory) {
+      url.searchParams.set('story', nextStory);
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
 
     return () => {
       const cleanupUrl = new URL(window.location.href);
-      cleanupUrl.searchParams.delete('story');
-      window.history.replaceState({}, '', cleanupUrl.toString());
+      if (cleanupUrl.searchParams.get('story') === nextStory) {
+        cleanupUrl.searchParams.delete('story');
+        window.history.replaceState(window.history.state, '', cleanupUrl.toString());
+      }
     };
-  }, [storyDetail]);
+  }, [storyDisplayId]);
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {
@@ -1614,7 +1620,7 @@ export function StoryDetailPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[75vw] !max-w-[75vw] p-0"
+        className="w-[80vw] !max-w-[80vw] p-0"
         showCloseButton={false}
         onPointerDownOutside={(event) => {
           if (shouldSuppressStoryOverlayOutsideDismiss(openedAtRef.current, Date.now())) {

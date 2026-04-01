@@ -498,15 +498,13 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"properties": map[string]interface{}{
 			"title": map[string]interface{}{"type": "string"},
 			"content": map[string]interface{}{
-				"description": "Story plan JSON content, typically including summary and proposed_stories.",
-				"oneOf": []map[string]interface{}{
-					{"type": "object"},
-					{"type": "array"},
-					{"type": "number"},
-					{"type": "boolean"},
-					{"type": "null"},
-					{"type": "string"},
+				"description": "Story plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
+				"type":        "object",
+				"properties": map[string]interface{}{
+					"summary":          map[string]interface{}{"type": "string"},
+					"proposed_stories": map[string]interface{}{"type": "array"},
 				},
+				"required": []string{"summary", "proposed_stories"},
 			},
 			"replace": map[string]interface{}{"type": "boolean"},
 		},

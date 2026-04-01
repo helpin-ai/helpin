@@ -433,6 +433,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
+		worker.ToolUpdatePlan,
 		worker.ToolRequestReviewCheckpoint,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishStoryPlan,
@@ -469,6 +470,9 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 	if !slices.Contains(tools, worker.ToolPublishStoryPlanDoc) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolPublishStoryPlanDoc, tools)
 	}
+	if !slices.Contains(tools, worker.ToolUpdatePlan) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolUpdatePlan, tools)
+	}
 	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
 	}
@@ -503,6 +507,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
+		worker.ToolUpdatePlan,
 		worker.ToolRequestReviewCheckpoint,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishStoryPlan,

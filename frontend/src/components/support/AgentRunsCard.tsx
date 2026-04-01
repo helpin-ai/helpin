@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Bot, Loader2, MessageSquareMore, ShieldCheck } from 'lucide-react';
 
-import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,7 +15,7 @@ interface AgentRunsCardProps {
   onApprove: (runId: string) => Promise<void>;
 }
 
-export function AgentRunsCard({ workspaceId, agentRuns, onApprove }: AgentRunsCardProps) {
+export function AgentRunsCard({ workspaceId: _workspaceId, agentRuns, onApprove }: AgentRunsCardProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [approvingRun, setApprovingRun] = useState<string | null>(null);
@@ -93,12 +93,10 @@ export function AgentRunsCard({ workspaceId, agentRuns, onApprove }: AgentRunsCa
         </div>
       </Card>
 
-      <AgentRunDrawer
-        workspaceId={workspaceId}
-        runId={selectedRunId}
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
         onOpenChange={setDrawerOpen}
-        canEdit
         title="Support Agent Run"
       />
     </>

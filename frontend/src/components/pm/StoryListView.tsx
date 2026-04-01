@@ -833,14 +833,15 @@ export function StoryListView({
   });
 
   const { rows } = table.getRowModel();
+  const typeIconColumn = table.getAllLeafColumns().find((column) => column.id === 'typeIcon');
   const pinnedOffsets = useMemo(
     () =>
       getStoryListPinnedOffsets({
         displayIdWidth: table.getColumn('displayId')?.getSize() ?? 90,
-        typeIconWidth: table.getColumn('typeIcon')?.getSize() ?? 40,
-        showTypeIcon: table.getColumn('typeIcon')?.getIsVisible() ?? false,
+        typeIconWidth: typeIconColumn?.getSize() ?? 40,
+        showTypeIcon: typeIconColumn?.getIsVisible() ?? false,
       }),
-    [columnSizing, columnVisibility, table],
+    [columnSizing, columnVisibility, table, typeIconColumn],
   );
   const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
 

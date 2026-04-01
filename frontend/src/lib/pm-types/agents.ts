@@ -289,6 +289,7 @@ export interface AssignAgentRequest {
 }
 
 export interface ApproveAgentRunRequest {
+  content?: string;
   send_message?: boolean;
 }
 

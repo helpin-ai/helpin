@@ -233,13 +233,17 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	}
 
 	type plannerPolicy struct {
-		allowedPreviewTools  []string
+		requiredTools        []string
 		disallowedExtraTools []string
 	}
 	var policy plannerPolicy
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
-		policy.allowedPreviewTools = []string{worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan}
+		policy.requiredTools = []string{
+			worker.ToolUpdatePlan,
+			worker.ToolPublishPRDDraft,
+			worker.ToolPublishStoryPlan,
+		}
 		policy.disallowedExtraTools = []string{
 			worker.ToolPreviewMarkdown,
 			worker.ToolPreviewJSON,
@@ -255,7 +259,10 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			"set_story_dependencies",
 		}
 	case model.AgentPresetStoryPlanner:
-		policy.allowedPreviewTools = []string{worker.ToolPublishStoryPlanDoc}
+		policy.requiredTools = []string{
+			worker.ToolUpdatePlan,
+			worker.ToolPublishStoryPlanDoc,
+		}
 		policy.disallowedExtraTools = []string{
 			worker.ToolPreviewMarkdown,
 			worker.ToolPreviewJSON,
@@ -275,9 +282,9 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 		return raw
 	}
 
-	allowedSet := make(map[string]bool, len(policy.allowedPreviewTools))
-	for _, toolName := range policy.allowedPreviewTools {
-		allowedSet[toolName] = true
+	requiredSet := make(map[string]bool, len(policy.requiredTools))
+	for _, toolName := range policy.requiredTools {
+		requiredSet[toolName] = true
 	}
 
 	disallowedSet := make(map[string]bool, len(policy.disallowedExtraTools))
@@ -287,12 +294,12 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 
 	filtered := make([]string, 0, len(tools))
 	for _, toolName := range tools {
-		if disallowedSet[toolName] && !allowedSet[toolName] {
+		if disallowedSet[toolName] && !requiredSet[toolName] {
 			continue
 		}
 		filtered = append(filtered, toolName)
 	}
-	for _, toolName := range policy.allowedPreviewTools {
+	for _, toolName := range policy.requiredTools {
 		if !slices.Contains(filtered, toolName) {
 			filtered = append(filtered, toolName)
 		}

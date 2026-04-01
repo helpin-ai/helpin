@@ -1088,6 +1088,9 @@ func executeToolCallsForRound(
 			emitStarted(toolCall)
 			results[i] = executeSingleToolCall(execCtx, registry, toolCall)
 			emitFinished(results[i])
+			if IsHumanInteractionTool(results[i].ToolName) {
+				return results[:i+1]
+			}
 		}
 		return results
 	}

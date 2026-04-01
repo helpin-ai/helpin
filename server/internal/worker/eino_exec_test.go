@@ -345,6 +345,31 @@ func TestExecuteToolCallsForRoundEmitsSequentialToolEventsWhenParallelDisabled(t
 	}
 }
 
+func TestExecuteToolCallsForRoundStopsAfterHumanInteractionTool(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	registry.tools[ToolRequestReviewCheckpoint] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return `{"status":"paused","pause_reason":"human_approval"}`, nil
+	}
+	registry.tools["write_file"] = func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		t.Fatal("write_file should not execute after request_review_checkpoint in the same round")
+		return "", nil
+	}
+
+	execCtx := &ExecutionContext{Context: context.Background()}
+	toolCalls := []ExecutionBlock{
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: ToolRequestReviewCheckpoint, Input: json.RawMessage(`{"phase":"prd","title":"PRD Review"}`)},
+		{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-2", ToolName: "write_file", Input: json.RawMessage(`{"path":"a.go","content":"updated"}`)},
+	}
+
+	results := executeToolCallsForRound(execCtx, registry, toolCalls, "assistant-1", nil)
+	if len(results) != 1 {
+		t.Fatalf("expected execution to stop after the human interaction tool, got %#v", results)
+	}
+	if results[0].ToolName != ToolRequestReviewCheckpoint {
+		t.Fatalf("expected only request_review_checkpoint to execute, got %#v", results)
+	}
+}
+
 func TestChunkReasoningDeltaReadsReasoningPartsAndSignature(t *testing.T) {
 	chunk := &schema.Message{
 		Role:             schema.Assistant,

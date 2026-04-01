@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { GitBranch } from 'lucide-react';
+import { GitBranch, Loader2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,19 +12,28 @@ export function CodingSessionHeader({
   workspaceSlug,
   onRefresh,
   refreshing = false,
+  acting = null,
+  onCancelRun,
 }: {
   session: CodingSession | null;
   statusIcon: ReactNode;
   workspaceSlug?: string;
   onRefresh: () => void;
   refreshing?: boolean;
+  acting?: string | null;
+  onCancelRun?: () => void;
 }) {
+  const canCancel = session !== null
+    && session.status !== 'completed'
+    && session.status !== 'cancelled'
+    && session.status !== 'failed';
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <h1 className="text-xl font-semibold">
-            {session?.title ?? 'Coding Session'}
+            {session?.title ?? 'Agent Session'}
           </h1>
           {session?.summary ? (
             <p className="text-sm text-muted-foreground">
@@ -39,6 +48,12 @@ export function CodingSessionHeader({
               <a href={`/w/${workspaceSlug}/pm/agent-runs`}>
                 Back to runs
               </a>
+            </Button>
+          ) : null}
+          {onCancelRun ? (
+            <Button variant="outline" size="sm" onClick={onCancelRun} disabled={acting !== null || !canCancel}>
+              {acting === 'cancel' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Cancel run
             </Button>
           ) : null}
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>

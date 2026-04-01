@@ -97,25 +97,23 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 		if dedupKey := codingSessionDedupKeyForInteraction(interaction); dedupKey != "" {
 			interactionDedupKeys[dedupKey] = struct{}{}
 		}
-		eventType, payload, runtimeMetadata := codingSessionEventFromInteraction(interaction)
-		if eventType == "" {
-			continue
+		for _, interactionEvent := range codingSessionEventsFromInteraction(interaction) {
+			pending = append(pending, pendingEvent{
+				at:      interactionEvent.timestamp,
+				weight:  20,
+				eventID: interactionEvent.id,
+				event: model.CodingSessionEvent{
+					ID:              interactionEvent.id,
+					SessionID:       run.ID,
+					RunID:           run.ID,
+					Timestamp:       interactionEvent.timestamp,
+					Type:            interactionEvent.eventType,
+					RuntimeKind:     firstNonEmptyString(interaction.RuntimeKind, run.RuntimeKind),
+					Payload:         interactionEvent.payload,
+					RuntimeMetadata: interactionEvent.runtimeMetadata,
+				},
+			})
 		}
-		pending = append(pending, pendingEvent{
-			at:      interaction.CreatedAt.UTC(),
-			weight:  20,
-			eventID: "interaction:" + interaction.ID,
-			event: model.CodingSessionEvent{
-				ID:              "interaction:" + interaction.ID,
-				SessionID:       run.ID,
-				RunID:           run.ID,
-				Timestamp:       interaction.CreatedAt.UTC(),
-				Type:            eventType,
-				RuntimeKind:     firstNonEmptyString(interaction.RuntimeKind, run.RuntimeKind),
-				Payload:         payload,
-				RuntimeMetadata: runtimeMetadata,
-			},
-		})
 	}
 
 	for _, artifact := range artifacts {
@@ -226,7 +224,9 @@ func (s *AgentService) GetCodingSessionDiff(ctx context.Context, workspaceID, se
 		if strings.TrimSpace(path) != "" {
 			args = append(args, strings.TrimSpace(path))
 		}
-		out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = workDir
+		out, err := cmd.CombinedOutput()
 		if err == nil {
 			diffPath := strings.TrimSpace(path)
 			return &model.CodingSessionDiff{
@@ -303,7 +303,7 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 		return nil, err
 	}
 
-	if liveCodexPause && strings.TrimSpace(run.RuntimeKind) == "codex" {
+	if liveCodexPause && strings.TrimSpace(run.RuntimeKind) == "codex" && interactionUsesNativeCodexResume(interaction) {
 		if followupMessage != "" {
 			if _, err := s.createRunMessage(ctx, run, "user", interactionMessageTypeForIntent(resolveIntentForInteraction(interaction, responsePayload)), followupMessage); err != nil {
 				_ = s.restorePendingInteraction(ctx, &previousInteraction)
@@ -325,6 +325,24 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	}
 	s.publishResolvedInteractionEvent(run, interaction, actorID)
 	return interaction, nil
+}
+
+func interactionUsesNativeCodexResume(interaction *model.AgentRunInteraction) bool {
+	if interaction == nil {
+		return false
+	}
+	if strings.TrimSpace(interaction.RuntimeKind) != "codex" {
+		return false
+	}
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindRequestUserInput,
+		model.AgentRunInteractionKindCommandExecutionApproval,
+		model.AgentRunInteractionKindFileChangeApproval,
+		model.AgentRunInteractionKindPermissionsApproval:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentRun) (*model.CodingSession, error) {
@@ -440,12 +458,16 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 			return model.ResumeAgentRunRequest{}, fmt.Errorf("request_user_input response is missing content")
 		}
 		return model.ResumeAgentRunRequest{
-			Intent:  model.AgentRunResumeIntentReply,
-			Content: content,
+			Intent:          model.AgentRunResumeIntentReply,
+			Content:         content,
+			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
 		}, nil
 	case model.AgentRunInteractionKindReviewCheckpoint:
 		content := firstNonEmptyString(followupMessage, reviewCheckpointResponseMessage(responsePayload))
-		req := model.ResumeAgentRunRequest{Intent: intent}
+		req := model.ResumeAgentRunRequest{
+			Intent:          intent,
+			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
+		}
 		if intent == model.AgentRunResumeIntentApprove {
 			if content != "" {
 				req.Content = content
@@ -456,7 +478,10 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 		req.Content = firstNonEmptyString(content, "Please revise and continue.")
 		return req, nil
 	default:
-		req := model.ResumeAgentRunRequest{Intent: intent}
+		req := model.ResumeAgentRunRequest{
+			Intent:          intent,
+			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
+		}
 		if intent == model.AgentRunResumeIntentApprove {
 			if followupMessage != "" {
 				req.Content = followupMessage
@@ -466,6 +491,62 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 		}
 		req.Content = firstNonEmptyString(followupMessage, "Please revise and continue.")
 		return req, nil
+	}
+}
+
+type codingSessionInteractionEvent struct {
+	id              string
+	eventType       string
+	timestamp       time.Time
+	payload         map[string]any
+	runtimeMetadata map[string]any
+}
+
+func codingSessionEventsFromInteraction(interaction model.AgentRunInteraction) []codingSessionInteractionEvent {
+	status := strings.TrimSpace(interaction.Status)
+	if status == "" {
+		status = model.AgentRunInteractionStatusPending
+	}
+
+	statuses := []string{model.AgentRunInteractionStatusPending}
+	if status != model.AgentRunInteractionStatusPending {
+		statuses = append(statuses, status)
+	}
+
+	events := make([]codingSessionInteractionEvent, 0, len(statuses))
+	for _, eventStatus := range statuses {
+		eventType, payload, runtimeMetadata := codingSessionEventFromInteractionWithStatus(interaction, eventStatus)
+		if eventType == "" {
+			continue
+		}
+		events = append(events, codingSessionInteractionEvent{
+			id:              fmt.Sprintf("interaction:%s:%s", interaction.ID, eventStatus),
+			eventType:       eventType,
+			timestamp:       codingSessionInteractionEventTimestamp(interaction, eventStatus),
+			payload:         payload,
+			runtimeMetadata: runtimeMetadata,
+		})
+	}
+	return events
+}
+
+func codingSessionInteractionEventTimestamp(interaction model.AgentRunInteraction, status string) time.Time {
+	switch strings.TrimSpace(status) {
+	case model.AgentRunInteractionStatusPending:
+		return interaction.CreatedAt.UTC()
+	default:
+		createdAt := interaction.CreatedAt.UTC()
+		latest := createdAt
+		if interaction.UpdatedAt.After(latest) {
+			latest = interaction.UpdatedAt.UTC()
+		}
+		if interaction.ResolvedAt != nil && interaction.ResolvedAt.After(latest) {
+			latest = interaction.ResolvedAt.UTC()
+		}
+		if !latest.After(createdAt) {
+			latest = createdAt.Add(time.Nanosecond)
+		}
+		return latest
 	}
 }
 
@@ -729,6 +810,11 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 }
 
 func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (string, map[string]any, map[string]any) {
+	return codingSessionEventFromInteractionWithStatus(interaction, strings.TrimSpace(interaction.Status))
+}
+
+func codingSessionEventFromInteractionWithStatus(interaction model.AgentRunInteraction, status string) (string, map[string]any, map[string]any) {
+	interaction = codingSessionInteractionEventView(interaction, status)
 	eventType := "interaction.updated"
 	switch strings.TrimSpace(interaction.Status) {
 	case model.AgentRunInteractionStatusPending:
@@ -778,6 +864,25 @@ func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (s
 		}
 	}
 	return eventType, payload, runtimeMetadata
+}
+
+func codingSessionInteractionEventView(interaction model.AgentRunInteraction, status string) model.AgentRunInteraction {
+	view := interaction
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = strings.TrimSpace(view.Status)
+	}
+	if status == "" {
+		status = model.AgentRunInteractionStatusPending
+	}
+	view.Status = status
+	if status == model.AgentRunInteractionStatusPending {
+		view.ResponseSchemaVersion = nil
+		view.ResponsePayload = nil
+		view.ResolvedAt = nil
+		view.ResolvedBy = nil
+	}
+	return view
 }
 
 func interactionAssistantSequenceNo(interaction model.AgentRunInteraction) int {

@@ -973,13 +973,9 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 			if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
 				return nil, fmt.Errorf("parse approved preview artifact: %w", err)
 			}
-			status := "approved"
-			if marker, ok := applied[artifact.ID]; ok && strings.TrimSpace(marker.Action) != "" {
-				status = "approved_and_" + strings.TrimSpace(marker.Action)
-			}
 			latestApproved[strings.TrimSpace(preview.PanelKey)] = approvedPreviewContextEntry{
-				Preview: preview,
-				Status:  status,
+				ArtifactID: artifact.ID,
+				Preview:    preview,
 			}
 		case model.AgentRunArtifactTypeRunPlan:
 			entry, err := buildRunPlanArtifactContextEntry(artifact)
@@ -1014,7 +1010,7 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 
 	entries := make([]workerpkg.ArtifactContextEntry, 0, len(panelKeys)*2+len(otherEntries))
 	for _, panelKey := range panelKeys {
-		if preview, ok := latestRunPreview[panelKey]; ok {
+		if preview, ok := latestRunPreview[panelKey]; ok && latestApproved[panelKey].Preview.Phase == "" {
 			content, err := renderArtifactContextContent(preview.Format, preview.Content)
 			if err != nil {
 				return nil, err
@@ -1029,6 +1025,10 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 			})
 		}
 		if approved, ok := latestApproved[panelKey]; ok {
+			status := "approved"
+			if marker, ok := applied[approved.ArtifactID]; ok && strings.TrimSpace(marker.Action) != "" {
+				status = "approved_and_" + strings.TrimSpace(marker.Action)
+			}
 			content, err := renderArtifactContextContent(approved.Preview.Format, approved.Preview.Content)
 			if err != nil {
 				return nil, err
@@ -1036,7 +1036,7 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 			entries = append(entries, workerpkg.ArtifactContextEntry{
 				Label:        fmt.Sprintf("Approved preview for %s", panelKey),
 				Source:       model.AgentRunArtifactTypeApprovedPreview,
-				Status:       approved.Status,
+				Status:       status,
 				Format:       approved.Preview.Format,
 				Content:      content,
 				PreserveFull: true,
@@ -1051,8 +1051,8 @@ func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpk
 }
 
 type approvedPreviewContextEntry struct {
-	Preview model.ApprovedRunPreview
-	Status  string
+	ArtifactID string
+	Preview    model.ApprovedRunPreview
 }
 
 func buildRunPlanArtifactContextEntry(artifact model.AgentRunArtifact) (*workerpkg.ArtifactContextEntry, error) {
@@ -3583,8 +3583,10 @@ func (a *AgentRunActivities) buildStoryCompletionInstructions(state *resolvedRun
 	sections = append(sections, "Only propose internal PM/docs/support follow-up work. Do not publish customer-facing docs or website changes directly.")
 	if state.story != nil {
 		sections = append(sections, fmt.Sprintf("Story: %s", state.story.Name))
-		if state.story.Description != nil && strings.TrimSpace(*state.story.Description) != "" {
-			sections = append(sections, "Story description:\n"+truncatePlanningText(*state.story.Description, 8000))
+		if state.story.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*state.story.Description); description != "" {
+				sections = append(sections, "Story description:\n"+truncatePlanningText(description, 8000))
+			}
 		}
 		if state.story.EpicID != nil && *state.story.EpicID != "" {
 			sections = append(sections, fmt.Sprintf("Epic ID: %s", *state.story.EpicID))
@@ -3653,6 +3655,7 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 	sections = append(sections, "Choose the next step from the transcript, story details, parent epic context, linked docs, comments, code context, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the story planning doc, publish it with publish_story_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical story planning doc automatically.")
 	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"story_doc\" and stop after the request.")
+	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting the checkpoint.")
 	sections = append(sections, "Use publish_story_plan_doc for reviewable right-pane story planning documents.")
 	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the story planning document unless they directly affect this story's implementation.")
 	sections = append(sections, "Ground the planning document primarily in the story description, story comments, story-linked docs, and the current codebase context. Keep the output focused on this story's implementation plan.")
@@ -3676,8 +3679,10 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 	}
 
 	sections = append(sections, fmt.Sprintf("Story: %s", state.story.Name))
-	if state.story.Description != nil && strings.TrimSpace(*state.story.Description) != "" {
-		sections = append(sections, "Story description:\n"+truncatePlanningText(*state.story.Description, 8000))
+	if state.story.Description != nil {
+		if description := tiptap.RichTextToMarkdown(*state.story.Description); description != "" {
+			sections = append(sections, "Story description:\n"+truncatePlanningText(description, 8000))
+		}
 	}
 	if state.story.TeamID != nil && strings.TrimSpace(*state.story.TeamID) != "" {
 		sections = append(sections, fmt.Sprintf("Story team ID: %s", strings.TrimSpace(*state.story.TeamID)))
@@ -3685,8 +3690,10 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 
 	if state.epic != nil {
 		sections = append(sections, fmt.Sprintf("Parent epic: %s", state.epic.Name))
-		if state.epic.Description != nil && strings.TrimSpace(*state.epic.Description) != "" {
-			sections = append(sections, "Parent epic description:\n"+truncatePlanningText(*state.epic.Description, 8000))
+		if state.epic.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*state.epic.Description); description != "" {
+				sections = append(sections, "Parent epic description:\n"+truncatePlanningText(description, 8000))
+			}
 		}
 	}
 
@@ -3738,7 +3745,7 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 
 	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
 		state.story.Name,
-		derefString(state.story.Description),
+		tiptap.RichTextToMarkdown(derefString(state.story.Description)),
 		input.AdditionalContext,
 	}, "\n\n"))
 	if err != nil {
@@ -3764,6 +3771,8 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing stories, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation story plan, publish it with publish_story_plan, wait for inline story approval, then let the platform apply the approved story plan artifact and create stories.")
 	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"stories\" and stop after the request.")
+	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting the checkpoint.")
+	sections = append(sections, "After explicit PRD approval, continue automatically to story planning in the same run. Do not ask whether to proceed to stories unless the human explicitly redirects scope.")
 	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_story_plan for story plan JSON previews.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or story plans through mutation tools.")
 
@@ -3812,7 +3821,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 
 	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
 		state.epic.Name,
-		derefString(state.epic.Description),
+		tiptap.RichTextToMarkdown(derefString(state.epic.Description)),
 		linkedDocs,
 		linkedTickets,
 		input.AdditionalContext,

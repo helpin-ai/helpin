@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CodingInterruptionPanel } from '../CodingSession/CodingInterruptionPanel';
+import { CodingTranscriptPane } from '../CodingSession/CodingTranscriptPane';
 import type { CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -90,14 +90,17 @@ describe('CodingInterruptionPanel', () => {
 
     act(() => {
       root.render(
-        <CodingInterruptionPanel
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
           session={buildSession()}
           activeInteraction={null}
           acting={null}
           onAuthStart={vi.fn()}
           onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
-          onCancelRun={vi.fn()}
         />,
       );
     });
@@ -119,7 +122,11 @@ describe('CodingInterruptionPanel', () => {
 
     act(() => {
       root.render(
-        <CodingInterruptionPanel
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
           session={buildSession({
             pause_reason: 'human_input',
             auth_state: undefined,
@@ -129,7 +136,6 @@ describe('CodingInterruptionPanel', () => {
           onAuthStart={vi.fn()}
           onAuthCancel={vi.fn()}
           onResolveInteraction={vi.fn()}
-          onCancelRun={vi.fn()}
         />,
       );
     });
@@ -141,5 +147,225 @@ describe('CodingInterruptionPanel', () => {
     act(() => {
       root.unmount();
     });
+  });
+
+  it('shows back and next buttons for multi-question overlays', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            pause_reason: 'human_input',
+            auth_state: undefined,
+          })}
+          activeInteraction={buildInteraction({
+            request_payload: {
+              questions: [
+                {
+                  id: 'continue',
+                  header: 'Continue',
+                  question: 'How should the coding run continue?',
+                  isOther: true,
+                  isSecret: false,
+                  options: [
+                    {
+                      label: 'Continue coding now',
+                      description: 'Resume immediately.',
+                    },
+                  ],
+                },
+                {
+                  id: 'repo',
+                  header: 'Repo',
+                  question: 'Which repository should be used?',
+                  isOther: true,
+                  isSecret: false,
+                  options: [
+                    {
+                      label: 'Current repository',
+                      description: 'Use the active workspace repo.',
+                    },
+                  ],
+                },
+              ],
+            },
+          })}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Question 1 of 2');
+    expect(container.textContent).toContain('How should the coding run continue?');
+    expect(container.textContent).not.toContain('Which repository should be used?');
+    expect(container.textContent).toContain('Next');
+    const backButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Back');
+    expect(backButton).toBeTruthy();
+    expect(backButton?.getAttribute('disabled')).not.toBeNull();
+
+    const firstOption = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Continue coding now'));
+    expect(firstOption).toBeTruthy();
+
+    act(() => {
+      firstOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const nextButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Next');
+    expect(nextButton).toBeTruthy();
+
+    act(() => {
+      nextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('Question 2 of 2');
+    expect(container.textContent).toContain('Which repository should be used?');
+    expect(container.textContent).toContain('Back');
+    expect(container.textContent).toContain('Submit answers');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('renders markdown formatting in persisted user transcript messages', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[
+            {
+              event_id: 'event-1',
+              message_id: 'message-1',
+              role: 'user',
+              content: '**Approved**\n\n- keep current scope',
+              timestamp: '2026-03-31T10:00:00Z',
+              sequence_no: 1,
+            },
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+        />,
+      );
+    });
+
+    expect(container.querySelector('strong')?.textContent).toBe('Approved');
+    expect(container.querySelector('ul li')?.textContent).toBe('keep current scope');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('scrolls the transcript to the latest content when new turns arrive', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const scrollTo = vi.fn();
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback) => {
+        callback(200);
+        return 1;
+      });
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => {});
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession()}
+          activeInteraction={null}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[{
+            event_id: 'event-1',
+            role: 'assistant',
+            content: 'New streamed text',
+            timestamp: '2026-03-31T10:01:00Z',
+            sequence_no: 1,
+          }]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession()}
+          activeInteraction={null}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto.px-4.py-4') as HTMLDivElement | null;
+    expect(scrollContainer).toBeTruthy();
+    if (!scrollContainer) {
+      throw new Error('expected transcript scroll container');
+    }
+    scrollContainer.scrollTo = scrollTo;
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      value: 640,
+    });
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[{
+            event_id: 'event-1',
+            role: 'assistant',
+            content: 'New streamed text plus more',
+            timestamp: '2026-03-31T10:01:01Z',
+            sequence_no: 2,
+          }]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession()}
+          activeInteraction={null}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 640 }));
+
+    act(() => {
+      root.unmount();
+    });
+
+    requestAnimationFrameSpy.mockRestore();
+    cancelAnimationFrameSpy.mockRestore();
   });
 });

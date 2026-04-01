@@ -7,7 +7,7 @@ export interface StatusConfig {
   variant: 'default' | 'secondary' | 'destructive' | 'outline';
 }
 
-// Populated at runtime by AgentRunTable/AgentRunDetail to avoid importing lucide here.
+// Populated at runtime by the run list UI to avoid importing lucide here.
 // Instead, each consumer builds its own icon inline and references this for label+variant.
 
 export const STATUS_META: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {

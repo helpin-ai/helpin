@@ -274,7 +274,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolCanonicalizesJSONStringContent(t *testing.T) {
+func TestPublishStoryPlanToolRejectsJSONStringContent(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -287,21 +287,11 @@ func TestPublishStoryPlanToolCanonicalizesJSONStringContent(t *testing.T) {
 		"  \"title\": \"Story Plan\",\n"+
 		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"\n"+
 		"}"))
-	if err != nil {
-		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	if err == nil {
+		t.Fatal("expected publish_story_plan to reject stringified JSON content")
 	}
-
-	preview := latestPublishedPreviewForContext(ctx, "story_plan")
-	if preview == nil {
-		t.Fatal("expected cached story plan preview")
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(preview.Content, &payload); err != nil {
-		t.Fatalf("expected canonical story plan JSON object, got %s: %v", string(preview.Content), err)
-	}
-	if payload["summary"] != "Breakdown" {
-		t.Fatalf("expected summary Breakdown, got %#v", payload["summary"])
+	if !strings.Contains(err.Error(), "publish_story_plan content must be a JSON object with summary and proposed_stories") {
+		t.Fatalf("expected structured story plan error, got %v", err)
 	}
 }
 
