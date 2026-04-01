@@ -214,6 +214,8 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		storyRepo,
 		repository.NewWorkspaceRepository(db),
 		repository.NewPMWorkflowRepository(db),
+		repository.NewPMEpicRepository(db),
+		repository.NewPMSprintRepository(db),
 		repository.NewPMLabelRepository(db),
 		nil,
 		nil,

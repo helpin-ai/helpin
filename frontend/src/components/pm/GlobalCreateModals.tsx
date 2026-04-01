@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -221,8 +222,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <input
-                type="text"
+              <Input
                 autoFocus
                 aria-label="Epic title"
                 value={form.name}
@@ -234,7 +234,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     editor?.focus();
                   }
                 }}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Epic title"
               />
               <div className="mt-4">

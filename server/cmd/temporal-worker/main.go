@@ -316,6 +316,8 @@ func main() {
 		storyRepo,
 		workspaceRepo,
 		workflowRepo,
+		epicRepo,
+		sprintRepo,
 		labelRepo,
 		checklistRepo,
 		externalLinkRepo,

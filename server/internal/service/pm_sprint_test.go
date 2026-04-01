@@ -29,7 +29,16 @@ func newSprintTestEnvWithDB(t *testing.T) (*PMSprintService, *gorm.DB, string) {
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
 
-	svc := NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), activityService, nil, nil)
+	svc := NewPMSprintService(
+		sprintRepo,
+		labelRepo,
+		repository.NewPMAttachmentRepository(db),
+		repository.NewWorkspaceRepository(db),
+		repository.NewSettingsRepository(db),
+		activityService,
+		nil,
+		nil,
+	)
 	return svc, db, "ws-sprint"
 }
 
@@ -698,7 +707,16 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 	labelRepo := repository.NewPMLabelRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
-	svc := NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), activityService, nil, nil)
+	svc := NewPMSprintService(
+		sprintRepo,
+		labelRepo,
+		repository.NewPMAttachmentRepository(db),
+		repository.NewWorkspaceRepository(db),
+		repository.NewSettingsRepository(db),
+		activityService,
+		nil,
+		nil,
+	)
 
 	ctx := context.Background()
 	teamID := "team-1"

@@ -1277,7 +1277,7 @@ function StoryDetailPanelBody({
                     <span>{PRIORITY_CONFIG[form.priority].label}</span>
                   </>
                 )}
-                renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
+                renderOption={(v) => <><PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" /><span>{PRIORITY_CONFIG[v as Priority].label}</span></>}
               />
             </MetadataRow>
             )}
@@ -1295,7 +1295,7 @@ function StoryDetailPanelBody({
                     <span>{SEVERITY_CONFIG[form.severity].label}</span>
                   </>
                 )}
-                renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
+                renderOption={(v) => <><SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" /><span>{SEVERITY_CONFIG[v as Severity].label}</span></>}
               />
             </MetadataRow>
             )}
@@ -1313,7 +1313,7 @@ function StoryDetailPanelBody({
                     <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
                   </>
                 )}
-                renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
+                renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}
               />
             </MetadataRow>
             )}
