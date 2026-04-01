@@ -44,6 +44,8 @@ export const queryKeys = {
     epicAssociations: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'associations'] as const,
 
     sprints: (wsId: string) => ['pm', wsId, 'sprints'] as const,
+    sprintPlanning: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'sprints', 'planning', filters] as const) : (['pm', wsId, 'sprints', 'planning'] as const),
     sprint: (wsId: string, id: string) => ['pm', wsId, 'sprints', id] as const,
     sprintStories: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'stories'] as const,
 
@@ -113,6 +115,7 @@ export const queryKeys = {
     mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
     mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,
     emailRoutes: (wsId: string) => ['support', wsId, 'email-routes'] as const,
+    triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
     teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
     visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
@@ -121,6 +124,7 @@ export const queryKeys = {
     spaces: (wsId: string) => ['docs', wsId, 'spaces'] as const,
     space: (wsId: string, id: string) => ['docs', wsId, 'spaces', id] as const,
     collections: (wsId: string, spaceId: string) => ['docs', wsId, 'spaces', spaceId, 'collections'] as const,
+    allCollections: (wsId: string) => ['docs', wsId, 'allCollections'] as const,
     documents: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,

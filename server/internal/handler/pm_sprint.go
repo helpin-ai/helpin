@@ -48,6 +48,34 @@ func (h *PMSprintHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sprints)
 }
 
+// PlanningWorkspace handles GET /api/pm/sprints/planning.
+func (h *PMSprintHandler) PlanningWorkspace(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	includeCompleted, err := queryBoolPtr(r, "include_completed")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid include_completed query param")
+		return
+	}
+	filters := model.PMSprintPlanningFilters{
+		TeamID: queryStringPtr(r, "team_id"),
+	}
+	if includeCompleted != nil {
+		filters.IncludeCompleted = *includeCompleted
+	} else {
+		filters.IncludeCompleted = true
+	}
+	workspace, err := h.sprintService.ListPlanningWorkspace(r.Context(), workspaceID, filters)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, workspace)
+}
+
 // Create handles POST /api/pm/sprints.
 func (h *PMSprintHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())

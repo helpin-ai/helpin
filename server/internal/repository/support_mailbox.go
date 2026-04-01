@@ -284,6 +284,7 @@ func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID 
 	} else {
 		query = query.Where("sc.mailbox_id = ?", *mailboxID)
 	}
+	query = query.Where("(sc.ai_state IS NULL OR sc.ai_state = ?)", "escalated")
 
 	var count int64
 	if err := query.Where(`

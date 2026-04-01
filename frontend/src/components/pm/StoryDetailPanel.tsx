@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
@@ -20,6 +21,7 @@ import {
   Maximize2,
   MoreVertical,
   Paperclip,
+  Pencil,
   Play,
   RefreshCw,
   ShieldAlert,
@@ -52,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
@@ -82,6 +85,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
@@ -92,7 +96,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
-import { buildStoryCopyUrl } from '@/lib/pmStoryLinks';
+import { buildStoryCopyUrl, buildStoryPath } from '@/lib/pmStoryLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
@@ -101,6 +105,14 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
+import { shouldSuppressStoryOverlayOutsideDismiss } from '@/components/pm/story-detail/storyOverlayDismiss';
+import { getFlushablePendingStoryPatch, hasPendingStorySave } from '@/components/pm/story-detail/storyPendingPatch';
+import { StoryStateSelectContent } from '@/components/pm/story-detail/StoryStateSelectContent';
+import {
+  isEpicSelectableForStoryTeam,
+  isSprintSelectableForStoryTeam,
+} from '@/components/pm/story-detail/storyPlanningScope';
+import { syncStoryLabelsWithFeedback } from '@/components/pm/story-detail/storyLabelSync';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -211,57 +223,6 @@ function MetadataRow({
   );
 }
 
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-  renderOption,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  renderOption?: (value: T) => React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-              `}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {renderOption ? renderOption(option.value) : null}
-              <span className="truncate">{option.label}</span>
-              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ── Timeline Entry ─────────────────────────────────────────────────
 
@@ -327,20 +288,34 @@ function StoryDetailPanelBody({
 }) {
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [labelSaving, setLabelSaving] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  const pendingPatchRef = useRef<UpdateStoryRequest>({});
+  const descriptionPendingUploadsRef = useRef(0);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+  const storyId = storyDetail.story.id;
+
+  useEffect(() => {
+    pendingPatchRef.current = pendingPatch;
+  }, [pendingPatch]);
+
+  useEffect(() => {
+    descriptionPendingUploadsRef.current = descriptionPendingUploads;
+  }, [descriptionPendingUploads]);
 
   // Check if GitHub is connected
   useEffect(() => {
@@ -403,16 +378,6 @@ function StoryDetailPanelBody({
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
   const savedDescriptionRef = useRef(storyDetail.story.description ?? '');
-  useEffect(() => {
-    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
-      lastSyncedAt.current = storyDetail.story.updated_at;
-      savedDescriptionRef.current = storyDetail.story.description ?? '';
-      // Only reset form if no unsaved edits
-      if (Object.keys(pendingPatch).length === 0 && !saving) {
-        setForm(buildFormState(storyDetail));
-      }
-    }
-  }, [storyDetail, pendingPatch, saving]);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
 
@@ -434,6 +399,7 @@ function StoryDetailPanelBody({
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const teamSprintsEnabled = useMemo(() => teams.find((t) => t.id === form.team_id)?.sprints_enabled !== false, [teams, form.team_id]);
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
     [teams, form.team_id],
@@ -467,6 +433,18 @@ function StoryDetailPanelBody({
     reloadComments();
     reloadActivity();
   }, [reloadComments, reloadActivity]);
+
+  useEffect(() => {
+    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
+      lastSyncedAt.current = storyDetail.story.updated_at;
+      savedDescriptionRef.current = storyDetail.story.description ?? '';
+      void reloadActivity();
+      // Only reset form if no unsaved edits
+      if (Object.keys(pendingPatch).length === 0 && !saving) {
+        setForm(buildFormState(storyDetail));
+      }
+    }
+  }, [storyDetail, pendingPatch, reloadActivity, saving]);
 
   // Re-fetch comments when comment events arrive; activity on any story change
   useEffect(() => {
@@ -504,6 +482,51 @@ function StoryDetailPanelBody({
     })();
   }, [workspaceId]);
 
+  const queuePatch = (patch: UpdateStoryRequest) => {
+    setPendingPatch((current) => ({ ...current, ...patch }));
+  };
+
+  const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateStoryRequest) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    queuePatch(patch);
+  };
+
+  const availableEpics = useMemo(
+    () =>
+      epics.filter((entry) =>
+        isEpicSelectableForStoryTeam(entry.epic.team_id ?? null, form.team_id || null),
+      ),
+    [epics, form.team_id],
+  );
+
+  const availableSprints = useMemo(
+    () =>
+      sprints.filter((entry) =>
+        isSprintSelectableForStoryTeam(entry.sprint.team_id ?? null, form.team_id || null),
+      ),
+    [form.team_id, sprints],
+  );
+
+  useEffect(() => {
+    if (!form.epic_id) return;
+    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+    if (!selectedEpic) return;
+    if (isEpicSelectableForStoryTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
+      return;
+    }
+    updateField('epic_id', '', { epic_id: '' });
+  }, [epics, form.epic_id, form.team_id]);
+
+  useEffect(() => {
+    if (!form.sprint_id) return;
+    const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
+    if (!selectedSprint) return;
+    if (isSprintSelectableForStoryTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+      return;
+    }
+    updateField('sprint_id', '', { sprint_id: '' });
+  }, [form.sprint_id, form.team_id, sprints]);
+
   // ── Auto-show checklist / external links if items exist ────────
   useEffect(() => {
     (async () => {
@@ -520,21 +543,25 @@ function StoryDetailPanelBody({
   useEffect(() => {
     if (
       saving ||
-      Object.keys(pendingPatch).length === 0 ||
-      (pendingPatch.description !== undefined && descriptionPendingUploads > 0)
+      !getFlushablePendingStoryPatch(pendingPatch, descriptionPendingUploads)
     ) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
-      const { data, error } = await pmStoryService.update(workspaceId, storyDetail.story.id, patch);
+      const { data, error } = await pmStoryService.update(workspaceId, storyId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
         setSaveError(null);
         onStoryUpdated(data);
+        void reloadActivity();
+        // Invalidate sprint planning if sprint/state/estimate changed
+        if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
+          queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
+        }
         const nextDescription = data.story.description ?? '';
         savedDescriptionRef.current = nextDescription;
         if (patch.description !== undefined) {
@@ -550,16 +577,43 @@ function StoryDetailPanelBody({
     }, 650);
 
     return () => window.clearTimeout(timer);
-  }, [workspaceId, storyDetail, pendingPatch, saving, onStoryUpdated, descriptionPendingUploads]);
+  }, [
+    descriptionPendingUploads,
+    onStoryUpdated,
+    pendingPatch,
+    queryClient,
+    reloadActivity,
+    saving,
+    storyId,
+    workspaceId,
+  ]);
 
-  const queuePatch = (patch: UpdateStoryRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
-  };
+  useEffect(() => {
+    return () => {
+      const patch = getFlushablePendingStoryPatch(
+        pendingPatchRef.current,
+        descriptionPendingUploadsRef.current,
+      );
+      if (!patch) {
+        return;
+      }
 
-  const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateStoryRequest) => {
-    setForm((current) => ({ ...current, [key]: value }));
-    queuePatch(patch);
-  };
+      void pmStoryService.update(workspaceId, storyId, patch).then(({ data }) => {
+        if (!data) {
+          return;
+        }
+
+        onStoryUpdated(data);
+        if (
+          patch.sprint_id !== undefined ||
+          patch.workflow_state_id !== undefined ||
+          patch.estimate !== undefined
+        ) {
+          queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
+        }
+      });
+    };
+  }, [onStoryUpdated, queryClient, storyId, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -586,7 +640,7 @@ function StoryDetailPanelBody({
       });
       setSaving(true);
 
-      const { data, error } = await pmStoryService.update(workspaceId, storyDetail.story.id, {
+      const { data, error } = await pmStoryService.update(workspaceId, storyId, {
         description: nextDescription,
       });
       if (error || !data) {
@@ -603,17 +657,17 @@ function StoryDetailPanelBody({
       setSaving(false);
       return 'handled' as const;
     },
-    [form.description, onStoryUpdated, storyDetail.story.id, workspaceId],
+    [confirm, form.description, onStoryUpdated, storyId, workspaceId],
   );
 
   // ── Archive ────────────────────────────────────────────────────
   const archiveStory = async () => {
-    const { error } = await pmStoryService.remove(workspaceId, storyDetail.story.id);
+    const { error } = await pmStoryService.remove(workspaceId, storyId);
     if (error) {
       setSaveError(error);
       return;
     }
-    onStoryArchived(storyDetail.story.id);
+    onStoryArchived(storyId);
     onOpenChange(false);
   };
 
@@ -681,6 +735,7 @@ function StoryDetailPanelBody({
   }, [form.requester_member_id, memberNameMap]);
 
   const storyLabels = storyDetail.labels ?? [];
+  const isSaving = saving || labelSaving || hasPendingStorySave(pendingPatch, descriptionPendingUploads);
 
   useEffect(() => {
     if (!form) return;
@@ -688,11 +743,18 @@ function StoryDetailPanelBody({
       .filter((label) => !label.team_id || (form.team_id ? label.team_id === form.team_id : false))
       .map((label) => label.id);
     if (validLabelIds.length === storyLabels.length) return;
-    void (async () => {
-      await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((label) => label.id), validLabelIds);
-      const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
-      if (res.data) onStoryUpdated(res.data);
-    })();
+    void syncStoryLabelsWithFeedback({
+      workspaceId,
+      storyId: storyDetail.story.id,
+      currentLabelIds: storyLabels.map((label) => label.id),
+      nextLabelIds: validLabelIds,
+      syncLabels: pmStoryService.syncLabels,
+      reloadStory: pmStoryService.get,
+      onStoryUpdated,
+      onSaved: reloadActivity,
+      setSaving: setLabelSaving,
+      setSaveError,
+    });
   }, [form?.team_id, onStoryUpdated, storyDetail.story.id, storyLabels, workspaceId]);
 
   return (
@@ -734,7 +796,7 @@ function StoryDetailPanelBody({
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && (
+          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && teamSprintsEnabled && (
             <>
               <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
@@ -762,7 +824,7 @@ function StoryDetailPanelBody({
         </div>
 
         <div className="ml-2 flex shrink-0 items-center gap-1">
-          <SaveIndicator saving={saving} error={saveError} />
+          <SaveIndicator saving={isSaving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
               <Check className="h-3.5 w-3.5" />
@@ -793,17 +855,17 @@ function StoryDetailPanelBody({
             </DropdownMenuContent>
           </DropdownMenu>
           {workspace && (
-            <QuickTooltip label="Open full page">
+            <QuickTooltip label="Open in new tab">
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 shrink-0"
                 onClick={() => {
-                  onOpenChange(false);
-                  navigate({
-                    to: '/w/$slug/pm/stories/$storyId',
-                    params: { slug: workspace.slug, storyId: storyDetail.story.id },
-                  });
+                  window.open(
+                    buildStoryPath(workspace.slug, storyDetail.story.id),
+                    '_blank',
+                    'noopener,noreferrer',
+                  );
                 }}
               >
                 <Maximize2 className="h-3.5 w-3.5" />
@@ -868,16 +930,46 @@ function StoryDetailPanelBody({
 
           {/* Description */}
           <div className="mt-4">
-            <TiptapEditor
-              content={form.description}
-              onChange={(html) => updateField('description', html, { description: html })}
-              placeholder="Add a description..."
-              className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
-              uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-              onUploadStateChange={setDescriptionPendingUploads}
-              teams={mentionTeams}
-              members={assignableMembers}
-            />
+            {editingDescription ? (
+              <div>
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => updateField('description', html, { description: html })}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
+                  members={assignableMembers}
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="group/desc relative">
+                {form.description ? (
+                  <RichTextMentionContent
+                    html={form.description}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                    className="prose prose-sm dark:prose-invert max-w-none text-[13px] [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No description yet</p>
+                )}
+                <button
+                  type="button"
+                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                  onClick={() => setEditingDescription(true)}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit description
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Action bar — "Add to Story" */}
@@ -1085,14 +1177,25 @@ function StoryDetailPanelBody({
                 options={states.map((s) => ({ value: s.id, label: s.name }))}
                 onChange={(v) => updateField('workflow_state_id', v, { workflow_state_id: v })}
                 renderTrigger={() => (
-                  <>
-                    {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5" />}
-                    <span>{currentState?.name ?? 'Select'}</span>
-                  </>
+                  currentState ? (
+                    <StoryStateSelectContent
+                      stateType={currentState.state_type}
+                      label={currentState.name}
+                      color={currentState.color}
+                    />
+                  ) : (
+                    <span>Select</span>
+                  )
                 )}
                 renderOption={(v) => {
                   const s = states.find((st) => st.id === v);
-                  return s ? <StateTypeIcon stateType={s.state_type} className="h-4 w-4 shrink-0" /> : null;
+                  return s ? (
+                    <StoryStateSelectContent
+                      stateType={s.state_type}
+                      label={s.name}
+                      color={s.color}
+                    />
+                  ) : null;
                 }}
               />
             </MetadataRow>
@@ -1225,16 +1328,25 @@ function StoryDetailPanelBody({
                 selectedLabelIds={storyLabels.map((l) => l.id)}
                 onLabelsChange={setAllLabels}
                 onChange={async (labelIds) => {
-                  await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((l) => l.id), labelIds);
-                  const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
-                  if (res.data) onStoryUpdated(res.data);
+                  await syncStoryLabelsWithFeedback({
+                    workspaceId,
+                    storyId: storyDetail.story.id,
+                    currentLabelIds: storyLabels.map((label) => label.id),
+                    nextLabelIds: labelIds,
+                    syncLabels: pmStoryService.syncLabels,
+                    reloadStory: pmStoryService.get,
+                    onStoryUpdated,
+                    onSaved: reloadActivity,
+                    setSaving: setLabelSaving,
+                    setSaveError,
+                  });
                 }}
               />
             </MetadataRow>
             )}
 
             {/* ── Planning ── */}
-            {(fieldVis.epic || fieldVis.sprint || fieldVis.estimate || fieldVis.due_date || fieldVis.blocked) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+            {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled) || fieldVis.estimate || fieldVis.due_date || fieldVis.blocked) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
             {/* Epic */}
             {fieldVis.epic && (
@@ -1243,7 +1355,7 @@ function StoryDetailPanelBody({
                 value={form.epic_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'No epic' },
-                  ...epics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
+                  ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
@@ -1255,13 +1367,13 @@ function StoryDetailPanelBody({
             )}
 
             {/* Sprint */}
-            {fieldVis.sprint && (
+            {fieldVis.sprint && teamSprintsEnabled && (
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'No sprint' },
-                  ...sprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
+                  ...availableSprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
@@ -1271,6 +1383,8 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
             )}
+
+            <div className="col-span-3 border-t border-border/60" />
 
             {/* Estimate */}
             {fieldVis.estimate && (
@@ -1486,9 +1600,33 @@ export function StoryDetailPanel({
   onStoryUpdated,
   onStoryArchived,
 }: StoryDetailPanelProps) {
+  const openedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      openedAtRef.current = Date.now();
+      return;
+    }
+    openedAtRef.current = null;
+  }, [open]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[75vw] !max-w-[75vw] p-0" showCloseButton={false}>
+      <SheetContent
+        side="right"
+        className="w-[75vw] !max-w-[75vw] p-0"
+        showCloseButton={false}
+        onPointerDownOutside={(event) => {
+          if (shouldSuppressStoryOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
+            event.preventDefault();
+          }
+        }}
+        onInteractOutside={(event) => {
+          if (shouldSuppressStoryOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
+            event.preventDefault();
+          }
+        }}
+      >
         <SheetTitle className="sr-only">Story Detail</SheetTitle>
         {storyDetail ? (
           <StoryDetailPanelBody

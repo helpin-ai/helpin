@@ -39,6 +39,7 @@ plane
 
 # Claude Code
 .claude/settings.local.json
+.worktrees/
 node_modules/
 .turbo/
 dist/

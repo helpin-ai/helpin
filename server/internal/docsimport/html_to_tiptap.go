@@ -3,6 +3,8 @@ package docsimport
 import (
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -41,19 +43,44 @@ func (c *converter) warn(w Warning) {
 
 // convertChildren walks child nodes and returns block-level Tiptap nodes.
 func (c *converter) convertChildren(parent *html.Node) []Node {
-	var result []Node
+	var (
+		result       []Node
+		inlineBuffer []Node
+	)
+
+	flushInline := func() {
+		inlineBuffer = trimInlineNodes(inlineBuffer)
+		if len(inlineBuffer) == 0 {
+			inlineBuffer = nil
+			return
+		}
+		result = append(result, Paragraph(inlineBuffer...))
+		inlineBuffer = nil
+	}
+
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
 		nodes := c.convertNode(child)
-		result = append(result, nodes...)
+		for _, node := range nodes {
+			if node.Type == "" {
+				continue
+			}
+			if isInlineNode(node) {
+				inlineBuffer = append(inlineBuffer, node)
+				continue
+			}
+			flushInline()
+			result = append(result, node)
+		}
 	}
-	return result
+	flushInline()
+	return compactBlockNodes(result)
 }
 
 // convertNode converts a single HTML node into Tiptap nodes.
 func (c *converter) convertNode(n *html.Node) []Node {
 	switch n.Type {
 	case html.TextNode:
-		text := n.Data
+		text := normalizeInlineText(n.Data)
 		if strings.TrimSpace(text) == "" {
 			return nil
 		}
@@ -83,17 +110,17 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		return c.convertParagraph(n)
 
 	case atom.H1:
-		return []Node{Heading(1, c.convertInline(n)...)}
+		return c.convertHeading(1, n)
 	case atom.H2:
-		return []Node{Heading(2, c.convertInline(n)...)}
+		return c.convertHeading(2, n)
 	case atom.H3:
-		return []Node{Heading(3, c.convertInline(n)...)}
+		return c.convertHeading(3, n)
 	case atom.H4:
-		return []Node{Heading(4, c.convertInline(n)...)}
+		return c.convertHeading(4, n)
 	case atom.H5:
-		return []Node{Heading(5, c.convertInline(n)...)}
+		return c.convertHeading(5, n)
 	case atom.H6:
-		return []Node{Heading(6, c.convertInline(n)...)}
+		return c.convertHeading(6, n)
 
 	case atom.Blockquote:
 		content := c.convertChildren(n)
@@ -151,11 +178,11 @@ func (c *converter) convertElement(n *html.Node) []Node {
 	case atom.Iframe:
 		return c.convertIframe(n)
 
-	// Inline elements — wrap in paragraph if at block level
+	// Inline elements stay inline; convertChildren is responsible for wrapping
+	// contiguous inline content into paragraphs when needed.
 	case atom.A, atom.Strong, atom.B, atom.Em, atom.I, atom.U, atom.S, atom.Del,
 		atom.Code, atom.Sub, atom.Sup, atom.Span, atom.Small, atom.Mark:
-		inline := c.convertInlineElement(n, nil)
-		return []Node{Paragraph(inline...)}
+		return c.convertInlineElement(n, nil)
 
 	case atom.Figure:
 		return c.convertFigure(n)
@@ -202,6 +229,7 @@ func (c *converter) convertParagraph(n *html.Node) []Node {
 	var inlineBuffer []Node
 
 	flushInline := func() {
+		inlineBuffer = trimInlineNodes(inlineBuffer)
 		if len(inlineBuffer) > 0 {
 			result = append(result, Paragraph(inlineBuffer...))
 			inlineBuffer = nil
@@ -222,7 +250,7 @@ func (c *converter) convertParagraph(n *html.Node) []Node {
 		} else if child.Type == html.ElementNode && child.DataAtom == atom.Br {
 			inlineBuffer = append(inlineBuffer, HardBreak())
 		} else if child.Type == html.TextNode {
-			text := child.Data
+			text := normalizeInlineText(child.Data)
 			if text != "" {
 				inlineBuffer = append(inlineBuffer, Text(text))
 			}
@@ -233,9 +261,17 @@ func (c *converter) convertParagraph(n *html.Node) []Node {
 	flushInline()
 
 	if len(result) == 0 {
-		return []Node{Paragraph()}
+		return nil
 	}
-	return result
+	return compactBlockNodes(result)
+}
+
+func (c *converter) convertHeading(level int, n *html.Node) []Node {
+	content := trimInlineNodes(c.convertInline(n))
+	if len(content) == 0 {
+		return nil
+	}
+	return []Node{Heading(level, content...)}
 }
 
 // convertInline walks children of an inline container and returns text nodes with marks.
@@ -249,7 +285,7 @@ func (c *converter) convertInlineChildren(parent *html.Node, marks []Mark) []Nod
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
 		switch child.Type {
 		case html.TextNode:
-			text := child.Data
+			text := normalizeInlineText(child.Data)
 			if text == "" {
 				continue
 			}
@@ -529,6 +565,7 @@ func isSafeURL(href string) bool {
 
 // ensureBlockContent wraps inline-only content in a paragraph if needed.
 func ensureBlockContent(nodes []Node) []Node {
+	nodes = compactBlockNodes(nodes)
 	if len(nodes) == 0 {
 		return []Node{Paragraph()}
 	}
@@ -543,4 +580,193 @@ func ensureBlockContent(nodes []Node) []Node {
 		return []Node{Paragraph(nodes...)}
 	}
 	return nodes
+}
+
+func compactBlockNodes(nodes []Node) []Node {
+	result := make([]Node, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Type == "" {
+			continue
+		}
+		if node.Type == "paragraph" {
+			node.Content = trimInlineNodes(node.Content)
+			if len(node.Content) == 0 {
+				continue
+			}
+		}
+		result = append(result, node)
+	}
+	return result
+}
+
+func trimInlineNodes(nodes []Node) []Node {
+	trimmed := append([]Node(nil), nodes...)
+	for len(trimmed) > 0 {
+		if candidate, ok := trimInlineNodeLeft(trimmed[0]); ok {
+			trimmed[0] = candidate
+			break
+		}
+		trimmed = trimmed[1:]
+	}
+	for len(trimmed) > 0 {
+		last := len(trimmed) - 1
+		if candidate, ok := trimInlineNodeRight(trimmed[last]); ok {
+			trimmed[last] = candidate
+			break
+		}
+		trimmed = trimmed[:last]
+	}
+	return compactInlineBreaks(trimmed)
+}
+
+func compactInlineBreaks(nodes []Node) []Node {
+	result := make([]Node, 0, len(nodes))
+	for _, node := range nodes {
+		switch node.Type {
+		case "hardBreak":
+			if len(result) == 0 || result[len(result)-1].Type == "hardBreak" {
+				continue
+			}
+			if result[len(result)-1].Type == "text" {
+				result[len(result)-1].Text = strings.TrimRightFunc(result[len(result)-1].Text, unicode.IsSpace)
+				if result[len(result)-1].Text == "" {
+					result = result[:len(result)-1]
+					if len(result) == 0 || result[len(result)-1].Type == "hardBreak" {
+						continue
+					}
+				}
+			}
+			result = append(result, node)
+		case "text":
+			if len(result) > 0 && result[len(result)-1].Type == "hardBreak" {
+				node.Text = strings.TrimLeftFunc(node.Text, unicode.IsSpace)
+				if node.Text == "" {
+					continue
+				}
+			}
+			result = append(result, node)
+		default:
+			result = append(result, node)
+		}
+	}
+	for len(result) > 0 && result[len(result)-1].Type == "hardBreak" {
+		result = result[:len(result)-1]
+	}
+	return ensureInlineBoundarySpacing(result)
+}
+
+func ensureInlineBoundarySpacing(nodes []Node) []Node {
+	if len(nodes) < 2 {
+		return nodes
+	}
+	for i := 1; i < len(nodes); i++ {
+		prev := &nodes[i-1]
+		curr := &nodes[i]
+		if prev.Type != "text" || curr.Type != "text" {
+			continue
+		}
+		if !shouldInsertBoundarySpace(*prev, *curr) {
+			continue
+		}
+		prev.Text = strings.TrimRightFunc(prev.Text, unicode.IsSpace) + " "
+		curr.Text = strings.TrimLeftFunc(curr.Text, unicode.IsSpace)
+	}
+	return nodes
+}
+
+func shouldInsertBoundarySpace(prev, curr Node) bool {
+	if len(prev.Marks) == 0 && len(curr.Marks) == 0 {
+		return false
+	}
+	if prev.Text == "" || curr.Text == "" {
+		return false
+	}
+	prevLast, okPrev := lastNonSpaceRune(prev.Text)
+	currFirst, okCurr := firstNonSpaceRune(curr.Text)
+	if !okPrev || !okCurr {
+		return false
+	}
+	if unicode.IsSpace(prevLast) || unicode.IsSpace(currFirst) {
+		return false
+	}
+	return isWordLikeBoundaryRune(prevLast) && isWordLikeBoundaryRune(currFirst)
+}
+
+func trimInlineNodeLeft(node Node) (Node, bool) {
+	if node.Type != "text" {
+		return node, true
+	}
+	text := strings.TrimLeftFunc(replaceNBSP(node.Text), unicode.IsSpace)
+	if text == "" {
+		return Node{}, false
+	}
+	node.Text = text
+	return node, true
+}
+
+func normalizeInlineText(text string) string {
+	text = replaceNBSP(text)
+	if text == "" {
+		return ""
+	}
+	var builder strings.Builder
+	builder.Grow(len(text))
+	lastWasSpace := false
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			if !lastWasSpace {
+				builder.WriteByte(' ')
+				lastWasSpace = true
+			}
+			continue
+		}
+		builder.WriteRune(r)
+		lastWasSpace = false
+	}
+	return builder.String()
+}
+
+func firstNonSpaceRune(text string) (rune, bool) {
+	for _, r := range text {
+		if !unicode.IsSpace(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+func lastNonSpaceRune(text string) (rune, bool) {
+	for i := len(text); i > 0; {
+		r, size := utf8.DecodeLastRuneInString(text[:i])
+		i -= size
+		if !unicode.IsSpace(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+func isWordLikeBoundaryRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsNumber(r)
+}
+
+func trimInlineNodeRight(node Node) (Node, bool) {
+	if node.Type != "text" {
+		return node, true
+	}
+	text := strings.TrimRightFunc(replaceNBSP(node.Text), unicode.IsSpace)
+	if text == "" {
+		return Node{}, false
+	}
+	node.Text = text
+	return node, true
+}
+
+func isInlineNode(node Node) bool {
+	switch node.Type {
+	case "text", "hardBreak":
+		return true
+	default:
+		return false
+	}
 }

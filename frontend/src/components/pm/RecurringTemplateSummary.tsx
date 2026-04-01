@@ -149,7 +149,7 @@ export function RecurringTemplateSummary({
           <div className="flex items-start gap-2 text-muted-foreground">
             <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">
-              Last generated: TP-{lastGeneratedStory.display_id} {lastGeneratedStory.name}
+              Last generated: {lastGeneratedStory.display_id} {lastGeneratedStory.name}
             </span>
           </div>
         ) : null}

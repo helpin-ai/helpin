@@ -62,6 +62,7 @@ import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { UserAvatar } from "@/components/pm/UserAvatar";
 import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
 import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
@@ -70,6 +71,7 @@ import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
 import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
 import { buildSprintOptionGroups } from "@/lib/pmSprintOptions";
+import { isEpicSelectableForStoryTeam } from '@/components/pm/story-detail/storyPlanningScope';
 import { htmlToMarkdown, markdownToHtml } from "@/lib/tiptapMarkdown";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -85,6 +87,7 @@ interface CreateStoryModalProps {
   initialStateId?: string;
   initialTeamId?: string;
   initialOwnerMemberId?: string;
+  initialSprintId?: string;
   onCreate?: (payload: CreateStoryRequest) => Promise<{ id: string } | void>;
   mode?: 'story' | 'template';
   editingTemplate?: StoryTemplate | null;
@@ -140,60 +143,6 @@ function MetadataRow({
       <span className="text-xs text-muted-foreground self-center">{label}</span>
       <div className="min-w-0 self-center">{children}</div>
     </>
-  );
-}
-
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-  renderOption,
-  optionClassName,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  renderOption?: (value: T) => React.ReactNode;
-  optionClassName?: (value: T) => string;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? "bg-accent text-foreground font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground"}
-              `}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {renderOption ? renderOption(option.value) : null}
-              <span className={`truncate ${optionClassName?.(option.value) ?? ''}`}>{option.label}</span>
-              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -296,6 +245,7 @@ export function CreateStoryModal({
   initialStateId,
   initialTeamId,
   initialOwnerMemberId,
+  initialSprintId,
   onCreate,
   mode = 'story',
   editingTemplate,
@@ -336,9 +286,11 @@ export function CreateStoryModal({
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
+  const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
   const selectedTeamDefaultStoryType = useMemo(
-    () => (teams.find((team) => team.id === form.team_id)?.default_story_type as StoryType | undefined) ?? 'feature',
-    [teams, form.team_id],
+    () => (selectedTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+    [selectedTeam],
   );
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
@@ -387,6 +339,7 @@ export function CreateStoryModal({
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         owner_member_id: initialOwnerMemberId ?? '',
+        sprint_id: initialSprintId ?? '',
       });
       setStoryTypeDirty(false);
       initialDescRef.current = '';
@@ -402,7 +355,7 @@ export function CreateStoryModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -465,6 +418,14 @@ export function CreateStoryModal({
     setForm((current) => (current.sprint_id ? { ...current, sprint_id: '' } : current));
   }, [form.sprint_id, form.team_id, sprints]);
 
+  useEffect(() => {
+    if (!form.epic_id) return;
+    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+    if (!selectedEpic) return;
+    if (isEpicSelectableForStoryTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) return;
+    setForm((current) => (current.epic_id ? { ...current, epic_id: '' } : current));
+  }, [epics, form.epic_id, form.team_id]);
+
   const canSubmit = useMemo(
     () =>
       descriptionPendingUploads === 0 &&
@@ -483,6 +444,14 @@ export function CreateStoryModal({
     if (!form.epic_id) return "None";
     return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? "None";
   }, [form.epic_id, epics]);
+
+  const availableEpics = useMemo(
+    () =>
+      epics.filter((entry) =>
+        isEpicSelectableForStoryTeam(entry.epic.team_id ?? null, form.team_id || null),
+      ),
+    [epics, form.team_id],
+  );
 
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return "None";
@@ -691,6 +660,7 @@ export function CreateStoryModal({
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
+            sprint_id: initialSprintId ?? '',
           });
           setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
@@ -719,6 +689,7 @@ export function CreateStoryModal({
     currentMemberId,
     initialTeamId,
     initialOwnerMemberId,
+    initialSprintId,
     isTemplateMode,
     editingTemplate,
     onCreate,
@@ -1360,7 +1331,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* ── Planning ── */}
-                {(fieldVis.epic || fieldVis.sprint) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled)) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
@@ -1369,7 +1340,7 @@ export function CreateStoryModal({
                     value={form.epic_id || "__none__"}
                     options={[
                       { value: "__none__", label: "No epic" },
-                      ...epics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
+                      ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
                     ]}
                     onChange={(value) =>
                       setForm((prev) => ({
@@ -1383,7 +1354,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* Sprint */}
-                {fieldVis.sprint && (
+                {fieldVis.sprint && teamSprintsEnabled && (
                 <MetadataRow icon={SprintIcon} label="Sprint">
                   <GroupedSidebarPopoverSelect
                     value={form.sprint_id || "__none__"}

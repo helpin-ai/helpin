@@ -1,6 +1,5 @@
 import {
   BookOpen,
-  Bot,
   FileText,
   FolderKanban,
   Globe,
@@ -8,6 +7,7 @@ import {
   Mail,
   MessageSquare,
   RefreshCw,
+  Route,
   Settings2,
   Sliders,
   Sparkles,
@@ -37,9 +37,7 @@ export type SettingsSection =
   | 'crm-autonomy'
   | 'ai-automations'
   | 'chat-general'
-  | 'team-inboxes'
-  | 'email-forwarding'
-  | 'chat-ai';
+  | 'inboxes-routing';
 
 export type SettingsRouteSection = SettingsSection | 'profile' | 'notifications' | 'account';
 
@@ -199,31 +197,16 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'chat-general',
     label: 'Chat Widget',
-    description: 'Widget installation, availability, identity capture, appearance, AI auto-reply, and routing.',
+    description: 'Widget installation, availability, identity capture, appearance, and AI auto-reply behavior.',
     icon: MessageSquare,
     group: 'Support & Docs',
   },
   {
-    id: 'team-inboxes',
-    label: 'Team Inboxes',
-    description: 'Create private support inboxes, add members, pick icons, and link support teams.',
-    icon: MessageSquare,
+    id: 'inboxes-routing',
+    label: 'Inboxes & Routing',
+    description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
+    icon: Route,
     group: 'Support & Docs',
-  },
-  {
-    id: 'email-forwarding',
-    label: 'Email Forwarding',
-    description: 'Generate forwarding addresses for Shared Inbox and Team Inboxes.',
-    icon: Mail,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'chat-ai',
-    label: 'AI & Routing',
-    description: 'Configure support AI auto-reply, routing, handoff, and related chat behavior.',
-    icon: Bot,
-    group: 'Support & Docs',
-    sidebar: false,
   },
 ];
 

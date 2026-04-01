@@ -97,6 +97,7 @@ export function CommentEditor({
   onUploadStateChangeRef.current = onUploadStateChange
   const pendingUploadsRef = useRef(0)
   const [pendingUploads, setPendingUploads] = useState(0)
+  const [hasContent, setHasContent] = useState(false)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -317,7 +318,8 @@ export function CommentEditor({
         return false
       },
     },
-    onUpdate: () => {
+    onUpdate: ({ editor: e }) => {
+      setHasContent(!e.isEmpty)
       const html = editorRef.current?.getHTML() ?? ''
       if (skipNextCleanupRef.current) {
         skipNextCleanupRef.current = false
@@ -385,8 +387,7 @@ export function CommentEditor({
 
   if (!editor) return null
 
-  const content = getContent(editor)
-  const canSubmit = !loading && pendingUploads === 0 && (content.trim().length > 0 || uploadedFiles.length > 0)
+  const canSubmit = !loading && pendingUploads === 0 && (hasContent || uploadedFiles.length > 0)
 
   return (
     <div className="rounded-lg border border-border/60 bg-background transition-colors focus-within:border-border">

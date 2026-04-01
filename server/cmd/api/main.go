@@ -192,8 +192,11 @@ func main() {
 		&model.CodingSessionStateSnapshot{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
+		&model.SupportConversationTriage{},
+		&model.SupportConversationTriageEvent{},
 		&model.SupportMailbox{},
 		&model.SupportMailboxMembership{},
+		&model.SupportTriageRule{},
 		&model.SupportEmailRoute{},
 		&model.SupportMessage{},
 		&model.SupportEmailLog{},
@@ -443,7 +446,7 @@ func main() {
 	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
 	go func() {
 		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
-			fatalWithSentry("jetstream bridge stopped", err)
+			slog.Error("jetstream bridge stopped (non-fatal in dev)", "error", err)
 		}
 	}()
 
@@ -482,7 +485,10 @@ func main() {
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
+	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
+	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
+	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
@@ -563,7 +569,7 @@ func main() {
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
-	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, settingsRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
@@ -614,6 +620,18 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	supportInboxTriageService := service.NewSupportInboxTriageService(
+		supportInboxService,
+		supportConversationTriageRepo,
+		supportConversationTriageEventRepo,
+		supportTriageRuleRepo,
+		supportInstallRepo,
+		supportMailboxRepo,
+		supportConversationRepo,
+		supportMessageRepo,
+		supportLLMRouter,
+	)
+	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -880,6 +898,7 @@ func main() {
 	)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
+	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetSupportAIService(supportAIService)
 

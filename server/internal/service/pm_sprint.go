@@ -18,6 +18,7 @@ type PMSprintService struct {
 	labelRepo           *repository.PMLabelRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
+	settingsRepo        *repository.SettingsRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
@@ -25,8 +26,8 @@ type PMSprintService struct {
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, settingsRepo *repository.SettingsRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, settingsRepo: settingsRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
 }
 
 // List returns sprints with filters.
@@ -52,6 +53,15 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 	return result, nil
 }
 
+// ListPlanningWorkspace returns grouped sprints and an unassigned backlog for the planning page.
+func (s *PMSprintService) ListPlanningWorkspace(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters) (*model.SprintPlanningWorkspace, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	return s.sprintRepo.ListPlanningWorkspace(ctx, workspaceID, filters)
+}
+
 // GetByID returns sprint with stats.
 func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.SprintWithStats, error) {
 	sprint, err := s.sprintRepo.GetWithStats(ctx, id)
@@ -74,6 +84,13 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 	}
 	if err := requireCanManage(ctx, req.TeamID); err != nil {
 		return nil, err
+	}
+	// Check if sprints are enabled for this team
+	if req.TeamID != nil && *req.TeamID != "" && s.settingsRepo != nil {
+		team, err := s.settingsRepo.GetTeamByID(ctx, *req.TeamID)
+		if err == nil && team != nil && !team.SprintsEnabled {
+			return nil, fmt.Errorf("sprints are disabled for this team")
+		}
 	}
 	if !req.EndDate.After(req.StartDate) {
 		return nil, fmt.Errorf("end_date must be after start_date")

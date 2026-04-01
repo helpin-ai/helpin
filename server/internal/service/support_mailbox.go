@@ -11,6 +11,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+type supportConversationMoveOptions struct {
+	EnforceMailboxAccess bool
+	UseAccessibleLoad    bool
+	RecordTriageFeedback bool
+}
+
 func normalizeSupportMailboxHandle(handle string) string {
 	handle = strings.ToLower(strings.TrimSpace(handle))
 	handle = strings.ReplaceAll(handle, " ", "-")
@@ -61,7 +67,11 @@ func (s *SupportInboxService) requireMailboxAccess(ctx context.Context, workspac
 }
 
 func (s *SupportInboxService) loadConversationAccessible(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversation, error) {
-	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	actor := supportActorFromContext(ctx, workspaceID)
+	if actor == nil || strings.TrimSpace(actor.WorkspaceMemberID) == "" {
+		return s.loadConversationUnscoped(ctx, workspaceID, conversationID)
+	}
+	workspaceMemberID, role := actor.WorkspaceMemberID, actor.Role
 	return s.conversationRepo.GetByID(ctx, workspaceID, conversationID, workspaceMemberID, role)
 }
 
@@ -246,14 +256,22 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 		Handle:         handle,
 		Icon:           icon,
 		Description:    req.Description,
+		RoutingPrompt:  req.RoutingPrompt,
+		TriageEligible: true,
 		LinkedTeamID:   req.LinkedTeamID,
 		VisibilityMode: "members_only",
 		AssignmentMode: req.AssignmentMode,
 		Active:         true,
 		CreatedByID:    actorID,
 	}
+	if req.TriageEligible != nil {
+		mailbox.TriageEligible = *req.TriageEligible
+	}
 	if req.LinkedTeamID != nil && strings.TrimSpace(*req.LinkedTeamID) == "" {
 		mailbox.LinkedTeamID = nil
+	}
+	if req.RoutingPrompt != nil && strings.TrimSpace(*req.RoutingPrompt) == "" {
+		mailbox.RoutingPrompt = nil
 	}
 
 	if err := s.mailboxRepo.Create(ctx, mailbox); err != nil {
@@ -312,6 +330,17 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 			mailbox.Description = req.Description
 		}
 	}
+	if req.RoutingPrompt != nil {
+		if strings.TrimSpace(*req.RoutingPrompt) == "" {
+			mailbox.RoutingPrompt = nil
+		} else {
+			trimmed := strings.TrimSpace(*req.RoutingPrompt)
+			mailbox.RoutingPrompt = &trimmed
+		}
+	}
+	if req.TriageEligible != nil {
+		mailbox.TriageEligible = *req.TriageEligible
+	}
 	if req.LinkedTeamID != nil {
 		if strings.TrimSpace(*req.LinkedTeamID) == "" {
 			mailbox.LinkedTeamID = nil
@@ -364,7 +393,20 @@ func (s *SupportInboxService) ReorderMailboxes(ctx context.Context, workspaceID 
 }
 
 func (s *SupportInboxService) MoveConversation(ctx context.Context, workspaceID, conversationID string, mailboxID *string, actorID string) (*model.SupportConversation, error) {
-	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	return s.moveConversationInternal(ctx, workspaceID, conversationID, mailboxID, actorID, supportConversationMoveOptions{
+		EnforceMailboxAccess: true,
+		UseAccessibleLoad:    true,
+		RecordTriageFeedback: true,
+	})
+}
+
+func (s *SupportInboxService) moveConversationInternal(ctx context.Context, workspaceID, conversationID string, mailboxID *string, actorID string, options supportConversationMoveOptions) (*model.SupportConversation, error) {
+	loadConversation := s.loadConversationAccessible
+	if !options.UseAccessibleLoad {
+		loadConversation = s.loadConversationUnscoped
+	}
+
+	conv, err := loadConversation(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -376,8 +418,10 @@ func (s *SupportInboxService) MoveConversation(ctx context.Context, workspaceID,
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireMailboxAccess(ctx, workspaceID, targetMailboxID); err != nil {
-		return nil, err
+	if options.EnforceMailboxAccess {
+		if err := s.requireMailboxAccess(ctx, workspaceID, targetMailboxID); err != nil {
+			return nil, err
+		}
 	}
 
 	ownerID, flowState, err := s.determineMailboxOwner(ctx, workspaceID, mailbox, conv.OpenedByUserID)
@@ -395,6 +439,13 @@ func (s *SupportInboxService) MoveConversation(ctx context.Context, workspaceID,
 		return nil, err
 	}
 
+	if options.RecordTriageFeedback && s.triageService != nil && strings.TrimSpace(actorID) != "" {
+		s.triageService.RecordManualMoveFeedback(ctx, workspaceID, conv, targetMailboxID, actorID)
+	}
+	if strings.TrimSpace(actorID) != "" && !sameMailboxID(conv.MailboxID, targetMailboxID) {
+		s.createMailboxMoveSystemMessage(ctx, workspaceID, conversationID, actorID, targetMailboxID, mailbox)
+	}
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_conversation",
@@ -403,10 +454,69 @@ func (s *SupportInboxService) MoveConversation(ctx context.Context, workspaceID,
 		ActorID:     actorID,
 	})
 
-	return s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	updatedConversation, err := loadConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if s.triageService != nil && updatedConversation != nil {
+		if hydrateErr := s.triageService.HydrateConversation(ctx, updatedConversation); hydrateErr != nil {
+			slog.ErrorContext(ctx, "hydrate moved support conversation triage", "error", hydrateErr, "workspace_id", workspaceID, "conversation_id", conversationID)
+		}
+	}
+	return updatedConversation, nil
+}
+
+func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context, workspaceID, conversationID, actorID string, mailboxID *string, mailbox *model.SupportMailbox) {
+	if s == nil || s.messageRepo == nil || strings.TrimSpace(actorID) == "" {
+		return
+	}
+
+	displayName := "Team member"
+	var avatarURL *string
+	if s.userRepo != nil {
+		user, err := s.userRepo.GetByID(ctx, actorID)
+		if err == nil && user != nil {
+			if trimmed := strings.TrimSpace(user.FullName); trimmed != "" {
+				displayName = trimmed
+			}
+			avatarURL = user.AvatarURL
+		}
+	}
+
+	mailboxName := "Shared Inbox"
+	if mailbox != nil {
+		mailboxName = mailbox.Name
+	} else if mailboxID != nil && strings.TrimSpace(*mailboxID) != "" {
+		if resolved := s.loadMailboxFromConversation(ctx, workspaceID, mailboxID); resolved != nil && strings.TrimSpace(resolved.Name) != "" {
+			mailboxName = resolved.Name
+		} else {
+			mailboxName = "Selected Inbox"
+		}
+	}
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      &actorID,
+		SenderDisplayName: &displayName,
+		SenderAvatarURL:   avatarURL,
+		Content:           fmt.Sprintf("Moved to %s by %s", mailboxName, displayName),
+		IsInternal:        false,
+		MessageType:       "system",
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support mailbox move system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID, "actor_id", actorID)
+		return
+	}
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, actorID))
 }
 
 func (s *SupportInboxService) maybeApplyMailboxRouting(ctx context.Context, workspaceID string, explicitMailboxID *string, useWorkspaceDefault bool) (*string, *model.SupportMailbox, error) {
+	return s.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, explicitMailboxID, useWorkspaceDefault, "")
+}
+
+func (s *SupportInboxService) maybeApplyMailboxRoutingForChannel(ctx context.Context, workspaceID string, explicitMailboxID *string, useWorkspaceDefault bool, channel string) (*string, *model.SupportMailbox, error) {
 	if explicitMailboxID != nil {
 		return s.sanitizeMailboxSelection(ctx, workspaceID, explicitMailboxID)
 	}
@@ -416,6 +526,9 @@ func (s *SupportInboxService) maybeApplyMailboxRouting(ctx context.Context, work
 	_, settings, err := s.GetInstallation(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if settings != nil && settings.TriageEnabled && triageChannelEnabled(*settings, strings.ToLower(strings.TrimSpace(channel))) && settings.TriageFallbackBehavior == "shared" {
+		return nil, nil, nil
 	}
 	return s.resolveDefaultMailbox(ctx, workspaceID, settings)
 }

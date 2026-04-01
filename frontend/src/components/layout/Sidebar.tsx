@@ -43,13 +43,14 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { isAdmin, canManageSettings } = usePermissions(access);
+  const { isAdmin, canManageSettings, canManageTeams } = usePermissions(access);
   const {
     navFilter,
     setNavFilter,
     selectedMailboxId,
     setSelectedMailboxId,
     setTeamInboxDialogOpen,
+    activeContext,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
@@ -285,6 +286,7 @@ export function Sidebar() {
             {activeRail === 'support' && (
               <SupportRailNav
                 navFilter={navFilter}
+                activeContext={activeContext}
                 unreadStats={unreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
@@ -303,6 +305,7 @@ export function Sidebar() {
                 isTeamSubActive={isTeamSubActive}
                 toggleTeam={toggleTeam}
                 onNavigate={handleNavigate}
+                canManageTeams={canManageTeams}
               />
             )}
 

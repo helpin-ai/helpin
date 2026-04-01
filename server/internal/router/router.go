@@ -466,6 +466,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-routes", h.SupportInbox.ListEmailRoutes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes", h.SupportInbox.CreateEmailRoute)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes/{routeId}/disable", h.SupportInbox.DisableEmailRoute)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/triage-rules", h.SupportInbox.ListTriageRules)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/triage-rules", h.SupportInbox.CreateTriageRule)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/triage-rules/{ruleId}", h.SupportInbox.UpdateTriageRule)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/inbox/triage-rules/{ruleId}", h.SupportInbox.DeleteTriageRule)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/teammates/presence", h.SupportInbox.ListTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
@@ -482,6 +486,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/triage/dismiss", h.SupportInbox.DismissConversationTriage)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
@@ -579,6 +584,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
@@ -779,6 +785,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/restore", h.Docs.RestoreSpace)
 
 				// Collections — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/collections", h.Docs.ListAllCollections)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/collections", h.Docs.ListCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces/{spaceId}/collections", h.Docs.CreateCollection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/collections/{collectionId}", h.Docs.UpdateCollection)

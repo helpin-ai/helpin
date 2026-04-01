@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { WorkspaceTeam } from '@/lib/types';
 import type { EpicWorkflowState, PMAutomation, AutomationType } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Info, X } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -19,6 +20,8 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
   teams: WorkspaceTeam[];
   editable?: boolean;
 }) {
+  const navigate = useNavigate();
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [automations, setAutomations] = useState<PMAutomation[]>([]);
   const [epicStates, setEpicStates] = useState<EpicWorkflowState[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,24 +97,6 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
     }
   };
 
-  const removeAuto = async (type: AutomationType, teamId?: string) => {
-    const snapshot = automations;
-    setAutomations((prev) => prev.filter((a) => !(a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id))));
-    const res = await pmAutomationService.remove(workspaceId, type, teamId);
-    if (res.error) {
-      setAutomations(snapshot);
-      toast.error(res.error);
-    }
-  };
-
-  const updateSprintConfig = (cfg: PMAutomation, patch: { enabled?: boolean; configInt?: number; configInt2?: number; configInt3?: number }) =>
-    upsert('sprint_auto_create', patch.enabled ?? cfg.enabled, {
-      teamId: cfg.team_id!,
-      configInt: patch.configInt ?? cfg.config_int ?? 2,
-      configInt2: patch.configInt2 ?? cfg.config_int2 ?? 1,
-      configInt3: patch.configInt3 ?? cfg.config_int3 ?? 1,
-    });
-
   const startedStates = epicStates.filter((s) => s.state_type === 'started');
   const doneStates = epicStates.filter((s) => s.state_type === 'done');
 
@@ -135,144 +120,45 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
 
   return (
     <div className="space-y-6">
-      {/* ── Sprint Automations ── */}
+      {/* ── Sprint Settings (read-only overview) ── */}
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
-          <CardTitle className="text-base">Sprint Automations</CardTitle>
-          <CardDescription>Automate sprint creation and story rollover per team.</CardDescription>
+          <CardTitle className="text-base">Sprint Settings</CardTitle>
+          <CardDescription>Sprint settings are configured per team. Use team settings to enable sprints and configure automation.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-            <Info className="h-4 w-4 shrink-0" />
-            Changes to Sprint Automations are specific to each Team.
-          </div>
+        <CardContent className="space-y-3">
+          {teams.length === 0 && (
+            <p className="text-sm text-muted-foreground">No teams found.</p>
+          )}
+          {teams.map((team) => {
+            const autoCreateCfg = sprintAutoCreateConfigs.find((a) => a.team_id === team.id);
+            const hasAutoCreate = sprintAutoCreateTeamIds.has(team.id);
+            const hasRollOver = sprintMoveTeamIds.has(team.id);
+            const durationWeeks = autoCreateCfg?.config_int2 ?? 2;
+            const startDayNum = autoCreateCfg?.config_int3 ?? 1;
+            const startDayLabel = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][startDayNum] ?? 'Monday';
 
-          {/* Auto-Create Future Sprints */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Auto-Create Future Sprints</p>
-                <p className="text-xs text-muted-foreground">
-                  Automatically create future sprints when a sprint completes.
-                </p>
-              </div>
-              {editable && (
-                <Select
-                  value=""
-                  onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
-                >
-                  <SelectTrigger className="w-[140px] h-8 text-xs">
-                    <SelectValue placeholder="Add Team..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            {sprintAutoCreateConfigs.map((cfg) => {
-              const team = teams.find((t) => t.id === cfg.team_id);
-              return (
-                <div key={cfg.id} className="flex items-center gap-3 rounded-md border p-3">
-                  <span className="text-sm font-medium min-w-[100px]">{team?.name ?? 'Unknown'}</span>
-                  <div className="flex items-center gap-2 text-xs flex-wrap">
-                    <Label className="text-xs text-muted-foreground">Sprints:</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={cfg.config_int ?? 2}
-                      onChange={(e) => updateSprintConfig(cfg, { configInt: Number(e.target.value) })}
-                      className="w-16 h-7 text-xs"
-                      disabled={!editable}
-                    />
-                    <Label className="text-xs text-muted-foreground">Weeks:</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={8}
-                      value={cfg.config_int2 ?? 1}
-                      onChange={(e) => updateSprintConfig(cfg, { configInt2: Number(e.target.value) })}
-                      className="w-16 h-7 text-xs"
-                      disabled={!editable}
-                    />
-                    <Label className="text-xs text-muted-foreground">Start day:</Label>
-                    <Select
-                      value={String(cfg.config_int3 ?? 1)}
-                      onValueChange={(val) => updateSprintConfig(cfg, { configInt3: Number(val) })}
-                      disabled={!editable}
-                    >
-                      <SelectTrigger className="w-[100px] h-7 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, i) => (
-                          <SelectItem key={i} value={String(i)}>{day}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Switch
-                    checked={cfg.enabled}
-                    disabled={!editable}
-                    onCheckedChange={(checked) => updateSprintConfig(cfg, { enabled: checked })}
-                  />
-                  {editable && (
-                    <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
+            return (
+              <div key={team.id} className="flex items-center justify-between rounded-lg border border-border/60 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">{team.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {hasAutoCreate
+                      ? <>{`${durationWeeks}-week sprints · Starts ${startDayLabel}`}{hasAutoCreate && <> · <span className="text-emerald-600">Auto-create ✓</span></>}{hasRollOver && <> · <span className="text-emerald-600">Roll over ✓</span></>}</>
+                      : 'No sprint automations configured'}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Move Unfinished Stories */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Move Unfinished Stories to Next Sprint</p>
-                <p className="text-xs text-muted-foreground">
-                  When a sprint ends, move incomplete stories to the next sprint.
-                </p>
-              </div>
-              {editable && (
-                <Select
-                  value=""
-                  onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => navigate({ to: '/w/$slug/settings/teams', params: { slug: workspace?.slug ?? '' }, search: { team: team.id, section: 'sprints' } })}
                 >
-                  <SelectTrigger className="w-[140px] h-8 text-xs">
-                    <SelectValue placeholder="Add Team..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            {sprintMoveConfigs.map((cfg) => {
-              const team = teams.find((t) => t.id === cfg.team_id);
-              return (
-                <div key={cfg.id} className="flex items-center gap-3 rounded-md border p-3">
-                  <span className="text-sm font-medium flex-1">{team?.name ?? 'Unknown'}</span>
-                  <Switch
-                    checked={cfg.enabled}
-                    disabled={!editable}
-                    onCheckedChange={(checked) => upsert('sprint_move_unfinished', checked, { teamId: cfg.team_id! })}
-                  />
-                  {editable && (
-                    <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  Edit &rarr;
+                </Button>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 

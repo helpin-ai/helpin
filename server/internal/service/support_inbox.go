@@ -45,6 +45,7 @@ type SupportInboxService struct {
 	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
+	triageService           *SupportInboxTriageService
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -290,6 +291,15 @@ func (s *SupportInboxService) SetStatusOverrideRepo(repo *repository.SupportTeam
 	return s
 }
 
+// SetTriageService injects the support conversation triage service.
+func (s *SupportInboxService) SetTriageService(triageService *SupportInboxTriageService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.triageService = triageService
+	return s
+}
+
 // SetConversationAgentRunner injects the agent-run startup hook used for widget auto-replies.
 func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)) *SupportInboxService {
 	if s == nil {
@@ -297,6 +307,48 @@ func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context
 	}
 	s.conversationAgentRunner = runner
 	return s
+}
+
+func (s *SupportInboxService) ListTriageRules(ctx context.Context, workspaceID string) ([]model.SupportTriageRule, error) {
+	if s.triageService == nil {
+		return []model.SupportTriageRule{}, nil
+	}
+	return s.triageService.ListRules(ctx, workspaceID)
+}
+
+func (s *SupportInboxService) CreateTriageRule(ctx context.Context, workspaceID, actorID string, req model.CreateSupportTriageRuleRequest) (*model.SupportTriageRule, error) {
+	if s.triageService == nil {
+		return nil, fmt.Errorf("support triage is unavailable")
+	}
+	return s.triageService.CreateRule(ctx, workspaceID, actorID, req)
+}
+
+func (s *SupportInboxService) UpdateTriageRule(ctx context.Context, workspaceID, ruleID string, req model.UpdateSupportTriageRuleRequest) (*model.SupportTriageRule, error) {
+	if s.triageService == nil {
+		return nil, fmt.Errorf("support triage is unavailable")
+	}
+	return s.triageService.UpdateRule(ctx, workspaceID, ruleID, req)
+}
+
+func (s *SupportInboxService) DeleteTriageRule(ctx context.Context, workspaceID, ruleID string) error {
+	if s.triageService == nil {
+		return fmt.Errorf("support triage is unavailable")
+	}
+	return s.triageService.DeleteRule(ctx, workspaceID, ruleID)
+}
+
+func (s *SupportInboxService) DismissConversationTriage(ctx context.Context, workspaceID, conversationID, actorID string) (*model.SupportConversationTriage, error) {
+	if s.triageService == nil {
+		return nil, fmt.Errorf("support triage is unavailable")
+	}
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+	return s.triageService.DismissConversationTriage(ctx, workspaceID, conversationID, actorID)
 }
 
 // ListConversations returns conversations with optional filters.
@@ -323,6 +375,11 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 	}
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
+			slog.ErrorContext(ctx, "hydrate support conversation triage list", "error", err, "workspace_id", workspaceID)
+		}
 	}
 
 	stats, err := s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
@@ -551,6 +608,11 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 	if ticket == nil {
 		return nil, fmt.Errorf("ticket not found")
 	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
+			slog.ErrorContext(ctx, "hydrate support conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", id)
+		}
+	}
 	return ticket, nil
 }
 
@@ -576,6 +638,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		Status:         "open",
 		FlowState:      strPtr(defaultConversationFlowState(&actorID, nil)),
 		Priority:       priority,
+		Channel:        source,
 		CustomerName:   req.CustomerName,
 		CustomerEmail:  req.CustomerEmail,
 		OpenedByUserID: &actorID,
@@ -622,6 +685,11 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		WorkspaceID: ticket.WorkspaceID,
 		ActorID:     actorID,
 	})
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
+			slog.ErrorContext(ctx, "hydrate created support conversation triage", "error", err, "workspace_id", ticket.WorkspaceID, "conversation_id", ticket.ID)
+		}
+	}
 
 	return ticket, nil
 }
@@ -850,6 +918,13 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
+		if s.triageService != nil {
+			go func(workspaceID, conversationID, messageID string) {
+				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
+					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
+				}
+			}(workspaceID, ticketID, msg.ID)
+		}
 	}
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
@@ -955,6 +1030,11 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 	filtered, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids, workspaceMemberID, role)
 	if err != nil {
 		return nil, 0, err
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, filtered); err != nil {
+			slog.ErrorContext(ctx, "hydrate support contact conversation triage", "error", err, "workspace_id", workspaceID)
+		}
 	}
 	return filtered, int64(len(filtered)), nil
 }
@@ -1094,6 +1174,11 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 	}
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
+			slog.ErrorContext(ctx, "hydrate support mention conversation triage", "error", err, "workspace_id", workspaceID)
+		}
 	}
 	return &model.ConversationListResponse{
 		Data:       conversations,

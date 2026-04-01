@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -52,19 +51,34 @@ func (f *fakeDocsImageStore) PublicURL(key string) string {
 	return "https://cdn.helpin.ai/" + key
 }
 
-func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
-	t.Parallel()
+type roundTripperFunc func(*http.Request) (*http.Response, error)
 
-	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("png-binary"))
-	}))
-	defer imageServer.Close()
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "https://images.example.com/assets/diagram.png?cache=1" {
+				t.Fatalf("unexpected url: %s", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"image/png"}},
+				Body:       io.NopCloser(strings.NewReader("png-binary")),
+			}, nil
+		}),
+	}
+	defer func() {
+		http.DefaultClient = originalClient
+	}()
 
 	svc := &DocsImportService{}
 	uploader := &fakeImageUploader{}
 
-	got, err := svc.importExternalImageWithUploader(context.Background(), "ws-1", imageServer.URL+"/assets/diagram.png?cache=1", uploader)
+	got, err := svc.importExternalImageWithUploader(context.Background(), "ws-1", "https://images.example.com/assets/diagram.png?cache=1", uploader)
 	if err != nil {
 		t.Fatalf("importExternalImageWithUploader: %v", err)
 	}
@@ -83,18 +97,27 @@ func TestDocsImportService_ImportExternalImageWithUploader(t *testing.T) {
 }
 
 func TestDocsImportService_ImportExternalImageWithUploader_RejectsNonImages(t *testing.T) {
-	t.Parallel()
-
-	textServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("not-an-image"))
-	}))
-	defer textServer.Close()
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "https://images.example.com/readme.txt" {
+				t.Fatalf("unexpected url: %s", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Body:       io.NopCloser(strings.NewReader("not-an-image")),
+			}, nil
+		}),
+	}
+	defer func() {
+		http.DefaultClient = originalClient
+	}()
 
 	svc := &DocsImportService{}
 	uploader := &fakeImageUploader{}
 
-	_, err := svc.importExternalImageWithUploader(context.Background(), "ws-1", textServer.URL+"/readme.txt", uploader)
+	_, err := svc.importExternalImageWithUploader(context.Background(), "ws-1", "https://images.example.com/readme.txt", uploader)
 	if err == nil {
 		t.Fatal("expected error")
 	}

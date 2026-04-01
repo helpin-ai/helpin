@@ -33,3 +33,19 @@ func warnImageDownloadFailed(src string) Warning {
 func warnHTMLBlockFallback() Warning {
 	return Warning{Type: "html_block_fallback", Message: "unsupported content preserved as HTML block"}
 }
+
+func warnHelpScoutNoteBlockNormalized() Warning {
+	return Warning{Type: "helpscout_note_block_normalized", Message: "escaped Help Scout note block normalized to callout"}
+}
+
+func warnEmptyHeadingRemoved() Warning {
+	return Warning{Type: "empty_heading_removed", Message: "empty heading removed during import normalization"}
+}
+
+func warnBlankParagraphRemoved() Warning {
+	return Warning{Type: "blank_paragraph_removed", Message: "blank paragraph removed during import normalization"}
+}
+
+func warnImageURLKept(src string) Warning {
+	return Warning{Type: "image_url_kept", Message: fmt.Sprintf("image URL kept without rewrite: %s", src)}
+}

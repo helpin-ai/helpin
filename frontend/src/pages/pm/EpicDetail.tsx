@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   CalendarDays,
   ChevronRight,
@@ -16,10 +18,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -29,7 +32,6 @@ import {
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
 import { StoryListView } from '@/components/pm/StoryListView';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -51,6 +53,7 @@ import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -61,50 +64,6 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-}: {
-  value: T;
-  options: { value: T; label: string; className?: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex w-full items-center justify-start gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-              `}
-              onClick={() => { onChange(option.value); setOpen(false); }}
-            >
-              <span className={`truncate ${option.className ?? ''}`}>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
@@ -185,6 +144,7 @@ export function EpicDetailPage() {
   const { epicId, slug } = routeApi.useParams();
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 
   const workspaceId = workspace?.id;
@@ -205,6 +165,7 @@ export function EpicDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
   const savedDescriptionRef = useRef('');
@@ -222,8 +183,6 @@ export function EpicDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
-
-  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
@@ -423,8 +382,10 @@ export function EpicDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Story) => openStoryPanel(story.id),
-    [openStoryPanel],
+    (story: Story) => {
+      openStoryRoute(navigate as never, location as never, slug, story.id);
+    },
+    [location, navigate, slug],
   );
 
   const selectedObjectives = useMemo<ObjectivePickerSelection[]>(
@@ -487,7 +448,11 @@ export function EpicDetailPage() {
     };
   }, [workspaceId, epicId]);
 
-  const goBack = () => navigate({ to: '/w/$slug/pm/epics', params: { slug } });
+  const goBack = () => navigate({
+    to: '/w/$slug/pm/epics',
+    params: { slug },
+    search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
+  });
 
   if (loading) {
     return (
@@ -529,6 +494,29 @@ export function EpicDetailPage() {
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <FollowButton entityType="epic" entityId={epic.epic.id} />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs text-muted-foreground"
+            onClick={async () => {
+              if (!workspaceId || !epic) return;
+              if (!epic.epic.archived) {
+                setArchiveConfirmOpen(true);
+                return;
+              }
+              setSaving(true);
+              const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, { archived: false });
+              if (err || !data) {
+                setSaveError(err ?? 'Failed to update');
+              } else {
+                setEpic(data);
+                setSaveError(null);
+              }
+              setSaving(false);
+            }}
+          >
+            {epic.epic.archived ? <><ArchiveRestore className="h-3.5 w-3.5" /> Unarchive</> : <><Archive className="h-3.5 w-3.5" /> Archive</>}
+          </Button>
         </div>
       </div>
 
@@ -863,6 +851,27 @@ export function EpicDetailPage() {
           ) : null}
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title="Archive epic"
+        description="This epic will be hidden from the active list. You can restore it later from the archived view."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={async () => {
+          if (!workspaceId || !epic) return;
+          setSaving(true);
+          const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, { archived: true });
+          if (err || !data) {
+            setSaveError(err ?? 'Failed to archive');
+          } else {
+            setEpic(data);
+            setSaveError(null);
+          }
+          setSaving(false);
+        }}
+      />
     </div>
   );
 }

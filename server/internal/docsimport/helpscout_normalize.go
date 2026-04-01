@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // calloutVariantMap maps Help Scout callout classes to Helpin callout variants.
@@ -20,7 +21,12 @@ var calloutVariantMap = map[string]string{
 
 // isHelpScoutCallout checks if a node is a Help Scout callout div and returns the variant.
 func isHelpScoutCallout(n *html.Node) (variant string, ok bool) {
-	if n.Type != html.ElementNode || n.Data != "div" {
+	if n.Type != html.ElementNode {
+		return "", false
+	}
+	switch n.DataAtom {
+	case atom.Div, atom.Section, atom.Aside:
+	default:
 		return "", false
 	}
 	classes := getAttr(n, "class")

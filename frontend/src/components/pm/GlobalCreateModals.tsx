@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
   Hash,
-  Heart,
   Layers,
   Loader2,
   User,
@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -41,7 +40,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { EpicHealth, GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
@@ -55,20 +54,15 @@ import {
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
 
-const healthOptions: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'off_track'];
-const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
-  no_health: { label: 'No health', color: 'text-muted-foreground' },
-  on_track: { label: 'On track', color: 'text-green-600' },
-  at_risk: { label: 'At risk', color: 'text-yellow-600' },
-  off_track: { label: 'Off track', color: 'text-red-600' },
-};
 
 // ── Story wrapper ────────────────────────────────────────────────────
 
 function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const qc = useQueryClient();
   const [workflow, setWorkflow] = useState<WorkflowWithStates | null>(null);
   const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
   const initialOwnerMemberId = useGlobalCreateStore((s) => s.initialOwnerMemberId);
+  const initialSprintId = useGlobalCreateStore((s) => s.initialSprintId);
 
   useEffect(() => {
     // Try board store first (already loaded if on stories page)
@@ -93,12 +87,16 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       initialStateId={workflow.states[0]?.id ?? ''}
       initialTeamId={initialTeamId}
       initialOwnerMemberId={initialOwnerMemberId}
+      initialSprintId={initialSprintId}
       onCreate={async (payload) => {
         const { data, error } = await pmStoryService.create(payload);
         if (error) throw new Error(error);
         // Refresh the board if it's loaded
         const boardWs = usePMBoardStore.getState().workspaceId;
         if (boardWs) usePMBoardStore.getState().refreshBoard();
+        // Invalidate TanStack Query caches
+        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] });
+        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
         window.dispatchEvent(new CustomEvent('story-created', {
           detail: { ownerMemberId: data?.story?.owner_member_id, teamId: data?.story?.team_id },
         }));
@@ -121,7 +119,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     name: '',
     description: '',
     stateId: '',
-    health: 'no_health' as EpicHealth,
     teamId: storeTeamId ?? teams[0]?.id ?? '',
     ownerMemberId: '',
     planningRepositoryId: '',
@@ -176,7 +173,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       epic_state_id: form.stateId || undefined,
       team_id: form.teamId || undefined,
       owner_member_id: form.ownerMemberId || undefined,
-      health: form.health,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
       planning_repository_id: showPlanningRepository ? (form.planningRepositoryId || undefined) : undefined,
@@ -245,7 +241,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   className="border-transparent shadow-none"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
@@ -308,21 +304,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     <SelectItem value="__none__">None</SelectItem>
                     {epicStates.map((s) => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Heart className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Health</span>
-                <Select value={form.health} onValueChange={(v) => setForm((f) => ({ ...f, health: v as EpicHealth }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {healthOptions.map((h) => (
-                      <SelectItem key={h} value={h}>
-                        <span className={healthConfig[h].color}>{healthConfig[h].label}</span>
-                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -400,7 +381,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     description: '',
     startDate: '',
     endDate: '',
-    teamId: storeTeamId ?? teams[0]?.id ?? '',
+    teamId: storeTeamId ?? teams.find((t) => t.sprints_enabled !== false)?.id ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
@@ -454,7 +435,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
           setAutomationPrompt({
             teamId: form.teamId,
             teamName: team?.name ?? 'this team',
-            sprintCount: 2, // current sprint + 1 ahead
+            sprintCount: 1, // 1 unstarted sprint ahead
             weeks,
             startDay: 1, // Monday
             moveUnfinished: true,
@@ -560,37 +541,29 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Always keep</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={automationPrompt.sprintCount}
-                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, sprintCount: Number(e.target.value) } : p)}
-                  className="w-20 h-8 text-xs"
-                />
-                <span className="text-xs text-muted-foreground">{automationPrompt.sprintCount === 1 ? 'active sprint' : 'active sprints'}</span>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Each sprint lasts</Label>
+                <Select
+                  value={String(automationPrompt.weeks)}
+                  onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, weeks: Number(val) } : p)}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4].map((w) => (
+                      <SelectItem key={w} value={String(w)}>{w} {w === 1 ? 'week' : 'weeks'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Sprint length</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={automationPrompt.weeks}
-                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, weeks: Number(e.target.value) } : p)}
-                  className="w-20 h-8 text-xs"
-                />
-                <span className="text-xs text-muted-foreground">{automationPrompt.weeks === 1 ? 'week' : 'weeks'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Label className="text-xs text-muted-foreground w-28 shrink-0">Starts on</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Sprints start on</Label>
                 <Select
                   value={String(automationPrompt.startDay)}
                   onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, startDay: Number(val) } : p)}
                 >
-                  <SelectTrigger className="h-8 text-xs flex-1">
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -600,10 +573,26 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Upcoming sprints to create</Label>
+                <Select
+                  value={String(automationPrompt.sprintCount)}
+                  onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, sprintCount: Number(val) } : p)}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n} {n === 1 ? 'sprint' : 'sprints'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-center justify-between pt-1">
                 <div>
-                  <p className="text-xs font-medium">Move unfinished stories</p>
-                  <p className="text-[11px] text-muted-foreground">Carry over incomplete stories to the next sprint</p>
+                  <p className="text-sm font-medium">Roll over unfinished work</p>
+                  <p className="text-xs text-muted-foreground">When a sprint ends, move incomplete stories to the next sprint</p>
                 </div>
                 <Switch
                   checked={automationPrompt.moveUnfinished}
@@ -613,7 +602,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
 
             <p className="text-[11px] text-muted-foreground">
-              You can change this anytime in Settings &gt; Automations.
+              You can change this anytime in Team Settings.
             </p>
 
             <div className="flex justify-end gap-2">
@@ -686,7 +675,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"
@@ -708,7 +697,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
-                    {teams.map((t) => (
+                    {teams.filter((t) => t.sprints_enabled !== false).map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -929,7 +918,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
-                  placeholder="Add a description..."
+                  placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"

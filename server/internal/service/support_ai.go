@@ -261,6 +261,7 @@ type SupportAIService struct {
 	mailboxRepo            *repository.SupportMailboxRepository
 	workspaceRepo          *repository.WorkspaceRepository
 	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
+	triageService          *SupportInboxTriageService
 	linkPreviewService     SupportMessageLinkPreviewer
 	wsPublisher            *websocket.Publisher
 	presence               websocket.PresenceProvider
@@ -335,6 +336,14 @@ func (s *SupportAIService) SetMailboxRepository(mailboxRepo *repository.SupportM
 		return nil
 	}
 	s.mailboxRepo = mailboxRepo
+	return s
+}
+
+func (s *SupportAIService) SetTriageService(triageService *SupportInboxTriageService) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.triageService = triageService
 	return s
 }
 
@@ -467,7 +476,38 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 7. Check max follow-ups
+	// 7. Run triage synchronously before planner/handoff so mailbox routing is
+	// available in the same decision path even if the async triage job lags.
+	if s.triageService != nil {
+		triage, triageErr := s.triageService.EvaluateAndRoute(ctx, workspaceID, conversationID, msg.ID)
+		if triageErr != nil {
+			slog.WarnContext(ctx, "support AI triage evaluation failed",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"error", triageErr,
+			)
+		} else {
+			triageStatus := ""
+			triageSource := ""
+			var suggestedMailboxID *string
+			if triage != nil {
+				triageStatus = strings.TrimSpace(triage.Status)
+				triageSource = strings.TrimSpace(triage.ClassifierSource)
+				suggestedMailboxID = triage.SuggestedMailboxID
+			}
+			slog.InfoContext(ctx, "support AI triage evaluated",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"triage_status", triageStatus,
+				"triage_source", triageSource,
+				"suggested_mailbox_id", derefString(suggestedMailboxID),
+			)
+		}
+	}
+
+	// 8. Check max follow-ups
 	if maxFollowupTurnCount >= settings.AIMaxFollowups {
 		slog.InfoContext(ctx, "support AI escalating due to max followups",
 			"workspace_id", workspaceID,
@@ -477,14 +517,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"max_followup_turn_count", maxFollowupTurnCount,
 			"max_followups", settings.AIMaxFollowups,
 		)
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "max_followups_reached"); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "max_followups_reached"); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
 	}
 
-	// 8. Hard escalation rules check
+	// 9. Hard escalation rules check
 	customerPromptText := supportMessagePromptText(*msg)
 	if reason := checkHardEscalation(customerPromptText); reason != "" {
 		slog.InfoContext(ctx, "support AI hard escalation rule matched",
@@ -494,14 +534,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", reason,
 			"customer_message_preview", safeLogPreview(msg.Content, 120),
 		)
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, reason); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, reason); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
 	}
 
-	// 9. Smart escalation signals (pre-LLM — no cost).
+	// 10. Smart escalation signals (pre-LLM — no cost).
 	if signal := evaluatePreLLMEscalation(customerPromptText, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
 		slog.InfoContext(ctx, "support AI smart escalation triggered",
 			"workspace_id", workspaceID,
@@ -510,33 +550,33 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", signal.Reason,
 			"score", signal.Score,
 		)
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
 	}
 
-	// 10. Load agent config
+	// 11. Load agent config
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return fmt.Errorf("get agent %s: %w", agentID, err)
 	}
 	if s.llmProvider == nil {
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "llm_provider_unavailable"); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "llm_provider_unavailable"); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
 	}
 
-	// 11. Send typing indicator
+	// 12. Send typing indicator
 	s.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 	defer s.publishTypingIndicator(ctx, workspaceID, conversationID, false)
 
-	// 12. Check token budget before planner + answer model usage.
+	// 13. Check token budget before planner + answer model usage.
 	if !s.checkTokenBudget(agent) {
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "token_budget_exhausted"); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "token_budget_exhausted"); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
@@ -545,7 +585,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	providerName, modelName := resolveSupportLLMConfig(agent)
 
-	// 13. Plan how to handle the message: answer, clarify, or hand off.
+	// 14. Plan how to handle the message: answer, clarify, or hand off.
 	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, *msg)
 	if err != nil {
 		slog.WarnContext(ctx, "support query planning failed; using direct retrieval fallback",
@@ -594,14 +634,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"planner_reason", queryPlan.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, queryPlan.Reason); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, queryPlan.Reason); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens)
 		return nil
 	}
 
-	// 14. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
+	// 15. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
 	searchResults, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, queryPlan.SearchQueries)
 	if err != nil {
 		slog.ErrorContext(ctx, "search knowledge base failed",
@@ -622,7 +662,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	)
 	knowledgeContext := buildKnowledgeContext(searchResults)
 
-	// 15. Generate AI response
+	// 16. Generate AI response
 	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, historyForPrompt, knowledgeContext, *msg, providerName, modelName)
 	if err != nil {
 		slog.ErrorContext(ctx, "AI response generation failed",
@@ -635,10 +675,10 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	totalTokens := plannerTokens + tokensUsed
 
-	// 16. Record token usage atomically
+	// 17. Record token usage atomically
 	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
-	// 17. Multi-signal confidence evaluation
+	// 18. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
 	slog.InfoContext(ctx, "support AI response evaluated",
 		"workspace_id", workspaceID,
@@ -653,7 +693,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"total_tokens_used", totalTokens,
 	)
 
-	// 18. Decide: grounded reply or escalate
+	// 19. Decide: grounded reply or escalate
 	if response.CanAnswer && confidence >= settings.AIConfidenceThreshold {
 		// 18a. Check for declining satisfaction trend before sending reply.
 		if signal := evaluatePostAnswerEscalation(historyForPrompt, confidence); signal != nil {
@@ -665,7 +705,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 				"reason", signal.Reason,
 				"score", signal.Score,
 			)
-			if err := s.EscalateToHuman(ctx, workspaceID, conversationID, signal.Reason); err != nil {
+			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
 				return err
 			}
 			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
@@ -735,7 +775,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"grounded_confidence", confidence,
 			"confidence_threshold", settings.AIConfidenceThreshold,
 		)
-		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "low_confidence"); err != nil {
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "low_confidence"); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
@@ -746,6 +786,16 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
+	return s.escalateToHuman(ctx, workspaceID, conversationID, "", reason)
+}
+
+// EscalateToHumanForMessage transitions a conversation from AI handling to human pickup,
+// using the triggering customer message to reuse triage routing when available.
+func (s *SupportAIService) EscalateToHumanForMessage(ctx context.Context, workspaceID, conversationID, messageID, reason string) error {
+	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason)
+}
+
+func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason string) error {
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
@@ -780,6 +830,8 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 		return fmt.Errorf("create escalation system message: %w", err)
 	}
 
+	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
+
 	// 2. Transition AI state: pending → escalated
 	selection, selectErr := selectSupportConversationRecipient(
 		ctx,
@@ -791,7 +843,7 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 		s.statusOverrideRepo,
 		supportRecipientSelectorInput{
 			WorkspaceID:         workspaceID,
-			MailboxID:           conv.MailboxID,
+			MailboxID:           handoffMailboxID,
 			OwnerUserID:         conv.OpenedByUserID,
 			HandoffBehavior:     settings.HandoffBehavior,
 			HandoffTeamID:       settings.HandoffTeamID,
@@ -806,20 +858,6 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 	flowState := escalatedConversationFlowState(settings, now)
 	if selection != nil {
 		flowState = model.SupportConversationFlowStateAssignedToHuman
-	}
-	handoffMailboxID := conv.MailboxID
-	if s.mailboxRepo != nil {
-		if settings.AIHandoffMailboxID != nil && strings.TrimSpace(*settings.AIHandoffMailboxID) != "" {
-			trimmed := strings.TrimSpace(*settings.AIHandoffMailboxID)
-			if mailbox, mailboxErr := s.mailboxRepo.GetByID(ctx, workspaceID, trimmed); mailboxErr == nil && mailbox != nil && mailbox.Active {
-				handoffMailboxID = &trimmed
-			}
-		} else if settings.DefaultMailboxID != nil && strings.TrimSpace(*settings.DefaultMailboxID) != "" {
-			trimmed := strings.TrimSpace(*settings.DefaultMailboxID)
-			if mailbox, mailboxErr := s.mailboxRepo.GetByID(ctx, workspaceID, trimmed); mailboxErr == nil && mailbox != nil && mailbox.Active {
-				handoffMailboxID = &trimmed
-			}
-		}
 	}
 	fields := map[string]any{
 		"ai_state":          "escalated",
@@ -865,8 +903,64 @@ func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, con
 		"workspace_id", workspaceID,
 		"conversation_id", conversationID,
 		"reason", reason,
+		"mailbox_id", derefString(handoffMailboxID),
+		"mailbox_selection_source", mailboxSelectionSource,
 	)
 	return nil
+}
+
+func (s *SupportAIService) resolveEscalationMailbox(ctx context.Context, workspaceID, conversationID, messageID string, conv *model.SupportConversation, settings model.SupportInboxSettings) (*string, string) {
+	if triageMailboxID := s.resolveEscalationTriageMailbox(ctx, workspaceID, conversationID, messageID); triageMailboxID != nil {
+		return triageMailboxID, "triage"
+	}
+	if currentMailboxID := s.resolveActiveMailboxID(ctx, workspaceID, conv.MailboxID); currentMailboxID != nil {
+		return currentMailboxID, "current"
+	}
+	if fallbackMailboxID := s.resolveConfiguredHandoffMailbox(ctx, workspaceID, settings); fallbackMailboxID != nil {
+		return fallbackMailboxID, "configured_handoff"
+	}
+	return nil, "shared"
+}
+
+func (s *SupportAIService) resolveEscalationTriageMailbox(ctx context.Context, workspaceID, conversationID, messageID string) *string {
+	if s == nil || s.triageService == nil || strings.TrimSpace(messageID) == "" {
+		return nil
+	}
+	triage, err := s.triageService.EvaluateAndRoute(ctx, workspaceID, conversationID, strings.TrimSpace(messageID))
+	if err != nil {
+		slog.WarnContext(ctx, "resolve escalation triage mailbox failed", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
+		return nil
+	}
+	if triage == nil {
+		return nil
+	}
+	return s.resolveActiveMailboxID(ctx, workspaceID, triage.SuggestedMailboxID)
+}
+
+func (s *SupportAIService) resolveConfiguredHandoffMailbox(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) *string {
+	if mailboxID := s.resolveActiveMailboxID(ctx, workspaceID, settings.AIHandoffMailboxID); mailboxID != nil {
+		return mailboxID
+	}
+	return s.resolveActiveMailboxID(ctx, workspaceID, settings.DefaultMailboxID)
+}
+
+func (s *SupportAIService) resolveActiveMailboxID(ctx context.Context, workspaceID string, mailboxID *string) *string {
+	if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*mailboxID)
+	if s == nil || s.mailboxRepo == nil {
+		return &trimmed
+	}
+	mailbox, err := s.mailboxRepo.GetByID(ctx, workspaceID, trimmed)
+	if err != nil {
+		slog.WarnContext(ctx, "load support mailbox during escalation", "workspace_id", workspaceID, "mailbox_id", trimmed, "error", err)
+		return nil
+	}
+	if mailbox == nil || !mailbox.Active {
+		return nil
+	}
+	return &trimmed
 }
 
 // loadSettings loads AI settings for a workspace.

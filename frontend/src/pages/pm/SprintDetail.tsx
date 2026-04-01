@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
   Archive,
@@ -17,7 +17,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -27,7 +27,6 @@ import {
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
 import { StoryListView } from '@/components/pm/StoryListView';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
@@ -39,58 +38,13 @@ import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, SprintWithStats, SprintStatus, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
+import type { AttachmentResponse, SprintWithStats, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
-const statusOptions: SprintStatus[] = ['unstarted', 'started', 'done'];
-
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-}: {
-  value: T;
-  options: { value: T; label: string; className?: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-              `}
-              onClick={() => { onChange(option.value); setOpen(false); }}
-            >
-              <span className={`truncate ${option.className ?? ''}`}>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
@@ -134,6 +88,7 @@ export function SprintDetailPage() {
   const { sprintId, slug } = routeApi.useParams();
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
 
@@ -168,8 +123,6 @@ export function SprintDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
-
-  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   useTitle(form?.name ? `${form.name} — Sprint` : 'Sprint');
 
@@ -337,8 +290,10 @@ export function SprintDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Story) => openStoryPanel(story.id),
-    [openStoryPanel],
+    (story: Story) => {
+      openStoryRoute(navigate as never, location as never, slug, story.id);
+    },
+    [location, navigate, slug],
   );
 
   // Refresh stories when global panel updates/archives a story
@@ -357,7 +312,11 @@ export function SprintDetailPage() {
     };
   }, [workspaceId, sprintId]);
 
-  const goBack = () => navigate({ to: '/w/$slug/pm/sprints', params: { slug } });
+  const goBack = () => navigate({
+    to: '/w/$slug/pm/sprints',
+    params: { slug },
+    search: sprint?.sprint.team_id ? { team: sprint.sprint.team_id } : {},
+  });
 
   if (loading) {
     return (
@@ -405,11 +364,9 @@ export function SprintDetailPage() {
             onClick={async () => {
               if (!workspaceId || !sprint) return;
               if (!sprint.sprint.archived) {
-                // Show confirm dialog before archiving
                 setArchiveConfirmOpen(true);
                 return;
               }
-              // Unarchive directly
               setSaving(true);
               const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
               if (err || !data) {
@@ -421,17 +378,7 @@ export function SprintDetailPage() {
               setSaving(false);
             }}
           >
-            {sprint.sprint.archived ? (
-              <>
-                <ArchiveRestore className="h-3.5 w-3.5" />
-                Unarchive
-              </>
-            ) : (
-              <>
-                <Archive className="h-3.5 w-3.5" />
-                Archive
-              </>
-            )}
+            {sprint.sprint.archived ? <><ArchiveRestore className="h-3.5 w-3.5" /> Unarchive</> : <><Archive className="h-3.5 w-3.5" /> Archive</>}
           </Button>
         </div>
       </div>
@@ -571,18 +518,11 @@ export function SprintDetailPage() {
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-            {/* Status */}
+            {/* Status — computed from dates, display only */}
             <MetadataRow icon={RefreshCw} label="Status">
-              <SidebarPopoverSelect
-                value={sprint.sprint.status}
-                options={statusOptions.map((s) => ({ value: s, label: SPRINT_STATUS_CONFIG[s].label, className: SPRINT_STATUS_CONFIG[s].color }))}
-                onChange={() => {/* status is computed server-side */}}
-                renderTrigger={() => (
-                  <span className={SPRINT_STATUS_CONFIG[sprint.sprint.status]?.color}>
-                    {SPRINT_STATUS_CONFIG[sprint.sprint.status]?.label}
-                  </span>
-                )}
-              />
+              <span className={`text-xs ${SPRINT_STATUS_CONFIG[sprint.sprint.status]?.color ?? ''}`}>
+                {SPRINT_STATUS_CONFIG[sprint.sprint.status]?.label}
+              </span>
             </MetadataRow>
 
             {/* Team */}

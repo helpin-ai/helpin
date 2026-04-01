@@ -1,24 +1,167 @@
-import * as PhosphorIcons from '@phosphor-icons/react'
-import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
+import type { ComponentType, SVGProps } from 'react'
+import {
+  Airplay,
+  Archive,
+  Bookmark,
+  Box,
+  Calendar,
+  ChartBar,
+  CheckCircle,
+  CircleDot,
+  Cloud,
+  Code,
+  Cog,
+  Compass,
+  CreditCard,
+  Database,
+  Download,
+  File,
+  FileText,
+  Filter,
+  Flag,
+  Folder,
+  FolderOpen,
+  Globe,
+  HardDrive,
+  Hash,
+  Heart,
+  Home,
+  Image,
+  Inbox,
+  Info,
+  Key,
+  Layers,
+  Layout,
+  Link,
+  List,
+  Lock,
+  Mail,
+  Map,
+  MessageCircle,
+  Monitor,
+  Package,
+  Pen,
+  Phone,
+  Play,
+  Plus,
+  Puzzle,
+  Rocket,
+  Search,
+  Send,
+  Settings,
+  Shield,
+  ShoppingCart,
+  Sparkles,
+  Star,
+  Tag,
+  Target,
+  Terminal,
+  ThumbsUp,
+  Trash,
+  TrendingUp,
+  Upload,
+  User,
+  Users,
+  Video,
+  Wand,
+  Wrench,
+  Zap,
+} from 'lucide-react'
 
-function pascalToKebab(s: string): string {
-  return s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number | string }>
+
+/**
+ * Static icon map — Phosphor kebab-case names mapped to Lucide components.
+ * Each icon is tree-shaken individually (~500 bytes). No lazy loading,
+ * no Suspense, renders synchronously during SSR.
+ */
+const ICON_MAP: Record<string, IconComponent> = {
+  // Direct name matches
+  airplay: Airplay,
+  archive: Archive,
+  bookmark: Bookmark,
+  calendar: Calendar,
+  cloud: Cloud,
+  code: Code,
+  compass: Compass,
+  database: Database,
+  download: Download,
+  filter: Filter,
+  flag: Flag,
+  folder: Folder,
+  'folder-open': FolderOpen,
+  globe: Globe,
+  hash: Hash,
+  heart: Heart,
+  home: Home,
+  image: Image,
+  inbox: Inbox,
+  info: Info,
+  key: Key,
+  layers: Layers,
+  layout: Layout,
+  link: Link,
+  list: List,
+  lock: Lock,
+  mail: Mail,
+  map: Map,
+  monitor: Monitor,
+  package: Package,
+  phone: Phone,
+  play: Play,
+  plus: Plus,
+  rocket: Rocket,
+  search: Search,
+  send: Send,
+  shield: Shield,
+  star: Star,
+  tag: Tag,
+  target: Target,
+  terminal: Terminal,
+  trash: Trash,
+  upload: Upload,
+  user: User,
+  users: Users,
+  video: Video,
+  zap: Zap,
+
+  // Phosphor → Lucide name mappings
+  'chart-bar': ChartBar,
+  'chart-line': TrendingUp,
+  'check-circle': CheckCircle,
+  'credit-card': CreditCard,
+  'circle-dashed': CircleDot,
+  'file-text': FileText,
+  file: File,
+  'gear': Cog,
+  'gear-six': Cog,
+  'hard-drive': HardDrive,
+  'hard-drives': HardDrive,
+  'chat-circle': MessageCircle,
+  'chat-text': MessageCircle,
+  'chat-dots': MessageCircle,
+  'chats': MessageCircle,
+  'envelope': Mail,
+  'envelope-simple': Mail,
+  'magic-wand': Wand,
+  'sparkle': Sparkles,
+  'shopping-cart': ShoppingCart,
+  'shopping-bag': ShoppingCart,
+  'thumbs-up': ThumbsUp,
+  'trending-up': TrendingUp,
+  'pencil-simple': Pen,
+  'pencil': Pen,
+  'note-pencil': Pen,
+  'wrench': Wrench,
+  'puzzle-piece': Puzzle,
+  'cube': Box,
+  'box': Box,
+  'settings': Settings,
+  'sliders': Settings,
+  'sliders-horizontal': Settings,
 }
 
-const SKIP = new Set(['IconContext', 'IconBase', 'IconWeight'])
-
-// Build ICON_MAP dynamically from all Phosphor exports so any icon
-// chosen in the admin settings will render on the public help center.
-export const ICON_MAP: Record<string, PhosphorIcon> = (() => {
-  const map: Record<string, PhosphorIcon> = {}
-  for (const [name, exported] of Object.entries(PhosphorIcons)) {
-    // Skip non-component exports
-    if (SKIP.has(name)) continue
-    // Icon components are PascalCase starting with uppercase
-    if (!/^[A-Z][a-z]/.test(name)) continue
-    if (typeof exported !== 'object' && typeof exported !== 'function') continue
-    if (exported === null) continue
-    map[pascalToKebab(name)] = exported as unknown as PhosphorIcon
-  }
-  return map
-})()
+export function getIconComponent(name: string): IconComponent | null {
+  if (!name) return null
+  return ICON_MAP[name.toLowerCase()] ?? null
+}

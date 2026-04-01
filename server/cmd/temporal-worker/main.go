@@ -116,6 +116,12 @@ func main() {
 	sprintRepo := repository.NewPMSprintRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
+	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
+	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
+	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
+	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
+	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
+	userRepo := repository.NewUserRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
@@ -230,6 +236,36 @@ func main() {
 		defer redisClient.Close()
 	}
 	// AI Support Agent consumer — runs alongside Temporal workers.
+	supportInboxService := service.NewSupportInboxService(
+		conversationRepo,
+		supportMailboxRepo,
+		supportMessageRepo,
+		nil,
+		nil,
+		supportInstallRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		crmContactRepo,
+		userRepo,
+		docsSpaceRepo,
+		nil,
+		docsHelpcenterRepo,
+	)
+	supportInboxTriageService := service.NewSupportInboxTriageService(
+		supportInboxService,
+		supportConversationTriageRepo,
+		supportConversationTriageEventRepo,
+		supportTriageRuleRepo,
+		supportInstallRepo,
+		supportMailboxRepo,
+		conversationRepo,
+		supportMessageRepo,
+		supportLLMRouter,
+	)
+	supportInboxService.SetTriageService(supportInboxTriageService)
+
 	supportAIService := service.NewSupportAIService(
 		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
 		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
@@ -238,6 +274,9 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetSupportRoutingDependencies(workspaceRepo, nil, supportTeammateStatusOverrideRepo)
+	supportAIService.SetMailboxRepository(supportMailboxRepo)
+	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs))
 	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
 	go func() {

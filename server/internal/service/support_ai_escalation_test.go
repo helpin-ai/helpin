@@ -544,8 +544,8 @@ func TestCheckHardEscalation(t *testing.T) {
 		{name: "no match", content: "How do I reset?", want: ""},
 		{name: "human request", content: "I want to talk to a human", want: "customer_requested_human"},
 		{name: "live agent", content: "Connect me to a live agent please", want: "customer_requested_human"},
-		{name: "billing", content: "I need a refund", want: "billing_topic"},
-		{name: "cancel", content: "Cancel my account now", want: "billing_topic"},
+		{name: "billing goes through planner", content: "I need a refund", want: ""},
+		{name: "account cancellation goes through planner", content: "Cancel my account now", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

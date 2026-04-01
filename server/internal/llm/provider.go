@@ -21,6 +21,7 @@ type ChatRequest struct {
 	Temperature  float64
 	MaxTokens    int
 	JSONMode     bool
+	JSONSchema   map[string]any
 }
 
 // Message represents a conversation message.

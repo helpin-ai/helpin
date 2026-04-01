@@ -152,6 +152,17 @@ func (h *DocsHandler) ListCollections(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, colls)
 }
 
+// ListAllCollections returns all collections across all spaces in a workspace.
+func (h *DocsHandler) ListAllCollections(w http.ResponseWriter, r *http.Request) {
+	wsID := r.URL.Query().Get("workspace_id")
+	colls, err := h.collectionSvc.ListByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, colls)
+}
+
 func (h *DocsHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -507,6 +518,7 @@ func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Reques
 // PublicPreviewArticle returns a preview of a document for the help center app.
 // Requires a valid preview JWT token as query parameter.
 func (h *DocsHandler) PublicPreviewArticle(w http.ResponseWriter, r *http.Request) {
+	setHelpcenterCacheHeader(w, "no-store")
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
 		return
@@ -706,7 +718,9 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	pubSpace, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
 	if pubSpace != nil && pubSpace.Type == model.SpaceTypeExternalCapable {
 		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
-			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
+			slog.ErrorContext(r.Context(), "PublishExternally failed", "doc_id", docID, "error", err)
+			writeError(w, http.StatusInternalServerError, "Article published internally but failed to publish to help center: "+err.Error())
+			return
 		}
 	}
 	h.queueEmbeddingSync(r.Context(), docID)
@@ -1042,6 +1056,26 @@ func publicDefaultLocale(cfg *model.DocsHelpcenterConfig) string {
 	return "en"
 }
 
+func publicMultilingualEnabled(cfg *model.DocsHelpcenterConfig) bool {
+	if cfg == nil {
+		return false
+	}
+
+	seen := make(map[string]struct{}, len(cfg.EnabledLocales))
+	for _, locale := range cfg.EnabledLocales {
+		normalized := strings.TrimSpace(strings.ToLower(locale))
+		if normalized == "" {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		if len(seen) > 1 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 	if cfg == nil {
 		return false
@@ -1052,6 +1086,10 @@ func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 		}
 	}
 	return false
+}
+
+func setHelpcenterCacheHeader(w http.ResponseWriter, value string) {
+	w.Header().Set("Cache-Control", value)
 }
 
 func (h *DocsHandler) publicLocaleRedirectTarget(r *http.Request, cfg *model.DocsHelpcenterConfig) string {
@@ -1113,6 +1151,7 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -1121,7 +1160,7 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}
@@ -1134,6 +1173,7 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, spaces)
 }
 
@@ -1142,7 +1182,7 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}
@@ -1156,6 +1196,7 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, nav)
 }
 
@@ -1185,6 +1226,7 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, article)
 }
 
@@ -1209,9 +1251,11 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
+			"space_slug": coll.SpaceSlug,
 		})
 		return
 	}
@@ -1226,14 +1270,16 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
+			"space_slug": coll.SpaceSlug,
 		})
 		return
 	}
 	collectionSlug := chi.URLParam(r, "collectionSlug")
-	coll, articles, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
+	coll, articles, spaceSlug, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1242,9 +1288,11 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "collection not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"collection": coll,
 		"articles":   articles,
+		"space_slug": spaceSlug,
 	})
 }
 
@@ -1265,6 +1313,7 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
 	writeJSON(w, http.StatusOK, article)
 }
 
@@ -1302,7 +1351,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	if cfg == nil {
 		return
 	}
-	if chi.URLParam(r, "locale") == "" {
+	if chi.URLParam(r, "locale") == "" && publicMultilingualEnabled(cfg) {
 		http.Redirect(w, r, h.publicLocaleRedirectTarget(r, cfg), http.StatusFound)
 		return
 	}
@@ -1324,6 +1373,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	setHelpcenterCacheHeader(w, "public, max-age=60")
 	writeJSON(w, http.StatusOK, results)
 }
 

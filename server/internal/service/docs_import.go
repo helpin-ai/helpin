@@ -247,8 +247,25 @@ type redirectEntry struct {
 
 // articleStats holds per-article outcome counts returned by importArticle.
 type articleStats struct {
-	Published       bool
-	RedirectCreated bool
+	Published            bool
+	RedirectCreated      bool
+	Uncategorized        bool
+	HadConversionWarning bool
+	HTMLBlockFallbacks   int
+	ImageRewriteFailures int
+	NormalizedNoteBlocks int
+}
+
+type helpscoutCategoryTarget struct {
+	collectionID   *string
+	collectionSlug string
+}
+
+type helpscoutCategoryMapping struct {
+	byID          map[string]helpscoutCategoryTarget
+	bySlug        map[string]helpscoutCategoryTarget
+	byName        map[string]helpscoutCategoryTarget
+	uncategorized helpscoutCategoryTarget
 }
 
 // runImport is the background worker that performs the actual HelpScout import.
@@ -319,17 +336,24 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	var (
-		completed    int
-		failed       int
-		published    int
-		drafted      int
-		artRedirects int
-		failures     []model.ImportFailure
-		redirects    []redirectEntry
+		completed                    int
+		failed                       int
+		published                    int
+		drafted                      int
+		artRedirects                 int
+		articlesUncategorized        int
+		articlesWithWarnings         int
+		htmlBlockFallbacks           int
+		imageRewriteFailures         int
+		normalizedNoteBlocks         int
+		failures                     []model.ImportFailure
+		redirects                    []redirectEntry
 	)
 
+	categoryMapping := buildHelpScoutCategoryMapping(categories, categoryToCollection, categoryToCollectionSlug)
+
 	for i, ref := range articleRefs {
-		stats, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryToCollection, categoryToCollectionSlug, uploader, req.ImportStatus, &redirects)
+		stats, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryMapping, uploader, req.ImportStatus, &redirects)
 		if err != nil {
 			s.logger.Error("article import failed",
 				"job_id", jobID,
@@ -353,6 +377,15 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			if stats.RedirectCreated {
 				artRedirects++
 			}
+			if stats.Uncategorized {
+				articlesUncategorized++
+			}
+			if stats.HadConversionWarning {
+				articlesWithWarnings++
+			}
+			htmlBlockFallbacks += stats.HTMLBlockFallbacks
+			imageRewriteFailures += stats.ImageRewriteFailures
+			normalizedNoteBlocks += stats.NormalizedNoteBlocks
 		}
 
 		// Update progress every 5 articles or on last article.
@@ -379,10 +412,15 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 
 	// Store import summary.
 	summary := model.ImportSummary{
-		CollectionsCreated: len(categories),
-		ArticlesPublished:  published,
-		ArticlesDrafted:    drafted,
-		RedirectsCreated:   len(categories) + artRedirects, // category + article redirects
+		CollectionsCreated:             len(categories),
+		ArticlesPublished:              published,
+		ArticlesDrafted:                drafted,
+		RedirectsCreated:               len(categories) + artRedirects, // category + article redirects
+		ArticlesUncategorized:          articlesUncategorized,
+		ArticlesWithConversionWarnings: articlesWithWarnings,
+		HTMLBlockFallbacks:             htmlBlockFallbacks,
+		ImageRewriteFailures:           imageRewriteFailures,
+		NormalizedNoteBlocks:           normalizedNoteBlocks,
 	}
 	summaryJSON, err := json.Marshal(summary)
 	if err != nil {
@@ -417,8 +455,7 @@ func (s *DocsImportService) importArticle(
 	client *helpscout.Client,
 	ref helpscout.ArticleRef,
 	spaceID, workspaceID, userID string,
-	categoryToCollection map[string]string,
-	categoryToCollectionSlug map[string]string,
+	categoryMapping helpscoutCategoryMapping,
 	uploader helpscout.ImageUploader,
 	importStatus string,
 	redirects *[]redirectEntry,
@@ -431,10 +468,11 @@ func (s *DocsImportService) importArticle(
 	}
 
 	html := article.Text
+	imageWarnings := make([]docsimport.Warning, 0)
 
 	// Process images if uploader is available.
 	if uploader != nil && html != "" {
-		processed, err := helpscout.ProcessImages(ctx, html, uploader, workspaceID)
+		processed, keptURLs, err := helpscout.ProcessImagesDetailed(ctx, html, uploader, workspaceID)
 		if err != nil {
 			s.logger.Warn("image processing failed, using original HTML",
 				"article_id", ref.ID,
@@ -442,15 +480,22 @@ func (s *DocsImportService) importArticle(
 			)
 		} else {
 			html = processed
+			for _, keptURL := range keptURLs {
+				imageWarnings = append(imageWarnings, docsimport.Warning{
+					Type:    "image_url_kept",
+					Message: fmt.Sprintf("image URL kept without rewrite: %s", keptURL),
+				})
+			}
 		}
 	}
 
-	// Convert HTML to canonical Tiptap JSON.
-	convResult, err := docsimport.ConvertHTML(html)
+	sourceHTML := html
+	convResult, allWarnings, err := convertHelpScoutHTML(html)
 	if err != nil {
 		return nil, fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
 	}
-	for _, w := range convResult.Warnings {
+	allWarnings = append(imageWarnings, allWarnings...)
+	for _, w := range allWarnings {
 		s.logger.Warn("import conversion warning",
 			"article_id", ref.ID,
 			"warning_type", w.Type,
@@ -458,19 +503,9 @@ func (s *DocsImportService) importArticle(
 		)
 	}
 
-	// Determine collection ID and slug from first category.
-	// Use article.Categories (from single-article fetch) rather than
-	// ref.Categories (from list endpoint, which omits categories).
-	var collectionID *string
-	var collectionSlug string
-	if len(article.Categories) > 0 {
-		if cID, ok := categoryToCollection[article.Categories[0]]; ok {
-			collectionID = &cID
-		}
-		if slug, ok := categoryToCollectionSlug[article.Categories[0]]; ok {
-			collectionSlug = slug
-		}
-	}
+	target := resolveHelpScoutCategoryTarget(categoryMapping, article.Categories)
+	collectionID := target.collectionID
+	collectionSlug := target.collectionSlug
 
 	// Create document.
 	doc, err := s.documentSvc.Create(ctx, workspaceID, model.CreateDocsDocumentRequest{
@@ -494,7 +529,7 @@ func (s *DocsImportService) importArticle(
 
 	// Store import provenance — post-image-rewrite, pre-conversion HTML snapshot.
 	sourceSystem := "helpscout"
-	s.contentSvc.SetImportProvenance(ctx, savedContent.ID, html, sourceSystem, ref.ID)
+	s.contentSvc.SetImportProvenance(ctx, savedContent.ID, sourceHTML, sourceSystem, ref.ID)
 
 	// Create helpcenter article record with slug from HelpScout.
 	hcArticle := &model.DocsHelpcenterArticle{
@@ -506,7 +541,8 @@ func (s *DocsImportService) importArticle(
 	}
 
 	// Create legacy redirect for HelpScout article URL.
-	stats := &articleStats{}
+	stats := summarizeImportWarnings(allWarnings)
+	stats.Uncategorized = collectionID == nil
 	if collectionSlug != "" {
 		articleSlug := ref.Slug
 		articleRedirect := &model.DocsRedirect{
@@ -551,9 +587,12 @@ func (s *DocsImportService) importArticle(
 
 // ReconvertResult holds the outcome of a reconversion run.
 type ReconvertResult struct {
-	Total     int `json:"total"`
-	Converted int `json:"converted"`
-	Failed    int `json:"failed"`
+	Total                int `json:"total"`
+	Converted            int `json:"converted"`
+	Failed               int `json:"failed"`
+	ArticlesWithWarnings int `json:"articles_with_warnings"`
+	HTMLBlockFallbacks   int `json:"html_block_fallbacks"`
+	NormalizedNoteBlocks int `json:"normalized_note_blocks"`
 }
 
 // Reconvert re-runs the HTML-to-Tiptap converter on all documents from a previous import job,
@@ -582,7 +621,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 			continue
 		}
 
-		convResult, err := docsimport.ConvertHTML(*c.ImportSourceHTML)
+		convResult, warnings, err := convertHelpScoutHTML(*c.ImportSourceHTML)
 		if err != nil {
 			s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
 			result.Failed++
@@ -603,6 +642,29 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 		}
 
 		result.Converted++
+		if len(warnings) > 0 {
+			result.ArticlesWithWarnings++
+		}
+		for _, warning := range warnings {
+			switch warning.Type {
+			case "html_block_fallback":
+				result.HTMLBlockFallbacks++
+			case "helpscout_note_block_normalized":
+				result.NormalizedNoteBlocks++
+			}
+		}
+	}
+
+	if len(job.Summary) > 0 {
+		var summary model.ImportSummary
+		if err := json.Unmarshal(job.Summary, &summary); err == nil {
+			summary.ArticlesWithConversionWarnings = result.ArticlesWithWarnings
+			summary.HTMLBlockFallbacks = result.HTMLBlockFallbacks
+			summary.NormalizedNoteBlocks = result.NormalizedNoteBlocks
+			if summaryJSON, marshalErr := json.Marshal(summary); marshalErr == nil {
+				_ = s.importRepo.SetSummary(ctx, job.ID, summaryJSON)
+			}
+		}
 	}
 
 	return result, nil
@@ -699,7 +761,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 		}
 
 		ref := article.ArticleRef
-		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, nil, nil, uploader, "", &redirects); err != nil {
+		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, helpscoutCategoryMapping{uncategorized: helpscoutCategoryTarget{collectionSlug: "uncategorized"}}, uploader, "", &redirects); err != nil {
 			s.logger.Error("retry article import failed", "article_id", f.ArticleID, "error", err)
 			retryFailed++
 			newFailures = append(newFailures, model.ImportFailure{
@@ -761,4 +823,77 @@ func (s *DocsImportService) failJob(ctx context.Context, jobID, errMsg string) {
 	_ = s.importRepo.SetError(ctx, jobID, errMsg)
 	failTime := time.Now()
 	_ = s.importRepo.UpdateStatus(ctx, jobID, model.DocsImportStatusFailed, &failTime)
+}
+
+func buildHelpScoutCategoryMapping(categories []helpscout.Category, categoryToCollection, categoryToCollectionSlug map[string]string) helpscoutCategoryMapping {
+	mapping := helpscoutCategoryMapping{
+		byID:   make(map[string]helpscoutCategoryTarget, len(categories)),
+		bySlug: make(map[string]helpscoutCategoryTarget, len(categories)),
+		byName: make(map[string]helpscoutCategoryTarget, len(categories)),
+		uncategorized: helpscoutCategoryTarget{
+			collectionSlug: "uncategorized",
+		},
+	}
+
+	for _, category := range categories {
+		target := helpscoutCategoryTarget{
+			collectionSlug: categoryToCollectionSlug[category.ID],
+		}
+		if collectionID, ok := categoryToCollection[category.ID]; ok {
+			target.collectionID = stringPtr(collectionID)
+		}
+		mapping.byID[normalizeHelpScoutCategoryKey(category.ID)] = target
+		mapping.bySlug[normalizeHelpScoutCategoryKey(category.Slug)] = target
+		mapping.byName[normalizeHelpScoutCategoryKey(category.Name)] = target
+	}
+
+	return mapping
+}
+
+func resolveHelpScoutCategoryTarget(mapping helpscoutCategoryMapping, categories []string) helpscoutCategoryTarget {
+	for _, category := range categories {
+		key := normalizeHelpScoutCategoryKey(category)
+		if target, ok := mapping.byID[key]; ok {
+			return target
+		}
+		if target, ok := mapping.bySlug[key]; ok {
+			return target
+		}
+		if target, ok := mapping.byName[key]; ok {
+			return target
+		}
+	}
+	return mapping.uncategorized
+}
+
+func normalizeHelpScoutCategoryKey(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(value))), " ")
+}
+
+func summarizeImportWarnings(warnings []docsimport.Warning) *articleStats {
+	stats := &articleStats{}
+	if len(warnings) > 0 {
+		stats.HadConversionWarning = true
+	}
+	for _, warning := range warnings {
+		switch warning.Type {
+		case "html_block_fallback":
+			stats.HTMLBlockFallbacks++
+		case "image_url_kept":
+			stats.ImageRewriteFailures++
+		case "helpscout_note_block_normalized":
+			stats.NormalizedNoteBlocks++
+		}
+	}
+	return stats
+}
+
+func convertHelpScoutHTML(rawHTML string) (*docsimport.ConversionResult, []docsimport.Warning, error) {
+	normalizedHTML, preprocessingWarnings := docsimport.PreprocessHelpScoutHTML(rawHTML)
+	convResult, err := docsimport.ConvertHTML(normalizedHTML)
+	if err != nil {
+		return nil, nil, err
+	}
+	allWarnings := append(preprocessingWarnings, convResult.Warnings...)
+	return convResult, allWarnings, nil
 }

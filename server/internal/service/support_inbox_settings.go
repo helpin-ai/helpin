@@ -79,6 +79,39 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIHandoffMailboxID != nil {
 		current.AIHandoffMailboxID = patch.AIHandoffMailboxID
 	}
+	if patch.TriageEnabled != nil {
+		current.TriageEnabled = *patch.TriageEnabled
+	}
+	if patch.TriageAutoMoveEnabled != nil {
+		current.TriageAutoMoveEnabled = *patch.TriageAutoMoveEnabled
+	}
+	if patch.TriageConfidenceThreshold != nil {
+		current.TriageConfidenceThreshold = *patch.TriageConfidenceThreshold
+	}
+	if patch.TriageWidgetEnabled != nil {
+		current.TriageWidgetEnabled = *patch.TriageWidgetEnabled
+	}
+	if patch.TriageEmailEnabled != nil {
+		current.TriageEmailEnabled = *patch.TriageEmailEnabled
+	}
+	if patch.TriageInternalEnabled != nil {
+		current.TriageInternalEnabled = *patch.TriageInternalEnabled
+	}
+	if patch.TriageFallbackBehavior != nil {
+		current.TriageFallbackBehavior = *patch.TriageFallbackBehavior
+	}
+	if patch.TriageRerunOnMeaningChange != nil {
+		current.TriageRerunOnMeaningChange = *patch.TriageRerunOnMeaningChange
+	}
+	if patch.TriageDailyBudget != nil {
+		current.TriageDailyBudget = *patch.TriageDailyBudget
+	}
+	if patch.TriageSkipSpamConversations != nil {
+		current.TriageSkipSpamConversations = *patch.TriageSkipSpamConversations
+	}
+	if patch.TriageDeduplicateFirstMessage != nil {
+		current.TriageDeduplicateFirstMessage = *patch.TriageDeduplicateFirstMessage
+	}
 	if patch.BusinessHoursEnabled != nil {
 		current.BusinessHoursEnabled = *patch.BusinessHoursEnabled
 	}
@@ -152,6 +185,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if settings.AIConfidenceThreshold < 0 || settings.AIConfidenceThreshold > 1 {
 		return fmt.Errorf("ai_confidence_threshold must be between 0.0 and 1.0")
 	}
+	if settings.TriageConfidenceThreshold < 0 || settings.TriageConfidenceThreshold > 1 {
+		return fmt.Errorf("triage_confidence_threshold must be between 0.0 and 1.0")
+	}
 	if settings.BrandColor != "" && !hexColorRegex.MatchString(settings.BrandColor) {
 		return fmt.Errorf("brand_color must be a valid hex color (e.g. #6366F1)")
 	}
@@ -168,6 +204,10 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validHandoff := map[string]bool{"unassigned": true, "assign_to_team": true, "round_robin": true}
 	if !validHandoff[settings.HandoffBehavior] {
 		return fmt.Errorf("handoff_behavior must be unassigned, assign_to_team, or round_robin")
+	}
+	validTriageFallback := map[string]bool{"shared": true, "default": true}
+	if !validTriageFallback[settings.TriageFallbackBehavior] {
+		return fmt.Errorf("triage_fallback_behavior must be shared or default")
 	}
 	if settings.HandoffBehavior == "assign_to_team" && (settings.HandoffTeamID == nil || *settings.HandoffTeamID == "") {
 		return fmt.Errorf("handoff_team_id is required when handoff_behavior is assign_to_team")
@@ -209,6 +249,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
 		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
+	}
+	if settings.TriageDailyBudget < 0 {
+		return fmt.Errorf("triage_daily_budget must be >= 0")
 	}
 	if settings.AIEnabled {
 		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {

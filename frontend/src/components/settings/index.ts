@@ -11,6 +11,7 @@ export { CRMEmailSettingsTab } from './CRMEmailSettingsTab';
 export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';
 export { AIAutomationsTab } from './AIAutomationsTab';
 export { ChatGeneralTab } from './ChatGeneralTab';
+export { ConversationRoutingTab } from './ConversationRoutingTab';
 export { RedirectsTab } from './RedirectsTab';
 export { TeamInboxesTab } from './TeamInboxesTab';
 export { SupportEmailForwardingTab } from './SupportEmailForwardingTab';

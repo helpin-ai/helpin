@@ -258,6 +258,81 @@ func TestListSprints(t *testing.T) {
 	}
 }
 
+func TestListPlanningWorkspace_GroupsSprintsAndBacklog(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	ctx := context.Background()
+
+	const (
+		teamIDValue = "team-planning"
+		workflowID  = "wf-planning"
+		todoStateID = "state-planning-todo"
+		doingStateID = "state-planning-doing"
+		doneStateID = "state-planning-done"
+	)
+	teamID := teamIDValue
+
+	seedPMSprintPlanningServiceState(t, db, todoStateID, workflowID, "Todo", model.PMStateTypeUnstarted, 0)
+	seedPMSprintPlanningServiceState(t, db, doingStateID, workflowID, "Doing", model.PMStateTypeStarted, 1)
+	seedPMSprintPlanningServiceState(t, db, doneStateID, workflowID, "Done", model.PMStateTypeDone, 2)
+
+	now := time.Now().UTC()
+	activeStart, activeEnd := makeSprintDates(now, -2, 5)
+	upcomingStart, upcomingEnd := makeSprintDates(now, 8, 15)
+	completedStart, completedEnd := makeSprintDates(now, -15, -8)
+
+	active, err := svc.Create(ctx, model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Active planning sprint",
+		StartDate:   activeStart,
+		EndDate:     activeEnd,
+		TeamID:      &teamID,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create active sprint: %v", err)
+	}
+	if _, err := svc.Create(ctx, model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Upcoming planning sprint",
+		StartDate:   upcomingStart,
+		EndDate:     upcomingEnd,
+		TeamID:      &teamID,
+	}, "actor-1"); err != nil {
+		t.Fatalf("Create upcoming sprint: %v", err)
+	}
+	if _, err := svc.Create(ctx, model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Completed planning sprint",
+		StartDate:   completedStart,
+		EndDate:     completedEnd,
+		TeamID:      &teamID,
+	}, "actor-1"); err != nil {
+		t.Fatalf("Create completed sprint: %v", err)
+	}
+
+	seedPMSprintPlanningServiceStory(t, db, "story-active", wsID, workflowID, todoStateID, active.Sprint.ID, teamIDValue, "Active work", 2001, 1, 3)
+	seedPMSprintPlanningServiceStory(t, db, "story-backlog", wsID, workflowID, doingStateID, "", teamIDValue, "Backlog work", 2002, 2, 5)
+	seedPMSprintPlanningServiceStory(t, db, "story-backlog-done", wsID, workflowID, doneStateID, "", teamIDValue, "Backlog done", 2003, 3, 1)
+
+	workspace, err := svc.ListPlanningWorkspace(ctx, wsID, model.PMSprintPlanningFilters{
+		TeamID:           &teamID,
+		IncludeCompleted: true,
+	})
+	if err != nil {
+		t.Fatalf("ListPlanningWorkspace: %v", err)
+	}
+
+	if len(workspace.Buckets) != 3 {
+		t.Fatalf("buckets = %d, want 3", len(workspace.Buckets))
+	}
+	if len(workspace.Buckets[0].Sprints) != 1 || workspace.Buckets[0].Sprints[0].Sprint.Name != "Active planning sprint" {
+		t.Fatalf("active bucket = %+v", workspace.Buckets[0].Sprints)
+	}
+	if workspace.BacklogTotal != 1 {
+		t.Fatalf("backlog_total = %d, want 1", workspace.BacklogTotal)
+	}
+}
+
 func TestListSprints_EmptyWorkspaceID(t *testing.T) {
 	t.Parallel()
 	svc, _ := newSprintTestService(t)
@@ -266,6 +341,32 @@ func TestListSprints_EmptyWorkspaceID(t *testing.T) {
 	_, err := svc.List(ctx, "", model.PMSprintListFilters{})
 	if err == nil {
 		t.Fatal("expected error for empty workspace_id")
+	}
+}
+
+func seedPMSprintPlanningServiceState(t *testing.T, db *gorm.DB, id, workflowID, name, stateType string, position int) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := db.Exec(
+		`INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, workflowID, name, stateType, position, false, now, now,
+	).Error; err != nil {
+		t.Fatalf("seed workflow state: %v", err)
+	}
+}
+
+func seedPMSprintPlanningServiceStory(t *testing.T, db *gorm.DB, id, workspaceID, workflowID, stateID, sprintID, teamID, name string, displayID, position, estimate int) {
+	t.Helper()
+	now := time.Now().UTC()
+	var sprint any
+	if sprintID != "" {
+		sprint = sprintID
+	}
+	if err := db.Exec(
+		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMStoryPriorityMedium, now, now,
+	).Error; err != nil {
+		t.Fatalf("seed planning story: %v", err)
 	}
 }
 

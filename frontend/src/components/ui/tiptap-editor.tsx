@@ -1,4 +1,5 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
@@ -48,13 +49,15 @@ interface TiptapEditorProps {
 function ToolbarButton({
   onClick,
   active = false,
+  title,
   children,
 }: {
   onClick: () => void;
   active?: boolean;
+  title?: string;
   children: React.ReactNode;
 }) {
-  return (
+  const btn = (
     <button
       type="button"
       onClick={onClick}
@@ -64,6 +67,15 @@ function ToolbarButton({
     >
       {children}
     </button>
+  );
+
+  if (!title) return btn;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{btn}</TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -173,10 +185,15 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         heading: { levels: [1, 2, 3] },
         link: {
           openOnClick: false,
-          HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+          HTMLAttributes: { class: 'text-primary underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({
+        placeholder,
+        showOnlyCurrent: false,
+        emptyNodeClass: 'is-empty',
+        emptyEditorClass: 'is-editor-empty',
+      }),
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -386,24 +403,28 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}
+          title="Bold"
         >
           <Bold className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleItalic().run()}
           active={editor.isActive('italic')}
+          title="Italic"
         >
           <Italic className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleStrike().run()}
           active={editor.isActive('strike')}
+          title="Strikethrough"
         >
           <Strikethrough className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCode().run()}
           active={editor.isActive('code')}
+          title="Inline code"
         >
           <Code2 className="h-4 w-4" />
         </ToolbarButton>
@@ -413,52 +434,59 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           active={editor.isActive('heading', { level: 2 })}
+          title="Heading 2"
         >
           <Heading2 className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           active={editor.isActive('heading', { level: 3 })}
+          title="Heading 3"
         >
           <Heading3 className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive('bulletList')}
+          title="Bullet list"
         >
           <List className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           active={editor.isActive('orderedList')}
+          title="Numbered list"
         >
           <ListOrdered className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           active={editor.isActive('blockquote')}
+          title="Quote"
         >
           <Quote className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           active={editor.isActive('codeBlock')}
+          title="Code block"
         >
           <FileCode2 className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          title="Horizontal rule"
         >
           <Minus className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-1 h-4 w-px bg-border/60" />
 
-        <ToolbarButton onClick={addLink} active={editor.isActive('link')}>
+        <ToolbarButton onClick={addLink} active={editor.isActive('link')} title="Link">
           <Link2 className="h-4 w-4" />
         </ToolbarButton>
         {uploadConfig && (
-          <ToolbarButton onClick={addImage}>
+          <ToolbarButton onClick={addImage} title="Image">
             <ImageIcon className="h-4 w-4" />
           </ToolbarButton>
         )}

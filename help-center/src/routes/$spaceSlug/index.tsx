@@ -1,24 +1,33 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { LoadingState } from '@/components/LoadingState'
-import { useDocsContext } from '@/contexts/DocsContext'
+import { loadRootRouteData } from '@/lib/rootLoader'
+import { buildCanonicalCollectionPath } from '@/lib/locale'
 
 export const Route = createFileRoute('/$spaceSlug/')({
+  beforeLoad: async ({ context, location, params }) => {
+    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+
+    const target = buildCanonicalCollectionPath(
+      rootData.multilingualEnabled,
+      rootData.config.default_locale,
+      params.spaceSlug,
+    )
+
+    // Avoid redirect loop when target resolves to the same path
+    const currentPath = location.pathname.replace(/\/+$/, '') || '/'
+    const targetPath = target.replace(/\/+$/, '') || '/'
+    if (currentPath === targetPath) {
+      return
+    }
+
+    throw redirect({
+      statusCode: 301,
+      to: target,
+    })
+  },
   component: LegacySpaceIndexRedirect,
 })
 
 function LegacySpaceIndexRedirect() {
-  const { spaceSlug } = Route.useParams()
-  const { defaultLocale } = useDocsContext()
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    navigate({
-      to: '/$locale/$spaceSlug',
-      params: { locale: defaultLocale, spaceSlug },
-      replace: true,
-    })
-  }, [defaultLocale, navigate, spaceSlug])
-
   return <LoadingState message="Redirecting..." />
 }

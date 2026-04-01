@@ -41,10 +41,19 @@ function renderNode(
 
   const element = node as HTMLElement
   const tag = element.tagName.toLowerCase()
-  const props = { key, ...mapAttributes(element) }
+  const props: Record<string, string> = { key, ...mapAttributes(element) }
 
   if (tag === 'img') {
     return createElement(LoadingImage, props)
+  }
+
+  // Enforce links open in new tab with consistent styling
+  if (tag === 'a') {
+    props.target = '_blank'
+    props.rel = 'noopener noreferrer'
+    if (!props.className) {
+      props.className = 'text-primary underline cursor-pointer'
+    }
   }
 
   const children = Array.from(element.childNodes)

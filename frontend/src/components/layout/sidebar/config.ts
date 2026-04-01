@@ -5,17 +5,22 @@ import {
   Briefcase,
   Building2,
   CheckCircle2,
+  CircleDot,
   ClipboardCheck,
   Clock,
   DollarSign,
   FileText,
   FolderKanban,
   GanttChart,
+  Inbox,
   LayoutList,
   Layers,
   Lightbulb,
+  Loader2,
   Mail,
   MessageSquare,
+  OctagonX,
+  Pause,
   Play,
   RefreshCw,
   Settings,
@@ -25,6 +30,7 @@ import {
   UserX,
   Users,
   Wrench,
+  XCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
@@ -42,8 +48,8 @@ export function deriveActiveRail(pathname: string): RailId {
 
 export const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string }[] = [
   { key: 'stories', label: 'Stories', icon: LayoutList, path: 'stories' },
-  { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
   { key: 'epics', label: 'Epics', icon: Layers, path: 'epics' },
+  { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
 ];
 
 export const projectCreateOptions = [
@@ -134,6 +140,16 @@ export const supportFilterItems = [
   { key: 'mentions' as const, label: 'Mentions', icon: MessageSquare },
   { key: 'all' as const, label: 'All', icon: Mail },
 ];
+
+export const supportStatusOptions: readonly { value: string; label: string; icon: LucideIcon; color: string }[] = [
+  { value: 'all', label: 'All statuses', icon: Inbox, color: 'text-muted-foreground' },
+  { value: 'open', label: 'Open', icon: CircleDot, color: 'text-blue-500' },
+  { value: 'in_progress', label: 'In Progress', icon: Loader2, color: 'text-amber-500' },
+  { value: 'waiting', label: 'Waiting', icon: Pause, color: 'text-orange-500' },
+  { value: 'resolved', label: 'Resolved', icon: CheckCircle2, color: 'text-emerald-500' },
+  { value: 'closed', label: 'Closed', icon: XCircle, color: 'text-slate-400' },
+  { value: 'spam', label: 'Spam', icon: OctagonX, color: 'text-red-500' },
+] as const;
 
 export const supportAiItems = [
   { key: 'ai_all' as const, label: 'All AI', icon: Bot },

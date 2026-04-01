@@ -172,6 +172,232 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 	}
 }
 
+func TestSupportAIServiceEscalateToHumanUsesTriageMailboxForTriggeringMessage(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-escalate-triage"
+	ownerID := "user-owner"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
+	seedWorkspace(t, db, workspaceID, "Escalate Triage WS", "escalate-triage-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-owner", workspaceID, ownerID, "owner@example.com", "Owner User", model.RoleAdmin)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	billingMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "inbox",
+		TriageEligible: true,
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, billingMailbox); err != nil {
+		t.Fatalf("create billing mailbox: %v", err)
+	}
+	handoffMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "General Handoff",
+		Handle:         "general-handoff",
+		Icon:           "inbox",
+		TriageEligible: true,
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, handoffMailbox); err != nil {
+		t.Fatalf("create handoff mailbox: %v", err)
+	}
+
+	seedSupportInstallationSettings(t, db, workspaceID, func(settings *model.SupportInboxSettings) {
+		settings.BusinessHoursEnabled = false
+		settings.TriageEnabled = true
+		settings.TriageWidgetEnabled = true
+		settings.TriageAutoMoveEnabled = false
+		settings.AIHandoffMailboxID = &handoffMailbox.ID
+	})
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	handoffRepo := repository.NewAgentHandoffRepository(db)
+	instRepo := repository.NewSupportInboxInstallationRepository(db)
+	triageRepo := repository.NewSupportConversationTriageRepository(db)
+	triageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
+	triageRuleRepo := repository.NewSupportTriageRuleRepository(db)
+
+	supportSvc := NewSupportInboxService(
+		convRepo,
+		mailboxRepo,
+		messageRepo,
+		nil,
+		nil,
+		instRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	)
+	triageSvc := NewSupportInboxTriageService(
+		supportSvc,
+		triageRepo,
+		triageEventRepo,
+		triageRuleRepo,
+		instRepo,
+		mailboxRepo,
+		convRepo,
+		messageRepo,
+		nil,
+	)
+	supportSvc.SetTriageService(triageSvc)
+
+	if _, err := triageSvc.CreateRule(ctx, workspaceID, ownerID, model.CreateSupportTriageRuleRequest{
+		Name:            "Refunds",
+		Priority:        1,
+		Channels:        []string{"widget"},
+		Conditions:      model.SupportTriageRuleConditions{PhraseContains: []string{"refund"}},
+		TargetMailboxID: billingMailbox.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	aiPending := "pending"
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Refund request",
+		Status:      "open",
+		Channel:     "widget",
+		Source:      "widget",
+		AIState:     &aiPending,
+		FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conv.ID,
+		SenderType:        "customer",
+		SenderDisplayName: strPtr("Customer"),
+		Content:           "Need help with refund",
+		MessageType:       "reply",
+	}
+	if err := messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	svc := &SupportAIService{
+		conversationRepo: convRepo,
+		messageRepo:      messageRepo,
+		handoffRepo:      handoffRepo,
+		installationRepo: instRepo,
+	}
+	svc.SetMailboxRepository(mailboxRepo)
+	svc.SetTriageService(triageSvc)
+
+	if err := svc.EscalateToHumanForMessage(ctx, workspaceID, conv.ID, msg.ID, "billing_topic"); err != nil {
+		t.Fatalf("EscalateToHumanForMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.MailboxID == nil || *updated.MailboxID != billingMailbox.ID {
+		t.Fatalf("mailbox_id = %#v, want %q", updated.MailboxID, billingMailbox.ID)
+	}
+}
+
+func TestSupportAIServiceEscalateToHumanPreservesExistingMailbox(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-escalate-preserve-mailbox"
+	ownerID := "user-owner"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
+	seedWorkspace(t, db, workspaceID, "Preserve Mailbox WS", "preserve-mailbox-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-owner", workspaceID, ownerID, "owner@example.com", "Owner User", model.RoleAdmin)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	billingMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "inbox",
+		TriageEligible: true,
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, billingMailbox); err != nil {
+		t.Fatalf("create billing mailbox: %v", err)
+	}
+	handoffMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "General Handoff",
+		Handle:         "general-handoff",
+		Icon:           "inbox",
+		TriageEligible: true,
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, handoffMailbox); err != nil {
+		t.Fatalf("create handoff mailbox: %v", err)
+	}
+
+	seedSupportInstallationSettings(t, db, workspaceID, func(settings *model.SupportInboxSettings) {
+		settings.BusinessHoursEnabled = false
+		settings.AIHandoffMailboxID = &handoffMailbox.ID
+	})
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	handoffRepo := repository.NewAgentHandoffRepository(db)
+	instRepo := repository.NewSupportInboxInstallationRepository(db)
+
+	aiPending := "pending"
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Already in billing",
+		Status:      "open",
+		MailboxID:   &billingMailbox.ID,
+		AIState:     &aiPending,
+		FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := &SupportAIService{
+		conversationRepo: convRepo,
+		messageRepo:      messageRepo,
+		handoffRepo:      handoffRepo,
+		installationRepo: instRepo,
+	}
+	svc.SetMailboxRepository(mailboxRepo)
+
+	if err := svc.EscalateToHuman(ctx, workspaceID, conv.ID, "customer_requested"); err != nil {
+		t.Fatalf("EscalateToHuman: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.MailboxID == nil || *updated.MailboxID != billingMailbox.ID {
+		t.Fatalf("mailbox_id = %#v, want %q", updated.MailboxID, billingMailbox.ID)
+	}
+}
+
 func seedSupportInstallationSettings(t *testing.T, db *gorm.DB, workspaceID string, mutate func(*model.SupportInboxSettings)) {
 	t.Helper()
 

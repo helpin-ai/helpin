@@ -1,477 +1,286 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { createColumnHelper, type VisibilityState } from '@tanstack/react-table';
-import { format, parseISO } from 'date-fns';
-import { Archive, ArchiveRestore, CalendarDays, LayoutGrid, LayoutList, Minus, MoreHorizontal, Plus, Timer, BarChart3, CheckCircle2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from '@tanstack/react-router';
+import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { PMDataTable } from '@/components/pm/PMDataTable';
-import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
-import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { pmSprintService } from '@/lib/services/pmSprintService';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
+import { SprintPlanningWorkspace } from '@/components/pm/sprints/SprintPlanningWorkspace';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
+import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningStoryPreview } from '@/lib/pmTypes';
+import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmStoryService } from '@/lib/services/pmStoryService';
+import { unwrap } from '@/lib/queryUtils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import type { SprintStatus, SprintWithStats } from '@/lib/pmTypes';
-import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
-const ALL_PROPERTIES = [
-  { key: 'status', label: 'Status' },
-  { key: 'team', label: 'Team' },
-  { key: 'progress', label: 'Progress' },
-  { key: 'stories', label: 'Stories' },
-  { key: 'points', label: 'Points' },
-  { key: 'start_date', label: 'Start date' },
-  { key: 'end_date', label: 'End date' },
-];
-
-const DEFAULT_VISIBLE = [
-  'status',
-  'team',
-  'progress',
-  'stories',
-  'points',
-  'start_date',
-  'end_date',
-];
-
-const columnHelper = createColumnHelper<SprintWithStats>();
+const STORY_PREVIEW_LIMIT = 5;
+const BACKLOG_LIMIT = 50;
 
 interface SprintsPageProps {
   teamId?: string;
 }
 
-export function SprintsPage({ teamId }: SprintsPageProps) {
-  useTitle('Sprints');
-  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
-  const workspaceId = workspace?.id;
-
-  const [sprints, setSprints] = useState<SprintWithStats[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
-  const [showArchived, setShowArchived] = useState(false);
-  const [hasArchivedSprints, setHasArchivedSprints] = useState(false);
-
-  const VIEW_MODE_KEY = `pm_view_mode_sprints_${workspaceId}`;
-  const [viewMode, setViewModeState] = useState<'cards' | 'table'>(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_MODE_KEY);
-      return saved === 'table' ? 'table' : 'cards';
-    } catch { return 'cards'; }
-  });
-  const setViewMode = useCallback((mode: 'cards' | 'table') => {
-    setViewModeState(mode);
-    try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
-  }, [VIEW_MODE_KEY]);
-
-  const { findTeamName } = useAccessibleTeams(workspaceId ?? '');
-  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { canEdit } = usePermissions(access);
-  const navigate = useNavigate();
-  const openCreate = useGlobalCreateStore((s) => s.openCreate);
-
-  const pct = (entry: SprintWithStats) => {
-    if (entry.stats.story_count === 0) return 0;
-    return Math.round((entry.stats.done_story_count / entry.stats.story_count) * 100);
+function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintPlanningWorkspaceData {
+  return {
+    ...workspace,
+    buckets: workspace.buckets.map((bucket) => ({
+      ...bucket,
+      sprints: (bucket.sprints ?? []).map((card) => ({
+        ...card,
+        preview_stories: [...(card.preview_stories ?? [])],
+      })),
+    })),
+    backlog_stories: [...workspace.backlog_stories],
   };
+}
 
-  const columns = useMemo(
-    () => [
-      columnHelper.display({
-        id: 'name',
-        header: 'Name',
-        size: 999,
-        cell: (info) => (
-          <span className="truncate font-medium text-sm">{info.row.original.sprint.name}</span>
-        ),
-      }),
-      columnHelper.display({
-        id: 'status',
-        header: 'Status',
-        size: 100,
-        cell: (info) => {
-          const cfg = SPRINT_STATUS_CONFIG[info.row.original.sprint.status as SprintStatus];
-          return (
-            <span className={`text-xs ${cfg?.color ?? 'text-muted-foreground'}`}>
-              {cfg?.label ?? info.row.original.sprint.status}
-            </span>
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'team',
-        header: 'Team',
-        size: 120,
-        cell: (info) => (
-          <span className="truncate text-xs text-muted-foreground">
-            {findTeamName(info.row.original.sprint.team_id) || <Minus className="h-3.5 w-3.5" />}
-          </span>
-        ),
-      }),
-      columnHelper.display({
-        id: 'progress',
-        header: 'Progress',
-        size: 140,
-        cell: (info) => {
-          const entry = info.row.original;
-          return (
-            <div className="flex items-center gap-2">
-              <Progress value={pct(entry)} className="h-1.5 w-16 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-              <span className="text-xs text-muted-foreground">{pct(entry)}%</span>
-            </div>
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'stories',
-        header: 'Stories',
-        size: 90,
-        cell: (info) => {
-          const entry = info.row.original;
-          return (
-            <span className="text-xs text-muted-foreground">
-              {entry.stats.done_story_count}/{entry.stats.story_count}
-            </span>
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'points',
-        header: 'Points',
-        size: 80,
-        cell: (info) => {
-          const entry = info.row.original;
-          return (
-            <span className="text-xs text-muted-foreground">
-              {entry.stats.done_points}/{entry.stats.total_points}
-            </span>
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'start_date',
-        header: 'Start date',
-        size: 110,
-        cell: (info) => {
-          const d = info.row.original.sprint.start_date;
-          return d ? (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              <span>{format(parseISO(d), 'MMM d')}</span>
-            </div>
-          ) : <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
-        },
-      }),
-      columnHelper.display({
-        id: 'end_date',
-        header: 'End date',
-        size: 110,
-        cell: (info) => {
-          const d = info.row.original.sprint.end_date;
-          return d ? (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              <span>{format(parseISO(d), 'MMM d')}</span>
-            </div>
-          ) : <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
-        },
-      }),
-    ],
-    [findTeamName]
+function removeStoryFromCards(workspace: SprintPlanningWorkspaceData, storyId: string) {
+  let found: SprintPlanningStoryPreview | null = null;
+  let sourceSprintId: string | null = null;
+
+  const backlogIndex = workspace.backlog_stories.findIndex((story) => story.id === storyId);
+  if (backlogIndex >= 0) {
+    found = workspace.backlog_stories[backlogIndex];
+    workspace.backlog_stories.splice(backlogIndex, 1);
+    workspace.backlog_total = Math.max(0, workspace.backlog_total - 1);
+  }
+
+  for (const bucket of workspace.buckets) {
+    for (const card of (bucket.sprints ?? [])) {
+      const stories = card.preview_stories ?? [];
+      const index = stories.findIndex((story) => story.id === storyId);
+      if (index >= 0) {
+        found = stories[index];
+        sourceSprintId = card.sprint.id;
+        stories.splice(index, 1);
+        card.preview_stories = stories;
+        card.stats.story_count = Math.max(0, card.stats.story_count - 1);
+        card.stats.total_points = Math.max(0, card.stats.total_points - (found.estimate ?? 0));
+        if (found.state_type === 'done') {
+          card.stats.done_story_count = Math.max(0, card.stats.done_story_count - 1);
+          card.stats.done_points = Math.max(0, card.stats.done_points - (found.estimate ?? 0));
+        }
+        const hiddenCount = Math.max(card.stats.story_count - card.preview_stories.length, 0);
+        card.story_preview_overflow = hiddenCount;
+      }
+    }
+  }
+
+  return { found, sourceSprintId };
+}
+
+function addStoryToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['sprints'][number], story: SprintPlanningStoryPreview, sprintId: string) {
+  const nextStory = { ...story, sprint_id: sprintId };
+  card.preview_stories = [nextStory, ...(card.preview_stories ?? []).filter((item) => item.id !== story.id)].slice(0, STORY_PREVIEW_LIMIT);
+  card.stats.story_count += 1;
+  card.stats.total_points += story.estimate ?? 0;
+  if (story.state_type === 'done') {
+    card.stats.done_story_count += 1;
+    card.stats.done_points += story.estimate ?? 0;
+  }
+  card.story_preview_overflow = Math.max(card.stats.story_count - card.preview_stories.length, 0);
+}
+
+function addStoryToBacklog(workspace: SprintPlanningWorkspaceData, story: SprintPlanningStoryPreview) {
+  const nextStory = { ...story, sprint_id: undefined };
+  workspace.backlog_stories = [nextStory, ...workspace.backlog_stories.filter((item) => item.id !== story.id)].slice(0, BACKLOG_LIMIT);
+  workspace.backlog_total += 1;
+}
+
+function applyStoryAssignment(
+  workspace: SprintPlanningWorkspaceData,
+  story: SprintPlanningStoryPreview,
+  targetSprintId: string | null,
+): SprintPlanningWorkspaceData {
+  const next = clonePlanningWorkspace(workspace);
+  const { found, sourceSprintId } = removeStoryFromCards(next, story.id);
+  const movingStory = found ?? story;
+  if (sourceSprintId === targetSprintId) return workspace;
+
+  if (!targetSprintId) {
+    addStoryToBacklog(next, movingStory);
+    return next;
+  }
+
+  for (const bucket of next.buckets) {
+    for (const card of (bucket.sprints ?? [])) {
+      if (card.sprint.id === targetSprintId) {
+        addStoryToSprint(card, movingStory, targetSprintId);
+        return next;
+      }
+    }
+  }
+  return workspace;
+}
+
+export function SprintsPage({ teamId }: SprintsPageProps) {
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const workspaceId = workspace?.id ?? '';
+  const workspaceSlug = workspace?.slug ?? '';
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const openCreate = useGlobalCreateStore((state) => state.openCreate);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(access);
+  const { teams } = useAccessibleTeams(workspaceId);
+  const { members } = useAssignableWorkspaceMembers(workspaceId);
+  const [backlogOpen, setBacklogOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<SprintStatusFilter>('all');
+
+  const teamName = teamId ? teams.find((t) => t.id === teamId)?.name : undefined;
+  useTitle(teamName ? `Sprints — ${teamName}` : 'Sprints');
+
+  const isArchived = statusFilter === 'archived';
+
+  const filters = useMemo(
+    () => ({
+      team_id: teamId || undefined,
+      include_completed: true,
+    }),
+    [teamId],
   );
 
-  const columnVisibility = useMemo<VisibilityState>(() => {
-    const vis: VisibilityState = { name: true };
-    for (const prop of ALL_PROPERTIES) {
-      vis[prop.key] = visibleColumns.includes(prop.key);
+  const planningQuery = useSprintPlanningWorkspace(workspaceId, filters);
+  const planningQueryKey = useMemo(
+    () => queryKeys.pm.sprintPlanning(workspaceId, filters as Record<string, unknown> | undefined),
+    [workspaceId, filters],
+  );
+
+  const handleOpenStory = (storyId: string) => {
+    if (!workspaceSlug) return;
+    openStoryRoute(navigate as never, location as never, workspaceSlug, storyId);
+  };
+
+  // Separate query for archived sprints — only enabled when filter is "archived"
+  const archivedQuery = useQuery({
+    queryKey: ['pm', workspaceId, 'sprints', 'archived', teamId],
+    queryFn: async () => unwrap(await pmSprintService.list(workspaceId, { team_id: teamId, archived: true })),
+    enabled: !!workspaceId && isArchived,
+  });
+
+  // Filter the planning workspace buckets based on status filter
+  const filteredWorkspace = useMemo(() => {
+    if (!planningQuery.data || isArchived) return planningQuery.data ?? null;
+    if (statusFilter === 'all') return planningQuery.data;
+
+    const bucketKey = statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'active' ? 'active' : 'completed';
+    return {
+      ...planningQuery.data,
+      buckets: planningQuery.data.buckets.filter((b) => b.key === bucketKey),
+    };
+  }, [planningQuery.data, statusFilter, isArchived]);
+
+  const handleAssignStory = async (story: SprintPlanningStoryPreview, sprintId: string | null) => {
+    if (!planningQuery.data || !canEdit) return;
+    const previous = queryClient.getQueryData<SprintPlanningWorkspaceData>(planningQueryKey) ?? planningQuery.data;
+    const optimistic = applyStoryAssignment(previous, story, sprintId);
+    if (optimistic === previous) return;
+
+    queryClient.setQueryData(planningQueryKey, optimistic);
+    try {
+      const { error } = await pmStoryService.update(workspaceId, story.id, { sprint_id: sprintId ?? '' });
+      if (error) throw new Error(error);
+    } catch (error) {
+      queryClient.setQueryData(planningQueryKey, previous);
+      toast.error(error instanceof Error ? error.message : 'Failed to update story sprint');
     }
-    return vis;
-  }, [visibleColumns]);
-
-  const loadData = async () => {
-    if (!workspaceId) return;
-    setLoading(true);
-    setError(null);
-    const [res, archivedRes] = await Promise.all([
-      pmSprintService.list(workspaceId, { archived: showArchived, team_id: teamId }),
-      pmSprintService.list(workspaceId, { archived: true, team_id: teamId }),
-    ]);
-    if (res.error || !res.data) {
-      setError(res.error ?? 'Failed to load sprints');
-      setLoading(false);
-      return;
-    }
-    setHasArchivedSprints(Boolean(archivedRes.data?.length));
-    setSprints(res.data);
-    setLoading(false);
   };
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, teamId, showArchived]);
-
-  // Refresh when sprint is created via global modal
-  useEffect(() => {
-    const handler = () => { loadData(); };
-    window.addEventListener('sprint-created', handler);
-    return () => window.removeEventListener('sprint-created', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, teamId]);
-
-  const openSprint = (entry: SprintWithStats) => {
-    if (!workspace) return;
-    navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: entry.sprint.id } });
+  const handleCreateStory = (sprintId?: string) => {
+    openCreate('story', {
+      teamId: teamId || undefined,
+      ownerMemberId: undefined,
+      sprintId,
+    });
   };
 
-  const teamLabel = teamId ? findTeamName(teamId) : null;
-  const showHeaderActions = sprints.length > 0 || showArchived;
-  const showHeaderIntro = sprints.length > 0;
-  const showArchivedToggle = hasArchivedSprints || showArchived;
-
-  const handleArchiveToggle = async (entry: SprintWithStats) => {
-    if (!workspaceId) return;
-    const next = !entry.sprint.archived;
-    await pmSprintService.update(workspaceId, entry.sprint.id, { archived: next });
-    loadData();
-  };
+  // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
+  const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const isFiltered = statusFilter !== 'all';
 
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto">
-      <header className="flex items-center justify-between">
-        {showHeaderIntro ? (
-          <div>
-            <h2 className="text-xl font-semibold">Sprints{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
-            <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
-          </div>
-        ) : <div />}
-        <div className="flex items-center gap-2">
-          {showHeaderActions && (
-            <>
-              {showArchivedToggle && (
-                <Button
-                  variant={showArchived ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setShowArchived((v) => !v)}
-                >
-                  {showArchived ? 'Hide archived' : 'Show archived'}
-                </Button>
-              )}
-              {viewMode === 'table' && (
-                <DisplayPropertiesPopover
-                  allProperties={ALL_PROPERTIES}
-                  visible={visibleColumns}
-                  onChange={setVisibleColumns}
-                />
-              )}
-              <div className="flex items-center rounded-md border border-border/60">
-                <Button
-                  variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 rounded-r-none px-2.5"
-                  onClick={() => setViewMode('cards')}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 rounded-l-none px-2.5"
-                  onClick={() => setViewMode('table')}
-                >
-                  <LayoutList className="h-4 w-4" />
-                </Button>
-              </div>
-              {canEdit && (
-                <Button size="sm" onClick={() => openCreate('sprint', { teamId })}>
-                  Create Sprint
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      </header>
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+      {(hasAnySprintUnfiltered || isFiltered) && (
+        <SprintPlanningFilters
+          teamName={teamName}
+          statusFilter={statusFilter}
+          canEdit={canEdit}
+          onStatusFilterChange={setStatusFilter}
+          onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
+        />
+      )}
 
-      {error ? (
+      {planningQuery.error && !isArchived ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
+          {planningQuery.error instanceof Error ? planningQuery.error.message : 'Failed to load sprint planning'}
         </div>
       ) : null}
 
-      {loading ? null : sprints.length === 0 ? (
-        showArchived ? (
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">
-              <Archive className="h-7 w-7 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold mb-1.5">No archived sprints</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-              Archived sprints will appear here. You can archive completed sprints to keep your active list clean.
-            </p>
-            <Button variant="outline" onClick={() => setShowArchived(false)}>
-              View active sprints
-            </Button>
+      {isArchived ? (
+        archivedQuery.isLoading ? (
+          <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-sm text-muted-foreground">
+            Loading archived sprints…
+          </div>
+        ) : archivedQuery.data && archivedQuery.data.length > 0 ? (
+          <div className="space-y-2">
+            {archivedQuery.data.map((s) => (
+              <button
+                key={s.sprint.id}
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                onClick={() => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: s.sprint.id } })}
+              >
+                <div>
+                  <p className="text-sm font-medium">{s.sprint.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {s.sprint.start_date && s.sprint.end_date
+                      ? `${new Date(s.sprint.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(s.sprint.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                      : 'No dates set'}
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {s.stats.done_story_count}/{s.stats.story_count} stories
+                </span>
+              </button>
+            ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
-              <Timer className="h-7 w-7 text-emerald-500" />
-            </div>
-            <h3 className="text-lg font-semibold mb-1.5">Create your first sprint</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-              Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
-            </p>
-            <Button
-              className="gap-2 mb-8"
-              onClick={() => openCreate('sprint', { teamId })}
-            >
-              <Plus className="h-4 w-4" />
-              Create Sprint
-            </Button>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
-              {[
-                { icon: CalendarDays, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
-                { icon: BarChart3, title: 'Track progress', desc: 'Monitor story and point completion in real time' },
-                { icon: CheckCircle2, title: 'Ship consistently', desc: 'Build momentum with regular delivery milestones' },
-              ].map((item) => (
-                <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-                  <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
-                  <p className="text-sm font-medium mb-1">{item.title}</p>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
-                </div>
-              ))}
-            </div>
+          <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
+            No archived sprints.
           </div>
         )
-      ) : viewMode === 'cards' ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {sprints.map((entry) => (
-            <SprintCard
-              key={entry.sprint.id}
-              entry={entry}
-              findTeamName={findTeamName}
-              pct={pct}
-              onOpen={() => openSprint(entry)}
-              onArchiveToggle={() => handleArchiveToggle(entry)}
-            />
-          ))}
+      ) : planningQuery.isLoading && !planningQuery.data ? (
+        <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-sm text-muted-foreground">
+          Loading sprints…
+        </div>
+      ) : isFiltered && !hasAnySprintFiltered && hasAnySprintUnfiltered ? (
+        <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
+          No {statusFilter} sprints found. Try a different filter.
         </div>
       ) : (
-        <PMDataTable
-          data={sprints}
-          columns={columns}
-          columnVisibility={columnVisibility}
-          onRowClick={openSprint}
+        <SprintPlanningWorkspace
+          workspace={filteredWorkspace}
+          backlogOpen={backlogOpen}
+          onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
+          canEdit={canEdit}
+          members={members}
+          onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
+          onOpenStory={handleOpenStory}
+          onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
+          onCreateStory={handleCreateStory}
+          onAssignStory={handleAssignStory}
         />
       )}
     </div>
-  );
-}
-
-// ── Sprint Card with archive action ──────────────────────────────────
-
-function SprintCard({
-  entry,
-  findTeamName,
-  pct,
-  onOpen,
-  onArchiveToggle,
-}: {
-  entry: SprintWithStats;
-  findTeamName: (id?: string | null) => string | undefined;
-  pct: (entry: SprintWithStats) => number;
-  onOpen: () => void;
-  onArchiveToggle: () => void;
-}) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const isArchived = entry.sprint.archived;
-
-  return (
-    <>
-      <Card
-        className="group cursor-pointer transition-all border-border/60 hover:shadow-md hover:border-border"
-        onClick={onOpen}
-      >
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-base">{entry.sprint.name}</CardTitle>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                {isArchived ? (
-                  <DropdownMenuItem onClick={onArchiveToggle}>
-                    <ArchiveRestore className="mr-2 h-4 w-4 text-blue-500" />
-                    Unarchive
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onClick={() => setConfirmOpen(true)}>
-                    <Archive className="mr-2 h-4 w-4 text-amber-500" />
-                    Archive
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className={SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.color}>
-              {SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.label ?? entry.sprint.status}
-            </span>
-            {findTeamName(entry.sprint.team_id) && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                {findTeamName(entry.sprint.team_id)}
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Progress value={pct(entry)} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{entry.stats.done_story_count}/{entry.stats.story_count} stories</span>
-            <span>{entry.stats.done_points}/{entry.stats.total_points} pts</span>
-          </div>
-          {entry.sprint.start_date && entry.sprint.end_date ? (
-            <p className="text-xs text-muted-foreground">
-              {format(parseISO(entry.sprint.start_date), 'MMM d')} - {format(parseISO(entry.sprint.end_date), 'MMM d, yyyy')}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">No dates set</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Archive sprint"
-        description="This sprint will be hidden from the active list. You can view and restore it from the archived sprints view."
-        confirmLabel="Archive"
-        variant="default"
-        onConfirm={onArchiveToggle}
-      />
-    </>
   );
 }

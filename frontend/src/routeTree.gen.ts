@@ -37,23 +37,21 @@ import { Route as AuthenticatedWSlugSupportConversationIdRouteImport } from './r
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
-import { Route as AuthenticatedWSlugSettingsTeamInboxesRouteImport } from './routes/_authenticated/w/$slug/settings/team-inboxes'
 import { Route as AuthenticatedWSlugSettingsStoryTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/story-templates'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
 import { Route as AuthenticatedWSlugSettingsLabelsRouteImport } from './routes/_authenticated/w/$slug/settings/labels'
 import { Route as AuthenticatedWSlugSettingsKnowledgeRouteImport } from './routes/_authenticated/w/$slug/settings/knowledge'
+import { Route as AuthenticatedWSlugSettingsInboxesRoutingRouteImport } from './routes/_authenticated/w/$slug/settings/inboxes-routing'
 import { Route as AuthenticatedWSlugSettingsImportRouteImport } from './routes/_authenticated/w/$slug/settings/import'
 import { Route as AuthenticatedWSlugSettingsHelpcenterRouteImport } from './routes/_authenticated/w/$slug/settings/helpcenter'
 import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/general'
-import { Route as AuthenticatedWSlugSettingsEmailForwardingRouteImport } from './routes/_authenticated/w/$slug/settings/email-forwarding'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
-import { Route as AuthenticatedWSlugSettingsChatAiRouteImport } from './routes/_authenticated/w/$slug/settings/chat-ai'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
@@ -243,12 +241,6 @@ const AuthenticatedWSlugSettingsTeamsRoute =
     path: '/settings/teams',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugSettingsTeamInboxesRoute =
-  AuthenticatedWSlugSettingsTeamInboxesRouteImport.update({
-    id: '/settings/team-inboxes',
-    path: '/settings/team-inboxes',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
 const AuthenticatedWSlugSettingsStoryTemplatesRoute =
   AuthenticatedWSlugSettingsStoryTemplatesRouteImport.update({
     id: '/settings/story-templates',
@@ -285,6 +277,12 @@ const AuthenticatedWSlugSettingsKnowledgeRoute =
     path: '/settings/knowledge',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsInboxesRoutingRoute =
+  AuthenticatedWSlugSettingsInboxesRoutingRouteImport.update({
+    id: '/settings/inboxes-routing',
+    path: '/settings/inboxes-routing',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsImportRoute =
   AuthenticatedWSlugSettingsImportRouteImport.update({
     id: '/settings/import',
@@ -301,12 +299,6 @@ const AuthenticatedWSlugSettingsGeneralRoute =
   AuthenticatedWSlugSettingsGeneralRouteImport.update({
     id: '/settings/general',
     path: '/settings/general',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugSettingsEmailForwardingRoute =
-  AuthenticatedWSlugSettingsEmailForwardingRouteImport.update({
-    id: '/settings/email-forwarding',
-    path: '/settings/email-forwarding',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsDeliveryRoute =
@@ -337,12 +329,6 @@ const AuthenticatedWSlugSettingsChatGeneralRoute =
   AuthenticatedWSlugSettingsChatGeneralRouteImport.update({
     id: '/settings/chat-general',
     path: '/settings/chat-general',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugSettingsChatAiRoute =
-  AuthenticatedWSlugSettingsChatAiRouteImport.update({
-    id: '/settings/chat-ai',
-    path: '/settings/chat-ai',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsAutomationsRoute =
@@ -596,23 +582,21 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
-  '/w/$slug/settings/chat-ai': typeof AuthenticatedWSlugSettingsChatAiRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
-  '/w/$slug/settings/email-forwarding': typeof AuthenticatedWSlugSettingsEmailForwardingRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
+  '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
-  '/w/$slug/settings/team-inboxes': typeof AuthenticatedWSlugSettingsTeamInboxesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -676,23 +660,21 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
-  '/w/$slug/settings/chat-ai': typeof AuthenticatedWSlugSettingsChatAiRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
-  '/w/$slug/settings/email-forwarding': typeof AuthenticatedWSlugSettingsEmailForwardingRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
+  '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
-  '/w/$slug/settings/team-inboxes': typeof AuthenticatedWSlugSettingsTeamInboxesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -760,23 +742,21 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
-  '/_authenticated/w/$slug/settings/chat-ai': typeof AuthenticatedWSlugSettingsChatAiRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
-  '/_authenticated/w/$slug/settings/email-forwarding': typeof AuthenticatedWSlugSettingsEmailForwardingRoute
   '/_authenticated/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/_authenticated/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/_authenticated/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
+  '/_authenticated/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/_authenticated/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/_authenticated/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/_authenticated/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
-  '/_authenticated/w/$slug/settings/team-inboxes': typeof AuthenticatedWSlugSettingsTeamInboxesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -844,23 +824,21 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
-    | '/w/$slug/settings/chat-ai'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
-    | '/w/$slug/settings/email-forwarding'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
+    | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/story-templates'
-    | '/w/$slug/settings/team-inboxes'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
@@ -924,23 +902,21 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
-    | '/w/$slug/settings/chat-ai'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
-    | '/w/$slug/settings/email-forwarding'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
+    | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/story-templates'
-    | '/w/$slug/settings/team-inboxes'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
@@ -1007,23 +983,21 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/settings/ai-automations'
     | '/_authenticated/w/$slug/settings/automations'
-    | '/_authenticated/w/$slug/settings/chat-ai'
     | '/_authenticated/w/$slug/settings/chat-general'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/delivery'
-    | '/_authenticated/w/$slug/settings/email-forwarding'
     | '/_authenticated/w/$slug/settings/general'
     | '/_authenticated/w/$slug/settings/helpcenter'
     | '/_authenticated/w/$slug/settings/import'
+    | '/_authenticated/w/$slug/settings/inboxes-routing'
     | '/_authenticated/w/$slug/settings/knowledge'
     | '/_authenticated/w/$slug/settings/labels'
     | '/_authenticated/w/$slug/settings/members'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
     | '/_authenticated/w/$slug/settings/story-templates'
-    | '/_authenticated/w/$slug/settings/team-inboxes'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
     | '/_authenticated/w/$slug/sprints/$sprintId'
@@ -1266,13 +1240,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTeamsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/settings/team-inboxes': {
-      id: '/_authenticated/w/$slug/settings/team-inboxes'
-      path: '/settings/team-inboxes'
-      fullPath: '/w/$slug/settings/team-inboxes'
-      preLoaderRoute: typeof AuthenticatedWSlugSettingsTeamInboxesRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
     '/_authenticated/w/$slug/settings/story-templates': {
       id: '/_authenticated/w/$slug/settings/story-templates'
       path: '/settings/story-templates'
@@ -1315,6 +1282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsKnowledgeRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/inboxes-routing': {
+      id: '/_authenticated/w/$slug/settings/inboxes-routing'
+      path: '/settings/inboxes-routing'
+      fullPath: '/w/$slug/settings/inboxes-routing'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsInboxesRoutingRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/import': {
       id: '/_authenticated/w/$slug/settings/import'
       path: '/settings/import'
@@ -1334,13 +1308,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/general'
       fullPath: '/w/$slug/settings/general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsGeneralRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/settings/email-forwarding': {
-      id: '/_authenticated/w/$slug/settings/email-forwarding'
-      path: '/settings/email-forwarding'
-      fullPath: '/w/$slug/settings/email-forwarding'
-      preLoaderRoute: typeof AuthenticatedWSlugSettingsEmailForwardingRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/delivery': {
@@ -1376,13 +1343,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/chat-general'
       fullPath: '/w/$slug/settings/chat-general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsChatGeneralRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/settings/chat-ai': {
-      id: '/_authenticated/w/$slug/settings/chat-ai'
-      path: '/settings/chat-ai'
-      fullPath: '/w/$slug/settings/chat-ai'
-      preLoaderRoute: typeof AuthenticatedWSlugSettingsChatAiRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/automations': {
@@ -1686,23 +1646,21 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
-  AuthenticatedWSlugSettingsChatAiRoute: typeof AuthenticatedWSlugSettingsChatAiRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
-  AuthenticatedWSlugSettingsEmailForwardingRoute: typeof AuthenticatedWSlugSettingsEmailForwardingRoute
   AuthenticatedWSlugSettingsGeneralRoute: typeof AuthenticatedWSlugSettingsGeneralRoute
   AuthenticatedWSlugSettingsHelpcenterRoute: typeof AuthenticatedWSlugSettingsHelpcenterRoute
   AuthenticatedWSlugSettingsImportRoute: typeof AuthenticatedWSlugSettingsImportRoute
+  AuthenticatedWSlugSettingsInboxesRoutingRoute: typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   AuthenticatedWSlugSettingsKnowledgeRoute: typeof AuthenticatedWSlugSettingsKnowledgeRoute
   AuthenticatedWSlugSettingsLabelsRoute: typeof AuthenticatedWSlugSettingsLabelsRoute
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
   AuthenticatedWSlugSettingsStoryTemplatesRoute: typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
-  AuthenticatedWSlugSettingsTeamInboxesRoute: typeof AuthenticatedWSlugSettingsTeamInboxesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
   AuthenticatedWSlugSprintsSprintIdRoute: typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -1755,7 +1713,6 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsAiAutomationsRoute,
   AuthenticatedWSlugSettingsAutomationsRoute:
     AuthenticatedWSlugSettingsAutomationsRoute,
-  AuthenticatedWSlugSettingsChatAiRoute: AuthenticatedWSlugSettingsChatAiRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
   AuthenticatedWSlugSettingsCrmAutonomyRoute:
@@ -1766,13 +1723,13 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:
     AuthenticatedWSlugSettingsDeliveryRoute,
-  AuthenticatedWSlugSettingsEmailForwardingRoute:
-    AuthenticatedWSlugSettingsEmailForwardingRoute,
   AuthenticatedWSlugSettingsGeneralRoute:
     AuthenticatedWSlugSettingsGeneralRoute,
   AuthenticatedWSlugSettingsHelpcenterRoute:
     AuthenticatedWSlugSettingsHelpcenterRoute,
   AuthenticatedWSlugSettingsImportRoute: AuthenticatedWSlugSettingsImportRoute,
+  AuthenticatedWSlugSettingsInboxesRoutingRoute:
+    AuthenticatedWSlugSettingsInboxesRoutingRoute,
   AuthenticatedWSlugSettingsKnowledgeRoute:
     AuthenticatedWSlugSettingsKnowledgeRoute,
   AuthenticatedWSlugSettingsLabelsRoute: AuthenticatedWSlugSettingsLabelsRoute,
@@ -1784,8 +1741,6 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRedirectsRoute,
   AuthenticatedWSlugSettingsStoryTemplatesRoute:
     AuthenticatedWSlugSettingsStoryTemplatesRoute,
-  AuthenticatedWSlugSettingsTeamInboxesRoute:
-    AuthenticatedWSlugSettingsTeamInboxesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,
   AuthenticatedWSlugSettingsWorkflowsRoute:
     AuthenticatedWSlugSettingsWorkflowsRoute,

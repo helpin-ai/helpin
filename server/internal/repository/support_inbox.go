@@ -755,6 +755,9 @@ func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, works
 	if isElevatedSupportRole(role) {
 		return query
 	}
+	if strings.TrimSpace(workspaceMemberID) == "" {
+		return query.Where("1 = 0")
+	}
 	return query.Where(`
 		(
 			support_conversations.mailbox_id IS NULL

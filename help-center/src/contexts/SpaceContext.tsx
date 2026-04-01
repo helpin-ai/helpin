@@ -30,11 +30,12 @@ export function SpaceProvider({
   spaceSlug: string
   children: ReactNode
 }) {
-  const { subdomain, locale, spaces } = useDocsContext()
+  const { subdomain, locale, spaces, multilingualEnabled } = useDocsContext()
   const { data: navigation, isLoading } = useSpaceNavigation(
     subdomain,
     locale,
     spaceSlug,
+    multilingualEnabled,
   )
 
   const space = spaces.find((s) => s.slug === spaceSlug)

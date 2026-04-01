@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   DndContext,
   DragOverlay,
@@ -27,20 +28,25 @@ import { StateTypeIcon } from '@/lib/pmConstants';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAuthStore } from '@/stores/authStore';
-import { useAgents, useSession, useAutomationRulesByWorkflow } from '@/hooks/queries';
+import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar, StoryOwnerAvatarFilterRow } from './StoryFilters';
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
-import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
+import { ListDisplayMenu } from './ListDisplayMenu';
+import { BoardToolbarSlot } from './BoardToolbarSlot';
+import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
 import { commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from './KanbanBoard.dnd';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { getVisibleStoryListGroupOptions, type StoryListGroupByOption } from '@/components/pm/story-detail/storyListGrouping';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -435,6 +441,9 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCol
 MemberColumn.displayName = 'MemberColumn';
 
 export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const workflow = usePMBoardStore((state) => state.workflow);
   const columns = usePMBoardStore((state) => state.columns);
   const loading = usePMBoardStore((state) => state.loading);
@@ -461,7 +470,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const { data: sessionMembership } = useSession(workspaceId);
   const currentMemberId = sessionMembership?.id;
   const { teams, findTeamName } = useAccessibleTeams(workspaceId);
+  const { userMemberships } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const listFieldVis = useTeamFieldVisibilityForTeam(workspaceId, storeTeamId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
@@ -528,7 +539,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
-  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
   const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
   const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
     try {
@@ -540,6 +550,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     setViewModeState(mode);
     try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   }, [VIEW_MODE_KEY]);
+  const [listGroupBy, setListGroupBy] = useState<StoryListGroupByOption>('workflow_state');
 
   const COLLAPSED_KEY = `pm_kanban_collapsed_${workspaceId}`;
   const [collapsedColumns, setCollapsedColumnsState] = useState<Set<string>>(() => {
@@ -557,6 +568,32 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       return next;
     });
   }, [COLLAPSED_KEY]);
+
+  const listGroupOptions = useMemo(
+    () =>
+      getVisibleStoryListGroupOptions({
+        story_type: listFieldVis.story_type,
+        priority: listFieldVis.priority,
+        severity: listFieldVis.severity,
+        epic: listFieldVis.epic,
+        sprint: listFieldVis.sprint,
+      }),
+    [listFieldVis.epic, listFieldVis.priority, listFieldVis.severity, listFieldVis.sprint, listFieldVis.story_type],
+  );
+
+  const listDisabledKeys = useMemo(() => {
+    const keys = new Set<DisplayPropertyKey>();
+    if (!listFieldVis.priority) keys.add('priority');
+    if (!listFieldVis.severity) keys.add('severity');
+    if (!listFieldVis.story_type) keys.add('story_type');
+    if (!listFieldVis.estimate) keys.add('estimate');
+    if (!listFieldVis.epic) keys.add('epic');
+    if (!listFieldVis.sprint) keys.add('sprint');
+    if (!listFieldVis.due_date) keys.add('due_date');
+    if (!listFieldVis.labels) keys.add('labels');
+    if (teamId) keys.add('team');
+    return keys;
+  }, [listFieldVis, teamId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -595,13 +632,18 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     if (!match) return;
     (async () => {
       const res = await pmStoryService.getByDisplayId(workspaceId, Number(match[1]));
-      if (res.data) openStoryPanel(res.data.story.id);
+      if (res.data && workspaceSlug) {
+        openStoryRoute(navigate as never, location as never, workspaceSlug, res.data.story.id);
+      }
     })();
-  }, [workspaceId, workflow, openStoryPanel]);
+  }, [location, navigate, workspaceId, workflow, workspaceSlug]);
 
   const openStory = useCallback(
-    (story: Story) => openStoryPanel(story.id),
-    [openStoryPanel]
+    (story: Story) => {
+      if (!workspaceSlug) return;
+      openStoryRoute(navigate as never, location as never, workspaceSlug, story.id);
+    },
+    [location, navigate, workspaceSlug],
   );
   const resolveTeamName = useCallback(
     (storyTeamId: string | undefined) => {
@@ -1005,6 +1047,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     <StoryFilterProvider
       workspaceId={workspaceId}
       assignableMembers={assignableMembers}
+      activeTeamId={storeTeamId}
+      userMemberships={userMemberships}
       labels={refLabels}
       epics={refEpics}
       sprints={refSprints}
@@ -1015,7 +1059,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       {currentUser && (
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
-      <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+      <header className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <StoryFilterTrigger />
         <StoryOwnerAvatarFilterRow />
 
@@ -1037,45 +1081,64 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
             </SelectContent>
           </Select>
         )}
-
-        <div className="ml-auto flex items-center gap-1">
-          {viewMode === 'board' ? (
-            <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
-              <button
-                className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setGroupBy('status')}
+        <div className="ml-auto flex items-center gap-1 self-center">
+          <BoardToolbarSlot>
+            {viewMode === 'board' ? (
+              <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
+                <button
+                  className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setGroupBy('status')}
+                >
+                  By States
+                </button>
+                <button
+                  className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setGroupBy('members')}
+                >
+                  By Members
+                </button>
+              </div>
+            ) : (
+              <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as StoryListGroupByOption)}>
+                <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
+                  <span className="shrink-0 text-muted-foreground">Group by:</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {listGroupOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </BoardToolbarSlot>
+          <BoardToolbarSlot>
+            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
+          </BoardToolbarSlot>
+          <BoardToolbarSlot className="gap-1">
+            <QuickTooltip label="Board view">
+              <Button
+                variant={viewMode === 'board' ? 'default' : 'ghost'}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setViewMode('board')}
               >
-                By States
-              </button>
-              <button
-                className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setGroupBy('members')}
+                <Columns2 className="h-4 w-4" />
+              </Button>
+            </QuickTooltip>
+            <QuickTooltip label="List view">
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setViewMode('list')}
               >
-                By Members
-              </button>
-            </div>
-          ) : null}
-          {viewMode === 'board' ? <BoardDisplayMenu /> : null}
-          <QuickTooltip label="Board view">
-            <Button
-              variant={viewMode === 'board' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode('board')}
-            >
-              <Columns2 className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
-          <QuickTooltip label="List view">
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode('list')}
-            >
-              <LayoutList className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
+                <LayoutList className="h-4 w-4" />
+              </Button>
+            </QuickTooltip>
+          </BoardToolbarSlot>
         </div>
 
       </header>
@@ -1184,6 +1247,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           filters={filters}
           teamId={storeTeamId}
           onOpenStory={openStory}
+          groupBy={listGroupBy}
+          onGroupByChange={setListGroupBy}
+          showToolbar={false}
         />
       ) : null}
 

@@ -97,6 +97,14 @@ export function useDocsCollections(wsId: string, spaceId: string) {
   })
 }
 
+export function useAllDocsCollections(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.allCollections(wsId),
+    queryFn: async () => unwrap(await docsService.listAllCollections(wsId)),
+    enabled: !!wsId,
+  })
+}
+
 export function useCreateDocsCollection(wsId: string, spaceId: string) {
   const qc = useQueryClient()
   return useMutation({
