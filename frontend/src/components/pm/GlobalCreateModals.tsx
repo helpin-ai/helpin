@@ -220,7 +220,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
               <Input
                 autoFocus
@@ -274,7 +274,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <MemberPickerPopover
                   value={form.ownerMemberId || '__none__'}
                   members={assignableMembers}
-                  noneLabel="None"
+                  noneLabel="No owner"
                   onChange={(value) => setForm((f) => ({ ...f, ownerMemberId: value === '__none__' ? '' : value }))}
                   renderTrigger={() => {
                     const selectedMember = findAssignableMember(assignableMembers, form.ownerMemberId);
@@ -288,7 +288,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                             fallbackClassName="text-[7px]"
                           />
                         ) : null}
-                        <span>{selectedMember?.display_name || selectedMember?.email || 'None'}</span>
+                        <span>{selectedMember?.display_name || selectedMember?.email || 'No owner'}</span>
                       </>
                     );
                   }}
@@ -313,7 +313,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -322,7 +323,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <DatePicker
                   value={form.targetDate}
                   onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -653,10 +655,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <input
-                type="text"
+              <Input
                 autoFocus
                 aria-label="Sprint title"
                 value={form.name}
@@ -668,7 +669,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     editor?.focus();
                   }
                 }}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Sprint title"
               />
               <div className="mt-4">
@@ -708,7 +709,8 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -717,7 +719,8 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <DatePicker
                   value={form.endDate}
                   onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
               </div>
@@ -896,10 +899,9 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <input
-                type="text"
+              <Input
                 autoFocus
                 aria-label="Objective title"
                 value={form.name}
@@ -911,7 +913,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                     editor?.focus();
                   }
                 }}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Objective title"
               />
               <div className="mt-4">
@@ -1033,7 +1035,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -1042,7 +1045,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <DatePicker
                   value={form.targetDate}
                   onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
               </div>

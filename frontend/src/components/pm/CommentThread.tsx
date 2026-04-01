@@ -541,8 +541,7 @@ export function CommentThread({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                  title="React"
+                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
                 >
                   <SmilePlus className={iconSize} />
                 </button>
@@ -552,31 +551,36 @@ export function CommentThread({
               </PopoverContent>
             </Popover>
             {!isReply && (
-              <button
-                type="button"
-                className={`${btnSize} flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                title="Reply"
-                onClick={() => toggleThread(entry.comment.id)}
-              >
-                <Reply className={iconSize} />
-              </button>
+              <QuickTooltip label="Reply">
+                <button
+                  type="button"
+                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
+                  onClick={() => toggleThread(entry.comment.id)}
+                >
+                  <Reply className={iconSize} />
+                </button>
+              </QuickTooltip>
             )}
             {isOwn && !isEditing && (
               <>
-                <button
-                  type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                  onClick={() => startEditComment(entry)}
-                >
-                  <Pencil className={iconSize} />
-                </button>
-                <button
-                  type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer`}
-                  onClick={() => deleteComment(entry.comment.id)}
-                >
-                  <Trash2 className={iconSize} />
-                </button>
+                <QuickTooltip label="Edit">
+                  <button
+                    type="button"
+                    className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
+                    onClick={() => startEditComment(entry)}
+                  >
+                    <Pencil className={iconSize} />
+                  </button>
+                </QuickTooltip>
+                <QuickTooltip label="Delete">
+                  <button
+                    type="button"
+                    className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-destructive hover:bg-accent transition-colors cursor-pointer`}
+                    onClick={() => deleteComment(entry.comment.id)}
+                  >
+                    <Trash2 className={iconSize} />
+                  </button>
+                </QuickTooltip>
               </>
             )}
           </div>

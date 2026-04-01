@@ -23,10 +23,15 @@ export const useStoryPanelStore = create<StoryPanelState>((set, get) => ({
       storyId,
       requestKey: get().requestKey + 1,
     }),
-  close: () =>
-    set({
-      storyId: null,
-    }),
+  close: () => {
+    // Clean up ?story= URL param
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('story')) {
+      url.searchParams.delete('story');
+      window.history.replaceState({}, '', url.toString());
+    }
+    set({ storyId: null });
+  },
   rememberClosedStory: (storyId) =>
     set({
       lastClosedStoryId: storyId,

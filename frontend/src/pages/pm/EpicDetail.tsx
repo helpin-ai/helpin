@@ -332,7 +332,7 @@ export function EpicDetailPage() {
   const currentStateColor = currentEpicState ? STATE_TYPE_ICON_CONFIG[currentEpicState.state_type as StateType]?.color : '';
 
   const currentTeamName = useMemo(
-    () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
+    () => (form?.team_id ? findTeamName(form.team_id) ?? 'Select team' : 'Select team'),
     [form?.team_id, findTeamName],
   );
   const selectedTeam = useMemo(
@@ -342,7 +342,7 @@ export function EpicDetailPage() {
   const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
   const noHealthSuggestionMessage = useMemo(() => getNoHealthSuggestionMessage(epic), [epic]);
   const currentOwnerName = useMemo(() => {
-    if (!form?.owner_member_id) return 'Nobody';
+    if (!form?.owner_member_id) return 'No owner';
     return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
   }, [form?.owner_member_id, assignableMemberNames]);
   const currentPlanningRepositoryName = useMemo(() => {
@@ -718,7 +718,7 @@ export function EpicDetailPage() {
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No team' },
+                  { value: '__none__', label: 'Select team' },
                   ...teams.map((t) => ({ value: t.id, label: t.name })),
                 ]}
                 onChange={(v) => {
@@ -749,7 +749,7 @@ export function EpicDetailPage() {
                 selectedObjectives={selectedObjectives}
                 onChange={updateObjectives}
                 addLabel="Add objective"
-                emptyLabel="No objectives"
+                emptyLabel="None"
                 className="min-h-6"
               />
             </MetadataRow>
@@ -759,7 +759,7 @@ export function EpicDetailPage() {
               <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
                 members={assignableMembers}
-                noneLabel="Nobody"
+                noneLabel="No owner"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val || undefined });
@@ -789,6 +789,7 @@ export function EpicDetailPage() {
                 value={form.planned_start_date}
                 onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
                 placeholder="None"
+                hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -799,6 +800,8 @@ export function EpicDetailPage() {
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
                 placeholder="None"
+                hideIcon
+                urgencyColor
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>

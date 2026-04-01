@@ -560,7 +560,11 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		// Handled below via workspace member resolution.
 	}
 	if req.Estimate != nil {
-		current.Estimate = req.Estimate
+		if *req.Estimate < 0 {
+			current.Estimate = nil
+		} else {
+			current.Estimate = req.Estimate
+		}
 	}
 	if req.Priority != nil {
 		if !isValidStoryPriority(*req.Priority) {

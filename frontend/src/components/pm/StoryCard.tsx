@@ -333,8 +333,8 @@ function StoryCardComponent({
               </span>
         )}
 
-        {/* Priority pill — clickable dropdown */}
-        {vis.priority && (workspaceId ? (
+        {/* Priority pill — clickable dropdown (hidden when 'none') */}
+        {vis.priority && story.priority !== 'none' && (workspaceId ? (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <Tooltip open={priorityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -535,7 +535,7 @@ function StoryCardComponent({
             </TooltipContent>
           </Tooltip>
         )}
-        {vis.estimate && (workspaceId ? (
+        {vis.estimate && story.estimate != null && (workspaceId ? (
           <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
             <EstimatePicker
               value={story.estimate != null ? String(story.estimate) : ''}
