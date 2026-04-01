@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext, type MutableRefObject } from 'react';
 import type { Agent, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import type { DragPreviewManager } from './KanbanBoard.dnd';
@@ -22,6 +22,11 @@ export interface BoardCallbacksContextValue {
   onLoadMoreMember: (memberId: string | null) => void;
 }
 
+/** Holds stable data that changes infrequently (members, agents). Re-renders consumers on change. */
 export const BoardDataContext = createContext<BoardDataContextValue | null>(null);
-export const BoardCallbacksContext = createContext<BoardCallbacksContextValue | null>(null);
+/**
+ * Holds a REF to callbacks — the ref identity never changes so consumers never
+ * re-render from callback identity shifts. Read via `ref.current.onOpen(...)`.
+ */
+export const BoardCallbacksContext = createContext<MutableRefObject<BoardCallbacksContextValue> | null>(null);
 export const DragPreviewContext = createContext<DragPreviewManager | null>(null);

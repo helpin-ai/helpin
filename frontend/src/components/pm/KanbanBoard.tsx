@@ -1,5 +1,5 @@
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import {
   DndContext,
   DragOverlay,
@@ -71,7 +71,7 @@ interface ColumnProps {
 
 const Column = memo(function Column({ column, collapsed, isLoadingMore }: ColumnProps) {
   const { automatedStateIds, findTeamName } = useContext(BoardDataContext)!;
-  const { onCreate, onToggleCollapse, onLoadMore } = useContext(BoardCallbacksContext)!;
+  const callbacksRef = useContext(BoardCallbacksContext)!;
   const dragManager = useContext(DragPreviewContext)!;
 
   // Subscribe to drag preview for this column only
@@ -91,7 +91,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          onLoadMore(column.state.id);
+          callbacksRef.current.onLoadMore(column.state.id);
         }
       },
       {
@@ -102,7 +102,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [column.has_more, column.state.id, column.stories.length, isLoadingMore, onLoadMore]);
+  }, [column.has_more, column.state.id, column.stories.length, isLoadingMore, callbacksRef]);
 
   if (collapsed) {
     return (
@@ -111,9 +111,9 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         ref={setNodeRef}
         className={cn(
           'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50',
-          isOver && 'bg-primary/10 ring-2 ring-inset ring-primary/30',
+          isOver && 'bg-accent ring-1 ring-inset ring-border',
         )}
-        onClick={() => onToggleCollapse(column.state.id)}
+        onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
       >
         {column.state.color && (
           <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
@@ -188,13 +188,13 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               variant="ghost"
               size="icon"
               className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity"
-              onClick={() => onToggleCollapse(column.state.id)}
+              onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
             >
               <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create story">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreate(column.state.id)}>
               <Plus className="h-4 w-4" />
             </Button>
           </QuickTooltip>
@@ -208,7 +208,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             scrollRef.current = node;
           }}
           className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
-            isOver ? 'bg-primary/10 ring-2 ring-inset ring-primary/30 gap-4' : 'gap-2'
+            isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'
           }`}
         >
           {groupedStories.length > 0 ? (
@@ -255,7 +255,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
           <Button
             variant="ghost"
             className="w-full justify-start text-xs text-muted-foreground"
-            onClick={() => onCreate(column.state.id)}
+            onClick={() => callbacksRef.current.onCreate(column.state.id)}
           >
             <Plus className="h-3.5 w-3.5" />
             Add story
@@ -275,7 +275,7 @@ interface MemberColumnProps {
 
 const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMore }: MemberColumnProps) {
   const { findTeamName } = useContext(BoardDataContext)!;
-  const { onCreateForMember, onToggleCollapse, onLoadMoreMember } = useContext(BoardCallbacksContext)!;
+  const callbacksRef = useContext(BoardCallbacksContext)!;
   const dragManager = useContext(DragPreviewContext)!;
 
   const colKey = column.member?.id ?? '__unassigned__';
@@ -296,14 +296,14 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          onLoadMoreMember(column.member?.id ?? null);
+          callbacksRef.current.onLoadMoreMember(column.member?.id ?? null);
         }
       },
       { root: scrollRef.current, rootMargin: '0px 0px 160px 0px' },
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [column.has_more, column.member?.id, column.stories.length, isLoadingMore, onLoadMoreMember]);
+  }, [column.has_more, column.member?.id, column.stories.length, isLoadingMore, callbacksRef]);
 
   if (collapsed) {
     return (
@@ -312,9 +312,9 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           ref={setNodeRef}
           className={cn(
             'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-3 transition-colors hover:bg-muted/50',
-            isOver && 'bg-primary/10 ring-2 ring-inset ring-primary/30',
+            isOver && 'bg-accent ring-1 ring-inset ring-border',
           )}
-          onClick={() => onToggleCollapse(colKey)}
+          onClick={() => callbacksRef.current.onToggleCollapse(colKey)}
         >
           <ChevronsLeftRight className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {column.member ? (
@@ -365,12 +365,12 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
         </div>
         <div className="flex items-center gap-0.5">
           <QuickTooltip label="Collapse column">
-            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity" onClick={() => onToggleCollapse(colKey)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity" onClick={() => callbacksRef.current.onToggleCollapse(colKey)}>
               <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create story">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreateForMember(column.member?.id ?? null)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}>
               <Plus className="h-4 w-4" />
             </Button>
           </QuickTooltip>
@@ -383,7 +383,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-primary/10 ring-2 ring-inset ring-primary/30 gap-4' : 'gap-2'}`}
+          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
         >
           {stories.map((story) => (
             <StoryCard
@@ -407,7 +407,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           <Button
             variant="ghost"
             className="w-full justify-start text-xs text-muted-foreground"
-            onClick={() => onCreateForMember(column.member?.id ?? null)}
+            onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
           >
             <Plus className="h-3.5 w-3.5" />
             Add story
@@ -446,7 +446,6 @@ DragOverlayCard.displayName = 'DragOverlayCard';
 
 export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const workflow = usePMBoardStore((state) => state.workflow);
   const columns = usePMBoardStore((state) => state.columns);
@@ -635,17 +634,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     (async () => {
       const res = await pmStoryService.getByDisplayId(workspaceId, Number(match[1]));
       if (res.data && workspaceSlug) {
-        openStoryRoute(navigate as never, location as never, workspaceSlug, res.data.story.id);
+        openStoryRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.story.id);
       }
     })();
-  }, [location, navigate, workspaceId, workflow, workspaceSlug]);
-
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, workflow, workspaceSlug]);
   const openStory = useCallback(
     (story: Story) => {
       if (!workspaceSlug) return;
-      openStoryRoute(navigate as never, location as never, workspaceSlug, story.id);
+      openStoryRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, story.id);
     },
-    [location, navigate, workspaceSlug],
+    [navigate, workspaceSlug],
   );
   const resolveTeamName = useCallback(
     (storyTeamId: string | undefined) => {
@@ -1046,7 +1045,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, findTeamName: resolveTeamName,
   }), [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName]);
 
-  const boardCallbacks = useMemo<import('./KanbanBoard.contexts').BoardCallbacksContextValue>(() => ({
+  // Use a ref so the context value identity never changes — consumers never
+  // re-render from callback identity shifts (e.g. ownerNameMap refetch).
+  const boardCallbacksRef = useRef<import('./KanbanBoard.contexts').BoardCallbacksContextValue>({
     onStoryPatched: handleStoryPatched,
     onOpen: openStory,
     onCreate: handleCreateForState,
@@ -1054,7 +1055,16 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     onToggleCollapse: toggleCollapse,
     onLoadMore: loadMoreColumn,
     onLoadMoreMember: loadMoreMemberColumn,
-  }), [handleStoryPatched, openStory, handleCreateForState, handleCreateForMember, toggleCollapse, loadMoreColumn, loadMoreMemberColumn]);
+  });
+  boardCallbacksRef.current = {
+    onStoryPatched: handleStoryPatched,
+    onOpen: openStory,
+    onCreate: handleCreateForState,
+    onCreateForMember: handleCreateForMember,
+    onToggleCollapse: toggleCollapse,
+    onLoadMore: loadMoreColumn,
+    onLoadMoreMember: loadMoreMemberColumn,
+  };
 
   return (
     <StoryFilterProvider
@@ -1173,7 +1183,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       {!loading && viewMode === 'board' ? (
         <BoardDataContext.Provider value={boardData}>
-        <BoardCallbacksContext.Provider value={boardCallbacks}>
+        <BoardCallbacksContext.Provider value={boardCallbacksRef}>
         <DragPreviewContext.Provider value={dragManager}>
         <DndContext
           sensors={sensors}

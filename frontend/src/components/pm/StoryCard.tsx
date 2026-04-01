@@ -125,7 +125,7 @@ function StoryCardComponent({
 }: StoryCardProps) {
   // Consume board contexts (null when used outside KanbanBoard)
   const boardData = useContext(BoardDataContext);
-  const boardCallbacks = useContext(BoardCallbacksContext);
+  const callbacksRef = useContext(BoardCallbacksContext);
 
   // Resolve values: context first, then prop fallback
   const workspaceId = boardData?.workspaceId ?? workspaceIdProp;
@@ -133,8 +133,8 @@ function StoryCardComponent({
   const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
   const agentById = boardData?.agentById;
   const assignedAgent = assignedAgentProp ?? (agentById && story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null);
-  const onOpen = boardCallbacks?.onOpen ?? onOpenProp;
-  const onStoryPatched = boardCallbacks?.onStoryPatched;
+  const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
+  const onStoryPatched = callbacksRef?.current.onStoryPatched;
 
   const {
     attributes,
