@@ -34,6 +34,9 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          env:
+            - name: RUN_AUTO_MIGRATE
+              value: "true"
           resources:
             requests:
               cpu: 250m
