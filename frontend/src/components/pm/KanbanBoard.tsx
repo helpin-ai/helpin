@@ -1081,7 +1081,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
             </SelectContent>
           </Select>
         )}
-
         <div className="ml-auto flex items-center gap-1 self-center">
           <BoardToolbarSlot>
             {viewMode === 'board' ? (

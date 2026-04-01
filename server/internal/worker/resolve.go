@@ -27,7 +27,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 	if agent == nil {
 		defaultProfile := GetRuntimeProfile("")
 		return ResolvedProfile{
-			Tools:            defaultProfile.AllowedTools,
+			Tools:            NormalizeToolNames(defaultProfile.AllowedTools),
 			Commands:         defaultProfile.AllowedCommands,
 			TargetTypes:      defaultProfile.AllowedTargetTypes,
 			ApprovalMode:     "never",
@@ -45,7 +45,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 	defaultProfile := GetRuntimeProfile(defaultProfileNameForPreset(agent.EffectivePresetKey(), agent.IsSystem))
 
 	resolved := ResolvedProfile{
-		Tools:            defaultProfile.AllowedTools,
+		Tools:            NormalizeToolNames(defaultProfile.AllowedTools),
 		Commands:         defaultProfile.AllowedCommands,
 		TargetTypes:      defaultProfile.AllowedTargetTypes,
 		ApprovalMode:     "never",
@@ -56,7 +56,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 
 	// Per-agent tool overrides
 	if tools := parseJSONStringSlice(agent.AllowedTools); len(tools) > 0 {
-		resolved.Tools = tools
+		resolved.Tools = NormalizeToolNames(tools)
 	}
 	if commands := parseJSONStringSlice(agent.AllowedCommands); len(commands) > 0 {
 		resolved.Commands = commands
@@ -120,6 +120,9 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 	case "opencode":
 		return "agent-opencode-autonomous"
 	case "codex":
+		if invocationMode == model.InvocationModeInteractive {
+			return "agent-codex-interactive"
+		}
 		return "agent-codex-autonomous"
 	default:
 		return "automation-default"

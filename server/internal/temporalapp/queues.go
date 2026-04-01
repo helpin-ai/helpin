@@ -4,7 +4,8 @@ const (
 	QueueAgentNativeInteractive = "agent-native-interactive"
 	QueueAgentNativeAutonomous  = "agent-native-autonomous"
 	QueueAgentOpenCode          = "agent-opencode-autonomous"
-	QueueAgentCodex             = "agent-codex-autonomous"
+	QueueAgentCodexAutonomous   = "agent-codex-autonomous"
+	QueueAgentCodexInteractive  = "agent-codex-interactive"
 	QueueAutomation             = "automation-default"
 	WorkflowSignalResume        = "ResumeRun"
 	WorkflowSignalApprove       = "ApproveRun"
@@ -24,7 +25,8 @@ func SharedQueues() []QueueConfig {
 		{Name: QueueAgentNativeInteractive, Concurrency: 8},
 		{Name: QueueAgentNativeAutonomous, Concurrency: 6},
 		{Name: QueueAgentOpenCode, Concurrency: 4},
-		{Name: QueueAgentCodex, Concurrency: 4},
+		{Name: QueueAgentCodexAutonomous, Concurrency: 4},
+		{Name: QueueAgentCodexInteractive, Concurrency: 4},
 		{Name: QueueAutomation, Concurrency: 4},
 	}
 }
@@ -40,7 +42,10 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 	case "opencode":
 		return QueueAgentOpenCode
 	case "codex":
-		return QueueAgentCodex
+		if invocationMode == "interactive" {
+			return QueueAgentCodexInteractive
+		}
+		return QueueAgentCodexAutonomous
 	default:
 		return QueueAutomation
 	}

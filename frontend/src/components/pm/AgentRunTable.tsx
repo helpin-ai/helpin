@@ -1,4 +1,4 @@
-import { Clock, Loader2, CheckCircle2, MessageSquareMore, XCircle, ShieldCheck } from 'lucide-react';
+import { Clock, Loader2, CheckCircle2, KeyRound, MessageSquareMore, XCircle, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
@@ -18,6 +18,7 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   running: <Loader2 className="h-3 w-3 animate-spin" />,
   awaiting_input: <MessageSquareMore className="h-3 w-3" />,
   awaiting_approval: <ShieldCheck className="h-3 w-3" />,
+  awaiting_auth: <KeyRound className="h-3 w-3" />,
   completed: <CheckCircle2 className="h-3 w-3" />,
   failed: <XCircle className="h-3 w-3" />,
   cancelled: <XCircle className="h-3 w-3" />,

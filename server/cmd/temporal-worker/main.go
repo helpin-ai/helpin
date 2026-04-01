@@ -100,6 +100,8 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
 	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
@@ -169,8 +171,19 @@ func main() {
 
 	runtimes := workerpkg.NewDefaultRuntimeRegistry(
 		cfg.OpenCodePath,
-		cfg.CodexPath,
-		cfg.CodexModel,
+		workerpkg.CodexRuntimeConfig{
+			Path:                      cfg.CodexPath,
+			DefaultModel:              cfg.CodexModel,
+			OpenAIAPIKey:              cfg.OpenAIAPIKey,
+			OpenAIBaseURL:             cfg.OpenAIBaseURL,
+			OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
+			EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
+			ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
+			ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
+			ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
+			OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
+			OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
+		},
 		cfg.AnthropicAPIKey,
 		cfg.AnthropicBaseURL,
 		cfg.OpenAIAPIKey,
@@ -336,6 +349,8 @@ func main() {
 		runRepo,
 		runMessageRepo,
 		artifactRepo,
+		interactionRepo,
+		sessionSnapshotRepo,
 		storyRepo,
 		storyLinkRepo,
 		epicRepo,
@@ -353,7 +368,15 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	).SetModelProviderConfig(
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenRouterAPIKey,
+		cfg.CodexOpenAIAuthMode,
+		cfg.CodexEnableChatGPTOAuth,
+		cfg.CodexChatGPTAccessToken,
+		cfg.CodexChatGPTAccountID,
+	)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
@@ -402,6 +425,8 @@ func main() {
 		runMessageRepo,
 		agentRepo,
 		artifactRepo,
+		interactionRepo,
+		sessionSnapshotRepo,
 		storyRepo,
 		storyLinkRepo,
 		epicRepo,

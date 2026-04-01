@@ -81,6 +81,7 @@ import { Route as AuthenticatedWSlugPmStoriesStoryIdRouteImport } from './routes
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
+import { Route as AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport } from './routes/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
 import { Route as AuthenticatedWSlugCrmSequencesSequenceIdRouteImport } from './routes/_authenticated/w/$slug/crm/sequences/$sequenceId'
@@ -504,6 +505,12 @@ const AuthenticatedWSlugPmEpicsEpicIdRoute =
     path: '/pm/epics/$epicId',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmCodingSessionsSessionIdRoute =
+  AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport.update({
+    id: '/pm/coding-sessions/$sessionId',
+    path: '/pm/coding-sessions/$sessionId',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugDocsSpacesSpaceIdRoute =
   AuthenticatedWSlugDocsSpacesSpaceIdRouteImport.update({
     id: '/spaces/$spaceId',
@@ -606,6 +613,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
+  '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -683,6 +691,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
+  '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -764,6 +773,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
+  '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -845,6 +855,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
+    | '/w/$slug/pm/coding-sessions/$sessionId'
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
@@ -922,6 +933,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
+    | '/w/$slug/pm/coding-sessions/$sessionId'
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
@@ -1002,6 +1014,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/sequences/$sequenceId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
+    | '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
     | '/_authenticated/w/$slug/pm/epics/$epicId'
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
@@ -1535,6 +1548,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': {
+      id: '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
+      path: '/pm/coding-sessions/$sessionId'
+      fullPath: '/w/$slug/pm/coding-sessions/$sessionId'
+      preLoaderRoute: typeof AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/docs/spaces/$spaceId': {
       id: '/_authenticated/w/$slug/docs/spaces/$spaceId'
       path: '/spaces/$spaceId'
@@ -1654,6 +1674,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
   AuthenticatedWSlugCrmSequencesSequenceIdRoute: typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
+  AuthenticatedWSlugPmCodingSessionsSessionIdRoute: typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
   AuthenticatedWSlugPmEpicsEpicIdRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   AuthenticatedWSlugPmSprintsSprintIdRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -1739,6 +1760,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
   AuthenticatedWSlugCrmSequencesSequenceIdRoute:
     AuthenticatedWSlugCrmSequencesSequenceIdRoute,
+  AuthenticatedWSlugPmCodingSessionsSessionIdRoute:
+    AuthenticatedWSlugPmCodingSessionsSessionIdRoute,
   AuthenticatedWSlugPmEpicsEpicIdRoute: AuthenticatedWSlugPmEpicsEpicIdRoute,
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute:
     AuthenticatedWSlugPmObjectivesObjectiveIdRoute,

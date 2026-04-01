@@ -328,7 +328,44 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolOpenPR)
 
 	// Helpin tools
-	r.register("request_human_input", "Present structured single-select questions in the interactive run drawer and wait for the human's answer.", map[string]interface{}{
+	r.register(ToolRequestUserInput, "Present structured questions in the interactive run drawer and wait for the human's answer. Use the Codex-style question payload exactly.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"questions": map[string]interface{}{
+				"type":        "array",
+				"description": "Questions to present. Prefer 1-3 focused questions per request.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":       map[string]interface{}{"type": "string", "description": "Stable question identifier."},
+						"header":   map[string]interface{}{"type": "string", "description": "Optional short heading shown above the question."},
+						"question": map[string]interface{}{"type": "string", "description": "The prompt to answer."},
+						"isOther":  map[string]interface{}{"type": "boolean", "description": "When true, allow a freeform Other answer."},
+						"isSecret": map[string]interface{}{"type": "boolean", "description": "When true, render the answer field as secret input."},
+						"options": map[string]interface{}{
+							"type":        "array",
+							"description": "Optional mutually exclusive answer choices.",
+							"items": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"label":       map[string]interface{}{"type": "string", "description": "User-facing option label."},
+									"description": map[string]interface{}{"type": "string", "description": "Optional short description for the option."},
+								},
+								"required":             []string{"label"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					"required":             []string{"id", "question"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"questions"},
+		"additionalProperties": false,
+	}, toolRequestUserInput)
+
+	r.register(ToolRequestHumanInput, "Legacy alias for request_user_input. Present structured single-select questions in the interactive run drawer and wait for the human's answer.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"questions": map[string]interface{}{
@@ -362,7 +399,18 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolRequestHumanInput)
 
-	r.register("request_human_approval", "Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+	r.register(ToolRequestReviewCheckpoint, "Request an inline product review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":   map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as prd, stories, or story_doc."},
+			"title":   map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
+			"summary": map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestReviewCheckpoint)
+
+	r.register(ToolRequestHumanApproval, "Legacy alias for request_review_checkpoint. Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"phase":   map[string]interface{}{"type": "string"},
@@ -708,7 +756,8 @@ func (r *ToolRegistry) Execute(ctx *ExecutionContext, name string, input json.Ra
 
 // ExecuteAllowed runs a tool by name only if it is enabled for the execution context.
 func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input json.RawMessage) (string, error) {
-	if len(ctx.AllowedTools) > 0 && !ctx.AllowedTools[name] {
+	canonicalName := CanonicalToolName(name)
+	if ctx != nil && len(ctx.AllowedTools) > 0 && !ctx.AllowedTools[name] && !ctx.AllowedTools[canonicalName] {
 		if ctx == nil {
 			return "", fmt.Errorf("tool %q is not allowed", name)
 		}
