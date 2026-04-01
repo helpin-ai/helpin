@@ -1,5 +1,5 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   ArrowRightLeft,
   Check,
@@ -43,6 +43,7 @@ import type {
 import { StoryTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 interface StoryRelationshipsSectionProps {
   workspaceId: string;
@@ -236,6 +237,7 @@ export function StoryRelationshipsSection({
   className,
 }: StoryRelationshipsSectionProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
@@ -313,10 +315,7 @@ export function StoryRelationshipsSection({
 
   const handleOpenStory = (targetStoryId: string) => {
     if (!workspace?.slug) return;
-    navigate({
-      to: '/w/$slug/pm/stories/$storyId',
-      params: { slug: workspace.slug, storyId: targetStoryId },
-    });
+    openStoryRoute(navigate as never, location as never, workspace.slug, targetStoryId);
   };
 
   const handleCreateRelationship = async (otherStoryId: string) => {

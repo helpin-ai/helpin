@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Bell, CheckCheck, Archive, Clock, Trash2, Eye, EyeOff } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -159,7 +160,6 @@ function NotificationRow({
 
 function getEntityRoute(slug: string, entityType: string, entityId: string): string | null {
   switch (entityType) {
-    case 'story': return `/w/${slug}/pm/stories/${entityId}`
     case 'epic': return `/w/${slug}/pm/epics/${entityId}`
     case 'objective': return `/w/${slug}/pm/objectives/${entityId}`
     case 'sprint': return `/w/${slug}/pm/sprints`
@@ -175,6 +175,7 @@ export function NotificationCenter() {
   const wsId = workspace?.id || ''
   const slug = workspace?.slug || ''
   const navigate = useNavigate()
+  const location = useLocation()
 
   const { data: unreadData } = useUnreadCount(wsId)
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useNotifications(wsId, filter)
@@ -189,6 +190,12 @@ export function NotificationCenter() {
   const notifications = data?.pages.flatMap((p) => p.data) ?? []
 
   const handleNavigate = (notification: Notification) => {
+    if (notification.entity_type === 'story') {
+      if (!slug) return
+      setOpen(false)
+      openStoryRoute(navigate as never, location as never, slug, notification.entity_id)
+      return
+    }
     const route = getEntityRoute(slug, notification.entity_type, notification.entity_id)
     if (route) {
       setOpen(false)

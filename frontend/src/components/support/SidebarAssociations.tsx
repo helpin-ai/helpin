@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   FileText,
   GitBranch,
@@ -30,6 +30,7 @@ import {
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 import type { GroupedAssociations, CreateStoryRequest } from '@/lib/pmTypes';
 
 interface SidebarAssociationsProps {
@@ -41,6 +42,7 @@ type SectionKey = 'stories' | 'docs';
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
@@ -52,7 +54,8 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'support_conversation', conversationId);
 
   const handleNavigateStory = (storyId: string) => {
-    navigate({ to: '/w/$slug/pm/stories/$storyId', params: { slug, storyId } } as any);
+    if (!slug) return;
+    openStoryRoute(navigate as never, location as never, slug, storyId);
   };
 
   const handleNavigateDoc = (docId: string) => {

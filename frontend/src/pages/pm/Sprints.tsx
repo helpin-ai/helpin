@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
 import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
@@ -15,7 +15,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { unwrap } from '@/lib/queryUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 const STORY_PREVIEW_LIMIT = 5;
 const BACKLOG_LIMIT = 50;
@@ -120,10 +120,11 @@ function applyStoryAssignment(
 export function SprintsPage({ teamId }: SprintsPageProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
+  const workspaceSlug = workspace?.slug ?? '';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const openCreate = useGlobalCreateStore((state) => state.openCreate);
-  const openStory = useStoryPanelStore((state) => state.openStory);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId);
@@ -149,6 +150,11 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     () => queryKeys.pm.sprintPlanning(workspaceId, filters as Record<string, unknown> | undefined),
     [workspaceId, filters],
   );
+
+  const handleOpenStory = (storyId: string) => {
+    if (!workspaceSlug) return;
+    openStoryRoute(navigate as never, location as never, workspaceSlug, storyId);
+  };
 
   // Separate query for archived sprints — only enabled when filter is "archived"
   const archivedQuery = useQuery({
@@ -269,7 +275,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           canEdit={canEdit}
           members={members}
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
-          onOpenStory={openStory}
+          onOpenStory={handleOpenStory}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
           onCreateStory={handleCreateStory}
           onAssignStory={handleAssignStory}
