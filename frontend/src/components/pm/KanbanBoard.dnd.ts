@@ -7,9 +7,16 @@ import type { Story } from '@/lib/pmTypes';
 
 type Listener = () => void;
 
+export interface PreviewDropTarget {
+  fromColumnId: string;
+  toColumnId: string;
+  toIndex: number;
+}
+
 export class DragPreviewManager {
   private activeStory: Story | null = null;
   private columnOverrides = new Map<string, Story[]>();
+  private dropTarget: PreviewDropTarget | null = null;
   private columnListeners = new Map<string, Set<Listener>>();
   private globalListeners = new Set<Listener>();
 
@@ -17,23 +24,36 @@ export class DragPreviewManager {
 
   setActiveStory(story: Story | null) {
     this.activeStory = story;
+    if (story === null) {
+      this.dropTarget = null;
+    }
     this.notifyGlobal();
   }
 
-  updatePreview(fromId: string, toId: string, newFromStories: Story[], newToStories: Story[]) {
+  updatePreview(fromId: string, toId: string, newFromStories: Story[], newToStories: Story[], toIndex: number) {
     this.columnOverrides.set(fromId, newFromStories);
     this.columnOverrides.set(toId, newToStories);
+    this.dropTarget = {
+      fromColumnId: fromId,
+      toColumnId: toId,
+      toIndex,
+    };
     this.notifyColumn(fromId);
     if (toId !== fromId) this.notifyColumn(toId);
   }
 
-  clear() {
+  clearColumnOverrides() {
     const affectedIds = [...this.columnOverrides.keys()];
-    this.activeStory = null;
     this.columnOverrides.clear();
+    this.dropTarget = null;
     for (const id of affectedIds) {
       this.notifyColumn(id);
     }
+  }
+
+  clear() {
+    this.activeStory = null;
+    this.clearColumnOverrides();
     this.notifyGlobal();
   }
 
@@ -45,6 +65,10 @@ export class DragPreviewManager {
 
   getColumnStories(columnId: string): Story[] | null {
     return this.columnOverrides.get(columnId) ?? null;
+  }
+
+  getDropTarget(): PreviewDropTarget | null {
+    return this.dropTarget;
   }
 
   // ── Subscriptions ──
@@ -117,6 +141,62 @@ export function useActiveStory(manager: DragPreviewManager): Story | null {
     [manager],
   );
   return useSyncExternalStore(subscribe, getSnapshot, () => null);
+}
+
+export function getStoredCrossColumnDropTarget({
+  previewTarget,
+  fromColumnId,
+  validColumnIds,
+}: {
+  previewTarget: PreviewDropTarget | null;
+  fromColumnId: string;
+  validColumnIds: string[];
+}) {
+  if (!previewTarget) {
+    return null;
+  }
+  if (previewTarget.fromColumnId !== fromColumnId) {
+    return null;
+  }
+  if (previewTarget.toColumnId === fromColumnId) {
+    return null;
+  }
+  if (!validColumnIds.includes(previewTarget.toColumnId)) {
+    return null;
+  }
+  return {
+    toColumnId: previewTarget.toColumnId,
+    toIndex: previewTarget.toIndex,
+  };
+}
+
+export function getStableCrossColumnPreviewIndex({
+  previewTarget,
+  fromColumnId,
+  toColumnId,
+  overId,
+  containerId,
+  computedIndex,
+  columnLength,
+}: {
+  previewTarget: PreviewDropTarget | null;
+  fromColumnId: string;
+  toColumnId: string;
+  overId: string;
+  containerId: string;
+  computedIndex: number;
+  columnLength: number;
+}) {
+  if (overId !== containerId) {
+    return computedIndex;
+  }
+  if (!previewTarget) {
+    return computedIndex;
+  }
+  if (previewTarget.fromColumnId !== fromColumnId || previewTarget.toColumnId !== toColumnId) {
+    return computedIndex;
+  }
+  return Math.max(0, Math.min(previewTarget.toIndex, columnLength));
 }
 
 // ── Existing helpers ────────────────────────────────────────────────

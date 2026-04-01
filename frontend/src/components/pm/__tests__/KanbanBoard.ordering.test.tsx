@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex } from '../KanbanBoard.dnd'
+import { DragPreviewManager, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStableCrossColumnPreviewIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget } from '../KanbanBoard.dnd'
 
 describe('getStateBoardPreviewInsertIndex', () => {
   it('pins done-column drag previews to the top instead of a hovered slot', () => {
@@ -90,5 +90,94 @@ describe('commitDropBeforeClearingPreview', () => {
 
     expect(result).toBe(42)
     expect(calls).toEqual(['commit-start', 'clear-preview', 'commit-end'])
+  })
+})
+
+describe('getStoredCrossColumnDropTarget', () => {
+  it('returns the stored between-card target when it matches the source column', () => {
+    expect(getStoredCrossColumnDropTarget({
+      previewTarget: {
+        fromColumnId: 'state-todo',
+        toColumnId: 'state-doing',
+        toIndex: 2,
+      },
+      fromColumnId: 'state-todo',
+      validColumnIds: ['state-todo', 'state-doing', 'state-done'],
+    })).toEqual({
+      toColumnId: 'state-doing',
+      toIndex: 2,
+    })
+  })
+
+  it('ignores stale targets from another source column', () => {
+    expect(getStoredCrossColumnDropTarget({
+      previewTarget: {
+        fromColumnId: 'state-backlog',
+        toColumnId: 'state-doing',
+        toIndex: 1,
+      },
+      fromColumnId: 'state-todo',
+      validColumnIds: ['state-todo', 'state-doing'],
+    })).toBeNull()
+  })
+})
+
+describe('DragPreviewManager', () => {
+  it('clears stored cross-column targets when preview overrides are cleared', () => {
+    const manager = new DragPreviewManager()
+
+    manager.updatePreview(
+      'state-todo',
+      'state-doing',
+      [{ id: 'story-1' } as never],
+      [{ id: 'story-2' } as never, { id: 'story-1' } as never],
+      1,
+    )
+
+    expect(manager.getDropTarget()).toEqual({
+      fromColumnId: 'state-todo',
+      toColumnId: 'state-doing',
+      toIndex: 1,
+    })
+
+    manager.clearColumnOverrides()
+
+    expect(manager.getDropTarget()).toBeNull()
+    expect(manager.getColumnStories('state-todo')).toBeNull()
+    expect(manager.getColumnStories('state-doing')).toBeNull()
+  })
+})
+
+describe('getStableCrossColumnPreviewIndex', () => {
+  it('keeps the last between-card target when the hover falls back to the column container', () => {
+    expect(getStableCrossColumnPreviewIndex({
+      previewTarget: {
+        fromColumnId: 'state-todo',
+        toColumnId: 'state-doing',
+        toIndex: 2,
+      },
+      fromColumnId: 'state-todo',
+      toColumnId: 'state-doing',
+      overId: 'state-doing',
+      containerId: 'state-doing',
+      computedIndex: 5,
+      columnLength: 5,
+    })).toBe(2)
+  })
+
+  it('uses the computed append index when there is no matching stored target', () => {
+    expect(getStableCrossColumnPreviewIndex({
+      previewTarget: {
+        fromColumnId: 'state-backlog',
+        toColumnId: 'state-doing',
+        toIndex: 1,
+      },
+      fromColumnId: 'state-todo',
+      toColumnId: 'state-doing',
+      overId: 'state-doing',
+      containerId: 'state-doing',
+      computedIndex: 5,
+      columnLength: 5,
+    })).toBe(5)
   })
 })
