@@ -1183,6 +1183,7 @@ export function ObjectiveDetailPage() {
                   value={form.planned_start_date}
                   onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
                   placeholder="None"
+                  hideIcon
                   className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                 />
               ) : (
@@ -1199,6 +1200,8 @@ export function ObjectiveDetailPage() {
                   value={form.deadline}
                   onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
                   placeholder="None"
+                  hideIcon
+                  urgencyColor
                   className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                 />
               ) : (

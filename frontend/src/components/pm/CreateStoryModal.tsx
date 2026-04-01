@@ -63,6 +63,7 @@ import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
+import { StoryStateSelectContent } from '@/components/pm/story-detail/StoryStateSelectContent';
 import { UserAvatar } from "@/components/pm/UserAvatar";
 import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
 import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
@@ -741,7 +742,7 @@ export function CreateStoryModal({
           </div>
 
           {/* Two-column grid */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
             {/* Left column — title + description */}
             <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
 
@@ -1091,8 +1092,8 @@ export function CreateStoryModal({
             </div>
 
             {/* Right sidebar — metadata */}
-            <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-4 py-4">
-              <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+            <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-5 py-4">
+              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
                 {/* Template */}
                 {!isTemplateMode && templates.length > 0 && (
                 <MetadataRow icon={FileText} label="Template">
@@ -1144,7 +1145,7 @@ export function CreateStoryModal({
                     <SidebarPopoverSelect
                       value={form.team_id || "__none__"}
                       options={[
-                        ...(teams.length === 0 ? [{ value: "__none__", label: "No team" }] : []),
+                        ...(teams.length === 0 ? [{ value: "__none__", label: "Select team" }] : []),
                         ...teams.map((t) => ({ value: t.id, label: t.name })),
                       ]}
                       onChange={(value) =>
@@ -1170,16 +1171,20 @@ export function CreateStoryModal({
                     onChange={setStateId}
                     renderTrigger={() => {
                       const st = workflow.states.find((s) => s.id === stateId);
-                      return (
-                        <>
-                          {st && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color || '#a1a1aa' }} />}
-                          <span>{currentStateName}</span>
-                        </>
+                      return st ? (
+                        <StoryStateSelectContent stateType={st.state_type} label={st.name} color={st.color} />
+                      ) : (
+                        <span>{currentStateName}</span>
                       );
                     }}
                     renderOption={(v) => {
                       const s = workflow.states.find((st) => st.id === v);
-                      return s ? <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color || '#a1a1aa' }} /> : null;
+                      return s ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color || '#a1a1aa' }} />
+                          <span>{s.name}</span>
+                        </span>
+                      ) : null;
                     }}
                   />
                 </MetadataRow>
@@ -1265,12 +1270,12 @@ export function CreateStoryModal({
                       setForm((prev) => ({ ...prev, priority: value as Priority }))
                     }
                     renderTrigger={() => (
-                      <>
-                        <PriorityIcon priority={form.priority} className="h-3.5 w-3.5" />
-                        <span>{PRIORITY_CONFIG[form.priority].label}</span>
-                      </>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <PriorityIcon priority={form.priority} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{PRIORITY_CONFIG[form.priority].label}</span>
+                      </span>
                     )}
-                    renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
+                    renderOption={(v) => <><PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" /><span>{PRIORITY_CONFIG[v as Priority].label}</span></>}
                   />
                 </MetadataRow>
                 )}
@@ -1285,12 +1290,12 @@ export function CreateStoryModal({
                       setForm((prev) => ({ ...prev, severity: value as Severity }))
                     }
                     renderTrigger={() => (
-                      <>
-                        <SeverityIcon severity={form.severity} className="h-3.5 w-3.5" />
-                        <span>{SEVERITY_CONFIG[form.severity].label}</span>
-                      </>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <SeverityIcon severity={form.severity} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{SEVERITY_CONFIG[form.severity].label}</span>
+                      </span>
                     )}
-                    renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
+                    renderOption={(v) => <><SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" /><span>{SEVERITY_CONFIG[v as Severity].label}</span></>}
                   />
                 </MetadataRow>
                 )}
@@ -1306,12 +1311,12 @@ export function CreateStoryModal({
                       setForm((prev) => ({ ...prev, story_type: value as StoryType }));
                     }}
                     renderTrigger={() => (
-                      <>
-                        <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
-                        <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
-                      </>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{STORY_TYPE_CONFIG[form.story_type].label}</span>
+                      </span>
                     )}
-                    renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
+                    renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}
                   />
                 </MetadataRow>
                 )}
@@ -1397,6 +1402,8 @@ export function CreateStoryModal({
                     onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
                     placeholder="None"
                     disablePast
+                    hideIcon
+                    urgencyColor
                     className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                   />
                 </MetadataRow>
