@@ -77,7 +77,6 @@ export function WidgetPreview({
         },
         features: {
           aiEnabled: aiFirst,
-          aiFirst,
           showTalkToHuman,
           escalationMessage,
           fileUploads: false,
@@ -85,7 +84,7 @@ export function WidgetPreview({
           requirePhone: false,
           csatRating: false,
           forceIdentify: false,
-        },
+        } as any,
         availability: availability ?? {
           isOnline: true,
           statusText: 'Online now',
