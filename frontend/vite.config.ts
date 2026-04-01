@@ -4,8 +4,21 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
-  plugins: [TanStackRouterVite({ autoCodeSplitting: true }), react(), tailwindcss()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    TanStackRouterVite({ autoCodeSplitting: true }),
+    react(),
+    tailwindcss(),
+    mode === 'development' && process.env.VITE_REACT_SCAN === 'true' && {
+      name: 'react-scan',
+      transformIndexHtml(html: string) {
+        return html.replace(
+          '<head>',
+          '<head><script src="https://unpkg.com/react-scan/dist/auto.global.js" crossorigin="anonymous"></script>',
+        );
+      },
+    },
+  ].filter(Boolean),
   server: {
     allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
   },
@@ -17,4 +30,4 @@ export default defineConfig({
       "@helpin/widget-core": path.resolve(__dirname, "../packages/widget-core/dist/index.js"),
     },
   },
-})
+}))
