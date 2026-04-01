@@ -1,0 +1,45 @@
+-- Story -> Task hard-cut migration draft
+--
+-- This file is intentionally kept outside server/internal/dbmigrate/sql/
+-- so it is not executed by ./migrate up until the migration is fully ready.
+--
+-- Planned operations for the executable migration:
+--
+-- 1. Rename core PM tables
+--    - pm_stories -> pm_tasks
+--    - pm_story_owners -> pm_task_owners
+--    - pm_story_followers -> pm_task_followers
+--    - pm_story_labels -> pm_task_labels
+--    - pm_story_links -> pm_task_links
+--    - pm_story_templates -> pm_task_templates
+--
+-- 2. Rename story-scoped columns to task-scoped columns
+--    - story_id -> task_id
+--    - linked_story_id -> linked_task_id
+--    - active_story_id -> active_task_id
+--    - created_from_story_id -> created_from_task_id
+--    - last_generated_story_id -> last_generated_task_id
+--    - generated_story_id -> generated_task_id
+--
+-- 3. Rename story_type fields
+--    - pm_stories.story_type -> task_type
+--    - workspace_teams.default_story_type -> default_task_type
+--
+-- 4. Rename sequence and column default
+--    - pm_story_display_id_seq -> pm_task_display_id_seq
+--
+-- 5. Update constraints, indexes, and foreign-key names
+--    - pm_comments.entity_type CHECK: story -> task
+--    - any CHECK/default/index/FK names containing story-era names
+--
+-- 6. Backfill persisted values
+--    - entity_type = 'story' -> 'task'
+--    - object_type = 'story' -> 'task'
+--    - agents.allowed_targets JSONB "story" -> "task"
+--    - preset key story_planner -> task_planner
+--    - automation trigger strings story.* -> task.*
+--
+-- 7. Validate row counts and surviving references
+--    - pm_tasks row count matches prior pm_stories count
+--    - renamed child tables retain matching row counts
+--    - no primary-contract story-era values remain in migrated tables

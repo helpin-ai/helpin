@@ -6,7 +6,7 @@
 
 | Workstream | Status | Notes |
 | --- | --- | --- |
-| Schema and migrations | Pending | Explicit SQL rename and persisted payload rewrites |
+| Schema and migrations | In Progress | Migration runner foundation landed; Story -> Task SQL rename still pending |
 | Data backfill rewrites | Pending | Entity type values, JSONB payloads, trigger strings |
 | Backend contracts | Pending | Models, handlers, services, repositories, routes |
 | Agent and automation surfaces | Pending | Preset keys, target types, prompts, planner payloads |
@@ -17,8 +17,19 @@
 
 ## Checklist
 
+### 0. Migration runner foundation
+
+- [x] Add `server/cmd/migrate` runner binary
+- [x] Add `server/internal/dbmigrate` runtime migration package with `schema_migrations`, embedded SQL loading, checksums, and advisory lock
+- [x] Add bootstrap runtime migration SQL file under `server/internal/dbmigrate/sql/`
+- [x] Build `./migrate` into the server image
+- [x] Add ArgoCD `PreSync` migration Job manifests in `k8s/stage/server-migrate.yaml` and `k8s/prod/server-migrate.yaml`
+- [x] Add `RUN_AUTO_MIGRATE` flag support to API startup
+- [x] Change the stage/prod migration Jobs from bootstrap-safe fallback mode to strict `./migrate up` mode now that the deployment image contains the migration binary
+
 ### 1. Schema and migrations
 
+- [ ] Add the Story -> Task forward rename SQL file(s) under `server/internal/dbmigrate/sql/`
 - [ ] Create the SQL migration set for table renames (`pm_stories` -> `pm_tasks`, related join/template/link tables)
 - [ ] Rename FK columns (`story_id` -> `task_id`, `linked_story_id` -> `linked_task_id`, `active_story_id` -> `active_task_id`, recurring lineage columns, etc.)
 - [ ] Rename `story_type` to `task_type`
@@ -143,13 +154,14 @@
 
 - [ ] Write reverse migration SQL script (tables/columns back to story-era names) and test on staging
 - [ ] Add migration verification test coverage for seeded existing story data
+- [ ] Run `./migrate status` in staging after applying the Story -> Task SQL and confirm the version is recorded in `schema_migrations`
 - [ ] Verify end-to-end task CRUD and board flows against migrated data
 - [ ] Verify agent assignment/run and automation triggers against `task`
 - [ ] Verify no primary-contract `/pm/stories`, `story_id`, `story_type`, `story_planner`, or `story.*` identifiers remain
 - [ ] Prepare release notes for the hard cutover and bookmark/API breakage
 - [ ] Add temporary 301 redirect from `/pm/stories/*` -> `/pm/tasks/*` (remove after one release cycle)
 - [ ] Take database snapshot/backup immediately before production migration
-- [ ] Execute production rollout with migration-first deployment sequence
+- [ ] Execute production rollout with migration-first deployment sequence (`PreSync` Job runs `./migrate up`, then task-era pods deploy with `RUN_AUTO_MIGRATE=false`)
 
 ## Open Risks To Watch
 
