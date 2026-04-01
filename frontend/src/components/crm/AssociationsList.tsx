@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   Building2,
   DollarSign,
@@ -30,6 +30,7 @@ import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 interface AssociationsListProps {
   workspaceId: string;
@@ -60,6 +61,7 @@ export function AssociationsList({
   onAssociationRemoved,
 }: AssociationsListProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const createAssociation = useCreateAssociation(workspaceId);
   const deleteAssociation = useDeleteAssociation(workspaceId);
   const [removeId, setRemoveId] = useState<string | null>(null);
@@ -87,11 +89,14 @@ export function AssociationsList({
       company: { to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } },
       deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } },
       epic: { to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: id } },
-      story: { to: '/w/$slug/pm/stories/$storyId', params: { slug, storyId: id } },
       support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } },
     };
+    if (type === 'story') {
+      openStoryRoute(navigate as never, location as never, slug, id);
+      return;
+    }
     const route = routes[type];
-    if (route) navigate(route as any);
+    if (route) navigate(route as never);
   };
 
   const handleRemove = async () => {

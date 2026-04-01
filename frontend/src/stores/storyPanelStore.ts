@@ -1,38 +1,42 @@
 import { create } from 'zustand';
-import type { StoryDetail } from '@/lib/pmTypes';
 
 interface StoryPanelState {
-  open: boolean;
   storyId: string | null;
-  storyDetail: StoryDetail | null;
-  loading: boolean;
-  /** Monotonic counter so re-clicking the same story re-triggers the fetch */
   requestKey: number;
-
-  /** Queue a story to be fetched — panel opens only after data is ready */
+  lastClosedStoryId: string | null;
+  lastClosedAt: number;
   openStory: (storyId: string) => void;
-  /** Called by GlobalStoryPanel once data is loaded — opens the panel */
-  reveal: (detail: StoryDetail) => void;
   close: () => void;
-  setStoryDetail: (detail: StoryDetail | null) => void;
+  rememberClosedStory: (storyId: string) => void;
+  shouldSuppressOpen: (storyId: string) => boolean;
 }
 
+const RECENTLY_CLOSED_STORY_SUPPRESSION_MS = 250;
+
 export const useStoryPanelStore = create<StoryPanelState>((set, get) => ({
-  open: false,
   storyId: null,
-  storyDetail: null,
-  loading: false,
   requestKey: 0,
-
+  lastClosedStoryId: null,
+  lastClosedAt: 0,
   openStory: (storyId) =>
-    set({ storyId, storyDetail: null, loading: true, open: false, requestKey: get().requestKey + 1 }),
-
-  reveal: (detail) =>
-    set({ storyDetail: detail, loading: false, open: true }),
-
+    set({
+      storyId,
+      requestKey: get().requestKey + 1,
+    }),
   close: () =>
-    set({ open: false, storyId: null, storyDetail: null, loading: false }),
-
-  setStoryDetail: (detail) =>
-    set({ storyDetail: detail, loading: false }),
+    set({
+      storyId: null,
+    }),
+  rememberClosedStory: (storyId) =>
+    set({
+      lastClosedStoryId: storyId,
+      lastClosedAt: Date.now(),
+    }),
+  shouldSuppressOpen: (storyId) => {
+    const state = get();
+    return (
+      state.lastClosedStoryId === storyId &&
+      Date.now() - state.lastClosedAt < RECENTLY_CLOSED_STORY_SUPPRESSION_MS
+    );
+  },
 }));

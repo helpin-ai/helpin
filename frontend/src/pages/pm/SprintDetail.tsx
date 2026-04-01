@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
   Archive,
@@ -27,7 +27,6 @@ import {
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
 import { StoryListView } from '@/components/pm/StoryListView';
-import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
@@ -42,6 +41,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import type { AttachmentResponse, SprintWithStats, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
@@ -88,6 +88,7 @@ export function SprintDetailPage() {
   const { sprintId, slug } = routeApi.useParams();
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
 
@@ -122,8 +123,6 @@ export function SprintDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
-
-  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   useTitle(form?.name ? `${form.name} — Sprint` : 'Sprint');
 
@@ -291,8 +290,10 @@ export function SprintDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Story) => openStoryPanel(story.id),
-    [openStoryPanel],
+    (story: Story) => {
+      openStoryRoute(navigate as never, location as never, slug, story.id);
+    },
+    [location, navigate, slug],
   );
 
   // Refresh stories when global panel updates/archives a story
