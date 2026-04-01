@@ -141,7 +141,7 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 		definition.RuntimeKind = runtime
 	}
 	if len(version.AllowedTools) > 0 {
-		definition.AllowedTools = parseJSONStringSlice(version.AllowedTools)
+		definition.AllowedTools = worker.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
 	}
 	if len(version.SupportedModes) > 0 {
 		definition.SupportedModes = parseJSONStringSlice(version.SupportedModes)
@@ -235,13 +235,13 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishStoryPlan,
-		worker.ToolRequestHumanInput,
-		worker.ToolRequestHumanApproval,
+		worker.ToolRequestUserInput,
+		worker.ToolRequestReviewCheckpoint,
 	)
 	storyPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolPublishStoryPlanDoc,
-		worker.ToolRequestHumanInput,
-		worker.ToolRequestHumanApproval,
+		worker.ToolRequestUserInput,
+		worker.ToolRequestReviewCheckpoint,
 	)
 
 	return []model.AgentPresetDefinition{

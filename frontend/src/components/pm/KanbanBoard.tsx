@@ -1039,20 +1039,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         )}
 
         <div className="ml-auto flex items-center gap-1">
-          <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
-            <button
-              className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setGroupBy('status')}
-            >
-              By States
-            </button>
-            <button
-              className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setGroupBy('members')}
-            >
-              By Members
-            </button>
-          </div>
+          {viewMode === 'board' ? (
+            <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
+              <button
+                className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setGroupBy('status')}
+              >
+                By States
+              </button>
+              <button
+                className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setGroupBy('members')}
+              >
+                By Members
+              </button>
+            </div>
+          ) : null}
           {viewMode === 'board' ? <BoardDisplayMenu /> : null}
           <QuickTooltip label="Board view">
             <Button

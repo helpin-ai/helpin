@@ -100,6 +100,8 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
 	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
@@ -308,6 +310,8 @@ func main() {
 		runRepo,
 		runMessageRepo,
 		artifactRepo,
+		interactionRepo,
+		sessionSnapshotRepo,
 		storyRepo,
 		storyLinkRepo,
 		epicRepo,
@@ -382,6 +386,8 @@ func main() {
 		runMessageRepo,
 		agentRepo,
 		artifactRepo,
+		interactionRepo,
+		sessionSnapshotRepo,
 		storyRepo,
 		storyLinkRepo,
 		epicRepo,

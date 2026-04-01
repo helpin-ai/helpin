@@ -61,9 +61,10 @@ type ExecutionContext struct {
 }
 
 type LiveExecutionResumeSignal struct {
-	Intent      string
-	Content     string
-	Acknowledge func() error
+	Intent          string
+	Content         string
+	ResponsePayload json.RawMessage
+	Acknowledge     func() error
 }
 
 type ArtifactContext struct {

@@ -9,12 +9,43 @@ import (
 	appmodel "github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestRequestHumanInputToolReturnsAwaitingInputPayload(t *testing.T) {
+func TestRequestUserInputToolReturnsAwaitingInputPayload(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolRequestHumanInput: true,
+			ToolRequestUserInput: true,
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, ToolRequestUserInput, json.RawMessage(`{
+		"questions": [
+			{
+				"id": "q1",
+				"header": "Owner",
+				"question": "Who owns this deal?",
+				"isOther": true,
+				"options": [
+					{ "label": "Sales" },
+					{ "label": "Support" }
+				]
+			}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !strings.Contains(output, `"status":"paused"`) || !strings.Contains(output, `"pause_reason":"human_input"`) || !strings.Contains(output, `"id":"q1"`) {
+		t.Fatalf("expected paused human_input payload, got %s", output)
+	}
+}
+
+func TestLegacyRequestHumanInputAliasExecutesWhenCanonicalToolIsAllowed(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolRequestUserInput: true,
 		},
 	}
 
@@ -33,15 +64,15 @@ func TestRequestHumanInputToolReturnsAwaitingInputPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"status":"paused"`) || !strings.Contains(output, `"pause_reason":"human_input"`) || !strings.Contains(output, `"id":"q1"`) {
-		t.Fatalf("expected paused human_input payload, got %s", output)
+	if !strings.Contains(output, `"pause_reason":"human_input"`) {
+		t.Fatalf("expected alias to pause for human input, got %s", output)
 	}
 }
 
 func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
 	approval := ExtractLatestHumanApprovalRequest([]appmodel.ToolInvocation{
 		{
-			ToolName: ToolRequestHumanApproval,
+			ToolName: ToolRequestReviewCheckpoint,
 			Input: json.RawMessage(`{
 				"phase": "crm_review",
 				"title": "Approve the stage change",
@@ -57,16 +88,16 @@ func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
 	}
 }
 
-func TestRequestHumanApprovalToolReturnsAwaitingApprovalPayload(t *testing.T) {
+func TestRequestReviewCheckpointToolReturnsAwaitingApprovalPayload(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolRequestHumanApproval: true,
+			ToolRequestReviewCheckpoint: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolRequestHumanApproval, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolRequestReviewCheckpoint, json.RawMessage(`{
 		"phase": "prd",
 		"title": "Approve PRD",
 		"summary": "Review the latest draft."

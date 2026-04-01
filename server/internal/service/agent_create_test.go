@@ -573,7 +573,7 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 		Label:                 "Ops Variant",
 		RuntimeKind:           "native_sdk",
 		SystemPrompt:          agentTestStringPtr("Plan with explicit operational checkpoints."),
-		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_human_input"}),
+		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_user_input"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeInteractive,

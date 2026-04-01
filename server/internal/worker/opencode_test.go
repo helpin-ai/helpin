@@ -207,57 +207,60 @@ func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testin
 }
 
 func TestParseOpenCodeJSONEventTextAndTokens(t *testing.T) {
-	display, response, tokens, eventErr, err := parseOpenCodeJSONEvent(`{"type":"text","part":{"id":"msg_1","text":"{\"status\":\"success\"}"}}`)
+	parsed, err := parseOpenCodeJSONEvent(`{"type":"text","part":{"id":"msg_1","text":"{\"status\":\"success\"}"}}`)
 	if err != nil {
 		t.Fatalf("parse text event: %v", err)
 	}
-	if display != "{\"status\":\"success\"}" {
-		t.Fatalf("expected display line to match text content, got %q", display)
+	if parsed.DisplayLine != "{\"status\":\"success\"}" {
+		t.Fatalf("expected display line to match text content, got %q", parsed.DisplayLine)
 	}
-	if response != "{\"status\":\"success\"}" {
-		t.Fatalf("expected response text to match text content, got %q", response)
+	if parsed.ResponseText != "{\"status\":\"success\"}" {
+		t.Fatalf("expected response text to match text content, got %q", parsed.ResponseText)
 	}
-	if tokens != 0 {
-		t.Fatalf("expected no tokens on text event, got %d", tokens)
+	if parsed.TokensUsed != 0 {
+		t.Fatalf("expected no tokens on text event, got %d", parsed.TokensUsed)
 	}
-	if eventErr != "" {
-		t.Fatalf("expected no event error, got %q", eventErr)
+	if parsed.EventError != "" {
+		t.Fatalf("expected no event error, got %q", parsed.EventError)
 	}
 
-	display, response, tokens, eventErr, err = parseOpenCodeJSONEvent(`{"type":"step_finish","part":{"stepID":"step_1","stopReason":"end_turn","tokens":{"input":120,"output":45,"reasoning":10,"cache":{"read":8,"write":3}}}}`)
+	parsed, err = parseOpenCodeJSONEvent(`{"type":"step_finish","part":{"stepID":"step_1","stopReason":"end_turn","tokens":{"input":120,"output":45,"reasoning":10,"cache":{"read":8,"write":3}}}}`)
 	if err != nil {
 		t.Fatalf("parse step_finish event: %v", err)
 	}
-	if !strings.Contains(display, "tokens=186") {
-		t.Fatalf("expected display line to include aggregated tokens, got %q", display)
+	if !strings.Contains(parsed.DisplayLine, "tokens=186") {
+		t.Fatalf("expected display line to include aggregated tokens, got %q", parsed.DisplayLine)
 	}
-	if response != "" {
-		t.Fatalf("expected no response text on step_finish event, got %q", response)
+	if parsed.ResponseText != "" {
+		t.Fatalf("expected no response text on step_finish event, got %q", parsed.ResponseText)
 	}
-	if tokens != 186 {
-		t.Fatalf("expected aggregated tokens 186, got %d", tokens)
+	if parsed.TokensUsed != 186 {
+		t.Fatalf("expected aggregated tokens 186, got %d", parsed.TokensUsed)
 	}
-	if eventErr != "" {
-		t.Fatalf("expected no event error, got %q", eventErr)
+	if parsed.EventError != "" {
+		t.Fatalf("expected no event error, got %q", parsed.EventError)
+	}
+	if parsed.Usage.InputTokens != 131 || parsed.Usage.OutputTokens != 55 {
+		t.Fatalf("expected usage to preserve prompt/completion split, got %+v", parsed.Usage)
 	}
 }
 
 func TestParseOpenCodeJSONEventError(t *testing.T) {
-	display, response, tokens, eventErr, err := parseOpenCodeJSONEvent(`{"type":"error","message":"provider quota exceeded"}`)
+	parsed, err := parseOpenCodeJSONEvent(`{"type":"error","message":"provider quota exceeded"}`)
 	if err != nil {
 		t.Fatalf("parse error event: %v", err)
 	}
-	if !strings.Contains(display, "provider quota exceeded") {
-		t.Fatalf("expected display line to include error message, got %q", display)
+	if !strings.Contains(parsed.DisplayLine, "provider quota exceeded") {
+		t.Fatalf("expected display line to include error message, got %q", parsed.DisplayLine)
 	}
-	if response != "" {
-		t.Fatalf("expected no response text on error event, got %q", response)
+	if parsed.ResponseText != "" {
+		t.Fatalf("expected no response text on error event, got %q", parsed.ResponseText)
 	}
-	if tokens != 0 {
-		t.Fatalf("expected no tokens on error event, got %d", tokens)
+	if parsed.TokensUsed != 0 {
+		t.Fatalf("expected no tokens on error event, got %d", parsed.TokensUsed)
 	}
-	if eventErr != "provider quota exceeded" {
-		t.Fatalf("expected event error to be recorded, got %q", eventErr)
+	if parsed.EventError != "provider quota exceeded" {
+		t.Fatalf("expected event error to be recorded, got %q", parsed.EventError)
 	}
 }
 
@@ -269,7 +272,7 @@ func TestConsumeOpenCodeJSONStreamCollectsResponseAndTokens(t *testing.T) {
 		`{"type":"step_finish","part":{"stopReason":"end_turn","tokens":{"input":100,"output":20}}}`,
 	}, "\n")
 
-	collector := newOpenCodeStreamCollector("run_12345678", &openCodeArtifactWriter{})
+	collector := newOpenCodeStreamCollector("run_12345678", &openCodeArtifactWriter{}, nil)
 	errCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -306,12 +309,15 @@ func TestConsumeOpenCodeJSONStreamCollectsResponseAndTokens(t *testing.T) {
 	if collector.TokensUsed() != 120 {
 		t.Fatalf("expected aggregated tokens 120, got %d", collector.TokensUsed())
 	}
+	if collector.Usage().InputTokens != 100 || collector.Usage().OutputTokens != 20 {
+		t.Fatalf("expected usage to be captured, got %+v", collector.Usage())
+	}
 }
 
 func TestConsumeOpenCodeJSONStreamFallsBackToPlainText(t *testing.T) {
 	payload := "plain progress line\n"
 
-	collector := newOpenCodeStreamCollector("run_12345678", &openCodeArtifactWriter{})
+	collector := newOpenCodeStreamCollector("run_12345678", &openCodeArtifactWriter{}, nil)
 	errCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -328,6 +334,93 @@ func TestConsumeOpenCodeJSONStreamFallsBackToPlainText(t *testing.T) {
 	stdoutText, _ := collector.Outputs()
 	if !strings.Contains(stdoutText, "plain progress line") {
 		t.Fatalf("expected fallback stdout text, got %q", stdoutText)
+	}
+}
+
+func TestConsumeOpenCodeJSONStreamEmitsStructuredExecutionEvents(t *testing.T) {
+	payload := strings.Join([]string{
+		`{"type":"message.part.updated","properties":{"part":{"id":"text_1","messageID":"msg_1","type":"text","text":"Hello"}}}`,
+		`{"type":"message.part.delta","properties":{"sessionID":"sess_1","messageID":"msg_1","partID":"text_1","field":"text","delta":" world"}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"reason_1","messageID":"msg_1","type":"reasoning","text":"Inspecting file","time":{"start":10,"end":20}}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"tool_1","messageID":"msg_1","type":"tool","callID":"call_1","tool":"read_file","state":{"status":"completed","input":{"path":"README.md"},"output":"README contents","time":{"start":1000,"end":1500}}}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"step_1","messageID":"msg_1","type":"step-finish","reason":"end_turn","tokens":{"input":10,"output":5,"reasoning":2,"cache":{"read":1,"write":1}}}}}`,
+	}, "\n")
+
+	var events []ExecutionEvent
+	collector := newOpenCodeStreamCollector("run_12345678", &openCodeArtifactWriter{}, func(event ExecutionEvent) {
+		events = append(events, event)
+	})
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go consumeOpenCodeJSONStream(strings.NewReader(payload), context.Background(), collector, &wg, errCh)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil && !errors.Is(err, io.EOF) {
+			t.Fatalf("consume json stream: %v", err)
+		}
+	}
+
+	got := make([]string, 0, len(events))
+	for _, event := range events {
+		switch event.Type {
+		case "assistant_message_delta", "reasoning_message_delta":
+			got = append(got, event.Type+":"+event.Text)
+		case "tool_call_started", "tool_call_result", "tool_call_finished":
+			got = append(got, event.Type+":"+event.ToolCallID)
+		default:
+			got = append(got, event.Type)
+		}
+	}
+
+	want := []string{
+		"assistant_message_started",
+		"assistant_message_delta:Hello",
+		"assistant_message_delta: world",
+		"reasoning_message_started",
+		"reasoning_message_delta:Inspecting file",
+		"reasoning_message_completed",
+		"tool_call_started:call_1",
+		"tool_call_result:call_1",
+		"tool_call_finished:call_1",
+		"activity_delta",
+		"assistant_message_completed",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d execution events, got %d: %#v", len(want), len(got), got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("unexpected event sequence at %d: got %q want %q (full=%#v)", index, got[index], want[index], got)
+		}
+	}
+
+	if collector.ResponseText() != "Hello world" {
+		t.Fatalf("expected collector response text to match assistant output, got %q", collector.ResponseText())
+	}
+	if collector.TokensUsed() != 19 {
+		t.Fatalf("expected total tokens 19, got %d", collector.TokensUsed())
+	}
+	if collector.Usage().InputTokens != 12 || collector.Usage().OutputTokens != 7 {
+		t.Fatalf("expected usage 12/7, got %+v", collector.Usage())
+	}
+	invocations := collector.ToolInvocations()
+	if len(invocations) != 1 {
+		t.Fatalf("expected a single tool invocation, got %#v", invocations)
+	}
+	if invocations[0].ToolName != "read_file" {
+		t.Fatalf("expected tool invocation to preserve tool name, got %#v", invocations[0])
+	}
+	if invocations[0].OutputSummary != "README contents" {
+		t.Fatalf("expected tool invocation to preserve output summary, got %#v", invocations[0])
+	}
+	if invocations[0].DurationMs != 500 {
+		t.Fatalf("expected tool duration 500ms, got %#v", invocations[0])
+	}
+	if string(invocations[0].Input) != `{"path":"README.md"}` {
+		t.Fatalf("expected tool input to be normalized JSON, got %s", string(invocations[0].Input))
 	}
 }
 

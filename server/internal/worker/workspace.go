@@ -36,6 +36,11 @@ func CleanupWorkspaceForRun(runID string) error {
 	return os.RemoveAll(persistentWorkspacePath(runID))
 }
 
+// PersistentWorkspacePathForRun returns the stable checkout path used for an interactive run.
+func PersistentWorkspacePathForRun(runID string) string {
+	return persistentWorkspacePath(runID)
+}
+
 func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken, runID string) (string, bool, error) {
 	if runID != "" {
 		workRoot := filepath.Dir(persistentWorkspacePath(runID))

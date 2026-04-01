@@ -43,6 +43,33 @@ func codexRequestIDString(id json.RawMessage) string {
 	return strings.Trim(trimmed, `"`)
 }
 
+func threadIDFromApprovalPayload(payload json.RawMessage) string {
+	var envelope struct {
+		ThreadID string `json:"threadId"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(envelope.ThreadID)
+}
+
+func approvalIDFromApprovalPayload(payload json.RawMessage) *string {
+	var envelope struct {
+		ApprovalID *string `json:"approvalId,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return nil
+	}
+	if envelope.ApprovalID == nil {
+		return nil
+	}
+	value := strings.TrimSpace(*envelope.ApprovalID)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func codexHumanInputPause(params codexToolRequestUserInputParams, requestID json.RawMessage) (appmodel.ToolInvocation, json.RawMessage, *codexPendingRequest) {
 	questions := make([]HumanInputQuestion, 0, len(params.Questions))
 	questionIDs := make([]string, 0, len(params.Questions))
@@ -81,11 +108,13 @@ func codexHumanInputPause(params codexToolRequestUserInputParams, requestID json
 	request := HumanInputRequest{Questions: questions}
 	payload, _ := json.Marshal(request)
 	metadata, _ := json.Marshal(map[string]any{
-		"runtime_kind":       "codex",
-		"codex_request_kind": codexPendingRequestKindHumanInput,
-		"codex_request_id":   codexRequestIDString(requestID),
-		"codex_turn_id":      strings.TrimSpace(params.TurnID),
-		"codex_item_id":      strings.TrimSpace(params.ItemID),
+		"runtime_kind":          "codex",
+		"codex_request_kind":    codexPendingRequestKindHumanInput,
+		"codex_request_id":      codexRequestIDString(requestID),
+		"codex_thread_id":       strings.TrimSpace(params.ThreadID),
+		"codex_turn_id":         strings.TrimSpace(params.TurnID),
+		"codex_item_id":         strings.TrimSpace(params.ItemID),
+		"codex_request_payload": params,
 	})
 	rawParams, _ := json.Marshal(params)
 	return appmodel.ToolInvocation{
@@ -113,12 +142,15 @@ func codexHumanApprovalPause(kind string, title, summary string, requestID json.
 	}
 	input, _ := json.Marshal(req)
 	metadata, _ := json.Marshal(map[string]any{
-		"runtime_kind":       "codex",
-		"codex_request_kind": strings.TrimSpace(kind),
-		"codex_request_id":   codexRequestIDString(requestID),
-		"codex_turn_id":      strings.TrimSpace(turnID),
-		"codex_item_id":      strings.TrimSpace(itemID),
-		"approval_kind":      strings.TrimSpace(kind),
+		"runtime_kind":          "codex",
+		"codex_request_kind":    strings.TrimSpace(kind),
+		"codex_request_id":      codexRequestIDString(requestID),
+		"codex_thread_id":       strings.TrimSpace(threadIDFromApprovalPayload(payload)),
+		"codex_turn_id":         strings.TrimSpace(turnID),
+		"codex_item_id":         strings.TrimSpace(itemID),
+		"approval_kind":         strings.TrimSpace(kind),
+		"codex_approval_id":     approvalIDFromApprovalPayload(payload),
+		"codex_request_payload": json.RawMessage(append(json.RawMessage(nil), payload...)),
 	})
 	return appmodel.ToolInvocation{
 			ToolName:      ToolRequestHumanApproval,
@@ -317,6 +349,21 @@ func codexParseUserInputResponse(pending *codexPendingRequest, content string) (
 	return response, nil
 }
 
+func BuildCodexUserInputResponseFromPayload(requestPayload json.RawMessage, content string) (json.RawMessage, error) {
+	response, err := codexParseUserInputResponse(&codexPendingRequest{
+		Kind:    codexPendingRequestKindHumanInput,
+		Payload: append(json.RawMessage(nil), requestPayload...),
+	}, content)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("marshal codex user input response: %w", err)
+	}
+	return raw, nil
+}
+
 func codexApprovalResponse(pending *codexPendingRequest, approved bool, requestChanges bool) (any, error) {
 	if pending == nil {
 		return nil, fmt.Errorf("missing pending approval state")
@@ -359,4 +406,19 @@ func codexApprovalResponse(pending *codexPendingRequest, approved bool, requestC
 	default:
 		return nil, fmt.Errorf("unsupported pending approval kind %q", pending.Kind)
 	}
+}
+
+func BuildCodexApprovalResponseFromPayload(kind string, requestPayload json.RawMessage, approved bool, requestChanges bool) (json.RawMessage, error) {
+	response, err := codexApprovalResponse(&codexPendingRequest{
+		Kind:    strings.TrimSpace(kind),
+		Payload: append(json.RawMessage(nil), requestPayload...),
+	}, approved, requestChanges)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("marshal codex approval response: %w", err)
+	}
+	return raw, nil
 }

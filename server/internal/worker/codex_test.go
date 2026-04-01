@@ -200,6 +200,55 @@ func TestPendingResponsePayloadForSignalReturnsFollowupInputForRequestChanges(t 
 	}
 }
 
+func TestShouldStartCodexFollowupTurnAllowsCompletedAndInterruptedTurns(t *testing.T) {
+	for _, status := range []string{"completed", "interrupted"} {
+		if !shouldStartCodexFollowupTurn(&codexTurn{Status: status}, "Please revise the auth path.") {
+			t.Fatalf("expected follow-up turn to start for status %q", status)
+		}
+	}
+	if shouldStartCodexFollowupTurn(&codexTurn{Status: "failed"}, "Please revise the auth path.") {
+		t.Fatal("did not expect follow-up turn to start for failed turns")
+	}
+	if shouldStartCodexFollowupTurn(&codexTurn{Status: "completed"}, "") {
+		t.Fatal("did not expect follow-up turn without input")
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestCreatesStructuredPause(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. When both api_key and token are present but conflict, should auth prioritize token or allow either one to pass?
+2. For pipeline_auth_duration_seconds, do you want result labels or no labels at all?
+3. For requests with no credentials, should behavior stay 401 Unauthorized or continue downstream?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(result)
+
+	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
+	if request == nil {
+		t.Fatal("expected a structured human-input request")
+	}
+	if len(request.Questions) != 3 {
+		t.Fatalf("expected 3 questions, got %#v", request.Questions)
+	}
+	if request.Questions[0].Question != "When both api_key and token are present but conflict, should auth prioritize token or allow either one to pass?" {
+		t.Fatalf("unexpected first question %#v", request.Questions[0])
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestIgnoresNormalCompletionText(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: "Implemented the auth changes and added tests. Anything else?",
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(result)
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request, got %#v", request)
+	}
+}
+
 func TestRequestedModelIDReturnsEmptyWhenAgentModelIsUnset(t *testing.T) {
 	executor := NewCodexExecutor("codex", CodexRuntimeConfig{DefaultModel: "gpt-5-mini"}, nil, nil)
 	if got := executor.requestedModelID(&model.Agent{}); got != "" {

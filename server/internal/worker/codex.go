@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,8 @@ const (
 	codexForcedLoginMethodChat = "chatgpt"
 	codexOpenRouterDefaultURL  = "https://openrouter.ai/api/v1"
 )
+
+var codexPlainTextQuestionLinePattern = regexp.MustCompile(`^(?:\d+[\.\)]|[-*])\s+(.+\?)$`)
 
 type CodexRuntimeConfig struct {
 	Path                      string
@@ -211,6 +214,10 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 
 	if result.CodexAuthState != nil {
 		return nil
+	}
+
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
+		appendInteractivePlainTextQuestionInputRequest(result)
 	}
 
 	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
@@ -811,6 +818,67 @@ func appendInteractiveRepoFollowupInputRequest(result *ExecutionResult) {
 	if strings.TrimSpace(result.AssistantText) == "" {
 		result.AssistantText = "I did not produce repository changes yet. Reply with guidance to continue."
 	}
+}
+
+func appendInteractivePlainTextQuestionInputRequest(result *ExecutionResult) {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil {
+		return
+	}
+	questions := extractInteractivePlainTextQuestions(result.AssistantText)
+	if len(questions) == 0 {
+		return
+	}
+
+	request := UserInputRequest{
+		Questions: make([]UserInputQuestion, 0, len(questions)),
+	}
+	for index, question := range questions {
+		request.Questions = append(request.Questions, UserInputQuestion{
+			ID:       fmt.Sprintf("followup_question_%d", index+1),
+			Question: question,
+		})
+	}
+
+	input, _ := json.Marshal(request)
+	result.ToolInvocations = append(result.ToolInvocations, model.ToolInvocation{
+		ToolName:      ToolRequestUserInput,
+		Input:         input,
+		OutputSummary: "waiting for human input",
+	})
+}
+
+func extractInteractivePlainTextQuestions(text string) []string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	questions := make([]string, 0, len(lines))
+	seen := map[string]struct{}{}
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		match := codexPlainTextQuestionLinePattern.FindStringSubmatch(line)
+		if len(match) != 2 {
+			continue
+		}
+		question := strings.TrimSpace(match[1])
+		if question == "" {
+			continue
+		}
+		if _, exists := seen[question]; exists {
+			continue
+		}
+		seen[question] = struct{}{}
+		questions = append(questions, question)
+	}
+	if len(questions) >= 2 {
+		return questions
+	}
+	return nil
 }
 
 func extractCodexEventFailure(stdoutText string) (string, bool) {

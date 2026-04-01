@@ -188,6 +188,8 @@ func main() {
 		&model.AgentRun{},
 		&model.AgentRunMessage{},
 		&model.AgentRunArtifact{},
+		&model.AgentRunInteraction{},
+		&model.CodingSessionStateSnapshot{},
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
 		&model.SupportMailbox{},
@@ -476,6 +478,8 @@ func main() {
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
+	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
+	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
@@ -661,6 +665,8 @@ func main() {
 		agentRunRepo,
 		agentRunMessageRepo,
 		agentRunArtifactRepo,
+		agentRunInteractionRepo,
+		codingSessionStateSnapshotRepo,
 		pmStoryRepo,
 		pmStoryLinkRepo,
 		pmEpicRepo,

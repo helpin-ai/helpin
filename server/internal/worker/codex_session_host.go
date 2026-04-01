@@ -669,6 +669,16 @@ func (h *codexSessionHost) pendingResponsePayloadForSignal(pending *codexPending
 	if signal == nil {
 		return nil, "", fmt.Errorf("missing live resume signal")
 	}
+	if len(signal.ResponsePayload) > 0 {
+		var responsePayload any
+		if err := json.Unmarshal(signal.ResponsePayload, &responsePayload); err != nil {
+			return nil, "", fmt.Errorf("parse live resume response payload: %w", err)
+		}
+		if strings.TrimSpace(signal.Intent) == appmodel.AgentRunResumeIntentRequestChanges && strings.TrimSpace(signal.Content) != "" {
+			return responsePayload, strings.TrimSpace(signal.Content), nil
+		}
+		return responsePayload, "", nil
+	}
 
 	switch pending.Kind {
 	case codexPendingRequestKindHumanInput:
@@ -698,11 +708,7 @@ func (h *codexSessionHost) pendingResponsePayloadForSignal(pending *codexPending
 }
 
 func (h *codexSessionHost) startFollowupTurn(ctx context.Context, client *codexAppServerClient, state *codexSessionState, mapper *codexEventMapper, followupInput string, followupSequenceNo int) (*codexEventMapper, error) {
-	if mapper == nil || strings.TrimSpace(followupInput) == "" {
-		return mapper, nil
-	}
-	completedTurn := mapper.CompletedTurn()
-	if completedTurn == nil || strings.ToLower(strings.TrimSpace(completedTurn.Status)) != "interrupted" {
+	if mapper == nil || !shouldStartCodexFollowupTurn(mapper.CompletedTurn(), followupInput) {
 		return mapper, nil
 	}
 
@@ -734,6 +740,18 @@ func (h *codexSessionHost) startFollowupTurn(ctx context.Context, client *codexA
 		return mapper, err
 	}
 	return h.processTurn(ctx, client, state)
+}
+
+func shouldStartCodexFollowupTurn(completedTurn *codexTurn, followupInput string) bool {
+	if completedTurn == nil || strings.TrimSpace(followupInput) == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(completedTurn.Status)) {
+	case "completed", "interrupted":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *codexSessionHost) persistRuntimeArtifacts(ctx context.Context, client *codexAppServerClient, mapper *codexEventMapper) {

@@ -40,4 +40,13 @@ func (n *RunNotifier) PublishRunEvent(_ context.Context, run *model.AgentRun) {
 		ParentID:    run.TargetID,
 		Data:        data,
 	})
+	n.publisher.Publish(Event{
+		Action:      "updated",
+		Entity:      "coding_session",
+		EntityID:    run.ID,
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  run.TargetType,
+		ParentID:    run.TargetID,
+		Data:        data,
+	})
 }

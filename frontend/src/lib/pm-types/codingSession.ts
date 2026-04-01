@@ -1,0 +1,197 @@
+import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
+
+export type CodingSessionInteractionKind =
+  | 'request_user_input'
+  | 'command_execution_approval'
+  | 'file_change_approval'
+  | 'permissions_approval'
+  | 'review_checkpoint'
+  | 'auth_required';
+
+export type CodingSessionInteractionStatus = 'pending' | 'resolved' | 'cancelled';
+
+export interface CodingSessionInteraction {
+  interaction_id: string;
+  interaction_kind: CodingSessionInteractionKind;
+  status: CodingSessionInteractionStatus;
+  request_schema_version: string;
+  response_schema_version?: string;
+  request_payload: Record<string, unknown>;
+  response_payload?: Record<string, unknown>;
+  title?: string;
+  summary?: string;
+  request_id?: string;
+  thread_id?: string;
+  turn_id?: string;
+  item_id?: string;
+  approval_id?: string;
+  assistant_message_sequence_no?: number;
+  resolved_at?: string;
+  resolved_by?: string;
+}
+
+export interface ResolveCodingSessionInteractionRequest {
+  response_payload: Record<string, unknown>;
+  followup_message?: string;
+}
+
+export interface CodingSessionCapabilities {
+  live_text_streaming: boolean;
+  tool_streaming: boolean;
+  repo_diff_streaming: boolean;
+  plan_streaming: boolean;
+  approvals: boolean;
+  human_input: boolean;
+  authentication: boolean;
+  previews: boolean;
+  terminal_output: boolean;
+  checkpoints: boolean;
+}
+
+export interface CodingSessionRepoFile {
+  path: string;
+  status: string;
+}
+
+export interface CodingSessionRepoState {
+  repo_name?: string;
+  branch?: string;
+  is_dirty: boolean;
+  changed_file_count: number;
+  changed_files?: CodingSessionRepoFile[];
+}
+
+export interface CodingSessionDiff {
+  path?: string;
+  diff: string;
+  is_truncated: boolean;
+}
+
+export interface CodingSession {
+  id: string;
+  run_id: string;
+  workspace_id: string;
+  target_type: string;
+  target_id: string;
+  agent_id: string;
+  runtime_kind: AgentRuntimeKind;
+  invocation_mode: AgentInvocationMode;
+  status: AgentRunStatus;
+  pause_reason: AgentRunPauseReason;
+  title: string;
+  summary?: string;
+  capabilities: CodingSessionCapabilities;
+  repo: CodingSessionRepoState;
+  auth_state?: CodexAuthState;
+  stream_state_snapshot?: CodingSessionStreamSnapshot;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodingSessionEvent {
+  id: string;
+  session_id: string;
+  run_id: string;
+  sequence_no: number;
+  timestamp: string;
+  type: string;
+  runtime_kind: AgentRuntimeKind;
+  payload: Record<string, unknown>;
+  runtime_metadata?: Record<string, unknown>;
+}
+
+export interface CodingSessionEventListResponse {
+  events: CodingSessionEvent[];
+  next_sequence_no: number;
+}
+
+export interface CodingSessionTranscriptMessage {
+  event_id: string;
+  message_id?: string;
+  role: 'assistant' | 'user';
+  content: string;
+  message_type?: string;
+  timestamp: string;
+  sequence_no: number;
+  tool_calls?: CodingSessionLiveToolCall[];
+  turn_segments?: CodingSessionLiveTurnSegment[];
+}
+
+export interface CodingSessionLiveToolResult {
+  message_id?: string;
+  content: string;
+  output_summary?: string;
+  error?: string;
+}
+
+export interface CodingSessionLiveToolCall {
+  tool_call_id: string;
+  parent_message_id?: string;
+  tool_name: string;
+  args_text: string;
+  status: 'running' | 'completed' | 'failed';
+  duration_ms?: number;
+  started_at?: string;
+  completed_at?: string;
+  result?: CodingSessionLiveToolResult;
+}
+
+export interface CodingSessionLiveAssistantMessage {
+  message_id: string;
+  content: string;
+  started_at?: string;
+  completed_at?: string;
+  status: 'streaming' | 'completed';
+  tool_calls: CodingSessionLiveToolCall[];
+}
+
+export interface CodingSessionLiveReasoningMessage {
+  message_id: string;
+  content: string;
+  started_at?: string;
+  completed_at?: string;
+  status: 'streaming' | 'completed';
+  encrypted_value?: string;
+}
+
+export interface CodingSessionLiveAssistantSegment {
+  segment_id: string;
+  kind: 'assistant_message';
+  assistant_message: CodingSessionLiveAssistantMessage;
+}
+
+export interface CodingSessionLiveToolCallSegment {
+  segment_id: string;
+  kind: 'tool_call';
+  tool_call: CodingSessionLiveToolCall;
+}
+
+export type CodingSessionLiveTurnSegment =
+  | CodingSessionLiveAssistantSegment
+  | CodingSessionLiveToolCallSegment;
+
+export interface CodingSessionStreamSnapshot {
+  live_assistant_message?: CodingSessionLiveAssistantMessage;
+  live_reasoning_message?: CodingSessionLiveReasoningMessage;
+  live_turn_segments?: CodingSessionLiveTurnSegment[];
+}
+
+export interface RunPlanStep {
+  step: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface RunPlanArtifact {
+  note?: string;
+  plan: RunPlanStep[];
+}
+
+export interface CodingSessionStreamState {
+  transcript_messages: CodingSessionTranscriptMessage[];
+  live_assistant_message: CodingSessionLiveAssistantMessage | null;
+  live_reasoning_message: CodingSessionLiveReasoningMessage | null;
+  live_turn_segments: CodingSessionLiveTurnSegment[];
+  activity_events: CodingSessionEvent[];
+  current_plan: RunPlanArtifact | null;
+  completed_tool_calls: CodingSessionLiveToolCall[];
+}

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	appmodel "github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -21,6 +23,7 @@ type codexEventMapper struct {
 	latestDiff     string
 
 	assistantText      strings.Builder
+	assistantMessageID string
 	assistantStarted   bool
 	assistantCompleted bool
 	liveTools          map[string]codexLiveToolCall
@@ -103,6 +106,11 @@ func (m *codexEventMapper) HandleNotification(ctx context.Context, method string
 				OutputSummary: "plan updated",
 			})
 			m.result.RunPlanMetadata = metadata
+			// Emit a live event so the plan panel updates immediately during streaming.
+			m.emitEvent(ExecutionEvent{
+				Type:    "plan_updated",
+				Content: string(input),
+			})
 		}
 	case "item/agentMessage/delta":
 		var payload codexAgentMessageDeltaNotification
@@ -237,18 +245,30 @@ func (m *codexEventMapper) ensurePauseAssistantText(text string) {
 	m.completeAssistantStream()
 }
 
+func (m *codexEventMapper) ensureAssistantMessageID() string {
+	if strings.TrimSpace(m.assistantMessageID) == "" {
+		m.assistantMessageID = uuid.NewString()
+	}
+	return strings.TrimSpace(m.assistantMessageID)
+}
+
 func (m *codexEventMapper) appendAssistantDelta(text string) {
 	if text == "" {
 		return
 	}
 	if !m.assistantStarted {
 		m.assistantStarted = true
-		m.emitEvent(ExecutionEvent{Type: "assistant_message_started"})
+		m.emitEvent(ExecutionEvent{
+			Type:      "assistant_message_started",
+			MessageID: m.ensureAssistantMessageID(),
+		})
 	}
 	m.assistantText.WriteString(text)
 	m.emitEvent(ExecutionEvent{
-		Type: "assistant_message_delta",
-		Text: text,
+		Type:      "assistant_message_delta",
+		MessageID: m.ensureAssistantMessageID(),
+		Text:      text,
+		Content:   text,
 	})
 }
 
@@ -257,7 +277,13 @@ func (m *codexEventMapper) completeAssistantStream() {
 		return
 	}
 	m.assistantCompleted = true
-	m.emitEvent(ExecutionEvent{Type: "assistant_message_completed"})
+	finalText := strings.TrimSpace(m.assistantText.String())
+	m.emitEvent(ExecutionEvent{
+		Type:      "assistant_message_completed",
+		MessageID: m.ensureAssistantMessageID(),
+		Text:      finalText,
+		Content:   finalText,
+	})
 }
 
 func (m *codexEventMapper) handleItemStarted(item codexThreadItem) {
@@ -270,12 +296,26 @@ func (m *codexEventMapper) handleItemStarted(item codexThreadItem) {
 		Input:   input,
 		Started: time.Now(),
 	}
+	parentMessageID := m.ensureAssistantMessageID()
+	argsText := strings.TrimSpace(input)
 	m.emitEvent(ExecutionEvent{
-		Type:       "tool_call_started",
-		ToolCallID: strings.TrimSpace(item.ID),
-		ToolName:   toolName,
-		ToolInput:  input,
+		Type:            "tool_call_started",
+		ToolCallID:      strings.TrimSpace(item.ID),
+		ToolName:        toolName,
+		ToolInput:       input,
+		ParentMessageID: parentMessageID,
+		ArgsText:        argsText,
 	})
+	if argsText != "" {
+		m.emitEvent(ExecutionEvent{
+			Type:            "tool_call_args_delta",
+			ToolCallID:      strings.TrimSpace(item.ID),
+			ToolName:        toolName,
+			ParentMessageID: parentMessageID,
+			ArgsDelta:       argsText,
+			ArgsText:        argsText,
+		})
+	}
 }
 
 func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
@@ -302,12 +342,32 @@ func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
 		durationMs = &derived
 	}
 	outputSummary := codexToolOutputSummary(item)
+	parentMessageID := m.ensureAssistantMessageID()
+	resultMessageID := uuid.NewString()
+	errorText := ""
+	if codexItemFailed(item) {
+		errorText = outputSummary
+	}
 	m.emitEvent(ExecutionEvent{
-		Type:          "tool_call_finished",
-		ToolCallID:    strings.TrimSpace(item.ID),
-		ToolName:      toolName,
-		OutputSummary: outputSummary,
-		DurationMs:    derefInt64(durationMs),
+		Type:            "tool_call_result",
+		ToolCallID:      strings.TrimSpace(item.ID),
+		ToolName:        toolName,
+		ParentMessageID: parentMessageID,
+		ResultMessageID: resultMessageID,
+		Content:         outputSummary,
+		OutputSummary:   outputSummary,
+		Error:           errorText,
+	})
+	m.emitEvent(ExecutionEvent{
+		Type:            "tool_call_finished",
+		ToolCallID:      strings.TrimSpace(item.ID),
+		ToolName:        toolName,
+		ParentMessageID: parentMessageID,
+		ResultMessageID: resultMessageID,
+		OutputSummary:   outputSummary,
+		Content:         outputSummary,
+		DurationMs:      derefInt64(durationMs),
+		Error:           errorText,
 	})
 
 	if strings.TrimSpace(item.Type) == "fileChange" && m.latestDiff == "" {
@@ -484,6 +544,11 @@ func codexDiffFromFileChange(item codexThreadItem) string {
 		diff := strings.TrimSpace(change.Diff)
 		if diff == "" {
 			continue
+		}
+		// Prepend standard unified diff file headers so the frontend can identify
+		// which file each hunk belongs to when rendering the diff.
+		if change.Path != "" && !strings.HasPrefix(diff, "---") && !strings.HasPrefix(diff, "diff ") {
+			diff = "--- a/" + change.Path + "\n+++ b/" + change.Path + "\n" + diff
 		}
 		parts = append(parts, diff)
 	}

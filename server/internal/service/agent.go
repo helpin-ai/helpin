@@ -61,6 +61,8 @@ type AgentService struct {
 	runRepo                    *repository.AgentRunRepository
 	runMessageRepo             *repository.AgentRunMessageRepository
 	artifactRepo               *repository.AgentRunArtifactRepository
+	interactionRepo            *repository.AgentRunInteractionRepository
+	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
 	storyRepo                  *repository.PMStoryRepository
 	storyLinkRepo              *repository.PMStoryLinkRepository
 	epicRepo                   *repository.PMEpicRepository
@@ -97,6 +99,8 @@ func NewAgentService(
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	interactionRepo *repository.AgentRunInteractionRepository,
+	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
@@ -121,6 +125,8 @@ func NewAgentService(
 		runRepo:                    runRepo,
 		runMessageRepo:             runMessageRepo,
 		artifactRepo:               artifactRepo,
+		interactionRepo:            interactionRepo,
+		sessionSnapshotRepo:        sessionSnapshotRepo,
 		storyRepo:                  storyRepo,
 		storyLinkRepo:              storyLinkRepo,
 		epicRepo:                   epicRepo,
@@ -241,7 +247,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.PresetVersionKey = presetVersionKey
 			changed = true
 		}
-		expectedAllowedTools := mustJSONStringSlice(preset.AllowedTools)
+		expectedAllowedTools := normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 		expectedAllowedCommands := mustJSONStringSlice(preset.AllowedCommands)
 		expectedAllowedTargets := mustJSONStringSlice(preset.AllowedTargetTypes)
 		if string(existing.AllowedTools) != string(expectedAllowedTools) {
@@ -299,7 +305,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		TriggerMode:           preset.DefaultTriggerMode,
 		SystemPrompt:          systemPrompt,
 		PlanningNotes:         nil,
-		AllowedTools:          mustJSONStringSlice(preset.AllowedTools),
+		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
 		AllowedCommands:       mustJSONStringSlice(preset.AllowedCommands),
 		AllowedTargets:        mustJSONStringSlice(preset.AllowedTargetTypes),
 		ApprovalMode:          preset.ApprovalMode,
@@ -501,14 +507,14 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Provider:              trimPtr(req.Provider),
 		Model:                 trimPtr(req.Model),
 		SystemPrompt:          trimPtr(req.SystemPrompt),
-		AllowedTools:          mustJSONStringSlice(basePreset.AllowedTools),
+		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		SupportedModes:        mustJSONStringSlice(normalizedSupportedModes),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: defaultInvocationMode,
 		CreatedBy:             trimPtr(&actorID),
 	}
 	if len(req.AllowedTools) > 0 {
-		version.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
 	if version.SystemPrompt == nil {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
@@ -634,7 +640,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		PlanningNotes:          nil,
 		MonthlyTokenBudget:     normalizeTokenBudget(req.MonthlyTokenBudget),
 		TeamID:                 trimPtr(req.TeamID),
-		AllowedTools:           normalizeJSONSlice(req.AllowedTools),
+		AllowedTools:           normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
 		AllowedCommands:        normalizeJSONSlice(req.AllowedCommands),
 		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"story"}),
 		Schedule:               trimPtr(req.Schedule),
@@ -807,9 +813,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		agent.TeamID = trimPtr(req.TeamID)
 	}
 	if req.AllowedTools != nil {
-		agent.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+		agent.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	} else if presetChanged && hasPreset {
-		agent.AllowedTools = mustJSONStringSlice(preset.AllowedTools)
+		agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 	}
 	if req.AllowedCommands != nil {
 		agent.AllowedCommands = normalizeJSONSlice(req.AllowedCommands)
@@ -1519,6 +1525,15 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		if err := s.runRepo.Update(ctx, run); err != nil {
 			return nil, nil, err
 		}
+		if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+			slog.ErrorContext(ctx, "failed to resolve run interaction",
+				"error", err,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"pause_reason", previousPauseReason,
+				"intent", signal.Intent,
+			)
+		}
 		s.publishRunEvent(run, actorID)
 		return run, message, nil
 	}
@@ -1552,6 +1567,15 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		}
 		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 		return nil, nil, fmt.Errorf("resume workflow signal failed: %w", err)
+	}
+	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+		slog.ErrorContext(ctx, "failed to resolve run interaction",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"pause_reason", previousPauseReason,
+			"intent", signal.Intent,
+		)
 	}
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
@@ -1590,6 +1614,109 @@ func normalizeResumeIntent(intent string) string {
 		return model.AgentRunResumeIntentApprove
 	case model.AgentRunResumeIntentRequestChanges:
 		return model.AgentRunResumeIntentRequestChanges
+	default:
+		return ""
+	}
+}
+
+func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run *model.AgentRun, actorID, pauseReason, signalIntent, content string) error {
+	if s == nil || s.interactionRepo == nil || run == nil {
+		return nil
+	}
+
+	interaction, err := s.interactionRepo.GetLatestPendingByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil || interaction == nil {
+		return err
+	}
+
+	responsePayload, responseSchemaVersion, err := buildInteractionResponsePayload(interaction, normalizeResolvedInteractionIntent(pauseReason, signalIntent), content)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	interaction.Status = model.AgentRunInteractionStatusResolved
+	interaction.ResponsePayload = responsePayload
+	interaction.ResponseSchemaVersion = stringPtrIfNotEmpty(responseSchemaVersion)
+	interaction.ResolvedBy = stringPtrIfNotEmpty(actorID)
+	interaction.ResolvedAt = &now
+	return s.interactionRepo.Update(ctx, interaction)
+}
+
+func normalizeResolvedInteractionIntent(pauseReason, signalIntent string) string {
+	switch normalizeResumeIntent(signalIntent) {
+	case model.AgentRunResumeIntentApprove:
+		return model.AgentRunResumeIntentApprove
+	case model.AgentRunResumeIntentRequestChanges:
+		return model.AgentRunResumeIntentRequestChanges
+	case model.AgentRunResumeIntentReply:
+		if strings.TrimSpace(pauseReason) == model.AgentRunPauseReasonHumanApproval {
+			return model.AgentRunResumeIntentRequestChanges
+		}
+		return model.AgentRunResumeIntentReply
+	default:
+		return strings.TrimSpace(signalIntent)
+	}
+}
+
+func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, resolvedIntent, content string) (json.RawMessage, string, error) {
+	if interaction == nil {
+		return nil, "", nil
+	}
+
+	switch strings.TrimSpace(interaction.RequestSchemaVersion) {
+	case model.AgentRunInteractionSchemaVersionCodexV2:
+		switch strings.TrimSpace(interaction.InteractionKind) {
+		case model.AgentRunInteractionKindRequestUserInput:
+			payload, err := worker.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
+			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
+		case model.AgentRunInteractionKindCommandExecutionApproval, model.AgentRunInteractionKindFileChangeApproval, model.AgentRunInteractionKindPermissionsApproval:
+			payload, err := worker.BuildCodexApprovalResponseFromPayload(
+				codexPendingKindForInteraction(strings.TrimSpace(interaction.InteractionKind)),
+				interaction.RequestPayload,
+				resolvedIntent == model.AgentRunResumeIntentApprove,
+				resolvedIntent == model.AgentRunResumeIntentRequestChanges,
+			)
+			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
+		}
+	}
+
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindRequestUserInput:
+		payload, err := json.Marshal(map[string]any{
+			"content": strings.TrimSpace(content),
+		})
+		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		payload := map[string]any{}
+		switch resolvedIntent {
+		case model.AgentRunResumeIntentApprove:
+			payload["decision"] = "approve"
+		default:
+			payload["decision"] = "request_changes"
+			if trimmed := strings.TrimSpace(content); trimmed != "" {
+				payload["message"] = trimmed
+			}
+		}
+		raw, err := json.Marshal(payload)
+		return raw, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	default:
+		payload, err := json.Marshal(map[string]any{
+			"intent":  strings.TrimSpace(resolvedIntent),
+			"content": strings.TrimSpace(content),
+		})
+		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	}
+}
+
+func codexPendingKindForInteraction(interactionKind string) string {
+	switch strings.TrimSpace(interactionKind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval:
+		return "command_execution"
+	case model.AgentRunInteractionKindFileChangeApproval:
+		return "file_change"
+	case model.AgentRunInteractionKindPermissionsApproval:
+		return "permissions"
 	default:
 		return ""
 	}
@@ -1685,6 +1812,16 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 	}
 
 	s.publishRunEvent(run, actorID)
+	s.publishCodingSessionEvent(run, "auth.updated", map[string]any{
+		"state":            authState.State,
+		"provider":         authState.Provider,
+		"auth_mode":        authState.AuthMode,
+		"login_id":         derefString(authState.LoginID),
+		"auth_url":         derefString(authState.AuthURL),
+		"verification_url": derefString(authState.VerificationURL),
+		"user_code":        derefString(authState.UserCode),
+		"error":            derefString(authState.Error),
+	}, actorID)
 	return nil
 }
 
@@ -2217,6 +2354,7 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 		Data:        data,
 	}
 	s.wsPublisher.Publish(event)
+	s.publishCodingSessionUpdated(run, actorID)
 }
 
 func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
@@ -2234,6 +2372,23 @@ func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *mode
 		ParentID:    run.ID,
 		Data:        data,
 	})
+	eventType := "user.message.completed"
+	switch strings.TrimSpace(message.Role) {
+	case "assistant":
+		eventType = "assistant.message.completed"
+	case "tool":
+		eventType = "tool.call.completed"
+	}
+	s.publishCodingSessionEvent(run, eventType, map[string]any{
+		"message_id":       message.ID,
+		"role":             message.Role,
+		"message_type":     message.MessageType,
+		"content":          message.Content,
+		"sequence_no":      message.SequenceNo,
+		"content_blocks":   json.RawMessage(message.ContentBlocks),
+		"turn_segments":    json.RawMessage(message.TurnSegments),
+		"tool_invocations": json.RawMessage(message.ToolInvocations),
+	}, actorID)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {

@@ -109,6 +109,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	userPrompt := BuildUserPrompt(
+		execCtx.Agent,
 		execCtx.Story,
 		execCtx.Epic,
 		execCtx.EpicStories,
@@ -205,7 +206,20 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}()
 	}
 
-	streamCollector := newOpenCodeStreamCollector(run.ID, artifactWriter)
+	streamCollector := newOpenCodeStreamCollector(run.ID, artifactWriter, func(event ExecutionEvent) {
+		if execCtx.OnExecutionEvent != nil {
+			execCtx.OnExecutionEvent(event)
+		}
+		if execCtx.Heartbeat == nil {
+			return
+		}
+		switch event.Type {
+		case "assistant_message_started":
+			_ = execCtx.Heartbeat("assistant_started")
+		case "tool_call_started":
+			_ = execCtx.Heartbeat("tool_" + event.ToolName)
+		}
+	})
 	streamErrs := make(chan error, 2)
 	var streamWG sync.WaitGroup
 	streamWG.Add(2)
@@ -260,6 +274,16 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	responseText := sanitizeOpenCodeOutput(firstNonEmptyText(streamCollector.ResponseText(), stdoutText, stderrText))
 	if strings.TrimSpace(responseText) == "" {
 		return fmt.Errorf("opencode returned no response")
+	}
+	execCtx.CurrentAssistantText = responseText
+	execCtx.LastExecutionResult = &ExecutionResult{
+		AssistantText: responseText,
+		AssistantBlocks: []ExecutionBlock{{
+			Type: ExecutionBlockTypeText,
+			Text: responseText,
+		}},
+		ToolInvocations: streamCollector.ToolInvocations(),
+		Usage:           streamCollector.Usage(),
 	}
 
 	postRunCtx, cancelPostRun := context.WithTimeout(execCtx.Context, openCodePostRunTimeout)

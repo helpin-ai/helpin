@@ -1,0 +1,557 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import { CheckCircle2, GitCommitHorizontal, ShieldCheck } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import type { CodingSessionInteraction } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
+
+interface Props {
+  interaction: CodingSessionInteraction;
+  acting: string | null;
+  onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+}
+
+interface QuestionAnswerState {
+  value?: string;
+  freetext?: string;
+}
+
+export function CodingInteractionCard({ interaction, acting, onResolve }: Props) {
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
+  const [followupMessage, setFollowupMessage] = useState('');
+
+  useEffect(() => {
+    setQuestionAnswers({});
+    setFollowupMessage('');
+  }, [interaction.interaction_id]);
+
+  const isBusy = acting !== null;
+  const requestPayload = interaction.request_payload ?? {};
+
+  if (interaction.interaction_kind === 'request_user_input') {
+    const codexQuestions = parseCodexUserInputQuestions(requestPayload);
+    if (interaction.request_schema_version === 'codex.v2' && codexQuestions.length > 0) {
+      const allAnswered = codexQuestions.every((question) => {
+        const answer = questionAnswers[question.id];
+        if (!answer) return false;
+        if (!question.options.length || answer.value === '__other__') {
+          return Boolean(answer.freetext?.trim());
+        }
+        return Boolean(answer.value?.trim());
+      });
+
+      return (
+        <InteractionShell
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          eyebrow="User input required"
+          title={interaction.title ?? 'Answer the pending questions'}
+          summary={interaction.summary}
+        >
+          <div className="space-y-4">
+            {codexQuestions.map((question) => {
+              const answer = questionAnswers[question.id];
+              const isSecret = question.isSecret;
+              return (
+                <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
+                  <div>
+                    {question.header ? (
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
+                    ) : null}
+                    <div className="mt-1 text-sm font-medium text-foreground">{question.question}</div>
+                  </div>
+                  {question.options.length > 0 ? (
+                    <div className="space-y-2">
+                      {question.options.map((option) => {
+                        const selected = answer?.value === option.label;
+                        return (
+                          <button
+                            key={option.label}
+                            type="button"
+                            onClick={() => setQuestionAnswers((current) => ({
+                              ...current,
+                              [question.id]: { value: option.label },
+                            }))}
+                            className={cn(
+                              'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+                              selected
+                                ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
+                                : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
+                            )}
+                            disabled={isBusy}
+                          >
+                            <div className="text-sm font-medium text-foreground">{option.label}</div>
+                            {option.description ? (
+                              <div className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</div>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                      {question.isOther ? (
+                        <button
+                          type="button"
+                          onClick={() => setQuestionAnswers((current) => ({
+                            ...current,
+                            [question.id]: { ...current[question.id], value: '__other__' },
+                          }))}
+                          className={cn(
+                            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+                            answer?.value === '__other__'
+                              ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
+                              : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
+                          )}
+                          disabled={isBusy}
+                        >
+                          <div className="text-sm font-medium text-foreground">Other</div>
+                          <div className="mt-1 text-xs leading-5 text-muted-foreground">Provide a custom reply.</div>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {(!question.options.length || answer?.value === '__other__') ? (
+                    <Input
+                      type={isSecret ? 'password' : 'text'}
+                      value={answer?.freetext ?? ''}
+                      onChange={(event) => setQuestionAnswers((current) => ({
+                        ...current,
+                        [question.id]: { ...current[question.id], freetext: event.target.value },
+                      }))}
+                      placeholder="Type your answer"
+                      disabled={isBusy}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4">
+            <Button
+              size="sm"
+              disabled={!allAnswered || isBusy}
+              onClick={() => onResolve(interaction.interaction_id, buildCodexUserInputResponsePayload(codexQuestions, questionAnswers))}
+            >
+              Submit answers
+            </Button>
+          </div>
+        </InteractionShell>
+      );
+    }
+
+    const helpinQuestions = parseHelpinQuestions(requestPayload);
+    if (helpinQuestions.length > 0) {
+      const allAnswered = helpinQuestions.every((question) => {
+        const answer = questionAnswers[question.id];
+        if (!answer?.value) return false;
+        const selectedOption = question.options.find((option) => option.value === answer.value);
+        if (selectedOption?.freetext) {
+          return Boolean(answer.freetext?.trim());
+        }
+        return true;
+      });
+
+      return (
+        <InteractionShell
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          eyebrow="User input required"
+          title={interaction.title ?? 'Answer the pending questions'}
+          summary={interaction.summary}
+        >
+          <div className="space-y-4">
+            {helpinQuestions.map((question) => {
+              const answer = questionAnswers[question.id];
+              const selectedOption = question.options.find((option) => option.value === answer?.value);
+              return (
+                <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
+                  <div className="text-sm font-medium text-foreground">{question.text}</div>
+                  <div className="space-y-2">
+                    {question.options.map((option) => {
+                      const selected = answer?.value === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setQuestionAnswers((current) => ({
+                            ...current,
+                            [question.id]: { value: option.value, freetext: option.freetext ? current[question.id]?.freetext : undefined },
+                          }))}
+                          className={cn(
+                            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+                            selected
+                              ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
+                              : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
+                          )}
+                          disabled={isBusy}
+                        >
+                          <div className="text-sm font-medium text-foreground">{option.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedOption?.freetext ? (
+                    <Input
+                      value={answer?.freetext ?? ''}
+                      onChange={(event) => setQuestionAnswers((current) => ({
+                        ...current,
+                        [question.id]: { ...current[question.id], freetext: event.target.value },
+                      }))}
+                      placeholder="Please specify"
+                      disabled={isBusy}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4">
+            <Button
+              size="sm"
+              disabled={!allAnswered || isBusy}
+              onClick={() => onResolve(interaction.interaction_id, buildHelpinUserInputResponsePayload(helpinQuestions, questionAnswers))}
+            >
+              Submit answers
+            </Button>
+          </div>
+        </InteractionShell>
+      );
+    }
+  }
+
+  if (interaction.interaction_kind === 'review_checkpoint') {
+    const checkpoint = parseReviewCheckpointRequest(requestPayload);
+    return (
+      <InteractionShell
+        icon={<ShieldCheck className="h-4 w-4" />}
+        eyebrow={checkpoint?.phase ? `${checkpoint.phase} review checkpoint` : 'Review checkpoint'}
+        title={interaction.title ?? checkpoint?.title ?? 'Review required'}
+        summary={interaction.summary ?? checkpoint?.summary}
+      >
+        <Textarea
+          value={followupMessage}
+          onChange={(event) => setFollowupMessage(event.target.value)}
+          placeholder="Optional note for the agent"
+          className="min-h-[120px]"
+          disabled={isBusy}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(interaction.interaction_id, { decision: 'approve' }, followupMessage.trim() || undefined)}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              {
+                decision: 'request_changes',
+                ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
+              },
+              followupMessage.trim() || undefined,
+            )}
+          >
+            Request changes
+          </Button>
+        </div>
+      </InteractionShell>
+    );
+  }
+
+  if (interaction.interaction_kind === 'permissions_approval') {
+    const permissions = parsePermissionsRequest(requestPayload);
+    const requestedPermissions = permissions?.permissions ?? {};
+    return (
+      <InteractionShell
+        icon={<ShieldCheck className="h-4 w-4" />}
+        eyebrow="Permissions approval"
+        title={interaction.title ?? 'Approve additional permissions'}
+        summary={interaction.summary}
+      >
+        <div className="space-y-2 rounded-lg border border-border bg-muted/25 p-3 text-sm">
+          <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{permissions?.reason ?? 'No reason provided.'}</span></div>
+          <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100">
+            {JSON.stringify(requestedPermissions, null, 2)}
+          </pre>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(interaction.interaction_id, { permissions: requestedPermissions, scope: 'turn' })}
+          >
+            Allow for turn
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(interaction.interaction_id, { permissions: requestedPermissions, scope: 'session' })}
+          >
+            Allow for session
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(interaction.interaction_id, { permissions: {}, scope: 'turn' })}
+          >
+            Deny
+          </Button>
+        </div>
+      </InteractionShell>
+    );
+  }
+
+  if (interaction.interaction_kind === 'command_execution_approval' || interaction.interaction_kind === 'file_change_approval') {
+    const runtimeApproval = parseRuntimeApprovalRequest(interaction);
+    const decisions = runtimeApproval.decisions.length > 0
+      ? runtimeApproval.decisions
+      : interaction.interaction_kind === 'command_execution_approval'
+        ? ['accept', 'acceptForSession', 'decline', 'cancel']
+        : ['accept', 'acceptForSession', 'decline', 'cancel'];
+
+    return (
+      <InteractionShell
+        icon={<GitCommitHorizontal className="h-4 w-4" />}
+        eyebrow={interaction.interaction_kind === 'command_execution_approval' ? 'Command approval' : 'File-change approval'}
+        title={interaction.title ?? runtimeApproval.title}
+        summary={interaction.summary ?? runtimeApproval.summary}
+      >
+        <div className="space-y-2 rounded-lg border border-border bg-muted/25 p-3 text-sm">
+          {runtimeApproval.command ? (
+            <div><span className="font-medium text-foreground">Command:</span> <span className="text-muted-foreground"><code>{runtimeApproval.command}</code></span></div>
+          ) : null}
+          {runtimeApproval.cwd ? (
+            <div><span className="font-medium text-foreground">Working directory:</span> <span className="text-muted-foreground"><code>{runtimeApproval.cwd}</code></span></div>
+          ) : null}
+          {runtimeApproval.reason ? (
+            <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{runtimeApproval.reason}</span></div>
+          ) : null}
+          {runtimeApproval.grantRoot ? (
+            <div><span className="font-medium text-foreground">Grant root:</span> <span className="text-muted-foreground"><code>{runtimeApproval.grantRoot}</code></span></div>
+          ) : null}
+        </div>
+        <Textarea
+          value={followupMessage}
+          onChange={(event) => setFollowupMessage(event.target.value)}
+          placeholder="Optional follow-up message if you want the agent to revise after denying"
+          className="mt-4 min-h-[110px]"
+          disabled={isBusy}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {decisions.map((decision) => (
+            <Button
+              key={decision}
+              size="sm"
+              variant={decision.startsWith('accept') ? 'default' : 'outline'}
+              disabled={isBusy}
+              onClick={() => onResolve(interaction.interaction_id, { decision }, followupMessage.trim() || undefined)}
+            >
+              {labelForDecision(decision)}
+            </Button>
+          ))}
+        </div>
+      </InteractionShell>
+    );
+  }
+
+  return (
+    <InteractionShell
+      icon={<ShieldCheck className="h-4 w-4" />}
+      eyebrow="Interaction"
+      title={interaction.title ?? interaction.interaction_kind.replaceAll('_', ' ')}
+      summary={interaction.summary}
+    >
+      <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100">
+        {JSON.stringify(interaction.request_payload, null, 2)}
+      </pre>
+    </InteractionShell>
+  );
+}
+
+function InteractionShell({
+  icon,
+  eyebrow,
+  title,
+  summary,
+  children,
+}: {
+  icon: ReactNode;
+  eyebrow: string;
+  title: string;
+  summary?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {eyebrow}
+      </div>
+      <div className="text-base font-semibold">{title}</div>
+      {summary ? (
+        <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
+      ) : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
+function parseCodexUserInputQuestions(payload: Record<string, unknown>) {
+  const questions = Array.isArray(payload.questions) ? payload.questions : [];
+  return questions.flatMap((rawQuestion) => {
+    if (!rawQuestion || typeof rawQuestion !== 'object' || Array.isArray(rawQuestion)) return [];
+    const question = rawQuestion as Record<string, unknown>;
+    const id = typeof question.id === 'string' ? question.id.trim() : '';
+    const prompt = typeof question.question === 'string' ? question.question.trim() : '';
+    if (!id || !prompt) return [];
+    const options = Array.isArray(question.options) ? question.options : [];
+    return [{
+      id,
+      header: typeof question.header === 'string' ? question.header.trim() : '',
+      question: prompt,
+      isOther: question.isOther === true,
+      isSecret: question.isSecret === true,
+      options: options.flatMap((rawOption) => {
+        if (!rawOption || typeof rawOption !== 'object' || Array.isArray(rawOption)) return [];
+        const option = rawOption as Record<string, unknown>;
+        const label = typeof option.label === 'string' ? option.label.trim() : '';
+        if (!label) return [];
+        return [{
+          label,
+          description: typeof option.description === 'string' ? option.description.trim() : '',
+        }];
+      }),
+    }];
+  });
+}
+
+function buildCodexUserInputResponsePayload(
+  questions: ReturnType<typeof parseCodexUserInputQuestions>,
+  answers: Record<string, QuestionAnswerState>,
+) {
+  const payload: Record<string, { answers: string[] }> = {};
+  for (const question of questions) {
+    const answer = answers[question.id];
+    const value = answer?.value === '__other__' || !question.options.length
+      ? answer?.freetext?.trim()
+      : answer?.value?.trim();
+    if (!value) continue;
+    payload[question.id] = { answers: [value] };
+  }
+  return { answers: payload };
+}
+
+function parseHelpinQuestions(payload: Record<string, unknown>) {
+  const questions = Array.isArray(payload.questions) ? payload.questions : [];
+  return questions.flatMap((rawQuestion) => {
+    if (!rawQuestion || typeof rawQuestion !== 'object' || Array.isArray(rawQuestion)) return [];
+    const question = rawQuestion as Record<string, unknown>;
+    const id = typeof question.id === 'string' ? question.id.trim() : '';
+    const text = typeof question.text === 'string' ? question.text.trim() : '';
+    if (!id || !text) return [];
+    const options = Array.isArray(question.options) ? question.options : [];
+    return [{
+      id,
+      text,
+      options: options.flatMap((rawOption) => {
+        if (!rawOption || typeof rawOption !== 'object' || Array.isArray(rawOption)) return [];
+        const option = rawOption as Record<string, unknown>;
+        const value = typeof option.value === 'string' ? option.value.trim() : '';
+        const label = typeof option.label === 'string' ? option.label.trim() : '';
+        if (!value || !label) return [];
+        return [{
+          value,
+          label,
+          freetext: option.freetext === true,
+        }];
+      }),
+    }];
+  });
+}
+
+function buildHelpinUserInputResponsePayload(
+  questions: ReturnType<typeof parseHelpinQuestions>,
+  answers: Record<string, QuestionAnswerState>,
+) {
+  const entries = questions.flatMap((question) => {
+    const answer = answers[question.id];
+    if (!answer?.value) return [];
+    const option = question.options.find((candidate) => candidate.value === answer.value);
+    if (!option) return [];
+    return [{
+      question_id: question.id,
+      question: question.text,
+      selected_value: option.value,
+      selected_label: option.label,
+      freetext: option.freetext ? answer.freetext?.trim() : undefined,
+    }];
+  });
+  const lines = entries.map((entry) => (
+    entry.freetext
+      ? `- ${entry.question_id}: ${entry.question} -> ${entry.selected_label} (${entry.freetext})`
+      : `- ${entry.question_id}: ${entry.question} -> ${entry.selected_label}`
+  ));
+  return {
+    content: lines.join('\n'),
+    answers: entries,
+  };
+}
+
+function parseReviewCheckpointRequest(payload: Record<string, unknown>) {
+  return {
+    phase: typeof payload.phase === 'string' ? payload.phase.trim() : '',
+    title: typeof payload.title === 'string' ? payload.title.trim() : '',
+    summary: typeof payload.summary === 'string' ? payload.summary.trim() : '',
+  };
+}
+
+function parsePermissionsRequest(payload: Record<string, unknown>) {
+  return {
+    reason: typeof payload.reason === 'string' ? payload.reason.trim() : '',
+    permissions: payload.permissions && typeof payload.permissions === 'object' && !Array.isArray(payload.permissions)
+      ? payload.permissions as Record<string, unknown>
+      : {},
+  };
+}
+
+function parseRuntimeApprovalRequest(interaction: CodingSessionInteraction) {
+  const payload = interaction.request_payload ?? {};
+  const availableDecisions = Array.isArray(payload.availableDecisions) ? payload.availableDecisions : [];
+  return {
+    title: interaction.interaction_kind === 'command_execution_approval' ? 'Approve command execution' : 'Approve file changes',
+    summary: interaction.summary ?? '',
+    command: typeof payload.command === 'string' ? payload.command.trim() : '',
+    cwd: typeof payload.cwd === 'string' ? payload.cwd.trim() : '',
+    reason: typeof payload.reason === 'string' ? payload.reason.trim() : '',
+    grantRoot: typeof payload.grantRoot === 'string' ? payload.grantRoot.trim() : '',
+    decisions: availableDecisions.flatMap((decision) => {
+      if (typeof decision === 'string' && decision.trim()) return [decision.trim()];
+      return [];
+    }),
+  };
+}
+
+function labelForDecision(decision: string) {
+  switch (decision) {
+    case 'accept':
+      return 'Approve';
+    case 'acceptForSession':
+      return 'Approve for session';
+    case 'acceptWithExecpolicyAmendment':
+      return 'Approve with rule';
+    case 'applyNetworkPolicyAmendment':
+      return 'Apply network rule';
+    case 'decline':
+      return 'Decline';
+    case 'cancel':
+      return 'Cancel turn';
+    default:
+      return decision;
+  }
+}

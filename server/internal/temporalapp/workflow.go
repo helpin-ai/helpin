@@ -1,6 +1,7 @@
 package temporalapp
 
 import (
+	"encoding/json"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -29,8 +30,9 @@ type RunMessageSignal struct {
 
 // RunResumeSignal resumes an interactive run with a generic human intent.
 type RunResumeSignal struct {
-	Intent  string `json:"intent"`
-	Content string `json:"content,omitempty"`
+	Intent          string          `json:"intent"`
+	Content         string          `json:"content,omitempty"`
+	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
 }
 
 // AgentRunWorkflow is the Temporal workflow for a single agent run.

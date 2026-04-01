@@ -115,6 +115,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	if hasPreset {
 		agent.SystemPrompt = storedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes)
+		agent.AllowedTools = normalizeAllowedToolsJSON(agent.AllowedTools)
 		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
 		agent.AllowedTools = sanitizePlannerAgentTools(agent.AllowedTools, presetKey)
 		if jsonSliceIsEmpty(agent.AllowedTools) {
@@ -208,6 +209,21 @@ func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMe
 		migrated = append(migrated, worker.ToolPublishStoryPlanDoc)
 	}
 	return mustJSONStringSlice(migrated)
+}
+
+func normalizeAllowedToolsJSON(raw json.RawMessage) json.RawMessage {
+	tools := parseJSONStringSlice(raw)
+	if len(tools) == 0 {
+		return raw
+	}
+	normalized := worker.NormalizeToolNames(tools)
+	if len(normalized) == 0 {
+		return json.RawMessage("[]")
+	}
+	if slices.Equal(normalized, tools) {
+		return raw
+	}
+	return mustJSONStringSlice(normalized)
 }
 
 func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMessage {

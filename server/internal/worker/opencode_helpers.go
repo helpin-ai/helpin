@@ -150,6 +150,59 @@ func lookupInt(values map[string]any, key string) int {
 	return 0
 }
 
+func lookupInt64(values map[string]any, key string) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	raw, ok := values[key]
+	if !ok || raw == nil {
+		return 0
+	}
+	switch typed := raw.(type) {
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case int32:
+		return int64(typed)
+	case json.Number:
+		value, err := typed.Int64()
+		if err == nil {
+			return value
+		}
+	case string:
+		value, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err == nil {
+			return value
+		}
+	}
+	return 0
+}
+
+func lookupJSONString(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw, ok := values[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch typed := raw.(type) {
+	case string:
+		return typed
+	default:
+		payload, err := json.Marshal(typed)
+		if err != nil {
+			return ""
+		}
+		return string(payload)
+	}
+}
+
 func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt string, providerConfig map[string]any) (string, error) {
 	agentName := openCodeAgentName(execCtx)
 	agentConfig := map[string]any{

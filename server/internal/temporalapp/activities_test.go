@@ -16,11 +16,20 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type stubInternalCommandExecutor struct {
 	executeFn func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error)
+}
+
+type capturedEventPublisher struct {
+	events []websocket.Event
+}
+
+func (p *capturedEventPublisher) Publish(event websocket.Event) {
+	p.events = append(p.events, event)
 }
 
 func (s stubInternalCommandExecutor) Execute(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
@@ -122,8 +131,8 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			delivery_target_id TEXT,
 			execution_stage TEXT,
 			last_heartbeat_at DATETIME,
-			input TEXT NOT NULL DEFAULT '{}',
-			output_summary TEXT NOT NULL DEFAULT '{}',
+			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -692,8 +701,8 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		t.Fatalf("expected no wait state without interaction tools, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, &workerpkg.HumanInputRequest{
-		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Who is this for?", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, &workerpkg.UserInputRequest{
+		Questions: []workerpkg.UserInputQuestion{{ID: "q1", Question: "Who is this for?", Options: []workerpkg.UserInputOption{{Label: "A"}}}},
 	}, nil, nil)
 	if waitForApproval || !waitForInput || waitForAuth {
 		t.Fatalf("expected human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
@@ -720,8 +729,8 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		InvocationMode: model.InvocationModeAutonomous,
 		TargetType:     "story",
 		ApprovalState:  "not_required",
-	}, &workerpkg.HumanInputRequest{
-		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Pick one", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
+	}, &workerpkg.UserInputRequest{
+		Questions: []workerpkg.UserInputQuestion{{ID: "q1", Question: "Pick one", Options: []workerpkg.UserInputOption{{Label: "A"}}}},
 	}, nil, nil)
 	if waitForApproval || !waitForInput || waitForAuth {
 		t.Fatalf("expected autonomous human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
@@ -813,7 +822,28 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 		Usage: workerpkg.ExecutionUsage{InputTokens: 11, OutputTokens: 7},
 	}
 
-	message, err := buildPersistedAssistantRunMessage(result)
+	message, err := buildPersistedAssistantRunMessage(result, &model.CodingSessionStreamSnapshot{
+		LiveTurnSegments: []model.CodingSessionLiveTurnSegment{
+			{
+				SegmentID: "assistant-1:segment:1",
+				Kind:      "assistant_message",
+				AssistantMessage: &model.CodingSessionLiveAssistantMessage{
+					MessageID: "assistant-1",
+					Content:   "Planned update",
+					Status:    "completed",
+				},
+			},
+			{
+				SegmentID: "call-1",
+				Kind:      "tool_call",
+				ToolCall: &model.CodingSessionLiveToolCall{
+					ToolCallID: "call-1",
+					ToolName:   "read_file",
+					Status:     "completed",
+				},
+			},
+		},
+	})
 	if err != nil {
 		t.Fatalf("buildPersistedAssistantRunMessage returned error: %v", err)
 	}
@@ -826,7 +856,7 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 	if message.Content != "Planned update" {
 		t.Fatalf("expected content derived from text block, got %#v", message.Content)
 	}
-	if len(message.ContentBlocks) == 0 || len(message.ToolInvocations) == 0 || len(message.TokenUsage) == 0 {
+	if len(message.ContentBlocks) == 0 || len(message.TurnSegments) == 0 || len(message.ToolInvocations) == 0 || len(message.TokenUsage) == 0 {
 		t.Fatalf("expected canonical persisted payloads, got %#v", message)
 	}
 }
@@ -864,6 +894,7 @@ func TestPersistAssistantRunMessageWritesInteractionArtifacts(t *testing.T) {
 			content TEXT NOT NULL,
 			message_type TEXT NOT NULL,
 			content_blocks BLOB,
+			turn_segments BLOB,
 			tool_invocations BLOB,
 			token_usage BLOB,
 			sequence_no INTEGER NOT NULL,
@@ -945,6 +976,348 @@ func TestPersistAssistantRunMessageWritesInteractionArtifacts(t *testing.T) {
 	}
 }
 
+func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessageIsPersisted(t *testing.T) {
+	previousPollEvery := codexLivePausePollEvery
+	codexLivePausePollEvery = 10 * time.Millisecond
+	defer func() {
+		codexLivePausePollEvery = previousPollEvery
+	}()
+
+	dbName := fmt.Sprintf("file:live-codex-pause-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			story_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'story',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input TEXT NOT NULL DEFAULT '{}',
+			output_summary TEXT NOT NULL DEFAULT '{}',
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	activities := &AgentRunActivities{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+	}
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-live-codex",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "codex",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		ID:          "message-old-reply",
+		WorkspaceID: run.WorkspaceID,
+		RunID:       run.ID,
+		Role:        "user",
+		Content:     "old reply",
+		MessageType: "user_reply",
+		SequenceNo:  1,
+		CreatedAt:   now,
+	}); err != nil {
+		t.Fatalf("create old reply: %v", err)
+	}
+
+	result := &workerpkg.ExecutionResult{
+		ToolInvocations: []model.ToolInvocation{
+			{
+				ToolName: workerpkg.ToolRequestHumanInput,
+				Input:    json.RawMessage(`{"questions":[{"id":"q1","type":"single_select","text":"Need more info","options":[{"value":"a","label":"A","freetext":true}]}]}`),
+			},
+		},
+	}
+
+	type pauseOutcome struct {
+		signal *workerpkg.LiveExecutionResumeSignal
+		err    error
+	}
+	outcomeCh := make(chan pauseOutcome, 1)
+	go func() {
+		signal, err := activities.handleLiveCodexInteractivePause(
+			context.Background(),
+			&resolvedRunState{run: run},
+			&workerpkg.ExecutionContext{},
+			result,
+			nil,
+		)
+		outcomeCh <- pauseOutcome{signal: signal, err: err}
+	}()
+
+	select {
+	case outcome := <-outcomeCh:
+		t.Fatalf("pause returned before a new reply was written: signal=%#v err=%v", outcome.signal, outcome.err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	loadedRun, err := runRepo.GetByID(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("get paused run: %v", err)
+	}
+	if loadedRun == nil || loadedRun.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run to be paused while waiting for live input, got %#v", loadedRun)
+	}
+
+	if err := runMessageRepo.Create(context.Background(), &model.AgentRunMessage{
+		ID:          "message-new-reply",
+		WorkspaceID: run.WorkspaceID,
+		RunID:       run.ID,
+		Role:        "user",
+		Content:     "new reply",
+		MessageType: "user_reply",
+		SequenceNo:  2,
+		CreatedAt:   now.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("create new reply: %v", err)
+	}
+
+	select {
+	case outcome := <-outcomeCh:
+		if outcome.err != nil {
+			t.Fatalf("pause returned error: %v", outcome.err)
+		}
+		if outcome.signal == nil {
+			t.Fatal("expected live resume signal")
+		}
+		if outcome.signal.Intent != model.AgentRunResumeIntentReply {
+			t.Fatalf("expected reply intent, got %#v", outcome.signal)
+		}
+		if outcome.signal.Content != "new reply" {
+			t.Fatalf("expected new reply content, got %#v", outcome.signal)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live codex pause to resume from the new reply")
+	}
+}
+
+func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testing.T) {
+	dbName := fmt.Sprintf("file:live-codex-resolved-interaction-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			story_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'story',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input TEXT NOT NULL DEFAULT '{}',
+			output_summary TEXT NOT NULL DEFAULT '{}',
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
+	}
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-live-codex-resolved",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "codex",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	responsePayload := json.RawMessage(`{"decision":"acceptForSession"}`)
+	resolvedAt := now.Add(time.Second)
+	responseSchemaVersion := model.AgentRunInteractionSchemaVersionCodexV2
+	assistantSequenceNo := 6
+	resolvedBy := "user-1"
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-resolved-1",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindCommandExecutionApproval,
+		Status:                     model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionCodexV2,
+		ResponseSchemaVersion:      &responseSchemaVersion,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"command":"git commit","availableDecisions":["accept","acceptForSession","decline","cancel"]}`),
+		ResponsePayload:            responsePayload,
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"codex"}`),
+		ResolvedBy:                 &resolvedBy,
+		ResolvedAt:                 &resolvedAt,
+		CreatedAt:                  now,
+		UpdatedAt:                  resolvedAt,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	signal, err := activities.waitForLiveCodexResumeSignal(context.Background(), run, 5, model.AgentRunPauseReasonHumanApproval)
+	if err != nil {
+		t.Fatalf("waitForLiveCodexResumeSignal returned error: %v", err)
+	}
+	if signal == nil {
+		t.Fatal("expected live resume signal")
+	}
+	if signal.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent, got %#v", signal)
+	}
+	if signal.Content != "" {
+		t.Fatalf("expected no follow-up message content, got %#v", signal)
+	}
+	if got := string(signal.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected native response payload to be preserved, got %s", got)
+	}
+}
+
 func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
 	dbName := fmt.Sprintf("file:provider-checkpoint-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -1020,6 +1393,164 @@ func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
 	}
 }
 
+func TestPersistHumanInteractionArtifactsDualWritesCodexApprovalInteraction(t *testing.T) {
+	dbName := fmt.Sprintf("file:interaction-dual-write-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	wsPublisher := &capturedEventPublisher{}
+	activities := &AgentRunActivities{artifactRepo: artifactRepo, interactionRepo: interactionRepo, wsPublisher: wsPublisher}
+
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "codex"}
+	state := &resolvedRunState{
+		run:   run,
+		agent: &model.Agent{ID: "agent-1", WorkspaceID: "ws-1", RuntimeKind: "codex"},
+	}
+	assistantMessage := &model.AgentRunMessage{SequenceNo: 5}
+
+	approvalInput, err := json.Marshal(workerpkg.HumanApprovalRequest{
+		Phase:   "command_execution",
+		Title:   "Approve command execution",
+		Summary: "Command: go test ./...",
+	})
+	if err != nil {
+		t.Fatalf("marshal approval input: %v", err)
+	}
+
+	nativeRequestPayload := json.RawMessage(`{
+		"threadId":"thread-1",
+		"turnId":"turn-1",
+		"itemId":"item-1",
+		"approvalId":"approval-1",
+		"command":"go test ./..."
+	}`)
+	approvalMetadata, err := json.Marshal(map[string]any{
+		"runtime_kind":          "codex",
+		"codex_request_kind":    "command_execution",
+		"codex_request_id":      "7",
+		"codex_thread_id":       "thread-1",
+		"codex_turn_id":         "turn-1",
+		"codex_item_id":         "item-1",
+		"codex_approval_id":     "approval-1",
+		"codex_request_payload": nativeRequestPayload,
+	})
+	if err != nil {
+		t.Fatalf("marshal approval metadata: %v", err)
+	}
+
+	result := &workerpkg.ExecutionResult{
+		ToolInvocations: []model.ToolInvocation{{
+			ToolName: workerpkg.ToolRequestHumanApproval,
+			Input:    approvalInput,
+		}},
+		HumanApprovalMetadata: approvalMetadata,
+	}
+
+	if err := activities.persistHumanInteractionArtifacts(context.Background(), state, result, assistantMessage); err != nil {
+		t.Fatalf("persistHumanInteractionArtifacts returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].ArtifactType != model.AgentRunArtifactTypeHumanApprovalRequest {
+		t.Fatalf("expected legacy approval artifact, got %#v", artifacts)
+	}
+
+	interactions, err := interactionRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list interactions: %v", err)
+	}
+	if len(interactions) != 1 {
+		t.Fatalf("expected one interaction, got %#v", interactions)
+	}
+	interaction := interactions[0]
+	if interaction.InteractionKind != model.AgentRunInteractionKindCommandExecutionApproval {
+		t.Fatalf("expected command execution interaction, got %#v", interaction)
+	}
+	if interaction.RequestSchemaVersion != model.AgentRunInteractionSchemaVersionCodexV2 {
+		t.Fatalf("expected codex request schema version, got %#v", interaction)
+	}
+	if interaction.RequestID == nil || *interaction.RequestID != "7" {
+		t.Fatalf("expected request id to be preserved, got %#v", interaction.RequestID)
+	}
+	if interaction.ApprovalID == nil || *interaction.ApprovalID != "approval-1" {
+		t.Fatalf("expected approval id to be preserved, got %#v", interaction.ApprovalID)
+	}
+	if interaction.AssistantMessageSequenceNo == nil || *interaction.AssistantMessageSequenceNo != 5 {
+		t.Fatalf("expected assistant sequence linkage, got %#v", interaction.AssistantMessageSequenceNo)
+	}
+	var requestPayload map[string]any
+	if err := json.Unmarshal(interaction.RequestPayload, &requestPayload); err != nil {
+		t.Fatalf("unmarshal request payload: %v", err)
+	}
+	if got, _ := requestPayload["threadId"].(string); got != "thread-1" {
+		t.Fatalf("expected native codex request payload, got %#v", requestPayload)
+	}
+	if len(wsPublisher.events) == 0 {
+		t.Fatal("expected coding session interaction event to be published")
+	}
+	var event model.CodingSessionEvent
+	if err := json.Unmarshal(wsPublisher.events[0].Data, &event); err != nil {
+		t.Fatalf("unmarshal published event: %v", err)
+	}
+	if event.Type != "interaction.requested" {
+		t.Fatalf("expected interaction.requested event, got %#v", event)
+	}
+	if _, ok := event.Payload["interaction_id"].(string); !ok {
+		t.Fatalf("expected interaction payload, got %#v", event.Payload)
+	}
+}
+
 func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testing.T) {
 	dbName := fmt.Sprintf("file:run-conversation-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -1035,6 +1566,7 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 			content TEXT NOT NULL,
 			message_type TEXT NOT NULL,
 			content_blocks BLOB,
+			turn_segments BLOB,
 			tool_invocations BLOB,
 			token_usage BLOB,
 			sequence_no INTEGER NOT NULL,
@@ -1051,7 +1583,7 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1"}
 	state := &resolvedRunState{run: run}
 
-	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "status", "Preparing workspace and loading run context.", nil, nil, nil); err != nil {
+	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "status", "Preparing workspace and loading run context.", nil, nil, nil, nil); err != nil {
 		t.Fatalf("create status message: %v", err)
 	}
 
@@ -1078,6 +1610,92 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 	}
 }
 
+func TestPublishRunStreamEventPersistsAndCreateRunMessageClearsCodingSessionSnapshot(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-stream-snapshot-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE coding_session_state_snapshots (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			schema_version TEXT NOT NULL,
+			snapshot_payload BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(workspace_id, run_id)
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	snapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+	activities := &AgentRunActivities{
+		runMessageRepo:      runMessageRepo,
+		sessionSnapshotRepo: snapshotRepo,
+	}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1"}
+
+	activities.publishRunStreamEvent(run, workerpkg.ExecutionEvent{
+		Type:      "assistant_message_started",
+		MessageID: "assistant-live-1",
+	})
+	activities.publishRunStreamEvent(run, workerpkg.ExecutionEvent{
+		Type:      "assistant_message_delta",
+		MessageID: "assistant-live-1",
+		Text:      "Inspecting workspace",
+	})
+
+	record, err := snapshotRepo.GetByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("get snapshot: %v", err)
+	}
+	if record == nil {
+		t.Fatal("expected coding session snapshot to be persisted")
+	}
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	if snapshot == nil || snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "Inspecting workspace" {
+		t.Fatalf("unexpected persisted snapshot %#v", snapshot)
+	}
+	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].Kind != "assistant_message" || snapshot.LiveTurnSegments[0].AssistantMessage == nil || snapshot.LiveTurnSegments[0].AssistantMessage.Content != "Inspecting workspace" {
+		t.Fatalf("unexpected live turn segments %#v", snapshot.LiveTurnSegments)
+	}
+
+	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Inspecting workspace", nil, nil, nil, nil); err != nil {
+		t.Fatalf("create assistant turn: %v", err)
+	}
+
+	record, err = snapshotRepo.GetByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("get snapshot after clear: %v", err)
+	}
+	if record != nil {
+		t.Fatalf("expected snapshot to be cleared after persisted assistant turn, got %#v", record)
+	}
+}
+
 func TestEnsureRunConversationBuildsTranscriptSummaryCheckpoint(t *testing.T) {
 	dbName := fmt.Sprintf("file:run-summary-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -1093,6 +1711,7 @@ func TestEnsureRunConversationBuildsTranscriptSummaryCheckpoint(t *testing.T) {
 			content TEXT NOT NULL,
 			message_type TEXT NOT NULL,
 			content_blocks BLOB,
+			turn_segments BLOB,
 			tool_invocations BLOB,
 			token_usage BLOB,
 			sequence_no INTEGER NOT NULL,
@@ -1132,7 +1751,7 @@ func TestEnsureRunConversationBuildsTranscriptSummaryCheckpoint(t *testing.T) {
 			messageType = "prompt"
 			content = fmt.Sprintf("User request %d", i)
 		}
-		if _, err := activities.createRunMessage(context.Background(), run, role, messageType, content, nil, nil, nil); err != nil {
+		if _, err := activities.createRunMessage(context.Background(), run, role, messageType, content, nil, nil, nil, nil); err != nil {
 			t.Fatalf("create message %d: %v", i, err)
 		}
 	}
@@ -1344,6 +1963,7 @@ func TestPersistAssistantRunMessagePersistsRunPlanArtifact(t *testing.T) {
 			content TEXT,
 			message_type TEXT NOT NULL DEFAULT 'message',
 			content_blocks TEXT,
+			turn_segments TEXT,
 			tool_invocations TEXT,
 			token_usage TEXT,
 			sequence_no INTEGER NOT NULL DEFAULT 0,

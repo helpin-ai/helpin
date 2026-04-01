@@ -18,6 +18,7 @@ import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/a
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
+import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import { useTitle } from '@/hooks/useTitle';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
@@ -84,49 +85,60 @@ function AgentRunRow({
   run,
   agent,
   onOpen,
+  sessionPath,
 }: {
   run: AgentRun;
   agent?: Agent | null;
   onOpen: (run: AgentRun) => void;
+  sessionPath?: string;
 }) {
   const agentName = agent?.name ?? 'Agent';
   const displayStatus = getAgentRunDisplayStatus(run);
   const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus;
 
   return (
-    <button
-      type="button"
-      className="w-full rounded-lg border border-border/60 bg-background/80 px-4 py-3 text-left transition-colors hover:bg-accent/40"
-      onClick={() => onOpen(run)}
-    >
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {agent ? <AgentAvatar agent={agent} className="h-7 w-7" /> : null}
-            <p className="text-sm font-medium">{agentName}</p>
-            <Badge variant={statusVariant(run.status)} className="gap-1 px-1.5 py-0 text-[10px]">
-              {STATUS_ICONS[displayStatus]}
-              {statusLabel}
-            </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              {run.invocation_mode}
-            </Badge>
+    <div className="rounded-lg border border-border/60 bg-background/80">
+      <button
+        type="button"
+        className="w-full px-4 py-3 text-left transition-colors hover:bg-accent/40"
+        onClick={() => onOpen(run)}
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              {agent ? <AgentAvatar agent={agent} className="h-7 w-7" /> : null}
+              <p className="text-sm font-medium">{agentName}</p>
+              <Badge variant={statusVariant(run.status)} className="gap-1 px-1.5 py-0 text-[10px]">
+                {STATUS_ICONS[displayStatus]}
+                {statusLabel}
+              </Badge>
+              <Badge variant="outline" className="text-[10px]">
+                {run.invocation_mode}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatTarget(run)} • {run.id.slice(0, 8)}
+              {run.execution_stage ? ` • ${run.execution_stage}` : ''}
+              {run.working_branch ? ` • ${run.working_branch}` : run.base_branch ? ` • ${run.base_branch}` : ''}
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {formatTarget(run)} • {run.id.slice(0, 8)}
-            {run.execution_stage ? ` • ${run.execution_stage}` : ''}
-            {run.working_branch ? ` • ${run.working_branch}` : run.base_branch ? ` • ${run.base_branch}` : ''}
-          </p>
-        </div>
 
-        <div className="text-xs text-muted-foreground md:text-right">
-          <p>{formatTimestamp(run.created_at)}</p>
-          <p>
-            {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k tokens` : 'No tokens yet'}
-          </p>
+          <div className="text-xs text-muted-foreground md:text-right">
+            <p>{formatTimestamp(run.created_at)}</p>
+            <p>
+              {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k tokens` : 'No tokens yet'}
+            </p>
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {sessionPath ? (
+        <div className="border-t border-border/60 px-4 py-2">
+          <Button asChild variant="outline" size="sm">
+            <a href={sessionPath}>Open session</a>
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -284,6 +296,7 @@ export function AgentRunsPage() {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);
                     }}
+                    sessionPath={canOpenCodingSession(run) ? (buildCodingSessionPath(workspace.slug, run.id) ?? undefined) : undefined}
                   />
                 ))}
               </div>
@@ -310,6 +323,7 @@ export function AgentRunsPage() {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);
                     }}
+                    sessionPath={canOpenCodingSession(run) ? (buildCodingSessionPath(workspace.slug, run.id) ?? undefined) : undefined}
                   />
                 ))}
               </div>

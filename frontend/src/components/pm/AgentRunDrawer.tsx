@@ -11,6 +11,7 @@ import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus, isInternalA
 import { parseLatestCodexAuthState, parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
 import { isPublishedPreviewToolName, parseArtifactPublishedPreview, parsePublishedPreviewRawInput, resolveMessagePublishedPreview, type PublishedPreview } from '@/components/pm/agentRunPreviews';
 import { StreamingTagRouter, INITIAL_SEGMENTS, type StreamSegments } from '@/components/pm/streamingTagRouter';
+import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,7 @@ import type {
 } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface AgentRunDrawerProps {
   workspaceId: string;
@@ -1070,6 +1072,7 @@ export function AgentRunDrawer({
   title,
   description,
 }: AgentRunDrawerProps) {
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const [run, setRun] = useState<AgentRun | null>(null);
   const [messages, setMessages] = useState<AgentRunMessage[]>([]);
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
@@ -1599,6 +1602,9 @@ export function AgentRunDrawer({
 
   const resolvedTitle = title ?? (run?.invocation_mode === 'interactive' ? 'Interactive Agent Run' : 'Agent Run');
   const resolvedDescription = description ?? (run ? `${run.target_type} · ${formatMessageTimestamp(run.created_at)}` : 'Run conversation and artifacts');
+  const codingSessionPath = run && canOpenCodingSession(run)
+    ? buildCodingSessionPath(workspaceSlug, run.id)
+    : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1612,7 +1618,14 @@ export function AgentRunDrawer({
               </SheetTitle>
               <SheetDescription>{resolvedDescription}</SheetDescription>
             </div>
-            {run ? <Badge variant="outline">{run.invocation_mode}</Badge> : null}
+            <div className="flex items-center gap-2">
+              {codingSessionPath ? (
+                <Button asChild variant="outline" size="sm">
+                  <a href={codingSessionPath}>Open coding session</a>
+                </Button>
+              ) : null}
+              {run ? <Badge variant="outline">{run.invocation_mode}</Badge> : null}
+            </div>
           </div>
         </SheetHeader>
 

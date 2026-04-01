@@ -473,15 +473,6 @@ export function StoryListView({
           <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
         ),
       }),
-      columnHelper.accessor('story_type', {
-        id: 'typeIcon',
-        header: '',
-        size: 40,
-        enableGrouping: false,
-        enableSorting: false,
-        enableResizing: false,
-        cell: (info) => <StoryTypeIcon storyType={info.getValue()} className="h-4 w-4" />,
-      }),
       columnHelper.accessor('name', {
         id: 'name',
         header: 'Name',
@@ -489,12 +480,15 @@ export function StoryListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-[13px] hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenStory(info.row.original);
             }}
           >
+            {fieldVis.story_type && displayProps.story_type ? (
+              <StoryTypeIcon storyType={info.row.original.story_type} className="h-4 w-4 shrink-0" />
+            ) : null}
             {info.row.original.recurring_template_id ? (
               <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
             ) : null}
@@ -751,7 +745,7 @@ export function StoryListView({
         ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug, fieldVis.story_type, displayProps.story_type]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -775,7 +769,7 @@ export function StoryListView({
     // Team-level visibility (overrides everything)
     if (!fieldVis.priority) { vis['priorityIcon'] = false; vis['priorityName'] = false; }
     if (!fieldVis.severity) { vis['severityIcon'] = false; vis['severityName'] = false; }
-    if (!fieldVis.story_type) { vis['typeIcon'] = false; vis['typeName'] = false; }
+    if (!fieldVis.story_type) { vis['typeName'] = false; }
     if (!fieldVis.estimate) vis['estimate'] = false;
     if (!fieldVis.epic) vis['epicName'] = false;
     if (!fieldVis.sprint) vis['sprintName'] = false;
@@ -786,7 +780,6 @@ export function StoryListView({
     if (!displayProps.state) vis['stateName'] = false;
     if (!displayProps.priority && vis['priorityIcon'] !== false) vis['priorityIcon'] = false;
     if (!displayProps.severity && vis['severityIcon'] !== false) vis['severityIcon'] = false;
-    if (!displayProps.story_type && vis['typeIcon'] !== false) vis['typeIcon'] = false;
     if (!displayProps.estimate && vis['estimate'] !== false) vis['estimate'] = false;
     if (!displayProps.assignee) vis['ownerName'] = false;
     if (!displayProps.team && vis['teamName'] !== false) vis['teamName'] = false;
@@ -947,12 +940,11 @@ export function StoryListView({
                 const canSort = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
                 const colId = header.column.id;
-                const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+                const pinnedClass = colId === 'displayId' || colId === 'name'
                   ? TABLE_PINNED_HEADER_LEFT
                   : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
                 const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
-                  : colId === 'typeIcon' ? pinnedStyle('left', 90)
-                  : colId === 'name' ? pinnedStyle('left', 130)
+                  : colId === 'name' ? pinnedStyle('left', 90)
                   : colId === 'actions' ? pinnedStyle('right', 0) : {};
                 return (
                   <div
@@ -1139,12 +1131,11 @@ const MemoDataRow = memo(function DataRow({
         const isResized = runtimeSize !== defSize;
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+        const pinnedClass = colId === 'displayId' || colId === 'name'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
         const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
-          : colId === 'typeIcon' ? pinnedStyle('left', 90)
-          : colId === 'name' ? pinnedStyle('left', 130)
+          : colId === 'name' ? pinnedStyle('left', 90)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div

@@ -13,8 +13,10 @@ import (
 
 	agenticopenai "github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	einoclaude "github.com/cloudwego/eino-ext/components/model/claude"
+	openaiacl "github.com/cloudwego/eino-ext/libs/acl/openai"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 
 	appmodel "github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -53,14 +55,28 @@ type ExecutionUsage struct {
 }
 
 type ExecutionEvent struct {
-	Type          string
-	Text          string
-	ToolCallID    string
-	ToolName      string
-	ToolInput     string
-	OutputSummary string
-	DurationMs    int64
-	Error         string
+	Type            string
+	MessageID       string
+	ParentMessageID string
+	Text            string
+	Content         string
+	ToolCallID      string
+	ToolName        string
+	ToolInput       string
+	ArgsDelta       string
+	ArgsText        string
+	ResultMessageID string
+	ActivityID      string
+	ActivityType    string
+	EncryptedValue  string
+	OutputSummary   string
+	DurationMs      int64
+	Error           string
+}
+
+type executionReasoning struct {
+	Text           string
+	EncryptedValue string
 }
 
 type ExecutionResult struct {
@@ -280,7 +296,7 @@ func ExecuteWithEino(
 	}
 
 	for step := 0; step < maxSteps; step++ {
-		assistantMsg, assistantBlocks, usage, err := streamAssistantMessage(ctx, modelWithTools, messages, onEvent)
+		assistantMsg, assistantBlocks, usage, assistantMessageID, err := streamAssistantMessage(ctx, modelWithTools, messages, onEvent)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +327,7 @@ func ExecuteWithEino(
 			})
 		}
 
-		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, onEvent) {
+		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, assistantMessageID, onEvent) {
 			summary := truncate(executed.Output, 500)
 			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
 				ToolName:      executed.ToolName,
@@ -391,7 +407,7 @@ func executeWithEinoAgentic(
 	}
 
 	for step := 0; step < maxSteps; step++ {
-		assistantMsg, assistantBlocks, usage, continuation, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, agenticOpts...)
+		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, agenticOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -414,7 +430,7 @@ func executeWithEinoAgentic(
 		}
 
 		stopAfterToolRound := false
-		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, onEvent) {
+		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, assistantMessageID, onEvent) {
 			summary := truncate(executed.Output, 500)
 			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
 				ToolName:      executed.ToolName,
@@ -454,15 +470,18 @@ func streamAssistantMessage(
 	model einomodel.BaseChatModel,
 	messages []*schema.Message,
 	onEvent func(ExecutionEvent),
-) (*schema.Message, []ExecutionBlock, ExecutionUsage, error) {
+) (*schema.Message, []ExecutionBlock, ExecutionUsage, string, error) {
 	reader, err := model.Stream(ctx, messages)
 	if err != nil {
-		return nil, nil, ExecutionUsage{}, err
+		return nil, nil, ExecutionUsage{}, "", err
 	}
 	defer reader.Close()
 
 	var chunks []*schema.Message
 	started := false
+	assistantMessageID := uuid.NewString()
+	reasoningMessageID := uuid.NewString()
+	reasoningStarted := false
 
 	for {
 		chunk, recvErr := reader.Recv()
@@ -470,7 +489,7 @@ func streamAssistantMessage(
 			break
 		}
 		if recvErr != nil {
-			return nil, nil, ExecutionUsage{}, recvErr
+			return nil, nil, ExecutionUsage{}, "", recvErr
 		}
 		if chunk == nil {
 			continue
@@ -479,31 +498,64 @@ func streamAssistantMessage(
 		if !started {
 			started = true
 			if onEvent != nil {
-				onEvent(ExecutionEvent{Type: "assistant_message_started"})
+				onEvent(ExecutionEvent{Type: "assistant_message_started", MessageID: assistantMessageID})
 			}
 		}
 		if text := chunkTextDelta(chunk); text != "" && onEvent != nil {
 			onEvent(ExecutionEvent{
-				Type: "assistant_message_delta",
-				Text: text,
+				Type:      "assistant_message_delta",
+				MessageID: assistantMessageID,
+				Text:      text,
+				Content:   text,
 			})
+		}
+		if onEvent != nil {
+			reasoningDelta := chunkReasoningDelta(chunk)
+			if reasoningDelta.Text != "" || reasoningDelta.EncryptedValue != "" {
+				if !reasoningStarted {
+					reasoningStarted = true
+					onEvent(ExecutionEvent{Type: "reasoning_message_started", MessageID: reasoningMessageID})
+				}
+				onEvent(ExecutionEvent{
+					Type:           "reasoning_message_delta",
+					MessageID:      reasoningMessageID,
+					Text:           reasoningDelta.Text,
+					Content:        reasoningDelta.Text,
+					EncryptedValue: reasoningDelta.EncryptedValue,
+				})
+			}
 		}
 	}
 
 	if len(chunks) == 0 {
-		return schema.AssistantMessage("", nil), nil, ExecutionUsage{}, nil
+		return schema.AssistantMessage("", nil), nil, ExecutionUsage{}, assistantMessageID, nil
 	}
 
 	finalMsg, err := schema.ConcatMessages(chunks)
 	if err != nil {
-		return nil, nil, ExecutionUsage{}, err
+		return nil, nil, ExecutionUsage{}, "", err
 	}
 	sanitizeSchemaMessageToolCalls(finalMsg)
 	blocks := fromSchemaAssistantMessage(finalMsg)
+	finalReasoning := extractReasoningFromSchemaMessage(finalMsg)
+	if onEvent != nil && (reasoningStarted || finalReasoning.Text != "" || finalReasoning.EncryptedValue != "") {
+		if !reasoningStarted {
+			onEvent(ExecutionEvent{Type: "reasoning_message_started", MessageID: reasoningMessageID})
+		}
+		onEvent(ExecutionEvent{
+			Type:           "reasoning_message_completed",
+			MessageID:      reasoningMessageID,
+			Text:           finalReasoning.Text,
+			Content:        finalReasoning.Text,
+			EncryptedValue: finalReasoning.EncryptedValue,
+		})
+	}
 	if onEvent != nil {
 		onEvent(ExecutionEvent{
-			Type: "assistant_message_completed",
-			Text: extractTextFromExecutionBlocks(blocks),
+			Type:      "assistant_message_completed",
+			MessageID: assistantMessageID,
+			Text:      extractTextFromExecutionBlocks(blocks),
+			Content:   extractTextFromExecutionBlocks(blocks),
 		})
 	}
 
@@ -512,7 +564,7 @@ func streamAssistantMessage(
 		usage.InputTokens = finalMsg.ResponseMeta.Usage.PromptTokens
 		usage.OutputTokens = finalMsg.ResponseMeta.Usage.CompletionTokens
 	}
-	return finalMsg, blocks, usage, nil
+	return finalMsg, blocks, usage, assistantMessageID, nil
 }
 
 func generateAssistantAgenticMessage(
@@ -521,22 +573,37 @@ func generateAssistantAgenticMessage(
 	messages []*schema.AgenticMessage,
 	onEvent func(ExecutionEvent),
 	opts ...einomodel.Option,
-) (*schema.AgenticMessage, []ExecutionBlock, ExecutionUsage, *ProviderContinuation, error) {
+) (*schema.AgenticMessage, []ExecutionBlock, ExecutionUsage, *ProviderContinuation, string, error) {
+	assistantMessageID := uuid.NewString()
 	if onEvent != nil {
-		onEvent(ExecutionEvent{Type: "assistant_message_started"})
+		onEvent(ExecutionEvent{Type: "assistant_message_started", MessageID: assistantMessageID})
 	}
 	finalMsg, err := model.Generate(ctx, messages, opts...)
 	if err != nil {
-		return nil, nil, ExecutionUsage{}, nil, err
+		return nil, nil, ExecutionUsage{}, nil, "", err
 	}
 	if finalMsg == nil {
 		finalMsg = &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
 	}
 	blocks := fromSchemaAgenticAssistantMessage(finalMsg)
+	reasoning := extractReasoningFromAgenticMessage(finalMsg)
+	if onEvent != nil && (reasoning.Text != "" || reasoning.EncryptedValue != "") {
+		reasoningMessageID := uuid.NewString()
+		onEvent(ExecutionEvent{Type: "reasoning_message_started", MessageID: reasoningMessageID})
+		onEvent(ExecutionEvent{
+			Type:           "reasoning_message_completed",
+			MessageID:      reasoningMessageID,
+			Text:           reasoning.Text,
+			Content:        reasoning.Text,
+			EncryptedValue: reasoning.EncryptedValue,
+		})
+	}
 	if onEvent != nil {
 		onEvent(ExecutionEvent{
-			Type: "assistant_message_completed",
-			Text: extractTextFromExecutionBlocks(blocks),
+			Type:      "assistant_message_completed",
+			MessageID: assistantMessageID,
+			Text:      extractTextFromExecutionBlocks(blocks),
+			Content:   extractTextFromExecutionBlocks(blocks),
 		})
 	}
 
@@ -545,7 +612,7 @@ func generateAssistantAgenticMessage(
 		usage.InputTokens = finalMsg.ResponseMeta.TokenUsage.PromptTokens
 		usage.OutputTokens = finalMsg.ResponseMeta.TokenUsage.CompletionTokens
 	}
-	return finalMsg, blocks, usage, providerContinuationFromAgenticMessage(finalMsg), nil
+	return finalMsg, blocks, usage, providerContinuationFromAgenticMessage(finalMsg), assistantMessageID, nil
 }
 
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
@@ -705,6 +772,58 @@ func fromSchemaAssistantMessage(msg *schema.Message) []ExecutionBlock {
 	return dedupeAdjacentTextBlocks(blocks)
 }
 
+func chunkReasoningDelta(chunk *schema.Message) executionReasoning {
+	if chunk == nil {
+		return executionReasoning{}
+	}
+
+	reasoning := executionReasoning{
+		Text:           chunk.ReasoningContent,
+		EncryptedValue: "",
+	}
+	for _, part := range chunk.AssistantGenMultiContent {
+		if part.Type != schema.ChatMessagePartTypeReasoning || part.Reasoning == nil {
+			continue
+		}
+		reasoning.Text += part.Reasoning.Text
+		if strings.TrimSpace(part.Reasoning.Signature) != "" {
+			reasoning.EncryptedValue = strings.TrimSpace(part.Reasoning.Signature)
+		}
+	}
+	if strings.TrimSpace(reasoning.Text) == "" {
+		if text, ok := openaiacl.GetReasoningContent(chunk); ok {
+			reasoning.Text = text
+		}
+	}
+	return reasoning
+}
+
+func extractReasoningFromSchemaMessage(msg *schema.Message) executionReasoning {
+	if msg == nil {
+		return executionReasoning{}
+	}
+
+	reasoning := executionReasoning{
+		Text:           msg.ReasoningContent,
+		EncryptedValue: "",
+	}
+	for _, part := range msg.AssistantGenMultiContent {
+		if part.Type != schema.ChatMessagePartTypeReasoning || part.Reasoning == nil {
+			continue
+		}
+		reasoning.Text += part.Reasoning.Text
+		if strings.TrimSpace(part.Reasoning.Signature) != "" {
+			reasoning.EncryptedValue = strings.TrimSpace(part.Reasoning.Signature)
+		}
+	}
+	if strings.TrimSpace(reasoning.Text) == "" {
+		if text, ok := openaiacl.GetReasoningContent(msg); ok {
+			reasoning.Text = text
+		}
+	}
+	return reasoning
+}
+
 func fromSchemaAgenticAssistantMessage(msg *schema.AgenticMessage) []ExecutionBlock {
 	if msg == nil {
 		return nil
@@ -734,6 +853,24 @@ func fromSchemaAgenticAssistantMessage(msg *schema.AgenticMessage) []ExecutionBl
 		}
 	}
 	return dedupeAdjacentTextBlocks(blocks)
+}
+
+func extractReasoningFromAgenticMessage(msg *schema.AgenticMessage) executionReasoning {
+	if msg == nil {
+		return executionReasoning{}
+	}
+
+	var reasoning executionReasoning
+	for _, block := range msg.ContentBlocks {
+		if block == nil || block.Type != schema.ContentBlockTypeReasoning || block.Reasoning == nil {
+			continue
+		}
+		reasoning.Text += block.Reasoning.Text
+		if strings.TrimSpace(block.Reasoning.Signature) != "" {
+			reasoning.EncryptedValue = strings.TrimSpace(block.Reasoning.Signature)
+		}
+	}
+	return reasoning
 }
 
 func extractTextFromExecutionBlocks(blocks []ExecutionBlock) string {
@@ -882,6 +1019,7 @@ func executeToolCallsForRound(
 	execCtx *ExecutionContext,
 	registry *ToolRegistry,
 	toolCalls []ExecutionBlock,
+	parentMessageID string,
 	onEvent func(ExecutionEvent),
 ) []executedToolCall {
 	if len(toolCalls) == 0 {
@@ -893,22 +1031,54 @@ func executeToolCallsForRound(
 			return
 		}
 		onEvent(ExecutionEvent{
-			Type:       "tool_call_started",
-			ToolCallID: toolCall.ToolCallID,
-			ToolName:   toolCall.ToolName,
-			ToolInput:  toolInputForEvent(toolCall.ToolName, toolCall.Input),
+			Type:            "tool_call_started",
+			ToolCallID:      toolCall.ToolCallID,
+			ToolName:        toolCall.ToolName,
+			ToolInput:       toolInputForEvent(toolCall.ToolName, toolCall.Input),
+			ParentMessageID: strings.TrimSpace(parentMessageID),
+			ArgsText:        strings.TrimSpace(string(normalizeExecutionBlockToolInput(toolCall.Input))),
 		})
+		argsText := strings.TrimSpace(string(normalizeExecutionBlockToolInput(toolCall.Input)))
+		if argsText != "" {
+			onEvent(ExecutionEvent{
+				Type:            "tool_call_args_delta",
+				ToolCallID:      toolCall.ToolCallID,
+				ToolName:        toolCall.ToolName,
+				ParentMessageID: strings.TrimSpace(parentMessageID),
+				ArgsDelta:       argsText,
+				ArgsText:        argsText,
+			})
+		}
 	}
 	emitFinished := func(executed executedToolCall) {
 		if onEvent == nil {
 			return
 		}
+		resultMessageID := uuid.NewString()
+		errorText := ""
+		if executed.IsError {
+			errorText = truncate(executed.Output, 500)
+		}
 		onEvent(ExecutionEvent{
-			Type:          "tool_call_finished",
-			ToolCallID:    executed.ToolCallID,
-			ToolName:      executed.ToolName,
-			OutputSummary: truncate(executed.Output, 500),
-			DurationMs:    executed.Duration.Milliseconds(),
+			Type:            "tool_call_result",
+			ToolCallID:      executed.ToolCallID,
+			ToolName:        executed.ToolName,
+			ParentMessageID: strings.TrimSpace(parentMessageID),
+			ResultMessageID: resultMessageID,
+			Content:         truncate(executed.Output, 2000),
+			OutputSummary:   truncate(executed.Output, 500),
+			Error:           errorText,
+		})
+		onEvent(ExecutionEvent{
+			Type:            "tool_call_finished",
+			ToolCallID:      executed.ToolCallID,
+			ToolName:        executed.ToolName,
+			ParentMessageID: strings.TrimSpace(parentMessageID),
+			ResultMessageID: resultMessageID,
+			OutputSummary:   truncate(executed.Output, 500),
+			Content:         truncate(executed.Output, 2000),
+			DurationMs:      executed.Duration.Milliseconds(),
+			Error:           errorText,
 		})
 	}
 

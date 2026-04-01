@@ -1103,7 +1103,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className="flex max-w-full items-center gap-2.5 text-sm">
+          <div className="flex max-w-full items-center gap-2.5 text-[13px]">
             <Layers className="h-4 w-4 shrink-0 text-violet-500" />
             <span className="min-w-0 truncate font-normal">{info.getValue()}</span>
           </div>
