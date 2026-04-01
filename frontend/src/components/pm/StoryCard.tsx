@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
   AlertTriangle,
@@ -26,6 +26,7 @@ import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { findAssignableMember } from '@/lib/assignableMembers';
+import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -39,15 +40,23 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 
 interface StoryCardProps {
   story: Story;
-  onOpen: (story: Story) => void;
+  /** @deprecated Use BoardCallbacksContext instead. Kept for backward compat outside KanbanBoard. */
+  onOpen?: (story: Story) => void;
   isOverlay?: boolean;
   teamName?: string;
+  /** @deprecated Use BoardDataContext instead */
   workspaceId?: string;
+  /** @deprecated Use BoardDataContext instead */
   assignableMembers?: AssignableMember[];
+  /** @deprecated Use BoardDataContext instead */
   ownerNameMap?: Map<string, string>;
+  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
   onOwnerChanged?: (story: Story) => void;
+  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
   onPriorityChanged?: (story: Story) => void;
+  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
   onSeverityChanged?: (story: Story) => void;
+  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
   onEstimateChanged?: (story: Story) => void;
   showStateBadge?: boolean;
   assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
@@ -101,19 +110,32 @@ function StoryCardAgentBadge({
 
 function StoryCardComponent({
   story,
-  onOpen,
+  onOpen: onOpenProp,
   isOverlay = false,
   teamName,
-  workspaceId,
-  assignableMembers,
-  ownerNameMap,
+  workspaceId: workspaceIdProp,
+  assignableMembers: assignableMembersProp,
+  ownerNameMap: ownerNameMapProp,
   onOwnerChanged,
   onPriorityChanged,
   onSeverityChanged,
   onEstimateChanged,
   showStateBadge = false,
-  assignedAgent,
+  assignedAgent: assignedAgentProp,
 }: StoryCardProps) {
+  // Consume board contexts (null when used outside KanbanBoard)
+  const boardData = useContext(BoardDataContext);
+  const callbacksRef = useContext(BoardCallbacksContext);
+
+  // Resolve values: context first, then prop fallback
+  const workspaceId = boardData?.workspaceId ?? workspaceIdProp;
+  const assignableMembers = boardData?.assignableMembers ?? assignableMembersProp;
+  const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
+  const agentById = boardData?.agentById;
+  const assignedAgent = assignedAgentProp ?? (agentById && story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null);
+  const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
+  const onStoryPatched = callbacksRef?.current.onStoryPatched;
+
   const {
     attributes,
     listeners,
@@ -192,13 +214,13 @@ function StoryCardComponent({
       try {
         const result = await pmStoryService.update(workspaceId, story.id, { owner_member_id: newOwnerId });
         if (result.data?.story) {
-          onOwnerChanged?.(result.data.story);
+          (onStoryPatched ?? onOwnerChanged)?.(result.data.story);
         }
       } catch {
         // Board will show stale data until next refresh
       }
     },
-    [workspaceId, story.id, onOwnerChanged],
+    [workspaceId, story.id, onStoryPatched, onOwnerChanged],
   );
 
   const handleChangePriority = useCallback(
@@ -210,14 +232,14 @@ function StoryCardComponent({
       try {
         const result = await pmStoryService.update(workspaceId, story.id, { priority });
         if (result.data?.story) {
-          onPriorityChanged?.(result.data.story);
+          (onStoryPatched ?? onPriorityChanged)?.(result.data.story);
         }
       } catch {
         // Board will show stale data until next refresh
       }
       setPriorityOpen(false);
     },
-    [workspaceId, story.id, story.priority, onPriorityChanged],
+    [workspaceId, story.id, story.priority, onStoryPatched, onPriorityChanged],
   );
 
   const handleChangeSeverity = useCallback(
@@ -229,14 +251,14 @@ function StoryCardComponent({
       try {
         const result = await pmStoryService.update(workspaceId, story.id, { severity });
         if (result.data?.story) {
-          onSeverityChanged?.(result.data.story);
+          (onStoryPatched ?? onSeverityChanged)?.(result.data.story);
         }
       } catch {
         // Board will show stale data until next refresh
       }
       setSeverityOpen(false);
     },
-    [workspaceId, story.id, story.severity, onSeverityChanged],
+    [workspaceId, story.id, story.severity, onStoryPatched, onSeverityChanged],
   );
 
   const handleChangeEstimate = useCallback(
@@ -245,13 +267,13 @@ function StoryCardComponent({
       try {
         const result = await pmStoryService.update(workspaceId, story.id, { estimate: apiValue ?? 0 });
         if (result.data?.story) {
-          onEstimateChanged?.(result.data.story);
+          (onStoryPatched ?? onEstimateChanged)?.(result.data.story);
         }
       } catch {
         // Board will show stale data until next refresh
       }
     },
-    [workspaceId, story.id, story.estimate, onEstimateChanged],
+    [workspaceId, story.id, story.estimate, onStoryPatched, onEstimateChanged],
   );
 
   const titleIsLong = story.name.length > 60;
@@ -264,11 +286,11 @@ function StoryCardComponent({
       {...listeners}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(story)}
+      onClick={() => onOpen?.(story)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onOpen(story);
+          onOpen?.(story);
         }
       }}
       className={cn(
@@ -589,5 +611,15 @@ function StoryCardComponent({
   );
 }
 
-export const StoryCard = memo(StoryCardComponent);
+export const StoryCard = memo(StoryCardComponent, (prev, next) => {
+  // Fast path: same object reference means no change
+  if (prev.story !== next.story) {
+    // Different reference — check if the story actually changed
+    if (prev.story.id !== next.story.id || prev.story.updated_at !== next.story.updated_at) return false;
+  }
+  return prev.isOverlay === next.isOverlay
+    && prev.teamName === next.teamName
+    && prev.showStateBadge === next.showStateBadge
+    && prev.assignedAgent === next.assignedAgent;
+});
 StoryCard.displayName = 'StoryCard';
