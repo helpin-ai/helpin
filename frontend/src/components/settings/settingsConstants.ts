@@ -1,1 +1,1 @@
-export const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
+export const LINEAR_CARD_CLASS = 'rounded-xl border-border shadow-none';

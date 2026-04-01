@@ -72,7 +72,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
           )}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" align="start" arrow={false} className="max-w-sm p-0 overflow-hidden bg-popover text-popover-foreground border border-border shadow-lg">
+      <TooltipContent side="top" align="start" className="max-w-sm p-0 overflow-hidden bg-popover text-popover-foreground border border-border shadow-lg">
         <div className="px-3 pt-3 pb-2">
           <div className="flex items-start gap-2">
             {ownerName && (

@@ -187,8 +187,8 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-10 w-full rounded-none" />
-        <Skeleton className="h-48 w-full rounded-none" />
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
       </div>
     );
   }
