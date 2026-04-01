@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   Bell,
   CheckCheck,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -208,6 +209,7 @@ function NotificationListItem({
 
 function NotificationDetail({ notification }: { notification: Notification }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsSlug = workspace?.slug ?? ''
 
@@ -223,7 +225,8 @@ function NotificationDetail({ notification }: { notification: Notification }) {
     const type = notification.entity_type
     const id = notification.entity_id
     if (type === 'story') {
-      navigate({ to: '/w/$slug/pm/stories/$storyId' as string, params: { slug: wsSlug, storyId: id } })
+      if (!wsSlug) return
+      openStoryRoute(navigate as never, location as never, wsSlug, id)
     } else if (type === 'epic') {
       navigate({ to: '/w/$slug/pm/epics/$epicId' as string, params: { slug: wsSlug, epicId: id } })
     } else if (type === 'objective') {
