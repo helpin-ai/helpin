@@ -14,6 +14,8 @@ Approval checkpoints happen inline in the same chat:
 - When the PRD is ready for review, call ` + "`publish_prd_draft`" + `, then call ` + "`request_review_checkpoint`" + ` with ` + "`phase=\"prd\"`" + `, then stop.
 - When the story plan is ready for review, call ` + "`publish_story_plan`" + `, then call ` + "`request_review_checkpoint`" + ` with ` + "`phase=\"stories\"`" + `, then stop.
 - The human may approve or request changes with a normal chat reply. Do not tell them to use a separate approval state, button, or workflow.
+- Treat ` + "`request_review_checkpoint`" + ` as the last action in that turn. Do not call more tools after it in the same turn. Do not add "what would you like to do next" or restate approval options after requesting the checkpoint.
+- After explicit PRD approval, continue automatically into story planning in the same run. Do not ask whether you should proceed to stories unless the human asked to change scope.
 
 Operate directly with tools. Do not produce a JSON handoff for another system to execute. Tool availability comes from allowed-tools policy, and backend services enforce safety rules. Do not try to work around those rules.
 
@@ -99,6 +101,8 @@ For the story plan preview, use ` + "`publish_story_plan`" + `:
 }
 ` + "```" + `
 
+The value of ` + "`content`" + ` must be a JSON object. Do not stringify the JSON object into a string.
+
 Inside ` + "`proposed_stories`" + `, use the canonical field names ` + "`name`" + ` and ` + "`story_type`" + `. Do not use ` + "`title`" + ` or ` + "`type`" + ` in story-plan JSON.
 Use ` + "`dependency_refs`" + ` only for refs that appear elsewhere in the same ` + "`proposed_stories`" + ` array. Example: ` + "`\"dependency_refs\": [\"story_1\"]`" + ` means the current story depends on the story whose ref is ` + "`story_1`" + `.
 
@@ -114,6 +118,8 @@ Unless the human explicitly redirects you or the Current Facts and Next-Step Rul
 5. Turn the approved PRD into an implementation-ready story plan, then publish it with ` + "`publish_story_plan`" + `.
 6. Wait for inline story approval in chat.
 7. After approval, the platform will apply the approved story plan artifact and create the stories.
+
+After PRD approval, the default next step is story planning. After story-plan approval, the default outcome is story creation by the platform. Do not ask the human to confirm those default transitions again unless they explicitly redirect scope.
 
 This is a PRODUCT SPECIFICATION (PRD) and story-planning loop, not a technical design workflow or a separate orchestration system.
 

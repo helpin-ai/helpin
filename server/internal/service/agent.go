@@ -1515,6 +1515,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	}
 
 	now := time.Now()
+	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
+		signal.ResponsePayload = append(json.RawMessage(nil), req.ResponsePayload...)
+	}
 	run.ExecutionStage = strPtr(stage)
 	run.LastHeartbeatAt = &now
 	run.CompletedAt = nil
@@ -1525,7 +1528,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		if err := s.runRepo.Update(ctx, run); err != nil {
 			return nil, nil, err
 		}
-		if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+		if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText, req.ResponsePayload); err != nil {
 			slog.ErrorContext(ctx, "failed to resolve run interaction",
 				"error", err,
 				"workspace_id", run.WorkspaceID,
@@ -1568,7 +1571,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 		return nil, nil, fmt.Errorf("resume workflow signal failed: %w", err)
 	}
-	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText); err != nil {
+	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText, req.ResponsePayload); err != nil {
 		slog.ErrorContext(ctx, "failed to resolve run interaction",
 			"error", err,
 			"workspace_id", run.WorkspaceID,
@@ -1619,7 +1622,7 @@ func normalizeResumeIntent(intent string) string {
 	}
 }
 
-func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run *model.AgentRun, actorID, pauseReason, signalIntent, content string) error {
+func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run *model.AgentRun, actorID, pauseReason, signalIntent, content string, explicitResponsePayload json.RawMessage) error {
 	if s == nil || s.interactionRepo == nil || run == nil {
 		return nil
 	}
@@ -1629,9 +1632,16 @@ func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run 
 		return err
 	}
 
-	responsePayload, responseSchemaVersion, err := buildInteractionResponsePayload(interaction, normalizeResolvedInteractionIntent(pauseReason, signalIntent), content)
-	if err != nil {
-		return err
+	responsePayload := append(json.RawMessage(nil), explicitResponsePayload...)
+	responseSchemaVersion := strings.TrimSpace(interaction.RequestSchemaVersion)
+	if len(responsePayload) == 0 || strings.TrimSpace(string(responsePayload)) == "" || strings.TrimSpace(string(responsePayload)) == "null" {
+		var err error
+		responsePayload, responseSchemaVersion, err = buildInteractionResponsePayload(interaction, normalizeResolvedInteractionIntent(pauseReason, signalIntent), content)
+		if err != nil {
+			return err
+		}
+	} else if responseSchemaVersion == "" {
+		responseSchemaVersion = model.AgentRunInteractionSchemaVersionHelpinV1
 	}
 
 	now := time.Now().UTC()
@@ -2124,6 +2134,7 @@ func isExplicitInteractiveApprovalReply(reply string) bool {
 // ApproveRun approves a pending outcome, publishing support drafts when requested.
 func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actorID string, req model.ApproveAgentRunRequest) (*model.AgentRun, error) {
 	return s.ResumeRun(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
+		Content:     req.Content,
 		Intent:      model.AgentRunResumeIntentApprove,
 		SendMessage: req.SendMessage,
 	})

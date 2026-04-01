@@ -61,6 +61,9 @@ func toolPublishPRDDraft(_ *ExecutionContext, input json.RawMessage) (string, er
 
 func toolPublishStoryPlan(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	req, err := buildFixedPreviewRequest(input, "story_plan", PreviewFormatJSON)
+	if err == nil && previewContentLooksJSONString(req.Content) {
+		err = fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+	}
 	return executePreviewToolRequest(ctx, ToolPublishStoryPlan, req, err)
 }
 
@@ -667,6 +670,14 @@ func normalizePreviewContent(format string, raw json.RawMessage) (json.RawMessag
 	default:
 		return nil, fmt.Errorf("unsupported preview format %q", format)
 	}
+}
+
+func previewContentLooksJSONString(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var text string
+	return json.Unmarshal(raw, &text) == nil
 }
 
 func inferPreviewPanelKey(req *PublishedPreviewRequest) string {

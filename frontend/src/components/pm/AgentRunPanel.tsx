@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { Bot, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -16,10 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import { agentService } from '@/lib/services/agentService';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface Props {
   storyId: string;
@@ -28,8 +25,6 @@ interface Props {
 }
 
 export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) {
-  const navigate = useNavigate();
-  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -124,17 +119,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       await fetchRuns();
       if (res.data?.id) {
         setSelectedRunId(res.data.id);
-        const sessionPath = canOpenCodingSession(res.data)
-          ? buildCodingSessionPath(workspaceSlug, res.data.id)
-          : null;
-        if (sessionPath && workspaceSlug) {
-          navigate({
-            to: '/w/$slug/pm/coding-sessions/$sessionId',
-            params: { slug: workspaceSlug, sessionId: res.data.id },
-          });
-        } else {
-          setDrawerOpen(true);
-        }
+        setDrawerOpen(true);
       }
     } finally {
       setTriggering(false);
@@ -196,12 +181,10 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
         />
       </div>
 
-      <AgentRunDrawer
-        workspaceId={workspaceId}
-        runId={selectedRunId}
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
         onOpenChange={setDrawerOpen}
-        canEdit
         title="Story Agent Run"
       />
 

@@ -13,12 +13,11 @@ import {
 } from 'lucide-react';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { AgentRunDrawer } from '@/components/pm/AgentRunDrawer';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
-import { buildCodingSessionPath, canOpenCodingSession } from '@/lib/codingSessionSurface';
 import { useTitle } from '@/hooks/useTitle';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
@@ -85,12 +84,10 @@ function AgentRunRow({
   run,
   agent,
   onOpen,
-  sessionPath,
 }: {
   run: AgentRun;
   agent?: Agent | null;
   onOpen: (run: AgentRun) => void;
-  sessionPath?: string;
 }) {
   const agentName = agent?.name ?? 'Agent';
   const displayStatus = getAgentRunDisplayStatus(run);
@@ -131,13 +128,6 @@ function AgentRunRow({
           </div>
         </div>
       </button>
-      {sessionPath ? (
-        <div className="border-t border-border/60 px-4 py-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={sessionPath}>Open session</a>
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -147,7 +137,7 @@ export function AgentRunsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { canEdit } = usePermissions(access);
+  usePermissions(access);
 
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -232,7 +222,6 @@ export function AgentRunsPage() {
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
-  const activeWorkspaceId = workspace.id;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -296,7 +285,6 @@ export function AgentRunsPage() {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);
                     }}
-                    sessionPath={canOpenCodingSession(run) ? (buildCodingSessionPath(workspace.slug, run.id) ?? undefined) : undefined}
                   />
                 ))}
               </div>
@@ -323,7 +311,6 @@ export function AgentRunsPage() {
                       setSelectedRunId(nextRun.id);
                       setDrawerOpen(true);
                     }}
-                    sessionPath={canOpenCodingSession(run) ? (buildCodingSessionPath(workspace.slug, run.id) ?? undefined) : undefined}
                   />
                 ))}
               </div>
@@ -332,12 +319,10 @@ export function AgentRunsPage() {
         </div>
       )}
 
-      <AgentRunDrawer
-        workspaceId={activeWorkspaceId}
-        runId={selectedRunId}
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
         onOpenChange={setDrawerOpen}
-        canEdit={canEdit}
         title={selectedRun ? `${agentNameById[selectedRun.agent_id] ?? 'Agent'} Run` : 'Agent Run'}
         description={selectedRun ? `${formatTarget(selectedRun)} • ${formatTimestamp(selectedRun.created_at)}` : undefined}
       />

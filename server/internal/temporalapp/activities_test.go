@@ -28,8 +28,24 @@ type capturedEventPublisher struct {
 	events []websocket.Event
 }
 
+type stubRuntimeAdapter struct {
+	kind      string
+	executeFn func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error
+}
+
 func (p *capturedEventPublisher) Publish(event websocket.Event) {
 	p.events = append(p.events, event)
+}
+
+func (s stubRuntimeAdapter) Kind() string {
+	return s.kind
+}
+
+func (s stubRuntimeAdapter) Execute(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+	if s.executeFn != nil {
+		return s.executeFn(execCtx, run)
+	}
+	return nil
 }
 
 func (s stubInternalCommandExecutor) Execute(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
@@ -81,6 +97,9 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			preset_key TEXT,
+			preset_version_key TEXT,
+			source_preset_key TEXT,
+			source_preset_version_key TEXT,
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -2088,6 +2107,72 @@ func TestBuildArtifactContextEntriesIncludesLatestRunPlan(t *testing.T) {
 	}
 }
 
+func TestBuildArtifactContextEntriesPrefersApprovedPreviewOverDraftForSamePanel(t *testing.T) {
+	draftContent, _ := json.Marshal("# Draft PRD")
+	approvedContent, _ := json.Marshal("# Approved PRD")
+	approvedPreview, _ := json.Marshal(model.ApprovedRunPreview{
+		Phase:        "prd",
+		PanelKey:     "prd_draft",
+		PreviewTitle: "PRD Draft",
+		Format:       workerpkg.PreviewFormatMarkdown,
+		Content:      approvedContent,
+	})
+	appliedMarker, _ := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "artifact-approved",
+		Phase:              "prd",
+		Action:             "persist_prd",
+		AppliedAt:          time.Now().UTC(),
+	})
+	runPreview, _ := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "prd_draft",
+		Title:    "PRD Draft",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  draftContent,
+	})
+
+	entries, err := buildArtifactContextEntries([]model.AgentRunArtifact{
+		{
+			ID:            "artifact-draft",
+			ArtifactType:  workerpkg.RunPreviewArtifactType,
+			Format:        "json",
+			InlineContent: strPtr(string(runPreview)),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "artifact-approved",
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			InlineContent: strPtr(string(approvedPreview)),
+			SequenceNo:    2,
+		},
+		{
+			ID:            "artifact-applied",
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+			Format:        "json",
+			InlineContent: strPtr(string(appliedMarker)),
+			SequenceNo:    3,
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildArtifactContextEntries returned error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected only the approved preview entry, got %#v", entries)
+	}
+	if entries[0].Source != model.AgentRunArtifactTypeApprovedPreview {
+		t.Fatalf("expected approved preview source, got %#v", entries[0])
+	}
+	if entries[0].Status != "approved_and_persist_prd" {
+		t.Fatalf("expected applied approved-preview status, got %#v", entries[0])
+	}
+	if strings.Contains(entries[0].Label, "Current preview") {
+		t.Fatalf("expected stale draft preview to be omitted, got %#v", entries[0])
+	}
+	if !strings.Contains(entries[0].Content, "Approved PRD") {
+		t.Fatalf("expected approved preview content, got %q", entries[0].Content)
+	}
+}
+
 func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T) {
 	state := &resolvedRunState{
 		run: &model.AgentRun{
@@ -2733,6 +2818,193 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
+	}
+}
+
+func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_messages table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_run_interactions (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		runtime_kind TEXT NOT NULL,
+		interaction_kind TEXT NOT NULL,
+		status TEXT NOT NULL,
+		request_schema_version TEXT NOT NULL,
+		response_schema_version TEXT,
+		request_id TEXT,
+		thread_id TEXT,
+		turn_id TEXT,
+		item_id TEXT,
+		approval_id TEXT,
+		assistant_message_sequence_no INTEGER,
+		title TEXT,
+		summary TEXT,
+		request_payload BLOB NOT NULL,
+		response_payload BLOB,
+		runtime_metadata BLOB,
+		resolved_by TEXT,
+		resolved_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_interactions table: %v", err)
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	wsPublisher := &capturedEventPublisher{}
+
+	now := time.Now().UTC()
+	agent := &model.Agent{
+		ID:                    "agent-epic",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic Planner",
+		PresetKey:             model.AgentPresetEpicPlanner,
+		Role:                  "Planner",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                json.RawMessage(`[]`),
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-1",
+		WorkspaceID:        "ws-1",
+		Name:               "Test all the best code",
+		PlanningState:      model.EpicPlanningStateAwaitingSpecApproval,
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-review-checkpoint",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       epic.ID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		PauseReason:    model.AgentRunPauseReasonNone,
+		ApprovalState:  "not_required",
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		agentRepo:       agentRepo,
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+		epicRepo:        epicRepo,
+		docsDocRepo:     docsDocRepo,
+		docsContentRepo: docsContentRepo,
+		docsLinkRepo:    docsLinkRepo,
+		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
+			kind: "native_sdk",
+			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
+					AssistantText: "PRD review checkpoint requested.",
+					ToolInvocations: []model.ToolInvocation{
+						{
+							ToolName: workerpkg.ToolPublishPRDDraft,
+							Input:    json.RawMessage(`{"content":"# PRD\n\nDraft body"}`),
+						},
+						{
+							ToolName: workerpkg.ToolRequestReviewCheckpoint,
+							Input:    json.RawMessage(`{"phase":"prd","title":"PRD Review","summary":"Review the current PRD draft."}`),
+						},
+					},
+				}
+				return nil
+			},
+		}),
+		wsPublisher: wsPublisher,
+	}
+
+	result, err := activities.ExecuteRunActivity(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("ExecuteRunActivity returned error: %v", err)
+	}
+	if !result.WaitForApproval {
+		t.Fatalf("expected WaitForApproval, got %#v", result)
+	}
+	if result.AwaitingInput || result.AwaitingAuth || result.ContinueExecution {
+		t.Fatalf("unexpected execute result %#v", result)
+	}
+
+	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("get updated run: %v", err)
+	}
+	if updatedRun == nil {
+		t.Fatal("expected updated run")
+	}
+	if updatedRun.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected paused run, got %#v", updatedRun)
+	}
+	if updatedRun.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected human approval pause reason, got %#v", updatedRun)
+	}
+	if updatedRun.ApprovalState != "pending" {
+		t.Fatalf("expected pending approval state, got %#v", updatedRun)
+	}
+
+	interactions, err := interactionRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list interactions: %v", err)
+	}
+	if len(interactions) != 1 {
+		t.Fatalf("expected one interaction, got %#v", interactions)
+	}
+	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
+		t.Fatalf("expected review checkpoint interaction, got %#v", interactions[0])
 	}
 }
 

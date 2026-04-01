@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
@@ -27,15 +28,19 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 	if story != nil {
 		parts = append(parts, "\n## Current Task")
 		parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
-		if story.Description != nil && *story.Description != "" {
-			parts = append(parts, fmt.Sprintf("**Description**: %s", *story.Description))
+		if story.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+				parts = append(parts, "**Description**:\n"+description)
+			}
 		}
 	}
 	if epic != nil {
 		parts = append(parts, "\n## Current Epic")
 		parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
-		if epic.Description != nil && *epic.Description != "" {
-			parts = append(parts, fmt.Sprintf("**Description**: %s", *epic.Description))
+		if epic.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
+				parts = append(parts, "**Description**:\n"+description)
+			}
 		}
 	}
 	if ticket != nil {
@@ -115,14 +120,18 @@ func BuildUserPrompt(
 		} else {
 			contextParts = append(contextParts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
 		}
-		if story.Description != nil && *story.Description != "" {
-			contextParts = append(contextParts, "\nDescription:\n"+*story.Description)
+		if story.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+				contextParts = append(contextParts, "\nDescription:\n"+description)
+			}
 		}
 	}
 	if epic != nil {
 		contextParts = append(contextParts, fmt.Sprintf("Please work on epic: **%s**", epic.Name))
-		if epic.Description != nil && *epic.Description != "" {
-			contextParts = append(contextParts, "\nDescription:\n"+*epic.Description)
+		if epic.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
+				contextParts = append(contextParts, "\nDescription:\n"+description)
+			}
 		}
 		if len(epicStories) > 0 {
 			contextParts = append(contextParts, "\nExisting stories already linked to this epic:")

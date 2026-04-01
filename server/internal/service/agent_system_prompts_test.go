@@ -32,6 +32,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"\"dependency_refs\": [\"story_1\"]",
 		"\"story_type\": \"feature\"",
 		"\"test_strategy\": [\"...\"]",
+		"The value of `content` must be a JSON object.",
 		"Do not use `title` or `type` in story-plan JSON.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_stories` array.",
 		"`list_workspace_teams`",

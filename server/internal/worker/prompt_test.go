@@ -143,6 +143,32 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
+	description := "<h2>Scope</h2><p><strong>Important</strong> rollout</p><ul><li>First</li></ul>"
+
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMStory{Name: "Inbox triage automation", Description: &description},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+	)
+
+	for _, snippet := range []string{"## Scope", "**Important** rollout", "- First"} {
+		if !strings.Contains(prompt, snippet) {
+			t.Fatalf("expected prompt to contain %q\n%s", snippet, prompt)
+		}
+	}
+	if strings.Contains(prompt, "<strong>") || strings.Contains(prompt, "<ul>") {
+		t.Fatalf("expected prompt to avoid raw HTML\n%s", prompt)
+	}
+}
+
 func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 	systemPrompt := "Use the repo conventions and keep changes incremental."
 

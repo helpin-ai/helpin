@@ -77,6 +77,123 @@ function parsePreviewInput(input: unknown, surroundingText: string): PublishedPr
   };
 }
 
+function deepCloneJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(deepCloneJson);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, deepCloneJson(entry)]),
+    );
+  }
+  return value;
+}
+
+function extractToolPreviewContent(payload: Record<string, unknown>, format: PreviewFormat): unknown {
+  for (const key of ['content', 'body', 'markdown', 'text']) {
+    if (Object.prototype.hasOwnProperty.call(payload, key) && payload[key] != null) {
+      return payload[key];
+    }
+  }
+
+  for (const key of ['preview', 'payload']) {
+    const nested = asRecord(payload[key]);
+    if (!nested) continue;
+    const nestedContent = extractToolPreviewContent(nested, format);
+    if (nestedContent != null) return nestedContent;
+    if (format === 'json') {
+      const stripped = stripPreviewMetaFields(nested);
+      if (stripped != null) return stripped;
+    }
+  }
+
+  if (format === 'json') {
+    return stripPreviewMetaFields(payload);
+  }
+
+  return null;
+}
+
+function stripPreviewMetaFields(payload: Record<string, unknown>): unknown {
+  const metaKeys = new Set([
+    'slot',
+    'panel_key',
+    'panelKey',
+    'title',
+    'panelTitle',
+    'format',
+    'preview_format',
+    'replace',
+    'content',
+    'body',
+    'markdown',
+    'text',
+  ]);
+  const entries = Object.entries(payload).filter(([key]) => !metaKeys.has(key));
+  if (entries.length === 0) return null;
+  return Object.fromEntries(entries.map(([key, value]) => [key, deepCloneJson(value)]));
+}
+
+function defaultPreviewTitle(panelKey: string): string {
+  switch (panelKey) {
+    case 'prd_draft':
+      return 'PRD Draft';
+    case 'story_plan':
+      return 'Story Plan';
+    case 'story_plan_doc':
+      return 'Story Planning Document';
+    default:
+      return '';
+  }
+}
+
+function buildFixedToolPreviewInput(toolName: string, input: unknown): unknown {
+  const payload = asRecord(input);
+  if (!payload) return input;
+
+  let panelKey: string | null = null;
+  let format: PreviewFormat | null = null;
+  switch (toolName) {
+    case 'publish_prd_draft':
+      panelKey = 'prd_draft';
+      format = 'markdown';
+      break;
+    case 'publish_story_plan':
+      panelKey = 'story_plan';
+      format = 'json';
+      break;
+    case 'publish_story_plan_doc':
+      panelKey = 'story_plan_doc';
+      format = 'markdown';
+      break;
+    default:
+      return input;
+  }
+
+  const nextPayload: Record<string, unknown> = { ...payload };
+  if (!Object.prototype.hasOwnProperty.call(nextPayload, 'panel_key')) {
+    nextPayload.panel_key = panelKey;
+  }
+  if (!Object.prototype.hasOwnProperty.call(nextPayload, 'title')) {
+    nextPayload.title = asString(nextPayload.panelTitle) ?? defaultPreviewTitle(panelKey);
+  }
+  if (!Object.prototype.hasOwnProperty.call(nextPayload, 'format')) {
+    nextPayload.format = format;
+  }
+  if (!Object.prototype.hasOwnProperty.call(nextPayload, 'content')) {
+    const content = extractToolPreviewContent(payload, format);
+    if (content != null) {
+      nextPayload.content = content;
+    }
+  }
+
+  return nextPayload;
+}
+
+export function parsePublishedPreviewPayload(input: unknown, surroundingText = ''): PublishedPreview | null {
+  return parsePreviewInput(input, surroundingText);
+}
+
 export function parsePublishedPreviewRawInput(raw: string): PublishedPreview | null {
   if (!raw.trim()) return null;
   try {
@@ -84,6 +201,15 @@ export function parsePublishedPreviewRawInput(raw: string): PublishedPreview | n
   } catch {
     return null;
   }
+}
+
+export function parseToolInvocationPublishedPreview(
+  invocation: { tool_name?: unknown; input?: unknown },
+  surroundingText = '',
+): PublishedPreview | null {
+  const toolName = asString(invocation.tool_name);
+  const normalizedInput = toolName ? buildFixedToolPreviewInput(toolName, invocation.input) : invocation.input;
+  return parsePreviewInput(normalizedInput, surroundingText);
 }
 
 export function parseMessagePublishedPreview(
@@ -95,7 +221,7 @@ export function parseMessagePublishedPreview(
   for (let index = invocations.length - 1; index >= 0; index -= 1) {
     const invocation = asRecord(invocations[index]);
     if (!invocation || !isPublishedPreviewToolName(invocation.tool_name)) continue;
-    const preview = parsePreviewInput(invocation.input, message.content);
+    const preview = parseToolInvocationPublishedPreview(invocation, message.content);
     if (!preview) continue;
     if (expectedPanelKey && preview.panelKey !== expectedPanelKey) continue;
     return preview;
