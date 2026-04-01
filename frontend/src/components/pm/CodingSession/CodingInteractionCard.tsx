@@ -281,7 +281,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
           placeholder="Optional note for the agent"
-          className="min-h-[120px]"
+          className="min-h-[76px]"
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -370,14 +370,10 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         icon={<GitCommitHorizontal className="h-4 w-4" />}
         eyebrow={interaction.interaction_kind === 'command_execution_approval' ? 'Command approval' : 'File-change approval'}
         title={interaction.title ?? runtimeApproval.title}
-        summary={interaction.summary ?? runtimeApproval.summary}
       >
         <div className={cn('space-y-2 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
           {runtimeApproval.command ? (
             <div><span className="font-medium text-foreground">Command:</span> <span className="text-muted-foreground"><code>{runtimeApproval.command}</code></span></div>
-          ) : null}
-          {runtimeApproval.cwd ? (
-            <div><span className="font-medium text-foreground">Working directory:</span> <span className="text-muted-foreground"><code>{runtimeApproval.cwd}</code></span></div>
           ) : null}
           {runtimeApproval.reason ? (
             <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{runtimeApproval.reason}</span></div>
@@ -390,7 +386,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
           placeholder="Optional follow-up message if you want the agent to revise after denying"
-          className="mt-4 min-h-[110px]"
+          className="mt-4 min-h-[76px]"
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -440,7 +436,14 @@ function InteractionShell({
   compact?: boolean;
 }) {
   return (
-    <div className={cn('rounded-xl border border-border bg-card', compact ? 'p-3' : 'p-4')}>
+    <div
+      className={cn(
+        'rounded-xl border bg-card',
+        compact
+          ? 'border-amber-200/80 bg-[color:color-mix(in_oklch,var(--card)_82%,oklch(0.94_0.03_72)_18%)] p-3 dark:border-border dark:bg-card'
+          : 'border-border p-4',
+      )}
+    >
       <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-[11px]')}>
         {icon}
         {eyebrow}
