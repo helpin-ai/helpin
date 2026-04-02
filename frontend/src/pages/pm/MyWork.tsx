@@ -19,7 +19,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
-import type { Story, StateType } from '@/lib/pmTypes';
+import type { Task, StateType } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 type Mode = 'assigned' | 'requested';
@@ -54,7 +54,7 @@ export function MyWorkPage() {
   const showTeam = teams.length > 1;
 
   const [mode, setMode] = useState<Mode>('assigned');
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -125,7 +125,7 @@ export function MyWorkPage() {
     const active = stories.filter((s) => !s.completed);
     const done = stories.filter((s) => s.completed);
 
-    const scoreFn = (s: Story): number => {
+    const scoreFn = (s: Task): number => {
       let score = 0;
       if (s.deadline) {
         const days = differenceInDays(parseISO(s.deadline), now);
@@ -143,9 +143,9 @@ export function MyWorkPage() {
 
     const sorted = [...active].sort((a, b) => scoreFn(b) - scoreFn(a));
 
-    const blocked: Story[] = [];
-    const focusItems: Story[] = [];
-    const restItems: Story[] = [];
+    const blocked: Task[] = [];
+    const focusItems: Task[] = [];
+    const restItems: Task[] = [];
 
     for (const s of sorted) {
       if (s.blocked) {
@@ -170,7 +170,7 @@ export function MyWorkPage() {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
-  const openStory = (story: Story) => {
+  const openStory = (story: Task) => {
     if (!wsSlug) return;
     openTaskRoute(navigate as never, location as never, wsSlug, story.id);
   };
@@ -320,8 +320,8 @@ const COLLAPSE_THRESHOLD = 5;
 function StorySection({ title, count, stories, onClickStory, findTeamName, showTeam }: {
   title: string;
   count: number;
-  stories: Story[];
-  onClickStory: (s: Story) => void;
+  stories: Task[];
+  onClickStory: (s: Task) => void;
   findTeamName: (id?: string) => string | undefined;
   showTeam: boolean;
 }) {
@@ -364,7 +364,7 @@ function StorySection({ title, count, stories, onClickStory, findTeamName, showT
 // ── Story row ─────────────────────────────────────────────────────
 
 function StoryRow({ story, onClick, teamName }: {
-  story: Story;
+  story: Task;
   onClick: () => void;
   teamName?: string;
 }) {

@@ -24,15 +24,15 @@ type InternalCommandDefinition struct {
 
 type InternalCommandService struct {
 	agentService        *AgentService
-	storyService        *PMStoryService
+	storyService        *PMTaskService
 	crmDealService      *CRMDealService
 	crmActivityService  *CRMActivityService
 	docsContentService  *DocsContentService
 	docsLinkService     *DocsLinkService
 	pmAutomationService *PMAutomationService
 	gitService          *GitService
-	storyRepo           *repository.PMStoryRepository
-	storyLinkRepo       *repository.PMStoryLinkRepository
+	storyRepo           *repository.PMTaskRepository
+	storyLinkRepo       *repository.PMTaskLinkRepository
 	definitions         map[string]InternalCommandDefinition
 }
 
@@ -48,13 +48,13 @@ func (s *InternalCommandService) SetGitService(svc *GitService) {
 
 func NewInternalCommandService(
 	agentService *AgentService,
-	storyService *PMStoryService,
+	storyService *PMTaskService,
 	crmDealService *CRMDealService,
 	crmActivityService *CRMActivityService,
 	docsContentService *DocsContentService,
 	docsLinkService *DocsLinkService,
-	storyRepo *repository.PMStoryRepository,
-	storyLinkRepo *repository.PMStoryLinkRepository,
+	storyRepo *repository.PMTaskRepository,
+	storyLinkRepo *repository.PMTaskLinkRepository,
 ) *InternalCommandService {
 	svc := &InternalCommandService{
 		agentService:       agentService,
@@ -196,9 +196,9 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.create_task_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Stories       []model.ProposedStory `json:"stories"`
-				Tasks         []model.ProposedStory `json:"tasks"`
-				ProposedTasks []model.ProposedStory `json:"proposed_tasks"`
+				Stories       []model.ProposedTask `json:"stories"`
+				Tasks         []model.ProposedTask `json:"tasks"`
+				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
 				RunID         string                `json:"run_id,omitempty"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
@@ -222,7 +222,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("tasks is required")
 			}
 
-			var tasks []model.PMStory
+			var tasks []model.PMTask
 			var err error
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
@@ -293,11 +293,11 @@ func (s *InternalCommandService) registerDefaults() {
 				if source == nil || target == nil || source.WorkspaceID != meta.WorkspaceID || target.WorkspaceID != meta.WorkspaceID {
 					return nil, fmt.Errorf("tasks must belong to the current workspace")
 				}
-				if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
+				if err := s.storyLinkRepo.Create(ctx, &model.PMTaskLink{
 					WorkspaceID:   meta.WorkspaceID,
 					SourceStoryID: sourceID,
 					TargetStoryID: targetID,
-					LinkType:      model.PMStoryLinkTypeBlocks,
+					LinkType:      model.PMTaskLinkTypeBlocks,
 					CreatedBy:     fallbackActor(meta),
 				}); err != nil {
 					return nil, err
@@ -356,7 +356,7 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"task", "story"},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Followups []model.StoryCompletionFollowupProposal `json:"followups"`
+				Followups []model.TaskCompletionFollowupProposal `json:"followups"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse followup input: %w", err)
@@ -376,10 +376,10 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				taskType := strings.TrimSpace(followup.TaskType)
 				if taskType == "" {
-					taskType = model.PMStoryTypeChore
+					taskType = model.PMTaskTypeChore
 				}
 				description := strings.TrimSpace(followup.Description)
-				createReq := model.CreateStoryRequest{
+				createReq := model.CreateTaskRequest{
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
 					Description: stringPtrOrNil(description),
@@ -426,7 +426,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if taskID == "" || strings.TrimSpace(req.StateID) == "" {
 				return nil, fmt.Errorf("task_id and state_id are required")
 			}
-			_, err := s.storyService.MoveToState(ctx, taskID, model.MoveStoryRequest{
+			_, err := s.storyService.MoveToState(ctx, taskID, model.MoveTaskRequest{
 				StateID:  req.StateID,
 				Position: req.Position,
 			}, fallbackActor(meta))

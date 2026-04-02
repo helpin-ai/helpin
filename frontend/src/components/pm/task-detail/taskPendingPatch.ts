@@ -1,9 +1,9 @@
-import type { UpdateStoryRequest } from '@/lib/pmTypes';
+import type { UpdateTaskRequest } from '@/lib/pmTypes';
 
 export function getFlushablePendingTaskPatch(
-  pendingPatch: UpdateStoryRequest,
+  pendingPatch: UpdateTaskRequest,
   descriptionPendingUploads: number,
-): UpdateStoryRequest | null {
+): UpdateTaskRequest | null {
   if (Object.keys(pendingPatch).length === 0) {
     return null;
   }
@@ -16,7 +16,7 @@ export function getFlushablePendingTaskPatch(
 }
 
 export function hasPendingTaskSave(
-  pendingPatch: UpdateStoryRequest,
+  pendingPatch: UpdateTaskRequest,
   descriptionPendingUploads: number,
 ): boolean {
   return getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads) !== null;

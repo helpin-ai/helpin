@@ -357,7 +357,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{Ref: "story_a", Name: "Story A", AcceptanceCriteria: []string{"A works"}, DependencyRefs: []string{"story_b"}},
 		{Ref: "story_b", Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_a"}},
 	}
@@ -429,7 +429,7 @@ func TestCollectPlanningTreeBoundsDepth(t *testing.T) {
 }
 
 func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{Name: "Story A", AcceptanceCriteria: []string{"A works"}},
 		{Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_1"}},
 	}
@@ -1919,7 +1919,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	run := &model.AgentRun{ID: "run-story-1", WorkspaceID: "ws-1", TargetType: "story"}
 	state := &resolvedRunState{
 		run:  run,
-		task: &model.PMStory{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
+		task: &model.PMTask{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
 	}
 	execCtx := &workerpkg.ExecutionContext{
 		LastExecutionResult: &workerpkg.ExecutionResult{
@@ -2201,7 +2201,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			WorkspaceID: "ws-1",
 			TeamID:      strPtr("team-agent"),
 		},
-		task: &model.PMStory{
+		task: &model.PMTask{
 			ID:             "story-1",
 			EpicID:         strPtr("epic-1"),
 			TeamID:         strPtr("team-story"),
@@ -2218,7 +2218,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			ID:           "conv-1",
 			CRMContactID: strPtr("contact-conversation"),
 		},
-		deliveryTarget: &model.StoryDeliveryTarget{
+		deliveryTarget: &model.TaskDeliveryTarget{
 			ID:           "delivery-1",
 			RepositoryID: strPtr("repo-delivery"),
 		},
@@ -2625,7 +2625,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 
@@ -2733,13 +2733,13 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 				return json.RawMessage(`{}`), nil
 			}
 			var payload struct {
-				Stories []model.ProposedStory `json:"stories"`
+				Stories []model.ProposedTask `json:"stories"`
 			}
 			if err := json.Unmarshal(input, &payload); err != nil {
 				return nil, err
 			}
 			for _, planned := range payload.Stories {
-				story := &model.PMStory{
+				story := &model.PMTask{
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
@@ -2747,8 +2747,8 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					WorkflowID:      "wf-1",
 					WorkflowStateID: "state-1",
 					EpicID:          &epic.ID,
-					Priority:        model.PMStoryPriorityNone,
-					Severity:        model.PMStorySeverityNone,
+					Priority:        model.PMTaskPriorityNone,
+					Severity:        model.PMTaskSeverityNone,
 				}
 				if err := storyRepo.Create(ctx, story); err != nil {
 					return nil, err
@@ -2788,7 +2788,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		t.Fatalf("expected story batch command, got %#v", executed)
 	}
 
-	var createdStories []model.PMStory
+	var createdStories []model.PMTask
 	if err := db.Where("epic_id = ?", epic.ID).Find(&createdStories).Error; err != nil {
 		t.Fatalf("list created stories: %v", err)
 	}
@@ -3014,7 +3014,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -3048,16 +3048,16 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("create docs document: %v", err)
 	}
 
-	story := &model.PMStory{
+	story := &model.PMTask{
 		ID:              "story-1",
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
 		DisplayID:       1,
-		TaskType:       model.PMStoryTypeFeature,
+		TaskType:       model.PMTaskTypeFeature,
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
-		Priority:        model.PMStoryPriorityNone,
-		Severity:        model.PMStorySeverityNone,
+		Priority:        model.PMTaskPriorityNone,
+		Severity:        model.PMTaskSeverityNone,
 		PlanDocumentID:  &docID,
 	}
 	if err := db.Create(story).Error; err != nil {
@@ -3157,7 +3157,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("expected planning input plan_document_id to be set, got %#v", input)
 	}
 
-	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectStory, story.ID)
+	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectTask, story.ID)
 	if err != nil {
 		t.Fatalf("list docs links: %v", err)
 	}

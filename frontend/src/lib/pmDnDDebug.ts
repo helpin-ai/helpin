@@ -1,4 +1,4 @@
-import type { Story, StoryStateColumn } from './pmTypes'
+import type { Task, TaskStateColumn } from './pmTypes'
 
 const PM_DND_PREFIX = '[pm-dnd]'
 const PM_DND_SUMMARY_LIMIT = 8
@@ -10,7 +10,7 @@ export function createPMDnDTraceID(): string {
   return `pm-dnd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function summarizePMDnDStories(stories: Pick<Story, 'id' | 'position'>[]): string[] {
+export function summarizePMDnDStories(stories: Pick<Task, 'id' | 'position'>[]): string[] {
   const entries = stories.slice(0, PM_DND_SUMMARY_LIMIT).map((story) => `${story.id}@${story.position}`)
   if (stories.length > PM_DND_SUMMARY_LIMIT) {
     entries.push(`+${stories.length - PM_DND_SUMMARY_LIMIT} more`)
@@ -18,7 +18,7 @@ export function summarizePMDnDStories(stories: Pick<Story, 'id' | 'position'>[])
   return entries
 }
 
-export function summarizePMDnDColumn(column?: Pick<StoryStateColumn, 'state' | 'stories' | 'task_count' | 'has_more'> | null) {
+export function summarizePMDnDColumn(column?: Pick<TaskStateColumn, 'state' | 'stories' | 'task_count' | 'has_more'> | null) {
   if (!column) return null
   return {
     state_id: column.state.id,

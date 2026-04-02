@@ -21,7 +21,7 @@ func newRecurringTestEnv(t *testing.T) recurringTestEnv {
 	recurringRepo := repository.NewPMRecurringTemplateRepository(storyEnv.db)
 	recurringSvc := NewPMRecurringTemplateService(
 		recurringRepo,
-		repository.NewPMStoryRepository(storyEnv.db),
+		repository.NewPMTaskRepository(storyEnv.db),
 		repository.NewPMWorkflowRepository(storyEnv.db),
 		repository.NewPMSprintRepository(storyEnv.db),
 		repository.NewWorkspaceRepository(storyEnv.db),
@@ -164,7 +164,7 @@ func TestPMRecurringTemplateService_CompletionBasedGeneration(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if _, err := env.storyEnv.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+	if _, err := env.storyEnv.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
 		WorkflowStateID: &env.storyEnv.stDone,
 	}, env.storyEnv.userID); err != nil {
 		t.Fatalf("Update story to done: %v", err)
@@ -214,8 +214,8 @@ func TestPMRecurringTemplateService_UpdateRefreshesSeedFromStory(t *testing.T) {
 	}
 
 	updatedName := "Monthly Compliance Audit"
-	updatedPriority := model.PMStoryPriorityUrgent
-	if _, err := env.storyEnv.svc.Update(ctx, story.Story.ID, model.UpdateStoryRequest{
+	updatedPriority := model.PMTaskPriorityUrgent
+	if _, err := env.storyEnv.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
 		Name:     &updatedName,
 		Priority: &updatedPriority,
 	}, env.storyEnv.userID); err != nil {

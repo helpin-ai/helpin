@@ -63,8 +63,8 @@ type AgentService struct {
 	artifactRepo               *repository.AgentRunArtifactRepository
 	interactionRepo            *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
-	storyRepo                  *repository.PMStoryRepository
-	storyLinkRepo              *repository.PMStoryLinkRepository
+	storyRepo                  *repository.PMTaskRepository
+	storyLinkRepo              *repository.PMTaskLinkRepository
 	epicRepo                   *repository.PMEpicRepository
 	conversationRepo           *repository.SupportConversationRepository
 	messageRepo                *repository.SupportMessageRepository
@@ -77,7 +77,7 @@ type AgentService struct {
 	docsLinkRepo               *repository.DocsLinkRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
-	storyService               *PMStoryService
+	storyService               *PMTaskService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	wsPublisher                *websocket.Publisher
@@ -101,8 +101,8 @@ func NewAgentService(
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
-	storyRepo *repository.PMStoryRepository,
-	storyLinkRepo *repository.PMStoryLinkRepository,
+	storyRepo *repository.PMTaskRepository,
+	storyLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
@@ -115,7 +115,7 @@ func NewAgentService(
 	docsLinkRepo *repository.DocsLinkRepository,
 	runEngine *temporalapp.RunEngine,
 	gitService *GitService,
-	storyService *PMStoryService,
+	storyService *PMTaskService,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
@@ -982,7 +982,7 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 	s.publishSimpleEvent("updated", "task", storyID, workspaceID, actorID)
 
 	if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
-		if errors.Is(err, ErrStoryDeliveryTargetRequired) {
+		if errors.Is(err, ErrTaskDeliveryTargetRequired) {
 			return nil
 		}
 		return err
@@ -1114,9 +1114,9 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
-		var delivery *model.StoryDeliveryTarget
+		var delivery *model.TaskDeliveryTarget
 		if s.gitService != nil {
-			delivery, err = s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, story.ID, resolved.RequiresRepo)
+			delivery, err = s.gitService.ResolveTaskDeliveryTargetForRun(ctx, workspaceID, story.ID, resolved.RequiresRepo)
 			if err != nil {
 				return nil, err
 			}
@@ -2215,7 +2215,7 @@ type createRunParams struct {
 	conversationID *string
 	actorID        *string
 	input          []byte
-	delivery       *model.StoryDeliveryTarget
+	delivery       *model.TaskDeliveryTarget
 	invocationMode string
 }
 

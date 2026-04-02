@@ -12,13 +12,13 @@ import (
 // DocsLinkService handles business logic for document links.
 type DocsLinkService struct {
 	linkRepo    *repository.DocsLinkRepository
-	storyRepo   *repository.PMStoryRepository
+	storyRepo   *repository.PMTaskRepository
 	docRepo     *repository.DocsDocumentRepository
 	wsPublisher *websocket.Publisher
 }
 
 // NewDocsLinkService creates a new DocsLinkService.
-func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMStoryRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsLinkService {
+func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMTaskRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsLinkService {
 	return &DocsLinkService{linkRepo: linkRepo, storyRepo: storyRepo, docRepo: docRepo, wsPublisher: wsPublisher}
 }
 
@@ -94,7 +94,7 @@ func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLin
 		return // best-effort enrichment
 	}
 
-	storyMap := make(map[string]*model.PMStory, len(stories))
+	storyMap := make(map[string]*model.PMTask, len(stories))
 	for i := range stories {
 		storyMap[stories[i].ID] = &stories[i]
 	}

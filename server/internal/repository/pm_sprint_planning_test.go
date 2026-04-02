@@ -219,7 +219,7 @@ func seedPMSprintPlanningStory(t *testing.T, db *gorm.DB, id, workspaceID, workf
 	}
 	if err := db.Exec(
 		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMStoryPriorityMedium, updatedAt, updatedAt,
+		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMTaskPriorityMedium, updatedAt, updatedAt,
 	).Error; err != nil {
 		t.Fatalf("seed story: %v", err)
 	}

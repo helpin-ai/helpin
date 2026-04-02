@@ -9,7 +9,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
-import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningStoryPreview } from '@/lib/pmTypes';
+import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { unwrap } from '@/lib/queryUtils';
@@ -39,7 +39,7 @@ function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintP
 }
 
 function removeStoryFromCards(workspace: SprintPlanningWorkspaceData, storyId: string) {
-  let found: SprintPlanningStoryPreview | null = null;
+  let found: SprintPlanningTaskPreview | null = null;
   let sourceSprintId: string | null = null;
 
   const backlogIndex = workspace.backlog_stories.findIndex((story) => story.id === storyId);
@@ -73,7 +73,7 @@ function removeStoryFromCards(workspace: SprintPlanningWorkspaceData, storyId: s
   return { found, sourceSprintId };
 }
 
-function addStoryToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['sprints'][number], story: SprintPlanningStoryPreview, sprintId: string) {
+function addStoryToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['sprints'][number], story: SprintPlanningTaskPreview, sprintId: string) {
   const nextStory = { ...story, sprint_id: sprintId };
   card.preview_stories = [nextStory, ...(card.preview_stories ?? []).filter((item) => item.id !== story.id)].slice(0, STORY_PREVIEW_LIMIT);
   card.stats.story_count += 1;
@@ -85,7 +85,7 @@ function addStoryToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['
   card.task_preview_overflow = Math.max(card.stats.story_count - card.preview_stories.length, 0);
 }
 
-function addStoryToBacklog(workspace: SprintPlanningWorkspaceData, story: SprintPlanningStoryPreview) {
+function addStoryToBacklog(workspace: SprintPlanningWorkspaceData, story: SprintPlanningTaskPreview) {
   const nextStory = { ...story, sprint_id: undefined };
   workspace.backlog_stories = [nextStory, ...workspace.backlog_stories.filter((item) => item.id !== story.id)].slice(0, BACKLOG_LIMIT);
   workspace.backlog_total += 1;
@@ -93,7 +93,7 @@ function addStoryToBacklog(workspace: SprintPlanningWorkspaceData, story: Sprint
 
 function applyStoryAssignment(
   workspace: SprintPlanningWorkspaceData,
-  story: SprintPlanningStoryPreview,
+  story: SprintPlanningTaskPreview,
   targetSprintId: string | null,
 ): SprintPlanningWorkspaceData {
   const next = clonePlanningWorkspace(workspace);
@@ -175,7 +175,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     };
   }, [planningQuery.data, statusFilter, isArchived]);
 
-  const handleAssignStory = async (story: SprintPlanningStoryPreview, sprintId: string | null) => {
+  const handleAssignStory = async (story: SprintPlanningTaskPreview, sprintId: string | null) => {
     if (!planningQuery.data || !canEdit) return;
     const previous = queryClient.getQueryData<SprintPlanningWorkspaceData>(planningQueryKey) ?? planningQuery.data;
     const optimistic = applyStoryAssignment(previous, story, sprintId);

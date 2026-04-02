@@ -38,7 +38,7 @@ import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, SprintWithStats, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
+import type { AttachmentResponse, SprintWithStats, Task, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
@@ -95,7 +95,7 @@ export function SprintDetailPage() {
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [sprint, setSprint] = useState<SprintWithStats | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<Task[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -290,7 +290,7 @@ export function SprintDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Story) => {
+    (story: Task) => {
       openTaskRoute(navigate as never, location as never, slug, story.id);
     },
     [location, navigate, slug],

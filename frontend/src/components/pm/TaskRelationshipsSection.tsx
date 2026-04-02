@@ -36,9 +36,9 @@ import {
 } from '@/hooks/queries';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import type {
-  CreateStoryRequest,
+  CreateTaskRequest,
   GroupedAssociations,
-  StoryRelationshipAction,
+  TaskRelationshipAction,
 } from '@/lib/pmTypes';
 import { StoryTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
@@ -69,7 +69,7 @@ interface TaskRelationshipsSectionProps {
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
-  value: StoryRelationshipAction;
+  value: TaskRelationshipAction;
   label: string;
   icon: typeof ArrowRightLeft;
 }> = [
@@ -81,7 +81,7 @@ const RELATIONSHIP_OPTIONS: Array<{
 ];
 
 const UPDATE_TYPE_OPTIONS: Array<{
-  value: StoryRelationshipAction;
+  value: TaskRelationshipAction;
   label: string;
   icon: typeof ArrowRightLeft;
 }> = [
@@ -92,7 +92,7 @@ const UPDATE_TYPE_OPTIONS: Array<{
   { value: 'relates_to', label: 'Relates to', icon: ArrowRightLeft },
 ];
 
-const RELATIONSHIP_COLORS: Record<StoryRelationshipAction, { active: string; icon: string }> = {
+const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon: string }> = {
   relates_to: {
     active: 'border-blue-200/80 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300',
     icon: 'text-blue-500',
@@ -243,7 +243,7 @@ export function TaskRelationshipsSection({
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
   const [popoverTab, setPopoverTab] = useState<'stories' | 'docs'>('stories');
   const [query, setQuery] = useState('');
-  const [relationshipType, setRelationshipType] = useState<StoryRelationshipAction>('relates_to');
+  const [relationshipType, setRelationshipType] = useState<TaskRelationshipAction>('relates_to');
   const [searching, setSearching] = useState(false);
   const [storyResults, setStoryResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
@@ -298,7 +298,7 @@ export function TaskRelationshipsSection({
   }, [composerOpen, query, storyId, workspaceId, popoverTab]);
 
   const allRelationships = useMemo(() => {
-    const taskRels = data?.task_relationships ?? data?.story_relationships;
+    const taskRels = data?.task_relationships;
     if (!taskRels) return [];
     const rels = taskRels;
     return [
@@ -331,7 +331,7 @@ export function TaskRelationshipsSection({
     const name = query.trim();
     if (!name) return;
 
-    const payload: CreateStoryRequest = {
+    const payload: CreateTaskRequest = {
       workspace_id: workspaceId,
       name,
       workflow_id: workflowId,
@@ -367,7 +367,7 @@ export function TaskRelationshipsSection({
   const handleUpdateRelationshipType = async (
     relationshipId: string,
     otherStoryId: string,
-    newType: StoryRelationshipAction,
+    newType: TaskRelationshipAction,
   ) => {
     await deleteRelationship.mutateAsync(relationshipId);
     await createRelationship.mutateAsync({

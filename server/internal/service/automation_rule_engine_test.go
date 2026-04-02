@@ -86,7 +86,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -116,7 +116,7 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 func TestMatchesTriggerConfig_StateType(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -191,7 +191,7 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 func TestMatchesScope_NilStory(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -243,7 +243,7 @@ func TestMatchesScope_NilStory(t *testing.T) {
 func TestValidateRuleRequest_NewTypes(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 

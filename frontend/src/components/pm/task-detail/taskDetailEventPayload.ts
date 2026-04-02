@@ -1,6 +1,6 @@
-import type { Story, StoryDetail } from '@/lib/pmTypes';
+import type { Task, TaskDetail } from '@/lib/pmTypes';
 
-export function buildPatchedTaskFromDetail(detail: StoryDetail): Story {
+export function buildPatchedTaskFromDetail(detail: TaskDetail): Task {
   return {
     ...detail.task,
     labels: detail.labels.length > 0 ? detail.labels : detail.task.labels,

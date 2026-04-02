@@ -22,12 +22,12 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 	svc, workspaceID, adminID := newImportTestService(t, db)
 
 	existingExternalID := "85463"
-	if err := db.Create(&model.PMStory{
+	if err := db.Create(&model.PMTask{
 		ID:              uuid.NewString(),
 		WorkspaceID:     workspaceID,
 		DisplayID:       1,
 		Name:            "Existing Story",
-		TaskType:       model.PMStoryTypeFeature,
+		TaskType:       model.PMTaskTypeFeature,
 		WorkflowID:      "wf-existing",
 		WorkflowStateID: "state-existing",
 		ExternalID:      &existingExternalID,
@@ -242,7 +242,7 @@ func TestPMImportServiceExecuteShortcutUsesWorkflowIDsForStateMapping(t *testing
 		t.Fatalf("expected 2 workflows created, got %d", result.WorkflowsCreated)
 	}
 
-	var stories []model.PMStory
+	var stories []model.PMTask
 	if err := db.Where("workspace_id = ?", workspaceID).Order("external_id").Find(&stories).Error; err != nil {
 		t.Fatalf("load stories: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestPMImportServiceExecuteShortcutUsesManualUserMappingsForTeamMemberships(
 		t.Fatalf("expected manually mapped owner to be assigned to team: %v", err)
 	}
 
-	var story model.PMStory
+	var story model.PMTask
 	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "4002").First(&story).Error; err != nil {
 		t.Fatalf("load imported story: %v", err)
 	}
@@ -505,7 +505,7 @@ func TestPMImportServiceImportShortcutStoryMediaUpdatesDescriptions(t *testing.T
 		t.Fatalf("execute shortcut import: %v", err)
 	}
 
-	var story model.PMStory
+	var story model.PMTask
 	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "113165").First(&story).Error; err != nil {
 		t.Fatalf("load imported story: %v", err)
 	}
@@ -590,7 +590,7 @@ func TestPMImportServiceImportShortcutStoryMediaUpdatesChecklistItems(t *testing
 		t.Fatalf("execute shortcut import: %v", err)
 	}
 
-	var story model.PMStory
+	var story model.PMTask
 	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "3001").First(&story).Error; err != nil {
 		t.Fatalf("load imported story: %v", err)
 	}
@@ -1130,7 +1130,7 @@ func shortcutImportCSVFromRows(rows []map[string]string) string {
 func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 	t.Helper()
 
-	var stories []model.PMStory
+	var stories []model.PMTask
 	if err := db.Where("workspace_id = ?", workspaceID).Order("external_id").Find(&stories).Error; err != nil {
 		t.Fatalf("load stories: %v", err)
 	}
@@ -1159,7 +1159,7 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 			}
 		}
 	}
-	var markdownStory *model.PMStory
+	var markdownStory *model.PMTask
 	for i := range stories {
 		if stories[i].ExternalID != nil && *stories[i].ExternalID == "113165" {
 			markdownStory = &stories[i]
@@ -1237,7 +1237,7 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 	}
 
 	var ownerLinks int64
-	if err := db.Model(&model.PMStoryOwner{}).Count(&ownerLinks).Error; err != nil {
+	if err := db.Model(&model.PMTaskOwner{}).Count(&ownerLinks).Error; err != nil {
 		t.Fatalf("count owner links: %v", err)
 	}
 	if ownerLinks != 4 {

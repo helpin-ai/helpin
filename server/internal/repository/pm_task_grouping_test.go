@@ -16,26 +16,26 @@ func TestStartOfBoardWeekUsesMondayUTC(t *testing.T) {
 	}
 }
 
-func TestBuildDoneStoryGroupsBucketsByCompletionWeek(t *testing.T) {
+func TestBuildDoneTaskGroupsBucketsByCompletionWeek(t *testing.T) {
 	now := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
 
-	stories := []model.BoardStory{
+	stories := []model.BoardTask{
 		{
-			PMStory: model.PMStory{
+			PMTask: model.PMTask{
 				ID:          "story-1",
 				UpdatedAt:   time.Date(2026, time.March, 6, 12, 0, 0, 0, time.UTC),
 				CompletedAt: timePtr(time.Date(2026, time.March, 5, 9, 0, 0, 0, time.UTC)),
 			},
 		},
 		{
-			PMStory: model.PMStory{
+			PMTask: model.PMTask{
 				ID:          "story-2",
 				UpdatedAt:   time.Date(2026, time.February, 19, 12, 0, 0, 0, time.UTC),
 				CompletedAt: timePtr(time.Date(2026, time.February, 18, 9, 0, 0, 0, time.UTC)),
 			},
 		},
 		{
-			PMStory: model.PMStory{
+			PMTask: model.PMTask{
 				ID:          "story-3",
 				UpdatedAt:   time.Date(2026, time.February, 17, 12, 0, 0, 0, time.UTC),
 				CompletedAt: timePtr(time.Date(2026, time.February, 16, 9, 0, 0, 0, time.UTC)),

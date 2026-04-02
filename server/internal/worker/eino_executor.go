@@ -247,7 +247,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		case "pm.story_completion_followups":
 			assessment, err := extractTaskCompletionAssessmentFromResponseText(result.AssistantText)
 			if err != nil {
-				fallback := &model.StoryCompletionAssessment{
+				fallback := &model.TaskCompletionAssessment{
 					Summary: strings.TrimSpace(result.AssistantText),
 				}
 				seqNo++

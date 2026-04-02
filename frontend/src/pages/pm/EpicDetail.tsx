@@ -40,7 +40,7 @@ import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from 
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -153,7 +153,7 @@ export function EpicDetailPage() {
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<Task[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
@@ -382,7 +382,7 @@ export function EpicDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Story) => {
+    (story: Task) => {
       openTaskRoute(navigate as never, location as never, slug, story.id);
     },
     [location, navigate, slug],

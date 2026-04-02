@@ -319,7 +319,7 @@ func (s *PMSprintService) GetCurrentSprint(ctx context.Context, workspaceID stri
 }
 
 // ListStories returns stories in a sprint.
-func (s *PMSprintService) ListStories(ctx context.Context, sprintID string) ([]model.PMStory, error) {
+func (s *PMSprintService) ListStories(ctx context.Context, sprintID string) ([]model.PMTask, error) {
 	return s.sprintRepo.ListStories(ctx, sprintID)
 }
 

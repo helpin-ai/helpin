@@ -87,8 +87,8 @@ type AgentRunActivities struct {
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	storyRepo           *repository.PMStoryRepository
-	storyLinkRepo       *repository.PMStoryLinkRepository
+	storyRepo           *repository.PMTaskRepository
+	storyLinkRepo       *repository.PMTaskLinkRepository
 	epicRepo            *repository.PMEpicRepository
 	conversationRepo    *repository.SupportConversationRepository
 	commentRepo         *repository.PMCommentRepository
@@ -96,8 +96,8 @@ type AgentRunActivities struct {
 	messageRepo         *repository.SupportMessageRepository
 	gitIntRepo          *repository.GitIntegrationRepository
 	gitRepo             *repository.GitRepositoryRepository
-	gitLinkRepo         *repository.StoryGitLinkRepository
-	deliveryRepo        *repository.StoryDeliveryTargetRepository
+	gitLinkRepo         *repository.TaskGitLinkRepository
+	deliveryRepo        *repository.TaskDeliveryTargetRepository
 	settingsRepo        *repository.SettingsRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
 	docsDocRepo         *repository.DocsDocumentRepository
@@ -124,8 +124,8 @@ func NewAgentRunActivities(
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
-	storyRepo *repository.PMStoryRepository,
-	storyLinkRepo *repository.PMStoryLinkRepository,
+	storyRepo *repository.PMTaskRepository,
+	storyLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	commentRepo *repository.PMCommentRepository,
@@ -133,8 +133,8 @@ func NewAgentRunActivities(
 	messageRepo *repository.SupportMessageRepository,
 	gitIntRepo *repository.GitIntegrationRepository,
 	gitRepo *repository.GitRepositoryRepository,
-	gitLinkRepo *repository.StoryGitLinkRepository,
-	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	gitLinkRepo *repository.TaskGitLinkRepository,
+	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
@@ -192,12 +192,12 @@ func NewAgentRunActivities(
 type resolvedRunState struct {
 	run            *model.AgentRun
 	agent          *model.Agent
-	task           *model.PMStory
+	task           *model.PMTask
 	epic           *model.PMEpic
-	epicTasks      []model.PMStory
+	epicTasks      []model.PMTask
 	conversation   *model.SupportConversation
 	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
-	deliveryTarget *model.StoryDeliveryTarget
+	deliveryTarget *model.TaskDeliveryTarget
 	repository     *model.GitRepository
 	integration    *model.GitIntegration
 	teamDefault    *model.PMTeamRepoDefault
@@ -2575,7 +2575,7 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
 	}
-	proposal.ProposedTasks = make([]model.ProposedStory, 0, len(storyItems))
+	proposal.ProposedTasks = make([]model.ProposedTask, 0, len(storyItems))
 	for index, item := range storyItems {
 		task, ok := decodeLooseApprovedProposedTask(item)
 		if !ok {
@@ -2598,13 +2598,13 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 	return proposal, nil
 }
 
-func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedStory, bool) {
+func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedTask, bool) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return model.ProposedStory{}, false
+		return model.ProposedTask{}, false
 	}
 
-	task := model.ProposedStory{
+	task := model.ProposedTask{
 		Ref:                decodeLooseJSONString(payload["ref"]),
 		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
 		Description:        decodeLooseJSONString(payload["description"]),
@@ -2716,7 +2716,7 @@ func decodeLoosePlanningSourceRefs(raw json.RawMessage) ([]model.PlanningSourceR
 	return nil, false
 }
 
-func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.StoryImplementationBrief, bool) {
+func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.TaskImplementationBrief, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, false
 	}
@@ -2726,7 +2726,7 @@ func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.StoryImplem
 		return nil, false
 	}
 
-	brief := &model.StoryImplementationBrief{
+	brief := &model.TaskImplementationBrief{
 		Approach:       decodeLooseJSONString(payload["approach"]),
 		FilesToModify:  decodeLooseFileChanges(payload["files_to_modify"]),
 		TestStrategy:   decodeLooseJSONText(payload["test_strategy"]),
@@ -3204,7 +3204,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	return state, nil
 }
 
-func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspaceID string, story *model.PMStory) (*model.StoryDeliveryTarget, *model.PMTeamRepoDefault, error) {
+func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspaceID string, story *model.PMTask) (*model.TaskDeliveryTarget, *model.PMTeamRepoDefault, error) {
 	target, err := a.deliveryRepo.GetByStory(ctx, workspaceID, story.ID)
 	if err != nil {
 		return nil, nil, err
@@ -3220,7 +3220,7 @@ func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspac
 		return target, teamDefault, nil
 	}
 
-	target = &model.StoryDeliveryTarget{
+	target = &model.TaskDeliveryTarget{
 		WorkspaceID:   workspaceID,
 		TaskID:        story.ID,
 		DeliveryState: "unconfigured",
@@ -3432,7 +3432,7 @@ func (a *AgentRunActivities) upsertGitLink(ctx context.Context, state *resolvedR
 		return err
 	}
 	if link == nil {
-		link = &model.StoryGitLink{
+		link = &model.TaskGitLink{
 			WorkspaceID:   state.run.WorkspaceID,
 			TaskID:        state.task.ID,
 			IntegrationID: state.integration.ID,
@@ -3719,7 +3719,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 		}
 	}
 
-	storyLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectStory, state.task.ID, input.PlanDocumentID)
+	storyLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, input.PlanDocumentID)
 	if err != nil {
 		return "", err
 	}
@@ -3943,7 +3943,7 @@ func (a *AgentRunActivities) finalizeAgenticEpicPlannerRun(ctx context.Context, 
 func (a *AgentRunActivities) finalizeFlowOutputRun(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
 	switch strings.TrimSpace(input.FlowOutputKind) {
 	case "pm.story_completion_followups":
-		var assessment model.StoryCompletionAssessment
+		var assessment model.TaskCompletionAssessment
 		if err := json.Unmarshal(state.run.OutputSummary, &assessment); err != nil {
 			return fmt.Errorf("decode task completion assessment: %w", err)
 		}
@@ -4124,7 +4124,7 @@ func (a *AgentRunActivities) ensureEpicSpecLink(ctx context.Context, workspaceID
 }
 
 func (a *AgentRunActivities) ensureTaskPlanLink(ctx context.Context, workspaceID, documentID, storyID, actorID string) error {
-	links, err := a.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectStory, storyID)
+	links, err := a.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectTask, storyID)
 	if err != nil {
 		return err
 	}
@@ -4136,7 +4136,7 @@ func (a *AgentRunActivities) ensureTaskPlanLink(ctx context.Context, workspaceID
 	_, err = a.docsLinkRepo.Create(ctx, &model.DocsLink{
 		WorkspaceID:      workspaceID,
 		DocumentID:       documentID,
-		LinkedObjectType: model.LinkedObjectStory,
+		LinkedObjectType: model.LinkedObjectTask,
 		LinkedObjectID:   storyID,
 		LinkContext:      model.LinkContextCreatedFrom,
 		CreatedBy:        actorID,
@@ -4658,8 +4658,8 @@ func coalesceRaw(values ...string) string {
 	return ""
 }
 
-func validatePlanningProposalTasks(stories []model.ProposedStory) error {
-	return model.NormalizeProposedStories(stories)
+func validatePlanningProposalTasks(stories []model.ProposedTask) error {
+	return model.NormalizeProposedTasks(stories)
 }
 
 func buildDraftSpecClarifications(draft model.ProductSpecDraft) []model.SpecClarificationItem {
@@ -4885,7 +4885,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		ListChecklist: func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error) {
 			return a.checklistRepo.List(ctx, storyID)
 		},
-		CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (workerpkg.CreateTaskBatchResult, error) {
+		CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (workerpkg.CreateTaskBatchResult, error) {
 			if a.commandExecutor != nil {
 				output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 					WorkspaceID: workspaceID,
@@ -5373,7 +5373,7 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 	}
 }
 
-func buildWorkingBranch(task *model.PMStory, teamDefault *model.PMTeamRepoDefault) string {
+func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault) string {
 	template := "{display_id}-{slug}"
 	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
 		template = teamDefault.BranchTemplate
@@ -5678,14 +5678,14 @@ func structID(value any) string {
 	return id
 }
 
-func epicIDOfTask(story *model.PMStory) *string {
+func epicIDOfTask(story *model.PMTask) *string {
 	if story == nil {
 		return nil
 	}
 	return story.EpicID
 }
 
-func planDocumentIDOfTask(story *model.PMStory) *string {
+func planDocumentIDOfTask(story *model.PMTask) *string {
 	if story == nil {
 		return nil
 	}
@@ -5706,7 +5706,7 @@ func approvedSpecVersionIDOfEpic(epic *model.PMEpic) *string {
 	return epic.ApprovedSpecVersionID
 }
 
-func repositoryIDOfDeliveryTarget(target *model.StoryDeliveryTarget) string {
+func repositoryIDOfDeliveryTarget(target *model.TaskDeliveryTarget) string {
 	if target == nil {
 		return ""
 	}

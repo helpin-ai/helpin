@@ -21,15 +21,15 @@ func TestCreateStoryRelationshipMapsReciprocalActions(t *testing.T) {
 	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
 	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", false)
 
-	link, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateStoryRelationshipRequest{
-		RelationshipType: model.StoryRelationshipActionIsBlockedBy,
+	link, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateTaskRelationshipRequest{
+		RelationshipType: model.TaskRelationshipActionIsBlockedBy,
 		OtherTaskID:     "story-b",
 	})
 	if err != nil {
 		t.Fatalf("CreateStoryRelationship returned error: %v", err)
 	}
 
-	if link.LinkType != model.PMStoryLinkTypeBlocks {
+	if link.LinkType != model.PMTaskLinkTypeBlocks {
 		t.Fatalf("expected blocks link type, got %q", link.LinkType)
 	}
 	if link.SourceStoryID != "story-b" || link.TargetStoryID != "story-a" {
@@ -43,10 +43,10 @@ func TestCreateStoryRelationshipRejectsCycles(t *testing.T) {
 
 	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
 	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", false)
-	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMStoryLinkTypeBlocks)
+	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMTaskLinkTypeBlocks)
 
-	_, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateStoryRelationshipRequest{
-		RelationshipType: model.StoryRelationshipActionBlocks,
+	_, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateTaskRelationshipRequest{
+		RelationshipType: model.TaskRelationshipActionBlocks,
 		OtherTaskID:     "story-b",
 	})
 	if err == nil {
@@ -60,12 +60,12 @@ func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t
 
 	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
 	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", true)
-	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMStoryLinkTypeBlocks)
+	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMTaskLinkTypeBlocks)
 	seedSupportConversation(t, db, "ticket-1", "ws-1", 11, "Customer asks for Story A", "story-a")
 	seedDocsDocument(t, db, "doc-1", "ws-1", "Spec Doc")
-	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectStory, "story-a")
+	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectTask, "story-a")
 
-	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectStory, "story-a")
+	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "story-a")
 	if err != nil {
 		t.Fatalf("ListGrouped returned error: %v", err)
 	}
@@ -87,8 +87,8 @@ func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t
 func newAssociationsServiceForTest(db *gorm.DB) *AssociationsService {
 	return NewAssociationsService(
 		repository.NewCRMAssociationRepository(db),
-		repository.NewPMStoryLinkRepository(db),
-		repository.NewPMStoryRepository(db),
+		repository.NewPMTaskLinkRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewSupportConversationRepository(db),
 		repository.NewDocsLinkRepository(db),
 		repository.NewDocsDocumentRepository(db),

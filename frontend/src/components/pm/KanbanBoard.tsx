@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { Agent, CreateTaskRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -50,7 +50,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function storyListChanged(a: Story[], b: Story[]): boolean {
+function storyListChanged(a: Task[], b: Task[]): boolean {
   if (a.length !== b.length) return true;
   for (let i = 0; i < a.length; i++) {
     if (a[i].id !== b[i].id) return true;
@@ -64,7 +64,7 @@ interface KanbanBoardProps {
 }
 
 interface ColumnProps {
-  column: StoryStateColumn;
+  column: TaskStateColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
 }
@@ -80,7 +80,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const groupedStories = column.state.state_type === 'done' ? column.task_groups ?? column.story_groups ?? [] : [];
+  const groupedStories = column.state.state_type === 'done' ? column.task_groups ?? [] : [];
 
   // Memoize sortable items from preview stories
   const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
@@ -268,7 +268,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 Column.displayName = 'Column';
 
 interface MemberColumnProps {
-  column: StoryMemberColumn;
+  column: TaskMemberColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
 }
@@ -640,7 +640,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, workflow, workspaceSlug]);
   const openStory = useCallback(
-    (story: Story) => {
+    (story: Task) => {
       if (!workspaceSlug) return;
       openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, story.id);
     },
@@ -684,7 +684,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           story.state_color = stateCol.state.color;
         }
         const cols = usePMBoardStore.getState().memberColumns;
-        const patched = cols.map((col: StoryMemberColumn) => {
+        const patched = cols.map((col: TaskMemberColumn) => {
           const idx = col.stories.findIndex((s) => s.id === story.id);
           if (idx < 0) return col;
           const stories = [...col.stories];
@@ -701,7 +701,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (!storyId) return;
       if (groupBy === 'members') {
         const cols = usePMBoardStore.getState().memberColumns;
-        const updated = cols.map((col: StoryMemberColumn) => {
+        const updated = cols.map((col: TaskMemberColumn) => {
           const idx = col.stories.findIndex((s) => s.id === storyId);
           if (idx < 0) return col;
           return { ...col, stories: col.stories.filter((s) => s.id !== storyId), story_count: col.story_count - 1 };
@@ -1057,7 +1057,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [createTask]
   );
 
-  const handleStoryPatched = useCallback((story: Story) => {
+  const handleStoryPatched = useCallback((story: Task) => {
     // Enrich with owner_name for board display (update API doesn't include it)
     const ownerKey = story.owner_member_id;
     if (ownerKey && !story.owner_name) {

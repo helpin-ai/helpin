@@ -35,7 +35,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid archived query param")
 		return
 	}
-	filters := model.PMStoryFilters{
+	filters := model.PMTaskFilters{
 		TeamID:                queryStringPtr(r, "team_id"),
 		EpicID:                queryStringPtr(r, "epic_id"),
 		SprintID:              queryStringPtr(r, "sprint_id"),
@@ -69,7 +69,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stories == nil {
-		stories = []model.BoardStory{}
+		stories = []model.BoardTask{}
 	}
 
 	totalPages := 0
@@ -100,7 +100,7 @@ func (h *PMTaskHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if columns == nil {
-		columns = []model.StoryStateColumn{}
+		columns = []model.TaskStateColumn{}
 	}
 	writeJSON(w, http.StatusOK, columns)
 }
@@ -121,12 +121,12 @@ func (h *PMTaskHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if stories == nil {
-		stories = []model.BoardStory{}
+		stories = []model.BoardTask{}
 	}
 	if storyGroups == nil {
-		storyGroups = []model.StoryGroup{}
+		storyGroups = []model.TaskGroup{}
 	}
-	writeJSON(w, http.StatusOK, model.ColumnStoriesResponse{
+	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
 		Stories:     stories,
 		TaskGroups:  storyGroups,
 		Total:       total,
@@ -158,7 +158,7 @@ func (h *PMTaskHandler) ListBoardByMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if columns == nil {
-		columns = []model.StoryMemberColumn{}
+		columns = []model.TaskMemberColumn{}
 	}
 	writeJSON(w, http.StatusOK, columns)
 }
@@ -188,16 +188,16 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if stories == nil {
-		stories = []model.BoardStory{}
+		stories = []model.BoardTask{}
 	}
-	writeJSON(w, http.StatusOK, model.ColumnStoriesResponse{
+	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
 		Stories: stories,
 		Total:   total,
 	})
 }
 
-func boardFilters(r *http.Request) model.PMStoryFilters {
-	return model.PMStoryFilters{
+func boardFilters(r *http.Request) model.PMTaskFilters {
+	return model.PMTaskFilters{
 		TeamID:                queryStringPtr(r, "team_id"),
 		Priority:              queryStringPtr(r, "priority"),
 		Severity:              queryStringPtr(r, "severity"),
@@ -236,7 +236,7 @@ func (h *PMTaskHandler) CountByState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if counts == nil {
-		counts = []model.StoryStateCount{}
+		counts = []model.TaskStateCount{}
 	}
 	writeJSON(w, http.StatusOK, counts)
 }
@@ -244,7 +244,7 @@ func (h *PMTaskHandler) CountByState(w http.ResponseWriter, r *http.Request) {
 // Create handles POST /api/pm/stories.
 func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	var req model.CreateStoryRequest
+	var req model.CreateTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -296,7 +296,7 @@ func (h *PMTaskHandler) GetByDisplayID(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.UpdateStoryRequest
+	var req model.UpdateTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -324,7 +324,7 @@ func (h *PMTaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) Move(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.MoveStoryRequest
+	var req model.MoveTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -348,7 +348,7 @@ func (h *PMTaskHandler) Move(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.ReorderStoryRequest
+	var req model.ReorderTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -370,7 +370,7 @@ func (h *PMTaskHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.StoryUserLinkRequest
+	var req model.TaskUserLinkRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -398,7 +398,7 @@ func (h *PMTaskHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) AddFollower(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.StoryUserLinkRequest
+	var req model.TaskUserLinkRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -429,7 +429,7 @@ func (h *PMTaskHandler) RemoveFollower(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskHandler) AddLabel(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	var req model.StoryLabelLinkRequest
+	var req model.TaskLabelLinkRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

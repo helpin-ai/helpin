@@ -111,7 +111,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
-		&model.PMStory{Name: "Inbox triage automation"},
+		&model.PMTask{Name: "Inbox triage automation"},
 		nil,
 		nil,
 		nil,
@@ -148,7 +148,7 @@ func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
 
 	prompt := BuildUserPrompt(
 		nil,
-		&model.PMStory{Name: "Inbox triage automation", Description: &description},
+		&model.PMTask{Name: "Inbox triage automation", Description: &description},
 		nil,
 		nil,
 		nil,
@@ -174,7 +174,7 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 
 	prompt := BuildUserPrompt(
 		&model.Agent{SystemPrompt: &systemPrompt},
-		&model.PMStory{Name: "Inbox triage automation"},
+		&model.PMTask{Name: "Inbox triage automation"},
 		nil,
 		nil,
 		nil,
@@ -256,7 +256,7 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 			PresetKey:    model.AgentPresetCodeBuilder,
 			SystemPrompt: &systemPrompt,
 		},
-		&model.PMStory{Name: "Implement feature flag"},
+		&model.PMTask{Name: "Implement feature flag"},
 		nil,
 		nil,
 		"",
@@ -278,7 +278,7 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 			PresetKey:    model.AgentPresetCodeBuilder,
 			SystemPrompt: &systemPrompt,
 		},
-		&model.PMStory{Name: "Implement feature flag"},
+		&model.PMTask{Name: "Implement feature flag"},
 		nil,
 		nil,
 		"",

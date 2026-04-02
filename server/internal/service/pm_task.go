@@ -118,7 +118,7 @@ func (s *PMTaskService) requireAdmin(ctx context.Context, workspaceID, actorID s
 }
 
 // List returns stories with filters/pagination.
-func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
+func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
@@ -127,7 +127,7 @@ func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters mo
 }
 
 // GetByID returns story detail.
-func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.StoryDetail, error) {
+func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.TaskDetail, error) {
 	story, err := s.storyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.StoryDet
 }
 
 // GetByDisplayID returns story detail by display ID.
-func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.StoryDetail, error) {
+func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.TaskDetail, error) {
 	story, err := s.storyRepo.GetByDisplayID(ctx, workspaceID, displayID)
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, 
 }
 
 // Create creates a story.
-func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest, actorID string) (*model.TaskDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -205,13 +205,13 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 
 	storyType := req.TaskType
 	if storyType == "" {
-		storyType = model.PMStoryTypeFeature
+		storyType = model.PMTaskTypeFeature
 	}
 	if !isValidTaskType(storyType) {
 		return nil, fmt.Errorf("invalid task_type")
 	}
 
-	priority := model.PMStoryPriorityNone
+	priority := model.PMTaskPriorityNone
 	if req.Priority != nil && *req.Priority != "" {
 		priority = *req.Priority
 	}
@@ -219,7 +219,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 		return nil, fmt.Errorf("invalid priority")
 	}
 
-	severity := model.PMStorySeverityNone
+	severity := model.PMTaskSeverityNone
 	if req.Severity != nil && *req.Severity != "" {
 		severity = *req.Severity
 	}
@@ -251,7 +251,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 		blocked = true
 	}
 
-	story := &model.PMStory{
+	story := &model.PMTask{
 		WorkspaceID:       req.WorkspaceID,
 		Name:              strings.TrimSpace(req.Name),
 		Description:       req.Description,
@@ -468,7 +468,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 }
 
 // Update updates story fields.
-func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateTaskRequest, actorID string) (*model.TaskDetail, error) {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -906,7 +906,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 }
 
 // MoveToState moves story to another state.
-func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.MoveStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.MoveTaskRequest, actorID string) (*model.TaskDetail, error) {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1005,7 +1005,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 	// Auto-start pre-assigned LLM agent on state change.
 	if s.agentService != nil && current.AssignedAgentID != nil && *current.AssignedAgentID != "" {
 		if _, err := s.agentService.RunAgent(ctx, current.WorkspaceID, current.ID, "system"); err != nil {
-			if !errors.Is(err, ErrStoryDeliveryTargetRequired) {
+			if !errors.Is(err, ErrTaskDeliveryTargetRequired) {
 				s.logger.WarnContext(ctx, "auto-start agent on state change failed",
 					"error", err, "task_id", current.ID, "agent_id", *current.AssignedAgentID)
 			}
@@ -1033,7 +1033,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 }
 
 // Reorder changes story position in its state.
-func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.ReorderStoryRequest, actorID string) error {
+func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.ReorderTaskRequest, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return err
@@ -1256,7 +1256,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, storyID, labelID, actor
 
 // ListByWorkflowState returns board columns for a workflow with optional filters.
 // perStateLimit controls how many stories per column (0 = unlimited).
-func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
+func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMTaskFilters, perStateLimit int) ([]model.TaskStateColumn, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
@@ -1265,7 +1265,7 @@ func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID stri
 }
 
 // ListColumnStories returns a page of stories for a single board column.
-func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
+func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, []model.TaskGroup, int, error) {
 	if stateID == "" {
 		return nil, nil, 0, fmt.Errorf("state_id is required")
 	}
@@ -1277,7 +1277,7 @@ func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, f
 }
 
 // ListByMember returns board columns grouped by owner member.
-func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
+func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMTaskFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.TaskMemberColumn, error) {
 	if workspaceID == "" || workflowID == "" {
 		return nil, fmt.Errorf("workspace_id and workflow_id are required")
 	}
@@ -1286,7 +1286,7 @@ func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowI
 }
 
 // ListMemberColumnStories returns a page of stories for a single member board column.
-func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, int, error) {
 	if workspaceID == "" || workflowID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
 	}
@@ -1298,7 +1298,7 @@ func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID
 }
 
 // CountByState returns state-level story counts for a workflow.
-func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
+func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]model.TaskStateCount, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
@@ -1312,7 +1312,7 @@ func (s *PMTaskService) ListActivity(ctx context.Context, storyID string, pagina
 
 func isValidTaskType(value string) bool {
 	switch value {
-	case model.PMStoryTypeFeature, model.PMStoryTypeBug, model.PMStoryTypeChore:
+	case model.PMTaskTypeFeature, model.PMTaskTypeBug, model.PMTaskTypeChore:
 		return true
 	default:
 		return false
@@ -1321,7 +1321,7 @@ func isValidTaskType(value string) bool {
 
 func isValidTaskPriority(value string) bool {
 	switch value {
-	case model.PMStoryPriorityNone, model.PMStoryPriorityLow, model.PMStoryPriorityMedium, model.PMStoryPriorityHigh, model.PMStoryPriorityUrgent:
+	case model.PMTaskPriorityNone, model.PMTaskPriorityLow, model.PMTaskPriorityMedium, model.PMTaskPriorityHigh, model.PMTaskPriorityUrgent:
 		return true
 	default:
 		return false
@@ -1330,7 +1330,7 @@ func isValidTaskPriority(value string) bool {
 
 func isValidTaskSeverity(value string) bool {
 	switch value {
-	case model.PMStorySeverityNone, model.PMStorySeverityMinor, model.PMStorySeverityMajor, model.PMStorySeverityCritical:
+	case model.PMTaskSeverityNone, model.PMTaskSeverityMinor, model.PMTaskSeverityMajor, model.PMTaskSeverityCritical:
 		return true
 	default:
 		return false

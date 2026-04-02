@@ -15,7 +15,7 @@ import (
 )
 
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
-func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
+func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
 	var parts []string
 
 	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
@@ -97,9 +97,9 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 // BuildUserPrompt creates the initial user message for the run.
 func BuildUserPrompt(
 	agent *model.Agent,
-	story *model.PMStory,
+	story *model.PMTask,
 	epic *model.PMEpic,
-	epicStories []model.PMStory,
+	epicStories []model.PMTask,
 	ticket *model.SupportConversation,
 	ticketMessages []model.SupportMessage,
 	checklist []model.PMChecklistItem,

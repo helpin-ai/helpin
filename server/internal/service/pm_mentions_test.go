@@ -43,7 +43,7 @@ type pmMentionTestEnv struct {
 
 	workspaceRepo *repository.WorkspaceRepository
 
-	storyService     *PMStoryService
+	storyService     *PMTaskService
 	commentService   *PMCommentService
 	checklistService *PMChecklistItemService
 	epicService      *PMEpicService
@@ -94,9 +94,9 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 		"member-eng", env.workspaceID, env.collisionUID, "eng@example.com", "Eng", model.RoleMember, "active", now, now)
 
 	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_story_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		env.engTeamID, env.workspaceID, "Engineering", "eng", "engineering", model.PMStoryTypeFeature, now, now)
+		env.engTeamID, env.workspaceID, "Engineering", "eng", "engineering", model.PMTaskTypeFeature, now, now)
 	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_story_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		env.designTeamID, env.workspaceID, "Design", "design", "design", model.PMStoryTypeFeature, now, now)
+		env.designTeamID, env.workspaceID, "Design", "design", "design", model.PMTaskTypeFeature, now, now)
 
 	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"twm-alice-eng", env.engTeamID, env.aliceMemberID, "member", now, now)
@@ -126,8 +126,8 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	)
 	activityService := NewPMActivityService(repository.NewPMActivityRepository(db))
 
-	env.storyService = NewPMStoryService(
-		repository.NewPMStoryRepository(db),
+	env.storyService = NewPMTaskService(
+		repository.NewPMTaskRepository(db),
 		env.workspaceRepo,
 		repository.NewPMWorkflowRepository(db),
 		repository.NewPMEpicRepository(db),
@@ -144,7 +144,7 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	)
 	env.commentService = NewPMCommentService(
 		repository.NewPMCommentRepository(db),
-		repository.NewPMStoryRepository(db),
+		repository.NewPMTaskRepository(db),
 		nil,
 		activityService,
 		nil,
@@ -153,14 +153,14 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	)
 	env.checklistService = NewPMChecklistItemService(
 		repository.NewPMChecklistItemRepository(db),
-		repository.NewPMStoryRepository(db),
+		repository.NewPMTaskRepository(db),
 		nil,
 		notifService,
 		env.workspaceRepo,
 	)
 	env.epicService = NewPMEpicService(
 		repository.NewPMEpicRepository(db),
-		repository.NewPMStoryRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewPMLabelRepository(db),
 		repository.NewGitRepositoryRepository(db),
 		repository.NewPMAttachmentRepository(db),
@@ -207,11 +207,11 @@ func (e *pmMentionTestEnv) addCarolToDesignTeam(t *testing.T) {
 		"twm-carol-design", e.designTeamID, e.carolMemberID, "member", now, now)
 }
 
-func (e *pmMentionTestEnv) createStory(t *testing.T, description *string) *model.StoryDetail {
+func (e *pmMentionTestEnv) createStory(t *testing.T, description *string) *model.TaskDetail {
 	t.Helper()
 
 	teamID := e.engTeamID
-	story, err := e.storyService.Create(context.Background(), model.CreateStoryRequest{
+	story, err := e.storyService.Create(context.Background(), model.CreateTaskRequest{
 		WorkspaceID:     e.workspaceID,
 		Name:            "Mention Story",
 		Description:     description,
@@ -305,7 +305,7 @@ func TestResolveMentionRecipients_IgnoresOutOfScopeTeamHandles(t *testing.T) {
 	}
 }
 
-func TestPMStoryService_CreateAndUpdate_TeamMentions(t *testing.T) {
+func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("create emits story mention notifications", func(t *testing.T) {
@@ -317,7 +317,7 @@ func TestPMStoryService_CreateAndUpdate_TeamMentions(t *testing.T) {
 	t.Run("update emits story mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
 		story := env.createStory(t, nil)
-		updated, err := env.storyService.Update(context.Background(), story.Story.ID, model.UpdateStoryRequest{
+		updated, err := env.storyService.Update(context.Background(), story.Story.ID, model.UpdateTaskRequest{
 			Description: stringPtr(pmMentionBodyHTML),
 		}, env.actorUserID)
 		if err != nil {
