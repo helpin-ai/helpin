@@ -283,7 +283,7 @@ function TaskDetailPanelBody({
   states: WorkflowState[];
   initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
-  onTaskUpdated: (story: TaskDetail) => void;
+  onTaskUpdated: (task: TaskDetail) => void;
   onTaskArchived: (taskId: string) => void;
 }) {
   const confirm = useConfirm();
@@ -324,8 +324,8 @@ function TaskDetailPanelBody({
     });
   }, [workspaceId]);
 
-  const loadRecurringSummary = useCallback(async (currentStoryId: string) => {
-    const { data } = await pmRecurringTemplateService.getByStory(workspaceId, currentStoryId);
+  const loadRecurringSummary = useCallback(async (currentTaskId: string) => {
+    const { data } = await pmRecurringTemplateService.getByTask(workspaceId, currentTaskId);
     setRecurringSummary(data ?? null);
   }, [workspaceId]);
 
@@ -405,9 +405,9 @@ function TaskDetailPanelBody({
     [teams, form.team_id],
   );
   // ── URL sync (imperative, no effect loop) ──────────────────────
-  const lastSyncedStoryRef = useRef<string | null>(null);
-  if (taskDetail.task.id !== lastSyncedStoryRef.current) {
-    lastSyncedStoryRef.current = taskDetail.task.id;
+  const lastSyncedTaskRef = useRef<string | null>(null);
+  if (taskDetail.task.id !== lastSyncedTaskRef.current) {
+    lastSyncedTaskRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
     url.searchParams.set('task', `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
@@ -452,15 +452,15 @@ function TaskDetailPanelBody({
         reloadActivity();
       }
     };
-    const onStoryEvent = (e: Event) => {
+    const onTaskEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
       if (d?.entity_id === taskId) reloadActivity();
     };
     window.addEventListener('task-child-updated', onChildEvent);
-    window.addEventListener('task-updated', onStoryEvent);
+    window.addEventListener('task-updated', onTaskEvent);
     return () => {
       window.removeEventListener('task-child-updated', onChildEvent);
-      window.removeEventListener('task-updated', onStoryEvent);
+      window.removeEventListener('task-updated', onTaskEvent);
     };
   }, [taskDetail.task.id, reloadComments, reloadActivity]);
 
@@ -657,7 +657,7 @@ function TaskDetailPanelBody({
   );
 
   // ── Archive ────────────────────────────────────────────────────
-  const archiveStory = async () => {
+  const archiveTask = async () => {
     const { error } = await pmTaskService.remove(workspaceId, taskId);
     if (error) {
       setSaveError(error);
@@ -1045,14 +1045,14 @@ function TaskDetailPanelBody({
           <TaskRelationshipsSection
             workspaceId={workspaceId}
             taskId={taskDetail.task.id}
-            storyName={taskDetail.task.name}
-            storyDisplayId={taskDetail.task.display_id}
+            taskName={taskDetail.task.name}
+            taskDisplayId={taskDetail.task.display_id}
             workflowId={taskDetail.task.workflow_id}
             workflowStateId={taskDetail.task.workflow_state_id}
             epicId={taskDetail.task.epic_id}
             sprintId={taskDetail.task.sprint_id}
             teamId={taskDetail.task.team_id}
-            storyType={taskDetail.task.task_type}
+            taskType={taskDetail.task.task_type}
             priority={taskDetail.task.priority}
             severity={taskDetail.task.severity}
             externalBlocker={form.blocker}
@@ -1301,7 +1301,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={Hash} label="Type">
               <SidebarPopoverSelect
                 value={form.task_type}
-                options={storyTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
+                options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
                 onChange={(v) => updateField('task_type', v as TaskType, { task_type: v as TaskType })}
                 renderTrigger={() => (
                   <>
@@ -1580,7 +1580,7 @@ function TaskDetailPanelBody({
         description="This task will be hidden from the board and lists. You can restore it later from archived items."
         confirmLabel="Archive"
         variant="default"
-        onConfirm={archiveStory}
+        onConfirm={archiveTask}
       />
     </div>
   );

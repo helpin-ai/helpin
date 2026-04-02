@@ -14,58 +14,58 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-func TestCreateStoryRelationshipMapsReciprocalActions(t *testing.T) {
+func TestCreateTaskRelationshipMapsReciprocalActions(t *testing.T) {
 	db := newAssociationsTestDB(t)
 	svc := newAssociationsServiceForTest(db)
 
-	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
-	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", false)
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedAssociationTask(t, db, "task-b", "ws-1", 102, "Task B", false)
 
-	link, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateTaskRelationshipRequest{
+	link, err := svc.CreateTaskRelationship(context.Background(), "ws-1", "task-a", "user-1", model.CreateTaskRelationshipRequest{
 		RelationshipType: model.TaskRelationshipActionIsBlockedBy,
-		OtherTaskID:     "story-b",
+		OtherTaskID:     "task-b",
 	})
 	if err != nil {
-		t.Fatalf("CreateStoryRelationship returned error: %v", err)
+		t.Fatalf("CreateTaskRelationship returned error: %v", err)
 	}
 
 	if link.LinkType != model.PMTaskLinkTypeBlocks {
 		t.Fatalf("expected blocks link type, got %q", link.LinkType)
 	}
-	if link.SourceStoryID != "story-b" || link.TargetStoryID != "story-a" {
-		t.Fatalf("expected story-b to block story-a, got %s -> %s", link.SourceStoryID, link.TargetStoryID)
+	if link.SourceTaskID != "task-b" || link.TargetTaskID != "task-a" {
+		t.Fatalf("expected task-b to block task-a, got %s -> %s", link.SourceTaskID, link.TargetTaskID)
 	}
 }
 
-func TestCreateStoryRelationshipRejectsCycles(t *testing.T) {
+func TestCreateTaskRelationshipRejectsCycles(t *testing.T) {
 	db := newAssociationsTestDB(t)
 	svc := newAssociationsServiceForTest(db)
 
-	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
-	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", false)
-	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMTaskLinkTypeBlocks)
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedAssociationTask(t, db, "task-b", "ws-1", 102, "Task B", false)
+	seedTaskLink(t, db, "link-1", "ws-1", "task-b", "task-a", model.PMTaskLinkTypeBlocks)
 
-	_, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateTaskRelationshipRequest{
+	_, err := svc.CreateTaskRelationship(context.Background(), "ws-1", "task-a", "user-1", model.CreateTaskRelationshipRequest{
 		RelationshipType: model.TaskRelationshipActionBlocks,
-		OtherTaskID:     "story-b",
+		OtherTaskID:     "task-b",
 	})
 	if err == nil {
 		t.Fatalf("expected cycle error, got nil")
 	}
 }
 
-func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t *testing.T) {
+func TestListGroupedTaskAssociationsIncludesRelationshipsLegacySupportAndDocs(t *testing.T) {
 	db := newAssociationsTestDB(t)
 	svc := newAssociationsServiceForTest(db)
 
-	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
-	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", true)
-	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMTaskLinkTypeBlocks)
-	seedSupportConversation(t, db, "ticket-1", "ws-1", 11, "Customer asks for Story A", "story-a")
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedAssociationTask(t, db, "task-b", "ws-1", 102, "Task B", true)
+	seedTaskLink(t, db, "link-1", "ws-1", "task-b", "task-a", model.PMTaskLinkTypeBlocks)
+	seedSupportConversation(t, db, "ticket-1", "ws-1", 11, "Customer asks for Task A", "task-a")
 	seedDocsDocument(t, db, "doc-1", "ws-1", "Spec Doc")
-	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectTask, "story-a")
+	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectTask, "task-a")
 
-	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "story-a")
+	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "task-a")
 	if err != nil {
 		t.Fatalf("ListGrouped returned error: %v", err)
 	}
@@ -218,34 +218,34 @@ func registerAssociationsTestUUIDCallback(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func seedAssociationStory(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, name string, completed bool) {
+func seedAssociationTask(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, name string, completed bool) {
 	t.Helper()
 	if err := db.Exec(
 		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_state_id, completed, archived, blocked, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'state-1', ?, false, false, ?, ?)`,
 		id, workspaceID, displayID, name, completed, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
-		t.Fatalf("seed story: %v", err)
+		t.Fatalf("seed task: %v", err)
 	}
 }
 
-func seedStoryLink(t *testing.T, db *gorm.DB, id, workspaceID, sourceStoryID, targetStoryID, linkType string) {
+func seedTaskLink(t *testing.T, db *gorm.DB, id, workspaceID, sourceTaskID, targetTaskID, linkType string) {
 	t.Helper()
 	if err := db.Exec(
 		`INSERT INTO pm_task_links (id, workspace_id, source_task_id, target_task_id, link_type, created_by, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, 'user-1', ?, ?)`,
-		id, workspaceID, sourceStoryID, targetStoryID, linkType, time.Now().UTC(), time.Now().UTC(),
+		id, workspaceID, sourceTaskID, targetTaskID, linkType, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
-		t.Fatalf("seed story link: %v", err)
+		t.Fatalf("seed task link: %v", err)
 	}
 }
 
-func seedSupportConversation(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, subject, linkedStoryID string) {
+func seedSupportConversation(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, subject, linkedTaskID string) {
 	t.Helper()
 	if err := db.Exec(
 		`INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, priority, linked_task_id, source, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'open', 'medium', ?, 'internal', ?, ?)`,
-		id, workspaceID, displayID, subject, linkedStoryID, time.Now().UTC(), time.Now().UTC(),
+		id, workspaceID, displayID, subject, linkedTaskID, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
 		t.Fatalf("seed support conversation: %v", err)
 	}

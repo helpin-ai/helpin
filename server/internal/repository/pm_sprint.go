@@ -70,7 +70,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		defaultBacklogLimit = 50
 	)
 
-	previewLimit := filters.PreviewStoryLimit
+	previewLimit := filters.PreviewTaskLimit
 	if previewLimit <= 0 {
 		previewLimit = defaultPreviewLimit
 	}

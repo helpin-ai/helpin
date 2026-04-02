@@ -50,7 +50,7 @@ type PMSprintListFilters struct {
 type PMSprintPlanningFilters struct {
 	TeamID            *string
 	IncludeCompleted  bool
-	PreviewStoryLimit int
+	PreviewTaskLimit int
 	BacklogLimit      int
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.

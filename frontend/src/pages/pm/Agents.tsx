@@ -1862,7 +1862,7 @@ export function AgentsPage() {
                 })}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Story and epic are the normal choices for planning agents. Add other targets only if the prompt and toolset are designed for them.
+                Task and epic are the normal choices for planning agents. Add other targets only if the prompt and toolset are designed for them.
               </p>
             </div>
 

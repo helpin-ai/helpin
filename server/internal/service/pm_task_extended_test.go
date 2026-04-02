@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// storyTestEnv bundles the service, DB, and common IDs used across story tests.
-type storyTestEnv struct {
+// taskTestEnv bundles the service, DB, and common IDs used across task tests.
+type taskTestEnv struct {
 	svc          *PMTaskService
 	db           *gorm.DB
 	wsID         string
@@ -22,9 +22,9 @@ type storyTestEnv struct {
 	stDone       string
 }
 
-// newStoryTestEnv creates a fresh test environment for PMTaskService tests:
+// newTaskTestEnv creates a fresh test environment for PMTaskService tests:
 // workspace, user, workspace member (admin role), workflow with three states.
-func newStoryTestEnv(t *testing.T) storyTestEnv {
+func newTaskTestEnv(t *testing.T) taskTestEnv {
 	t.Helper()
 	db := newTestDB(t)
 
@@ -98,7 +98,7 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 		nil,
 	)
 
-	return storyTestEnv{
+	return taskTestEnv{
 		svc:          svc,
 		db:           db,
 		wsID:         wsID,
@@ -110,8 +110,8 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	}
 }
 
-// createTestStory is a helper that creates a story with minimal fields.
-func createTestStory(t *testing.T, env storyTestEnv, name string) *model.TaskDetail {
+// createTestTask is a helper that creates a story with minimal fields.
+func createTestTask(t *testing.T, env taskTestEnv, name string) *model.TaskDetail {
 	t.Helper()
 	story, err := env.svc.Create(context.Background(), model.CreateTaskRequest{
 		WorkspaceID:     env.wsID,
@@ -120,26 +120,26 @@ func createTestStory(t *testing.T, env storyTestEnv, name string) *model.TaskDet
 		WorkflowStateID: env.stTodo,
 	}, env.userID)
 	if err != nil {
-		t.Fatalf("createTestStory(%q): %v", name, err)
+		t.Fatalf("createTestTask(%q): %v", name, err)
 	}
 	return story
 }
 
-func seedStoryTeam(t *testing.T, env storyTestEnv, teamID, name string) {
+func seedTaskTeam(t *testing.T, env taskTestEnv, teamID, name string) {
 	t.Helper()
 	now := time.Now()
 	mustExec(t, env.db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
 		teamID, env.wsID, name, now, now)
 }
 
-func seedStoryEpic(t *testing.T, env storyTestEnv, epicID, teamID, name string) {
+func seedTaskEpic(t *testing.T, env taskTestEnv, epicID, teamID, name string) {
 	t.Helper()
 	now := time.Now()
 	mustExec(t, env.db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		epicID, env.wsID, name, nullableTestString(teamID), now, now)
 }
 
-func seedStorySprint(t *testing.T, env storyTestEnv, sprintID, teamID, name string) {
+func seedStorySprint(t *testing.T, env taskTestEnv, sprintID, teamID, name string) {
 	t.Helper()
 	now := time.Now()
 	mustExec(t, env.db, `INSERT INTO pm_sprints (id, workspace_id, name, team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -153,7 +153,7 @@ func nullableTestString(value string) any {
 	return value
 }
 
-func latestStoryActivityAction(t *testing.T, env storyTestEnv, storyID string) string {
+func latestStoryActivityAction(t *testing.T, env taskTestEnv, storyID string) string {
 	t.Helper()
 	entries, total, err := env.svc.ListActivity(context.Background(), storyID, model.PMPagination{Page: 1, PerPage: 10})
 	if err != nil {
@@ -171,7 +171,7 @@ func latestStoryActivityAction(t *testing.T, env storyTestEnv, storyID string) s
 
 func TestPMTaskService_Create(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("basic create", func(t *testing.T) {
@@ -187,31 +187,31 @@ func TestPMTaskService_Create(t *testing.T) {
 		if story == nil {
 			t.Fatal("expected non-nil story detail")
 		}
-		if story.Story.Name != "My Story" {
-			t.Errorf("name = %q, want %q", story.Story.Name, "My Story")
+		if story.Task.Name != "My Story" {
+			t.Errorf("name = %q, want %q", story.Task.Name, "My Story")
 		}
-		if story.Story.WorkspaceID != env.wsID {
-			t.Errorf("workspace_id = %q, want %q", story.Story.WorkspaceID, env.wsID)
+		if story.Task.WorkspaceID != env.wsID {
+			t.Errorf("workspace_id = %q, want %q", story.Task.WorkspaceID, env.wsID)
 		}
-		if story.Story.ID == "" {
+		if story.Task.ID == "" {
 			t.Error("expected non-empty ID")
 		}
-		if story.Story.DisplayID < 1 {
-			t.Errorf("display_id = %d, want >= 1", story.Story.DisplayID)
+		if story.Task.DisplayID < 1 {
+			t.Errorf("display_id = %d, want >= 1", story.Task.DisplayID)
 		}
-		if story.Story.WorkflowStateID != env.stTodo {
-			t.Errorf("workflow_state_id = %q, want %q", story.Story.WorkflowStateID, env.stTodo)
+		if story.Task.WorkflowStateID != env.stTodo {
+			t.Errorf("workflow_state_id = %q, want %q", story.Task.WorkflowStateID, env.stTodo)
 		}
-		if story.Story.TaskType != model.PMTaskTypeFeature {
-			t.Errorf("story_type = %q, want %q", story.Story.TaskType, model.PMTaskTypeFeature)
+		if story.Task.TaskType != model.PMTaskTypeFeature {
+			t.Errorf("story_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeFeature)
 		}
-		if story.Story.Priority != model.PMTaskPriorityNone {
-			t.Errorf("priority = %q, want %q", story.Story.Priority, model.PMTaskPriorityNone)
+		if story.Task.Priority != model.PMTaskPriorityNone {
+			t.Errorf("priority = %q, want %q", story.Task.Priority, model.PMTaskPriorityNone)
 		}
-		if story.Story.Severity != model.PMTaskSeverityNone {
-			t.Errorf("severity = %q, want %q", story.Story.Severity, model.PMTaskSeverityNone)
+		if story.Task.Severity != model.PMTaskSeverityNone {
+			t.Errorf("severity = %q, want %q", story.Task.Severity, model.PMTaskSeverityNone)
 		}
-		if story.Story.Archived {
+		if story.Task.Archived {
 			t.Error("expected archived = false")
 		}
 	})
@@ -226,8 +226,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if story.Story.RequesterMemberID != nil {
-			t.Fatalf("expected requester_member_id to remain nil for non-member actor, got %#v", story.Story.RequesterMemberID)
+		if story.Task.RequesterMemberID != nil {
+			t.Fatalf("expected requester_member_id to remain nil for non-member actor, got %#v", story.Task.RequesterMemberID)
 		}
 	})
 
@@ -242,8 +242,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create bug: %v", err)
 		}
-		if story.Story.TaskType != model.PMTaskTypeBug {
-			t.Errorf("story_type = %q, want %q", story.Story.TaskType, model.PMTaskTypeBug)
+		if story.Task.TaskType != model.PMTaskTypeBug {
+			t.Errorf("story_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeBug)
 		}
 	})
 
@@ -251,9 +251,9 @@ func TestPMTaskService_Create(t *testing.T) {
 		teamA := "team-story-a"
 		teamB := "team-story-b"
 		epicB := "epic-story-b"
-		seedStoryTeam(t, env, teamA, "Team A")
-		seedStoryTeam(t, env, teamB, "Team B")
-		seedStoryEpic(t, env, epicB, teamB, "Epic B")
+		seedTaskTeam(t, env, teamA, "Team A")
+		seedTaskTeam(t, env, teamB, "Team B")
+		seedTaskEpic(t, env, epicB, teamB, "Epic B")
 
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
@@ -272,8 +272,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		teamA := "team-story-c"
 		teamB := "team-story-d"
 		sprintB := "sprint-story-b"
-		seedStoryTeam(t, env, teamA, "Team C")
-		seedStoryTeam(t, env, teamB, "Team D")
+		seedTaskTeam(t, env, teamA, "Team C")
+		seedTaskTeam(t, env, teamB, "Team D")
 		seedStorySprint(t, env, sprintB, teamB, "Sprint B")
 
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
@@ -303,11 +303,11 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if story.Story.Priority != model.PMTaskPriorityHigh {
-			t.Errorf("priority = %q, want %q", story.Story.Priority, model.PMTaskPriorityHigh)
+		if story.Task.Priority != model.PMTaskPriorityHigh {
+			t.Errorf("priority = %q, want %q", story.Task.Priority, model.PMTaskPriorityHigh)
 		}
-		if story.Story.Severity != model.PMTaskSeverityMajor {
-			t.Errorf("severity = %q, want %q", story.Story.Severity, model.PMTaskSeverityMajor)
+		if story.Task.Severity != model.PMTaskSeverityMajor {
+			t.Errorf("severity = %q, want %q", story.Task.Severity, model.PMTaskSeverityMajor)
 		}
 	})
 
@@ -336,16 +336,16 @@ func TestPMTaskService_Create(t *testing.T) {
 		if attachment.EntityType != "story" {
 			t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "story")
 		}
-		if attachment.EntityID != story.Story.ID {
-			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, story.Story.ID)
+		if attachment.EntityID != story.Task.ID {
+			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, story.Task.ID)
 		}
 	})
 
 	t.Run("display_id increments per workspace", func(t *testing.T) {
-		s1 := createTestStory(t, env, "First")
-		s2 := createTestStory(t, env, "Second")
-		if s2.Story.DisplayID != s1.Story.DisplayID+1 {
-			t.Errorf("display_id: first=%d, second=%d; expected consecutive", s1.Story.DisplayID, s2.Story.DisplayID)
+		s1 := createTestTask(t, env, "First")
+		s2 := createTestTask(t, env, "Second")
+		if s2.Task.DisplayID != s1.Task.DisplayID+1 {
+			t.Errorf("display_id: first=%d, second=%d; expected consecutive", s1.Task.DisplayID, s2.Task.DisplayID)
 		}
 	})
 
@@ -371,8 +371,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if story.Story.Position != 2 {
-			t.Fatalf("position = %d, want 2", story.Story.Position)
+		if story.Task.Position != 2 {
+			t.Fatalf("position = %d, want 2", story.Task.Position)
 		}
 	})
 
@@ -386,10 +386,10 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create without workflow: %v", err)
 		}
-		if story.Story.WorkflowID == "" {
+		if story.Task.WorkflowID == "" {
 			t.Error("expected non-empty workflow_id")
 		}
-		if story.Story.WorkflowStateID == "" {
+		if story.Task.WorkflowStateID == "" {
 			t.Error("expected non-empty workflow_state_id")
 		}
 	})
@@ -401,7 +401,7 @@ func TestPMTaskService_Create(t *testing.T) {
 
 func TestPMTaskService_CreateValidation(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("missing name", func(t *testing.T) {
@@ -516,11 +516,11 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 
 func TestPMTaskService_List(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	createTestStory(t, env, "Story Alpha")
-	createTestStory(t, env, "Story Beta")
+	createTestTask(t, env, "Story Alpha")
+	createTestTask(t, env, "Story Beta")
 
 	stories, total, err := env.svc.List(ctx, env.wsID, model.PMTaskFilters{}, model.PMPagination{Page: 1, PerPage: 50})
 	if err != nil {
@@ -536,7 +536,7 @@ func TestPMTaskService_List(t *testing.T) {
 
 func TestPMTaskService_ListEmptyWorkspace(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	stories, total, err := env.svc.List(ctx, env.wsID, model.PMTaskFilters{}, model.PMPagination{Page: 1, PerPage: 50})
@@ -553,23 +553,23 @@ func TestPMTaskService_ListEmptyWorkspace(t *testing.T) {
 
 func TestPMTaskService_ListAssociationFilters(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	contactStory := createTestStory(t, env, "Story With Contact")
-	supportStory := createTestStory(t, env, "Story With Support")
+	contactStory := createTestTask(t, env, "Story With Contact")
+	supportStory := createTestTask(t, env, "Story With Support")
 	now := time.Now().UTC()
 
 	mustExec(t, env.db, `INSERT INTO crm_associations (
 		id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id, created_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"assoc-story-contact-1", env.wsID, model.CRMObjectTask, contactStory.Story.ID, model.CRMObjectContact, "contact-123", now,
+		"assoc-story-contact-1", env.wsID, model.CRMObjectTask, contactStory.Task.ID, model.CRMObjectContact, "contact-123", now,
 	)
 
 	mustExec(t, env.db, `INSERT INTO support_conversations (
 		id, workspace_id, display_id, subject, status, priority, channel, source, linked_task_id, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"support-conv-123", env.wsID, 9001, "Customer cannot log in", "open", "medium", "widget", "internal", supportStory.Story.ID, now, now,
+		"support-conv-123", env.wsID, 9001, "Customer cannot log in", "open", "medium", "widget", "internal", supportStory.Task.ID, now, now,
 	)
 
 	stories, total, err := env.svc.List(ctx, env.wsID, model.PMTaskFilters{
@@ -581,8 +581,8 @@ func TestPMTaskService_ListAssociationFilters(t *testing.T) {
 	if total != 1 {
 		t.Fatalf("contact filter total = %d, want 1", total)
 	}
-	if len(stories) != 1 || stories[0].ID != contactStory.Story.ID {
-		t.Fatalf("contact filter returned %+v, want only %s", stories, contactStory.Story.ID)
+	if len(stories) != 1 || stories[0].ID != contactStory.Task.ID {
+		t.Fatalf("contact filter returned %+v, want only %s", stories, contactStory.Task.ID)
 	}
 
 	stories, total, err = env.svc.List(ctx, env.wsID, model.PMTaskFilters{
@@ -594,14 +594,14 @@ func TestPMTaskService_ListAssociationFilters(t *testing.T) {
 	if total != 1 {
 		t.Fatalf("support filter total = %d, want 1", total)
 	}
-	if len(stories) != 1 || stories[0].ID != supportStory.Story.ID {
-		t.Fatalf("support filter returned %+v, want only %s", stories, supportStory.Story.ID)
+	if len(stories) != 1 || stories[0].ID != supportStory.Task.ID {
+		t.Fatalf("support filter returned %+v, want only %s", stories, supportStory.Task.ID)
 	}
 }
 
 func TestPMTaskService_ListRequiresWorkspaceID(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	_, _, err := env.svc.List(ctx, "", model.PMTaskFilters{}, model.PMPagination{})
@@ -616,48 +616,48 @@ func TestPMTaskService_ListRequiresWorkspaceID(t *testing.T) {
 
 func TestPMTaskService_GetByID(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	created := createTestStory(t, env, "Get Me")
+	created := createTestTask(t, env, "Get Me")
 
-	got, err := env.svc.GetByID(ctx, created.Story.ID)
+	got, err := env.svc.GetByID(ctx, created.Task.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
 	if got == nil {
 		t.Fatal("expected non-nil story")
 	}
-	if got.Story.ID != created.Story.ID {
-		t.Errorf("id = %q, want %q", got.Story.ID, created.Story.ID)
+	if got.Task.ID != created.Task.ID {
+		t.Errorf("id = %q, want %q", got.Task.ID, created.Task.ID)
 	}
-	if got.Story.Name != "Get Me" {
-		t.Errorf("name = %q, want %q", got.Story.Name, "Get Me")
+	if got.Task.Name != "Get Me" {
+		t.Errorf("name = %q, want %q", got.Task.Name, "Get Me")
 	}
-	if got.Story.WorkspaceID != env.wsID {
-		t.Errorf("workspace_id = %q, want %q", got.Story.WorkspaceID, env.wsID)
+	if got.Task.WorkspaceID != env.wsID {
+		t.Errorf("workspace_id = %q, want %q", got.Task.WorkspaceID, env.wsID)
 	}
-	if got.Story.DisplayID != created.Story.DisplayID {
-		t.Errorf("display_id = %d, want %d", got.Story.DisplayID, created.Story.DisplayID)
+	if got.Task.DisplayID != created.Task.DisplayID {
+		t.Errorf("display_id = %d, want %d", got.Task.DisplayID, created.Task.DisplayID)
 	}
 }
 
 func TestPMTaskService_GetByDisplayID(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	created := createTestStory(t, env, "Display ID Story")
+	created := createTestTask(t, env, "Display ID Story")
 
-	got, err := env.svc.GetByDisplayID(ctx, env.wsID, created.Story.DisplayID)
+	got, err := env.svc.GetByDisplayID(ctx, env.wsID, created.Task.DisplayID)
 	if err != nil {
 		t.Fatalf("GetByDisplayID: %v", err)
 	}
 	if got == nil {
 		t.Fatal("expected non-nil story")
 	}
-	if got.Story.ID != created.Story.ID {
-		t.Errorf("id = %q, want %q", got.Story.ID, created.Story.ID)
+	if got.Task.ID != created.Task.ID {
+		t.Errorf("id = %q, want %q", got.Task.ID, created.Task.ID)
 	}
 }
 
@@ -667,7 +667,7 @@ func TestPMTaskService_GetByDisplayID(t *testing.T) {
 
 func TestPMTaskService_GetByIDNotFound(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	_, err := env.svc.GetByID(ctx, "nonexistent-story-id")
@@ -678,7 +678,7 @@ func TestPMTaskService_GetByIDNotFound(t *testing.T) {
 
 func TestPMTaskService_GetByDisplayIDNotFound(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	_, err := env.svc.GetByDisplayID(ctx, env.wsID, 99999)
@@ -693,98 +693,98 @@ func TestPMTaskService_GetByDisplayIDNotFound(t *testing.T) {
 
 func TestPMTaskService_Update(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	created := createTestStory(t, env, "Original Name")
+	created := createTestTask(t, env, "Original Name")
 
 	t.Run("update name", func(t *testing.T) {
 		newName := "Updated Name"
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Name: &newName,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update name: %v", err)
 		}
-		if updated.Story.Name != "Updated Name" {
-			t.Errorf("name = %q, want %q", updated.Story.Name, "Updated Name")
+		if updated.Task.Name != "Updated Name" {
+			t.Errorf("name = %q, want %q", updated.Task.Name, "Updated Name")
 		}
 	})
 
 	t.Run("update priority", func(t *testing.T) {
 		prio := model.PMTaskPriorityUrgent
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Priority: &prio,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update priority: %v", err)
 		}
-		if updated.Story.Priority != model.PMTaskPriorityUrgent {
-			t.Errorf("priority = %q, want %q", updated.Story.Priority, model.PMTaskPriorityUrgent)
+		if updated.Task.Priority != model.PMTaskPriorityUrgent {
+			t.Errorf("priority = %q, want %q", updated.Task.Priority, model.PMTaskPriorityUrgent)
 		}
 	})
 
 	t.Run("update severity", func(t *testing.T) {
 		sev := model.PMTaskSeverityCritical
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Severity: &sev,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update severity: %v", err)
 		}
-		if updated.Story.Severity != model.PMTaskSeverityCritical {
-			t.Errorf("severity = %q, want %q", updated.Story.Severity, model.PMTaskSeverityCritical)
+		if updated.Task.Severity != model.PMTaskSeverityCritical {
+			t.Errorf("severity = %q, want %q", updated.Task.Severity, model.PMTaskSeverityCritical)
 		}
 	})
 
 	t.Run("update story_type", func(t *testing.T) {
 		st := model.PMTaskTypeChore
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TaskType: &st,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update story_type: %v", err)
 		}
-		if updated.Story.TaskType != model.PMTaskTypeChore {
-			t.Errorf("story_type = %q, want %q", updated.Story.TaskType, model.PMTaskTypeChore)
+		if updated.Task.TaskType != model.PMTaskTypeChore {
+			t.Errorf("story_type = %q, want %q", updated.Task.TaskType, model.PMTaskTypeChore)
 		}
 	})
 
 	t.Run("update description", func(t *testing.T) {
 		desc := "Updated description text"
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Description: &desc,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update description: %v", err)
 		}
-		if updated.Story.Description == nil || *updated.Story.Description != desc {
+		if updated.Task.Description == nil || *updated.Task.Description != desc {
 			t.Errorf("description mismatch")
 		}
 	})
 
 	t.Run("clear epic with empty string", func(t *testing.T) {
 		epicID := "epic-001"
-		seedStoryEpic(t, env, epicID, "", "Shared Epic")
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		seedTaskEpic(t, env, epicID, "", "Shared Epic")
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			EpicID: &epicID,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("set epic: %v", err)
 		}
-		if updated.Story.EpicID == nil || *updated.Story.EpicID != epicID {
-			t.Fatalf("epic_id = %v, want %q", updated.Story.EpicID, epicID)
+		if updated.Task.EpicID == nil || *updated.Task.EpicID != epicID {
+			t.Fatalf("epic_id = %v, want %q", updated.Task.EpicID, epicID)
 		}
 
 		emptyEpicID := ""
-		cleared, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		cleared, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			EpicID: &emptyEpicID,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("clear epic: %v", err)
 		}
-		if cleared.Story.EpicID != nil {
-			t.Fatalf("expected epic_id to be cleared, got %v", *cleared.Story.EpicID)
+		if cleared.Task.EpicID != nil {
+			t.Fatalf("expected epic_id to be cleared, got %v", *cleared.Task.EpicID)
 		}
 	})
 
@@ -792,11 +792,11 @@ func TestPMTaskService_Update(t *testing.T) {
 		teamA := "team-story-upd-a"
 		teamB := "team-story-upd-b"
 		epicB := "epic-story-upd-b"
-		seedStoryTeam(t, env, teamA, "Update Team A")
-		seedStoryTeam(t, env, teamB, "Update Team B")
-		seedStoryEpic(t, env, epicB, teamB, "Update Epic B")
+		seedTaskTeam(t, env, teamA, "Update Team A")
+		seedTaskTeam(t, env, teamB, "Update Team B")
+		seedTaskEpic(t, env, epicB, teamB, "Update Epic B")
 
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TeamID: stringPtr(teamA),
 			EpicID: stringPtr(epicB),
 		}, env.userID)
@@ -809,11 +809,11 @@ func TestPMTaskService_Update(t *testing.T) {
 		teamA := "team-story-upd-c"
 		teamB := "team-story-upd-d"
 		sprintB := "sprint-story-upd-b"
-		seedStoryTeam(t, env, teamA, "Update Team C")
-		seedStoryTeam(t, env, teamB, "Update Team D")
+		seedTaskTeam(t, env, teamA, "Update Team C")
+		seedTaskTeam(t, env, teamB, "Update Team D")
 		seedStorySprint(t, env, sprintB, teamB, "Update Sprint B")
 
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TeamID:   stringPtr(teamA),
 			SprintID: stringPtr(sprintB),
 		}, env.userID)
@@ -824,48 +824,48 @@ func TestPMTaskService_Update(t *testing.T) {
 
 	t.Run("update blocked", func(t *testing.T) {
 		blocked := true
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Blocked: &blocked,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update blocked: %v", err)
 		}
-		if !updated.Story.Blocked {
+		if !updated.Task.Blocked {
 			t.Error("expected blocked = true")
 		}
 
 		// Unblock.
 		unblocked := false
-		updated2, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated2, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Blocked: &unblocked,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update unblocked: %v", err)
 		}
-		if updated2.Story.Blocked {
+		if updated2.Task.Blocked {
 			t.Error("expected blocked = false")
 		}
 	})
 
 	t.Run("update blocker sets blocked", func(t *testing.T) {
 		blocker := "waiting on backend API"
-		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Blocker: &blocker,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update blocker: %v", err)
 		}
-		if !updated.Story.Blocked {
+		if !updated.Task.Blocked {
 			t.Error("expected blocked = true when blocker is set")
 		}
-		if updated.Story.Blocker == nil || *updated.Story.Blocker != blocker {
+		if updated.Task.Blocker == nil || *updated.Task.Blocker != blocker {
 			t.Errorf("blocker mismatch")
 		}
 	})
 
 	t.Run("empty name rejected", func(t *testing.T) {
 		emptyName := ""
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Name: &emptyName,
 		}, env.userID)
 		if err == nil {
@@ -875,7 +875,7 @@ func TestPMTaskService_Update(t *testing.T) {
 
 	t.Run("invalid priority rejected", func(t *testing.T) {
 		badPrio := "extreme"
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Priority: &badPrio,
 		}, env.userID)
 		if err == nil {
@@ -885,7 +885,7 @@ func TestPMTaskService_Update(t *testing.T) {
 
 	t.Run("invalid severity rejected", func(t *testing.T) {
 		badSev := "apocalyptic"
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Severity: &badSev,
 		}, env.userID)
 		if err == nil {
@@ -895,7 +895,7 @@ func TestPMTaskService_Update(t *testing.T) {
 
 	t.Run("invalid story_type rejected", func(t *testing.T) {
 		badType := "epic_story"
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TaskType: &badType,
 		}, env.userID)
 		if err == nil {
@@ -919,7 +919,7 @@ func TestPMTaskService_Update(t *testing.T) {
 		seedWorkspaceMember(t, env.db, "wm-viewer-upd-001", env.wsID, viewerID, "viewer-upd@test.com", "Viewer User", "viewer")
 
 		newName := "Forbidden Update"
-		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			Name: &newName,
 		}, viewerID)
 		if err == nil {
@@ -930,13 +930,13 @@ func TestPMTaskService_Update(t *testing.T) {
 
 func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	teamID := "team-activity-001"
-	seedStoryTeam(t, env, teamID, "Growth")
+	seedTaskTeam(t, env, teamID, "Growth")
 	epicID := "epic-activity-001"
-	seedStoryEpic(t, env, epicID, "", "Launch")
+	seedTaskEpic(t, env, epicID, "", "Launch")
 	sprintID := "sprint-activity-001"
 	seedStorySprint(t, env, sprintID, "", "Sprint 8")
 
@@ -951,102 +951,102 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	seedWorkspaceMember(t, env.db, requesterMemberID, env.wsID, requesterUserID, "requester@test.com", "Rita Requester", model.RoleMember)
 
 	t.Run("team assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Team Activity Story")
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		story := createTestTask(t, env, "Team Activity Story")
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			TeamID: stringPtr(teamID),
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update team: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "assigned this story to team Growth" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "assigned this story to team Growth" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("owner assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Owner Activity Story")
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		story := createTestTask(t, env, "Owner Activity Story")
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			OwnerMemberID: stringPtr(ownerMemberID),
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update owner: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "assigned owner Alice Owner" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "assigned owner Alice Owner" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("requester assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Requester Activity Story")
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		story := createTestTask(t, env, "Requester Activity Story")
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			RequesterMemberID: stringPtr(requesterMemberID),
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update requester: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "changed requester from Story Admin to Rita Requester" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "changed requester from Story Admin to Rita Requester" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("epic assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Epic Activity Story")
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		story := createTestTask(t, env, "Epic Activity Story")
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			EpicID: stringPtr(epicID),
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update epic: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "added this story to epic Launch" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this story to epic Launch" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("sprint assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Sprint Activity Story")
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		story := createTestTask(t, env, "Sprint Activity Story")
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			SprintID: stringPtr(sprintID),
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update sprint: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "added this story to sprint Sprint 8" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this story to sprint Sprint 8" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("estimate assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Estimate Activity Story")
+		story := createTestTask(t, env, "Estimate Activity Story")
 		estimate := 5
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			Estimate: &estimate,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update estimate: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "set estimate to 5" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "set estimate to 5" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("deadline assignment logs activity", func(t *testing.T) {
-		story := createTestStory(t, env, "Deadline Activity Story")
+		story := createTestTask(t, env, "Deadline Activity Story")
 		deadline := time.Date(2026, time.April, 3, 0, 0, 0, 0, time.UTC)
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			Deadline: &deadline,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update deadline: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "set due date to 2026-04-03" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "set due date to 2026-04-03" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
 
 	t.Run("blocker text update logs activity when already blocked", func(t *testing.T) {
-		story := createTestStory(t, env, "Blocker Activity Story")
+		story := createTestTask(t, env, "Blocker Activity Story")
 		initialBlocker := "Waiting on API"
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			Blocker: &initialBlocker,
 		}, env.userID)
 		if err != nil {
@@ -1054,13 +1054,13 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 		}
 
 		nextBlocker := "Waiting on API review"
-		_, err = env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err = env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			Blocker: &nextBlocker,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update blocker: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Story.ID); got != "updated blocker reason" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "updated blocker reason" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -1072,27 +1072,27 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 
 func TestPMTaskService_UpdateState(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	stInProgress := "state-inprogress-001"
 	stDone := "state-done-001"
 
 	t.Run("move to in_progress via Update", func(t *testing.T) {
-		story := createTestStory(t, env, "State Change Story")
+		story := createTestTask(t, env, "State Change Story")
 
-		updated, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			WorkflowStateID: &stInProgress,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update state: %v", err)
 		}
-		if updated.Story.WorkflowStateID != stInProgress {
-			t.Errorf("workflow_state_id = %q, want %q", updated.Story.WorkflowStateID, stInProgress)
+		if updated.Task.WorkflowStateID != stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", updated.Task.WorkflowStateID, stInProgress)
 		}
 		// Verify raw row to check started/completed flags.
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if !raw.Started {
@@ -1104,19 +1104,19 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 	})
 
 	t.Run("move to done via Update", func(t *testing.T) {
-		story := createTestStory(t, env, "Done Story")
+		story := createTestTask(t, env, "Done Story")
 
-		updated, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			WorkflowStateID: &stDone,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update state to done: %v", err)
 		}
-		if updated.Story.WorkflowStateID != stDone {
-			t.Errorf("workflow_state_id = %q, want %q", updated.Story.WorkflowStateID, stDone)
+		if updated.Task.WorkflowStateID != stDone {
+			t.Errorf("workflow_state_id = %q, want %q", updated.Task.WorkflowStateID, stDone)
 		}
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if !raw.Started {
@@ -1131,10 +1131,10 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 	})
 
 	t.Run("move back to unstarted clears started/completed", func(t *testing.T) {
-		story := createTestStory(t, env, "Back To Todo")
+		story := createTestTask(t, env, "Back To Todo")
 
 		// First move to done.
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			WorkflowStateID: &stDone,
 		}, env.userID)
 		if err != nil {
@@ -1143,7 +1143,7 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 
 		// Move back to todo.
 		todoState := env.stTodo
-		_, err = env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err = env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			WorkflowStateID: &todoState,
 		}, env.userID)
 		if err != nil {
@@ -1151,7 +1151,7 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 		}
 
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if raw.Started {
@@ -1163,9 +1163,9 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 	})
 
 	t.Run("state not in workflow rejected", func(t *testing.T) {
-		story := createTestStory(t, env, "Bad State Move")
+		story := createTestTask(t, env, "Bad State Move")
 		badState := "nonexistent-state-id"
-		_, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			WorkflowStateID: &badState,
 		}, env.userID)
 		if err == nil {
@@ -1176,41 +1176,41 @@ func TestPMTaskService_UpdateState(t *testing.T) {
 
 func TestPMTaskService_MoveToState(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	stInProgress := "state-inprogress-001"
 	stDone := "state-done-001"
 
 	t.Run("move to in_progress", func(t *testing.T) {
-		story := createTestStory(t, env, "Move Via MoveToState")
+		story := createTestTask(t, env, "Move Via MoveToState")
 
-		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		moved, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID: stInProgress,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("MoveToState: %v", err)
 		}
-		if moved.Story.WorkflowStateID != stInProgress {
-			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, stInProgress)
+		if moved.Task.WorkflowStateID != stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Task.WorkflowStateID, stInProgress)
 		}
 	})
 
 	t.Run("move to done", func(t *testing.T) {
-		story := createTestStory(t, env, "Move To Done")
+		story := createTestTask(t, env, "Move To Done")
 
-		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		moved, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID: stDone,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("MoveToState: %v", err)
 		}
-		if moved.Story.WorkflowStateID != stDone {
-			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, stDone)
+		if moved.Task.WorkflowStateID != stDone {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Task.WorkflowStateID, stDone)
 		}
 
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if !raw.Completed {
@@ -1219,8 +1219,8 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 	})
 
 	t.Run("move with position", func(t *testing.T) {
-		env := newStoryTestEnv(t)
-		story := createTestStory(t, env, "Move With Position")
+		env := newTaskTestEnv(t)
+		story := createTestTask(t, env, "Move With Position")
 		now := time.Now().UTC()
 		mustExec(t, env.db, `INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
@@ -1229,18 +1229,18 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 		)
 		pos := 1
 
-		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		moved, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID:  env.stInProgress,
 			Position: &pos,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("MoveToState with position: %v", err)
 		}
-		if moved.Story.WorkflowStateID != env.stInProgress {
-			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, env.stInProgress)
+		if moved.Task.WorkflowStateID != env.stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Task.WorkflowStateID, env.stInProgress)
 		}
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if raw.Position != 1 {
@@ -1249,8 +1249,8 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 	})
 
 	t.Run("move without position appends to end of target column", func(t *testing.T) {
-		env := newStoryTestEnv(t)
-		story := createTestStory(t, env, "Move Without Position")
+		env := newTaskTestEnv(t)
+		story := createTestTask(t, env, "Move Without Position")
 		now := time.Now().UTC()
 		mustExec(t, env.db, `INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
@@ -1263,29 +1263,29 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 			"state-target-b", env.wsID, 1002, "Target B", env.wfID, env.stInProgress, 1, "feature", "none", "none", true, false, false, false, now, now,
 		)
 
-		moved, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		moved, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID: env.stInProgress,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("MoveToState without position: %v", err)
 		}
-		if moved.Story.WorkflowStateID != env.stInProgress {
-			t.Errorf("workflow_state_id = %q, want %q", moved.Story.WorkflowStateID, env.stInProgress)
+		if moved.Task.WorkflowStateID != env.stInProgress {
+			t.Errorf("workflow_state_id = %q, want %q", moved.Task.WorkflowStateID, env.stInProgress)
 		}
-		if moved.Story.Position != 2 {
-			t.Fatalf("moved position = %d, want 2", moved.Story.Position)
+		if moved.Task.Position != 2 {
+			t.Fatalf("moved position = %d, want 2", moved.Task.Position)
 		}
 
 		var stories []model.PMTask
 		if err := env.db.
-			Where("workflow_state_id = ? AND id IN ?", env.stInProgress, []string{"state-target-a", "state-target-b", story.Story.ID}).
+			Where("workflow_state_id = ? AND id IN ?", env.stInProgress, []string{"state-target-a", "state-target-b", story.Task.ID}).
 			Order("position ASC").
 			Find(&stories).Error; err != nil {
 			t.Fatalf("query moved stories: %v", err)
 		}
 
 		gotIDs := []string{stories[0].ID, stories[1].ID, stories[2].ID}
-		wantIDs := []string{"state-target-a", "state-target-b", story.Story.ID}
+		wantIDs := []string{"state-target-a", "state-target-b", story.Task.ID}
 		for i := range wantIDs {
 			if gotIDs[i] != wantIDs[i] {
 				t.Fatalf("stories[%d] = %q, want %q (full order %v)", i, gotIDs[i], wantIDs[i], gotIDs)
@@ -1297,9 +1297,9 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 	})
 
 	t.Run("empty state_id rejected", func(t *testing.T) {
-		story := createTestStory(t, env, "No State ID")
+		story := createTestTask(t, env, "No State ID")
 
-		_, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		_, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID: "",
 		}, env.userID)
 		if err == nil {
@@ -1308,9 +1308,9 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 	})
 
 	t.Run("state not in workflow rejected", func(t *testing.T) {
-		story := createTestStory(t, env, "Bad State")
+		story := createTestTask(t, env, "Bad State")
 
-		_, err := env.svc.MoveToState(ctx, story.Story.ID, model.MoveTaskRequest{
+		_, err := env.svc.MoveToState(ctx, story.Task.ID, model.MoveTaskRequest{
 			StateID: "nonexistent-state",
 		}, env.userID)
 		if err == nil {
@@ -1334,20 +1334,20 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 
 func TestPMTaskService_Delete(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("delete archives story", func(t *testing.T) {
-		story := createTestStory(t, env, "To Be Deleted")
+		story := createTestTask(t, env, "To Be Deleted")
 
-		err := env.svc.Delete(ctx, story.Story.ID, env.userID)
+		err := env.svc.Delete(ctx, story.Task.ID, env.userID)
 		if err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
 		// Verify archived flag is set.
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("query after delete: %v", err)
 		}
 		if !raw.Archived {
@@ -1363,22 +1363,22 @@ func TestPMTaskService_Delete(t *testing.T) {
 	})
 
 	t.Run("delete requires admin", func(t *testing.T) {
-		story := createTestStory(t, env, "Admin Only Delete")
+		story := createTestTask(t, env, "Admin Only Delete")
 
 		managerID := "user-mgr-del-001"
 		seedUser(t, env.db, managerID, "mgr-del@test.com", "Manager Del", "hash")
 		seedWorkspaceMember(t, env.db, "wm-mgr-del-001", env.wsID, managerID, "mgr-del@test.com", "Manager Del", "manager")
 
-		err := env.svc.Delete(ctx, story.Story.ID, managerID)
+		err := env.svc.Delete(ctx, story.Task.ID, managerID)
 		if err == nil {
 			t.Fatal("expected forbidden error for manager role on Delete")
 		}
 	})
 
 	t.Run("delete allowed for admin", func(t *testing.T) {
-		story := createTestStory(t, env, "Admin Can Delete")
+		story := createTestTask(t, env, "Admin Can Delete")
 
-		err := env.svc.Delete(ctx, story.Story.ID, env.userID)
+		err := env.svc.Delete(ctx, story.Task.ID, env.userID)
 		if err != nil {
 			t.Fatalf("Delete by admin: %v", err)
 		}
@@ -1391,12 +1391,12 @@ func TestPMTaskService_Delete(t *testing.T) {
 
 func TestPMTaskService_Reorder(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("reorder changes position", func(t *testing.T) {
-		env := newStoryTestEnv(t)
-		story := createTestStory(t, env, "Reorder Me")
+		env := newTaskTestEnv(t)
+		story := createTestTask(t, env, "Reorder Me")
 		now := time.Now().UTC()
 		mustExec(t, env.db, `INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
@@ -1409,7 +1409,7 @@ func TestPMTaskService_Reorder(t *testing.T) {
 			"reorder-peer-b", env.wsID, 1004, "Reorder Peer B", env.wfID, env.stTodo, 2, "feature", "none", "none", false, false, false, false, now, now,
 		)
 
-		err := env.svc.Reorder(ctx, story.Story.ID, model.ReorderTaskRequest{
+		err := env.svc.Reorder(ctx, story.Task.ID, model.ReorderTaskRequest{
 			Position: 2,
 		}, env.userID)
 		if err != nil {
@@ -1417,7 +1417,7 @@ func TestPMTaskService_Reorder(t *testing.T) {
 		}
 
 		var raw model.PMTask
-		if err := env.db.Where("id = ?", story.Story.ID).First(&raw).Error; err != nil {
+		if err := env.db.Where("id = ?", story.Task.ID).First(&raw).Error; err != nil {
 			t.Fatalf("raw query: %v", err)
 		}
 		if raw.Position != 2 {
@@ -1426,9 +1426,9 @@ func TestPMTaskService_Reorder(t *testing.T) {
 	})
 
 	t.Run("negative position rejected", func(t *testing.T) {
-		story := createTestStory(t, env, "Negative Pos")
+		story := createTestTask(t, env, "Negative Pos")
 
-		err := env.svc.Reorder(ctx, story.Story.ID, model.ReorderTaskRequest{
+		err := env.svc.Reorder(ctx, story.Task.ID, model.ReorderTaskRequest{
 			Position: -1,
 		}, env.userID)
 		if err == nil {
@@ -1452,48 +1452,48 @@ func TestPMTaskService_Reorder(t *testing.T) {
 
 func TestPMTaskService_Owners(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("add and remove owner", func(t *testing.T) {
-		story := createTestStory(t, env, "Owner Test")
+		story := createTestTask(t, env, "Owner Test")
 
 		// Add the actor user as owner.
-		err := env.svc.AddOwner(ctx, story.Story.ID, env.userID, env.userID)
+		err := env.svc.AddOwner(ctx, story.Task.ID, env.userID, env.userID)
 		if err != nil {
 			t.Fatalf("AddOwner: %v", err)
 		}
 
 		// Verify owner exists in pivot table.
 		var count int64
-		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&count)
 		if count != 1 {
 			t.Errorf("owner count = %d, want 1", count)
 		}
 
 		// Also verify auto-follow.
 		var followerCount int64
-		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&followerCount)
+		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&followerCount)
 		if followerCount < 1 {
 			t.Error("expected user to be auto-followed when added as owner")
 		}
 
 		// Remove owner.
-		err = env.svc.RemoveOwner(ctx, story.Story.ID, env.userID, env.userID)
+		err = env.svc.RemoveOwner(ctx, story.Task.ID, env.userID, env.userID)
 		if err != nil {
 			t.Fatalf("RemoveOwner: %v", err)
 		}
 
-		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&count)
 		if count != 0 {
 			t.Errorf("owner count after remove = %d, want 0", count)
 		}
 	})
 
 	t.Run("add owner requires user_id", func(t *testing.T) {
-		story := createTestStory(t, env, "Empty Owner")
+		story := createTestTask(t, env, "Empty Owner")
 
-		err := env.svc.AddOwner(ctx, story.Story.ID, "", env.userID)
+		err := env.svc.AddOwner(ctx, story.Task.ID, "", env.userID)
 		if err == nil {
 			t.Fatal("expected error for empty user_id")
 		}
@@ -1506,33 +1506,33 @@ func TestPMTaskService_Owners(t *testing.T) {
 
 func TestPMTaskService_Followers(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	t.Run("add and remove follower", func(t *testing.T) {
-		story := createTestStory(t, env, "Follower Test")
+		story := createTestTask(t, env, "Follower Test")
 
-		err := env.svc.AddFollower(ctx, story.Story.ID, env.userID, env.userID)
+		err := env.svc.AddFollower(ctx, story.Task.ID, env.userID, env.userID)
 		if err != nil {
 			t.Fatalf("AddFollower: %v", err)
 		}
 
 		var count int64
-		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&count)
 		if count < 1 {
 			t.Error("expected follower to be added")
 		}
 
-		err = env.svc.RemoveFollower(ctx, story.Story.ID, env.userID, env.userID)
+		err = env.svc.RemoveFollower(ctx, story.Task.ID, env.userID, env.userID)
 		if err != nil {
 			t.Fatalf("RemoveFollower: %v", err)
 		}
 	})
 
 	t.Run("add follower requires user_id", func(t *testing.T) {
-		story := createTestStory(t, env, "No Follower ID")
+		story := createTestTask(t, env, "No Follower ID")
 
-		err := env.svc.AddFollower(ctx, story.Story.ID, "", env.userID)
+		err := env.svc.AddFollower(ctx, story.Task.ID, "", env.userID)
 		if err == nil {
 			t.Fatal("expected error for empty user_id")
 		}
@@ -1545,7 +1545,7 @@ func TestPMTaskService_Followers(t *testing.T) {
 
 func TestPMTaskService_Labels(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	// Seed a workspace-level label.
@@ -1554,25 +1554,25 @@ func TestPMTaskService_Labels(t *testing.T) {
 		"label-001", env.wsID, "Bug", "#ff0000", now, now)
 
 	t.Run("add and remove label", func(t *testing.T) {
-		story := createTestStory(t, env, "Label Test")
+		story := createTestTask(t, env, "Label Test")
 
-		err := env.svc.AddLabel(ctx, story.Story.ID, "label-001", env.userID)
+		err := env.svc.AddLabel(ctx, story.Task.ID, "label-001", env.userID)
 		if err != nil {
 			t.Fatalf("AddLabel: %v", err)
 		}
 
 		var count int64
-		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
+		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Task.ID, "label-001").Count(&count)
 		if count != 1 {
 			t.Errorf("label count = %d, want 1", count)
 		}
 
-		err = env.svc.RemoveLabel(ctx, story.Story.ID, "label-001", env.userID)
+		err = env.svc.RemoveLabel(ctx, story.Task.ID, "label-001", env.userID)
 		if err != nil {
 			t.Fatalf("RemoveLabel: %v", err)
 		}
 
-		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
+		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Task.ID, "label-001").Count(&count)
 		if count != 0 {
 			t.Errorf("label count after remove = %d, want 0", count)
 		}
@@ -1585,19 +1585,19 @@ func TestPMTaskService_Labels(t *testing.T) {
 
 func TestPMTaskService_ArchiveViaUpdate(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
-	story := createTestStory(t, env, "Archive Me")
+	story := createTestTask(t, env, "Archive Me")
 
 	archived := true
-	updated, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+	updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 		Archived: &archived,
 	}, env.userID)
 	if err != nil {
 		t.Fatalf("Update archived: %v", err)
 	}
-	if !updated.Story.Archived {
+	if !updated.Task.Archived {
 		t.Error("expected archived = true")
 	}
 }
@@ -1608,7 +1608,7 @@ func TestPMTaskService_ArchiveViaUpdate(t *testing.T) {
 
 func TestPMTaskService_Estimate(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	est := 5
@@ -1622,19 +1622,19 @@ func TestPMTaskService_Estimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create with estimate: %v", err)
 	}
-	if story.Story.Estimate == nil || *story.Story.Estimate != 5 {
-		t.Errorf("estimate mismatch, got %v", story.Story.Estimate)
+	if story.Task.Estimate == nil || *story.Task.Estimate != 5 {
+		t.Errorf("estimate mismatch, got %v", story.Task.Estimate)
 	}
 
 	newEst := 13
-	updated, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+	updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 		Estimate: &newEst,
 	}, env.userID)
 	if err != nil {
 		t.Fatalf("Update estimate: %v", err)
 	}
-	if updated.Story.Estimate == nil || *updated.Story.Estimate != 13 {
-		t.Errorf("updated estimate mismatch, got %v", updated.Story.Estimate)
+	if updated.Task.Estimate == nil || *updated.Task.Estimate != 13 {
+		t.Errorf("updated estimate mismatch, got %v", updated.Task.Estimate)
 	}
 }
 
@@ -1644,7 +1644,7 @@ func TestPMTaskService_Estimate(t *testing.T) {
 
 func TestPMTaskService_ManagerPermissions(t *testing.T) {
 	t.Parallel()
-	env := newStoryTestEnv(t)
+	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
 	managerID := "user-mgr-001"
@@ -1661,30 +1661,30 @@ func TestPMTaskService_ManagerPermissions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manager Create: %v", err)
 		}
-		if story.Story.Name != "Manager Created" {
-			t.Errorf("name = %q, want %q", story.Story.Name, "Manager Created")
+		if story.Task.Name != "Manager Created" {
+			t.Errorf("name = %q, want %q", story.Task.Name, "Manager Created")
 		}
 	})
 
 	t.Run("manager can update", func(t *testing.T) {
-		story := createTestStory(t, env, "Manager Updates")
+		story := createTestTask(t, env, "Manager Updates")
 
 		newName := "Manager Updated"
-		updated, err := env.svc.Update(ctx, story.Story.ID, model.UpdateTaskRequest{
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
 			Name: &newName,
 		}, managerID)
 		if err != nil {
 			t.Fatalf("manager Update: %v", err)
 		}
-		if updated.Story.Name != "Manager Updated" {
-			t.Errorf("name = %q, want %q", updated.Story.Name, "Manager Updated")
+		if updated.Task.Name != "Manager Updated" {
+			t.Errorf("name = %q, want %q", updated.Task.Name, "Manager Updated")
 		}
 	})
 
 	t.Run("manager cannot delete", func(t *testing.T) {
-		story := createTestStory(t, env, "Manager Cant Delete")
+		story := createTestTask(t, env, "Manager Cant Delete")
 
-		err := env.svc.Delete(ctx, story.Story.ID, managerID)
+		err := env.svc.Delete(ctx, story.Task.ID, managerID)
 		if err == nil {
 			t.Fatal("expected forbidden error for manager on Delete")
 		}

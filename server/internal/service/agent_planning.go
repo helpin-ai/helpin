@@ -248,11 +248,11 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
 	existingByExternalID := make(map[string]model.PMTask, len(existingTasks))
-	for _, story := range existingTasks {
-		if story.ExternalID == nil || strings.TrimSpace(*story.ExternalID) == "" {
+	for _, task := range existingTasks {
+		if task.ExternalID == nil || strings.TrimSpace(*task.ExternalID) == "" {
 			continue
 		}
-		existingByExternalID[*story.ExternalID] = story
+		existingByExternalID[*task.ExternalID] = task
 	}
 
 	created := make([]model.PMTask, 0, len(proposedStories))
@@ -354,10 +354,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			if !exists {
 				return nil, fmt.Errorf("task %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
-			if err := s.storyLinkRepo.Create(ctx, &model.PMTaskLink{
+			if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
 				WorkspaceID:   workspaceID,
-				SourceStoryID: sourceTask.ID,
-				TargetStoryID: targetTask.ID,
+				SourceTaskID: sourceTask.ID,
+				TargetTaskID: targetTask.ID,
 				LinkType:      model.PMTaskLinkTypeBlocks,
 				CreatedBy:     actorID,
 			}); err != nil {
@@ -469,11 +469,11 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
 	existingByExternalID := make(map[string]model.PMTask, len(existingTasks))
-	for _, story := range existingTasks {
-		if story.ExternalID == nil || strings.TrimSpace(*story.ExternalID) == "" {
+	for _, task := range existingTasks {
+		if task.ExternalID == nil || strings.TrimSpace(*task.ExternalID) == "" {
 			continue
 		}
-		existingByExternalID[*story.ExternalID] = story
+		existingByExternalID[*task.ExternalID] = task
 	}
 
 	created := make([]model.PMTask, 0, len(proposedStories))
@@ -558,10 +558,10 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 			if !exists {
 				return nil, fmt.Errorf("task %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
-			if err := s.storyLinkRepo.Create(ctx, &model.PMTaskLink{
+			if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
 				WorkspaceID:   workspaceID,
-				SourceStoryID: sourceTask.ID,
-				TargetStoryID: targetTask.ID,
+				SourceTaskID: sourceTask.ID,
+				TargetTaskID: targetTask.ID,
 				LinkType:      model.PMTaskLinkTypeBlocks,
 				CreatedBy:     actorID,
 			}); err != nil {
@@ -667,17 +667,17 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 }
 
 // EnsureTaskPlanDocument ensures the task has a canonical planning doc and returns it.
-func (s *AgentService) EnsureTaskPlanDocument(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
-	story, err := s.taskRepo.GetRawByID(ctx, storyID)
+func (s *AgentService) EnsureTaskPlanDocument(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error) {
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
-	if story == nil || story.WorkspaceID != workspaceID {
+	if task == nil || task.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("task not found")
 	}
 	var epic *model.PMEpic
-	if story.EpicID != nil && strings.TrimSpace(*story.EpicID) != "" {
-		epicWithStats, err := s.epicRepo.GetByID(ctx, *story.EpicID)
+	if task.EpicID != nil && strings.TrimSpace(*task.EpicID) != "" {
+		epicWithStats, err := s.epicRepo.GetByID(ctx, *task.EpicID)
 		if err != nil {
 			return nil, fmt.Errorf("get parent epic: %w", err)
 		}
@@ -685,17 +685,17 @@ func (s *AgentService) EnsureTaskPlanDocument(ctx context.Context, workspaceID, 
 			epic = &epicWithStats.Epic
 		}
 	}
-	return s.ensureTaskPlanDocument(ctx, workspaceID, story, epic, actorID)
+	return s.ensureTaskPlanDocument(ctx, workspaceID, task, epic, actorID)
 }
 
-func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID string, story *model.PMTask, epic *model.PMEpic, actorID string) (*model.DocsDocument, error) {
-	if story.PlanDocumentID != nil && strings.TrimSpace(*story.PlanDocumentID) != "" {
-		doc, err := s.docsDocumentRepo.GetByID(ctx, *story.PlanDocumentID)
+func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID string, task *model.PMTask, epic *model.PMEpic, actorID string) (*model.DocsDocument, error) {
+	if task.PlanDocumentID != nil && strings.TrimSpace(*task.PlanDocumentID) != "" {
+		doc, err := s.docsDocumentRepo.GetByID(ctx, *task.PlanDocumentID)
 		if err != nil {
 			return nil, err
 		}
 		if doc != nil {
-			if err := s.ensureTaskPlanLink(ctx, workspaceID, doc.ID, story.ID, actorID); err != nil {
+			if err := s.ensureTaskPlanLink(ctx, workspaceID, doc.ID, task.ID, actorID); err != nil {
 				return nil, err
 			}
 			return doc, nil
@@ -722,7 +722,7 @@ func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID s
 		}
 	}
 
-	teamID := story.TeamID
+	teamID := task.TeamID
 	if teamID == nil && epic != nil {
 		teamID = epic.TeamID
 	}
@@ -730,7 +730,7 @@ func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID s
 		teamID = strPtr(actorID)
 	}
 
-	title := strings.TrimSpace(story.Name) + " Plan"
+	title := strings.TrimSpace(task.Name) + " Plan"
 	doc, err := s.docsDocumentRepo.Create(ctx, &model.DocsDocument{
 		WorkspaceID: workspaceID,
 		SpaceID:     space.ID,
@@ -747,12 +747,12 @@ func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID s
 		return nil, err
 	}
 
-	story.PlanDocumentID = &doc.ID
-	if err := s.taskRepo.Update(ctx, story); err != nil {
+	task.PlanDocumentID = &doc.ID
+	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
 	}
 
-	if err := s.ensureTaskPlanLink(ctx, workspaceID, doc.ID, story.ID, actorID); err != nil {
+	if err := s.ensureTaskPlanLink(ctx, workspaceID, doc.ID, task.ID, actorID); err != nil {
 		return nil, err
 	}
 
@@ -780,8 +780,8 @@ func (s *AgentService) ensureEpicSpecLink(ctx context.Context, workspaceID, docu
 	return err
 }
 
-func (s *AgentService) ensureTaskPlanLink(ctx context.Context, workspaceID, documentID, storyID, actorID string) error {
-	links, err := s.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectTask, storyID)
+func (s *AgentService) ensureTaskPlanLink(ctx context.Context, workspaceID, documentID, taskID, actorID string) error {
+	links, err := s.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectTask, taskID)
 	if err != nil {
 		return err
 	}
@@ -794,7 +794,7 @@ func (s *AgentService) ensureTaskPlanLink(ctx context.Context, workspaceID, docu
 		WorkspaceID:      workspaceID,
 		DocumentID:       documentID,
 		LinkedObjectType: model.LinkedObjectTask,
-		LinkedObjectID:   storyID,
+		LinkedObjectID:   taskID,
 		LinkContext:      model.LinkContextCreatedFrom,
 		CreatedBy:        actorID,
 	})
@@ -831,17 +831,17 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 func loadPlanningTasksByID(ctx context.Context, taskRepo interface {
 	GetRawByID(ctx context.Context, id string) (*model.PMTask, error)
 }, ids []string) ([]model.PMTask, error) {
-	stories := make([]model.PMTask, 0, len(ids))
+	tasks := make([]model.PMTask, 0, len(ids))
 	for _, id := range ids {
-		story, err := taskRepo.GetRawByID(ctx, id)
+		task, err := taskRepo.GetRawByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		if story != nil {
-			stories = append(stories, *story)
+		if task != nil {
+			tasks = append(tasks, *task)
 		}
 	}
-	return stories, nil
+	return tasks, nil
 }
 
 func (s *AgentService) loadCreatedTasks(ctx context.Context, ids []string) ([]model.PMTask, error) {
@@ -1004,14 +1004,14 @@ func filterNonEmptyStrings(values []string) []string {
 	return filtered
 }
 
-func renderPlannedTaskDescription(story model.ProposedTask) string {
+func renderPlannedTaskDescription(proposed model.ProposedTask) string {
 	var sections []string
-	if summary := strings.TrimSpace(story.Description); summary != "" {
+	if summary := strings.TrimSpace(proposed.Description); summary != "" {
 		sections = append(sections, "## Summary\n"+summary)
 	}
-	if len(story.AcceptanceCriteria) > 0 {
+	if len(proposed.AcceptanceCriteria) > 0 {
 		var lines []string
-		for _, item := range story.AcceptanceCriteria {
+		for _, item := range proposed.AcceptanceCriteria {
 			item = strings.TrimSpace(item)
 			if item == "" {
 				continue
@@ -1022,16 +1022,16 @@ func renderPlannedTaskDescription(story model.ProposedTask) string {
 			sections = append(sections, "## Acceptance Criteria\n"+strings.Join(lines, "\n"))
 		}
 	}
-	if len(story.DependencyRefs) > 0 {
-		lines := make([]string, 0, len(story.DependencyRefs))
-		for _, dep := range story.DependencyRefs {
+	if len(proposed.DependencyRefs) > 0 {
+		lines := make([]string, 0, len(proposed.DependencyRefs))
+		for _, dep := range proposed.DependencyRefs {
 			lines = append(lines, "- Depends on `"+dep+"`")
 		}
 		sections = append(sections, "## Dependencies\n"+strings.Join(lines, "\n"))
 	}
-	if len(story.SourceRefs) > 0 {
-		lines := make([]string, 0, len(story.SourceRefs))
-		for _, ref := range story.SourceRefs {
+	if len(proposed.SourceRefs) > 0 {
+		lines := make([]string, 0, len(proposed.SourceRefs))
+		for _, ref := range proposed.SourceRefs {
 			label := strings.TrimSpace(ref.Title)
 			if label == "" {
 				label = strings.TrimSpace(ref.Type)

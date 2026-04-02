@@ -133,7 +133,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     repositoryId === (target?.repository_id ?? '') &&
     (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
 
-  const refreshStory = async () => {
+  const refreshTask = async () => {
     const { data, error } = await pmTaskService.get(workspaceId, taskDetail.task.id);
     if (error) {
       toast.error(error);
@@ -221,7 +221,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
       if (showSuccessToast) {
         toast.success('Agent assigned');
       }
-      await refreshStory();
+      await refreshTask();
       await refreshDeliveryTarget();
       return true;
     })();
@@ -255,7 +255,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
         return false;
       }
       toast.success('Agent assigned');
-      await refreshStory();
+      await refreshTask();
       await refreshDeliveryTarget(true);
       return true;
     })();

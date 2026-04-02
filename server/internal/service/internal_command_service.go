@@ -32,7 +32,7 @@ type InternalCommandService struct {
 	pmAutomationService *PMAutomationService
 	gitService          *GitService
 	taskRepo           *repository.PMTaskRepository
-	storyLinkRepo       *repository.PMTaskLinkRepository
+	taskLinkRepo       *repository.PMTaskLinkRepository
 	definitions         map[string]InternalCommandDefinition
 }
 
@@ -54,7 +54,7 @@ func NewInternalCommandService(
 	docsContentService *DocsContentService,
 	docsLinkService *DocsLinkService,
 	taskRepo *repository.PMTaskRepository,
-	storyLinkRepo *repository.PMTaskLinkRepository,
+	taskLinkRepo *repository.PMTaskLinkRepository,
 ) *InternalCommandService {
 	svc := &InternalCommandService{
 		agentService:       agentService,
@@ -64,7 +64,7 @@ func NewInternalCommandService(
 		docsContentService: docsContentService,
 		docsLinkService:    docsLinkService,
 		taskRepo:          taskRepo,
-		storyLinkRepo:      storyLinkRepo,
+		taskLinkRepo:      taskLinkRepo,
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
 	svc.registerDefaults()
@@ -267,18 +267,16 @@ func (s *InternalCommandService) registerDefaults() {
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				Dependencies []struct {
-					SourceStoryID string `json:"source_story_id"`
-					TargetStoryID string `json:"target_story_id"`
-					SourceTaskID  string `json:"source_task_id"`
-					TargetTaskID  string `json:"target_task_id"`
+					SourceTaskID string `json:"source_task_id"`
+					TargetTaskID string `json:"target_task_id"`
 				} `json:"dependencies"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse dependency input: %w", err)
 			}
 			for _, dep := range req.Dependencies {
-				sourceID := strings.TrimSpace(firstNonEmptyCommand(dep.SourceTaskID, dep.SourceStoryID))
-				targetID := strings.TrimSpace(firstNonEmptyCommand(dep.TargetTaskID, dep.TargetStoryID))
+				sourceID := strings.TrimSpace(dep.SourceTaskID)
+				targetID := strings.TrimSpace(dep.TargetTaskID)
 				if sourceID == "" || targetID == "" {
 					return nil, fmt.Errorf("source_task_id and target_task_id are required")
 				}
@@ -293,10 +291,10 @@ func (s *InternalCommandService) registerDefaults() {
 				if source == nil || target == nil || source.WorkspaceID != meta.WorkspaceID || target.WorkspaceID != meta.WorkspaceID {
 					return nil, fmt.Errorf("tasks must belong to the current workspace")
 				}
-				if err := s.storyLinkRepo.Create(ctx, &model.PMTaskLink{
+				if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
 					WorkspaceID:   meta.WorkspaceID,
-					SourceStoryID: sourceID,
-					TargetStoryID: targetID,
+					SourceTaskID: sourceID,
+					TargetTaskID: targetID,
 					LinkType:      model.PMTaskLinkTypeBlocks,
 					CreatedBy:     fallbackActor(meta),
 				}); err != nil {

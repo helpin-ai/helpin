@@ -431,7 +431,7 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 	}
 
 	// Load delivery target to get working branch
-	target, err := e.deliveryRepo.GetByStory(ctx, event.WorkspaceID, event.StoryID)
+	target, err := e.deliveryRepo.GetByTask(ctx, event.WorkspaceID, event.StoryID)
 	if err != nil {
 		return fmt.Errorf("load delivery target: %w", err)
 	}

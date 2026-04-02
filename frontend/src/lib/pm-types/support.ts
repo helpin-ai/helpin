@@ -482,6 +482,7 @@ export interface CreateMessageRequest {
   is_internal?: boolean;
 }
 
+/** @deprecated Use LinkTaskRequest instead */
 export interface LinkStoryRequest {
   story_id: string;
 }

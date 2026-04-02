@@ -56,14 +56,14 @@ func (h *AssociationsHandler) listByObject(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, response)
 }
 
-// CreateStoryRelationship handles POST /api/pm/tasks/{id}/relationships.
+// CreateStoryRelationship handles POST /api/pm/tasks/{id}/relationships (legacy alias).
 func (h *AssociationsHandler) CreateStoryRelationship(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
 	var req model.CreateTaskRelationshipRequest
@@ -72,7 +72,7 @@ func (h *AssociationsHandler) CreateStoryRelationship(w http.ResponseWriter, r *
 		return
 	}
 
-	link, err := h.associationsService.CreateStoryRelationship(r.Context(), workspaceID, storyID, actorID, req)
+	link, err := h.associationsService.CreateTaskRelationship(r.Context(), workspaceID, taskID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -96,7 +96,7 @@ func (h *AssociationsHandler) CreateTaskRelationship(w http.ResponseWriter, r *h
 		return
 	}
 
-	link, err := h.associationsService.CreateStoryRelationship(r.Context(), workspaceID, taskID, actorID, model.CreateTaskRelationshipRequest{
+	link, err := h.associationsService.CreateTaskRelationship(r.Context(), workspaceID, taskID, actorID, model.CreateTaskRelationshipRequest{
 		RelationshipType: req.RelationshipType,
 		OtherTaskID:      req.OtherTaskID,
 	})
@@ -107,22 +107,22 @@ func (h *AssociationsHandler) CreateTaskRelationship(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusCreated, link)
 }
 
-// DeleteStoryRelationship handles DELETE /api/pm/task-relationships/{id}.
+// DeleteStoryRelationship handles DELETE /api/pm/task-relationships/{id} (legacy alias).
 func (h *AssociationsHandler) DeleteStoryRelationship(w http.ResponseWriter, r *http.Request) {
+	h.DeleteTaskRelationship(w, r)
+}
+
+// DeleteTaskRelationship handles DELETE /api/pm/task-relationships/{id}.
+func (h *AssociationsHandler) DeleteTaskRelationship(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
 	relationshipID := chi.URLParam(r, "id")
-	if err := h.associationsService.DeleteStoryRelationship(r.Context(), workspaceID, relationshipID); err != nil {
+	if err := h.associationsService.DeleteTaskRelationship(r.Context(), workspaceID, relationshipID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "relationship deleted"})
-}
-
-// DeleteTaskRelationship handles DELETE /api/pm/task-relationships/{id}.
-func (h *AssociationsHandler) DeleteTaskRelationship(w http.ResponseWriter, r *http.Request) {
-	h.DeleteStoryRelationship(w, r)
 }

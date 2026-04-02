@@ -428,20 +428,20 @@ func TestCollectPlanningTreeBoundsDepth(t *testing.T) {
 	}
 }
 
-func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
-	stories := []model.ProposedTask{
-		{Name: "Story A", AcceptanceCriteria: []string{"A works"}},
-		{Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_1"}},
+func TestValidatePlanningProposalTasksNormalizesMissingRefs(t *testing.T) {
+	tasks := []model.ProposedTask{
+		{Name: "Task A", AcceptanceCriteria: []string{"A works"}},
+		{Name: "Task B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"task_1"}},
 	}
 
-	if err := validatePlanningProposalTasks(stories); err != nil {
+	if err := validatePlanningProposalTasks(tasks); err != nil {
 		t.Fatalf("validatePlanningProposalTasks returned error: %v", err)
 	}
-	if stories[0].Ref != "story_1" {
-		t.Fatalf("expected first story ref to default to story_1, got %q", stories[0].Ref)
+	if tasks[0].Ref != "task_1" {
+		t.Fatalf("expected first task ref to default to task_1, got %q", tasks[0].Ref)
 	}
-	if stories[1].Ref != "story_2" {
-		t.Fatalf("expected second story ref to default to story_2, got %q", stories[1].Ref)
+	if tasks[1].Ref != "task_2" {
+		t.Fatalf("expected second task ref to default to task_2, got %q", tasks[1].Ref)
 	}
 }
 
@@ -2625,7 +2625,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMTaskRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 
@@ -2750,7 +2750,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					Priority:        model.PMTaskPriorityNone,
 					Severity:        model.PMTaskSeverityNone,
 				}
-				if err := storyRepo.Create(ctx, story); err != nil {
+				if err := taskRepo.Create(ctx, story); err != nil {
 					return nil, err
 				}
 			}
@@ -2767,7 +2767,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		agentRepo:       agentRepo,
 		commandExecutor: commandExecutor,
 	}
@@ -3014,7 +3014,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
-	storyRepo := repository.NewPMTaskRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -3120,7 +3120,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		agentRepo:       agentRepo,
 		docsSpaceRepo:   docsSpaceRepo,
 		docsDocRepo:     docsDocRepo,
@@ -3146,14 +3146,14 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("expected docs write then docs link commands, got %#v", executed)
 	}
 
-	updatedStory, err := storyRepo.GetRawByID(context.Background(), story.ID)
+	updatedTask, err := taskRepo.GetRawByID(context.Background(), story.ID)
 	if err != nil {
-		t.Fatalf("get updated story: %v", err)
+		t.Fatalf("get updated task: %v", err)
 	}
-	if updatedStory == nil || updatedStory.PlanDocumentID == nil || *updatedStory.PlanDocumentID == "" {
-		t.Fatalf("expected story plan document id to be set, got %#v", updatedStory)
+	if updatedTask == nil || updatedTask.PlanDocumentID == nil || *updatedTask.PlanDocumentID == "" {
+		t.Fatalf("expected task plan document id to be set, got %#v", updatedTask)
 	}
-	if input.PlanDocumentID == "" || input.PlanDocumentID != *updatedStory.PlanDocumentID {
+	if input.PlanDocumentID == "" || input.PlanDocumentID != *updatedTask.PlanDocumentID {
 		t.Fatalf("expected planning input plan_document_id to be set, got %#v", input)
 	}
 

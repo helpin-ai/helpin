@@ -384,7 +384,7 @@ export function EpicDetailPage() {
     return Array.from(personMap.values());
   }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
-  const openStory = useCallback(
+  const openTask = useCallback(
     ( task: Task) => {
       openTaskRoute(navigate as never, location as never, slug, task.id);
     },
@@ -646,7 +646,7 @@ export function EpicDetailPage() {
                   epics={allEpics}
                   sprints={allSprints}
                   externalTasks={tasks}
-                  onOpenTask={openStory}
+                  onOpenTask={openTask}
                 />
               </div>
             ) : (

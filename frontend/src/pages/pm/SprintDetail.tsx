@@ -260,7 +260,7 @@ export function SprintDetailPage() {
 
   const workflow = workflows[0] ?? null;
 
-  // Resources: unique people from story owners + sprint team members
+  // Resources: unique people from task owners + sprint team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 

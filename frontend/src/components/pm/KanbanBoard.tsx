@@ -33,7 +33,7 @@ import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibi
 import { UserAvatar } from './UserAvatar';
 import { TaskCard } from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
-import { TaskFilterProvider, TaskFilterTrigger, TaskFilterBar, TaskOwnerAvatarFilterRow } from './StoryFilters';
+import { TaskFilterProvider, TaskFilterTrigger, TaskFilterBar, TaskOwnerAvatarFilterRow } from './TaskFilters';
 import { TaskListView } from './TaskListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
@@ -697,7 +697,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       }
     };
     const onArchived = (e: Event) => {
-      const taskId = (e as CustomEvent)?.detail?.storyId ?? (e as CustomEvent)?.detail?.taskId;
+      const taskId = (e as CustomEvent)?.detail?.taskId;
       if (!taskId) return;
       if (groupBy === 'members') {
         const cols = usePMBoardStore.getState().memberColumns;

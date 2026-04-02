@@ -830,19 +830,19 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     // Skip patching if user switched board context mid-flight
     if (contextChanged()) return;
 
-    const updatedStory = moveRes.data?.task;
-    if (updatedStory) {
+    const updatedTask = moveRes.data?.task;
+    if (updatedTask) {
       logPMDnD('store.move.move_success', {
         trace_id: traceID,
         task_id: taskId,
         response_task: {
-          id: updatedStory.id,
-          workflow_state_id: updatedStory.workflow_state_id,
-          position: updatedStory.position,
-          completed: updatedStory.completed,
-          completed_at: updatedStory.completed_at,
-          moved_at: updatedStory.moved_at,
-          updated_at: updatedStory.updated_at,
+          id: updatedTask.id,
+          workflow_state_id: updatedTask.workflow_state_id,
+          position: updatedTask.position,
+          completed: updatedTask.completed,
+          completed_at: updatedTask.completed_at,
+          moved_at: updatedTask.moved_at,
+          updated_at: updatedTask.updated_at,
         },
       });
       set((state) => {
@@ -851,7 +851,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         if (!target) return state;
         const idx = target.tasks.findIndex((candidate) => candidate.id === taskId);
         if (idx >= 0) {
-          target.tasks[idx] = mergeEnrichedFields(updatedStory, target.tasks[idx]);
+          target.tasks[idx] = mergeEnrichedFields(updatedTask, target.tasks[idx]);
           target.tasks = sortTasks(target.tasks, target.state.state_type);
         }
         return { columns };

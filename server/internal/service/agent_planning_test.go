@@ -209,9 +209,9 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		t.Fatalf("create epic: %v", err)
 	}
 
-	storyRepo := repository.NewPMTaskRepository(db)
-	storyService := NewPMTaskService(
-		storyRepo,
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
 		repository.NewWorkspaceRepository(db),
 		repository.NewPMWorkflowRepository(db),
 		repository.NewPMEpicRepository(db),
@@ -227,9 +227,9 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		nil,
 	)
 	svc := &AgentService{
-		storyRepo:    storyRepo,
+		taskRepo:    taskRepo,
 		epicRepo:     epicRepo,
-		storyService: storyService,
+		taskService: taskService,
 	}
 
 	stories, err := svc.createStoriesFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedTask{

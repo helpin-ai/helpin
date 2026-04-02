@@ -38,7 +38,7 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 	insertPMTaskMemberBoardTask(t, db, "story-todo-1", workspaceID, workflowID, todoStateID, memberID, 2, 1, now.Add(1*time.Minute))
 	insertPMTaskMemberBoardTask(t, db, "story-todo-2", workspaceID, workflowID, todoStateID, memberID, 3, 5, now.Add(2*time.Minute))
 
-	t.Run("ListByMember orders by workflow state then story position", func(t *testing.T) {
+	t.Run("ListByMember orders by workflow state then task position", func(t *testing.T) {
 		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMTaskFilters{}, 10, false, nil)
 		if err != nil {
 			t.Fatalf("ListByMember: %v", err)
@@ -55,25 +55,25 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 		want := []string{"story-todo-1", "story-todo-2", "story-started"}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("stories[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
+				t.Fatalf("tasks[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
 			}
 		}
 	})
 
-	t.Run("ListMemberColumnStories uses the same deterministic ordering", func(t *testing.T) {
-		stories, total, err := repo.ListMemberColumnStories(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMTaskFilters{}, 0, 10)
+	t.Run("ListMemberColumnTasks uses the same deterministic ordering", func(t *testing.T) {
+		tasks, total, err := repo.ListMemberColumnTasks(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMTaskFilters{}, 0, 10)
 		if err != nil {
-			t.Fatalf("ListMemberColumnStories: %v", err)
+			t.Fatalf("ListMemberColumnTasks: %v", err)
 		}
 		if total != 3 {
 			t.Fatalf("total = %d, want 3", total)
 		}
 
-		got := []string{stories[0].ID, stories[1].ID, stories[2].ID}
+		got := []string{tasks[0].ID, tasks[1].ID, tasks[2].ID}
 		want := []string{"story-todo-1", "story-todo-2", "story-started"}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("stories[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
+				t.Fatalf("tasks[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
 			}
 		}
 	})
@@ -82,7 +82,7 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:pm-story-member-board-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dbName := fmt.Sprintf("file:pm-task-member-board-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
@@ -291,17 +291,17 @@ func seedPMTaskMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, worksp
 	}
 }
 
-func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, storyID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
+func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, taskID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
 	t.Helper()
 	if err := db.Exec(
 		`INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, owner_member_id,
 			position, priority, severity, task_type, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		storyID, workspaceID, displayID, storyID, workflowID, stateID, ownerMemberID,
+		taskID, workspaceID, displayID, taskID, workflowID, stateID, ownerMemberID,
 		position, "none", "none", "feature", false, false, false, false, updatedAt, updatedAt,
 	).Error; err != nil {
-		t.Fatalf("seed story %s: %v", storyID, err)
+		t.Fatalf("seed task %s: %v", taskID, err)
 	}
 }
 

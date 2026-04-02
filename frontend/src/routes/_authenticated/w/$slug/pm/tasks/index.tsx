@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { TasksPage } from '@/pages/pm/Stories';
+import { TasksPage } from '@/pages/pm/Tasks';
 
 type TasksSearch = { team?: string; task?: string };
 
