@@ -11,7 +11,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, SEVERITY_CONFIG, TASK_TYPE_CONFIG } from '@/lib/pmConstants';
 import type { Priority, Severity, TaskType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember, TeamUserMembership } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
@@ -85,7 +85,7 @@ const FilterContext = createContext<FilterContextValue | null>(null);
 
 function useFilterContext() {
   const ctx = useContext(FilterContext);
-  if (!ctx) throw new Error('useFilterContext must be used within StoryFilterProvider');
+  if (!ctx) throw new Error('useFilterContext must be used within TaskFilterProvider');
   return ctx;
 }
 
@@ -172,7 +172,7 @@ function FilterPill({
 
 // ── Provider ───────────────────────────────────────────────────────
 
-interface StoryFilterProviderProps {
+interface TaskFilterProviderProps {
   workspaceId: string;
   assignableMembers: AssignableMember[];
   activeTeamId?: string | null;
@@ -185,7 +185,7 @@ interface StoryFilterProviderProps {
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({
+export function TaskFilterProvider({
   workspaceId,
   assignableMembers,
   activeTeamId,
@@ -196,7 +196,7 @@ export function StoryFilterProvider({
   onChange,
   externalFilters,
   children,
-}: StoryFilterProviderProps) {
+}: TaskFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
   const internalChangeRef = useRef(false);
   const { data: contactsRes } = useContacts(workspaceId, { page: 1, per_page: 100 });
@@ -237,7 +237,7 @@ export function StoryFilterProvider({
     });
 
     const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as TaskType[]).map((t) => {
-      const cfg = STORY_TYPE_CONFIG[t];
+      const cfg = TASK_TYPE_CONFIG[t];
       const Icon = cfg.icon;
       return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
     });
@@ -391,7 +391,7 @@ export function StoryFilterProvider({
 
 // ── Trigger button (goes in the header row) ────────────────────────
 
-export function StoryFilterTrigger() {
+export function TaskFilterTrigger() {
   const { definitions, activeKeys, activeCount, handleAdd } = useFilterContext();
   const [open, setOpen] = useState(false);
   const available = definitions.filter((d) => !activeKeys.has(d.key) && d.options.length > 0);
@@ -454,13 +454,13 @@ export function StoryFilterTrigger() {
 
 // ── Filter bar (renders on its own row below the header) ───────────
 
-export function StoryFilterBar() {
+export function TaskFilterBar() {
   const { filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
 
   if (activeCount === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-3 py-1.5">
+    <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
         .filter((def) => activeKeys.has(def.key))
         .map((def) => (
@@ -484,7 +484,7 @@ export function StoryFilterBar() {
   );
 }
 
-export function StoryOwnerAvatarFilterRow() {
+export function TaskOwnerAvatarFilterRow() {
   const { assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const ownerFilters = filterState.owner_member_id ?? [];
   const members = useMemo(
@@ -495,7 +495,7 @@ export function StoryOwnerAvatarFilterRow() {
   if (members.length === 0) return null;
 
   return (
-    <div className="ml-3 flex min-w-0 items-center gap-1">
+    <div className="ml-3 flex min-w-0 items-center -space-x-1">
       {members.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
@@ -504,9 +504,9 @@ export function StoryOwnerAvatarFilterRow() {
             <button
               type="button"
               onClick={() => handleToggle('owner_member_id', member.id)}
-              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all ${
+              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all hover:z-10 ${
                 isSelected
-                  ? 'ring-foreground'
+                  ? 'z-10 ring-foreground'
                   : 'ring-transparent opacity-70 hover:opacity-100'
               }`}
               aria-pressed={isSelected}
@@ -518,11 +518,6 @@ export function StoryOwnerAvatarFilterRow() {
                 className="h-6 w-6"
                 fallbackClassName="text-[8px]"
               />
-              {isSelected ? (
-                <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-background bg-primary text-primary-foreground">
-                  <Check className="h-1.5 w-1.5" />
-                </span>
-              ) : null}
             </button>
           </QuickTooltip>
         );

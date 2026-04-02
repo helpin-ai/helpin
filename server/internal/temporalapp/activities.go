@@ -87,8 +87,8 @@ type AgentRunActivities struct {
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	storyRepo           *repository.PMStoryRepository
-	storyLinkRepo       *repository.PMStoryLinkRepository
+	taskRepo           *repository.PMTaskRepository
+	taskLinkRepo       *repository.PMTaskLinkRepository
 	epicRepo            *repository.PMEpicRepository
 	conversationRepo    *repository.SupportConversationRepository
 	commentRepo         *repository.PMCommentRepository
@@ -96,8 +96,8 @@ type AgentRunActivities struct {
 	messageRepo         *repository.SupportMessageRepository
 	gitIntRepo          *repository.GitIntegrationRepository
 	gitRepo             *repository.GitRepositoryRepository
-	gitLinkRepo         *repository.StoryGitLinkRepository
-	deliveryRepo        *repository.StoryDeliveryTargetRepository
+	gitLinkRepo         *repository.TaskGitLinkRepository
+	deliveryRepo        *repository.TaskDeliveryTargetRepository
 	settingsRepo        *repository.SettingsRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
 	docsDocRepo         *repository.DocsDocumentRepository
@@ -124,8 +124,8 @@ func NewAgentRunActivities(
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
-	storyRepo *repository.PMStoryRepository,
-	storyLinkRepo *repository.PMStoryLinkRepository,
+	taskRepo *repository.PMTaskRepository,
+	taskLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	commentRepo *repository.PMCommentRepository,
@@ -133,8 +133,8 @@ func NewAgentRunActivities(
 	messageRepo *repository.SupportMessageRepository,
 	gitIntRepo *repository.GitIntegrationRepository,
 	gitRepo *repository.GitRepositoryRepository,
-	gitLinkRepo *repository.StoryGitLinkRepository,
-	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	gitLinkRepo *repository.TaskGitLinkRepository,
+	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
@@ -159,8 +159,8 @@ func NewAgentRunActivities(
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
-		storyRepo:           storyRepo,
-		storyLinkRepo:       storyLinkRepo,
+		taskRepo:           taskRepo,
+		taskLinkRepo:       taskLinkRepo,
 		epicRepo:            epicRepo,
 		conversationRepo:    conversationRepo,
 		commentRepo:         commentRepo,
@@ -192,12 +192,12 @@ func NewAgentRunActivities(
 type resolvedRunState struct {
 	run            *model.AgentRun
 	agent          *model.Agent
-	task           *model.PMStory
+	task           *model.PMTask
 	epic           *model.PMEpic
-	epicTasks      []model.PMStory
+	epicTasks      []model.PMTask
 	conversation   *model.SupportConversation
 	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
-	deliveryTarget *model.StoryDeliveryTarget
+	deliveryTarget *model.TaskDeliveryTarget
 	repository     *model.GitRepository
 	integration    *model.GitIntegration
 	teamDefault    *model.PMTeamRepoDefault
@@ -427,10 +427,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		config = workerpkg.DefaultWorkflowConfig()
 	}
 
-	allowedTools := resolvedAllowedToolSet(state.resolved)
-	if len(planningInput.AllowedTools) > 0 {
-		allowedTools = stringSliceToSet(planningInput.AllowedTools)
-	}
+	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
@@ -2563,9 +2560,9 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 		proposal.VerticalCoverage = verticalCoverage
 	}
 
-	var storyItems []json.RawMessage
-	if err := json.Unmarshal(payload["proposed_stories"], &storyItems); err != nil {
-		if err := json.Unmarshal(payload["proposed_tasks"], &storyItems); err != nil {
+	var taskItems []json.RawMessage
+	if err := json.Unmarshal(payload["proposed_stories"], &taskItems); err != nil {
+		if err := json.Unmarshal(payload["proposed_tasks"], &taskItems); err != nil {
 			if approvedPreviewDebugEnabled() {
 				slog.Error("approved task plan preview proposed_tasks decode failed during apply",
 					"normalized_preview", previewDebugSnippet(normalized, 1600),
@@ -2575,8 +2572,8 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
 	}
-	proposal.ProposedStories = make([]model.ProposedStory, 0, len(storyItems))
-	for index, item := range storyItems {
+	proposal.ProposedTasks = make([]model.ProposedTask, 0, len(taskItems))
+	for index, item := range taskItems {
 		task, ok := decodeLooseApprovedProposedTask(item)
 		if !ok {
 			if approvedPreviewDebugEnabled() {
@@ -2587,28 +2584,28 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 			}
 			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
-		proposal.ProposedStories = append(proposal.ProposedStories, task)
+		proposal.ProposedTasks = append(proposal.ProposedTasks, task)
 	}
 	if approvedPreviewDebugEnabled() {
 		slog.Info("decoded approved task plan preview",
 			"summary_preview", truncateString(strings.TrimSpace(proposal.Summary), 240),
-			"task_count", len(proposal.ProposedStories),
+			"task_count", len(proposal.ProposedTasks),
 		)
 	}
 	return proposal, nil
 }
 
-func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedStory, bool) {
+func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedTask, bool) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return model.ProposedStory{}, false
+		return model.ProposedTask{}, false
 	}
 
-	task := model.ProposedStory{
+	task := model.ProposedTask{
 		Ref:                decodeLooseJSONString(payload["ref"]),
 		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
 		Description:        decodeLooseJSONString(payload["description"]),
-		StoryType:          firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
+		TaskType:           firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
 		SliceType:          decodeLooseJSONString(payload["slice_type"]),
 		AcceptanceCriteria: decodeLooseJSONStringArray(payload["acceptance_criteria"]),
 		DependencyRefs:     decodeLooseJSONStringArray(payload["dependency_refs"]),
@@ -2716,7 +2713,7 @@ func decodeLoosePlanningSourceRefs(raw json.RawMessage) ([]model.PlanningSourceR
 	return nil, false
 }
 
-func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.StoryImplementationBrief, bool) {
+func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.TaskImplementationBrief, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, false
 	}
@@ -2726,7 +2723,7 @@ func decodeLooseTaskImplementationBrief(raw json.RawMessage) (*model.StoryImplem
 		return nil, false
 	}
 
-	brief := &model.StoryImplementationBrief{
+	brief := &model.TaskImplementationBrief{
 		Approach:       decodeLooseJSONString(payload["approach"]),
 		FilesToModify:  decodeLooseFileChanges(payload["files_to_modify"]),
 		TestStrategy:   decodeLooseJSONText(payload["test_strategy"]),
@@ -2931,7 +2928,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 	if proposal.SpecVersionID == "" {
 		proposal.SpecVersionID = strings.TrimSpace(firstNonEmptyString(input.SpecVersionID, derefString(state.epic.ApprovedSpecVersionID)))
 	}
-	if err := validatePlanningProposalTasks(proposal.ProposedStories); err != nil {
+	if err := validatePlanningProposalTasks(proposal.ProposedTasks); err != nil {
 		return err
 	}
 
@@ -2941,7 +2938,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 		TargetType:  "epic",
 		TargetID:    state.epic.ID,
 	}, "pm.create_task_batch", mustJSON(map[string]any{
-		"tasks": proposal.ProposedStories,
+		"tasks": proposal.ProposedTasks,
 	}))
 	if err != nil {
 		return err
@@ -2952,7 +2949,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 		return fmt.Errorf("parse created task batch: %w", err)
 	}
 
-	tasks, err := a.epicRepo.ListStories(ctx, state.epic.ID)
+	tasks, err := a.epicRepo.ListTasks(ctx, state.epic.ID)
 	if err != nil {
 		return err
 	}
@@ -2972,7 +2969,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 	}
 
 	state.run.OutputSummary, _ = json.Marshal(planningRunSummary{
-		Stage:               model.PlanningStagePlanStories,
+		Stage:               model.PlanningStagePlanTasks,
 		SpecDocumentID:      strings.TrimSpace(firstNonEmptyString(input.SpecDocumentID, derefString(state.epic.SpecDocumentID))),
 		SpecVersionID:       proposal.SpecVersionID,
 		PlanningMethodology: input.PlanningMethodology,
@@ -3060,7 +3057,7 @@ func (a *AgentRunActivities) applyApprovedTaskDocPreview(ctx context.Context, st
 	}
 
 	state.task.PlanDocumentID = &doc.ID
-	if err := a.storyRepo.Update(ctx, state.task); err != nil {
+	if err := a.taskRepo.Update(ctx, state.task); err != nil {
 		return err
 	}
 	input.PlanDocumentID = doc.ID
@@ -3116,17 +3113,17 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 
 	if run.TargetType == "" {
 		switch {
-		case run.StoryID != nil:
+		case run.TaskID != nil:
 			run.TargetType = "task"
-			run.TargetID = *run.StoryID
+			run.TargetID = *run.TaskID
 		case run.ConversationID != nil:
 			run.TargetType = "support_conversation"
 			run.TargetID = *run.ConversationID
 		}
 	}
 
-	if run.StoryID != nil {
-		task, err := a.storyRepo.GetRawByID(ctx, *run.StoryID)
+	if run.TaskID != nil {
+		task, err := a.taskRepo.GetRawByID(ctx, *run.TaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -3194,7 +3191,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			return nil, fmt.Errorf("epic not found")
 		}
 		state.epic = &epicWithStats.Epic
-		epicTasks, err := a.epicRepo.ListStories(ctx, run.TargetID)
+		epicTasks, err := a.epicRepo.ListTasks(ctx, run.TargetID)
 		if err != nil {
 			return nil, err
 		}
@@ -3204,15 +3201,15 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	return state, nil
 }
 
-func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspaceID string, story *model.PMStory) (*model.StoryDeliveryTarget, *model.PMTeamRepoDefault, error) {
-	target, err := a.deliveryRepo.GetByStory(ctx, workspaceID, story.ID)
+func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspaceID string, task *model.PMTask) (*model.TaskDeliveryTarget, *model.PMTeamRepoDefault, error) {
+	target, err := a.deliveryRepo.GetByTask(ctx, workspaceID, task.ID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if target != nil {
 		var teamDefault *model.PMTeamRepoDefault
-		if story.TeamID != nil && *story.TeamID != "" {
-			teamDefault, err = a.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID)
+		if task.TeamID != nil && *task.TeamID != "" {
+			teamDefault, err = a.settingsRepo.GetTeamRepoDefault(ctx, *task.TeamID)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -3220,15 +3217,15 @@ func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspac
 		return target, teamDefault, nil
 	}
 
-	target = &model.StoryDeliveryTarget{
+	target = &model.TaskDeliveryTarget{
 		WorkspaceID:   workspaceID,
-		StoryID:       story.ID,
+		TaskID:        task.ID,
 		DeliveryState: "unconfigured",
 	}
 
 	var teamDefault *model.PMTeamRepoDefault
-	if story.TeamID != nil && *story.TeamID != "" {
-		teamDefault, err = a.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID)
+	if task.TeamID != nil && *task.TeamID != "" {
+		teamDefault, err = a.settingsRepo.GetTeamRepoDefault(ctx, *task.TeamID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -3432,9 +3429,9 @@ func (a *AgentRunActivities) upsertGitLink(ctx context.Context, state *resolvedR
 		return err
 	}
 	if link == nil {
-		link = &model.StoryGitLink{
+		link = &model.TaskGitLink{
 			WorkspaceID:   state.run.WorkspaceID,
-			StoryID:       state.task.ID,
+			TaskID:        state.task.ID,
 			IntegrationID: state.integration.ID,
 			RepositoryID:  state.deliveryTarget.RepositoryID,
 			RunID:         &state.run.ID,
@@ -3488,9 +3485,10 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 		return planningRunInput{}, err
 	}
 
-	if state.run.TargetType == "task" && state.task != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
+	tools := effectiveToolSet(state.resolved, input.AllowedTools)
+	if state.run.TargetType == "task" && state.task != nil && tools[workerpkg.ToolPublishTaskPlanDoc] {
 		if input.Stage == "" {
-			input.Stage = model.PlanningStageStoryPlanDoc
+			input.Stage = model.PlanningStageTaskPlanDoc
 		}
 		if input.PlanDocumentID == "" && state.task.PlanDocumentID != nil {
 			input.PlanDocumentID = strings.TrimSpace(*state.task.PlanDocumentID)
@@ -3556,13 +3554,17 @@ func (a *AgentRunActivities) normalizeEpicSpecState(ctx context.Context, state *
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	tools := effectiveToolSet(state.resolved, input.AllowedTools)
 	if strings.TrimSpace(input.FlowOutputKind) != "" {
 		return a.buildFlowOutputInstructions(ctx, state, input)
 	}
-	if state.run.TargetType == "task" && state.task != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
+	if state.run.TargetType == "task" && state.task != nil && tools[workerpkg.ToolPublishTaskPlanDoc] {
 		return a.buildTaskPlannerInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
+		return runInputAdditionalContext(state.run.Input), nil
+	}
+	if !tools[workerpkg.ToolPublishPRDDraft] || (!tools[workerpkg.ToolPublishTaskPlan] && !tools[workerpkg.ToolPublishStoryPlan]) {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)
@@ -3570,7 +3572,7 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 
 func (a *AgentRunActivities) buildFlowOutputInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
 	switch strings.TrimSpace(input.FlowOutputKind) {
-	case "pm.story_completion_followups":
+	case "pm.task_completion_followups":
 		return a.buildTaskCompletionInstructions(state, input), nil
 	case "crm.deal_review_actions":
 		return a.buildCRMDealReviewInstructions(ctx, state, input)
@@ -3719,12 +3721,12 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 		}
 	}
 
-	storyLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectStory, state.task.ID, input.PlanDocumentID)
+	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, input.PlanDocumentID)
 	if err != nil {
 		return "", err
 	}
-	if storyLinkedDocs != "" {
-		sections = append(sections, "Other docs linked directly to this task:\n"+storyLinkedDocs)
+	if taskLinkedDocs != "" {
+		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
 	}
 
 	if state.epic != nil {
@@ -3942,8 +3944,8 @@ func (a *AgentRunActivities) finalizeAgenticEpicPlannerRun(ctx context.Context, 
 
 func (a *AgentRunActivities) finalizeFlowOutputRun(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
 	switch strings.TrimSpace(input.FlowOutputKind) {
-	case "pm.story_completion_followups":
-		var assessment model.StoryCompletionAssessment
+	case "pm.task_completion_followups":
+		var assessment model.TaskCompletionAssessment
 		if err := json.Unmarshal(state.run.OutputSummary, &assessment); err != nil {
 			return fmt.Errorf("decode task completion assessment: %w", err)
 		}
@@ -4093,7 +4095,7 @@ func (a *AgentRunActivities) ensureTaskPlanDocument(ctx context.Context, state *
 	}
 
 	state.task.PlanDocumentID = &doc.ID
-	if err := a.storyRepo.Update(ctx, state.task); err != nil {
+	if err := a.taskRepo.Update(ctx, state.task); err != nil {
 		return nil, err
 	}
 	if err := a.ensureTaskPlanLink(ctx, state.run.WorkspaceID, doc.ID, state.task.ID, actorID); err != nil {
@@ -4123,8 +4125,8 @@ func (a *AgentRunActivities) ensureEpicSpecLink(ctx context.Context, workspaceID
 	return err
 }
 
-func (a *AgentRunActivities) ensureTaskPlanLink(ctx context.Context, workspaceID, documentID, storyID, actorID string) error {
-	links, err := a.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectStory, storyID)
+func (a *AgentRunActivities) ensureTaskPlanLink(ctx context.Context, workspaceID, documentID, taskID, actorID string) error {
+	links, err := a.docsLinkRepo.ListByObject(ctx, workspaceID, model.LinkedObjectTask, taskID)
 	if err != nil {
 		return err
 	}
@@ -4136,8 +4138,8 @@ func (a *AgentRunActivities) ensureTaskPlanLink(ctx context.Context, workspaceID
 	_, err = a.docsLinkRepo.Create(ctx, &model.DocsLink{
 		WorkspaceID:      workspaceID,
 		DocumentID:       documentID,
-		LinkedObjectType: model.LinkedObjectStory,
-		LinkedObjectID:   storyID,
+		LinkedObjectType: model.LinkedObjectTask,
+		LinkedObjectID:   taskID,
 		LinkContext:      model.LinkContextCreatedFrom,
 		CreatedBy:        actorID,
 	})
@@ -4191,11 +4193,11 @@ func (a *AgentRunActivities) renderObjectLinkedDocsContext(ctx context.Context, 
 	return strings.Join(entries, "\n\n"), nil
 }
 
-func (a *AgentRunActivities) renderTaskCommentsContext(ctx context.Context, storyID string) (string, error) {
-	if strings.TrimSpace(storyID) == "" || a.commentRepo == nil {
+func (a *AgentRunActivities) renderTaskCommentsContext(ctx context.Context, taskID string) (string, error) {
+	if strings.TrimSpace(taskID) == "" || a.commentRepo == nil {
 		return "", nil
 	}
-	comments, err := a.commentRepo.List(ctx, "task", storyID)
+	comments, err := a.commentRepo.List(ctx, "task", taskID)
 	if err != nil {
 		return "", err
 	}
@@ -4658,8 +4660,8 @@ func coalesceRaw(values ...string) string {
 	return ""
 }
 
-func validatePlanningProposalTasks(stories []model.ProposedStory) error {
-	return model.NormalizeProposedStories(stories)
+func validatePlanningProposalTasks(stories []model.ProposedTask) error {
+	return model.NormalizeProposedTasks(stories)
 }
 
 func buildDraftSpecClarifications(draft model.ProductSpecDraft) []model.SpecClarificationItem {
@@ -4850,29 +4852,29 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return a.commandExecutor.Execute(ctx, meta, name, input)
 		},
-		AddComment: func(ctx context.Context, workspaceID, storyID, agentID, content string) error {
+		AddComment: func(ctx context.Context, workspaceID, taskID, agentID, content string) error {
 			comment := &model.PMComment{
 				EntityType: "task",
-				EntityID:   storyID,
+				EntityID:   taskID,
 				AuthorID:   agentID,
 				Body:       content,
 			}
 			return a.commentRepo.Create(ctx, comment)
 		},
-		UpdateTaskState: func(ctx context.Context, workspaceID, storyID, stateID string) error {
+		UpdateTaskState: func(ctx context.Context, workspaceID, taskID, stateID string) error {
 			if a.commandExecutor != nil {
 				_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 					WorkspaceID: workspaceID,
 					TargetType:  "task",
-					TargetID:    storyID,
+					TargetID:    taskID,
 				}, "pm.update_task_state", mustJSON(map[string]any{
-					"task_id":  storyID,
+					"task_id":  taskID,
 					"state_id": stateID,
 				}))
 				return err
 			}
 			// TODO(flow-platform): remove direct fallback once all native runs are command-backed.
-			task, err := a.storyRepo.GetRawByID(ctx, storyID)
+			task, err := a.taskRepo.GetRawByID(ctx, taskID)
 			if err != nil {
 				return err
 			}
@@ -4880,12 +4882,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return fmt.Errorf("task not found")
 			}
 			task.WorkflowStateID = stateID
-			return a.storyRepo.Update(ctx, task)
+			return a.taskRepo.Update(ctx, task)
 		},
-		ListChecklist: func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error) {
-			return a.checklistRepo.List(ctx, storyID)
+		ListChecklist: func(ctx context.Context, workspaceID, taskID string) ([]model.PMChecklistItem, error) {
+			return a.checklistRepo.List(ctx, taskID)
 		},
-		CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (workerpkg.CreateTaskBatchResult, error) {
+		CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedTask) (workerpkg.CreateTaskBatchResult, error) {
 			if a.commandExecutor != nil {
 				output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 					WorkspaceID: workspaceID,
@@ -4893,7 +4895,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 					TargetType:  "epic",
 					TargetID:    epicID,
 				}, "pm.create_task_batch", mustJSON(map[string]any{
-					"tasks": stories,
+					"tasks": tasks,
 				}))
 				if err != nil {
 					return workerpkg.CreateTaskBatchResult{}, err
@@ -4906,7 +4908,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return workerpkg.CreateTaskBatchResult{}, fmt.Errorf("planner commands are not available")
 		},
-		AssignTaskAgent: func(ctx context.Context, workspaceID, actorID, storyID, agentID string) error {
+		AssignTaskAgent: func(ctx context.Context, workspaceID, actorID, taskID, agentID string) error {
 			if a.commandExecutor == nil {
 				return fmt.Errorf("planner commands are not available")
 			}
@@ -4914,9 +4916,9 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				WorkspaceID: workspaceID,
 				ActorID:     actorID,
 				TargetType:  "task",
-				TargetID:    storyID,
+				TargetID:    taskID,
 			}, "pm.assign_task_agent", mustJSON(map[string]any{
-				"task_id":  storyID,
+				"task_id":  taskID,
 				"agent_id": agentID,
 			}))
 			return err
@@ -4935,7 +4937,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return err
 		},
 		ListEpicTasks: func(ctx context.Context, workspaceID, epicID string) ([]workerpkg.EpicTaskSummary, error) {
-			tasks, err := a.epicRepo.ListStories(ctx, epicID)
+			tasks, err := a.epicRepo.ListTasks(ctx, epicID)
 			if err != nil {
 				return nil, err
 			}
@@ -4953,7 +4955,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				summaries = append(summaries, workerpkg.EpicTaskSummary{
 					ID:              s.ID,
 					Name:            s.Name,
-					TaskType:        s.StoryType,
+					TaskType:        s.TaskType,
 					Status:          status,
 					Estimate:        s.Estimate,
 					Priority:        s.Priority,
@@ -5141,7 +5143,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return a.docsDocRepo.GetByID(ctx, response.DocumentID)
 		},
-		EnsureTaskPlanDoc: func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
+		EnsureTaskPlanDoc: func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error) {
 			if a.commandExecutor == nil {
 				return nil, fmt.Errorf("document commands are not available")
 			}
@@ -5149,7 +5151,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				WorkspaceID: workspaceID,
 				ActorID:     actorID,
 				TargetType:  "task",
-				TargetID:    storyID,
+				TargetID:    taskID,
 			}, "docs.ensure_task_plan_doc", json.RawMessage(`{}`))
 			if err != nil {
 				return nil, err
@@ -5253,7 +5255,7 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 	}
 	if agent, err := a.agentRepo.GetByID(ctx, state.run.WorkspaceID, state.run.AgentID); err == nil && agent != nil {
 		agent.Status = "error"
-		agent.ActiveStoryID = nil
+		agent.ActiveTaskID = nil
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
@@ -5302,7 +5304,7 @@ func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, e
 	if a.agentRepo != nil {
 		if agent, err := a.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil {
 			agent.Status = "error"
-			agent.ActiveStoryID = nil
+			agent.ActiveTaskID = nil
 			_ = a.agentRepo.Update(ctx, agent)
 		}
 	}
@@ -5338,7 +5340,7 @@ func (a *AgentRunActivities) markAgentIdle(ctx context.Context, workspaceID, age
 		return err
 	}
 	agent.Status = "idle"
-	agent.ActiveStoryID = nil
+	agent.ActiveTaskID = nil
 	agent.TokensUsedThisMonth += tokens
 	return a.agentRepo.Update(ctx, agent)
 }
@@ -5373,7 +5375,7 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 	}
 }
 
-func buildWorkingBranch(task *model.PMStory, teamDefault *model.PMTeamRepoDefault) string {
+func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault) string {
 	template := "{display_id}-{slug}"
 	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
 		template = teamDefault.BranchTemplate
@@ -5445,8 +5447,8 @@ func buildDurableRunFacts(state *resolvedRunState, input planningRunInput) map[s
 	setFact(facts, "agent_id", state.run.AgentID)
 	setFact(facts, "target_type", state.run.TargetType)
 	setFact(facts, "target_id", state.run.TargetID)
-	setFact(facts, "task_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.task)))
-	setFact(facts, "story_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.task)))
+	setFact(facts, "task_id", firstNonEmptyString(derefString(state.run.TaskID), structID(state.task)))
+	setFact(facts, "story_id", firstNonEmptyString(derefString(state.run.TaskID), structID(state.task)))
 	setFact(facts, "conversation_id", firstNonEmptyString(derefString(state.run.ConversationID), structID(state.conversation)))
 	setFact(facts, "epic_id", firstNonEmptyString(structID(state.epic), derefString(epicIDOfTask(state.task))))
 	setFact(facts, "plan_document_id", firstNonEmptyString(input.PlanDocumentID, derefString(planDocumentIDOfTask(state.task))))
@@ -5678,18 +5680,18 @@ func structID(value any) string {
 	return id
 }
 
-func epicIDOfTask(story *model.PMStory) *string {
-	if story == nil {
+func epicIDOfTask(task *model.PMTask) *string {
+	if task == nil {
 		return nil
 	}
-	return story.EpicID
+	return task.EpicID
 }
 
-func planDocumentIDOfTask(story *model.PMStory) *string {
-	if story == nil {
+func planDocumentIDOfTask(task *model.PMTask) *string {
+	if task == nil {
 		return nil
 	}
-	return story.PlanDocumentID
+	return task.PlanDocumentID
 }
 
 func specDocumentIDOfEpic(epic *model.PMEpic) *string {
@@ -5706,7 +5708,7 @@ func approvedSpecVersionIDOfEpic(epic *model.PMEpic) *string {
 	return epic.ApprovedSpecVersionID
 }
 
-func repositoryIDOfDeliveryTarget(target *model.StoryDeliveryTarget) string {
+func repositoryIDOfDeliveryTarget(target *model.TaskDeliveryTarget) string {
 	if target == nil {
 		return ""
 	}
@@ -5753,6 +5755,13 @@ func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool 
 	return set
 }
 
+func effectiveToolSet(resolved workerpkg.ResolvedProfile, explicitAllowed []string) map[string]bool {
+	if len(explicitAllowed) > 0 {
+		return stringSliceToSet(explicitAllowed)
+	}
+	return resolvedAllowedToolSet(resolved)
+}
+
 func stringSliceToSet(items []string) map[string]bool {
 	set := make(map[string]bool, len(items))
 	for _, item := range items {
@@ -5762,23 +5771,6 @@ func stringSliceToSet(items []string) map[string]bool {
 		}
 	}
 	return set
-}
-
-func toolAllowedForPlanningRun(resolved workerpkg.ResolvedProfile, explicitAllowed []string, toolName string) bool {
-	if len(explicitAllowed) > 0 {
-		for _, allowed := range explicitAllowed {
-			if strings.TrimSpace(allowed) == toolName {
-				return true
-			}
-		}
-		return false
-	}
-	for _, allowed := range resolved.Tools {
-		if strings.TrimSpace(allowed) == toolName {
-			return true
-		}
-	}
-	return false
 }
 
 func mustJSON(value any) json.RawMessage {

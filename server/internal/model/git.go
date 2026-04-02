@@ -66,7 +66,7 @@ func (PMTeamRepoDefault) TableName() string { return "pm_team_repo_defaults" }
 type TaskDeliveryTarget struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID        string     `json:"task_id" gorm:"column:task_id;type:uuid;not null;uniqueIndex"`
+	TaskID         string     `json:"task_id" gorm:"column:task_id;type:uuid;not null;uniqueIndex"`
 	RepositoryID   *string    `json:"repository_id" gorm:"type:uuid;index"`
 	RepoFullName   *string    `json:"repo_full_name"`
 	IntegrationID  *string    `json:"integration_id" gorm:"type:uuid;index"`
@@ -90,7 +90,7 @@ func (TaskDeliveryTarget) TableName() string { return "task_delivery_targets" }
 type TaskGitLink struct {
 	ID            string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID       string    `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
+	TaskID        string    `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
 	IntegrationID string    `json:"integration_id" gorm:"type:uuid;not null"`
 	RepositoryID  *string   `json:"repository_id" gorm:"type:uuid;index"`
 	RunID         *string   `json:"run_id" gorm:"type:uuid;index"`

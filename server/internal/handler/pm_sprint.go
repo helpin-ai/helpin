@@ -134,16 +134,16 @@ func (h *PMSprintHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "sprint deleted"})
 }
 
-// ListStories handles GET /api/pm/sprints/{id}/stories.
-func (h *PMSprintHandler) ListStories(w http.ResponseWriter, r *http.Request) {
+// ListTasks handles GET /api/pm/sprints/{id}/stories.
+func (h *PMSprintHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	stories, err := h.sprintService.ListStories(r.Context(), id)
+	tasks, err := h.sprintService.ListTasks(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stories == nil {
-		stories = []model.PMStory{}
+	if tasks == nil {
+		tasks = []model.PMTask{}
 	}
-	writeJSON(w, http.StatusOK, stories)
+	writeJSON(w, http.StatusOK, tasks)
 }

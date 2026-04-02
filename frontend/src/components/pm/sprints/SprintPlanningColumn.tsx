@@ -15,8 +15,8 @@ interface SprintPlanningColumnProps {
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
   onOpenSprint: (sprintId: string) => void;
-  onOpenStory: (storyId: string) => void;
-  onCreateStory: (sprintId: string) => void;
+  onOpenTask: (taskId: string) => void;
+  onCreateTask: (sprintId: string) => void;
 }
 
 function formatSprintRange(startDate: string | null, endDate: string | null) {
@@ -29,8 +29,8 @@ export function SprintPlanningColumn({
   ownerByMemberId,
   canEdit,
   onOpenSprint,
-  onOpenStory,
-  onCreateStory,
+  onOpenTask,
+  onCreateTask,
 }: SprintPlanningColumnProps) {
   const isCompleted = card.sprint.status === 'done';
   const { setNodeRef, isOver } = useDroppable({
@@ -38,10 +38,10 @@ export function SprintPlanningColumn({
     disabled: isCompleted,
   });
   const statusConfig = SPRINT_STATUS_CONFIG[card.sprint.status];
-  const total = card.stats.story_count;
-  const done = card.stats.done_story_count;
+  const total = card.stats.task_count;
+  const done = card.stats.done_task_count;
   const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
-  const stories = card.preview_stories ?? [];
+  const tasks = card.preview_tasks ?? [];
 
   return (
       <Card
@@ -77,21 +77,21 @@ export function SprintPlanningColumn({
               {pctDone > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${pctDone}%` }} />}
             </div>
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{done}/{total} stories done</span>
+              <span>{done}/{total} tasks done</span>
               <span>{card.stats.done_points}/{card.stats.total_points} pts</span>
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="flex min-h-0 flex-1 flex-col gap-2 whitespace-normal">
-          {stories.length > 0 ? (
+          {tasks.length > 0 ? (
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {stories.map((story) => (
+              {tasks.map((task) => (
                 <SprintPlanningTaskCard
-                  key={story.id}
-                  story={story}
-                  owner={story.owner_member_id ? ownerByMemberId.get(story.owner_member_id) : undefined}
-                  onOpen={() => onOpenStory(story.id)}
+                  key={task.id}
+                  task={task}
+                  owner={task.owner_member_id ? ownerByMemberId.get(task.owner_member_id) : undefined}
+                  onOpen={() => onOpenTask(task.id)}
                 />
               ))}
             </div>
@@ -102,12 +102,12 @@ export function SprintPlanningColumn({
                 ? 'border-primary/40 bg-primary/5 text-primary/60'
                 : 'border-border/60 bg-muted/10 text-muted-foreground',
             )}>
-              {isOver ? 'Drop into sprint' : 'No stories yet'}
+              {isOver ? 'Drop into sprint' : 'No tasks yet'}
             </div>
           )}
 
-          {card.story_preview_overflow > 0 && (
-            <p className="text-center text-xs text-muted-foreground">+{card.story_preview_overflow} more stories</p>
+          {card.task_preview_overflow > 0 && (
+            <p className="text-center text-xs text-muted-foreground">+{card.task_preview_overflow} more tasks</p>
           )}
 
           {canEdit && (
@@ -115,10 +115,10 @@ export function SprintPlanningColumn({
               variant="ghost"
               size="sm"
               className="mt-auto w-full gap-2 text-muted-foreground"
-              onClick={() => onCreateStory(card.sprint.id)}
+              onClick={() => onCreateTask(card.sprint.id)}
             >
               <Plus className="h-4 w-4" />
-              Create story
+              Create task
             </Button>
           )}
         </CardContent>

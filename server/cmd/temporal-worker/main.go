@@ -102,8 +102,8 @@ func main() {
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
-	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
+	taskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
@@ -124,8 +124,8 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
-	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
-	deliveryRepo := repository.NewStoryDeliveryTargetRepository(db)
+	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
+	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
@@ -312,7 +312,7 @@ func main() {
 		wsPublisher,
 	)
 	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
-	pmStoryService := service.NewPMStoryService(
+	pmStoryService := service.NewPMTaskService(
 		storyRepo,
 		workspaceRepo,
 		workflowRepo,
@@ -329,7 +329,7 @@ func main() {
 		nil,
 	)
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
-	pmRecurringTemplateService.SetStoryService(pmStoryService)
+	pmRecurringTemplateService.SetTaskService(pmStoryService)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -354,7 +354,7 @@ func main() {
 		interactionRepo,
 		sessionSnapshotRepo,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 		epicRepo,
 		conversationRepo,
 		supportMessageRepo,
@@ -420,7 +420,7 @@ func main() {
 		docsContentService,
 		docsLinkService,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 	)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
@@ -430,7 +430,7 @@ func main() {
 		interactionRepo,
 		sessionSnapshotRepo,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 		epicRepo,
 		conversationRepo,
 		commentRepo,

@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { Agent, CreateTaskRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -33,7 +33,7 @@ import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibi
 import { UserAvatar } from './UserAvatar';
 import { TaskCard } from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
-import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar, StoryOwnerAvatarFilterRow } from './StoryFilters';
+import { TaskFilterProvider, TaskFilterTrigger, TaskFilterBar, TaskOwnerAvatarFilterRow } from './TaskFilters';
 import { TaskListView } from './TaskListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
@@ -42,7 +42,7 @@ import { BoardToolbarSlot } from './BoardToolbarSlot';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
-import { DragPreviewManager, useActiveStory, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
+import { DragPreviewManager, useActiveTask, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
@@ -50,7 +50,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function storyListChanged(a: Story[], b: Story[]): boolean {
+function taskListChanged(a: Task[], b: Task[]): boolean {
   if (a.length !== b.length) return true;
   for (let i = 0; i < a.length; i++) {
     if (a[i].id !== b[i].id) return true;
@@ -64,7 +64,7 @@ interface KanbanBoardProps {
 }
 
 interface ColumnProps {
-  column: StoryStateColumn;
+  column: TaskStateColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
 }
@@ -75,15 +75,15 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   const dragManager = useContext(DragPreviewContext)!;
 
   // Subscribe to drag preview for this column only
-  const stories = useColumnDragPreview(dragManager, column.state.id, column.stories);
+  const tasks = useColumnDragPreview(dragManager, column.state.id, column.tasks);
 
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const groupedStories = column.state.state_type === 'done' ? column.story_groups ?? [] : [];
+  const groupedTasks = column.state.state_type === 'done' ? column.task_groups ?? [] : [];
 
-  // Memoize sortable items from preview stories
-  const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
+  // Memoize sortable items from preview tasks
+  const sortableItems = useMemo(() => tasks.map((s) => s.id), [tasks]);
 
   useEffect(() => {
     if (!column.has_more || isLoadingMore || !scrollRef.current || !loadMoreRef.current) return;
@@ -102,7 +102,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [column.has_more, column.state.id, column.stories.length, isLoadingMore, callbacksRef]);
+  }, [column.has_more, column.state.id, column.tasks.length, isLoadingMore, callbacksRef]);
 
   if (collapsed) {
     return (
@@ -123,7 +123,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         {automatedStateIds?.has(column.state.id) && (
           <Bot className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
         )}
-        <span className="text-xs font-medium text-muted-foreground">{column.story_count}</span>
+        <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
         <div className="mt-3 flex flex-1 items-start">
           <span
             className="text-xs font-semibold whitespace-nowrap"
@@ -138,7 +138,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   }
 
   return (
-    <section className="flex h-full w-[340px] shrink-0 flex-col">
+    <section className="flex h-full w-[300px] shrink-0 flex-col">
       <header className="group/header flex items-center justify-between px-3 pt-4 pb-3 relative">
         {column.state.color && (
           <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
@@ -168,10 +168,10 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             </p>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'task' : 'tasks'}`}>
+            <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
                 <StickyNote className="h-3 w-3" />
-                {column.story_count}
+                {column.task_count}
               </span>
             </QuickTooltip>
             <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
@@ -193,7 +193,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
-          <QuickTooltip label="Create story">
+          <QuickTooltip label="Create task">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreate(column.state.id)}>
               <Plus className="h-4 w-4" />
             </Button>
@@ -207,31 +207,31 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
+          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
             isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'
           }`}
         >
-          {groupedStories.length > 0 ? (
-            groupedStories.map((group) => (
+          {groupedTasks.length > 0 ? (
+            groupedTasks.map((group) => (
               <div key={group.key} className="space-y-2">
                 <div className="rounded-md bg-muted px-3 py-1 text-center text-xs font-semibold text-muted-foreground">
                   {group.label}
                 </div>
-                {group.stories.map((story) => (
+                {group.tasks.map((task) => (
                   <TaskCard
-                    key={story.id}
-                    story={story}
-                    teamName={findTeamName(story.team_id)}
+                    key={task.id}
+                    task={task}
+                    teamName={findTeamName(task.team_id)}
                   />
                 ))}
               </div>
             ))
           ) : (
-            stories.map((story) => (
+            tasks.map((task) => (
               <TaskCard
-                key={story.id}
-                story={story}
-                teamName={findTeamName(story.team_id)}
+                key={task.id}
+                task={task}
+                teamName={findTeamName(task.team_id)}
               />
             ))
           )}
@@ -247,7 +247,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                   Loading more...
                 </>
               ) : (
-                <span>{column.story_count - column.stories.length} remaining</span>
+                <span>{column.task_count - column.tasks.length} remaining</span>
               )}
             </div>
           ) : null}
@@ -258,7 +258,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             onClick={() => callbacksRef.current.onCreate(column.state.id)}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add story
+            Add task
           </Button>
         </div>
       </SortableContext>
@@ -268,7 +268,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 Column.displayName = 'Column';
 
 interface MemberColumnProps {
-  column: StoryMemberColumn;
+  column: TaskMemberColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
 }
@@ -281,15 +281,15 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
   const colKey = column.member?.id ?? '__unassigned__';
 
   // Subscribe to drag preview for this column only
-  const stories = useColumnDragPreview(dragManager, colKey, column.stories);
+  const tasks = useColumnDragPreview(dragManager, colKey, column.tasks);
 
   const { setNodeRef, isOver } = useDroppable({ id: colKey });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const displayName = column.member?.display_name ?? 'Unassigned';
 
-  // Memoize sortable items from preview stories
-  const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
+  // Memoize sortable items from preview tasks
+  const sortableItems = useMemo(() => tasks.map((s) => s.id), [tasks]);
 
   useEffect(() => {
     if (!column.has_more || isLoadingMore || !scrollRef.current || !loadMoreRef.current) return;
@@ -303,7 +303,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [column.has_more, column.member?.id, column.stories.length, isLoadingMore, callbacksRef]);
+  }, [column.has_more, column.member?.id, column.tasks.length, isLoadingMore, callbacksRef]);
 
   if (collapsed) {
     return (
@@ -322,7 +322,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           ) : (
             <User className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
-          <span className="mt-2 text-xs font-medium text-muted-foreground">{column.story_count}</span>
+          <span className="mt-2 text-xs font-medium text-muted-foreground">{column.task_count}</span>
           <div className="mt-3 flex flex-1 items-start">
             <span
               className="text-xs font-semibold whitespace-nowrap"
@@ -349,10 +349,10 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             {displayName}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'task' : 'tasks'}`}>
+            <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
                 <StickyNote className="h-3 w-3" />
-                {column.story_count}
+                {column.task_count}
               </span>
             </QuickTooltip>
             <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
@@ -369,7 +369,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
               <ChevronsRightLeft className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
-          <QuickTooltip label="Create story">
+          <QuickTooltip label="Create task">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}>
               <Plus className="h-4 w-4" />
             </Button>
@@ -383,13 +383,13 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
+          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
         >
-          {stories.map((story) => (
+          {tasks.map((task) => (
             <TaskCard
-              key={story.id}
-              story={story}
-              teamName={findTeamName(story.team_id)}
+              key={task.id}
+              task={task}
+              teamName={findTeamName(task.team_id)}
               showStateBadge
             />
           ))}
@@ -399,7 +399,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
               {isLoadingMore ? (
                 <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading more...</>
               ) : (
-                <span>{column.story_count - column.stories.length} remaining</span>
+                <span>{column.task_count - column.tasks.length} remaining</span>
               )}
             </div>
           ) : null}
@@ -410,7 +410,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add story
+            Add task
           </Button>
         </div>
       </SortableContext>
@@ -430,14 +430,14 @@ const DragOverlayCard = memo(function DragOverlayCard({
   agentById: Map<string, Agent>;
   groupBy: string;
 }) {
-  const activeStory = useActiveStory(manager);
-  if (!activeStory) return null;
+  const activeTask = useActiveTask(manager);
+  if (!activeTask) return null;
   return (
     <TaskCard
-      story={activeStory}
+      task={activeTask}
       isOverlay
-      teamName={resolveTeamName(activeStory.team_id)}
-      assignedAgent={activeStory.assigned_agent_id ? agentById.get(activeStory.assigned_agent_id) ?? null : null}
+      teamName={resolveTeamName(activeTask.team_id)}
+      assignedAgent={activeTask.assigned_agent_id ? agentById.get(activeTask.assigned_agent_id) ?? null : null}
       showStateBadge={groupBy === 'members'}
     />
   );
@@ -495,7 +495,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     for (const rule of automationRules) {
       if (
         rule.enabled &&
-        rule.trigger_type === 'story.state_entered' &&
+        rule.trigger_type === 'task.state_entered' &&
         rule.action_type === 'start_agent_run'
       ) {
         const stateId = rule.trigger_config?.state_id;
@@ -535,7 +535,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   );
 
   const dragManager = useRef(new DragPreviewManager()).current;
-  const isDragging = useActiveStory(dragManager) !== null;
+  const isDragging = useActiveTask(dragManager) !== null;
   const lastDragOverTime = useRef(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
@@ -611,7 +611,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     }
   }, [workspaceId, currentMemberId, loadViews]);
 
-  // Refresh board when a story is created via the global modal
+  // Refresh board when a task is created via the global modal
   useEffect(() => {
     const handler = () => {
       if (groupBy === 'members') {
@@ -639,17 +639,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, workflow, workspaceSlug]);
-  const openStory = useCallback(
-    (story: Story) => {
+  const openTask = useCallback(
+    (task: Task) => {
       if (!workspaceSlug) return;
-      openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, story.id);
+      openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, task.id);
     },
     [navigate, workspaceSlug],
   );
   const resolveTeamName = useCallback(
-    (storyTeamId: string | undefined) => {
+    (taskTeamId: string | undefined) => {
       if (storeTeamId) return undefined;
-      return findTeamName(storyTeamId);
+      return findTeamName(taskTeamId);
     },
     [storeTeamId, findTeamName],
   );
@@ -667,48 +667,48 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   // Listen for global panel events to patch board state
   useEffect(() => {
     const onUpdated = (e: Event) => {
-      const updated = (e as CustomEvent)?.detail?.story;
+      const updated = (e as CustomEvent)?.detail?.task;
       if (!updated) return;
-      const story = { ...updated.task };
-      const ownerKey = story.owner_member_id;
-      if (ownerKey && !story.owner_name) {
-        story.owner_name = updated.owner_member
+      const task = { ...updated.task };
+      const ownerKey = task.owner_member_id;
+      if (ownerKey && !task.owner_name) {
+        task.owner_name = updated.owner_member
           ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
           : ownerNameMap.get(ownerKey);
       }
       if (groupBy === 'members') {
-        const stateCol = columns.find((c) => c.state.id === story.workflow_state_id);
+        const stateCol = columns.find((c) => c.state.id === task.workflow_state_id);
         if (stateCol) {
-          story.state_name = stateCol.state.name;
-          story.state_type = stateCol.state.state_type;
-          story.state_color = stateCol.state.color;
+          task.state_name = stateCol.state.name;
+          task.state_type = stateCol.state.state_type;
+          task.state_color = stateCol.state.color;
         }
         const cols = usePMBoardStore.getState().memberColumns;
-        const patched = cols.map((col: StoryMemberColumn) => {
-          const idx = col.stories.findIndex((s) => s.id === story.id);
+        const patched = cols.map((col: TaskMemberColumn) => {
+          const idx = col.tasks.findIndex((s) => s.id === task.id);
           if (idx < 0) return col;
-          const stories = [...col.stories];
-          stories[idx] = { ...stories[idx], ...story };
-          return { ...col, stories };
+          const tasks = [...col.tasks];
+          tasks[idx] = { ...tasks[idx], ...task };
+          return { ...col, tasks };
         });
         usePMBoardStore.setState({ memberColumns: patched });
       } else {
-        if (!patchTask('updated', story.id, story)) refreshBoard();
+        if (!patchTask('updated', task.id, task)) refreshBoard();
       }
     };
     const onArchived = (e: Event) => {
-      const storyId = (e as CustomEvent)?.detail?.storyId;
-      if (!storyId) return;
+      const taskId = (e as CustomEvent)?.detail?.taskId;
+      if (!taskId) return;
       if (groupBy === 'members') {
         const cols = usePMBoardStore.getState().memberColumns;
-        const updated = cols.map((col: StoryMemberColumn) => {
-          const idx = col.stories.findIndex((s) => s.id === storyId);
+        const updated = cols.map((col: TaskMemberColumn) => {
+          const idx = col.tasks.findIndex((s) => s.id === taskId);
           if (idx < 0) return col;
-          return { ...col, stories: col.stories.filter((s) => s.id !== storyId), story_count: col.story_count - 1 };
+          return { ...col, tasks: col.tasks.filter((s) => s.id !== taskId), task_count: col.task_count - 1 };
         });
         usePMBoardStore.setState({ memberColumns: updated });
       } else {
-        if (!patchTask('deleted', storyId)) refreshBoard();
+        if (!patchTask('deleted', taskId)) refreshBoard();
       }
     };
     window.addEventListener('task-panel-updated', onUpdated);
@@ -723,7 +723,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     (id: string) => {
       if (columns.some((column) => column.state.id === id)) return id;
       for (const column of columns) {
-        if (column.stories.some((story) => story.id === id)) {
+        if (column.tasks.some((t) => t.id === id)) {
           return column.state.id;
         }
       }
@@ -735,11 +735,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
       dragManager.clearColumnOverrides();
-      const allStories = groupBy === 'members'
-        ? memberColumns.flatMap((col) => col.stories)
-        : columns.flatMap((column) => column.stories);
-      const story = allStories.find((item) => item.id === String(event.active.id));
-      dragManager.setActiveStory(story ?? null);
+      const allTasks = groupBy === 'members'
+        ? memberColumns.flatMap((col) => col.tasks)
+        : columns.flatMap((column) => column.tasks);
+      const task = allTasks.find((item) => item.id === String(event.active.id));
+      dragManager.setActiveTask(task ?? null);
     },
     [columns, memberColumns, groupBy, dragManager]
   );
@@ -763,9 +763,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         let toKey: string | null = null;
         for (const col of memberColumns) {
           const key = col.member?.id ?? '__unassigned__';
-          const colStories = dragManager.getColumnStories(key) ?? col.stories;
-          if (colStories.some((s) => s.id === activeId)) fromKey = key;
-          if (key === overId || colStories.some((s) => s.id === overId)) toKey = key;
+          const colTasks = dragManager.getColumnTasks(key) ?? col.tasks;
+          if (colTasks.some((s) => s.id === activeId)) fromKey = key;
+          if (key === overId || colTasks.some((s) => s.id === overId)) toKey = key;
         }
         if (!fromKey || !toKey || fromKey === toKey) {
           dragManager.clearColumnOverrides();
@@ -776,12 +776,12 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const toBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
         if (!fromBase || !toBase) return;
 
-        const fromStories = [...(dragManager.getColumnStories(fromKey) ?? fromBase.stories)];
-        const toStories = [...(dragManager.getColumnStories(toKey) ?? toBase.stories)];
+        const fromTasks = [...(dragManager.getColumnTasks(fromKey) ?? fromBase.tasks)];
+        const toTasks = [...(dragManager.getColumnTasks(toKey) ?? toBase.tasks)];
 
-        const idx = fromStories.findIndex((s) => s.id === activeId);
+        const idx = fromTasks.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
-        const [story] = fromStories.splice(idx, 1);
+        const [task] = fromTasks.splice(idx, 1);
         const previousTarget = dragManager.getDropTarget();
         let insertIdx: number;
         if (overId === toKey) {
@@ -791,46 +791,46 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
             toColumnId: toKey,
             overId,
             containerId: toKey,
-            computedIndex: toStories.length,
-            columnLength: toStories.length,
+            computedIndex: toTasks.length,
+            columnLength: toTasks.length,
           });
         } else {
-          const overIdx = toStories.findIndex((s) => s.id === overId);
-          insertIdx = overIdx >= 0 ? overIdx : toStories.length;
+          const overIdx = toTasks.findIndex((s) => s.id === overId);
+          insertIdx = overIdx >= 0 ? overIdx : toTasks.length;
           if (overIdx >= 0) {
             const r = active.rect.current.translated;
             const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
             if (belowMid) insertIdx = overIdx + 1;
           }
         }
-        toStories.splice(insertIdx, 0, story);
+        toTasks.splice(insertIdx, 0, task);
 
         // Skip no-op updates
-        const currentFrom = dragManager.getColumnStories(fromKey);
-        if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
+        const currentFrom = dragManager.getColumnTasks(fromKey);
+        if (currentFrom && !taskListChanged(currentFrom, fromTasks)) return;
 
-        dragManager.updatePreview(fromKey, toKey, fromStories, toStories, insertIdx);
+        dragManager.updatePreview(fromKey, toKey, fromTasks, toTasks, insertIdx);
       } else {
         // State board path
         let fromStateId: string | null = null;
         let toStateId: string | null = null;
         for (const col of columns) {
-          const colStories = dragManager.getColumnStories(col.state.id) ?? col.stories;
-          if (colStories.some((s) => s.id === activeId)) fromStateId = col.state.id;
-          if (col.state.id === overId || colStories.some((s) => s.id === overId)) toStateId = col.state.id;
+          const colTasks = dragManager.getColumnTasks(col.state.id) ?? col.tasks;
+          if (colTasks.some((s) => s.id === activeId)) fromStateId = col.state.id;
+          if (col.state.id === overId || colTasks.some((s) => s.id === overId)) toStateId = col.state.id;
         }
         if (!fromStateId || !toStateId || fromStateId === toStateId) {
           dragManager.clearColumnOverrides();
           return;
         }
 
-        const fromStories = [...(dragManager.getColumnStories(fromStateId) ?? columns.find((c) => c.state.id === fromStateId)!.stories)];
-        const toStories = [...(dragManager.getColumnStories(toStateId) ?? columns.find((c) => c.state.id === toStateId)!.stories)];
+        const fromTasks = [...(dragManager.getColumnTasks(fromStateId) ?? columns.find((c) => c.state.id === fromStateId)!.tasks)];
+        const toTasks = [...(dragManager.getColumnTasks(toStateId) ?? columns.find((c) => c.state.id === toStateId)!.tasks)];
 
-        const idx = fromStories.findIndex((s) => s.id === activeId);
+        const idx = fromTasks.findIndex((s) => s.id === activeId);
         if (idx < 0) return;
-        const [story] = fromStories.splice(idx, 1);
-        const overIdx = toStories.findIndex((s) => s.id === overId);
+        const [task] = fromTasks.splice(idx, 1);
+        const overIdx = toTasks.findIndex((s) => s.id === overId);
         const r = active.rect.current.translated;
         const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
         const toCol = columns.find((c) => c.state.id === toStateId)!;
@@ -839,7 +839,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           overId,
           toStateId,
           overIdx,
-          columnLength: toStories.length,
+          columnLength: toTasks.length,
           pointerBelowMid: belowMid,
         });
         const insertIdx = getStableCrossColumnPreviewIndex({
@@ -849,15 +849,15 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           overId,
           containerId: toStateId,
           computedIndex: computedInsertIdx,
-          columnLength: toStories.length,
+          columnLength: toTasks.length,
         });
-        toStories.splice(insertIdx, 0, story);
+        toTasks.splice(insertIdx, 0, task);
 
         // Skip no-op updates
-        const currentFrom = dragManager.getColumnStories(fromStateId);
-        if (currentFrom && !storyListChanged(currentFrom, fromStories)) return;
+        const currentFrom = dragManager.getColumnTasks(fromStateId);
+        if (currentFrom && !taskListChanged(currentFrom, fromTasks)) return;
 
-        dragManager.updatePreview(fromStateId, toStateId, fromStories, toStories, insertIdx);
+        dragManager.updatePreview(fromStateId, toStateId, fromTasks, toTasks, insertIdx);
       }
     },
     [groupBy, columns, memberColumns, dragManager],
@@ -882,7 +882,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         let fromKey: string | null = null;
         for (const col of memberColumns) {
           const key = col.member?.id ?? '__unassigned__';
-          if (col.stories.some((s) => s.id === activeId)) { fromKey = key; break; }
+          if (col.tasks.some((s) => s.id === activeId)) { fromKey = key; break; }
         }
         if (!fromKey) { clearDragPreview(); return; }
 
@@ -904,9 +904,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         if (!toKey) {
           for (const col of memberColumns) {
             const key = col.member?.id ?? '__unassigned__';
-            const previewStories = dragManager.getColumnStories(key);
-            if (previewStories) {
-              const idx = previewStories.findIndex((s) => s.id === activeId);
+            const previewTasks = dragManager.getColumnTasks(key);
+            if (previewTasks) {
+              const idx = previewTasks.findIndex((s) => s.id === activeId);
               if (idx >= 0 && key !== fromKey) { toKey = key; toIdx = idx; break; }
             }
           }
@@ -916,7 +916,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         if (!toKey) {
           for (const col of memberColumns) {
             const key = col.member?.id ?? '__unassigned__';
-            if (key === overId || col.stories.some((s) => s.id === overId)) {
+            if (key === overId || col.tasks.some((s) => s.id === overId)) {
               if (key !== fromKey) { toKey = key; toIdx = 0; }
               break;
             }
@@ -930,7 +930,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           await commitDropBeforeClearingPreview({
             commit: () => moveMemberTask({
               workspaceId,
-              storyId: activeId,
+              taskId: activeId,
               fromMemberId: fromColumn.member?.id ?? null,
               toMemberId: toColumn.member?.id ?? null,
               toIndex: toIdx,
@@ -947,7 +947,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       // Find original column from BASE store data
       let fromStateId: string | null = null;
       for (const col of columns) {
-        if (col.stories.some((s) => s.id === activeId)) { fromStateId = col.state.id; break; }
+        if (col.tasks.some((s) => s.id === activeId)) { fromStateId = col.state.id; break; }
       }
       if (!fromStateId) { clearDragPreview(); return; }
       const debugTraceID = createPMDnDTraceID();
@@ -969,9 +969,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         // Check preview overrides for cross-column move
         if (!crossStateId) {
           for (const col of columns) {
-            const previewStories = dragManager.getColumnStories(col.state.id);
-            if (previewStories) {
-              const idx = previewStories.findIndex((s) => s.id === activeId);
+            const previewTasks = dragManager.getColumnTasks(col.state.id);
+            if (previewTasks) {
+              const idx = previewTasks.findIndex((s) => s.id === activeId);
               if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
             }
           }
@@ -980,11 +980,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       // If preview didn't capture it (throttle), compute from the over event
       if (!crossStateId) {
         for (const col of columns) {
-          if (col.state.id === overId || col.stories.some((s) => s.id === overId)) {
+          if (col.state.id === overId || col.tasks.some((s) => s.id === overId)) {
             if (col.state.id !== fromStateId) {
               crossStateId = col.state.id;
               // Compute insert index from the over position
-              const overIdx = col.stories.findIndex((s) => s.id === overId);
+              const overIdx = col.tasks.findIndex((s) => s.id === overId);
               const r = active.rect.current.translated;
               const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
               crossIdx = getStateBoardPreviewInsertIndex({
@@ -992,7 +992,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 overId,
                 toStateId: col.state.id,
                 overIdx,
-                columnLength: col.stories.length,
+                columnLength: col.tasks.length,
                 pointerBelowMid: belowMid,
               });
             }
@@ -1004,7 +1004,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (crossStateId) {
         logPMDnD('drag_end_cross_state', {
           trace_id: debugTraceID,
-          story_id: activeId,
+          task_id: activeId,
           over_id: overId,
           from_state_id: fromStateId,
           to_state_id: crossStateId,
@@ -1013,7 +1013,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         await commitDropBeforeClearingPreview({
           commit: () => moveTask({
             workspaceId,
-            storyId: activeId,
+            taskId: activeId,
             fromStateId,
             toStateId: crossStateId,
             toIndex: crossIdx,
@@ -1029,19 +1029,19 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         const fromColumn = columns.find((c) => c.state.id === fromStateId);
         if (!fromColumn) { clearDragPreview(); return; }
         if (fromColumn.state.state_type === 'done') {
-          logPMDnD('drag_end_done_column_noop', { trace_id: debugTraceID, story_id: activeId, state_id: fromStateId, over_id: overId });
+          logPMDnD('drag_end_done_column_noop', { trace_id: debugTraceID, task_id: activeId, state_id: fromStateId, over_id: overId });
           clearDragPreview();
           return;
         }
-        const fromIndex = fromColumn.stories.findIndex((s) => s.id === activeId);
+        const fromIndex = fromColumn.tasks.findIndex((s) => s.id === activeId);
         const overIndex = overId === toStateId
-          ? fromColumn.stories.length - 1
-          : fromColumn.stories.findIndex((s) => s.id === overId);
-        const toIndex = getSameStateBoardDropIndex({ overId, stateId: toStateId, overIndex, columnLength: fromColumn.stories.length });
+          ? fromColumn.tasks.length - 1
+          : fromColumn.tasks.findIndex((s) => s.id === overId);
+        const toIndex = getSameStateBoardDropIndex({ overId, stateId: toStateId, overIndex, columnLength: fromColumn.tasks.length });
         if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
-        logPMDnD('drag_end_same_state', { trace_id: debugTraceID, story_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
+        logPMDnD('drag_end_same_state', { trace_id: debugTraceID, task_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
         await commitDropBeforeClearingPreview({
-          commit: () => moveTask({ workspaceId, storyId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
+          commit: () => moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
           clearPreview: clearDragPreview,
         });
       }
@@ -1051,38 +1051,38 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const handleCreate = useCallback(
     async (payload: CreateTaskRequest) => {
-      const story = await createTask(payload);
-      return story ? { id: story.id } : undefined;
+      const task = await createTask(payload);
+      return task ? { id: task.id } : undefined;
     },
     [createTask]
   );
 
-  const handleStoryPatched = useCallback((story: Story) => {
+  const handleTaskPatched = useCallback((task: Task) => {
     // Enrich with owner_name for board display (update API doesn't include it)
-    const ownerKey = story.owner_member_id;
-    if (ownerKey && !story.owner_name) {
+    const ownerKey = task.owner_member_id;
+    if (ownerKey && !task.owner_name) {
       const ownerName = ownerNameMap.get(ownerKey);
-      if (ownerName) story = { ...story, owner_name: ownerName };
+      if (ownerName) task = { ...task, owner_name: ownerName };
     }
     if (groupBy === 'members') {
       // Enrich with state info from workflow columns (read from store directly to avoid dep)
       const stateColumns = usePMBoardStore.getState().columns;
-      const stateCol = stateColumns.find((c) => c.state.id === story.workflow_state_id);
+      const stateCol = stateColumns.find((c) => c.state.id === task.workflow_state_id);
       if (stateCol) {
-        story = { ...story, state_name: stateCol.state.name, state_type: stateCol.state.state_type, state_color: stateCol.state.color };
+        task = { ...task, state_name: stateCol.state.name, state_type: stateCol.state.state_type, state_color: stateCol.state.color };
       }
-      // Optimistically patch the story in member columns
+      // Optimistically patch the task in member columns
       const cols = usePMBoardStore.getState().memberColumns;
       const updated = cols.map((col) => {
-        const idx = col.stories.findIndex((s) => s.id === story.id);
+        const idx = col.tasks.findIndex((s) => s.id === task.id);
         if (idx < 0) return col;
-        const stories = [...col.stories];
-        stories[idx] = { ...stories[idx], ...story };
-        return { ...col, stories };
+        const tasks = [...col.tasks];
+        tasks[idx] = { ...tasks[idx], ...task };
+        return { ...col, tasks };
       });
       usePMBoardStore.setState({ memberColumns: updated });
     } else {
-      const patched = patchTask('updated', story.id, story);
+      const patched = patchTask('updated', task.id, task);
       if (!patched) {
         refreshBoard();
       }
@@ -1097,8 +1097,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   // Use a ref so the context value identity never changes — consumers never
   // re-render from callback identity shifts (e.g. ownerNameMap refetch).
   const boardCallbacksRef = useRef<import('./KanbanBoard.contexts').BoardCallbacksContextValue>({
-    onStoryPatched: handleStoryPatched,
-    onOpen: openStory,
+    onTaskPatched: handleTaskPatched,
+    onOpen: openTask,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,
@@ -1106,8 +1106,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     onLoadMoreMember: loadMoreMemberColumn,
   });
   boardCallbacksRef.current = {
-    onStoryPatched: handleStoryPatched,
-    onOpen: openStory,
+    onTaskPatched: handleTaskPatched,
+    onOpen: openTask,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,
@@ -1116,7 +1116,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   };
 
   return (
-    <StoryFilterProvider
+    <TaskFilterProvider
       workspaceId={workspaceId}
       assignableMembers={assignableMembers}
       activeTeamId={storeTeamId}
@@ -1131,9 +1131,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       {currentUser && (
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
-      <header className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
-        <StoryFilterTrigger />
-        <StoryOwnerAvatarFilterRow />
+      <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
+        <TaskFilterTrigger />
+        <TaskOwnerAvatarFilterRow />
 
         {/* Team selector — only shown when no team is pre-selected via URL */}
         {!teamId && teams.length > 0 && (
@@ -1215,7 +1215,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       </header>
 
-      <StoryFilterBar />
+      <TaskFilterBar />
 
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1245,7 +1245,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           <div className="min-h-0 flex-1 overflow-x-auto">
             <div className="flex h-full min-w-full gap-3 pb-2">
               {groupBy === 'members' ? (
-                memberColumns.filter((col) => showEmptyColumns || isDragging || col.story_count > 0).map((col) => {
+                memberColumns.filter((col) => showEmptyColumns || isDragging || col.task_count > 0).map((col) => {
                   const colKey = col.member?.id ?? '__unassigned__';
                   return (
                     <MemberColumn
@@ -1257,7 +1257,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   );
                 })
               ) : (
-                columns.filter((column) => showEmptyColumns || isDragging || column.story_count > 0).map((column) => (
+                columns.filter((column) => showEmptyColumns || isDragging || column.task_count > 0).map((column) => (
                   <Column
                     key={column.state.id}
                     column={column}
@@ -1288,7 +1288,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           sprints={refSprints}
           filters={filters}
           teamId={storeTeamId}
-          onOpenTask={openStory}
+          onOpenTask={openTask}
           groupBy={listGroupBy}
           onGroupByChange={setListGroupBy}
           showToolbar={false}
@@ -1309,6 +1309,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       ) : null}
 
     </div>
-    </StoryFilterProvider>
+    </TaskFilterProvider>
   );
 }

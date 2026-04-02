@@ -32,7 +32,7 @@ func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, 
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "epicadmin@test.com", "Epic Admin", model.RoleAdmin)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -239,7 +239,7 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "viewer@test.com", "Viewer", model.RoleMember)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -497,7 +497,7 @@ func TestPMEpicService_Delete_Forbidden(t *testing.T) {
 	seedWorkspaceMember(t, db, "member-del-manager", wsID, managerUserID, "delmanager@test.com", "Manager", model.RoleMember)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -658,15 +658,15 @@ func TestComputeEpicSuggestedHealth(t *testing.T) {
 				Deadline:         &end,
 			},
 			Stats: model.PMEpicStats{
-				StoryCount:     storyCount,
-				DoneStoryCount: doneCount,
+				TaskCount:     storyCount,
+				DoneTaskCount: doneCount,
 			},
 		}
 	}
 
 	t.Run("no dates returns no_health", func(t *testing.T) {
 		epic := &model.EpicWithStats{
-			Stats: model.PMEpicStats{StoryCount: 5, DoneStoryCount: 0},
+			Stats: model.PMEpicStats{TaskCount: 5, DoneTaskCount: 0},
 		}
 		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthNone {
@@ -676,7 +676,7 @@ func TestComputeEpicSuggestedHealth(t *testing.T) {
 
 	t.Run("no stories returns no_health", func(t *testing.T) {
 		epic := &model.EpicWithStats{
-			Stats: model.PMEpicStats{StoryCount: 0},
+			Stats: model.PMEpicStats{TaskCount: 0},
 		}
 		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthNone {

@@ -1,17 +1,14 @@
-
 use reqwest::Client;
-use std::{env, fs};
 use std::path::Path;
+use std::{env, fs};
 use tokio::fs as async_fs;
-
-
 
 const TARGET_PATH: &str = "data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN";
 const TEMP_TARGET_PATH: &str = "data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN.temp";
 
 pub async fn ip2proxy_download_and_save() -> Result<(), Box<dyn std::error::Error>> {
-    
-    let IP2PROXY_URL = env::var("IP2PROXY_DOWNLOADER_URL").expect("IP2PROXY_DOWNLOADER_URL must be set"); //"http://ip2proxy-downloader-svc.eventpipeline.svc/download";
+    let IP2PROXY_URL =
+        env::var("IP2PROXY_DOWNLOADER_URL").expect("IP2PROXY_DOWNLOADER_URL must be set"); //"http://ip2proxy-downloader-svc.eventpipeline.svc/download";
     let client = Client::new();
     let response = client.get(IP2PROXY_URL).send().await?;
     let bytes = response.bytes().await?;
@@ -51,6 +48,6 @@ mod tests {
         // Check that the file exists.
         assert!(Path::new(TARGET_PATH).exists());
         // Clean up after test.
-        fs::remove_file(TARGET_PATH).unwrap(); 
+        fs::remove_file(TARGET_PATH).unwrap();
     }
 }

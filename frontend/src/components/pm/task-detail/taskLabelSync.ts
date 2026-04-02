@@ -1,22 +1,22 @@
-import type { StoryDetail } from '@/lib/pmTypes';
+import type { TaskDetail } from '@/lib/pmTypes';
 
 interface LabelSyncResult {
   error?: string | null;
 }
 
 interface ReloadTaskResult {
-  data?: StoryDetail | null;
+  data?: TaskDetail | null;
   error?: string | null;
 }
 
 interface SyncTaskLabelsWithFeedbackOptions {
   workspaceId: string;
-  storyId: string;
+  taskId: string;
   currentLabelIds: string[];
   nextLabelIds: string[];
-  syncLabels: (workspaceId: string, storyId: string, currentIds: string[], nextIds: string[]) => Promise<LabelSyncResult[]>;
-  reloadTask: (workspaceId: string, storyId: string) => Promise<ReloadTaskResult>;
-  onTaskUpdated: (story: StoryDetail) => void;
+  syncLabels: (workspaceId: string, taskId: string, currentIds: string[], nextIds: string[]) => Promise<LabelSyncResult[]>;
+  reloadTask: (workspaceId: string, taskId: string) => Promise<ReloadTaskResult>;
+  onTaskUpdated: (detail: TaskDetail) => void;
   onSaved?: () => void | Promise<void>;
   setSaving: (saving: boolean) => void;
   setSaveError: (error: string | null) => void;
@@ -24,7 +24,7 @@ interface SyncTaskLabelsWithFeedbackOptions {
 
 export async function syncTaskLabelsWithFeedback({
   workspaceId,
-  storyId,
+  taskId,
   currentLabelIds,
   nextLabelIds,
   syncLabels,
@@ -36,14 +36,14 @@ export async function syncTaskLabelsWithFeedback({
 }: SyncTaskLabelsWithFeedbackOptions) {
   setSaving(true);
   try {
-    const results = await syncLabels(workspaceId, storyId, currentLabelIds, nextLabelIds);
+    const results = await syncLabels(workspaceId, taskId, currentLabelIds, nextLabelIds);
     const syncError = results.find((result) => result?.error)?.error;
     if (syncError) {
       setSaveError(syncError);
       return;
     }
 
-    const { data, error } = await reloadTask(workspaceId, storyId);
+    const { data, error } = await reloadTask(workspaceId, taskId);
     if (error || !data) {
       setSaveError(error ?? 'Failed to save changes');
       return;

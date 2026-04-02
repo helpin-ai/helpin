@@ -63,7 +63,7 @@ const ALL_PROPERTIES = [
   { key: 'state', label: 'State' },
   { key: 'health', label: 'Health' },
   { key: 'progress', label: 'Progress' },
-  { key: 'stories', label: 'Stories' },
+  { key: 'tasks', label: 'Tasks' },
   { key: 'points', label: 'Points' },
   { key: 'owner', label: 'Owner' },
   { key: 'objective', label: 'Objective' },
@@ -79,7 +79,7 @@ const DEFAULT_VISIBLE = [
   'state',
   'health',
   'progress',
-  'stories',
+  'tasks',
   'points',
   'owner',
   'objective',
@@ -127,6 +127,14 @@ interface EpicGroup {
   key: string;
   label: string;
   entries: EpicWithStats[];
+}
+
+function epicTaskCount(entry: EpicWithStats) {
+  return entry.stats.task_count ?? entry.stats.task_count ?? 0;
+}
+
+function epicDoneTaskCount(entry: EpicWithStats) {
+  return entry.stats.done_task_count ?? entry.stats.done_task_count ?? 0;
 }
 
 function applyEpicPatch(entry: EpicWithStats, patch: UpdateEpicRequest, allLabels: Label[]): EpicWithStats {
@@ -491,7 +499,7 @@ function EpicGroupSection({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const totalStories = group.entries.reduce((sum, entry) => sum + entry.stats.story_count, 0);
+  const totalTasks = group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0);
   const totalPoints = group.entries.reduce((sum, entry) => sum + entry.stats.total_points, 0);
   const completedPoints = group.entries.reduce((sum, entry) => sum + entry.stats.done_points, 0);
 
@@ -499,7 +507,7 @@ function EpicGroupSection({
     <section className="overflow-hidden rounded-lg border border-border/60">
       <button
         type="button"
-        className={`${TABLE_GROUP_ROW} w-full border-b border-border/60 text-left text-xs`}
+        className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
         onClick={onToggle}
       >
         {collapsed ? (
@@ -510,7 +518,7 @@ function EpicGroupSection({
         <span className="min-w-0 truncate font-medium">{group.label}</span>
         <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
           <span>{group.entries.length} {group.entries.length === 1 ? 'epic' : 'epics'}</span>
-          <span>{totalStories} stories</span>
+          <span>{totalTasks} tasks</span>
           <span>{completedPoints}/{totalPoints} points</span>
         </span>
       </button>
@@ -971,8 +979,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     return map;
   }, [epicStates]);
   const completionPct = (entry: EpicWithStats) => {
-    if (entry.stats.story_count === 0) return 0;
-    return Math.round((entry.stats.done_story_count / entry.stats.story_count) * 100);
+    const totalTasks = epicTaskCount(entry);
+    if (totalTasks === 0) return 0;
+    return Math.round((epicDoneTaskCount(entry) / totalTasks) * 100);
   };
 
   const filterDefinitions = useMemo<EpicFilterDefinition[]>(() => [
@@ -1108,7 +1117,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className="flex max-w-full items-center gap-2.5 text-[13px]">
+          <div className="flex max-w-full items-center gap-2.5 text-sm">
             <Layers className="h-4 w-4 shrink-0 text-violet-500" />
             <span className="min-w-0 truncate font-normal">{info.getValue()}</span>
           </div>
@@ -1173,13 +1182,13 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
         ),
       }),
-      columnHelper.accessor((row) => row.stats.story_count, {
-        id: 'stories',
-        header: 'Stories',
+      columnHelper.accessor((row) => epicTaskCount(row), {
+        id: 'tasks',
+        header: 'Tasks',
         size: 90,
         cell: (info) => (
           <span className="text-xs text-muted-foreground">
-            {info.row.original.stats.done_story_count}/{info.row.original.stats.story_count}
+            {epicDoneTaskCount(info.row.original)}/{epicTaskCount(info.row.original)}
           </span>
         ),
       }),
@@ -1396,7 +1405,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       state: visible.has('state'),
       health: visible.has('health'),
       progress: visible.has('progress'),
-      stories: visible.has('stories'),
+      tasks: visible.has('tasks'),
       points: visible.has('points'),
       owner: visible.has('owner'),
       objective: visible.has('objective'),
@@ -1541,7 +1550,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         {showHeaderIntro ? (
           <div>
             <h2 className="text-xl font-semibold">Epics{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
-            <p className="text-sm text-muted-foreground">Track long-running initiatives and their story progress.</p>
+            <p className="text-sm text-muted-foreground">Track long-running initiatives and their task progress.</p>
           </div>
         ) : <div />}
         {showHeaderActions && canEdit ? (
@@ -1559,7 +1568,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+        <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}
@@ -1638,7 +1647,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
           <h3 className="text-lg font-semibold mb-1.5">Create your first epic</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            Epics group related stories into long-running initiatives, giving you a high-level view of progress across your team's work.
+            Epics group related tasks into long-running initiatives, giving you a high-level view of progress across your team's work.
           </p>
           <Button
             className="gap-2 mb-8"
@@ -1649,14 +1658,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </Button>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {[
-              { icon: Layers, title: 'Group stories', desc: 'Organize related work items under a single initiative' },
+              { icon: Layers, title: 'Group tasks', desc: 'Organize related work items under a single initiative' },
               { icon: TrendingUp, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
               { icon: Target, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
             ].map((item) => (
               <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                 <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium mb-1">{item.title}</p>
-                <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>

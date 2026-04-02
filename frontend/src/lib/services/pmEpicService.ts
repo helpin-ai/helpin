@@ -2,7 +2,7 @@ import { api } from '../api';
 import type {
   CreateEpicRequest,
   EpicWithStats,
-  Story,
+  Task,
   UpdateEpicHealthRequest,
   UpdateEpicRequest,
 } from '../pmTypes';
@@ -47,7 +47,7 @@ export const pmEpicService = {
       deadline: toRFC3339(payload.deadline),
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/epics/${id}${qs(workspaceId)}`),
-  listStories: (workspaceId: string, id: string) => api.get<Story[]>(`/pm/epics/${id}/tasks${qs(workspaceId)}`),
+  listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/epics/${id}/tasks${qs(workspaceId)}`),
   updateHealth: (workspaceId: string, id: string, payload: UpdateEpicHealthRequest) =>
     api.put(`/pm/epics/${id}/health${qs(workspaceId)}`, payload),
 };

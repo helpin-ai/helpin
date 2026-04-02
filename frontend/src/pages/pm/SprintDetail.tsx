@@ -38,7 +38,7 @@ import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, SprintWithStats, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
+import type { AttachmentResponse, SprintWithStats, Task, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
@@ -95,7 +95,7 @@ export function SprintDetailPage() {
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [sprint, setSprint] = useState<SprintWithStats | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,9 +132,9 @@ export function SprintDetailPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      const [sprintRes, storiesRes, epicsRes, sprintsRes] = await Promise.all([
+      const [sprintRes, tasksRes, epicsRes, sprintsRes] = await Promise.all([
         pmSprintService.get(workspaceId, sprintId),
-        pmSprintService.listStories(workspaceId, sprintId),
+        pmSprintService.listTasks(workspaceId, sprintId),
         pmEpicService.list(workspaceId, { archived: false }),
         pmSprintService.list(workspaceId, { archived: false }),
       ]);
@@ -146,7 +146,7 @@ export function SprintDetailPage() {
       setSprint(sprintRes.data);
       savedDescriptionRef.current = sprintRes.data.sprint.description ?? '';
       setForm(buildForm(sprintRes.data));
-      setStories(storiesRes.data ?? []);
+      setTasks(tasksRes.data ?? []);
       setAllEpics(epicsRes.data ?? []);
       setAllSprints(sprintsRes.data ?? []);
       setLoading(false);
@@ -249,8 +249,8 @@ export function SprintDetailPage() {
 
   // Derived data
   const progress = useMemo(() => {
-    if (!sprint || sprint.stats.story_count === 0) return 0;
-    return Math.round((sprint.stats.done_story_count / sprint.stats.story_count) * 100);
+    if (!sprint || sprint.stats.task_count === 0) return 0;
+    return Math.round((sprint.stats.done_task_count / sprint.stats.task_count) * 100);
   }, [sprint]);
 
   const currentTeamName = useMemo(
@@ -260,12 +260,12 @@ export function SprintDetailPage() {
 
   const workflow = workflows[0] ?? null;
 
-  // Resources: unique people from story owners + sprint team members
+  // Resources: unique people from task owners + sprint team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
-    for (const story of stories) {
-      const ownerKey = story.owner_member_id;
+    for (const task of tasks) {
+      const ownerKey = task.owner_member_id;
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -287,21 +287,21 @@ export function SprintDetailPage() {
     }
 
     return Array.from(personMap.values());
-  }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
+  }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
-  const openStory = useCallback(
-    (story: Story) => {
-      openTaskRoute(navigate as never, location as never, slug, story.id);
+  const openTask = useCallback(
+    (task: Task) => {
+      openTaskRoute(navigate as never, location as never, slug, task.id);
     },
     [location, navigate, slug],
   );
 
-  // Refresh stories when global panel updates/archives a story
+  // Refresh tasks when global panel updates/archives a task
   useEffect(() => {
     const refresh = () => {
       if (!workspaceId) return;
-      pmSprintService.listStories(workspaceId, sprintId).then((res) => {
-        if (res.data) setStories(res.data);
+      pmSprintService.listTasks(workspaceId, sprintId).then((res) => {
+        if (res.data) setTasks(res.data);
       });
     };
     window.addEventListener('task-panel-updated', refresh);
@@ -341,7 +341,7 @@ export function SprintDetailPage() {
   return (
     <div className="flex h-full flex-col max-w-7xl mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -463,7 +463,7 @@ export function SprintDetailPage() {
             </div>
             <Progress value={progress} className="h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
             <p className="text-xs text-muted-foreground">
-              {sprint.stats.done_story_count}/{sprint.stats.story_count} stories done · {sprint.stats.done_points}/{sprint.stats.total_points} points
+              {sprint.stats.done_task_count}/{sprint.stats.task_count} tasks done · {sprint.stats.done_points}/{sprint.stats.total_points} points
             </p>
           </div>
 
@@ -491,9 +491,9 @@ export function SprintDetailPage() {
           {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Tasks ({stories.length})
+              Tasks ({tasks.length})
             </h3>
-            {stories.length === 0 ? (
+            {tasks.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
@@ -505,8 +505,8 @@ export function SprintDetailPage() {
                   assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
-                  externalStories={stories}
-                  onOpenTask={openStory}
+                  externalTasks={tasks}
+                  onOpenTask={openTask}
                 />
               </div>
             ) : (

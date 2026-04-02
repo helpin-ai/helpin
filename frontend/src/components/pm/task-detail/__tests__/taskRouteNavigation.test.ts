@@ -58,7 +58,7 @@ describe('taskRouteNavigation', () => {
     });
   });
 
-  it('opens contextual stories through the overlay store', () => {
+  it('opens contextual tasks through the overlay store', () => {
     const navigate = vi.fn();
 
     openTaskRoute(
@@ -88,10 +88,10 @@ describe('taskRouteNavigation', () => {
     );
 
     expect(navigate).toHaveBeenCalledWith({
-      to: '/w/$slug/pm/tasks/$storyId',
+      to: '/w/$slug/pm/tasks/$taskId',
       params: {
         slug: 'test-docs',
-        storyId: 'task-123',
+        taskId: 'task-123',
       },
     });
   });
@@ -129,7 +129,7 @@ describe('taskRouteNavigation', () => {
     expect(useTaskPanelStore.getState().taskId).toBeNull();
   });
 
-  it('does not immediately reopen the same contextual story right after close', () => {
+  it('does not immediately reopen the same contextual task right after close', () => {
     const navigate = vi.fn();
     useTaskPanelStore.setState({ taskId: 'task-123', requestKey: 1 });
 
@@ -153,7 +153,7 @@ describe('taskRouteNavigation', () => {
     expect(useTaskPanelStore.getState().taskId).toBeNull();
   });
 
-  it('still allows opening a different contextual story after close', () => {
+  it('still allows opening a different contextual task after close', () => {
     const navigate = vi.fn();
     useTaskPanelStore.setState({ taskId: 'task-123', requestKey: 1 });
 

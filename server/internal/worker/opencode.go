@@ -314,7 +314,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
 				return err
 			}
-		case model.PlanningStagePlanStories:
+		case model.PlanningStagePlanTasks:
 			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)
@@ -609,7 +609,7 @@ func resolveWorkingBranch(execCtx *ExecutionContext) (string, error) {
 	return branch, nil
 }
 
-func buildEngineerCommitMessage(story *model.PMStory) string {
+func buildEngineerCommitMessage(story *model.PMTask) string {
 	if story == nil {
 		return "tp: apply engineer run changes"
 	}

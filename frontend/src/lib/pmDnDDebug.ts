@@ -1,4 +1,4 @@
-import type { Story, StoryStateColumn } from './pmTypes'
+import type { Task, TaskStateColumn } from './pmTypes'
 
 const PM_DND_PREFIX = '[pm-dnd]'
 const PM_DND_SUMMARY_LIMIT = 8
@@ -10,23 +10,23 @@ export function createPMDnDTraceID(): string {
   return `pm-dnd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-export function summarizePMDnDStories(stories: Pick<Story, 'id' | 'position'>[]): string[] {
-  const entries = stories.slice(0, PM_DND_SUMMARY_LIMIT).map((story) => `${story.id}@${story.position}`)
-  if (stories.length > PM_DND_SUMMARY_LIMIT) {
-    entries.push(`+${stories.length - PM_DND_SUMMARY_LIMIT} more`)
+export function summarizePMDnDTasks(tasks: Pick<Task, 'id' | 'position'>[]): string[] {
+  const entries = tasks.slice(0, PM_DND_SUMMARY_LIMIT).map((task) => `${task.id}@${task.position}`)
+  if (tasks.length > PM_DND_SUMMARY_LIMIT) {
+    entries.push(`+${tasks.length - PM_DND_SUMMARY_LIMIT} more`)
   }
   return entries
 }
 
-export function summarizePMDnDColumn(column?: Pick<StoryStateColumn, 'state' | 'stories' | 'story_count' | 'has_more'> | null) {
+export function summarizePMDnDColumn(column?: Pick<TaskStateColumn, 'state' | 'tasks' | 'task_count' | 'has_more'> | null) {
   if (!column) return null
   return {
     state_id: column.state.id,
     state_type: column.state.state_type,
-    loaded_count: column.stories.length,
-    story_count: column.story_count,
+    loaded_count: column.tasks.length,
+    task_count: column.task_count,
     has_more: column.has_more,
-    loaded_order: summarizePMDnDStories(column.stories),
+    loaded_order: summarizePMDnDTasks(column.tasks),
   }
 }
 

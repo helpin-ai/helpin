@@ -272,12 +272,12 @@ export function LabelsPage() {
         },
       }),
       columnHelper.display({
-        id: 'stories',
-        header: 'Stories',
+        id: 'tasks',
+        header: 'Tasks',
         size: 200,
         cell: (info) => {
           const { stats } = info.row.original;
-          return <StatCell done={stats.done_story_count} total={stats.story_count} entity="Stories" />;
+          return <StatCell done={stats.done_task_count} total={stats.task_count} entity="Tasks" />;
         },
       }),
       columnHelper.display({
@@ -338,7 +338,7 @@ export function LabelsPage() {
         <div>
           <h2 className="text-xl font-semibold">Labels</h2>
           <p className="text-sm text-muted-foreground">
-            Organize and track work across stories and epics with labels.
+            Organize and track work across tasks and epics with labels.
           </p>
         </div>
         <Button size="sm" onClick={handleCreate}>
@@ -443,7 +443,7 @@ export function LabelsPage() {
         open={deleteLabelConfirm !== null}
         onOpenChange={(open) => { if (!open) setDeleteLabelConfirm(null); }}
         title="Delete label"
-        description={`This will permanently delete "${deleteLabelConfirm?.label.name ?? ''}". It will be removed from all stories. This action cannot be undone.`}
+        description={`This will permanently delete "${deleteLabelConfirm?.label.name ?? ''}". It will be removed from all tasks. This action cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => { if (deleteLabelConfirm) handleDeleteRef.current(deleteLabelConfirm); setDeleteLabelConfirm(null); }}

@@ -11,11 +11,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
+func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 	t.Parallel()
 
-	db := newPMStoryMemberBoardTestDB(t)
-	repo := NewPMStoryRepository(db)
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
 	ctx := context.Background()
 
 	const (
@@ -28,18 +28,18 @@ func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
 		memberID     = "member-member-board"
 	)
 
-	seedPMStoryMemberBoardUser(t, db, userID, "member-board@test.com", "Member Board User")
-	seedPMStoryMemberBoardWorkspace(t, db, workspaceID, userID)
-	seedPMStoryMemberBoardMember(t, db, memberID, workspaceID, userID, "Member Board User")
-	seedPMStoryMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
+	seedPMTaskMemberBoardUser(t, db, userID, "member-board@test.com", "Member Board User")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, userID)
+	seedPMTaskMemberBoardMember(t, db, memberID, workspaceID, userID, "Member Board User")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
 
 	now := time.Date(2026, 3, 22, 12, 0, 0, 0, time.UTC)
-	insertPMStoryMemberBoardStory(t, db, "story-started", workspaceID, workflowID, doingStateID, memberID, 1, 0, now.Add(3*time.Minute))
-	insertPMStoryMemberBoardStory(t, db, "story-todo-1", workspaceID, workflowID, todoStateID, memberID, 2, 1, now.Add(1*time.Minute))
-	insertPMStoryMemberBoardStory(t, db, "story-todo-2", workspaceID, workflowID, todoStateID, memberID, 3, 5, now.Add(2*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-started", workspaceID, workflowID, doingStateID, memberID, 1, 0, now.Add(3*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-todo-1", workspaceID, workflowID, todoStateID, memberID, 2, 1, now.Add(1*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-todo-2", workspaceID, workflowID, todoStateID, memberID, 3, 5, now.Add(2*time.Minute))
 
-	t.Run("ListByMember orders by workflow state then story position", func(t *testing.T) {
-		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMStoryFilters{}, 10, false, nil)
+	t.Run("ListByMember orders by workflow state then task position", func(t *testing.T) {
+		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMTaskFilters{}, 10, false, nil)
 		if err != nil {
 			t.Fatalf("ListByMember: %v", err)
 		}
@@ -48,41 +48,41 @@ func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
 		}
 
 		got := []string{
-			columns[0].Stories[0].ID,
-			columns[0].Stories[1].ID,
-			columns[0].Stories[2].ID,
+			columns[0].Tasks[0].ID,
+			columns[0].Tasks[1].ID,
+			columns[0].Tasks[2].ID,
 		}
 		want := []string{"story-todo-1", "story-todo-2", "story-started"}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("stories[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
+				t.Fatalf("tasks[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
 			}
 		}
 	})
 
-	t.Run("ListMemberColumnStories uses the same deterministic ordering", func(t *testing.T) {
-		stories, total, err := repo.ListMemberColumnStories(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMStoryFilters{}, 0, 10)
+	t.Run("ListMemberColumnTasks uses the same deterministic ordering", func(t *testing.T) {
+		tasks, total, err := repo.ListMemberColumnTasks(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMTaskFilters{}, 0, 10)
 		if err != nil {
-			t.Fatalf("ListMemberColumnStories: %v", err)
+			t.Fatalf("ListMemberColumnTasks: %v", err)
 		}
 		if total != 3 {
 			t.Fatalf("total = %d, want 3", total)
 		}
 
-		got := []string{stories[0].ID, stories[1].ID, stories[2].ID}
+		got := []string{tasks[0].ID, tasks[1].ID, tasks[2].ID}
 		want := []string{"story-todo-1", "story-todo-2", "story-started"}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("stories[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
+				t.Fatalf("tasks[%d] = %q, want %q (got full order %v)", i, got[i], want[i], got)
 			}
 		}
 	})
 }
 
-func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
+func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:pm-story-member-board-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dbName := fmt.Sprintf("file:pm-task-member-board-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
@@ -137,13 +137,13 @@ func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -178,11 +178,11 @@ func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_links (
+		`CREATE TABLE pm_task_links (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			source_story_id TEXT NOT NULL,
-			target_story_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
 			link_type TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -196,11 +196,11 @@ func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_labels (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_labels (
+			task_id TEXT NOT NULL,
 			label_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, label_id)
+			PRIMARY KEY (task_id, label_id)
 		)`,
 		`CREATE TABLE pm_epics (
 			id TEXT PRIMARY KEY,
@@ -227,7 +227,7 @@ func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func seedPMStoryMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName string) {
+func seedPMTaskMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -238,7 +238,7 @@ func seedPMStoryMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName s
 	}
 }
 
-func seedPMStoryMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, ownerID string) {
+func seedPMTaskMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, ownerID string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -249,7 +249,7 @@ func seedPMStoryMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, own
 	}
 }
 
-func seedPMStoryMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspaceID, userID, displayName string) {
+func seedPMTaskMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspaceID, userID, displayName string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -260,7 +260,7 @@ func seedPMStoryMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspace
 	}
 }
 
-func seedPMStoryMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, workspaceID, todoStateID, doingStateID, doneStateID string) {
+func seedPMTaskMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, workspaceID, todoStateID, doingStateID, doneStateID string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -291,17 +291,17 @@ func seedPMStoryMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, works
 	}
 }
 
-func insertPMStoryMemberBoardStory(t *testing.T, db *gorm.DB, storyID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
+func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, taskID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO pm_stories (
+		`INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, owner_member_id,
-			position, priority, severity, story_type, started, completed, blocked, archived, created_at, updated_at
+			position, priority, severity, task_type, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		storyID, workspaceID, displayID, storyID, workflowID, stateID, ownerMemberID,
+		taskID, workspaceID, displayID, taskID, workflowID, stateID, ownerMemberID,
 		position, "none", "none", "feature", false, false, false, false, updatedAt, updatedAt,
 	).Error; err != nil {
-		t.Fatalf("seed story %s: %v", storyID, err)
+		t.Fatalf("seed task %s: %v", taskID, err)
 	}
 }
 

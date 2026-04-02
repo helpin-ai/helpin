@@ -4,15 +4,15 @@ import { Plus, UserPlus } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { PRIORITY_BORDER_COLOR, PriorityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_BORDER_COLOR, PriorityIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import type { AssignableMember } from '@/lib/types';
-import type { SprintPlanningStoryPreview } from '@/lib/pmTypes';
+import type { SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 const pillBase = 'flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium';
 
 interface SprintPlanningTaskCardProps {
-  story: SprintPlanningStoryPreview;
+  task: SprintPlanningTaskPreview;
   owner?: AssignableMember;
   compact?: boolean;
   showBacklogAction?: boolean;
@@ -23,7 +23,7 @@ interface SprintPlanningTaskCardProps {
 }
 
 export function SprintPlanningTaskCard({
-  story,
+  task,
   owner,
   compact = false,
   showBacklogAction = false,
@@ -33,12 +33,12 @@ export function SprintPlanningTaskCard({
   onAddToSprint,
 }: SprintPlanningTaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging: dragActive } = useDraggable({
-    id: story.id,
-    data: { story },
+    id: task.id,
+    data: { task },
     disabled: !canDrag,
   });
 
-  const storyTypeCfg = STORY_TYPE_CONFIG[(story as { task_type?: string }).task_type as keyof typeof STORY_TYPE_CONFIG] ?? null;
+  const taskTypeCfg = TASK_TYPE_CONFIG[(task as { task_type?: string }).task_type as keyof typeof TASK_TYPE_CONFIG] ?? null;
 
   return (
     <article
@@ -65,43 +65,43 @@ export function SprintPlanningTaskCard({
       <div className={cn('min-w-0 flex-1', compact ? 'p-2.5' : 'p-3')}>
         {/* Row 1: type icon + state + spacer + drag handle + priority */}
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {storyTypeCfg && (
+          {taskTypeCfg && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="shrink-0">
-                  <StoryTypeIcon storyType={(story as { task_type?: string }).task_type as import('@/lib/pmTypes').TaskType} className="h-3.5 w-3.5" />
+                  <TaskTypeIcon taskType={(task as { task_type?: string }).task_type as import('@/lib/pmTypes').TaskType} className="h-3.5 w-3.5" />
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
+              <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
             </Tooltip>
           )}
-          {story.state_type && story.state_name && (
+          {task.state_type && task.state_name && (
             <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
-              <StateTypeIcon stateType={story.state_type} className="h-3 w-3" />
-              {story.state_name}
+              <StateTypeIcon stateType={task.state_type} className="h-3 w-3" />
+              {task.state_name}
             </span>
           )}
           <span className="flex-1" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className={cn('flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1', PRIORITY_BORDER_COLOR[story.priority])}>
-                <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+              <span className={cn('flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1', PRIORITY_BORDER_COLOR[task.priority])}>
+                <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top">Priority: {story.priority}</TooltipContent>
+            <TooltipContent side="top">Priority: {task.priority}</TooltipContent>
           </Tooltip>
         </div>
 
         {/* Row 2: Title */}
-        <h4 className={cn('mt-2 line-clamp-2 font-medium leading-snug text-foreground', compact ? 'mb-2 text-[13px]' : 'mb-3 text-[13px]')}>
-          {story.name}
+        <h4 className={cn('mt-2 line-clamp-2 font-medium leading-snug text-foreground', compact ? 'mb-2 text-sm' : 'mb-3 text-sm')}>
+          {task.name}
         </h4>
 
         {/* Row 3: Footer — estimate + assignee */}
         <div className="flex items-center gap-1.5">
-          {typeof story.estimate === 'number' && (
+          {typeof task.estimate === 'number' && (
             <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-              {story.estimate} pts
+              {task.estimate} pts
             </span>
           )}
           <span className="flex-1" />

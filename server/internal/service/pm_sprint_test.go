@@ -372,8 +372,8 @@ func seedPMSprintPlanningServiceStory(t *testing.T, db *gorm.DB, id, workspaceID
 		sprint = sprintID
 	}
 	if err := db.Exec(
-		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMStoryPriorityMedium, now, now,
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMTaskPriorityMedium, now, now,
 	).Error; err != nil {
 		t.Fatalf("seed planning story: %v", err)
 	}
@@ -757,7 +757,7 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 	}
 }
 
-func TestListStories_Empty(t *testing.T) {
+func TestListTasks_Empty(t *testing.T) {
 	t.Parallel()
 	svc, wsID := newSprintTestService(t)
 	ctx := context.Background()
@@ -765,7 +765,7 @@ func TestListStories_Empty(t *testing.T) {
 	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
 	created, err := svc.Create(ctx, model.CreateSprintRequest{
 		WorkspaceID: wsID,
-		Name:        "Sprint No Stories",
+		Name:        "Sprint No Tasks",
 		StartDate:   start,
 		EndDate:     end,
 	}, "actor-1")
@@ -773,12 +773,12 @@ func TestListStories_Empty(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	stories, err := svc.ListStories(ctx, created.Sprint.ID)
+	tasks, err := svc.ListTasks(ctx, created.Sprint.ID)
 	if err != nil {
-		t.Fatalf("ListStories: %v", err)
+		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(stories) != 0 {
-		t.Fatalf("ListStories count = %d, want 0", len(stories))
+	if len(tasks) != 0 {
+		t.Fatalf("ListTasks count = %d, want 0", len(tasks))
 	}
 }
 
@@ -802,14 +802,14 @@ func TestComputeStats_EmptySprint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeStats: %v", err)
 	}
-	if stats.StoryCount != 0 {
-		t.Fatalf("StoryCount = %d, want 0", stats.StoryCount)
+	if stats.TaskCount != 0 {
+		t.Fatalf("TaskCount = %d, want 0", stats.TaskCount)
 	}
 	if stats.TotalPoints != 0 {
 		t.Fatalf("TotalPoints = %d, want 0", stats.TotalPoints)
 	}
-	if stats.DoneStoryCount != 0 {
-		t.Fatalf("DoneStoryCount = %d, want 0", stats.DoneStoryCount)
+	if stats.DoneTaskCount != 0 {
+		t.Fatalf("DoneTaskCount = %d, want 0", stats.DoneTaskCount)
 	}
 	if stats.DonePoints != 0 {
 		t.Fatalf("DonePoints = %d, want 0", stats.DonePoints)

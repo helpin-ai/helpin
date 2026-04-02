@@ -52,7 +52,7 @@ export interface Sprint {
   team_goals: SprintTeamGoal[]
   capacity: SprintCapacity
   scoring: ScoringCriteria
-  velocity: number // story points completed
+  velocity: number // points completed
   tasks: SprintTask[]
   retrospective?: SprintRetrospective
   created_at: string

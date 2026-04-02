@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { MarkdownContent } from './MarkdownContent';
 
-interface StoryPlanStoryPreview {
+interface TaskPlanTaskPreview {
   ref?: string;
   title: string;
   type?: string;
@@ -14,9 +14,9 @@ interface StoryPlanStoryPreview {
   filesToModify: string[];
 }
 
-interface StoryPlanPreviewModel {
+interface TaskPlanPreviewModel {
   summary?: string;
-  proposedStories: StoryPlanStoryPreview[];
+  proposedTasks: TaskPlanTaskPreview[];
   risks: string[];
   openQuestions: string[];
 }
@@ -43,17 +43,17 @@ function toTitleCase(value: string) {
     .join(' ');
 }
 
-function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): StoryPlanPreviewModel | null {
+function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskPlanPreviewModel | null {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
-  const proposedStories = Array.isArray(record?.proposed_stories) ? record.proposed_stories : [];
-  if (!record || proposedStories.length === 0) return null;
+  const proposedTasks = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : [];
+  if (!record || proposedTasks.length === 0) return null;
 
-  const normalizedStories: StoryPlanStoryPreview[] = proposedStories.flatMap((entry) => {
-    const story = asRecord(entry);
-    if (!story) return [];
+  const normalizedTasks: TaskPlanTaskPreview[] = proposedTasks.flatMap((entry) => {
+    const task = asRecord(entry);
+    if (!task) return [];
 
-    const implementationBrief = asRecord(story.implementation_brief);
+    const implementationBrief = asRecord(task.implementation_brief);
     const filesToModify = Array.isArray(implementationBrief?.files_to_modify)
       ? implementationBrief.files_to_modify
         .map((fileEntry) => asRecord(fileEntry))
@@ -61,25 +61,25 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
         .filter((path) => path.length > 0)
       : [];
 
-    const title = asString(story.name).trim() || asString(story.title).trim();
+    const title = asString(task.name).trim() || asString(task.title).trim();
     if (!title) return [];
 
     return [{
-      ref: asString(story.ref).trim() || undefined,
+      ref: asString(task.ref).trim() || undefined,
       title,
-      type: asString(story.task_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
-      description: asString(story.description).trim() || undefined,
-      acceptanceCriteria: asStringArray(story.acceptance_criteria),
-      dependencyRefs: asStringArray(story.dependency_refs),
+      type: asString(task.task_type).trim() || asString(task.type).trim() || asString(task.slice_type).trim() || undefined,
+      description: asString(task.description).trim() || undefined,
+      acceptanceCriteria: asStringArray(task.acceptance_criteria),
+      dependencyRefs: asStringArray(task.dependency_refs),
       filesToModify,
-    } satisfies StoryPlanStoryPreview];
+    } satisfies TaskPlanTaskPreview];
   });
 
-  if (normalizedStories.length === 0) return null;
+  if (normalizedTasks.length === 0) return null;
 
   return {
     summary: asString(record.summary).trim() || undefined,
-    proposedStories: normalizedStories,
+    proposedTasks: normalizedTasks,
     risks: asStringArray(record.risks),
     openQuestions: asStringArray(record.open_questions),
   };
@@ -105,12 +105,12 @@ function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
   );
 }
 
-function StoryPlanPanel({
+function TaskPlanPanel({
   title,
   preview,
 }: {
   title: string;
-  preview: StoryPlanPreviewModel;
+  preview: TaskPlanPreviewModel;
 }) {
   return (
     <div className="rounded-md border border-border/60 bg-background/80 p-3">
@@ -122,52 +122,52 @@ function StoryPlanPanel({
         {preview.summary ? <MarkdownContent content={preview.summary} /> : null}
 
         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-          <span>{preview.proposedStories.length} stories</span>
+          <span>{preview.proposedTasks.length} tasks</span>
           {preview.risks.length ? <span>{preview.risks.length} risks</span> : null}
           {preview.openQuestions.length ? <span>{preview.openQuestions.length} open questions</span> : null}
         </div>
 
         <div className="space-y-1">
-          {preview.proposedStories.map((story, index) => (
+          {preview.proposedTasks.map((item, index) => (
             <div
-              key={`${story.ref ?? story.title}-${index}`}
+              key={`${item.ref ?? item.title}-${index}`}
               className="rounded-md px-1.5 py-1.5 transition-colors hover:bg-accent/30"
             >
               <div className="flex items-start gap-1.5">
                 <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {story.type ? (
+                    {item.type ? (
                       <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {toTitleCase(story.type)}
+                        {toTitleCase(item.type)}
                       </span>
                     ) : null}
-                    {story.ref ? (
+                    {item.ref ? (
                       <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-                        {story.ref}
+                        {item.ref}
                       </Badge>
                     ) : null}
-                    <p className="min-w-0 text-sm font-medium text-foreground">{story.title}</p>
+                    <p className="min-w-0 text-sm font-medium text-foreground">{item.title}</p>
                   </div>
 
-                  {story.description ? (
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{story.description}</p>
+                  {item.description ? (
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</p>
                   ) : null}
 
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {story.acceptanceCriteria.length ? (
+                    {item.acceptanceCriteria.length ? (
                       <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                        {story.acceptanceCriteria.length} acceptance criteria
+                        {item.acceptanceCriteria.length} acceptance criteria
                       </span>
                     ) : null}
-                    {story.dependencyRefs.length ? (
+                    {item.dependencyRefs.length ? (
                       <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                        Depends on {story.dependencyRefs.join(', ')}
+                        Depends on {item.dependencyRefs.join(', ')}
                       </span>
                     ) : null}
-                    {story.filesToModify.length ? (
+                    {item.filesToModify.length ? (
                       <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
-                        {story.filesToModify.length} files touched
+                        {item.filesToModify.length} files touched
                       </span>
                     ) : null}
                   </div>
@@ -212,14 +212,14 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
     return null;
   })();
 
-  const latestStoryPlanPreview = parseStoryPlanPreviewModel(previewsByKey.get('task_plan'));
+  const latestTaskPlanPreview = parseTaskPlanPreviewModel(previewsByKey.get('task_plan'));
   const otherPreviewPanels = Array.from(previewsByKey.values()).filter((preview) => {
     if (preview.panelKey === 'prd_draft' && latestSpecDraftPreview) return false;
-    if (preview.panelKey === 'task_plan' && latestStoryPlanPreview) return false;
+    if (preview.panelKey === 'task_plan' && latestTaskPlanPreview) return false;
     return true;
   });
 
-  if (!latestSpecDraftPreview && !latestStoryPlanPreview && otherPreviewPanels.length === 0) {
+  if (!latestSpecDraftPreview && !latestTaskPlanPreview && otherPreviewPanels.length === 0) {
     return null;
   }
 
@@ -239,10 +239,10 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
         </div>
       ) : null}
 
-      {latestStoryPlanPreview ? (
-        <StoryPlanPanel
+      {latestTaskPlanPreview ? (
+        <TaskPlanPanel
           title={previewsByKey.get('task_plan')?.title || 'Task Plan'}
-          preview={latestStoryPlanPreview}
+          preview={latestTaskPlanPreview}
         />
       ) : null}
 

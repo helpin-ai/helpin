@@ -16,8 +16,8 @@ describe('LoadingImage', () => {
     act(() => {
       root.render(
         <LoadingImage
-          src="https://cdn.example.com/story.png"
-          alt="Story image"
+          src="https://cdn.example.com/task.png"
+          alt="Task image"
           containerClassName="h-20 w-20"
           className="h-20 w-20"
         />,

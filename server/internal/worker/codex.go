@@ -267,7 +267,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
 				return err
 			}
-		case model.PlanningStagePlanStories:
+		case model.PlanningStagePlanTasks:
 			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, 0)
 			if err != nil {
 				return normalizeCodexPostRunError(postRunCtx, err)

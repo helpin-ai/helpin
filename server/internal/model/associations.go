@@ -8,18 +8,12 @@ const (
 	TaskRelationshipActionDuplicates     = "duplicates"
 	TaskRelationshipActionIsDuplicatedBy = "is_duplicated_by"
 
-	// Backward-compat aliases.
-	StoryRelationshipActionRelatesTo      = TaskRelationshipActionRelatesTo
-	StoryRelationshipActionBlocks         = TaskRelationshipActionBlocks
-	StoryRelationshipActionIsBlockedBy    = TaskRelationshipActionIsBlockedBy
-	StoryRelationshipActionDuplicates     = TaskRelationshipActionDuplicates
-	StoryRelationshipActionIsDuplicatedBy = TaskRelationshipActionIsDuplicatedBy
 )
 
 // CreateTaskRelationshipRequest creates a directional task relationship from a task detail surface.
 type CreateTaskRelationshipRequest struct {
 	RelationshipType string `json:"relationship_type"`
-	OtherStoryID     string `json:"other_task_id"`
+	OtherTaskID      string `json:"other_task_id"`
 }
 
 // AssociationObjectSummary is the lightweight cross-object shape returned by grouped association APIs.
@@ -32,7 +26,7 @@ type AssociationObjectSummary struct {
 	Status          *string `json:"status,omitempty"`
 	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
 	Completed       bool    `json:"completed,omitempty"`
-	StoryType       *string `json:"task_type,omitempty"`
+	TaskType        *string `json:"task_type,omitempty"`
 }
 
 // TaskRelationshipSummary represents one relationship edge rendered from the point of view of the current task.
@@ -55,8 +49,8 @@ type TaskRelationshipGroups struct {
 
 // GroupedAssociationsResponse is the umbrella associations payload for PM and support surfaces.
 type GroupedAssociationsResponse struct {
-	StoryRelationships   TaskRelationshipGroups     `json:"story_relationships"`
-	Stories              []AssociationObjectSummary `json:"stories"`
+	TaskRelationships    TaskRelationshipGroups     `json:"task_relationships"`
+	Tasks                []AssociationObjectSummary `json:"tasks"`
 	SupportConversations []AssociationObjectSummary `json:"support_conversations"`
 	CRMRecords           []AssociationObjectSummary `json:"crm_records"`
 	Docs                 []AssociationObjectSummary `json:"docs"`

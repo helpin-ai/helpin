@@ -50,7 +50,7 @@ type PMSprintListFilters struct {
 type PMSprintPlanningFilters struct {
 	TeamID            *string
 	IncludeCompleted  bool
-	PreviewStoryLimit int
+	PreviewTaskLimit int
 	BacklogLimit      int
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
@@ -114,8 +114,8 @@ type SprintPlanningTaskPreview struct {
 type SprintPlanningCard struct {
 	Sprint               PMSprint                     `json:"sprint"`
 	Stats                PMSprintStats                `json:"stats"`
-	PreviewStories       []SprintPlanningTaskPreview `json:"preview_stories"`
-	StoryPreviewOverflow int                         `json:"story_preview_overflow"`
+	PreviewTasks         []SprintPlanningTaskPreview `json:"preview_tasks"`
+	TaskPreviewOverflow  int                         `json:"task_preview_overflow"`
 }
 
 // SprintPlanningBucket groups planning cards by temporal bucket.
@@ -128,6 +128,6 @@ type SprintPlanningBucket struct {
 // SprintPlanningWorkspace is the top-level response for the sprint planning page.
 type SprintPlanningWorkspace struct {
 	Buckets        []SprintPlanningBucket       `json:"buckets"`
-	BacklogStories []SprintPlanningTaskPreview  `json:"backlog_stories"`
+	BacklogTasks   []SprintPlanningTaskPreview  `json:"backlog_tasks"`
 	BacklogTotal   int                          `json:"backlog_total"`
 }

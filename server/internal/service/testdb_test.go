@@ -84,7 +84,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			manager_id TEXT,
 			team_type TEXT NOT NULL DEFAULT 'engineering',
-			default_story_type TEXT NOT NULL DEFAULT 'feature',
+			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -243,13 +243,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			PRIMARY KEY (sprint_id, label_id)
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -292,7 +292,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			status TEXT NOT NULL DEFAULT 'active',
 			owner_member_id TEXT,
-			created_from_story_id TEXT,
+			created_from_task_id TEXT,
 			seed_payload BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			config BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			start_date DATETIME,
@@ -300,7 +300,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ends_after_occurrences INTEGER,
 			next_run_at DATETIME,
 			last_run_at DATETIME,
-			last_generated_story_id TEXT,
+			last_generated_task_id TEXT,
 			last_error TEXT,
 			failure_count INTEGER NOT NULL DEFAULT 0,
 			generated_count INTEGER NOT NULL DEFAULT 0,
@@ -320,35 +320,35 @@ func newTestDB(t *testing.T) *gorm.DB {
 			started_at DATETIME,
 			finished_at DATETIME,
 			status TEXT NOT NULL,
-			generated_story_id TEXT,
+			generated_task_id TEXT,
 			dedupe_key TEXT NOT NULL UNIQUE,
 			error_message TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_owners (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_owners (
+			task_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, user_id)
+			PRIMARY KEY (task_id, user_id)
 		)`,
-		`CREATE TABLE pm_story_labels (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_labels (
+			task_id TEXT NOT NULL,
 			label_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, label_id)
+			PRIMARY KEY (task_id, label_id)
 		)`,
-		`CREATE TABLE pm_story_followers (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_followers (
+			task_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, user_id)
+			PRIMARY KEY (task_id, user_id)
 		)`,
-		`CREATE TABLE pm_story_links (
+		`CREATE TABLE pm_task_links (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
-			source_story_id TEXT NOT NULL,
-			target_story_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
 			link_type TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
@@ -455,7 +455,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_checklist_items (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			story_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
 			text TEXT NOT NULL,
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
@@ -465,7 +465,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_external_links (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			story_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
 			url TEXT NOT NULL,
 			title TEXT,
 			created_at DATETIME,
@@ -619,7 +619,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			customer_phone TEXT,
 			opened_by_user_id TEXT,
 			assigned_agent_id TEXT,
-			linked_story_id TEXT,
+			linked_task_id TEXT,
 			source TEXT NOT NULL DEFAULT 'internal',
 			anonymous_id TEXT,
 			crm_contact_id TEXT,
@@ -741,7 +741,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			conversation_id TEXT,
 			epic_id TEXT,
-			story_id TEXT,
+			task_id TEXT,
 			from_agent_id TEXT,
 			to_agent_id TEXT,
 			to_user_id TEXT,

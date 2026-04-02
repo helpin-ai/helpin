@@ -60,6 +60,7 @@ import type {
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
 } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
@@ -747,15 +748,15 @@ export function ObjectiveDetailPage() {
     ? Math.round(data.key_results.reduce((sum, kr) => sum + kr.progress, 0) / data.key_results.length)
     : 0;
 
-  const epicProgress = data.stats.epic_story_count > 0
-    ? Math.round((data.stats.epic_done_stories / data.stats.epic_story_count) * 100)
+  const epicProgress = data.stats.epic_task_count > 0
+    ? Math.round((data.stats.epic_done_tasks / data.stats.epic_task_count) * 100)
     : 0;
   const ownerIds = data.owner_member_ids ?? data.owners;
 
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -883,7 +884,7 @@ export function ObjectiveDetailPage() {
                         <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[240px] text-xs">
-                        Percentage of done stories across all linked epics: done stories ÷ total stories.
+                        Percentage of done tasks across all linked epics: done tasks ÷ total tasks.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -1011,8 +1012,9 @@ export function ObjectiveDetailPage() {
             {data.epics.length > 0 ? (
               <div className="space-y-2">
                 {data.epics.map((e) => {
-                  const pct = e.stats.story_count > 0
-                    ? Math.round((e.stats.done_story_count / e.stats.story_count) * 100)
+                  const totalTasks = getEpicTaskCount(e.stats);
+                  const pct = totalTasks > 0
+                    ? Math.round((getEpicDoneTaskCount(e.stats) / totalTasks) * 100)
                     : 0;
                   const epicState = e.epic.completed ? 'Done' : e.epic.started ? 'In Progress' : 'Not Started';
                   const epicStateColor = e.epic.completed ? 'text-green-500' : e.epic.started ? 'text-amber-500' : 'text-zinc-400';

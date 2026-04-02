@@ -42,7 +42,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
@@ -51,7 +51,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			epic_id TEXT,
 			name TEXT NOT NULL DEFAULT '',
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			priority TEXT NOT NULL DEFAULT 'none',
 			position INTEGER NOT NULL DEFAULT 0,
 			started BOOLEAN NOT NULL DEFAULT 0,
@@ -86,7 +86,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -116,7 +116,7 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 func TestMatchesTriggerConfig_StateType(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -191,7 +191,7 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 func TestMatchesScope_NilStory(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -243,7 +243,7 @@ func TestMatchesScope_NilStory(t *testing.T) {
 func TestValidateRuleRequest_NewTypes(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	engine := NewAutomationRuleEngine(ruleRepo, storyRepo, workflowRepo, nil, nil, nil, nil, nil)
 
@@ -288,11 +288,35 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name:          "valid cron start_agent_run with explicit target",
+			triggerType:   model.TriggerCron,
+			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"epic","target_id":"epic-1"}`),
+			wantErr:       false,
+		},
+		{
 			name:          "start_agent_run missing agent_id",
 			triggerType:   model.TriggerStoryStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{}`),
+			wantErr:       true,
+		},
+		{
+			name:          "start_agent_run with partial explicit target is invalid",
+			triggerType:   model.TriggerStoryStateEntered,
+			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"story"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "cron start_agent_run missing explicit target is invalid",
+			triggerType:   model.TriggerCron,
+			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
 			wantErr:       true,
 		},
 		{

@@ -4,26 +4,26 @@
 export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto';
 
 /** Sticky header bar */
-export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-card';
+export const TABLE_HEADER = 'sticky top-0 z-10 bg-card';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
-  'relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground border-r border-border/60 last:border-r-0';
+  'ui-divider-bottom-fade ui-divider-right-fade relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:bg-none';
 
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted/40';
 
 /** Data row – compact h-9 (36px), `group` class for hover-reveal actions */
 export const TABLE_ROW =
-  'group flex h-9 items-center border-b border-border/50 bg-card transition-colors hover:bg-[color-mix(in_oklab,var(--card)_50%,var(--muted)_50%)]';
+  'group flex h-9 items-center bg-card transition-colors hover:bg-[color-mix(in_oklab,var(--card)_50%,var(--muted)_50%)]';
 
 /** Data cell – right border for grid lines, cell-level hover */
 export const TABLE_CELL =
-  'flex shrink-0 items-center px-2.5 self-stretch border-r border-border/60 last:border-r-0 transition-colors';
+  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center px-2.5 self-stretch last:bg-none transition-colors';
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/50 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted/40';
+  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center gap-2 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted/40';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =

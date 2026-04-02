@@ -111,7 +111,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
-			active_story_id TEXT,
+			active_task_id TEXT,
 			team_id TEXT,
 			allowed_tools TEXT NOT NULL DEFAULT '[]',
 			allowed_commands TEXT NOT NULL DEFAULT '[]',
@@ -127,7 +127,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -232,13 +232,13 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -357,7 +357,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{Ref: "story_a", Name: "Story A", AcceptanceCriteria: []string{"A works"}, DependencyRefs: []string{"story_b"}},
 		{Ref: "story_b", Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_a"}},
 	}
@@ -428,20 +428,20 @@ func TestCollectPlanningTreeBoundsDepth(t *testing.T) {
 	}
 }
 
-func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
-	stories := []model.ProposedStory{
-		{Name: "Story A", AcceptanceCriteria: []string{"A works"}},
-		{Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_1"}},
+func TestValidatePlanningProposalTasksNormalizesMissingRefs(t *testing.T) {
+	tasks := []model.ProposedTask{
+		{Name: "Task A", AcceptanceCriteria: []string{"A works"}},
+		{Name: "Task B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"task_1"}},
 	}
 
-	if err := validatePlanningProposalTasks(stories); err != nil {
+	if err := validatePlanningProposalTasks(tasks); err != nil {
 		t.Fatalf("validatePlanningProposalTasks returned error: %v", err)
 	}
-	if stories[0].Ref != "story_1" {
-		t.Fatalf("expected first story ref to default to story_1, got %q", stories[0].Ref)
+	if tasks[0].Ref != "task_1" {
+		t.Fatalf("expected first task ref to default to task_1, got %q", tasks[0].Ref)
 	}
-	if stories[1].Ref != "story_2" {
-		t.Fatalf("expected second story ref to default to story_2, got %q", stories[1].Ref)
+	if tasks[1].Ref != "task_2" {
+		t.Fatalf("expected second task ref to default to task_2, got %q", tasks[1].Ref)
 	}
 }
 
@@ -482,8 +482,8 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Ref != "story_1" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "story_1" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
 	}
 }
 
@@ -497,8 +497,8 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Name != "Story A" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
 	}
 }
 
@@ -523,9 +523,9 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testin
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	brief := proposal.ProposedStories[0].ImplementationBrief
+	brief := proposal.ProposedTasks[0].ImplementationBrief
 	if brief == nil {
-		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedStories[0])
+		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedTasks[0])
 	}
 	expected := "Add parser coverage\nAdd integration coverage"
 	if brief.TestStrategy != expected {
@@ -549,14 +549,14 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	if len(proposal.ProposedStories) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 {
+		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
 	}
-	if proposal.ProposedStories[0].Name != "Add 4xx error metrics tracking infrastructure" {
-		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedStories[0])
+	if proposal.ProposedTasks[0].Name != "Add 4xx error metrics tracking infrastructure" {
+		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedTasks[0])
 	}
-	if proposal.ProposedStories[0].StoryType != "feature" {
-		t.Fatalf("expected type alias to populate StoryType, got %#v", proposal.ProposedStories[0])
+	if proposal.ProposedTasks[0].TaskType != "feature" {
+		t.Fatalf("expected type alias to populate TaskType, got %#v", proposal.ProposedTasks[0])
 	}
 }
 
@@ -636,15 +636,15 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	if len(proposal.ProposedStories) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 {
+		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
 	}
-	if proposal.ProposedStories[0].Estimate == nil || *proposal.ProposedStories[0].Estimate != 3 {
-		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedStories[0].Estimate)
+	if proposal.ProposedTasks[0].Estimate == nil || *proposal.ProposedTasks[0].Estimate != 3 {
+		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedTasks[0].Estimate)
 	}
-	brief := proposal.ProposedStories[0].ImplementationBrief
+	brief := proposal.ProposedTasks[0].ImplementationBrief
 	if brief == nil {
-		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedStories[0])
+		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedTasks[0])
 	}
 	if brief.TestStrategy != `{"kind":"regression","owner":"qa"}` {
 		t.Fatalf("expected compact JSON test strategy, got %q", brief.TestStrategy)
@@ -658,7 +658,7 @@ func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *test
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
-	if !strings.Contains(err.Error(), "canonical story-plan shape {summary, proposed_stories}") {
+	if !strings.Contains(err.Error(), "canonical task-plan shape {summary, proposed_tasks}") {
 		t.Fatalf("expected canonical-shape error, got %v", err)
 	}
 }
@@ -1012,7 +1012,7 @@ func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessag
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -1186,7 +1186,7 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -1919,7 +1919,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	run := &model.AgentRun{ID: "run-story-1", WorkspaceID: "ws-1", TargetType: "story"}
 	state := &resolvedRunState{
 		run:  run,
-		task: &model.PMStory{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
+		task: &model.PMTask{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
 	}
 	execCtx := &workerpkg.ExecutionContext{
 		LastExecutionResult: &workerpkg.ExecutionResult{
@@ -1954,7 +1954,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &preview); err != nil {
 		t.Fatalf("unmarshal preview artifact: %v", err)
 	}
-	if preview.PanelKey != "story_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
+	if preview.PanelKey != "task_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
 		t.Fatalf("unexpected persisted story preview %#v", preview)
 	}
 
@@ -2181,7 +2181,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			AgentID:          "agent-1",
 			TargetType:       "crm_deal",
 			TargetID:         "deal-1",
-			StoryID:          strPtr("story-1"),
+			TaskID:           strPtr("story-1"),
 			ConversationID:   strPtr("conv-1"),
 			RepositoryID:     strPtr("repo-run"),
 			DeliveryTargetID: strPtr("delivery-run"),
@@ -2201,7 +2201,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			WorkspaceID: "ws-1",
 			TeamID:      strPtr("team-agent"),
 		},
-		task: &model.PMStory{
+		task: &model.PMTask{
 			ID:             "story-1",
 			EpicID:         strPtr("epic-1"),
 			TeamID:         strPtr("team-story"),
@@ -2218,7 +2218,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			ID:           "conv-1",
 			CRMContactID: strPtr("contact-conversation"),
 		},
-		deliveryTarget: &model.StoryDeliveryTarget{
+		deliveryTarget: &model.TaskDeliveryTarget{
 			ID:           "delivery-1",
 			RepositoryID: strPtr("repo-delivery"),
 		},
@@ -2285,7 +2285,7 @@ func TestFormatInteractivePlanningFacts(t *testing.T) {
 		"Current durable planning facts:",
 		"- approved_spec_exists=true",
 		"- draft_spec_exists=true",
-		"- existing_story_count=3",
+		"- existing_task_count=3",
 		"- spec_document_id=doc-1",
 		"- approved_spec_version_id=ver-1",
 	} {
@@ -2375,13 +2375,13 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -2625,7 +2625,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 
@@ -2729,28 +2729,28 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	commandExecutor := stubInternalCommandExecutor{
 		executeFn: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
 			executed = append(executed, name)
-			if name != "pm.create_story_batch" {
+			if name != "pm.create_task_batch" {
 				return json.RawMessage(`{}`), nil
 			}
 			var payload struct {
-				Stories []model.ProposedStory `json:"stories"`
+				Tasks []model.ProposedTask `json:"tasks"`
 			}
 			if err := json.Unmarshal(input, &payload); err != nil {
 				return nil, err
 			}
-			for _, planned := range payload.Stories {
-				story := &model.PMStory{
+			for _, planned := range payload.Tasks {
+				story := &model.PMTask{
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
-					StoryType:       planned.StoryType,
+					TaskType:       planned.TaskType,
 					WorkflowID:      "wf-1",
 					WorkflowStateID: "state-1",
 					EpicID:          &epic.ID,
-					Priority:        model.PMStoryPriorityNone,
-					Severity:        model.PMStorySeverityNone,
+					Priority:        model.PMTaskPriorityNone,
+					Severity:        model.PMTaskSeverityNone,
 				}
-				if err := storyRepo.Create(ctx, story); err != nil {
+				if err := taskRepo.Create(ctx, story); err != nil {
 					return nil, err
 				}
 			}
@@ -2767,7 +2767,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		agentRepo:       agentRepo,
 		commandExecutor: commandExecutor,
 	}
@@ -2781,14 +2781,14 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if err != nil {
 		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
 	}
-	if action != "create_stories" {
-		t.Fatalf("expected create_stories action, got %q", action)
+	if action != "create_tasks" {
+		t.Fatalf("expected create_tasks action, got %q", action)
 	}
-	if len(executed) != 1 || executed[0] != "pm.create_story_batch" {
-		t.Fatalf("expected story batch command, got %#v", executed)
+	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
+		t.Fatalf("expected task batch command, got %#v", executed)
 	}
 
-	var createdStories []model.PMStory
+	var createdStories []model.PMTask
 	if err := db.Where("epic_id = ?", epic.ID).Find(&createdStories).Error; err != nil {
 		t.Fatalf("list created stories: %v", err)
 	}
@@ -3014,7 +3014,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -3048,16 +3048,16 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("create docs document: %v", err)
 	}
 
-	story := &model.PMStory{
+	story := &model.PMTask{
 		ID:              "story-1",
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
 		DisplayID:       1,
-		StoryType:       model.PMStoryTypeFeature,
+		TaskType:       model.PMTaskTypeFeature,
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
-		Priority:        model.PMStoryPriorityNone,
-		Severity:        model.PMStorySeverityNone,
+		Priority:        model.PMTaskPriorityNone,
+		Severity:        model.PMTaskSeverityNone,
 		PlanDocumentID:  &docID,
 	}
 	if err := db.Create(story).Error; err != nil {
@@ -3068,7 +3068,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		ID:             "run-story-doc",
 		WorkspaceID:    "ws-1",
 		AgentID:        agent.ID,
-		StoryID:        &story.ID,
+		TaskID:         &story.ID,
 		TargetType:     "story",
 		TargetID:       story.ID,
 		InvocationMode: model.InvocationModeInteractive,
@@ -3086,7 +3086,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	}
 	preview := model.ApprovedRunPreview{
 		Phase:           "story_doc",
-		PanelKey:        "story_plan_doc",
+		PanelKey:        "task_plan_doc",
 		Format:          workerpkg.PreviewFormatMarkdown,
 		Content:         markdownJSON,
 		ApprovalSummary: "Approved story plan",
@@ -3120,7 +3120,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		agentRepo:       agentRepo,
 		docsSpaceRepo:   docsSpaceRepo,
 		docsDocRepo:     docsDocRepo,
@@ -3139,25 +3139,25 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	if err != nil {
 		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
 	}
-	if action != "persist_story_doc" {
-		t.Fatalf("expected persist_story_doc action, got %q", action)
+	if action != "persist_task_doc" {
+		t.Fatalf("expected persist_task_doc action, got %q", action)
 	}
 	if len(executed) != 2 || executed[0] != "docs.write_document_content" || executed[1] != "docs.link_document_to_object" {
 		t.Fatalf("expected docs write then docs link commands, got %#v", executed)
 	}
 
-	updatedStory, err := storyRepo.GetRawByID(context.Background(), story.ID)
+	updatedTask, err := taskRepo.GetRawByID(context.Background(), story.ID)
 	if err != nil {
-		t.Fatalf("get updated story: %v", err)
+		t.Fatalf("get updated task: %v", err)
 	}
-	if updatedStory == nil || updatedStory.PlanDocumentID == nil || *updatedStory.PlanDocumentID == "" {
-		t.Fatalf("expected story plan document id to be set, got %#v", updatedStory)
+	if updatedTask == nil || updatedTask.PlanDocumentID == nil || *updatedTask.PlanDocumentID == "" {
+		t.Fatalf("expected task plan document id to be set, got %#v", updatedTask)
 	}
-	if input.PlanDocumentID == "" || input.PlanDocumentID != *updatedStory.PlanDocumentID {
+	if input.PlanDocumentID == "" || input.PlanDocumentID != *updatedTask.PlanDocumentID {
 		t.Fatalf("expected planning input plan_document_id to be set, got %#v", input)
 	}
 
-	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectStory, story.ID)
+	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectTask, story.ID)
 	if err != nil {
 		t.Fatalf("list docs links: %v", err)
 	}
@@ -3257,7 +3257,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			epic_id TEXT,
 			workflow_state_id TEXT,

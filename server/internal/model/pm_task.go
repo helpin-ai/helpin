@@ -29,7 +29,7 @@ type PMTask struct {
 	DisplayID                 int                    `json:"display_id" gorm:"not null;index"`
 	Name                      string                 `json:"name" gorm:"not null"`
 	Description               *string                `json:"description"`
-	StoryType                 string                 `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
+	TaskType                  string                 `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
 	WorkflowID                string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID           string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
 	EpicID                    *string                `json:"epic_id" gorm:"type:uuid;index"`
@@ -115,7 +115,7 @@ type PMTaskFilters struct {
 	IncludeSupport        bool
 	WorkflowID            *string
 	WorkflowStateID       *string
-	StoryType             *string
+	TaskType              *string
 	OwnerID               *string
 	OwnerMemberID         *string
 	RequesterID           *string
@@ -143,7 +143,7 @@ type CreateTaskRequest struct {
 	WorkspaceID       string                       `json:"workspace_id"`
 	Name              string                       `json:"name"`
 	Description       *string                      `json:"description"`
-	StoryType         string                       `json:"task_type"`
+	TaskType          string                       `json:"task_type"`
 	WorkflowID        string                       `json:"workflow_id"`
 	WorkflowStateID   string                       `json:"workflow_state_id"`
 	EpicID            *string                      `json:"epic_id"`
@@ -174,7 +174,7 @@ type CreateTaskRequest struct {
 type UpdateTaskRequest struct {
 	Name              *string    `json:"name"`
 	Description       *string    `json:"description"`
-	StoryType         *string    `json:"task_type"`
+	TaskType          *string    `json:"task_type"`
 	WorkflowID        *string    `json:"workflow_id"`
 	WorkflowStateID   *string    `json:"workflow_state_id"`
 	EpicID            *string    `json:"epic_id"`
@@ -224,7 +224,7 @@ type TaskLabelLinkRequest struct {
 
 // TaskDetail is a task enriched with relation data.
 type TaskDetail struct {
-	Story           PMTask            `json:"task"`
+	Task            PMTask            `json:"task"`
 	Owners          []User            `json:"owners"`
 	Followers       []User            `json:"followers"`
 	OwnerMember     *AssignableMember `json:"owner_member,omitempty"`
@@ -247,10 +247,9 @@ type TaskDependencyTask struct {
 }
 
 // BoardTask is a task enriched with relation names for board display.
-// NOTE: embeds PMStory (alias for PMTask) to preserve the ".PMStory" field accessor
-// used by repository code until the repo layer is migrated to Task-era names.
+// NOTE: embeds PMTask for board display.
 type BoardTask struct {
-	PMStory
+	PMTask
 	EpicName             *string                    `json:"epic_name,omitempty"`
 	SprintName           *string                    `json:"sprint_name,omitempty"`
 	OwnerName            *string                    `json:"owner_name,omitempty"`
@@ -268,14 +267,14 @@ type BoardTask struct {
 type TaskGroup struct {
 	Key     string      `json:"key"`
 	Label   string      `json:"label"`
-	Stories []BoardTask `json:"stories"`
+	Tasks []BoardTask `json:"tasks"`
 }
 
 // TaskStateColumn is the data shape used for board columns.
 type TaskStateColumn struct {
 	State       PMWorkflowState `json:"state"`
-	Stories     []BoardTask     `json:"stories"`
-	StoryGroups []TaskGroup     `json:"story_groups,omitempty"`
+	Tasks       []BoardTask     `json:"tasks"`
+	TaskGroups  []TaskGroup     `json:"task_groups,omitempty"`
 	TaskCount   int             `json:"task_count"`
 	PointTotal  int             `json:"point_total"`
 	HasMore     bool            `json:"has_more"`
@@ -284,7 +283,7 @@ type TaskStateColumn struct {
 // TaskMemberColumn is the data shape for member-grouped board columns.
 type TaskMemberColumn struct {
 	Member     *AssignableMember `json:"member"`
-	Stories    []BoardTask       `json:"stories"`
+	Tasks      []BoardTask       `json:"tasks"`
 	TaskCount  int               `json:"task_count"`
 	PointTotal int               `json:"point_total"`
 	HasMore    bool              `json:"has_more"`
@@ -292,8 +291,8 @@ type TaskMemberColumn struct {
 
 // ColumnTasksResponse is the paginated payload for a single board column.
 type ColumnTasksResponse struct {
-	Stories     []BoardTask `json:"stories"`
-	StoryGroups []TaskGroup `json:"story_groups,omitempty"`
+	Tasks       []BoardTask `json:"tasks"`
+	TaskGroups  []TaskGroup `json:"task_groups,omitempty"`
 	Total       int         `json:"total"`
 }
 

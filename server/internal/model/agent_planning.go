@@ -8,9 +8,9 @@ import (
 
 const (
 	PlanningStageDraftSpec    = "draft_spec"
-	PlanningStagePlanStories   = "plan_stories"
-	PlanningStageStoryPlanDoc  = "story_plan_doc"
-	PlanningStageTaskPlanDoc   = "task_plan_doc"
+	PlanningStagePlanTasks    = "plan_stories"
+	PlanningStageStoryPlanDoc = "story_plan_doc" // compat alias
+	PlanningStageTaskPlanDoc  = "task_plan_doc"
 
 	EpicPlanningStateNotStarted          = "not_started"
 	EpicPlanningStateAwaitingClarification = "awaiting_spec_clarification"
@@ -48,7 +48,7 @@ type ProposedTask struct {
 	Ref                 string                   `json:"ref,omitempty"`
 	Name                string                   `json:"name"`
 	Description         string                   `json:"description"`
-	StoryType           string                   `json:"story_type"`
+	TaskType            string                   `json:"task_type"`
 	Estimate            *int                     `json:"estimate"`
 	Priority            *string                  `json:"priority,omitempty"`
 	AcceptanceCriteria  []string                 `json:"acceptance_criteria,omitempty"`
@@ -65,7 +65,8 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 		Name                string                   `json:"name"`
 		Title               string                   `json:"title"`
 		Description         string                   `json:"description"`
-		StoryType           string                   `json:"story_type"`
+		TaskType            string                   `json:"task_type"`
+		LegacyTaskType      string                   `json:"story_type"`
 		Type                string                   `json:"type"`
 		Estimate            *int                     `json:"estimate"`
 		Priority            *string                  `json:"priority,omitempty"`
@@ -85,7 +86,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 	p.Ref = strings.TrimSpace(raw.Ref)
 	p.Name = strings.TrimSpace(firstNonEmpty(raw.Name, raw.Title))
 	p.Description = strings.TrimSpace(raw.Description)
-	p.StoryType = strings.TrimSpace(firstNonEmpty(raw.StoryType, raw.Type))
+	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.LegacyTaskType, raw.Type))
 	p.Estimate = raw.Estimate
 	p.Priority = raw.Priority
 	p.AcceptanceCriteria = raw.AcceptanceCriteria
@@ -190,7 +191,7 @@ type OrchestrationProposal struct {
 	EpicID           string                  `json:"epic_id"`
 	Summary          string                  `json:"summary"`
 	SpecVersionID    string                  `json:"spec_version_id,omitempty"`
-	ProposedStories  []ProposedTask          `json:"proposed_stories"`
+	ProposedTasks    []ProposedTask          `json:"proposed_tasks"`
 	OpenQuestions    []string                `json:"open_questions,omitempty"`
 	Risks            []string                `json:"risks,omitempty"`
 	VerticalCoverage []VerticalCoverageEntry `json:"vertical_coverage,omitempty"`
@@ -203,11 +204,11 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		tasks[idx].Ref = strings.TrimSpace(tasks[idx].Ref)
 		tasks[idx].Name = strings.TrimSpace(tasks[idx].Name)
 		tasks[idx].Description = strings.TrimSpace(tasks[idx].Description)
-		tasks[idx].StoryType = strings.TrimSpace(tasks[idx].StoryType)
+		tasks[idx].TaskType = strings.TrimSpace(tasks[idx].TaskType)
 		tasks[idx].SliceType = strings.TrimSpace(tasks[idx].SliceType)
 
 		if tasks[idx].Name == "" {
-			return fmt.Errorf("story %d is missing name; use field \"name\" for the story title", idx+1)
+			return fmt.Errorf("task %d is missing name; use field \"name\" for the task title", idx+1)
 		}
 
 		filteredCriteria := make([]string, 0, len(tasks[idx].AcceptanceCriteria))
@@ -219,12 +220,12 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		}
 		tasks[idx].AcceptanceCriteria = filteredCriteria
 		if len(filteredCriteria) == 0 {
-			return fmt.Errorf("story %d is missing acceptance_criteria; provide at least one acceptance criterion", idx+1)
+			return fmt.Errorf("task %d is missing acceptance_criteria; provide at least one acceptance criterion", idx+1)
 		}
 
 		tasks[idx].DependencyRefs = filterNonEmptyPlannerStrings(tasks[idx].DependencyRefs)
 		if tasks[idx].Ref == "" {
-			tasks[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+			tasks[idx].Ref = fmt.Sprintf("task_%d", idx+1)
 		}
 
 		if brief := tasks[idx].ImplementationBrief; brief != nil {
@@ -246,7 +247,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		}
 
 		if prev, exists := refToIdx[tasks[idx].Ref]; exists {
-			return fmt.Errorf("story refs must be unique; stories %d and %d both use ref %q", prev+1, idx+1, tasks[idx].Ref)
+			return fmt.Errorf("task refs must be unique; tasks %d and %d both use ref %q", prev+1, idx+1, tasks[idx].Ref)
 		}
 		refToIdx[tasks[idx].Ref] = idx
 	}
@@ -264,10 +265,10 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		task := tasks[refToIdx[ref]]
 		for _, depRef := range task.DependencyRefs {
 			if _, ok := refToIdx[depRef]; !ok {
-				return fmt.Errorf("story %d references unknown dependency ref %q in dependency_refs", refToIdx[ref]+1, depRef)
+				return fmt.Errorf("task %d references unknown dependency ref %q in dependency_refs", refToIdx[ref]+1, depRef)
 			}
 			if depRef == ref {
-				return fmt.Errorf("story %d cannot list its own ref in dependency_refs", refToIdx[ref]+1)
+				return fmt.Errorf("task %d cannot list its own ref in dependency_refs", refToIdx[ref]+1)
 			}
 			if err := visit(depRef); err != nil {
 				return err
@@ -288,7 +289,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 // VerticalCoverageEntry maps a user-facing behavior to the tasks that deliver it.
 type VerticalCoverageEntry struct {
 	Behavior  string   `json:"behavior"`
-	StoryRefs []string `json:"story_refs"`
+	TaskRefs []string `json:"task_refs"`
 	FullSlice bool     `json:"full_slice"`
 }
 
@@ -312,7 +313,7 @@ type PlanningResearchSource struct {
 // ConfirmPlanningRequest confirms a task plan and optionally edits proposed tasks first.
 type ConfirmPlanningRequest struct {
 	RunID          string         `json:"run_id"`
-	ProposedStories []ProposedTask `json:"proposed_stories"`
+	ProposedTasks []ProposedTask `json:"proposed_tasks"`
 }
 
 type ApprovedSpecSummary struct {

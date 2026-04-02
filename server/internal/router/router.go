@@ -579,7 +579,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}", h.PMEpic.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}", h.PMEpic.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/tasks", h.PMEpic.ListStories)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/tasks", h.PMEpic.ListTasks)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit
@@ -589,7 +589,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListStories)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListTasks)
 
 				// Tasks — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)
@@ -709,9 +709,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages/{pageId}", h.SupportAI.GetContentSourcePage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/assign-agent", h.Agent.AssignAgentToStory)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunStoryAgent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/assign-agent", h.Agent.AssignAgentToTask)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunTaskAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)

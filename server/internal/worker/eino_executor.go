@@ -247,7 +247,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		case "pm.story_completion_followups":
 			assessment, err := extractTaskCompletionAssessmentFromResponseText(result.AssistantText)
 			if err != nil {
-				fallback := &model.StoryCompletionAssessment{
+				fallback := &model.TaskCompletionAssessment{
 					Summary: strings.TrimSpace(result.AssistantText),
 				}
 				seqNo++
@@ -294,7 +294,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 			seqNo++
 			e.saveArtifact(ctx, run, "product_spec_draft", "json", string(payload), seqNo)
-		case model.PlanningStagePlanStories:
+		case model.PlanningStagePlanTasks:
 			proposal, err := extractPlanningProposalFromResponseText(result.AssistantText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, totalTokens)
 			if err != nil {
 				return err

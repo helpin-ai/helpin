@@ -7,7 +7,7 @@ describe('syncTaskLabelsWithFeedback', () => {
     const setSaving = vi.fn();
     const setSaveError = vi.fn();
     const syncLabels = vi.fn().mockResolvedValue([{ error: null }]);
-    const reloadTask = vi.fn().mockResolvedValue({ data: { story: { id: 'story-1' } } });
+    const reloadTask = vi.fn().mockResolvedValue({ data: { task: { id: 'task-1' } } });
     const reloadActivity = vi.fn();
     const onTaskUpdated = vi.fn();
 
@@ -19,15 +19,15 @@ describe('syncTaskLabelsWithFeedback', () => {
       reloadTask,
       setSaveError,
       setSaving,
-      storyId: 'story-1',
+      taskId: 'task-1',
       syncLabels,
       workspaceId: 'ws-1',
     });
 
     expect(setSaving).toHaveBeenNthCalledWith(1, true);
-    expect(syncLabels).toHaveBeenCalledWith('ws-1', 'story-1', ['label-a'], ['label-b']);
-    expect(reloadTask).toHaveBeenCalledWith('ws-1', 'story-1');
-    expect(onTaskUpdated).toHaveBeenCalledWith({ story: { id: 'story-1' } });
+    expect(syncLabels).toHaveBeenCalledWith('ws-1', 'task-1', ['label-a'], ['label-b']);
+    expect(reloadTask).toHaveBeenCalledWith('ws-1', 'task-1');
+    expect(onTaskUpdated).toHaveBeenCalledWith({ task: { id: 'task-1' } });
     expect(reloadActivity).toHaveBeenCalledTimes(1);
     expect(setSaveError).toHaveBeenCalledWith(null);
     expect(setSaving).toHaveBeenLastCalledWith(false);
@@ -47,7 +47,7 @@ describe('syncTaskLabelsWithFeedback', () => {
       reloadTask,
       setSaveError,
       setSaving,
-      storyId: 'story-1',
+      taskId: 'task-1',
       syncLabels,
       workspaceId: 'ws-1',
     });

@@ -6,7 +6,7 @@ describe('getVisibleTaskListGroupOptions', () => {
   it('does not include team and labels owner grouping as members', () => {
     expect(
       getVisibleTaskListGroupOptions({
-        story_type: true,
+        task_type: true,
         priority: true,
         severity: true,
         epic: true,
@@ -16,7 +16,7 @@ describe('getVisibleTaskListGroupOptions', () => {
       'None',
       'States',
       'Members',
-      'Story Type',
+      'Task Type',
       'Priority',
       'Severity',
       'Epic',
@@ -27,7 +27,7 @@ describe('getVisibleTaskListGroupOptions', () => {
   it('hides advanced options when team field visibility disables them', () => {
     expect(
       getVisibleTaskListGroupOptions({
-        story_type: false,
+        task_type: false,
         priority: false,
         severity: true,
         epic: false,

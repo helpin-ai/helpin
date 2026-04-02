@@ -13,13 +13,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import { getSortableTaskCardStyle } from './TaskCard.sortable';
-import type { Agent, Priority, Severity, Story } from '@/lib/pmTypes';
+import type { Agent, Priority, Severity, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
@@ -39,9 +39,9 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 // ── Component ───────────────────────────────────────────────────────
 
 interface TaskCardProps {
-  story: Story;
+  task: Task;
   /** @deprecated Use BoardCallbacksContext instead. Kept for backward compat outside KanbanBoard. */
-  onOpen?: (story: Story) => void;
+  onOpen?: (task: Task) => void;
   isOverlay?: boolean;
   teamName?: string;
   /** @deprecated Use BoardDataContext instead */
@@ -50,14 +50,14 @@ interface TaskCardProps {
   assignableMembers?: AssignableMember[];
   /** @deprecated Use BoardDataContext instead */
   ownerNameMap?: Map<string, string>;
-  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onOwnerChanged?: (story: Story) => void;
-  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onPriorityChanged?: (story: Story) => void;
-  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onSeverityChanged?: (story: Story) => void;
-  /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onEstimateChanged?: (story: Story) => void;
+  /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
+  onOwnerChanged?: (task: Task) => void;
+  /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
+  onPriorityChanged?: (task: Task) => void;
+  /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
+  onSeverityChanged?: (task: Task) => void;
+  /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
+  onEstimateChanged?: (task: Task) => void;
   showStateBadge?: boolean;
   assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
 }
@@ -109,7 +109,7 @@ function TaskCardAgentBadge({
 }
 
 function TaskCardComponent({
-  story,
+  task,
   onOpen: onOpenProp,
   isOverlay = false,
   teamName,
@@ -132,9 +132,9 @@ function TaskCardComponent({
   const assignableMembers = boardData?.assignableMembers ?? assignableMembersProp;
   const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
   const agentById = boardData?.agentById;
-  const assignedAgent = assignedAgentProp ?? (agentById && story.assigned_agent_id ? agentById.get(story.assigned_agent_id) ?? null : null);
+  const assignedAgent = assignedAgentProp ?? (agentById && task.assigned_agent_id ? agentById.get(task.assigned_agent_id) ?? null : null);
   const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
-  const onStoryPatched = callbacksRef?.current.onStoryPatched;
+  const onTaskPatched = callbacksRef?.current.onTaskPatched;
 
   const {
     attributes,
@@ -143,7 +143,7 @@ function TaskCardComponent({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: story.id });
+  } = useSortable({ id: task.id });
 
   const style = getSortableTaskCardStyle({
     transform,
@@ -153,10 +153,10 @@ function TaskCardComponent({
 
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
-  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', story.team_id);
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', task.team_id);
   const displayProps = useBoardDisplayStore((s) => s.properties);
   const vis = useMemo(() => ({
-    story_type: fieldVis.task_type && displayProps.task_type,
+    task_type: fieldVis.task_type && displayProps.task_type,
     priority: fieldVis.priority && displayProps.priority,
     severity: fieldVis.severity && displayProps.severity,
     agent: displayProps.agent,
@@ -170,113 +170,113 @@ function TaskCardComponent({
   }), [fieldVis, displayProps]);
 
   const due = useMemo(() => {
-    if (!story.deadline) return null;
-    const date = parseISO(story.deadline);
+    if (!task.deadline) return null;
+    const date = parseISO(task.deadline);
     const today = startOfDay(new Date());
-    const overdue = isBefore(date, today) && !story.completed;
+    const overdue = isBefore(date, today) && !task.completed;
     const daysAway = differenceInDays(date, today);
-    const approaching = !story.completed && !overdue && daysAway <= 3;
+    const approaching = !task.completed && !overdue && daysAway <= 3;
     return {
       label: format(date, 'MMM d'),
       overdue,
       approaching,
     };
-  }, [story.deadline, story.completed]);
+  }, [task.deadline, task.completed]);
 
-  const severityCfg = story.severity !== 'none' && story.severity in SEVERITY_CONFIG
-    ? SEVERITY_CONFIG[story.severity]
+  const severityCfg = task.severity !== 'none' && task.severity in SEVERITY_CONFIG
+    ? SEVERITY_CONFIG[task.severity]
     : null;
   const blockedLabel = useMemo(() => {
-    if (!story.blocked) return null;
-    if (story.blocked_by_count && story.blocked_by_count > 0) {
-      if (story.blocked_by_count === 1 && story.blocked_by_stories?.[0]) {
-        return `Blocked by ${story.blocked_by_stories[0].display_id}`;
+    if (!task.blocked) return null;
+    if (task.blocked_by_count && task.blocked_by_count > 0) {
+      if (task.blocked_by_count === 1 && task.blocked_by_tasks?.[0]) {
+        return `Blocked by ${task.blocked_by_tasks[0].display_id}`;
       }
-      return `Blocked by ${story.blocked_by_count} stories`;
+      return `Blocked by ${task.blocked_by_count} tasks`;
     }
-    if (story.blocker?.trim()) {
+    if (task.blocker?.trim()) {
       return 'External blocker';
     }
     return 'Blocked';
-  }, [story.blocked, story.blocked_by_count, story.blocked_by_stories, story.blocker]);
+  }, [task.blocked, task.blocked_by_count, task.blocked_by_tasks, task.blocker]);
 
-  const priorityCfg = PRIORITY_CONFIG[story.priority];
-  const storyTypeCfg = STORY_TYPE_CONFIG[story.task_type];
+  const priorityCfg = PRIORITY_CONFIG[task.priority];
+  const taskTypeCfg = TASK_TYPE_CONFIG[task.task_type];
   const currentOwnerName = useMemo(() => {
-    const ownerKey = story.owner_member_id;
+    const ownerKey = task.owner_member_id;
     if (!ownerKey) return null;
-    return ownerNameMap?.get(ownerKey) ?? story.owner_name ?? null;
-  }, [story.owner_member_id, story.owner_name, ownerNameMap]);
+    return ownerNameMap?.get(ownerKey) ?? task.owner_name ?? null;
+  }, [task.owner_member_id, task.owner_name, ownerNameMap]);
   const handleAssignOwner = useCallback(
     async (value: string) => {
       if (!workspaceId) return;
       const newOwnerId = value === '__none__' ? '' : value;
       try {
-        const result = await pmTaskService.update(workspaceId, story.id, { owner_member_id: newOwnerId });
+        const result = await pmTaskService.update(workspaceId, task.id, { owner_member_id: newOwnerId });
         if (result.data?.task) {
-          (onStoryPatched ?? onOwnerChanged)?.(result.data.task);
+          (onTaskPatched ?? onOwnerChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
       }
     },
-    [workspaceId, story.id, onStoryPatched, onOwnerChanged],
+    [workspaceId, task.id, onTaskPatched, onOwnerChanged],
   );
 
   const handleChangePriority = useCallback(
     async (priority: Priority) => {
-      if (!workspaceId || priority === story.priority) {
+      if (!workspaceId || priority === task.priority) {
         setPriorityOpen(false);
         return;
       }
       try {
-        const result = await pmTaskService.update(workspaceId, story.id, { priority });
+        const result = await pmTaskService.update(workspaceId, task.id, { priority });
         if (result.data?.task) {
-          (onStoryPatched ?? onPriorityChanged)?.(result.data.task);
+          (onTaskPatched ?? onPriorityChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
       }
       setPriorityOpen(false);
     },
-    [workspaceId, story.id, story.priority, onStoryPatched, onPriorityChanged],
+    [workspaceId, task.id, task.priority, onTaskPatched, onPriorityChanged],
   );
 
   const handleChangeSeverity = useCallback(
     async (severity: Severity) => {
-      if (!workspaceId || severity === story.severity) {
+      if (!workspaceId || severity === task.severity) {
         setSeverityOpen(false);
         return;
       }
       try {
-        const result = await pmTaskService.update(workspaceId, story.id, { severity });
+        const result = await pmTaskService.update(workspaceId, task.id, { severity });
         if (result.data?.task) {
-          (onStoryPatched ?? onSeverityChanged)?.(result.data.task);
+          (onTaskPatched ?? onSeverityChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
       }
       setSeverityOpen(false);
     },
-    [workspaceId, story.id, story.severity, onStoryPatched, onSeverityChanged],
+    [workspaceId, task.id, task.severity, onTaskPatched, onSeverityChanged],
   );
 
   const handleChangeEstimate = useCallback(
     async (_display: string, apiValue: number | undefined) => {
-      if (!workspaceId || apiValue === story.estimate) return;
+      if (!workspaceId || apiValue === task.estimate) return;
       try {
-        const result = await pmTaskService.update(workspaceId, story.id, { estimate: apiValue ?? 0 });
+        const result = await pmTaskService.update(workspaceId, task.id, { estimate: apiValue ?? 0 });
         if (result.data?.task) {
-          (onStoryPatched ?? onEstimateChanged)?.(result.data.task);
+          (onTaskPatched ?? onEstimateChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
       }
     },
-    [workspaceId, story.id, story.estimate, onStoryPatched, onEstimateChanged],
+    [workspaceId, task.id, task.estimate, onTaskPatched, onEstimateChanged],
   );
 
-  const titleIsLong = story.name.length > 60;
+  const titleIsLong = task.name.length > 60;
 
   return (
     <article
@@ -286,11 +286,11 @@ function TaskCardComponent({
       {...listeners}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen?.(story)}
+      onClick={() => onOpen?.(task)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onOpen?.(story);
+          onOpen?.(task);
         }
       }}
       className={cn(
@@ -298,30 +298,30 @@ function TaskCardComponent({
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
-        showStateBadge && story.state_color && 'flex flex-row',
+        showStateBadge && task.state_color && 'flex flex-row',
       )}
     >
       {/* State color accent bar (member board only) */}
-      {showStateBadge && story.state_color && (
-        <div className="w-0.5 shrink-0 self-stretch rounded-l-lg" style={{ backgroundColor: story.state_color }} />
+      {showStateBadge && task.state_color && (
+        <div className="w-0.5 shrink-0 self-stretch rounded-l-lg" style={{ backgroundColor: task.state_color }} />
       )}
       <div className="p-3 flex-1 min-w-0">
-      {/* Row 1: Story type + Epic + Team + Priority */}
+      {/* Row 1: Task type + Epic + Team + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {vis.story_type && (
+        {vis.task_type && (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="shrink-0">
-              <StoryTypeIcon storyType={story.task_type} className="h-3.5 w-3.5" />
+              <TaskTypeIcon taskType={task.task_type} className="h-3.5 w-3.5" />
             </span>
           </TooltipTrigger>
-          <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
+          <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
         </Tooltip>
         )}
-        {showStateBadge && story.state_name && (
+        {showStateBadge && task.state_name && (
           <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
-            <StateTypeIcon stateType={(story.state_type as import('@/lib/pmTypes').StateType) ?? 'unstarted'} className="h-3 w-3" />
-            {story.state_name}
+            <StateTypeIcon stateType={(task.state_type as import('@/lib/pmTypes').StateType) ?? 'unstarted'} className="h-3 w-3" />
+            {task.state_name}
           </span>
         )}
 
@@ -334,7 +334,7 @@ function TaskCardComponent({
         )}
 
         {/* Priority pill — clickable dropdown (hidden when 'none') */}
-        {vis.priority && story.priority !== 'none' && (workspaceId ? (
+        {vis.priority && task.priority !== 'none' && (workspaceId ? (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <Tooltip open={priorityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -343,11 +343,11 @@ function TaskCardComponent({
                     type="button"
                     className={cn(
                       'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
-                      PRIORITY_BORDER_COLOR[story.priority],
+                      PRIORITY_BORDER_COLOR[task.priority],
                     )}
                     onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
                   >
-                    <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+                    <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
                   </button>
                 </PopoverTrigger>
               </TooltipTrigger>
@@ -377,7 +377,7 @@ function TaskCardComponent({
                           >
                             <PriorityIcon priority={p} className="h-3.5 w-3.5" />
                             <span>{cfg.label}</span>
-                            {story.priority === p && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                            {task.priority === p && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                           </CommandItem>
                         );
                       })}
@@ -392,9 +392,9 @@ function TaskCardComponent({
             <TooltipTrigger asChild>
               <span className={cn(
                 'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
-                PRIORITY_BORDER_COLOR[story.priority],
+                PRIORITY_BORDER_COLOR[task.priority],
               )}>
-                <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+                <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
@@ -403,39 +403,39 @@ function TaskCardComponent({
       </div>
 
       {/* Row 2: Title */}
-      {story.recurring_template_id ? (
+      {task.recurring_template_id ? (
         <div className="mt-3">
-          <RecurringTemplateBadge compact occurrenceNumber={story.recurring_occurrence_number} />
+          <RecurringTemplateBadge compact occurrenceNumber={task.recurring_occurrence_number} />
         </div>
       ) : null}
       {titleIsLong ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
-              {story.name}
+            <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
+              {task.name}
             </h4>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[300px]">{story.name}</TooltipContent>
+          <TooltipContent side="bottom" className="max-w-[300px]">{task.name}</TooltipContent>
         </Tooltip>
       ) : (
-        <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
-          {story.name}
+        <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
+          {task.name}
         </h4>
       )}
 
       {/* Epic row */}
-      {vis.epic && story.epic_name && (
+      {vis.epic && task.epic_name && (
         <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Layers className="h-3 w-3 shrink-0" />
-          <span className="truncate">{story.epic_name}</span>
+          <span className="truncate">{task.epic_name}</span>
         </div>
       )}
 
       {/* Sprint row */}
-      {vis.sprint && story.sprint_name && (
+      {vis.sprint && task.sprint_name && (
         <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           <SprintIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="truncate">{story.sprint_name}</span>
+          <span className="truncate">{task.sprint_name}</span>
         </div>
       )}
 
@@ -450,7 +450,7 @@ function TaskCardComponent({
                     className={cn(pillBase, 'border-border bg-muted/50 transition-colors hover:bg-muted', severityCfg.color)}
                     onClick={(e) => { e.stopPropagation(); setSeverityOpen(true); }}
                   >
-                    <SeverityIcon severity={story.severity} className="h-3 w-3" />
+                    <SeverityIcon severity={task.severity} className="h-3 w-3" />
                     {severityCfg.label}
                   </button>
                 </PopoverTrigger>
@@ -478,7 +478,7 @@ function TaskCardComponent({
                           >
                             <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
                             <span>{cfg.label}</span>
-                            {story.severity === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                            {task.severity === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                           </CommandItem>
                         );
                       })}
@@ -490,12 +490,12 @@ function TaskCardComponent({
           </Popover>
         ) : severityCfg ? (
               <span className={cn(pillBase, 'border-border bg-muted/50', severityCfg.color)}>
-                <SeverityIcon severity={story.severity} className="h-3 w-3" />
+                <SeverityIcon severity={task.severity} className="h-3 w-3" />
                 {severityCfg.label}
               </span>
         ) : null)}
 
-        {vis.blocked && story.blocked && blockedLabel && (
+        {vis.blocked && task.blocked && blockedLabel && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
@@ -508,7 +508,7 @@ function TaskCardComponent({
         )}
 
         {/* Labels */}
-        {vis.labels && story.labels && story.labels.length > 0 && story.labels.map((label) => (
+        {vis.labels && task.labels && task.labels.length > 0 && task.labels.map((label) => (
           <LabelBadge key={label.id} label={label} />
         ))}
       </div>
@@ -535,23 +535,23 @@ function TaskCardComponent({
             </TooltipContent>
           </Tooltip>
         )}
-        {vis.estimate && story.estimate != null && (workspaceId ? (
+        {vis.estimate && task.estimate != null && (workspaceId ? (
           <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
             <EstimatePicker
-              value={story.estimate != null ? String(story.estimate) : ''}
-              teamId={story.team_id}
+              value={task.estimate != null ? String(task.estimate) : ''}
+              teamId={task.team_id}
               onChange={handleChangeEstimate}
               className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground hover:bg-muted cursor-pointer')}
             />
           </span>
-        ) : story.estimate != null ? (
+        ) : task.estimate != null ? (
           <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-            {formatEstimateDisplay(story.estimate, story.team_id)}
+            {formatEstimateDisplay(task.estimate, task.team_id)}
           </span>
         ) : null)}
         <span className="flex-1" />
         <div className="flex items-center gap-1.5">
-          {vis.agent && story.assigned_agent_id && (
+          {vis.agent && task.assigned_agent_id && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="shrink-0">
@@ -564,7 +564,7 @@ function TaskCardComponent({
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
             <MemberPickerPopover
-              value={story.owner_member_id || '__none__'}
+              value={task.owner_member_id || '__none__'}
               members={assignableMembers}
               noneLabel="Unassigned"
               onChange={(value) => {
@@ -574,7 +574,7 @@ function TaskCardComponent({
               triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
               contentClassName="w-[220px]"
               renderTrigger={() => {
-                const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
+                const selectedMember = findAssignableMember(assignableMembers, task.owner_member_id);
                 return selectedMember ? (
                   <UserAvatar
                     name={selectedMember.display_name || selectedMember.email}
@@ -613,9 +613,9 @@ function TaskCardComponent({
 
 export const TaskCard = memo(TaskCardComponent, (prev, next) => {
   // Fast path: same object reference means no change
-  if (prev.story !== next.story) {
-    // Different reference — check if the story actually changed
-    if (prev.story.id !== next.story.id || prev.story.updated_at !== next.story.updated_at) return false;
+  if (prev.task !== next.task) {
+    // Different reference — check if the task actually changed
+    if (prev.task.id !== next.task.id || prev.task.updated_at !== next.task.updated_at) return false;
   }
   return prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName

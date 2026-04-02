@@ -1,6 +1,6 @@
 # Helpin
 
-Internal performance-based quarterly bonus system with integrated project management, CRM with self-driving deal automation, and support ticketing.
+Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution.
 
 ## Architecture
 
@@ -191,9 +191,33 @@ All dependencies are wired in `cmd/api/main.go`:
 5. Router created from handlers + authorization service
 
 ### Database Migrations
-- GORM `AutoMigrate` runs on startup for struct-level schema
-- SQL migrations in `server/migrations/` numbered sequentially (001–022+)
-- Migrations are idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`)
+
+**Two migration systems** (both active):
+
+1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
+
+**dbmigrate CLI** (`server/cmd/migrate/`):
+```bash
+go run ./cmd/migrate up              # Apply all pending migrations
+go run ./cmd/migrate status          # Show all migrations (applied/pending)
+go run ./cmd/migrate head            # Show latest applied migration
+go run ./cmd/migrate pending         # List only unapplied migrations
+go run ./cmd/migrate validate        # CI check — exit 1 if issues found
+go run ./cmd/migrate repair          # Fix checksums after post-apply file edits
+go run ./cmd/migrate create <name>   # Scaffold new migration file
+```
+
+**Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
+
+**When to use which**:
+- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
+
+**Rules**:
+- Migrations MUST be idempotent (`IF NOT EXISTS`, `IF EXISTS`)
+- Never edit an already-applied migration file — create a new one instead (or run `migrate repair` if you must)
+- Legacy SQL migrations in `server/migrations/` are reference docs only — new migrations go in `server/internal/dbmigrate/sql/`
 
 ### WebSocket
 - Endpoint: `GET /api/ws?token=JWT&workspace_id=ID`
@@ -248,6 +272,55 @@ The CRM module includes a "self-driving" automation layer that reads email threa
 | `CRM_LLM_API_KEY` | Only if openai | OpenAI API key |
 | `CRM_LLM_BASE_URL` | Only if openai | OpenAI-compatible base URL |
 | `CRM_LLM_MODEL` | Only if openai | Model name for OpenAI provider |
+
+### Agents And Automation Model
+
+Canonical reference: `docs/AGENTS_AND_AUTOMATION.md`
+
+Use this taxonomy when working on backend agent features:
+
+- built-in automations are product-owned backend behavior
+- automation rules are user-authored trigger-to-action records
+- agents are reusable executors
+- `agent_run` is the durable execution primitive
+- run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
+
+The backend already behaves as two practical agent categories:
+
+- `system agents`
+  - `is_system = true`
+  - product-owned
+  - preset-bound
+  - for `native_sdk`, share the same core run machinery as custom agents
+  - differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+- `custom agents`
+  - `is_system = false`
+  - generic executors
+  - current product direction is `native_sdk` only
+  - should gather most context through tools after receiving a minimal trigger payload
+
+Current trigger surfaces in code:
+
+- manual run actions
+- agent `trigger_mode`
+- agent `schedule`
+- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+
+Current limitation to keep in mind:
+
+- agent execution is generic
+- agent launch paths are still partially target-specific
+- native planning instructions are selected from effective tools plus target
+- generic target launching exists for direct runs and automation-rule `start_agent_run`
+- automation-rule `start_agent_run` now uses the generic target contract, with event-target defaulting and explicit targets required for cron
+
+Proposed direction for custom agents:
+
+- keep genuine special-case orchestration only for real product exceptions like support flow
+- keep automation rules as the event and cron trigger layer
+- make custom agents triggerable by `manual`, automation-rule `event`, and automation-rule `cron`
+- pass a minimal structured trigger payload into `agent_run.input`
+- let custom agents gather additional context with tools instead of relying on bespoke backend entrypoints
 
 ### Logging
 

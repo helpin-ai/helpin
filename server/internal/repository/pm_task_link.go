@@ -10,7 +10,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// PMTaskLinkRepository handles DB operations for story dependency links.
+// PMTaskLinkRepository handles DB operations for task dependency links.
 type PMTaskLinkRepository struct {
 	db *gorm.DB
 }
@@ -20,12 +20,12 @@ func NewPMTaskLinkRepository(db *gorm.DB) *PMTaskLinkRepository {
 	return &PMTaskLinkRepository{db: db}
 }
 
-// Create inserts a new story link if it does not already exist.
-func (r *PMTaskLinkRepository) Create(ctx context.Context, link *model.PMStoryLink) error {
-	var existing model.PMStoryLink
+// Create inserts a new task link if it does not already exist.
+func (r *PMTaskLinkRepository) Create(ctx context.Context, link *model.PMTaskLink) error {
+	var existing model.PMTaskLink
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND source_task_id = ? AND target_task_id = ? AND link_type = ?",
-			link.WorkspaceID, link.SourceStoryID, link.TargetStoryID, link.LinkType).
+			link.WorkspaceID, link.SourceTaskID, link.TargetTaskID, link.LinkType).
 		First(&existing).Error
 	switch {
 	case err == nil:
@@ -34,71 +34,71 @@ func (r *PMTaskLinkRepository) Create(ctx context.Context, link *model.PMStoryLi
 		link.UpdatedAt = existing.UpdatedAt
 		return nil
 	case !errors.Is(err, gorm.ErrRecordNotFound):
-		return fmt.Errorf("check story link: %w", err)
+		return fmt.Errorf("check task link: %w", err)
 	}
 
 	if err := r.db.WithContext(ctx).Create(link).Error; err != nil {
-		return fmt.Errorf("create story link: %w", err)
+		return fmt.Errorf("create task link: %w", err)
 	}
 	return nil
 }
 
-// ListByStory returns links where the task is either the source or target.
-func (r *PMTaskLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.PMStoryLink, error) {
-	var links []model.PMStoryLink
+// ListByTask returns links where the task is either the source or target.
+func (r *PMTaskLinkRepository) ListByTask(ctx context.Context, workspaceID, taskID string) ([]model.PMTaskLink, error) {
+	var links []model.PMTaskLink
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND (source_task_id = ? OR target_task_id = ?)", workspaceID, storyID, storyID).
+		Where("workspace_id = ? AND (source_task_id = ? OR target_task_id = ?)", workspaceID, taskID, taskID).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story links: %w", err)
+		return nil, fmt.Errorf("list task links: %w", err)
 	}
 	return links, nil
 }
 
-// ListByStories returns links where either endpoint belongs to the provided task set.
-func (r *PMTaskLinkRepository) ListByStories(ctx context.Context, workspaceID string, storyIDs []string) ([]model.PMStoryLink, error) {
-	if len(storyIDs) == 0 {
-		return []model.PMStoryLink{}, nil
+// ListByTasks returns links where either endpoint belongs to the provided task set.
+func (r *PMTaskLinkRepository) ListByTasks(ctx context.Context, workspaceID string, taskIDs []string) ([]model.PMTaskLink, error) {
+	if len(taskIDs) == 0 {
+		return []model.PMTaskLink{}, nil
 	}
 
-	var links []model.PMStoryLink
+	var links []model.PMTaskLink
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND (source_task_id IN ? OR target_task_id IN ?)", workspaceID, storyIDs, storyIDs).
+		Where("workspace_id = ? AND (source_task_id IN ? OR target_task_id IN ?)", workspaceID, taskIDs, taskIDs).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story links by stories: %w", err)
+		return nil, fmt.Errorf("list task links by tasks: %w", err)
 	}
 	return links, nil
 }
 
 // ListByWorkspaceAndType returns all links of a given type for a workspace.
-func (r *PMTaskLinkRepository) ListByWorkspaceAndType(ctx context.Context, workspaceID, linkType string) ([]model.PMStoryLink, error) {
-	var links []model.PMStoryLink
+func (r *PMTaskLinkRepository) ListByWorkspaceAndType(ctx context.Context, workspaceID, linkType string) ([]model.PMTaskLink, error) {
+	var links []model.PMTaskLink
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND link_type = ?", workspaceID, linkType).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story links by workspace/type: %w", err)
+		return nil, fmt.Errorf("list task links by type: %w", err)
 	}
 	return links, nil
 }
 
-// GetByID returns a story relationship by ID.
-func (r *PMTaskLinkRepository) GetByID(ctx context.Context, id string) (*model.PMStoryLink, error) {
-	var link model.PMStoryLink
+// GetByID returns a single task link by ID.
+func (r *PMTaskLinkRepository) GetByID(ctx context.Context, id string) (*model.PMTaskLink, error) {
+	var link model.PMTaskLink
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story link: %w", err)
+		return nil, fmt.Errorf("get task link: %w", err)
 	}
 	return &link, nil
 }
 
-// Delete removes a story relationship by ID.
+// Delete removes a task link by ID.
 func (r *PMTaskLinkRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.PMStoryLink{}).Error; err != nil {
-		return fmt.Errorf("delete story link: %w", err)
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.PMTaskLink{}).Error; err != nil {
+		return fmt.Errorf("delete task link: %w", err)
 	}
 	return nil
 }

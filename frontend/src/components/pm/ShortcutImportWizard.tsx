@@ -94,8 +94,8 @@ const STATE_TYPE_OPTIONS: { value: StateType; label: string; color: string }[] =
   { value: 'done', label: 'Done', color: 'bg-green-400' },
 ];
 
-const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links'];
-const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links', 'Comments'];
+const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Links'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Links', 'Comments'];
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           newStateName: s.name,
           stateType: (s.suggested_type || 'unstarted') as StateType,
           position: i,
-          storyCount: s.story_count,
+          storyCount: s.task_count,
           existingStateId: '',
         })),
         existingWorkflowId: '',
@@ -162,10 +162,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       })),
     );
 
-    // Build user story counts from preview
-    const userStoryCount = new Map<string, number>();
+    // Build user task counts from preview
+    const userTaskCount = new Map<string, number>();
     for (const u of data.users) {
-      userStoryCount.set(u.email, (userStoryCount.get(u.email) || 0) + 1);
+      userTaskCount.set(u.email, (userTaskCount.get(u.email) || 0) + 1);
     }
 
     setUserMappings(
@@ -591,7 +591,7 @@ function UploadStep({
                 <div>
                   <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and story comments.
+                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and task comments.
                     Generate a token at Settings &rarr; API Tokens in Shortcut.
                   </p>
                 </div>
@@ -633,7 +633,7 @@ function UploadStep({
 
   const s = preview.summary;
   const statCards = [
-    { label: 'Stories', value: s.total_stories },
+    { label: 'Tasks', value: s.total_tasks },
     { label: 'Epics', value: s.epics_count },
     { label: 'Objectives', value: s.objectives_count },
     { label: 'Sprints', value: s.sprints_count },
@@ -643,8 +643,8 @@ function UploadStep({
     { label: 'Checklists', value: s.checklist_items_count },
   ];
 
-  const storyTypes = Object.entries(s.stories_by_type).sort(([, a], [, b]) => b - a);
-  const totalStories = storyTypes.reduce((sum, [, v]) => sum + v, 0) || 1;
+  const storyTypes = Object.entries(s.tasks_by_type).sort(([, a], [, b]) => b - a);
+  const totalTasks = storyTypes.reduce((sum, [, v]) => sum + v, 0) || 1;
 
   const STORY_TYPE_COLORS: Record<string, string> = {
     feature: 'bg-blue-500',
@@ -676,13 +676,13 @@ function UploadStep({
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">Stories by Type</p>
+        <p className="text-sm font-medium">Tasks by Type</p>
         <div className="flex h-3 w-1/2 overflow-hidden rounded-full">
           {storyTypes.map(([type, count]) => (
             <div
               key={type}
               className={cn('h-full', STORY_TYPE_COLORS[type] || 'bg-gray-400')}
-              style={{ width: `${(count / totalStories) * 100}%` }}
+              style={{ width: `${(count / totalTasks) * 100}%` }}
               title={`${type}: ${count.toLocaleString()}`}
             />
           ))}
@@ -835,7 +835,7 @@ function WorkflowStep({
           wf.mode === 'create_new'
             ? hasDone && wf.newWorkflowName.trim() !== ''
             : wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
-        const totalStories = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
+        const totalTasks = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
 
         return (
           <Card key={wf.shortcutWorkflowId || wf.shortcutWorkflowName}>
@@ -854,7 +854,7 @@ function WorkflowStep({
                   {isValid && <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Ready</Badge>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {totalStories.toLocaleString()} stories
+                  {totalTasks.toLocaleString()} tasks
                 </span>
               </div>
             </CardHeader>
@@ -901,7 +901,7 @@ function WorkflowStep({
                             <TableRow>
                               <TableHead className="text-xs w-[40px]" />
                               <TableHead className="text-xs">State Name</TableHead>
-                              <TableHead className="text-xs text-right w-[80px]">Stories</TableHead>
+                              <TableHead className="text-xs text-right w-[80px]">Tasks</TableHead>
                               <TableHead className="text-xs w-[150px]">State Type</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -951,7 +951,7 @@ function WorkflowStep({
                         <TableHeader>
                           <TableRow>
                             <TableHead className="text-xs">Shortcut State</TableHead>
-                            <TableHead className="text-xs text-right w-[80px]">Stories</TableHead>
+                            <TableHead className="text-xs text-right w-[80px]">Tasks</TableHead>
                             <TableHead className="text-xs w-[180px]">Helpin State</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1036,7 +1036,7 @@ function UserStep({
       <div>
         <p className="text-sm text-muted-foreground">
           Match Shortcut users to Helpin workspace members. You can invite unmatched users so their
-          stories are properly assigned.
+          tasks are properly assigned.
         </p>
       </div>
 
@@ -1171,7 +1171,7 @@ function UserStep({
 
           {unmatched.some((u) => u.invited) && (
             <p className="text-xs text-muted-foreground">
-              Invitations have been sent. Stories will be assigned to these users. They'll see their
+              Invitations have been sent. Tasks will be assigned to these users. They'll see their
               work once they accept the invite and sign in.
             </p>
           )}
@@ -1314,11 +1314,11 @@ function ImportStep({
         </CardHeader>
         <CardContent className="space-y-3 px-4 pb-4 pt-0">
           <div className="flex items-center justify-between">
-            <Label className="text-sm">Import archived stories</Label>
+            <Label className="text-sm">Import archived tasks</Label>
             <Switch checked={importArchived} onCheckedChange={onArchived} />
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">Import completed stories</Label>
+            <Label className="text-sm">Import completed tasks</Label>
             <Switch checked={importCompleted} onCheckedChange={onCompleted} />
           </div>
         </CardContent>
@@ -1342,7 +1342,7 @@ function ImportStep({
                 <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
                 <SummaryRow label="Epics" value={`${s.epics_count}`} />
                 <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
-                <SummaryRow label="Stories" value={`${s.total_stories.toLocaleString()}`} />
+                <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
                 <SummaryRow label="Checklist Items" value={`${s.checklist_items_count}`} />
                 <SummaryRow
                   label="User Mappings"
@@ -1396,7 +1396,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Objectives', created: result.objectives_created },
     { label: 'Epics', created: result.epics_created },
     { label: 'Sprints', created: result.sprints_created },
-    { label: 'Stories', created: result.stories_created, skipped: result.stories_skipped },
+    { label: 'Tasks', created: result.tasks_created, skipped: result.tasks_skipped },
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },

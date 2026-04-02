@@ -101,7 +101,7 @@ func (s *PMImportService) importShortcutStoryMedia(ctx context.Context, workspac
 		Description *string
 	}
 	if err := s.db.WithContext(ctx).
-		Model(&model.PMStory{}).
+		Model(&model.PMTask{}).
 		Select("id, description").
 		Where("workspace_id = ? AND id IN ?", workspaceID, storyIDs).
 		Scan(&stories).Error; err != nil {
@@ -133,7 +133,7 @@ func (s *PMImportService) importShortcutStoryMedia(ctx context.Context, workspac
 			attachmentsCreated += created
 			warnings = appendUniqueWarnings(warnings, mediaWarnings)
 			if rewritten != *story.Description {
-				if err := s.db.WithContext(ctx).Model(&model.PMStory{}).Where("id = ?", story.ID).UpdateColumn("description", rewritten).Error; err != nil {
+				if err := s.db.WithContext(ctx).Model(&model.PMTask{}).Where("id = ?", story.ID).UpdateColumn("description", rewritten).Error; err != nil {
 					warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Failed to update imported story media for story %s: %s", story.ID, err.Error())})
 				}
 			}

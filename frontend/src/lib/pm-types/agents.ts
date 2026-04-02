@@ -42,7 +42,6 @@ export interface Agent {
   monthly_token_budget?: number;
   tokens_used_this_month: number;
   active_task_id?: string;
-  active_story_id?: string;
   team_id?: string;
   allowed_tools: string[];
   allowed_commands: string[];
@@ -165,6 +164,7 @@ export interface TaskImplementationBrief {
   depends_on_files?: string[];
 }
 
+/** @deprecated Use TaskImplementationBrief instead */
 export type StoryImplementationBrief = TaskImplementationBrief;
 
 export interface FileChange {
@@ -196,6 +196,7 @@ export interface ProposedTask {
   implementation_brief?: TaskImplementationBrief;
 }
 
+/** @deprecated Use ProposedTask instead */
 export type ProposedStory = ProposedTask;
 
 export interface PlanningSourceRef {
@@ -209,7 +210,8 @@ export interface OrchestrationProposal {
   summary: string;
   spec_version_id?: string;
   proposed_tasks: ProposedTask[];
-  proposed_stories?: ProposedStory[];
+  /** @deprecated Use proposed_tasks instead */
+  proposed_stories?: ProposedTask[];
   open_questions?: string[];
   risks?: string[];
   vertical_coverage?: VerticalCoverageEntry[];
@@ -281,7 +283,7 @@ export interface UpdateAgentRequest {
   planning_notes?: string;
   tools?: unknown[];
   monthly_token_budget?: number;
-  active_story_id?: string;
+  active_task_id?: string;
   team_id?: string | null;
   allowed_tools?: string[];
   allowed_commands?: string[];

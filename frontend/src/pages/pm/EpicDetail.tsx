@@ -40,7 +40,8 @@ import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from 
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -130,8 +131,8 @@ function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null
   if (end < start) {
     return 'No suggestion yet: fix the schedule dates.';
   }
-  if (epic.stats.story_count === 0) {
-    return 'No suggestion yet: add stories with workflow states to this epic.';
+  if (getEpicTaskCount(epic.stats) === 0) {
+    return 'No suggestion yet: add tasks with workflow states to this epic.';
   }
   if (today && today < start) {
     return 'No suggestion yet: this epic has not started yet.';
@@ -153,7 +154,7 @@ export function EpicDetailPage() {
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
@@ -190,9 +191,9 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     if (showLoading) setLoading(true);
     setError(null);
-    const [epicRes, storiesRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
+    const [epicRes, tasksRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
-      pmEpicService.listStories(workspaceId, epicId),
+      pmEpicService.listTasks(workspaceId, epicId),
       pmEpicService.list(workspaceId, { archived: false }),
       pmSprintService.list(workspaceId, { archived: false }),
       pmObjectiveService.list(workspaceId, { archived: false }),
@@ -206,7 +207,7 @@ export function EpicDetailPage() {
     setEpic(epicRes.data);
     savedDescriptionRef.current = epicRes.data.epic.description ?? '';
     setForm((current) => current ? current : buildForm(epicRes.data!));
-    setStories(storiesRes.data ?? []);
+    setTasks(tasksRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
     setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
@@ -319,8 +320,10 @@ export function EpicDetailPage() {
 
   // Derived data
   const progress = useMemo(() => {
-    if (!epic || epic.stats.story_count === 0) return 0;
-    return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
+    if (!epic) return 0;
+    const totalTasks = getEpicTaskCount(epic.stats);
+    if (totalTasks === 0) return 0;
+    return Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100);
   }, [epic]);
 
   const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
@@ -352,12 +355,12 @@ export function EpicDetailPage() {
 
   const workflow = workflows[0] ?? null;
 
-  // Resources: unique people from story owners + epic team members
+  // Resources: unique people from task owners + epic team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
-    for (const story of stories) {
-      const ownerKey = story.owner_member_id;
+    for (const task of tasks) {
+      const ownerKey = task.owner_member_id;
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -379,11 +382,11 @@ export function EpicDetailPage() {
     }
 
     return Array.from(personMap.values());
-  }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
+  }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
-  const openStory = useCallback(
-    (story: Story) => {
-      openTaskRoute(navigate as never, location as never, slug, story.id);
+  const openTask = useCallback(
+    ( task: Task) => {
+      openTaskRoute(navigate as never, location as never, slug, task.id);
     },
     [location, navigate, slug],
   );
@@ -432,12 +435,12 @@ export function EpicDetailPage() {
     setSaving(false);
   }, [allObjectives, epic, fetchData, workspaceId]);
 
-  // Refresh stories when global panel updates/archives a story
+  // Refresh tasks when global panel updates/archives a task
   useEffect(() => {
     const refresh = () => {
       if (!workspaceId) return;
-      pmEpicService.listStories(workspaceId, epicId).then((res) => {
-        if (res.data) setStories(res.data);
+      pmEpicService.listTasks(workspaceId, epicId).then((res) => {
+        if (res.data) setTasks(res.data);
       });
     };
     window.addEventListener('task-panel-updated', refresh);
@@ -477,7 +480,7 @@ export function EpicDetailPage() {
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -600,7 +603,7 @@ export function EpicDetailPage() {
             </div>
             <Progress value={progress} />
             <p className="text-xs text-muted-foreground">
-              {epic.stats.done_story_count}/{epic.stats.story_count} stories done · {epic.stats.done_points}/{epic.stats.total_points} points
+              {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks done · {epic.stats.done_points}/{epic.stats.total_points} points
             </p>
           </div>
 
@@ -628,9 +631,9 @@ export function EpicDetailPage() {
           {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Tasks ({stories.length})
+              Tasks ({tasks.length})
             </h3>
-            {stories.length === 0 ? (
+            {tasks.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
@@ -642,8 +645,8 @@ export function EpicDetailPage() {
                   assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
-                  externalStories={stories}
-                  onOpenTask={openStory}
+                  externalTasks={tasks}
+                  onOpenTask={openTask}
                 />
               </div>
             ) : (

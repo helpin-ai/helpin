@@ -37,7 +37,7 @@ export function useSprintPlanningWorkspace(wsId: string, filters?: SprintPlannin
 export function useSprintTasks(wsId: string, sprintId: string) {
   return useQuery({
     queryKey: queryKeys.pm.sprintTasks(wsId, sprintId),
-    queryFn: async () => unwrap(await pmSprintService.listStories(wsId, sprintId)),
+    queryFn: async () => unwrap(await pmSprintService.listTasks(wsId, sprintId)),
     enabled: !!wsId && !!sprintId,
   })
 }

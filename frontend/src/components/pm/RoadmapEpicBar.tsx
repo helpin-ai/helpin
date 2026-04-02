@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { RoadmapEpic } from '@/lib/pmTypes';
+import { getEpicTaskCount, getEpicDoneTaskCount } from '@/lib/pmTypes';
 
 const HEALTH_BAR_COLOR: Record<string, string> = {
   no_health: 'border-l-zinc-400 bg-zinc-500/6 hover:bg-zinc-500/12 dark:bg-zinc-500/8 dark:hover:bg-zinc-500/14',
@@ -34,14 +35,23 @@ interface RoadmapEpicBarProps {
   memberNameMap?: Map<string, string>;
 }
 
+function roadmapEpicTaskCount(epic: RoadmapEpic) {
+  return getEpicTaskCount(epic.stats);
+}
+
+function roadmapEpicDoneTaskCount(epic: RoadmapEpic) {
+  return getEpicDoneTaskCount(epic.stats);
+}
+
 export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: RoadmapEpicBarProps) {
   const navigate = useNavigate();
   const e = epic.epic;
   const health = e.health || 'no_health';
 
   const progress = useMemo(() => {
-    if (epic.stats.story_count === 0) return 0;
-    return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
+    const totalTasks = roadmapEpicTaskCount(epic);
+    if (totalTasks === 0) return 0;
+    return Math.round((roadmapEpicDoneTaskCount(epic) / totalTasks) * 100);
   }, [epic.stats]);
 
   const ownerName = e.owner_member_id && memberNameMap?.get(e.owner_member_id);
@@ -81,7 +91,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
               </span>
             )}
             <div className="min-w-0">
-              <p className="font-medium text-[13px] leading-snug">{e.name}</p>
+              <p className="font-medium text-sm leading-snug">{e.name}</p>
               {ownerName && (
                 <p className="text-[11px] text-muted-foreground mt-0.5">{ownerName}</p>
               )}
@@ -97,7 +107,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
           </span>
           <span className="text-muted-foreground/30">|</span>
           <span className="text-[11px] text-muted-foreground">
-            {epic.stats.done_story_count}/{epic.stats.story_count} stories
+            {roadmapEpicDoneTaskCount(epic)}/{roadmapEpicTaskCount(epic)} tasks
           </span>
           <span className="text-muted-foreground/30">|</span>
           <span className="text-[11px] text-muted-foreground font-medium tabular-nums">{progress}%</span>

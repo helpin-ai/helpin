@@ -486,7 +486,7 @@ export function DocsSpaceDetail() {
         <button
           type="button"
           onClick={() => setActiveCollection(null)}
-          className={`rounded-full px-3.5 py-1 text-[13px] font-medium transition-colors ${
+          className={`rounded-full px-3.5 py-1 text-sm font-medium transition-colors ${
             !activeCollection
               ? 'bg-foreground text-background'
               : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
@@ -500,7 +500,7 @@ export function DocsSpaceDetail() {
             <button
               type="button"
               onClick={() => setActiveCollection(col.id)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-[13px] font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-sm font-medium transition-colors ${
                 activeCollection === col.id
                   ? 'bg-foreground text-background'
                   : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'

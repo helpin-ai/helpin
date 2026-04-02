@@ -27,11 +27,11 @@ import { pmLabelService } from '@/lib/services/pmLabelService';
 import {
   PriorityIcon,
   SeverityIcon,
-  StoryTypeIcon,
+  TaskTypeIcon,
   StateTypeIcon,
   PRIORITY_CONFIG,
   SEVERITY_CONFIG,
-  STORY_TYPE_CONFIG,
+  TASK_TYPE_CONFIG,
 } from '@/lib/pmConstants';
 import { UserAvatar } from './UserAvatar';
 import type {
@@ -40,7 +40,7 @@ import type {
   Priority,
   Severity,
   StateType,
-  Story,
+  Task,
   WorkflowWithStates,
   EpicWithStats,
   SprintWithStats,
@@ -96,9 +96,9 @@ interface TaskListViewProps {
   sprints: SprintWithStats[];
   filters?: BoardFilters;
   teamId?: string | null;
-  /** When provided, use these stories instead of fetching internally. */
-  externalStories?: Story[];
-  onOpenTask: (story: Story) => void;
+  /** When provided, use these tasks instead of fetching internally. */
+  externalTasks?: Task[];
+  onOpenTask: (task: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
@@ -119,7 +119,7 @@ const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 const LIST_PAGE_SIZE = 50;
 
-const columnHelper = createColumnHelper<Story>();
+const columnHelper = createColumnHelper<Task>();
 
 export function TaskListView({
   workspaceId,
@@ -131,7 +131,7 @@ export function TaskListView({
   sprints,
   filters,
   teamId,
-  externalStories,
+  externalTasks,
   onOpenTask,
   groupBy: controlledGroupBy,
   onGroupByChange,
@@ -153,8 +153,8 @@ export function TaskListView({
 
   useEffect(() => { displayInit(workspaceId); }, [workspaceId, displayInit]);
 
-  const isExternal = externalStories !== undefined;
-  const [stories, setStories] = useState<Story[]>(externalStories ?? []);
+  const isExternal = externalTasks !== undefined;
+  const [tasks, setTasks] = useState<Task[]>(externalTasks ?? []);
   const [loading, setLoading] = useState(!isExternal);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -240,7 +240,7 @@ export function TaskListView({
   }, [sprints]);
 
   // ── Flat pagination (non-state grouping) ──
-  const fetchStoriesFlat = useCallback(async (page = 1, append = false) => {
+  const fetchTasksFlat = useCallback(async (page = 1, append = false) => {
     if (isExternal) return;
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
@@ -257,7 +257,7 @@ export function TaskListView({
     const res = await pmTaskService.list(workspaceId, apiFilters as Record<string, string>);
     if (res.data) {
       const incoming = res.data.data;
-      setStories((prev) => append ? [...prev, ...incoming] : incoming);
+      setTasks((prev) => append ? [...prev, ...incoming] : incoming);
       setHasMore(page < res.data.total_pages);
       setCurrentPage(page);
     }
@@ -266,7 +266,7 @@ export function TaskListView({
   }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal, includeAssociationData]);
 
   // ── Per-state pagination (workflow_state grouping) ──
-  const fetchStoriesByState = useCallback(async () => {
+  const fetchTasksByState = useCallback(async () => {
     if (isExternal) return;
     setLoading(true);
     const boardFilters: Record<string, string | undefined> = {};
@@ -279,24 +279,24 @@ export function TaskListView({
 
     const res = await pmTaskService.listBoard(workspaceId, workflow.workflow.id, boardFilters, LIST_PAGE_SIZE, includeAssociationData);
     if (res.data) {
-      const allStories: Story[] = [];
+      const allTasks: Task[] = [];
       const perGroup = new Map<string, { hasMore: boolean; total: number; loaded: number }>();
       for (const col of res.data) {
-        allStories.push(...col.stories);
+        allTasks.push(...col.tasks);
         perGroup.set(col.state.id, {
           hasMore: col.has_more,
-          total: col.story_count,
-          loaded: col.stories.length,
+          total: col.task_count,
+          loaded: col.tasks.length,
         });
       }
-      setStories(allStories);
+      setTasks(allTasks);
       setGroupHasMore(perGroup);
       setHasMore(false); // disable global load more
     }
     setLoading(false);
   }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal, includeAssociationData]);
 
-  // Load more stories for a specific state group
+  // Load more tasks for a specific state group
   const loadMoreForGroup = useCallback(async (stateId: string) => {
     const info = groupHasMore.get(stateId);
     if (!info?.hasMore || groupLoadingRef.current) return;
@@ -313,21 +313,21 @@ export function TaskListView({
 
     const res = await pmTaskService.listBoardColumn(workspaceId, stateId, info.loaded, LIST_PAGE_SIZE, boardFilters, includeAssociationData);
     if (res.data) {
-      const newStories = res.data.stories;
+      const newTasks = res.data.tasks;
       const newTotal = res.data.total;
-      const newLoaded = info.loaded + newStories.length;
+      const newLoaded = info.loaded + newTasks.length;
 
-      // Insert new stories after the last existing story of this state
-      setStories((prev) => {
+      // Insert new tasks after the last existing task of this state
+      setTasks((prev) => {
         let lastStateIdx = -1;
         for (let i = 0; i < prev.length; i++) {
           if (prev[i].workflow_state_id === stateId) lastStateIdx = i;
         }
         const result = [...prev];
         if (lastStateIdx >= 0) {
-          result.splice(lastStateIdx + 1, 0, ...newStories);
+          result.splice(lastStateIdx + 1, 0, ...newTasks);
         } else {
-          result.push(...newStories);
+          result.push(...newTasks);
         }
         return result;
       });
@@ -348,39 +348,39 @@ export function TaskListView({
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMore) {
-      fetchStoriesFlat(currentPage + 1, true);
+      fetchTasksFlat(currentPage + 1, true);
     }
-  }, [fetchStoriesFlat, currentPage, loadingMore, hasMore]);
+  }, [fetchTasksFlat, currentPage, loadingMore, hasMore]);
 
   // Fetch on mount and when dependencies change
   useEffect(() => {
     if (isExternal) return;
     if (isPerGroupMode) {
-      fetchStoriesByState();
+      fetchTasksByState();
     } else {
-      fetchStoriesFlat(1, false);
+      fetchTasksFlat(1, false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExternal, isPerGroupMode, fetchStoriesByState, fetchStoriesFlat]);
+  }, [isExternal, isPerGroupMode, fetchTasksByState, fetchTasksFlat]);
 
-  // Sync external stories when they change
+  // Sync external tasks when they change
   useEffect(() => {
-    if (isExternal && externalStories) setStories(externalStories);
-  }, [isExternal, externalStories]);
+    if (isExternal && externalTasks) setTasks(externalTasks);
+  }, [isExternal, externalTasks]);
 
   // Optimistic inline update with rollback on failure
-  const updateStoryField = useCallback(
-    async (storyId: string, patch: Partial<Story>) => {
-      const optimisticPatch: Partial<Story> = { ...patch };
+  const updateTaskField = useCallback(
+    async (taskId: string, patch: Partial<Task>) => {
+      const optimisticPatch: Partial<Task> = { ...patch };
       if (Object.prototype.hasOwnProperty.call(patch, 'owner_member_id')) {
         const ownerMemberId = patch.owner_member_id;
         optimisticPatch.owner_name = ownerMemberId ? ownerNameMap.get(ownerMemberId) : undefined;
       }
 
-      let snapshot: Story[] = [];
-      setStories((current) => {
+      let snapshot: Task[] = [];
+      setTasks((current) => {
         snapshot = current;
-        return current.map((s) => (s.id === storyId ? { ...s, ...optimisticPatch } : s));
+        return current.map((s) => (s.id === taskId ? { ...s, ...optimisticPatch } : s));
       });
       const {
         owner_name: _ownerName,
@@ -388,66 +388,66 @@ export function TaskListView({
         labels: _labels,
         ...apiPatch
       } = patch;
-      const { error } = await pmTaskService.update(workspaceId, storyId, apiPatch);
-      if (error) setStories(snapshot);
+      const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
+      if (error) setTasks(snapshot);
     },
     [workspaceId, ownerNameMap],
   );
 
-  // Listen for story events (only for self-fetching mode)
+  // Listen for task events (only for self-fetching mode)
   useEffect(() => {
     if (isExternal) return;
     const handleDeleted = (event: Event) => {
       const detail = (event as CustomEvent)?.detail;
-      const storyId = detail?.entity_id as string | undefined;
-      if (!storyId) return;
-      setStories((current) => current.filter((story) => story.id !== storyId));
+      const taskId = detail?.entity_id as string | undefined;
+      if (!taskId) return;
+      setTasks((current) => current.filter((s) => s.id !== taskId));
     };
 
     const handleUpdated = async (event: Event) => {
       const detail = (event as CustomEvent)?.detail;
-      const storyId = detail?.entity_id as string | undefined;
-      if (!storyId) return;
+      const taskId = detail?.entity_id as string | undefined;
+      if (!taskId) return;
 
       let shouldPatch = false;
-      setStories((current) => {
-        shouldPatch = current.some((story) => story.id === storyId);
+      setTasks((current) => {
+        shouldPatch = current.some((s) => s.id === taskId);
         return current;
       });
       if (!shouldPatch) return;
 
-      const res = await pmTaskService.get(workspaceId, storyId);
+      const res = await pmTaskService.get(workspaceId, taskId);
       if (!res.data?.task) return;
-      const storyDetail = res.data!;
-      const merged: Story = {
-        ...storyDetail.task,
-        labels: storyDetail.labels,
-        epic_name: storyDetail.epic_name ?? storyDetail.task.epic_name,
-        sprint_name: storyDetail.sprint_name ?? storyDetail.task.sprint_name,
-        owner_name: storyDetail.owner_member
-          ? (storyDetail.owner_member.display_name ?? storyDetail.owner_member.email)
-          : storyDetail.task.owner_name,
+      const taskDetail = res.data!;
+      const merged: Task = {
+        ...taskDetail.task,
+        labels: taskDetail.labels,
+        epic_name: taskDetail.epic_name ?? taskDetail.task.epic_name,
+        sprint_name: taskDetail.sprint_name ?? taskDetail.task.sprint_name,
+        owner_name: taskDetail.owner_member
+          ? (taskDetail.owner_member.display_name ?? taskDetail.owner_member.email)
+          : taskDetail.task.owner_name,
       };
-      setStories((current) =>
-        current.map((story) => (
-          story.id === storyId
+      setTasks((current) =>
+        current.map((s) => (
+          s.id === taskId
             ? {
                 ...merged,
-                contacts: story.contacts,
-                companies: story.companies,
-                deals: story.deals,
-                support_conversations: story.support_conversations,
+                contacts: s.contacts,
+                companies: s.companies,
+                deals: s.deals,
+                support_conversations: s.support_conversations,
               }
-            : story
+            : s
         )),
       );
     };
 
-    window.addEventListener('story-deleted', handleDeleted);
+    window.addEventListener('task-deleted', handleDeleted);
     window.addEventListener('task-updated', handleUpdated);
 
     return () => {
-      window.removeEventListener('story-deleted', handleDeleted);
+      window.removeEventListener('task-deleted', handleDeleted);
       window.removeEventListener('task-updated', handleUpdated);
     };
   }, [isExternal, workspaceId]);
@@ -470,14 +470,14 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-[13px] hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenTask(info.row.original);
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <StoryTypeIcon storyType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
@@ -501,10 +501,10 @@ export function TaskListView({
           size: 190,
           cell: (info) => (
             <InlineStateCell
-              story={info.row.original}
+              task={info.row.original}
               states={statesByWorkflowId.get(info.row.original.workflow_id) ?? workflow.states}
               stateMap={stateMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -516,8 +516,8 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <InlinePriorityCell
-            story={info.row.original}
-            onUpdate={updateStoryField}
+            task={info.row.original}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -528,8 +528,8 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <InlineSeverityCell
-            story={info.row.original}
-            onUpdate={updateStoryField}
+            task={info.row.original}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -540,8 +540,8 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <InlineEstimateCell
-            story={info.row.original}
-            onUpdate={updateStoryField}
+            task={info.row.original}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -556,10 +556,10 @@ export function TaskListView({
           size: 200,
           cell: (info) => (
             <InlineOwnerCell
-              story={info.row.original}
+              task={info.row.original}
               assignableMembers={assignableMembers}
               ownerNameMap={ownerNameMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -572,10 +572,10 @@ export function TaskListView({
           size: 180,
           cell: (info) => (
             <InlineTeamCell
-              story={info.row.original}
+              task={info.row.original}
               teams={teams}
               teamMap={teamMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -588,10 +588,10 @@ export function TaskListView({
           size: 200,
           cell: (info) => (
             <InlineEpicCell
-              story={info.row.original}
+              task={info.row.original}
               epics={epics}
               epicMap={epicMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -604,10 +604,10 @@ export function TaskListView({
           size: 190,
           cell: (info) => (
             <InlineSprintCell
-              story={info.row.original}
+              task={info.row.original}
               sprints={sprints}
               sprintMap={sprintMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -645,7 +645,7 @@ export function TaskListView({
         cell: (info) => <InlineAssociationListCell items={info.row.original.support_conversations} emptyLabel="No tickets" />,
       }),
       columnHelper.accessor(
-        (row) => (row.task_type ? STORY_TYPE_CONFIG[row.task_type].label : 'Unknown'),
+        (row) => (row.task_type ? TASK_TYPE_CONFIG[row.task_type].label : 'Unknown'),
         {
           id: 'typeName',
           header: 'Type',
@@ -681,8 +681,8 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <InlineDeadlineCell
-            story={info.row.original}
-            onUpdate={updateStoryField}
+            task={info.row.original}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -694,11 +694,11 @@ export function TaskListView({
         enableSorting: false,
         cell: (info) => (
           <InlineLabelsCell
-            story={info.row.original}
+            task={info.row.original}
             workspaceId={workspaceId}
             allLabels={allLabels}
             onLabelsChange={setAllLabels}
-            setStories={setStories}
+            setTasks={setTasks}
           />
         ),
       }),
@@ -726,16 +726,16 @@ export function TaskListView({
         enableResizing: false,
         cell: (info) => (
           <InlineActionsCell
-            story={info.row.original}
+            task={info.row.original}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
             onOpenTask={onOpenTask}
-            setStories={setStories}
+            setTasks={setTasks}
           />
         ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -810,7 +810,7 @@ export function TaskListView({
   }, [groupBy]);
 
   const table = useReactTable({
-    data: stories,
+    data: tasks,
     columns: tableColumns,
     state: {
       grouping,
@@ -843,7 +843,7 @@ export function TaskListView({
       }),
     [columnSizing, columnVisibility, table, typeIconColumn],
   );
-  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
+  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Task> | undefined) : undefined;
 
   const estimateSize = useCallback(
     (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
@@ -857,12 +857,12 @@ export function TaskListView({
     overscan: 20,
   });
 
-  // Compute total story count (including unloaded) for per-group mode
-  const displayStoryCount = isPerGroupMode && groupHasMore.size > 0
+  // Compute total task count (including unloaded) for per-group mode
+  const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
-    : stories.length;
+    : tasks.length;
 
-  const getGroupTotalCount = (groupRow: Row<Story>) => {
+  const getGroupTotalCount = (groupRow: Row<Task>) => {
     if (!isPerGroupMode || !groupRow.subRows[0]) return undefined;
     return groupHasMore.get(groupRow.subRows[0].original.workflow_state_id)?.total;
   };
@@ -871,7 +871,7 @@ export function TaskListView({
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading stories...
+        Loading tasks...
       </div>
     );
   }
@@ -894,7 +894,7 @@ export function TaskListView({
             </SelectContent>
           </Select>
           <span className="text-xs text-muted-foreground">
-            {displayStoryCount} {displayStoryCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+            {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
           </span>
           <div className="ml-auto">
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
@@ -1001,20 +1001,20 @@ export function TaskListView({
             {/* Pinned sticky group header — offset below the table header */}
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
-                <div className="bg-background border-b border-border/50">
-                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(pinnedGroupRow)} />
+                <div className="ui-divider-bottom-fade bg-background">
+                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(pinnedGroupRow)} />
                 </div>
               </div>
             )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index] as Row<Story>;
+              const row = rows[virtualRow.index] as Row<Task>;
               const isGrouped = row.getIsGrouped();
 
               // Determine if this is the last data row before the next group (for per-group "Load more")
               let showGroupLoadMore = false;
               let groupStateId = '';
               if (isPerGroupMode && !isGrouped) {
-                const nextRow = rows[virtualRow.index + 1] as Row<Story> | undefined;
+                const nextRow = rows[virtualRow.index + 1] as Row<Task> | undefined;
                 const isLastInGroup = !nextRow || nextRow.getIsGrouped();
                 if (isLastInGroup) {
                   groupStateId = row.original.workflow_state_id;
@@ -1039,7 +1039,7 @@ export function TaskListView({
                   }}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(row)} />
+                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(row)} />
                   ) : (
                     <>
                       <MemoDataRow
@@ -1064,7 +1064,7 @@ export function TaskListView({
           {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading more stories...
+              Loading more tasks...
             </div>
           )}
         </div>
@@ -1077,15 +1077,15 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   groupBy,
   stateMap,
-  totalStoryCount,
+  totalTaskCount,
 }: {
-  row: Row<Story>;
+  row: Row<Task>;
   groupBy: TaskListGroupByOption;
   stateMap: Map<string, { name: string; stateType: string }>;
-  totalStoryCount?: number;
+  totalTaskCount?: number;
 }) {
   const subRows = row.subRows;
-  const storyCount = totalStoryCount ?? subRows.length;
+  const storyCount = totalTaskCount ?? subRows.length;
   const totalPoints = subRows.reduce((sum, r) => sum + (r.original.estimate ?? 0), 0);
   const completedPoints = subRows.reduce((sum, r) => {
     const stateInfo = stateMap.get(r.original.workflow_state_id);
@@ -1111,7 +1111,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       {stateType && <StateTypeIcon stateType={stateType} className="h-4 w-4" />}
       <span>{String(row.groupingValue)}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
-        <span className="flex items-center gap-1" title="Stories">
+        <span className="flex items-center gap-1" title="Tasks">
           <StickyNote className="h-3 w-3" /> {storyCount}
         </span>
         <span className="flex items-center gap-1" title="Total Points">
@@ -1131,8 +1131,8 @@ const MemoDataRow = memo(function DataRow({
   columnSizingVersion,
   pinnedOffsets,
 }: {
-  row: Row<Story>;
-  onOpenTask: (story: Story) => void;
+  row: Row<Task>;
+  onOpenTask: (task: Task) => void;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
 }) {
@@ -1205,14 +1205,14 @@ function GroupLoadSentinel({
 // ── Inline editable cells ──────────────────────────────────────────
 
 function InlinePriorityCell({
-  story,
+  task,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  task: Task;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const p = story.priority;
+  const p = task.priority;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1246,7 +1246,7 @@ function InlinePriorityCell({
                       key={pri}
                       value={cfg.label}
                       onSelect={() => {
-                        if (pri !== p) onUpdate(story.id, { priority: pri });
+                        if (pri !== p) onUpdate(task.id, { priority: pri });
                         setOpen(false);
                       }}
                       className="flex items-center gap-2 text-xs"
@@ -1267,18 +1267,18 @@ function InlinePriorityCell({
 }
 
 function InlineStateCell({
-  story,
+  task,
   states,
   stateMap,
   onUpdate,
 }: {
-  story: Story;
+  task: Task;
   states: WorkflowWithStates['states'];
   stateMap: Map<string, { name: string; stateType: string }>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const current = stateMap.get(story.workflow_state_id);
+  const current = stateMap.get(task.workflow_state_id);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1312,15 +1312,15 @@ function InlineStateCell({
                     key={s.id}
                     value={s.name}
                     onSelect={() => {
-                      if (s.id !== story.workflow_state_id)
-                        onUpdate(story.id, { workflow_state_id: s.id });
+                      if (s.id !== task.workflow_state_id)
+                        onUpdate(task.id, { workflow_state_id: s.id });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
                     <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
                     <span>{s.name}</span>
-                    {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1333,29 +1333,29 @@ function InlineStateCell({
 }
 
 function InlineOwnerCell({
-  story,
+  task,
   assignableMembers,
   ownerNameMap,
   onUpdate,
 }: {
-  story: Story;
+  task: Task;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
-  const ownerKey = story.owner_member_id;
+  const ownerKey = task.owner_member_id;
   const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
 
   return (
     <MemberPickerPopover
-      value={story.owner_member_id || '__none__'}
+      value={task.owner_member_id || '__none__'}
       members={assignableMembers}
       noneLabel="Unassigned"
       onChange={(value) => {
-        void onUpdate(story.id, { owner_member_id: value === '__none__' ? '' : value });
+        void onUpdate(task.id, { owner_member_id: value === '__none__' ? '' : value });
       }}
       renderTrigger={() => {
-        const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
+        const selectedMember = findAssignableMember(assignableMembers, task.owner_member_id);
         return selectedMember ? (
           <>
             <UserAvatar
@@ -1378,14 +1378,14 @@ function InlineOwnerCell({
 }
 
 function InlineSeverityCell({
-  story,
+  task,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  task: Task;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const s = story.severity;
+  const s = task.severity;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1425,7 +1425,7 @@ function InlineSeverityCell({
                       key={sev}
                       value={cfg.label}
                       onSelect={() => {
-                        if (sev !== s) onUpdate(story.id, { severity: sev });
+                        if (sev !== s) onUpdate(task.id, { severity: sev });
                         setOpen(false);
                       }}
                       className="flex items-center gap-2 text-xs"
@@ -1446,21 +1446,21 @@ function InlineSeverityCell({
 }
 
 function InlineEstimateCell({
-  story,
+  task,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  task: Task;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <EstimatePicker
-        value={story.estimate?.toString() ?? ''}
-        teamId={story.team_id}
+        value={task.estimate?.toString() ?? ''}
+        teamId={task.team_id}
         onChange={(_displayValue, apiValue) => {
           const next = apiValue ?? null;
-          if (next !== story.estimate) {
-            onUpdate(story.id, { estimate: next as number });
+          if (next !== task.estimate) {
+            onUpdate(task.id, { estimate: next as number });
           }
         }}
       />
@@ -1469,18 +1469,18 @@ function InlineEstimateCell({
 }
 
 function InlineTeamCell({
-  story,
+  task,
   teams,
   teamMap,
   onUpdate,
 }: {
-  story: Story;
+  task: Task;
   teams: WorkspaceTeam[];
   teamMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const teamName = story.team_id ? teamMap.get(story.team_id) ?? 'Unknown' : null;
+  const teamName = task.team_id ? teamMap.get(task.team_id) ?? 'Unknown' : null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1515,14 +1515,14 @@ function InlineTeamCell({
                     key={t.id}
                     value={t.name}
                     onSelect={() => {
-                      const newTeamId = story.team_id === t.id ? undefined : t.id;
-                      onUpdate(story.id, { team_id: newTeamId });
+                      const newTeamId = task.team_id === t.id ? undefined : t.id;
+                      onUpdate(task.id, { team_id: newTeamId });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{t.name}</span>
-                    {story.team_id === t.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.team_id === t.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1535,18 +1535,18 @@ function InlineTeamCell({
 }
 
 function InlineEpicCell({
-  story,
+  task,
   epics,
   epicMap,
   onUpdate,
 }: {
-  story: Story;
+  task: Task;
   epics: EpicWithStats[];
   epicMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const epicName = story.epic_id ? epicMap.get(story.epic_id) ?? 'Unknown' : null;
+  const epicName = task.epic_id ? epicMap.get(task.epic_id) ?? 'Unknown' : null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1581,14 +1581,14 @@ function InlineEpicCell({
                     key={e.epic.id}
                     value={e.epic.name}
                     onSelect={() => {
-                      const newEpicId = story.epic_id === e.epic.id ? undefined : e.epic.id;
-                      onUpdate(story.id, { epic_id: newEpicId });
+                      const newEpicId = task.epic_id === e.epic.id ? undefined : e.epic.id;
+                      onUpdate(task.id, { epic_id: newEpicId });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{e.epic.name}</span>
-                    {story.epic_id === e.epic.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.epic_id === e.epic.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1601,18 +1601,18 @@ function InlineEpicCell({
 }
 
 function InlineSprintCell({
-  story,
+  task,
   sprints,
   sprintMap,
   onUpdate,
 }: {
-  story: Story;
+  task: Task;
   sprints: SprintWithStats[];
   sprintMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const sprintName = story.sprint_id ? sprintMap.get(story.sprint_id) ?? 'Unknown' : null;
+  const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1647,14 +1647,14 @@ function InlineSprintCell({
                     key={sp.sprint.id}
                     value={sp.sprint.name}
                     onSelect={() => {
-                      const newSprintId = story.sprint_id === sp.sprint.id ? undefined : sp.sprint.id;
-                      onUpdate(story.id, { sprint_id: newSprintId });
+                      const newSprintId = task.sprint_id === sp.sprint.id ? undefined : sp.sprint.id;
+                      onUpdate(task.id, { sprint_id: newSprintId });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{sp.sprint.name}</span>
-                    {story.sprint_id === sp.sprint.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.sprint_id === sp.sprint.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1693,14 +1693,14 @@ function InlineAssociationListCell({
 }
 
 function InlineDeadlineCell({
-  story,
+  task,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  task: Task;
+  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const v = story.deadline;
+  const v = task.deadline;
   const selected = v ? parseISO(v) : undefined;
   const isOverdue = selected ? selected < new Date() : false;
 
@@ -1740,7 +1740,7 @@ function InlineDeadlineCell({
             selected={selected}
             defaultMonth={selected}
             onSelect={(date) => {
-              onUpdate(story.id, { deadline: date ? format(date, 'yyyy-MM-dd') : undefined });
+              onUpdate(task.id, { deadline: date ? format(date, 'yyyy-MM-dd') : undefined });
               setOpen(false);
             }}
           />
@@ -1751,37 +1751,37 @@ function InlineDeadlineCell({
 }
 
 function InlineLabelsCell({
-  story,
+  task,
   workspaceId,
   allLabels,
   onLabelsChange,
-  setStories,
+  setTasks,
 }: {
-  story: Story;
+  task: Task;
   workspaceId: string;
   allLabels: Label[];
   onLabelsChange: (labels: Label[]) => void;
-  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
-  const storyLabels = story.labels ?? [];
+  const storyLabels = task.labels ?? [];
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <LabelPicker
         workspaceId={workspaceId}
-        teamId={story.team_id || undefined}
+        teamId={task.team_id || undefined}
         labels={allLabels}
         selectedLabelIds={storyLabels.map((l) => l.id)}
         onLabelsChange={onLabelsChange}
         onChange={async (labelIds) => {
           const currentIds = storyLabels.map((l) => l.id);
-          setStories((current) =>
+          setTasks((current) =>
             current.map((s) =>
-              s.id === story.id
+              s.id === task.id
                 ? { ...s, labels: allLabels.filter((l) => labelIds.includes(l.id)) }
                 : s
             )
           );
-          await pmTaskService.syncLabels(workspaceId, story.id, currentIds, labelIds);
+          await pmTaskService.syncLabels(workspaceId, task.id, currentIds, labelIds);
         }}
       />
     </div>
@@ -1789,17 +1789,17 @@ function InlineLabelsCell({
 }
 
 function InlineActionsCell({
-  story,
+  task,
   workspaceId,
   workspaceSlug,
   onOpenTask,
-  setStories,
+  setTasks,
 }: {
-  story: Story;
+  task: Task;
   workspaceId: string;
   workspaceSlug: string | null;
-  onOpenTask: (story: Story) => void;
-  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+  onOpenTask: (task: Task) => void;
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const { copy } = useCopyToClipboard();
@@ -1808,18 +1808,18 @@ function InlineActionsCell({
     e.stopPropagation();
     const url = buildTaskCopyUrl({
       currentHref: window.location.href,
-      displayId: story.display_id,
+      displayId: task.display_id,
       origin: window.location.origin,
       slug: workspaceSlug,
-      taskId: story.id,
+      taskId: task.id,
     });
     copy(url);
   };
 
-  const archiveStory = async () => {
-    const { error } = await pmTaskService.remove(workspaceId, story.id);
+  const archiveTask = async () => {
+    const { error } = await pmTaskService.remove(workspaceId, task.id);
     if (!error) {
-      setStories((current) => current.filter((s) => s.id !== story.id));
+      setTasks((current) => current.filter((s) => s.id !== task.id));
     }
   };
 
@@ -1835,7 +1835,7 @@ function InlineActionsCell({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onOpenTask(story)}>
+          <DropdownMenuItem onClick={() => onOpenTask(task)}>
             <ExternalLink className="mr-2 h-3.5 w-3.5" />
             Open Task
           </DropdownMenuItem>
@@ -1858,7 +1858,7 @@ function InlineActionsCell({
         title="Archive Task"
         description="This task will be hidden from the board and lists. You can restore it later from archived items."
         confirmLabel="Archive"
-        onConfirm={archiveStory}
+        onConfirm={archiveTask}
       />
     </div>
   );

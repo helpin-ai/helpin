@@ -111,7 +111,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
-		&model.PMStory{Name: "Inbox triage automation"},
+		&model.PMTask{Name: "Inbox triage automation"},
 		nil,
 		nil,
 		nil,
@@ -123,7 +123,7 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	)
 
 	for _, marker := range []string{
-		"Please draft or refine the canonical story planning document for story: **Inbox triage automation**",
+		"Please draft or refine the canonical task planning document for task: **Inbox triage automation**",
 		"Operator notes:",
 	} {
 		if !strings.Contains(prompt, marker) {
@@ -131,7 +131,7 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 		}
 	}
 	for _, snippet := range []string{
-		"Create a reviewable story planning document",
+		"Create a reviewable task planning document",
 		"open questions",
 	} {
 		if strings.Contains(prompt, snippet) {
@@ -148,7 +148,7 @@ func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
 
 	prompt := BuildUserPrompt(
 		nil,
-		&model.PMStory{Name: "Inbox triage automation", Description: &description},
+		&model.PMTask{Name: "Inbox triage automation", Description: &description},
 		nil,
 		nil,
 		nil,
@@ -174,7 +174,7 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 
 	prompt := BuildUserPrompt(
 		&model.Agent{SystemPrompt: &systemPrompt},
-		&model.PMStory{Name: "Inbox triage automation"},
+		&model.PMTask{Name: "Inbox triage automation"},
 		nil,
 		nil,
 		nil,
@@ -256,7 +256,7 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 			PresetKey:    model.AgentPresetCodeBuilder,
 			SystemPrompt: &systemPrompt,
 		},
-		&model.PMStory{Name: "Implement feature flag"},
+		&model.PMTask{Name: "Implement feature flag"},
 		nil,
 		nil,
 		"",
@@ -278,7 +278,7 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 			PresetKey:    model.AgentPresetCodeBuilder,
 			SystemPrompt: &systemPrompt,
 		},
-		&model.PMStory{Name: "Implement feature flag"},
+		&model.PMTask{Name: "Implement feature flag"},
 		nil,
 		nil,
 		"",

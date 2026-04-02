@@ -44,20 +44,20 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	seedPMSprintPlanningSprint(t, db, "sprint-other-team", workspaceID, teamBID, "Other team sprint", now.AddDate(0, 0, -1), now.AddDate(0, 0, 3), false)
 	seedPMSprintPlanningSprint(t, db, "sprint-archived", workspaceID, teamAID, "Archived sprint", now.AddDate(0, 0, -20), now.AddDate(0, 0, -10), true)
 
-	seedPMSprintPlanningStory(t, db, "story-active-1", workspaceID, workflowID, todoStateID, activeSprintID, teamAID, "Active todo", 1001, 1, 3, now.Add(-5*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-active-2", workspaceID, workflowID, doingStateID, activeSprintID, teamAID, "Active doing", 1002, 2, 5, now.Add(-4*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-active-3", workspaceID, workflowID, doneStateID, activeSprintID, teamAID, "Active done", 1003, 3, 1, now.Add(-3*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-upcoming-1", workspaceID, workflowID, todoStateID, upcomingSprintID, teamAID, "Upcoming todo", 1004, 1, 2, now.Add(-2*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-completed-1", workspaceID, workflowID, doneStateID, completedSprintID, teamAID, "Completed done", 1005, 1, 8, now.Add(-1*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-backlog-1", workspaceID, workflowID, todoStateID, "", teamAID, "Backlog one", 1006, 10, 2, now.Add(-6*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-backlog-2", workspaceID, workflowID, doingStateID, "", teamAID, "Backlog two", 1007, 11, 5, now.Add(-7*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-backlog-done", workspaceID, workflowID, doneStateID, "", teamAID, "Backlog done", 1008, 12, 1, now.Add(-8*time.Minute))
-	seedPMSprintPlanningStory(t, db, "story-other-team", workspaceID, workflowID, todoStateID, "", teamBID, "Other team backlog", 1009, 13, 3, now.Add(-9*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-active-1", workspaceID, workflowID, todoStateID, activeSprintID, teamAID, "Active todo", 1001, 1, 3, now.Add(-5*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-active-2", workspaceID, workflowID, doingStateID, activeSprintID, teamAID, "Active doing", 1002, 2, 5, now.Add(-4*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-active-3", workspaceID, workflowID, doneStateID, activeSprintID, teamAID, "Active done", 1003, 3, 1, now.Add(-3*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-upcoming-1", workspaceID, workflowID, todoStateID, upcomingSprintID, teamAID, "Upcoming todo", 1004, 1, 2, now.Add(-2*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-completed-1", workspaceID, workflowID, doneStateID, completedSprintID, teamAID, "Completed done", 1005, 1, 8, now.Add(-1*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-backlog-1", workspaceID, workflowID, todoStateID, "", teamAID, "Backlog one", 1006, 10, 2, now.Add(-6*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-backlog-2", workspaceID, workflowID, doingStateID, "", teamAID, "Backlog two", 1007, 11, 5, now.Add(-7*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-backlog-done", workspaceID, workflowID, doneStateID, "", teamAID, "Backlog done", 1008, 12, 1, now.Add(-8*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-other-team", workspaceID, workflowID, todoStateID, "", teamBID, "Other team backlog", 1009, 13, 3, now.Add(-9*time.Minute))
 
 	workspace, err := repo.ListPlanningWorkspace(ctx, workspaceID, model.PMSprintPlanningFilters{
 		TeamID:          &teamA,
 		IncludeCompleted: true,
-		PreviewStoryLimit: 2,
+		PreviewTaskLimit: 2,
 		BacklogLimit:      10,
 	})
 	if err != nil {
@@ -88,27 +88,27 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	}
 
 	activeCard := workspace.Buckets[0].Sprints[0]
-	if activeCard.Stats.StoryCount != 3 {
-		t.Fatalf("active story_count = %d, want 3", activeCard.Stats.StoryCount)
+	if activeCard.Stats.TaskCount != 3 {
+		t.Fatalf("active task_count = %d, want 3", activeCard.Stats.TaskCount)
 	}
-	if len(activeCard.PreviewStories) != 2 {
-		t.Fatalf("active preview stories = %d, want 2", len(activeCard.PreviewStories))
+	if len(activeCard.PreviewTasks) != 2 {
+		t.Fatalf("active preview tasks = %d, want 2", len(activeCard.PreviewTasks))
 	}
-	if activeCard.StoryPreviewOverflow != 1 {
-		t.Fatalf("active preview overflow = %d, want 1", activeCard.StoryPreviewOverflow)
+	if activeCard.TaskPreviewOverflow != 1 {
+		t.Fatalf("active preview overflow = %d, want 1", activeCard.TaskPreviewOverflow)
 	}
-	if activeCard.PreviewStories[0].ID != "story-active-1" || activeCard.PreviewStories[1].ID != "story-active-2" {
-		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewStories)
+	if activeCard.PreviewTasks[0].ID != "story-active-1" || activeCard.PreviewTasks[1].ID != "story-active-2" {
+		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewTasks)
 	}
 
 	if workspace.BacklogTotal != 2 {
 		t.Fatalf("backlog_total = %d, want 2", workspace.BacklogTotal)
 	}
-	if len(workspace.BacklogStories) != 2 {
-		t.Fatalf("backlog stories = %d, want 2", len(workspace.BacklogStories))
+	if len(workspace.BacklogTasks) != 2 {
+		t.Fatalf("backlog tasks = %d, want 2", len(workspace.BacklogTasks))
 	}
-	if workspace.BacklogStories[0].ID != "story-backlog-1" || workspace.BacklogStories[1].ID != "story-backlog-2" {
-		t.Fatalf("backlog order = %#v, want backlog one then backlog two", workspace.BacklogStories)
+	if workspace.BacklogTasks[0].ID != "story-backlog-1" || workspace.BacklogTasks[1].ID != "story-backlog-2" {
+		t.Fatalf("backlog order = %#v, want backlog one then backlog two", workspace.BacklogTasks)
 	}
 }
 
@@ -136,13 +136,13 @@ func newPMSprintPlanningTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -211,17 +211,17 @@ func seedPMSprintPlanningSprint(t *testing.T, db *gorm.DB, id, workspaceID, team
 	}
 }
 
-func seedPMSprintPlanningStory(t *testing.T, db *gorm.DB, id, workspaceID, workflowID, stateID, sprintID, teamID, name string, displayID, position, estimate int, updatedAt time.Time) {
+func seedPMSprintPlanningTask(t *testing.T, db *gorm.DB, id, workspaceID, workflowID, stateID, sprintID, teamID, name string, displayID, position, estimate int, updatedAt time.Time) {
 	t.Helper()
 	var sprint any
 	if sprintID != "" {
 		sprint = sprintID
 	}
 	if err := db.Exec(
-		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMStoryPriorityMedium, updatedAt, updatedAt,
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMTaskPriorityMedium, updatedAt, updatedAt,
 	).Error; err != nil {
-		t.Fatalf("seed story: %v", err)
+		t.Fatalf("seed task: %v", err)
 	}
 }
 

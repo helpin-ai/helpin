@@ -1,39 +1,39 @@
-import type { StoryDetail, StoryRecurringSummary, WorkflowState } from '@/lib/pmTypes';
+import type { TaskDetail, TaskRecurringSummary, WorkflowState } from '@/lib/pmTypes';
 
 export interface LoadedTaskState {
-  storyId: string;
-  storyDetail: StoryDetail;
+  taskId: string;
+  taskDetail: TaskDetail;
   states: WorkflowState[];
-  recurringSummary: StoryRecurringSummary | null;
+  recurringSummary: TaskRecurringSummary | null;
 }
 
 export interface TaskOverlayPresentationState {
   open: boolean;
   loading: boolean;
-  storyDetail: StoryDetail | null;
+  taskDetail: TaskDetail | null;
   states: WorkflowState[];
-  recurringSummary: StoryRecurringSummary | null;
+  recurringSummary: TaskRecurringSummary | null;
 }
 
 export function getTaskOverlayPresentationState(
-  activeStoryId: string | null,
-  loadedStory: LoadedTaskState | null,
+  activeTaskId: string | null,
+  loadedTask: LoadedTaskState | null,
 ): TaskOverlayPresentationState {
-  if (!activeStoryId) {
+  if (!activeTaskId) {
     return {
       open: false,
       loading: false,
-      storyDetail: null,
+      taskDetail: null,
       states: [],
       recurringSummary: null,
     };
   }
 
-  if (!loadedStory || loadedStory.storyId !== activeStoryId) {
+  if (!loadedTask || loadedTask.taskId !== activeTaskId) {
     return {
       open: true,
       loading: true,
-      storyDetail: null,
+      taskDetail: null,
       states: [],
       recurringSummary: null,
     };
@@ -42,8 +42,8 @@ export function getTaskOverlayPresentationState(
   return {
     open: true,
     loading: false,
-    storyDetail: loadedStory.storyDetail,
-    states: loadedStory.states,
-    recurringSummary: loadedStory.recurringSummary,
+    taskDetail: loadedTask.taskDetail,
+    states: loadedTask.states,
+    recurringSummary: loadedTask.recurringSummary,
   };
 }

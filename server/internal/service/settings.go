@@ -41,7 +41,7 @@ func isValidTeamType(value string) bool {
 
 func isValidDefaultStoryType(value string) bool {
 	switch value {
-	case model.PMStoryTypeFeature, model.PMStoryTypeBug, model.PMStoryTypeChore:
+	case model.PMTaskTypeFeature, model.PMTaskTypeBug, model.PMTaskTypeChore:
 		return true
 	default:
 		return false
@@ -92,7 +92,7 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 		return nil, fmt.Errorf("invalid team_type")
 	}
 	if strings.TrimSpace(req.DefaultStoryType) == "" {
-		req.DefaultStoryType = model.PMStoryTypeFeature
+		req.DefaultStoryType = model.PMTaskTypeFeature
 	}
 	if !isValidDefaultStoryType(req.DefaultStoryType) {
 		return nil, fmt.Errorf("invalid default_task_type")
@@ -174,7 +174,7 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 	if req.DefaultStoryType != nil {
 		defaultStoryType := strings.TrimSpace(*req.DefaultStoryType)
 		if defaultStoryType == "" {
-			defaultStoryType = model.PMStoryTypeFeature
+			defaultStoryType = model.PMTaskTypeFeature
 		}
 		if !isValidDefaultStoryType(defaultStoryType) {
 			return nil, fmt.Errorf("invalid default_task_type")

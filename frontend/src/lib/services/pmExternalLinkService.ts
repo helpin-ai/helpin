@@ -8,11 +8,11 @@ import type {
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const pmExternalLinkService = {
-  list: (workspaceId: string, storyId: string) =>
-    api.get<ExternalLink[]>(`/pm/tasks/${storyId}/links?${qs(workspaceId)}`),
+  list: (workspaceId: string, taskId: string) =>
+    api.get<ExternalLink[]>(`/pm/tasks/${taskId}/links?${qs(workspaceId)}`),
 
-  create: (workspaceId: string, storyId: string, payload: CreateExternalLinkRequest) =>
-    api.post<ExternalLink>(`/pm/tasks/${storyId}/links?${qs(workspaceId)}`, payload),
+  create: (workspaceId: string, taskId: string, payload: CreateExternalLinkRequest) =>
+    api.post<ExternalLink>(`/pm/tasks/${taskId}/links?${qs(workspaceId)}`, payload),
 
   update: (workspaceId: string, id: string, payload: UpdateExternalLinkRequest) =>
     api.put<ExternalLink>(`/pm/links/${id}?${qs(workspaceId)}`, payload),

@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
+func TestPMTaskRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -24,39 +24,39 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 
 	now := time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC)
 
-	setup := func(t *testing.T) (*PMStoryRepository, *gorm.DB, context.Context) {
+	setup := func(t *testing.T) (*PMTaskRepository, *gorm.DB, context.Context) {
 		t.Helper()
-		db := newPMStoryMemberBoardTestDB(t)
-		seedPMStoryMemberBoardUser(t, db, userID, "state-board@test.com", "State Board User")
-		seedPMStoryMemberBoardWorkspace(t, db, workspaceID, userID)
-		seedPMStoryMemberBoardMember(t, db, memberID, workspaceID, userID, "State Board User")
-		seedPMStoryMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
-		return NewPMStoryRepository(db), db, context.Background()
+		db := newPMTaskMemberBoardTestDB(t)
+		seedPMTaskMemberBoardUser(t, db, userID, "state-board@test.com", "State Board User")
+		seedPMTaskMemberBoardWorkspace(t, db, workspaceID, userID)
+		seedPMTaskMemberBoardMember(t, db, memberID, workspaceID, userID, "State Board User")
+		seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
+		return NewPMTaskRepository(db), db, context.Background()
 	}
 
 	t.Run("ListByWorkflowState orders done by recency before position", func(t *testing.T) {
 		repo, db, ctx := setup(t)
-		insertPMStoryMemberBoardStory(t, db, "done-old", workspaceID, workflowID, doneStateID, memberID, 1, 5, now.Add(-4*time.Hour))
-		insertPMStoryMemberBoardStory(t, db, "done-new", workspaceID, workflowID, doneStateID, memberID, 2, 0, now.Add(-3*time.Hour))
+		insertPMTaskMemberBoardTask(t, db, "done-old", workspaceID, workflowID, doneStateID, memberID, 1, 5, now.Add(-4*time.Hour))
+		insertPMTaskMemberBoardTask(t, db, "done-new", workspaceID, workflowID, doneStateID, memberID, 2, 0, now.Add(-3*time.Hour))
 		if err := db.Exec(
-			`UPDATE pm_stories SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
+			`UPDATE pm_tasks SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
 			true, now.Add(-2*time.Hour), now.Add(-2*time.Hour), "done-old",
 		).Error; err != nil {
 			t.Fatalf("update done-old: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE pm_stories SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
+			`UPDATE pm_tasks SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
 			true, now.Add(-30*time.Minute), now.Add(-30*time.Minute), "done-new",
 		).Error; err != nil {
 			t.Fatalf("update done-new: %v", err)
 		}
 
-		columns, err := repo.ListByWorkflowState(ctx, workflowID, model.PMStoryFilters{}, 0)
+		columns, err := repo.ListByWorkflowState(ctx, workflowID, model.PMTaskFilters{}, 0)
 		if err != nil {
 			t.Fatalf("ListByWorkflowState: %v", err)
 		}
 
-		var doneColumn *model.StoryStateColumn
+		var doneColumn *model.TaskStateColumn
 		for i := range columns {
 			if columns[i].State.ID == doneStateID {
 				doneColumn = &columns[i]
@@ -66,7 +66,7 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 		if doneColumn == nil {
 			t.Fatal("expected done column")
 		}
-		got := []string{doneColumn.Stories[0].ID, doneColumn.Stories[1].ID}
+		got := []string{doneColumn.Tasks[0].ID, doneColumn.Tasks[1].ID}
 		want := []string{"done-new", "done-old"}
 		for i := range want {
 			if got[i] != want[i] {
@@ -77,16 +77,16 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 
 	t.Run("MoveToState clamps oversized target positions", func(t *testing.T) {
 		repo, db, ctx := setup(t)
-		insertPMStoryMemberBoardStory(t, db, "move-source", workspaceID, workflowID, todoStateID, memberID, 10, 0, now.Add(10*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "move-target-1", workspaceID, workflowID, doingStateID, memberID, 11, 0, now.Add(11*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "move-target-2", workspaceID, workflowID, doingStateID, memberID, 12, 1, now.Add(12*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "move-source", workspaceID, workflowID, todoStateID, memberID, 10, 0, now.Add(10*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "move-target-1", workspaceID, workflowID, doingStateID, memberID, 11, 0, now.Add(11*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "move-target-2", workspaceID, workflowID, doingStateID, memberID, 12, 1, now.Add(12*time.Minute))
 
 		position := 99
 		if err := repo.MoveToState(ctx, "move-source", doingStateID, &position, "trace-move-clamp"); err != nil {
 			t.Fatalf("MoveToState: %v", err)
 		}
 
-		var stories []model.PMStory
+		var stories []model.PMTask
 		if err := db.WithContext(ctx).
 			Where("workflow_state_id = ? AND id IN ?", doingStateID, []string{"move-source", "move-target-1", "move-target-2"}).
 			Order("position ASC").
@@ -108,9 +108,9 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 
 	t.Run("NextPosition normalizes duplicate positions before returning the append index", func(t *testing.T) {
 		repo, db, ctx := setup(t)
-		insertPMStoryMemberBoardStory(t, db, "next-a", workspaceID, workflowID, todoStateID, memberID, 40, 0, now.Add(40*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "next-b", workspaceID, workflowID, todoStateID, memberID, 41, 0, now.Add(39*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "next-c", workspaceID, workflowID, todoStateID, memberID, 42, 3, now.Add(38*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "next-a", workspaceID, workflowID, todoStateID, memberID, 40, 0, now.Add(40*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "next-b", workspaceID, workflowID, todoStateID, memberID, 41, 0, now.Add(39*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "next-c", workspaceID, workflowID, todoStateID, memberID, 42, 3, now.Add(38*time.Minute))
 
 		position, err := repo.NextPosition(ctx, workspaceID, todoStateID)
 		if err != nil {
@@ -120,7 +120,7 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 			t.Fatalf("next position = %d, want 3", position)
 		}
 
-		var stories []model.PMStory
+		var stories []model.PMTask
 		if err := db.WithContext(ctx).
 			Where("workflow_state_id = ? AND id IN ?", todoStateID, []string{"next-a", "next-b", "next-c"}).
 			Order("position ASC, updated_at DESC").
@@ -137,15 +137,15 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 
 	t.Run("Reorder clamps oversized positions to the end of the column", func(t *testing.T) {
 		repo, db, ctx := setup(t)
-		insertPMStoryMemberBoardStory(t, db, "reorder-1", workspaceID, workflowID, todoStateID, memberID, 20, 0, now.Add(20*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "reorder-2", workspaceID, workflowID, todoStateID, memberID, 21, 1, now.Add(21*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "reorder-3", workspaceID, workflowID, todoStateID, memberID, 22, 2, now.Add(22*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "reorder-1", workspaceID, workflowID, todoStateID, memberID, 20, 0, now.Add(20*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "reorder-2", workspaceID, workflowID, todoStateID, memberID, 21, 1, now.Add(21*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "reorder-3", workspaceID, workflowID, todoStateID, memberID, 22, 2, now.Add(22*time.Minute))
 
 		if err := repo.Reorder(ctx, "reorder-1", 99, "trace-reorder-clamp"); err != nil {
 			t.Fatalf("Reorder: %v", err)
 		}
 
-		var stories []model.PMStory
+		var stories []model.PMTask
 		if err := db.WithContext(ctx).
 			Where("workflow_state_id = ? AND id IN ?", todoStateID, []string{"reorder-1", "reorder-2", "reorder-3"}).
 			Order("position ASC").
@@ -167,16 +167,16 @@ func TestPMStoryRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 
 	t.Run("Reorder normalizes duplicate positions before applying the requested move", func(t *testing.T) {
 		repo, db, ctx := setup(t)
-		insertPMStoryMemberBoardStory(t, db, "dup-a", workspaceID, workflowID, todoStateID, memberID, 30, 0, now.Add(30*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "dup-b", workspaceID, workflowID, todoStateID, memberID, 31, 0, now.Add(29*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "dup-c", workspaceID, workflowID, todoStateID, memberID, 32, 0, now.Add(28*time.Minute))
-		insertPMStoryMemberBoardStory(t, db, "dup-d", workspaceID, workflowID, todoStateID, memberID, 33, 1, now.Add(27*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "dup-a", workspaceID, workflowID, todoStateID, memberID, 30, 0, now.Add(30*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "dup-b", workspaceID, workflowID, todoStateID, memberID, 31, 0, now.Add(29*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "dup-c", workspaceID, workflowID, todoStateID, memberID, 32, 0, now.Add(28*time.Minute))
+		insertPMTaskMemberBoardTask(t, db, "dup-d", workspaceID, workflowID, todoStateID, memberID, 33, 1, now.Add(27*time.Minute))
 
 		if err := repo.Reorder(ctx, "dup-d", 1, "trace-reorder-normalize-duplicates"); err != nil {
 			t.Fatalf("Reorder: %v", err)
 		}
 
-		var stories []model.PMStory
+		var stories []model.PMTask
 		if err := db.WithContext(ctx).
 			Where("workflow_state_id = ? AND id IN ?", todoStateID, []string{"dup-a", "dup-b", "dup-c", "dup-d"}).
 			Order("position ASC, updated_at DESC").

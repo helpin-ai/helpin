@@ -8,13 +8,14 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
-	storyRepo           *repository.PMStoryRepository
+	taskRepo           *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -24,10 +25,10 @@ type PMCommentService struct {
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
-		storyRepo:           storyRepo,
+		taskRepo:           taskRepo,
 		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
@@ -74,7 +75,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 
 	// Auto-follow task when someone comments.
 	if req.EntityType == "task" || req.EntityType == "story" {
-		if err := s.storyRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
+		if err := s.taskRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to auto-follow story on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
 		}
 	}
@@ -105,7 +106,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
 		if req.EntityType == "task" || req.EntityType == "story" {
-			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
+			if story, _ := s.taskRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
@@ -138,7 +139,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		entitySnapshot := model.JSONB{
 			"title": entityTitle,
 		}
-		commentBody := truncate(comment.Body, 200)
+		commentBody := truncate(tiptap.StripHTML(comment.Body), 200)
 
 		if len(mentionedUserIDs) == 0 {
 			if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
@@ -273,7 +274,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
 		if comment.EntityType == "task" || comment.EntityType == "story" {
-			if story, _ := s.storyRepo.GetRawByID(ctx, comment.EntityID); story != nil {
+			if story, _ := s.taskRepo.GetRawByID(ctx, comment.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
@@ -290,7 +291,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 			TeamID:           entityTeamID,
 			ReadableTeamIDs:  readableTeamIDs,
 			EntitySnapshot:   model.JSONB{"title": entityTitle},
-			NotificationBody: truncate(comment.Body, 200),
+			NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
 		}

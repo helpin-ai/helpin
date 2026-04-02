@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use ip2proxy::{Database, Columns, Row};
 use anyhow::Result;
+use ip2proxy::{Columns, Database, Row};
 use std::net::IpAddr;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct IP2ProxyResolver {
@@ -11,15 +11,13 @@ pub struct IP2ProxyResolver {
 impl IP2ProxyResolver {
     pub fn new(db_path: &str) -> Result<Self> {
         let db = Database::open(db_path)?;
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     pub fn lookup(&self, ip: &str) -> Result<Option<IP2ProxyResult>> {
         let ip_addr: IpAddr = ip.parse()?;
         let row = self.db.query(ip_addr, Columns::all())?;
-        
+
         Ok(row.map(IP2ProxyResult::from))
     }
 
@@ -83,8 +81,12 @@ mod tests {
         if let Some(result) = resolver.lookup("38.153.15.49").unwrap() {
             assert_eq!(result.proxy_type, Some(String::from("VPN")));
             assert_eq!(result.country_short, Some(String::from("GB")));
-            assert_eq!(result.country_long, Some(String::from("United Kingdom of Great Britain and Northern Ireland")));
-            
+            assert_eq!(
+                result.country_long,
+                Some(String::from(
+                    "United Kingdom of Great Britain and Northern Ireland"
+                ))
+            );
         } else {
             panic!("Expected Some(IP2ProxyResult), got None");
         }

@@ -22,7 +22,7 @@ func NewPMTaskTemplateService(templateRepo *repository.PMTaskTemplateRepository,
 }
 
 // ListByWorkspace lists story templates by workspace.
-func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.PMTaskTemplate, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -34,7 +34,7 @@ func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID
 }
 
 // GetByID returns a story template by ID.
-func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.PMTaskTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.
 }
 
 // Create creates a story template after uniqueness validation.
-func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateTaskTemplateRequest) (*model.PMTaskTemplate, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -60,12 +60,12 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateStor
 		return nil, fmt.Errorf("template name already exists in this scope")
 	}
 
-	tmpl := &model.PMStoryTemplate{
+	tmpl := &model.PMTaskTemplate{
 		WorkspaceID:    req.WorkspaceID,
 		TeamID:         teamID,
 		Name:           name,
 		Description:    req.Description,
-		StoryType:      req.StoryType,
+		TaskType:      req.TaskType,
 		Priority:       req.Priority,
 		Severity:       req.Severity,
 		Estimate:       req.Estimate,
@@ -85,7 +85,7 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateStor
 }
 
 // Update updates a story template.
-func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model.UpdateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model.UpdateTaskTemplateRequest) (*model.PMTaskTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -116,8 +116,8 @@ func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model
 	if req.Description != nil {
 		tmpl.Description = req.Description
 	}
-	if req.StoryType != nil {
-		tmpl.StoryType = req.StoryType
+	if req.TaskType != nil {
+		tmpl.TaskType = req.TaskType
 	}
 	if req.Priority != nil {
 		tmpl.Priority = req.Priority

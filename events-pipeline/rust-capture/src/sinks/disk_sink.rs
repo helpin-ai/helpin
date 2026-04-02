@@ -1,6 +1,7 @@
 use super::{EventSink, EventTypes};
 use crate::api::CaptureError;
 use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,15 +42,8 @@ impl Clone for DiskSink {
 
 impl DiskSink {
     pub fn new(base_dir: PathBuf) -> Self {
-        let pending_dir = base_dir.join("pending");
-        let processing_dir = base_dir.join("processing");
-        let completed_dir = base_dir.join("completed");
-
-        for dir in [&pending_dir, &processing_dir, &completed_dir] {
-            if let Err(e) = fs::create_dir_all(dir) {
-                tracing::error!("Failed to create directory {:?}: {}", dir, e);
-            }
-        }
+        Self::ensure_directories(&base_dir);
+        Self::recover_orphaned_segments(&base_dir);
 
         DiskSink {
             base_dir,
@@ -77,6 +71,10 @@ impl DiskSink {
         self.base_dir.join("pending")
     }
 
+    pub fn active_dir(&self) -> PathBuf {
+        self.base_dir.join("active")
+    }
+
     pub fn processing_dir(&self) -> PathBuf {
         self.base_dir.join("processing")
     }
@@ -94,7 +92,74 @@ impl DiskSink {
         Ok(())
     }
 
-    fn create_new_segment(pending_dir: &PathBuf) -> Result<ActiveSegment, CaptureError> {
+    fn ensure_directories(base_dir: &PathBuf) {
+        let pending_dir = base_dir.join("pending");
+        let active_dir = base_dir.join("active");
+        let processing_dir = base_dir.join("processing");
+        let completed_dir = base_dir.join("completed");
+
+        for dir in [&pending_dir, &active_dir, &processing_dir, &completed_dir] {
+            if let Err(e) = fs::create_dir_all(dir) {
+                tracing::error!("Failed to create directory {:?}: {}", dir, e);
+            }
+        }
+    }
+
+    fn recover_orphaned_segments(base_dir: &PathBuf) {
+        let active_dir = base_dir.join("active");
+        let pending_dir = base_dir.join("pending");
+        let entries = match fs::read_dir(&active_dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::debug!(
+                    "Skipping orphaned segment recovery for {:?}: {}",
+                    active_dir,
+                    e
+                );
+                return;
+            }
+        };
+
+        for entry in entries.filter_map(|entry| entry.ok()) {
+            let path = entry.path();
+            if !path.to_string_lossy().ends_with(".jsonl.tmp") {
+                continue;
+            }
+
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+
+            let final_name = file_name.trim_end_matches(".tmp");
+            let final_path = pending_dir.join(final_name);
+
+            if let Some(parent) = final_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    tracing::error!(
+                        "Failed to create pending directory {:?} during recovery: {}",
+                        parent,
+                        e
+                    );
+                    continue;
+                }
+            }
+
+            match fs::rename(&path, &final_path) {
+                Ok(()) => tracing::info!(
+                    "Recovered orphaned disk segment {:?} into pending",
+                    path.file_name().unwrap_or_default()
+                ),
+                Err(e) => {
+                    tracing::warn!("Failed to recover orphaned disk segment {:?}: {}", path, e)
+                }
+            }
+        }
+    }
+
+    fn create_new_segment(
+        active_dir: &PathBuf,
+        pending_dir: &PathBuf,
+    ) -> Result<ActiveSegment, CaptureError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -104,7 +169,7 @@ impl DiskSink {
         let tmp_name = format!("{}.tmp", base_name);
 
         let final_path = pending_dir.join(&base_name);
-        let tmp_path = pending_dir.join(&tmp_name);
+        let tmp_path = active_dir.join(&tmp_name);
 
         let file = OpenOptions::new()
             .write(true)
@@ -134,12 +199,30 @@ impl DiskSink {
         drop(segment.file);
 
         if segment.size > 0 {
-            fs::rename(&segment.tmp_path, &segment.final_path).map_err(|e| {
-                CaptureError::NonRetryableSinkError(format!(
-                    "Failed to rename {:?} to {:?}: {}",
-                    segment.tmp_path, segment.final_path, e
-                ))
-            })?;
+            if let Some(parent) = segment.final_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    CaptureError::NonRetryableSinkError(format!(
+                        "Failed to ensure segment directory {:?}: {}",
+                        parent, e
+                    ))
+                })?;
+            }
+
+            match fs::rename(&segment.tmp_path, &segment.final_path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound && segment.final_path.exists() => {
+                    tracing::warn!(
+                        "Disk segment already finalized externally: {:?}",
+                        segment.final_path.file_name().unwrap_or_default()
+                    );
+                }
+                Err(e) => {
+                    return Err(CaptureError::NonRetryableSinkError(format!(
+                        "Failed to rename {:?} to {:?}: {}",
+                        segment.tmp_path, segment.final_path, e
+                    )))
+                }
+            }
             tracing::info!(
                 "Finalized disk segment: {:?} ({} bytes)",
                 segment.final_path.file_name().unwrap_or_default(),
@@ -168,6 +251,8 @@ impl EventSink for DiskSink {
     async fn send_batch(&self, events: Vec<EventTypes>) -> Result<(), CaptureError> {
         let mut guard = self.segment.lock().await;
         let pending_dir = self.pending_dir();
+        let active_dir = self.active_dir();
+        Self::ensure_directories(&self.base_dir);
 
         // Check if rotation is needed
         let needs_new = match guard.as_ref() {
@@ -179,17 +264,14 @@ impl EventSink for DiskSink {
             if let Some(old_segment) = guard.take() {
                 Self::finalize_segment(old_segment)?;
             }
-            *guard = Some(Self::create_new_segment(&pending_dir)?);
+            *guard = Some(Self::create_new_segment(&active_dir, &pending_dir)?);
         }
 
         let segment = guard.as_mut().unwrap();
 
         for event in &events {
             let payload = serde_json::to_string(event).map_err(|e| {
-                CaptureError::NonRetryableSinkError(format!(
-                    "Failed to serialize event: {}",
-                    e
-                ))
+                CaptureError::NonRetryableSinkError(format!("Failed to serialize event: {}", e))
             })?;
             let line = format!("{}\n", payload);
             let bytes = line.as_bytes();
@@ -203,10 +285,7 @@ impl EventSink for DiskSink {
         }
 
         segment.file.flush().map_err(|e| {
-            CaptureError::NonRetryableSinkError(format!(
-                "Failed to flush disk segment: {}",
-                e
-            ))
+            CaptureError::NonRetryableSinkError(format!("Failed to flush disk segment: {}", e))
         })?;
 
         metrics::counter!("capture_disk_events_written_total", events.len() as u64);
@@ -254,9 +333,10 @@ mod tests {
     #[tokio::test]
     async fn test_creates_directory_structure() {
         let dir = std::env::temp_dir().join(format!("disk_sink_dirs_{}", Uuid::new_v4()));
-        let sink = DiskSink::new(dir.clone());
+        let _sink = DiskSink::new(dir.clone());
 
         assert!(dir.join("pending").exists());
+        assert!(dir.join("active").exists());
         assert!(dir.join("processing").exists());
         assert!(dir.join("completed").exists());
 
@@ -338,7 +418,11 @@ mod tests {
             .collect();
 
         // First event creates segment, second triggers rotation (new segment)
-        assert_eq!(files.len(), 2, "Should have 2 segments after size-based rotation");
+        assert_eq!(
+            files.len(),
+            2,
+            "Should have 2 segments after size-based rotation"
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -362,7 +446,11 @@ mod tests {
             .filter(|e| e.path().extension().map_or(false, |ext| ext == "jsonl"))
             .collect();
 
-        assert_eq!(files.len(), 2, "Should have 2 segments after age-based rotation");
+        assert_eq!(
+            files.len(),
+            2,
+            "Should have 2 segments after age-based rotation"
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -375,20 +463,17 @@ mod tests {
         sink.send(make_test_event("test")).await.unwrap();
 
         // Before close, the file should still be .tmp
-        let pending = dir.join("pending");
-        let tmp_files: Vec<_> = fs::read_dir(&pending)
+        let active = dir.join("active");
+        let tmp_files: Vec<_> = fs::read_dir(&active)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .to_string_lossy()
-                    .ends_with(".jsonl.tmp")
-            })
+            .filter(|e| e.path().to_string_lossy().ends_with(".jsonl.tmp"))
             .collect();
 
         assert_eq!(tmp_files.len(), 1, "Should have 1 .tmp file before close");
 
         // No finalized .jsonl files yet
+        let pending = dir.join("pending");
         let jsonl_files: Vec<_> = fs::read_dir(&pending)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -399,7 +484,11 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(jsonl_files.len(), 0, "Should have no finalized files before close");
+        assert_eq!(
+            jsonl_files.len(),
+            0,
+            "Should have no finalized files before close"
+        );
 
         sink.close().await.unwrap();
 
@@ -414,7 +503,69 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(jsonl_files.len(), 1, "Should have 1 finalized file after close");
+        assert_eq!(
+            jsonl_files.len(),
+            1,
+            "Should have 1 finalized file after close"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_close_succeeds_if_segment_was_already_finalized() {
+        let dir =
+            std::env::temp_dir().join(format!("disk_sink_already_finalized_{}", Uuid::new_v4()));
+        let sink = DiskSink::new(dir.clone());
+
+        sink.send(make_test_event("race")).await.unwrap();
+
+        let active = dir.join("active");
+        let pending = dir.join("pending");
+        let tmp_file = fs::read_dir(&active)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|path| path.to_string_lossy().ends_with(".jsonl.tmp"))
+            .expect("tmp segment should exist");
+        let final_name = tmp_file
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .trim_end_matches(".tmp")
+            .to_string();
+        let final_path = pending.join(final_name);
+
+        fs::rename(&tmp_file, &final_path).unwrap();
+
+        sink.close().await.unwrap();
+
+        let contents = fs::read_to_string(final_path).unwrap();
+        assert!(contents.contains("race"));
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_recovers_orphaned_active_segments_on_startup() {
+        let dir =
+            std::env::temp_dir().join(format!("disk_sink_recover_orphaned_{}", Uuid::new_v4()));
+        let active = dir.join("active");
+        let pending = dir.join("pending");
+        fs::create_dir_all(&active).unwrap();
+        fs::create_dir_all(&pending).unwrap();
+
+        let orphaned_tmp = active.join("123_orphaned.jsonl.tmp");
+        fs::write(&orphaned_tmp, "{\"event\":\"orphaned\"}\n").unwrap();
+
+        let sink = DiskSink::new(dir.clone());
+        sink.close().await.unwrap();
+
+        assert!(!orphaned_tmp.exists());
+        let recovered = pending.join("123_orphaned.jsonl");
+        assert!(recovered.exists());
+        let contents = fs::read_to_string(recovered).unwrap();
+        assert!(contents.contains("orphaned"));
 
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -444,12 +595,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("disk_sink_json_{}", Uuid::new_v4()));
         let sink = DiskSink::new(dir.clone());
 
-        sink.send_batch(vec![
-            make_test_event("json1"),
-            make_test_event("json2"),
-        ])
-        .await
-        .unwrap();
+        sink.send_batch(vec![make_test_event("json1"), make_test_event("json2")])
+            .await
+            .unwrap();
         sink.close().await.unwrap();
 
         let pending = dir.join("pending");
@@ -520,7 +668,10 @@ mod tests {
         assert!(name.ends_with(".jsonl"));
         let parts: Vec<&str> = name.trim_end_matches(".jsonl").splitn(2, '_').collect();
         assert_eq!(parts.len(), 2, "Filename should be timestamp_uuid.jsonl");
-        assert!(parts[0].parse::<u64>().is_ok(), "First part should be a timestamp");
+        assert!(
+            parts[0].parse::<u64>().is_ok(),
+            "First part should be a timestamp"
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }

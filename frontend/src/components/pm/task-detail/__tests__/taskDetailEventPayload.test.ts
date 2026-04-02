@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload';
-import type { StoryDetail } from '@/lib/pmTypes';
+import type { TaskDetail } from '@/lib/pmTypes';
 
 describe('buildPatchedTaskFromDetail', () => {
-  it('merges board-enriched fields from story detail onto the story payload', () => {
+  it('merges board-enriched fields from task detail onto the task payload', () => {
     const detail = {
-      story: {
-        id: 'story-1',
+      task: {
+        id: 'task-1',
         display_id: 12,
         workspace_id: 'ws-1',
         workflow_id: 'wf-1',
         workflow_state_id: 'state-1',
         name: 'Refine onboarding',
         description: '',
-        story_type: 'feature',
+        task_type: 'feature',
         priority: 'medium',
         severity: 'none',
         position: 0,
@@ -46,10 +46,10 @@ describe('buildPatchedTaskFromDetail', () => {
         updated_at: '',
         color: '#123456',
       },
-    } satisfies StoryDetail;
+    } satisfies TaskDetail;
 
     expect(buildPatchedTaskFromDetail(detail)).toMatchObject({
-      id: 'story-1',
+      id: 'task-1',
       owner_name: 'Owner Person',
       epic_name: 'Q2 Reliability',
       sprint_name: 'Sprint 18',

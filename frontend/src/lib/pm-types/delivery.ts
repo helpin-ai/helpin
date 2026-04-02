@@ -36,7 +36,7 @@ export interface GitRepository {
 export interface TaskDeliveryTarget {
   id: string;
   workspace_id: string;
-  story_id: string;
+  task_id: string;
   repository_id?: string;
   repo_full_name?: string;
   integration_id?: string;
@@ -54,12 +54,13 @@ export interface TaskDeliveryTarget {
   updated_at: string;
 }
 
+/** @deprecated Use TaskDeliveryTarget instead */
 export type StoryDeliveryTarget = TaskDeliveryTarget;
 
 export interface TaskGitLink {
   id: string;
   workspace_id: string;
-  story_id: string;
+  task_id: string;
   integration_id: string;
   repository_id?: string;
   run_id?: string;
@@ -75,6 +76,7 @@ export interface TaskGitLink {
   updated_at: string;
 }
 
+/** @deprecated Use TaskGitLink instead */
 export type StoryGitLink = TaskGitLink;
 
 export interface CreateGitIntegrationRequest {
@@ -110,4 +112,5 @@ export interface UpdateTaskDeliveryTargetRequest {
   working_branch?: string;
 }
 
+/** @deprecated Use UpdateTaskDeliveryTargetRequest instead */
 export type UpdateStoryDeliveryTargetRequest = UpdateTaskDeliveryTargetRequest;

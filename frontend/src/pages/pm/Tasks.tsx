@@ -2,11 +2,11 @@ import { KanbanBoard } from '@/components/pm/KanbanBoard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
-interface StoriesPageProps {
+interface TasksPageProps {
   teamId?: string;
 }
 
-export function StoriesPage({ teamId }: StoriesPageProps) {
+export function TasksPage({ teamId }: TasksPageProps) {
   useTitle('Tasks');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
 

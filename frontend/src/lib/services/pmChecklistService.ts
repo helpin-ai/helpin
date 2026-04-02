@@ -8,11 +8,11 @@ import type {
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const pmChecklistService = {
-  list: (workspaceId: string, storyId: string) =>
-    api.get<ChecklistItem[]>(`/pm/tasks/${storyId}/checklist?${qs(workspaceId)}`),
+  list: (workspaceId: string, taskId: string) =>
+    api.get<ChecklistItem[]>(`/pm/tasks/${taskId}/checklist?${qs(workspaceId)}`),
 
-  create: (workspaceId: string, storyId: string, payload: CreateChecklistItemRequest) =>
-    api.post<ChecklistItem>(`/pm/tasks/${storyId}/checklist?${qs(workspaceId)}`, payload),
+  create: (workspaceId: string, taskId: string, payload: CreateChecklistItemRequest) =>
+    api.post<ChecklistItem>(`/pm/tasks/${taskId}/checklist?${qs(workspaceId)}`, payload),
 
   update: (workspaceId: string, id: string, payload: UpdateChecklistItemRequest) =>
     api.put<ChecklistItem>(`/pm/checklist-items/${id}?${qs(workspaceId)}`, payload),

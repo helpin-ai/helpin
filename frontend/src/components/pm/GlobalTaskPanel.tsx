@@ -15,7 +15,7 @@ import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDeta
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
-import type { StoryDetail, StoryRecurringSummary } from '@/lib/pmTypes';
+import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -31,16 +31,16 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   const contextualTaskId = useTaskPanelStore((s) => s.taskId);
   const requestKey = useTaskPanelStore((s) => s.requestKey);
   const closeContextualTask = useTaskPanelStore((s) => s.close);
-  const activeStoryRoute = useMemo(() => getActiveTaskRoute(overlayLocation), [overlayLocation]);
-  const activeStoryId = activeStoryRoute?.taskId ?? contextualTaskId;
+  const activeTaskRoute = useMemo(() => getActiveTaskRoute(overlayLocation), [overlayLocation]);
+  const activeTaskId = activeTaskRoute?.taskId ?? contextualTaskId;
 
-  const [loadedStory, setLoadedStory] = useState<LoadedTaskState | null>(null);
+  const [loadedTask, setLoadedTask] = useState<LoadedTaskState | null>(null);
   const presentation = useMemo(
-    () => getTaskOverlayPresentationState(activeStoryId, loadedStory),
-    [activeStoryId, loadedStory],
+    () => getTaskOverlayPresentationState(activeTaskId, loadedTask),
+    [activeTaskId, loadedTask],
   );
 
-  // Use refs for close handler to avoid re-triggering story load effect
+  // Use refs for close handler to avoid re-triggering task load effect
   const locationRef = useRef(overlayLocation);
   locationRef.current = overlayLocation;
   const navigateRef = useRef(navigate);
@@ -52,49 +52,49 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   }, [workspaceSlug]);
 
   useEffect(() => {
-    if (activeStoryRoute && contextualTaskId) {
+    if (activeTaskRoute && contextualTaskId) {
       closeContextualTask();
     }
-  }, [activeStoryRoute, closeContextualTask, contextualTaskId]);
+  }, [activeTaskRoute, closeContextualTask, contextualTaskId]);
 
   useEffect(() => {
-    if (!activeStoryId || !workspaceId) return;
+    if (!activeTaskId || !workspaceId) return;
 
     let cancelled = false;
 
     (async () => {
       try {
-        const [storyRes, wfRes] = await Promise.all([
-          pmTaskService.get(workspaceId, activeStoryId),
+        const [taskRes, wfRes] = await Promise.all([
+          pmTaskService.get(workspaceId, activeTaskId),
           pmWorkflowService.list(workspaceId),
         ]);
         if (cancelled) return;
-        if (!storyRes.data) {
-          toast.error('Failed to load story');
+        if (!taskRes.data) {
+          toast.error('Failed to load task');
           handleClose();
           return;
         }
 
-        let recurring: StoryRecurringSummary | null = null;
-        if (storyRes.data.task.recurring_template_id) {
-          const { data } = await pmRecurringTemplateService.getByStory(workspaceId, activeStoryId);
+        let recurring: TaskRecurringSummary | null = null;
+        if (taskRes.data.task.recurring_template_id) {
+          const { data } = await pmRecurringTemplateService.getByTask(workspaceId, activeTaskId);
           if (!cancelled) recurring = data ?? null;
         }
         if (cancelled) return;
 
         const workflow = wfRes.data?.find(
-          (item) => item.workflow.id === storyRes.data!.task.workflow_id,
+          (item) => item.workflow.id === taskRes.data!.task.workflow_id,
         );
 
-        setLoadedStory({
-          storyId: activeStoryId,
-          storyDetail: storyRes.data,
+        setLoadedTask({
+          taskId: activeTaskId,
+          taskDetail: taskRes.data,
           states: workflow?.states ?? [],
           recurringSummary: recurring,
         });
       } catch {
         if (!cancelled) {
-          toast.error('Failed to load story');
+          toast.error('Failed to load task');
           handleClose();
         }
       }
@@ -103,40 +103,40 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeStoryId, handleClose, requestKey, workspaceId]);
+  }, [activeTaskId, handleClose, requestKey, workspaceId]);
 
-  const handleStoryUpdated = useCallback((updated: StoryDetail) => {
-    const patchedStory = buildPatchedTaskFromDetail(updated);
-    setLoadedStory((current) =>
+  const handleStoryUpdated = useCallback((updated: TaskDetail) => {
+    const patchedTask = buildPatchedTaskFromDetail(updated);
+    setLoadedTask((current) =>
       current
         ? {
             ...current,
-            storyId: updated.task.id,
-            storyDetail: updated,
+            taskId: updated.task.id,
+            taskDetail: updated,
           }
         : {
-            storyId: updated.task.id,
-            storyDetail: updated,
+            taskId: updated.task.id,
+            taskDetail: updated,
             states: [],
             recurringSummary: null,
           },
     );
     window.dispatchEvent(
-      new CustomEvent('task-panel-updated', { detail: { story: patchedStory, storyDetail: updated } }),
+      new CustomEvent('task-panel-updated', { detail: { task: patchedTask, taskDetail: updated } }),
     );
     window.dispatchEvent(
       new CustomEvent('task-updated', {
-        detail: { entity: 'story', action: 'updated', entity_id: updated.task.id, local: true },
+        detail: { entity: 'task', action: 'updated', entity_id: updated.task.id, local: true },
       }),
     );
   }, []);
 
   const handleStoryArchived = useCallback(
-    (archivedStoryId: string) => {
+    (archivedTaskId: string) => {
       handleClose();
       window.dispatchEvent(
         new CustomEvent('task-panel-archived', {
-          detail: { storyId: archivedStoryId },
+          detail: { taskId: archivedTaskId },
         }),
       );
     },
@@ -148,7 +148,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
       workspaceId={workspaceId}
       open={presentation.open}
       loading={presentation.loading}
-      taskDetail={presentation.storyDetail}
+      taskDetail={presentation.taskDetail}
       states={presentation.states}
       initialRecurringSummary={presentation.recurringSummary}
       onOpenChange={(isOpen) => {

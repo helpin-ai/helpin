@@ -104,6 +104,19 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 	resolved := workerpkg.ResolveAgentProfile(agent, model.InvocationModeAutonomous)
 	approvalState := workerpkg.ResolveApprovalState(resolved)
 	taskQueue := resolved.Queue
+	now := time.Now().UTC()
+	inputPayload := model.AgentRunInputPayload{
+		Trigger: &model.AgentRunTriggerContext{
+			Source:      model.AgentRunTriggerSourceSchedule,
+			TriggerType: model.TriggerCron,
+			FiredAt:     &now,
+		},
+	}
+	inputPayload.SetTarget("scheduled", agent.ID)
+	inputJSON, err := json.Marshal(inputPayload)
+	if err != nil {
+		return ScheduledRunResult{}, fmt.Errorf("marshal scheduled run input: %w", err)
+	}
 
 	run := &model.AgentRun{
 		WorkspaceID:   input.WorkspaceID,
@@ -115,7 +128,7 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 		Status:        "queued",
 		TaskQueue:     &taskQueue,
 		RunnerPool:    &taskQueue,
-		Input:         json.RawMessage("{}"),
+		Input:         inputJSON,
 		OutputSummary: json.RawMessage("{}"),
 	}
 	if err := a.runRepo.Create(ctx, run); err != nil {

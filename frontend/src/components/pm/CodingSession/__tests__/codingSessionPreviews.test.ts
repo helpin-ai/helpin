@@ -72,7 +72,7 @@ describe('collectCodingSessionPreviews', () => {
         tool_name: 'publish_story_plan_doc',
         args_text: JSON.stringify({
           panel_key: 'story_plan_doc',
-          title: 'Story Planning Document',
+          title: 'Task Planning Document',
           format: 'markdown',
           content: '# Flow\n\nUpdated live draft',
         }),
@@ -84,7 +84,7 @@ describe('collectCodingSessionPreviews', () => {
 
     expect(previews.get('story_plan_doc')).toMatchObject({
       panelKey: 'story_plan_doc',
-      title: 'Story Planning Document',
+      title: 'Task Planning Document',
       format: 'markdown',
       content: '# Flow\n\nUpdated live draft',
     });
@@ -100,7 +100,7 @@ describe('collectCodingSessionPreviews', () => {
         args_text: JSON.stringify({
           content: {
             open_questions: [{ question: 'Should Kafka tests run on every PR?' }],
-            proposed_stories: [],
+            proposed_tasks: [],
           },
         }),
         status: 'failed',

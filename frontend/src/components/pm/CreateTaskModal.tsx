@@ -37,14 +37,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
 import type {
-  CreateStoryRequest,
+  CreateTaskRequest,
   Label,
   SprintWithStats,
   Priority,
   Severity,
-  StoryType,
+  TaskType,
   WorkflowWithStates,
   EpicWithStats,
 } from "@/lib/pmTypes";
@@ -53,7 +53,7 @@ import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
 import { pmTaskTemplateService } from "@/lib/services/pmTaskTemplateService";
 import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
-import type { StoryTemplate } from "@/lib/pmTypes";
+import type { TaskTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useAccessibleTeams } from "@/hooks/useAccessibleTeams";
@@ -89,15 +89,15 @@ interface CreateTaskModalProps {
   initialTeamId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
-  onCreate?: (payload: CreateStoryRequest) => Promise<{ id: string } | void>;
-  mode?: 'story' | 'template';
-  editingTemplate?: StoryTemplate | null;
-  onSaveTemplate?: (template: StoryTemplate) => void;
+  onCreate?: (payload: CreateTaskRequest) => Promise<{ id: string } | void>;
+  mode?: 'task' | 'template';
+  editingTemplate?: TaskTemplate | null;
+  onSaveTemplate?: (template: TaskTemplate) => void;
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
 const severityOptions: Severity[] = ["none", "minor", "major", "critical"];
-const storyTypeOptions: StoryType[] = ["feature", "bug", "chore"];
+const taskTypeOptions: TaskType[] = ["feature", "bug", "chore"];
 
 interface ChecklistTemplateItem {
   text: string;
@@ -111,7 +111,7 @@ interface ExternalLinkItem {
 
 const defaultState = {
   name: "",
-  task_type: "feature" as StoryType,
+  task_type: "feature" as TaskType,
   description: "",
   priority: "medium" as Priority,
   severity: "none" as Severity,
@@ -248,7 +248,7 @@ export function CreateTaskModal({
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
-  mode = 'story',
+  mode = 'task',
   editingTemplate,
   onSaveTemplate,
 }: CreateTaskModalProps) {
@@ -264,7 +264,7 @@ export function CreateTaskModal({
   const [descriptionMode, setDescriptionMode] = useState<'rich' | 'markdown'>('rich');
   const [sourceMarkdown, setSourceMarkdown] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [storyTypeDirty, setStoryTypeDirty] = useState(false);
+  const [taskTypeDirty, setTaskTypeDirty] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -274,7 +274,7 @@ export function CreateTaskModal({
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
-  const [templates, setTemplates] = useState<StoryTemplate[]>([]);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const descriptionEditorRef = useRef<Editor | null>(null);
   const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
@@ -289,8 +289,8 @@ export function CreateTaskModal({
   );
   const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
   const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
-  const selectedTeamDefaultStoryType = useMemo(
-    () => (selectedTeam?.default_task_type as StoryType | undefined) ?? 'feature',
+  const selectedTeamDefaultTaskType = useMemo(
+    () => (selectedTeam?.default_task_type as TaskType | undefined) ?? 'feature',
     [selectedTeam],
   );
   const mentionTeams = useMemo(
@@ -312,7 +312,7 @@ export function CreateTaskModal({
       setForm({
         name: editingTemplate.name,
         description: editingTemplate.description || '',
-        task_type: (editingTemplate.task_type as StoryType) || 'feature',
+        task_type: (editingTemplate.task_type as TaskType) || 'feature',
         priority: (editingTemplate.priority as Priority) || 'none',
         severity: (editingTemplate.severity as Severity) || 'none',
         estimate: editingTemplate.estimate !== undefined && editingTemplate.estimate !== null ? String(editingTemplate.estimate) : '',
@@ -326,7 +326,7 @@ export function CreateTaskModal({
         checklist_items: editingTemplate.checklist_items ? (() => { try { return JSON.parse(editingTemplate.checklist_items!); } catch { return []; } })() : [],
         external_links: editingTemplate.external_links ? (() => { try { return JSON.parse(editingTemplate.external_links!); } catch { return []; } })() : [],
       });
-      setStoryTypeDirty(true);
+      setTaskTypeDirty(true);
       initialDescRef.current = editingTemplate.description || '';
       // Auto-open sections that have data
       if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
@@ -336,13 +336,13 @@ export function CreateTaskModal({
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
       setForm({
         ...defaultState,
-        task_type: (initialTeam?.default_task_type as StoryType | undefined) ?? 'feature',
+        task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         owner_member_id: initialOwnerMemberId ?? '',
         sprint_id: initialSprintId ?? '',
       });
-      setStoryTypeDirty(false);
+      setTaskTypeDirty(false);
       initialDescRef.current = '';
     }
     setStateId(initialStateId ?? '');
@@ -355,16 +355,16 @@ export function CreateTaskModal({
     setShowAttachments(false);
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
-    if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
+    if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
     setForm((current) => {
-      if (current.task_type === selectedTeamDefaultStoryType) return current;
-      return { ...current, task_type: selectedTeamDefaultStoryType };
+      if (current.task_type === selectedTeamDefaultTaskType) return current;
+      return { ...current, task_type: selectedTeamDefaultTaskType };
     });
-  }, [selectedTeamDefaultStoryType, storyTypeDirty, isTemplateMode, editingTemplate]);
+  }, [selectedTeamDefaultTaskType, taskTypeDirty, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (!open) return;
@@ -608,7 +608,7 @@ export function CreateTaskModal({
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
         });
 
-        // Upload pending files after story creation.
+        // Upload pending files after task creation.
         if (result?.id && pendingFiles.length > 0) {
           for (const file of pendingFiles) {
             try {
@@ -625,7 +625,7 @@ export function CreateTaskModal({
                 await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
               }
             } catch {
-              // Non-blocking — story already created
+              // Non-blocking — task already created
             }
           }
         }
@@ -657,13 +657,13 @@ export function CreateTaskModal({
           setSourceMarkdown('');
           setForm({
             ...defaultState,
-            task_type: (resetTeam?.default_task_type as StoryType | undefined) ?? 'feature',
+            task_type: (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
             sprint_id: initialSprintId ?? '',
           });
-          setStoryTypeDirty(false);
+          setTaskTypeDirty(false);
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
           setRecurringDraft(null);
@@ -672,7 +672,7 @@ export function CreateTaskModal({
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create story");
+      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create task");
     } finally {
       setSubmitting(false);
     }
@@ -748,7 +748,7 @@ export function CreateTaskModal({
 
               {/* Title */}
               <Input
-                id="story-title"
+                id="task-title"
                 autoFocus
                 placeholder={isTemplateMode ? "Template name" : "Title"}
                 className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
@@ -799,7 +799,7 @@ export function CreateTaskModal({
                       value={sourceMarkdown}
                       onChange={(event) => setSourceMarkdown(event.target.value)}
                       className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
-                      placeholder="## Write the story in Markdown"
+                      placeholder="## Write the task in Markdown"
                       spellCheck={false}
                     />
                   </div>
@@ -1019,7 +1019,7 @@ export function CreateTaskModal({
                 </div>
               )}
 
-              {/* Attachments (story mode only) */}
+              {/* Attachments (task mode only) */}
               {!isTemplateMode && showAttachments && (
                 <div className="shrink-0 rounded-lg border border-border/60 bg-background">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
@@ -1108,12 +1108,12 @@ export function CreateTaskModal({
                     onChange={(templateId) => {
                       const tmpl = templates.find((t) => t.id === templateId);
                       if (!tmpl) return;
-                      setStoryTypeDirty(false);
+                      setTaskTypeDirty(false);
                       setForm((prev) => ({
                         ...prev,
                         team_id: tmpl.team_id || prev.team_id,
                         description: tmpl.description || prev.description,
-                        task_type: (tmpl.task_type as StoryType) || prev.task_type,
+                        task_type: (tmpl.task_type as TaskType) || prev.task_type,
                         priority: (tmpl.priority as Priority) || prev.priority,
                         severity: (tmpl.severity as Severity) || prev.severity,
                         estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
@@ -1150,7 +1150,7 @@ export function CreateTaskModal({
                       ]}
                       onChange={(value) =>
                         {
-                          setStoryTypeDirty(false);
+                          setTaskTypeDirty(false);
                           setForm((prev) => ({
                             ...prev,
                             team_id: value === "__none__" ? "" : value,
@@ -1305,18 +1305,18 @@ export function CreateTaskModal({
                 <MetadataRow icon={Hash} label="Type">
                   <SidebarPopoverSelect
                     value={form.task_type}
-                    options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
+                    options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
                     onChange={(value) => {
-                      setStoryTypeDirty(true);
-                      setForm((prev) => ({ ...prev, task_type: value as StoryType }));
+                      setTaskTypeDirty(true);
+                      setForm((prev) => ({ ...prev, task_type: value as TaskType }));
                     }}
                     renderTrigger={() => (
                       <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <StoryTypeIcon storyType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{STORY_TYPE_CONFIG[form.task_type].label}</span>
+                        <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{TASK_TYPE_CONFIG[form.task_type].label}</span>
                       </span>
                     )}
-                    renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}
+                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
                   />
                 </MetadataRow>
                 )}
@@ -1462,12 +1462,12 @@ export function CreateTaskModal({
               <DialogHeader>
                 <DialogTitle>Configure recurrence</DialogTitle>
                 <DialogDescription>
-                  Automatically create copies of this story on a schedule.
+                  Automatically create copies of this task on a schedule.
                 </DialogDescription>
               </DialogHeader>
               <RecurringTemplateForm
                 initialValue={recurringDraft ?? {
-                  title: form.name.trim() || 'Recurring story',
+                  title: form.name.trim() || 'Recurring task',
                   description: '',
                   config: {
                     schedule_type: 'time',

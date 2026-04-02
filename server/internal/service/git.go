@@ -21,17 +21,17 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-var ErrStoryDeliveryTargetRequired = errors.New("story has no delivery target configured")
+var ErrTaskDeliveryTargetRequired = errors.New("story has no delivery target configured")
 
 // GitService contains git integration and story delivery business logic.
 type GitService struct {
 	integrationRepo *repository.GitIntegrationRepository
 	repoRepo        *repository.GitRepositoryRepository
-	linkRepo        *repository.StoryGitLinkRepository
-	deliveryRepo    *repository.StoryDeliveryTargetRepository
+	linkRepo        *repository.TaskGitLinkRepository
+	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	settingsRepo    *repository.SettingsRepository
 	workspaceRepo   *repository.WorkspaceRepository
-	storyRepo       *repository.PMStoryRepository
+	taskRepo       *repository.PMTaskRepository
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	githubApp       *githubapp.Client
@@ -44,11 +44,11 @@ type GitService struct {
 func NewGitService(
 	integrationRepo *repository.GitIntegrationRepository,
 	repoRepo *repository.GitRepositoryRepository,
-	linkRepo *repository.StoryGitLinkRepository,
-	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	linkRepo *repository.TaskGitLinkRepository,
+	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
-	storyRepo *repository.PMStoryRepository,
+	taskRepo *repository.PMTaskRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	githubApp *githubapp.Client,
@@ -63,7 +63,7 @@ func NewGitService(
 		deliveryRepo:    deliveryRepo,
 		settingsRepo:    settingsRepo,
 		workspaceRepo:   workspaceRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
 		githubApp:       githubApp,
@@ -338,17 +338,17 @@ func (s *GitService) ResolveGitHubWebhookWorkspace(ctx context.Context, installa
 	return integration.WorkspaceID, nil
 }
 
-// GetStoryGitLinks returns git links for a story.
-func (s *GitService) GetStoryGitLinks(ctx context.Context, workspaceID, storyID string) ([]model.StoryGitLink, error) {
+// GetTaskGitLinks returns git links for a story.
+func (s *GitService) GetTaskGitLinks(ctx context.Context, workspaceID, storyID string) ([]model.TaskGitLink, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.linkRepo.ListByStory(ctx, workspaceID, storyID)
+	return s.linkRepo.ListByTask(ctx, workspaceID, storyID)
 }
 
-// GetStoryDeliveryTarget resolves or creates the current delivery target for a story.
-func (s *GitService) GetStoryDeliveryTarget(ctx context.Context, workspaceID, storyID string) (*model.StoryDeliveryTarget, error) {
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, storyID)
+// GetTaskDeliveryTarget resolves or creates the current delivery target for a story.
+func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, storyID string) (*model.TaskDeliveryTarget, error) {
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, storyID)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func (s *GitService) GetStoryDeliveryTarget(ctx context.Context, workspaceID, st
 		return target, nil
 	}
 
-	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	story, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,9 +364,9 @@ func (s *GitService) GetStoryDeliveryTarget(ctx context.Context, workspaceID, st
 		return nil, fmt.Errorf("story not found")
 	}
 
-	target = &model.StoryDeliveryTarget{
+	target = &model.TaskDeliveryTarget{
 		WorkspaceID:   workspaceID,
-		StoryID:       storyID,
+		TaskID:        storyID,
 		DeliveryState: "unconfigured",
 	}
 
@@ -400,9 +400,9 @@ func (s *GitService) GetStoryDeliveryTarget(ctx context.Context, workspaceID, st
 	return target, nil
 }
 
-// UpdateStoryDeliveryTarget updates the selected delivery target for a story.
-func (s *GitService) UpdateStoryDeliveryTarget(ctx context.Context, workspaceID, storyID string, req model.UpdateStoryDeliveryTargetRequest, actorID string) (*model.StoryDeliveryTarget, error) {
-	target, err := s.GetStoryDeliveryTarget(ctx, workspaceID, storyID)
+// UpdateTaskDeliveryTarget updates the selected delivery target for a story.
+func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, storyID string, req model.UpdateTaskDeliveryTargetRequest, actorID string) (*model.TaskDeliveryTarget, error) {
+	target, err := s.GetTaskDeliveryTarget(ctx, workspaceID, storyID)
 	if err != nil {
 		return nil, err
 	}
@@ -452,21 +452,21 @@ func (s *GitService) UpdateStoryDeliveryTarget(ctx context.Context, workspaceID,
 	return target, nil
 }
 
-// ResolveStoryDeliveryTargetForRun returns a delivery target suitable for a given execution policy.
-func (s *GitService) ResolveStoryDeliveryTargetForRun(ctx context.Context, workspaceID, storyID string, requiresRepo bool) (*model.StoryDeliveryTarget, error) {
-	target, err := s.GetStoryDeliveryTarget(ctx, workspaceID, storyID)
+// ResolveTaskDeliveryTargetForRun returns a delivery target suitable for a given execution policy.
+func (s *GitService) ResolveTaskDeliveryTargetForRun(ctx context.Context, workspaceID, storyID string, requiresRepo bool) (*model.TaskDeliveryTarget, error) {
+	target, err := s.GetTaskDeliveryTarget(ctx, workspaceID, storyID)
 	if err != nil {
 		return nil, err
 	}
 	if requiresRepo && (target.RepositoryID == nil || target.RepoFullName == nil || target.BaseBranch == nil) {
-		return nil, ErrStoryDeliveryTargetRequired
+		return nil, ErrTaskDeliveryTargetRequired
 	}
 	return target, nil
 }
 
 // CreateBranch retains backward compatibility by updating the delivery target and a git link.
-func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID string, req model.CreateBranchRequest, actorID string) (*model.StoryGitLink, error) {
-	targetReq := model.UpdateStoryDeliveryTargetRequest{
+func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID string, req model.CreateBranchRequest, actorID string) (*model.TaskGitLink, error) {
+	targetReq := model.UpdateTaskDeliveryTargetRequest{
 		BaseBranch: nil,
 	}
 	if req.IntegrationID != "" {
@@ -489,13 +489,13 @@ func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID stri
 		}
 	}
 	targetReq.WorkingBranch = &req.BranchName
-	target, err := s.UpdateStoryDeliveryTarget(ctx, workspaceID, storyID, targetReq, actorID)
+	target, err := s.UpdateTaskDeliveryTarget(ctx, workspaceID, storyID, targetReq, actorID)
 	if err != nil {
 		return nil, err
 	}
-	link := &model.StoryGitLink{
+	link := &model.TaskGitLink{
 		WorkspaceID:   workspaceID,
-		StoryID:       storyID,
+		TaskID:        storyID,
 		IntegrationID: deref(target.IntegrationID),
 		RepositoryID:  target.RepositoryID,
 		Provider:      "github",
@@ -510,7 +510,7 @@ func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID stri
 
 // MergeBranch merges the story's working branch into the target branch via GitHub API.
 func (s *GitService) MergeBranch(ctx context.Context, workspaceID, storyID, targetBranch string) error {
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, storyID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, storyID)
 	if err != nil {
 		return fmt.Errorf("load delivery target: %w", err)
 	}
@@ -558,7 +558,7 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.StoryID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.LastCommitSHA = &commitSHA
 		now := time.Now()
@@ -575,7 +575,7 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
 		ParentType:  "task",
-		ParentID:    link.StoryID,
+		ParentID:    link.TaskID,
 	})
 
 	return nil
@@ -605,7 +605,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.StoryID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.ActivePRNumber = &prNumber
 		target.ActivePRTitle = &prTitle
@@ -623,19 +623,19 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		}
 		_ = s.deliveryRepo.Save(ctx, target)
 
-		story, storyErr := s.storyRepo.GetRawByID(ctx, link.StoryID)
+		story, storyErr := s.taskRepo.GetRawByID(ctx, link.TaskID)
 		if storyErr == nil && story != nil && story.TeamID != nil && *story.TeamID != "" {
 			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates {
 				switch prStatus {
 				case "open":
 					if teamDefault.ReviewStateID != nil {
 						story.WorkflowStateID = *teamDefault.ReviewStateID
-						_ = s.storyRepo.Update(ctx, story)
+						_ = s.taskRepo.Update(ctx, story)
 					}
 				case "merged":
 					if teamDefault.DoneStateID != nil {
 						story.WorkflowStateID = *teamDefault.DoneStateID
-						_ = s.storyRepo.Update(ctx, story)
+						_ = s.taskRepo.Update(ctx, story)
 					}
 				}
 			}
@@ -648,7 +648,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
 		ParentType:  "task",
-		ParentID:    link.StoryID,
+		ParentID:    link.TaskID,
 	})
 	return nil
 }

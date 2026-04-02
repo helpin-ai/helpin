@@ -26,6 +26,7 @@ import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { pmRoadmapService } from '@/lib/services/pmRoadmapService';
 import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
 import type { RoadmapData, RoadmapEpic } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 
 type GroupBy = 'objective' | 'team' | 'epic';
 type Zoom = 'month' | 'quarter';
@@ -159,14 +160,14 @@ export function RoadmapPage() {
           <div className="w-full max-w-4xl mt-10">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { icon: Layers, title: 'Create epics', description: 'Group related stories into epics — your key initiatives' },
+                { icon: Layers, title: 'Create epics', description: 'Group related tasks into epics — your key initiatives' },
                 { icon: Target, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
                 { icon: CalendarDays, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
               ].map(({ icon: Icon, title, description }) => (
                 <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                   <Icon className="h-5 w-5 text-muted-foreground mb-3" />
                   <p className="text-sm font-medium mb-1">{title}</p>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
                 </div>
               ))}
             </div>
@@ -186,7 +187,7 @@ export function RoadmapPage() {
       <header className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold">Roadmap</h2>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Epics across objectives on a timeline.
           </p>
         </div>
@@ -328,7 +329,7 @@ export function RoadmapPage() {
             <GanttChart className="h-5 w-5 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium mb-1">No epics match your filters</p>
-          <p className="text-[13px] text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>
+          <p className="text-sm text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>
           <Button
             variant="outline"
             size="sm"
@@ -394,9 +395,10 @@ function UnscheduledEpicRow({
   const e = epic.epic;
   const health = e.health || 'no_health';
   const hc = HEALTH_CONFIG[health];
+  const totalTasks = getEpicTaskCount(epic.stats);
   const pct =
-    epic.stats.story_count > 0
-      ? Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100)
+    totalTasks > 0
+      ? Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100)
       : 0;
 
   return (
@@ -408,7 +410,7 @@ function UnscheduledEpicRow({
       <span className="flex items-center gap-1.5 shrink-0">
         <span className={`h-2 w-2 rounded-full ${hc?.dot}`} />
       </span>
-      <span className="text-[13px] truncate flex-1 min-w-0">{e.name}</span>
+      <span className="text-sm truncate flex-1 min-w-0">{e.name}</span>
       {epic.objectives.length > 0 && (
         <span className="text-[11px] text-muted-foreground truncate max-w-[120px] shrink-0 hidden sm:block">
           {epic.objectives[0].name}

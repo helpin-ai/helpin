@@ -21,10 +21,10 @@ func NewPMChecklistItemRepository(db *gorm.DB) *PMChecklistItemRepository {
 }
 
 // List returns checklist items for a task ordered by position.
-func (r *PMChecklistItemRepository) List(ctx context.Context, storyID string) ([]model.PMChecklistItem, error) {
+func (r *PMChecklistItemRepository) List(ctx context.Context, taskID string) ([]model.PMChecklistItem, error) {
 	var items []model.PMChecklistItem
 	if err := r.db.WithContext(ctx).
-		Where("task_id = ?", storyID).
+		Where("task_id = ?", taskID).
 		Order("position ASC, created_at ASC").
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list checklist items: %w", err)
@@ -69,9 +69,9 @@ func (r *PMChecklistItemRepository) Delete(ctx context.Context, id string) error
 }
 
 // Count returns number of checklist items for a task.
-func (r *PMChecklistItemRepository) Count(ctx context.Context, storyID string) (int64, error) {
+func (r *PMChecklistItemRepository) Count(ctx context.Context, taskID string) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.PMChecklistItem{}).Where("task_id = ?", storyID).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.PMChecklistItem{}).Where("task_id = ?", taskID).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count checklist items: %w", err)
 	}
 	return count, nil

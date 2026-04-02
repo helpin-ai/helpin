@@ -70,7 +70,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		defaultBacklogLimit = 50
 	)
 
-	previewLimit := filters.PreviewStoryLimit
+	previewLimit := filters.PreviewTaskLimit
 	if previewLimit <= 0 {
 		previewLimit = defaultPreviewLimit
 	}
@@ -115,7 +115,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		}
 		card := model.SprintPlanningCard{
 			Sprint:         sprints[i],
-			PreviewStories: []model.SprintPlanningStoryPreview{},
+			PreviewTasks:    []model.SprintPlanningTaskPreview{},
 		}
 		buckets[bucketKey].Sprints = append(buckets[bucketKey].Sprints, card)
 		cardBySprintID[sprints[i].ID] = &buckets[bucketKey].Sprints[len(buckets[bucketKey].Sprints)-1]
@@ -137,9 +137,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 				continue
 			}
 			card.Stats = statsBySprintID[sprintID]
-			card.PreviewStories = previewStoriesBySprintID[sprintID]
-			if overflow := card.Stats.TaskCount - len(card.PreviewStories); overflow > 0 {
-				card.StoryPreviewOverflow = overflow
+			card.PreviewTasks = previewStoriesBySprintID[sprintID]
+			if overflow := card.Stats.TaskCount - len(card.PreviewTasks); overflow > 0 {
+				card.TaskPreviewOverflow = overflow
 			}
 		}
 	}
@@ -160,7 +160,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 
 	return &model.SprintPlanningWorkspace{
 		Buckets:        orderedBuckets,
-		BacklogStories: backlogStories,
+		BacklogTasks:   backlogStories,
 		BacklogTotal:   backlogTotal,
 	}, nil
 }
@@ -282,9 +282,9 @@ func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string,
 	})
 }
 
-// ListStories returns stories in a sprint.
-func (r *PMSprintRepository) ListStories(ctx context.Context, sprintID string) ([]model.PMStory, error) {
-	var stories []model.PMStory
+// ListTasks returns tasks in a sprint.
+func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
+	var stories []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND archived = false", sprintID).
 		Order("position ASC, created_at DESC").
@@ -397,13 +397,13 @@ func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs
 	return statsBySprintID, nil
 }
 
-func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningStoryPreview, error) {
-	bySprint := make(map[string][]model.SprintPlanningStoryPreview, len(sprintIDs))
+func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
+	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
 	if len(sprintIDs) == 0 {
 		return bySprint, nil
 	}
 
-	var rows []model.SprintPlanningStoryPreview
+	var rows []model.SprintPlanningTaskPreview
 	if err := r.db.WithContext(ctx).
 		Table("pm_tasks s").
 		Select(`
@@ -439,7 +439,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 	return bySprint, nil
 }
 
-func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters, limit int) ([]model.SprintPlanningStoryPreview, int, error) {
+func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters, limit int) ([]model.SprintPlanningTaskPreview, int, error) {
 	base := r.db.WithContext(ctx).
 		Table("pm_tasks s").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
@@ -461,7 +461,7 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		return nil, 0, fmt.Errorf("count planning backlog stories: %w", err)
 	}
 
-	var stories []model.SprintPlanningStoryPreview
+	var stories []model.SprintPlanningTaskPreview
 	if err := base.
 		Select(`
 			s.id,

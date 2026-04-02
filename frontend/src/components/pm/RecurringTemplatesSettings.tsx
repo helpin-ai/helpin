@@ -65,8 +65,8 @@ function RunHistory({ runs, onOpenTask }: { runs: RecurringRun[]; onOpenTask?: (
             <span className="min-w-0 flex-1 truncate">{formatRunTrigger(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRunRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-            {run.generated_story_id && onOpenTask ? (
-              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenTask(run.generated_story_id!)}>
+            {run.generated_task_id && onOpenTask ? (
+              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenTask(run.generated_task_id!)}>
                 View task
               </button>
             ) : null}
@@ -240,7 +240,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
           onResume={editable ? (item) => void runAction(() => pmRecurringTemplateService.resume(workspaceId, item.template.id), 'Recurring template resumed') : undefined}
           onStop={editable ? (item) => setDeleteConfirm(item) : undefined}
           onSkipNext={editable ? (item) => void runAction(() => pmRecurringTemplateService.skipNext(workspaceId, item.template.id), 'Next occurrence skipped') : undefined}
-          onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring story generated') : undefined}
+          onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring task generated') : undefined}
           onDuplicate={editable ? (item) => void runAction(() => pmRecurringTemplateService.duplicate(workspaceId, item.template.id), 'Recurring template duplicated') : undefined}
         />
       )}
@@ -256,7 +256,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
               {viewTemplate.runs && viewTemplate.runs.length > 0 ? (
                 <RunHistory runs={viewTemplate.runs} onOpenTask={(taskId) => handleOpenTask(taskId)} />
               ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Stories will appear here after the first scheduled run.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Tasks will appear here after the first scheduled run.</p>
               )}
             </>
           ) : null}
@@ -291,7 +291,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
         open={deleteConfirm !== null}
         onOpenChange={(open) => { if (!open) setTimeout(() => setDeleteConfirm(null), 150); }}
         title="Delete recurring template"
-        description={`This will permanently stop "${deleteConfirm?.template.title ?? ''}" from creating new stories. Existing stories will not be affected.`}
+        description={`This will permanently stop "${deleteConfirm?.template.title ?? ''}" from creating new tasks. Existing tasks will not be affected.`}
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => {

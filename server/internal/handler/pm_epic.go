@@ -108,18 +108,18 @@ func (h *PMEpicHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "epic archived"})
 }
 
-// ListStories handles GET /api/pm/epics/{id}/stories.
-func (h *PMEpicHandler) ListStories(w http.ResponseWriter, r *http.Request) {
+// ListTasks handles GET /api/pm/epics/{id}/stories.
+func (h *PMEpicHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	stories, err := h.epicService.ListStories(r.Context(), id)
+	tasks, err := h.epicService.ListTasks(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stories == nil {
-		stories = []model.PMStory{}
+	if tasks == nil {
+		tasks = []model.PMTask{}
 	}
-	writeJSON(w, http.StatusOK, stories)
+	writeJSON(w, http.StatusOK, tasks)
 }
 
 // UpdateHealth handles PUT /api/pm/epics/{id}/health.

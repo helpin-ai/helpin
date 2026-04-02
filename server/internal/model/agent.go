@@ -18,6 +18,13 @@ const (
 	AgentModelProviderOpenAI              = "openai"
 	AgentModelProviderOpenRouter          = "openrouter"
 	AgentModelProviderOpenRouterResponses = "openrouter-responses"
+
+	AgentRunTriggerSourceManual         = "manual"
+	AgentRunTriggerSourceAutomationRule = "automation_rule"
+	AgentRunTriggerSourceSchedule       = "schedule"
+	AgentRunTriggerSourceSystem         = "system"
+
+	AgentRunTriggerTypeManual = "manual"
 )
 
 // Agent represents an LLM agent in a workspace.
@@ -41,7 +48,7 @@ type Agent struct {
 	PlanningNotes          *string         `json:"planning_notes"`
 	MonthlyTokenBudget     *int            `json:"monthly_token_budget"`
 	TokensUsedThisMonth    int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
-	ActiveStoryID          *string         `json:"active_task_id" gorm:"column:active_task_id;type:uuid"`
+	ActiveTaskID           *string         `json:"active_task_id" gorm:"column:active_task_id;type:uuid"`
 	TeamID                 *string         `json:"team_id" gorm:"type:uuid;index"`
 	AllowedTools           json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands        json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
@@ -99,7 +106,7 @@ type AgentRun struct {
 	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
-	StoryID           *string         `json:"task_id" gorm:"column:task_id;type:uuid"`
+	TaskID            *string         `json:"task_id" gorm:"column:task_id;type:uuid"`
 	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
 	TargetType        string          `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
@@ -191,7 +198,7 @@ type UpdateAgentRequest struct {
 	SystemPrompt          *string         `json:"system_prompt"`
 	PlanningNotes         *string         `json:"planning_notes"`
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
-	ActiveStoryID         *string         `json:"active_task_id"`
+	ActiveTaskID          *string         `json:"active_task_id"`
 	TeamID                *string         `json:"team_id"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
@@ -331,6 +338,77 @@ type HandoffAgentRunRequest struct {
 type StartAgentRunRequest struct {
 	AgentID           string  `json:"agent_id,omitempty"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
+}
+
+type StartTargetAgentRunRequest struct {
+	TargetType        string  `json:"target_type"`
+	TargetID          string  `json:"target_id"`
+	AgentID           string  `json:"agent_id"`
+	AdditionalContext *string `json:"additional_context,omitempty"`
+}
+
+type AgentRunTriggerContext struct {
+	Source      string     `json:"source,omitempty"`
+	TriggerType string     `json:"trigger_type,omitempty"`
+	RuleID      *string    `json:"rule_id,omitempty"`
+	FiredAt     *time.Time `json:"fired_at,omitempty"`
+}
+
+type AgentRunTargetContext struct {
+	TargetType string `json:"target_type,omitempty"`
+	TargetID   string `json:"target_id,omitempty"`
+}
+
+type AgentRunEventContext struct {
+	StateID *string `json:"state_id,omitempty"`
+	TeamID  *string `json:"team_id,omitempty"`
+	RunID   *string `json:"run_id,omitempty"`
+	Reason  *string `json:"reason,omitempty"`
+}
+
+// AgentRunInputPayload is the shared input contract for all agent runs.
+// It preserves legacy top-level IDs and planning fields while adding
+// explicit trigger/target/event metadata for generic launches.
+type AgentRunInputPayload struct {
+	Trigger             *AgentRunTriggerContext `json:"trigger,omitempty"`
+	Target              *AgentRunTargetContext  `json:"target,omitempty"`
+	Event               *AgentRunEventContext   `json:"event,omitempty"`
+	StoryID             string                  `json:"story_id,omitempty"`
+	EpicID              string                  `json:"epic_id,omitempty"`
+	ConversationID      string                  `json:"conversation_id,omitempty"`
+	AdditionalContext   string                  `json:"additional_context,omitempty"`
+	AllowedTools        []string                `json:"allowed_tools,omitempty"`
+	Stage               string                  `json:"stage,omitempty"`
+	PlanDocumentID      string                  `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                  `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                  `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                  `json:"planning_methodology,omitempty"`
+	FlowOutputKind      string                  `json:"flow_output_kind,omitempty"`
+}
+
+func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
+	if p == nil {
+		return
+	}
+	targetType = strings.TrimSpace(targetType)
+	targetID = strings.TrimSpace(targetID)
+	if targetType == "" || targetID == "" {
+		return
+	}
+
+	p.Target = &AgentRunTargetContext{
+		TargetType: targetType,
+		TargetID:   targetID,
+	}
+
+	switch targetType {
+	case "task", "story":
+		p.StoryID = targetID
+	case "epic":
+		p.EpicID = targetID
+	case "support_conversation":
+		p.ConversationID = targetID
+	}
 }
 
 type SendAgentRunMessageRequest struct {

@@ -30,7 +30,7 @@ export function useEpic(wsId: string, id: string) {
 export function useEpicTasks(wsId: string, epicId: string) {
   return useQuery({
     queryKey: queryKeys.pm.epicTasks(wsId, epicId),
-    queryFn: async () => unwrap(await pmEpicService.listStories(wsId, epicId)),
+    queryFn: async () => unwrap(await pmEpicService.listTasks(wsId, epicId)),
     enabled: !!wsId && !!epicId,
   })
 }

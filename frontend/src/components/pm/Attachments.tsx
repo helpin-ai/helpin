@@ -105,8 +105,8 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       const d = (e as CustomEvent)?.detail;
       if (d?.parent_id === entityId && d?.entity === 'attachment') reload();
     };
-    window.addEventListener('story-child-updated', handler);
-    return () => window.removeEventListener('story-child-updated', handler);
+    window.addEventListener('task-child-updated', handler);
+    return () => window.removeEventListener('task-child-updated', handler);
   }, [entityId, reload]);
 
   const handleUpload = useCallback(

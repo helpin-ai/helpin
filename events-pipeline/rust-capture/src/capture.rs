@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
-use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
+use axum::Json;
 use axum_macros::debug_handler;
 use base64::Engine;
 use uuid::Uuid;
@@ -12,8 +12,8 @@ use uuid::Uuid;
 use crate::api::{CaptureError, CaptureResponse, CaptureResponseCode};
 use crate::auth::authorization;
 use crate::events::event::{Event, EventFormData, EventQuery, ProcessedEvent};
-use crate::sinks;
 use crate::router;
+use crate::sinks;
 
 #[debug_handler]
 pub async fn event(

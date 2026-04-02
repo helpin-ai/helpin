@@ -223,7 +223,7 @@ export function Sidebar() {
 
   return (
     <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
-      <SidebarHeader className="border-b border-border/70 p-2 dark:border-sidebar-border">
+      <SidebarHeader className="relative p-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <WorkspaceSwitcher />

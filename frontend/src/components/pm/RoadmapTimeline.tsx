@@ -225,7 +225,7 @@ export function RoadmapTimeline({
             {!isEpicGrouping && (
               <div className="flex border-b border-border bg-muted/30">
                 <div className="w-52 shrink-0 sticky left-0 z-10 bg-muted/30 border-r border-border px-3 py-1.5 flex items-center gap-1.5">
-                  <span className="text-[13px] font-medium truncate">{group.name}</span>
+                  <span className="text-sm font-medium truncate">{group.name}</span>
                   <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0">
                     {group.epics.length}
                   </span>
@@ -241,7 +241,7 @@ export function RoadmapTimeline({
                 <div key={`${group.id}-${epic.epic.id}`} className="flex border-b border-border/40">
                   <div className="w-52 shrink-0 sticky left-0 z-10 bg-background border-r border-border px-3 py-1.5 flex items-center min-w-0">
                     <span
-                      className={`truncate ${isEpicGrouping ? 'text-[13px] font-medium text-foreground' : 'text-[12px] text-muted-foreground'}`}
+                      className={`truncate ${isEpicGrouping ? 'text-sm font-medium text-foreground' : 'text-[12px] text-muted-foreground'}`}
                     >
                       {isEpicGrouping ? group.name : epic.epic.name}
                     </span>

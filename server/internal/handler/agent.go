@@ -163,10 +163,10 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
-// AssignAgentToStory handles POST /api/pm/tasks/{id}/assign-agent.
-func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request) {
+// AssignAgentToTask handles POST /api/pm/tasks/{id}/assign-agent.
+func (h *AgentHandler) AssignAgentToTask(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
 	var req model.AssignAgentRequest
@@ -175,17 +175,17 @@ func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.agentService.AssignAgentToStory(r.Context(), workspaceID, storyID, req.AgentID, actorID); err != nil {
+	if err := h.agentService.AssignAgentToTask(r.Context(), workspaceID, taskID, req.AgentID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
-// RunStoryAgent handles POST /api/pm/tasks/{id}/run-agent.
-func (h *AgentHandler) RunStoryAgent(w http.ResponseWriter, r *http.Request) {
+// RunTaskAgent handles POST /api/pm/tasks/{id}/run-agent.
+func (h *AgentHandler) RunTaskAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
 	var req model.StartAgentRunRequest
@@ -194,7 +194,7 @@ func (h *AgentHandler) RunStoryAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, "task", storyID, req, actorID)
+	run, err := h.agentService.RunTaskAgent(r.Context(), workspaceID, taskID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -215,6 +215,28 @@ func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
+// StartTargetRun handles POST /api/pm/agent-runs.
+func (h *AgentHandler) StartTargetRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.StartTargetAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, req.TargetType, req.TargetID, model.StartAgentRunRequest{
+		AgentID:           req.AgentID,
+		AdditionalContext: req.AdditionalContext,
+	}, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

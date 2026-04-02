@@ -261,7 +261,7 @@ export function TeamWorkflowStateEditor({
           if (!open) setDeleteConfirm(null);
         }}
         title="Delete state"
-        description="Stories in this state will need to be moved to another state. This cannot be undone."
+        description="Tasks in this state will need to be moved to another state. This cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => {

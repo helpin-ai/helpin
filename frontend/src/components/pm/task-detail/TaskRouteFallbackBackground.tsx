@@ -1,4 +1,4 @@
-import { StoriesPage } from '@/pages/pm/Stories';
+import { TasksPage } from '@/pages/pm/Tasks';
 
 interface TaskRouteFallbackBackgroundProps {
   teamId?: string;
@@ -9,7 +9,7 @@ export function TaskRouteFallbackBackground({
 }: TaskRouteFallbackBackgroundProps) {
   return (
     <div className="h-full overflow-hidden pt-4 md:pt-6">
-      <StoriesPage teamId={teamId} />
+      <TasksPage teamId={teamId} />
     </div>
   );
 }

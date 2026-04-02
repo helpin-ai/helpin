@@ -25,8 +25,8 @@ func NewPMTaskTemplateRepository(db *gorm.DB) *PMTaskTemplateRepository {
 }
 
 // ListByWorkspace lists story templates by workspace.
-func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMTaskTemplateListOptions) ([]model.PMStoryTemplate, error) {
-	var templates []model.PMStoryTemplate
+func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMTaskTemplateListOptions) ([]model.PMTaskTemplate, error) {
+	var templates []model.PMTaskTemplate
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
 	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&templates).Error; err != nil {
@@ -36,8 +36,8 @@ func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspac
 }
 
 // GetByID returns a story template by ID.
-func (r *PMTaskTemplateRepository) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
-	var tmpl model.PMStoryTemplate
+func (r *PMTaskTemplateRepository) GetByID(ctx context.Context, id string) (*model.PMTaskTemplate, error) {
+	var tmpl model.PMTaskTemplate
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&tmpl).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -48,8 +48,8 @@ func (r *PMTaskTemplateRepository) GetByID(ctx context.Context, id string) (*mod
 }
 
 // GetByName returns a story template by workspace/name within a scope.
-func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMStoryTemplate, error) {
-	var tmpl model.PMStoryTemplate
+func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMTaskTemplate, error) {
+	var tmpl model.PMTaskTemplate
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND LOWER(name) = LOWER(?)", workspaceID, strings.TrimSpace(name))
 	if teamID == nil || strings.TrimSpace(*teamID) == "" {
@@ -67,7 +67,7 @@ func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID st
 }
 
 // Create inserts a story template.
-func (r *PMTaskTemplateRepository) Create(ctx context.Context, tmpl *model.PMStoryTemplate) error {
+func (r *PMTaskTemplateRepository) Create(ctx context.Context, tmpl *model.PMTaskTemplate) error {
 	if err := r.db.WithContext(ctx).Create(tmpl).Error; err != nil {
 		return fmt.Errorf("create story template: %w", err)
 	}
@@ -75,7 +75,7 @@ func (r *PMTaskTemplateRepository) Create(ctx context.Context, tmpl *model.PMSto
 }
 
 // Update updates a story template.
-func (r *PMTaskTemplateRepository) Update(ctx context.Context, tmpl *model.PMStoryTemplate) error {
+func (r *PMTaskTemplateRepository) Update(ctx context.Context, tmpl *model.PMTaskTemplate) error {
 	if err := r.db.WithContext(ctx).Save(tmpl).Error; err != nil {
 		return fmt.Errorf("update story template: %w", err)
 	}
@@ -84,7 +84,7 @@ func (r *PMTaskTemplateRepository) Update(ctx context.Context, tmpl *model.PMSto
 
 // Delete hard-deletes a story template.
 func (r *PMTaskTemplateRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Delete(&model.PMStoryTemplate{}, "id = ?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Delete(&model.PMTaskTemplate{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("delete story template: %w", err)
 	}
 	return nil

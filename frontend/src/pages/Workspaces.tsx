@@ -273,7 +273,7 @@ export default function Workspaces() {
             name: team.name,
             handle: team.handle ? slugifyTeamHandle(team.handle) : slugifyTeamHandle(team.name),
             team_type: team.teamType,
-            default_task_type: TEAM_TYPE_PRESETS[team.teamType].defaultStoryType,
+            default_task_type: TEAM_TYPE_PRESETS[team.teamType].defaultTaskType,
           });
 
           if (!teamRes.data || teamRes.error) {

@@ -36,26 +36,26 @@ import {
 } from '@/hooks/queries';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import type {
-  CreateStoryRequest,
+  CreateTaskRequest,
   GroupedAssociations,
-  StoryRelationshipAction,
+  TaskRelationshipAction,
 } from '@/lib/pmTypes';
-import { StoryTypeIcon } from '@/lib/pmConstants';
+import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 interface TaskRelationshipsSectionProps {
   workspaceId: string;
-  storyId: string;
-  storyName: string;
-  storyDisplayId: number;
+  taskId: string;
+  taskName: string;
+  taskDisplayId: number;
   workflowId?: string;
   workflowStateId?: string;
   epicId?: string;
   sprintId?: string;
   teamId?: string;
-  storyType?: 'feature' | 'bug' | 'chore';
+  taskType?: 'feature' | 'bug' | 'chore';
   priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
   severity?: 'none' | 'minor' | 'major' | 'critical';
   externalBlocker: string;
@@ -69,7 +69,7 @@ interface TaskRelationshipsSectionProps {
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
-  value: StoryRelationshipAction;
+  value: TaskRelationshipAction;
   label: string;
   icon: typeof ArrowRightLeft;
 }> = [
@@ -81,7 +81,7 @@ const RELATIONSHIP_OPTIONS: Array<{
 ];
 
 const UPDATE_TYPE_OPTIONS: Array<{
-  value: StoryRelationshipAction;
+  value: TaskRelationshipAction;
   label: string;
   icon: typeof ArrowRightLeft;
 }> = [
@@ -92,7 +92,7 @@ const UPDATE_TYPE_OPTIONS: Array<{
   { value: 'relates_to', label: 'Relates to', icon: ArrowRightLeft },
 ];
 
-const RELATIONSHIP_COLORS: Record<StoryRelationshipAction, { active: string; icon: string }> = {
+const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon: string }> = {
   relates_to: {
     active: 'border-blue-200/80 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300',
     icon: 'text-blue-500',
@@ -218,15 +218,15 @@ function FloatingPopover({
 
 export function TaskRelationshipsSection({
   workspaceId,
-  storyId,
-  storyName: _storyName,
-  storyDisplayId: _storyDisplayId,
+  taskId,
+  taskName: _taskName,
+  taskDisplayId: _taskDisplayId,
   workflowId,
   workflowStateId,
   epicId,
   sprintId,
   teamId,
-  storyType,
+  taskType,
   priority,
   severity,
   externalBlocker,
@@ -241,20 +241,20 @@ export function TaskRelationshipsSection({
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
-  const [popoverTab, setPopoverTab] = useState<'stories' | 'docs'>('stories');
+  const [popoverTab, setPopoverTab] = useState<'tasks' | 'docs'>('tasks');
   const [query, setQuery] = useState('');
-  const [relationshipType, setRelationshipType] = useState<StoryRelationshipAction>('relates_to');
+  const [relationshipType, setRelationshipType] = useState<TaskRelationshipAction>('relates_to');
   const [searching, setSearching] = useState(false);
-  const [storyResults, setStoryResults] = useState<SearchResult[]>([]);
+  const [taskResults, setTaskResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
 
-  const associationsQuery = useTaskAssociations(workspaceId, storyId);
+  const associationsQuery = useTaskAssociations(workspaceId, taskId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
-  const createRelationship = useCreateTaskRelationship(workspaceId, storyId);
-  const deleteRelationship = useDeleteTaskRelationship(workspaceId, storyId);
-  const createStory = useCreateTask(workspaceId);
-  const createDocAssociation = useCreateDocAssociation(workspaceId, 'task', storyId);
-  const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'task', storyId);
+  const createRelationship = useCreateTaskRelationship(workspaceId, taskId);
+  const deleteRelationship = useDeleteTaskRelationship(workspaceId, taskId);
+  const createTask = useCreateTask(workspaceId);
+  const createDocAssociation = useCreateDocAssociation(workspaceId, 'task', taskId);
+  const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'task', taskId);
 
   // Detect which trigger opened the popover
   useEffect(() => {
@@ -271,14 +271,14 @@ export function TaskRelationshipsSection({
     if (!composerOpen) {
       setQuery('');
       setSearching(false);
-      setStoryResults([]);
+      setTaskResults([]);
       setDocResults([]);
       return;
     }
 
     const handle = window.setTimeout(async () => {
       if (query.trim().length < 2) {
-        setStoryResults([]);
+        setTaskResults([]);
         setDocResults([]);
         setSearching(false);
         return;
@@ -286,8 +286,8 @@ export function TaskRelationshipsSection({
 
       setSearching(true);
       const response = await searchService.search(workspaceId, query.trim());
-      if (popoverTab === 'stories') {
-        setStoryResults((response.data?.stories ?? []).filter((story) => story.id !== storyId));
+      if (popoverTab === 'tasks') {
+        setTaskResults((response.data?.tasks ?? []).filter(( s) => s.id !== taskId));
       } else {
         setDocResults(response.data?.documents ?? []);
       }
@@ -295,11 +295,12 @@ export function TaskRelationshipsSection({
     }, 220);
 
     return () => window.clearTimeout(handle);
-  }, [composerOpen, query, storyId, workspaceId, popoverTab]);
+  }, [composerOpen, query, taskId, workspaceId, popoverTab]);
 
   const allRelationships = useMemo(() => {
-    if (!data?.story_relationships) return [];
-    const rels = data.story_relationships;
+    const taskRels = data?.task_relationships;
+    if (!taskRels) return [];
+    const rels = taskRels;
     return [
       ...rels.blocked_by.map((r) => ({ ...r, link_type: 'is_blocked_by' as const })),
       ...rels.blocking.map((r) => ({ ...r, link_type: 'blocks' as const })),
@@ -313,24 +314,24 @@ export function TaskRelationshipsSection({
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
   const hasContent = allRelationships.length > 0 || linkedDocs.length > 0 || !!externalBlocker;
 
-  const handleOpenStory = (targetStoryId: string) => {
+  const handleOpenTask = (targetTaskId: string) => {
     if (!workspace?.slug) return;
-    openTaskRoute(navigate as never, location as never, workspace.slug, targetStoryId);
+    openTaskRoute(navigate as never, location as never, workspace.slug, targetTaskId);
   };
 
-  const handleCreateRelationship = async (otherStoryId: string) => {
+  const handleCreateRelationship = async (otherTaskId: string) => {
     await createRelationship.mutateAsync({
       relationship_type: relationshipType,
-      other_task_id: otherStoryId,
+      other_task_id: otherTaskId,
     });
     onComposerOpenChange(false);
   };
 
-  const handleCreateRelatedStory = async () => {
+  const handleCreateRelatedTask = async () => {
     const name = query.trim();
     if (!name) return;
 
-    const payload: CreateStoryRequest = {
+    const payload: CreateTaskRequest = {
       workspace_id: workspaceId,
       name,
       workflow_id: workflowId,
@@ -338,12 +339,12 @@ export function TaskRelationshipsSection({
       epic_id: epicId,
       sprint_id: sprintId,
       team_id: teamId,
-      task_type: storyType,
+      task_type: taskType,
       priority,
       severity,
     };
 
-    const created = await createStory.mutateAsync(payload);
+    const created = await createTask.mutateAsync(payload);
     await createRelationship.mutateAsync({
       relationship_type: relationshipType,
       other_task_id: created.task.id,
@@ -355,8 +356,8 @@ export function TaskRelationshipsSection({
     await createDocAssociation.mutateAsync({
       documentId,
       payload: {
-        linked_object_type: 'story',
-        linked_object_id: storyId,
+        linked_object_type: 'task',
+        linked_object_id: taskId,
         link_context: 'attached',
       },
     });
@@ -365,20 +366,20 @@ export function TaskRelationshipsSection({
 
   const handleUpdateRelationshipType = async (
     relationshipId: string,
-    otherStoryId: string,
-    newType: StoryRelationshipAction,
+    otherTaskId: string,
+    newType: TaskRelationshipAction,
   ) => {
     await deleteRelationship.mutateAsync(relationshipId);
     await createRelationship.mutateAsync({
       relationship_type: newType,
-      other_task_id: otherStoryId,
+      other_task_id: otherTaskId,
     });
   };
 
   const busy =
     createRelationship.isPending ||
     deleteRelationship.isPending ||
-    createStory.isPending ||
+    createTask.isPending ||
     createDocAssociation.isPending ||
     deleteDocAssociation.isPending;
 
@@ -394,18 +395,18 @@ export function TaskRelationshipsSection({
         <Tabs
           value={popoverTab}
           onValueChange={(v) => {
-            setPopoverTab(v as 'stories' | 'docs');
+            setPopoverTab(v as 'tasks' | 'docs');
             setQuery('');
-            setStoryResults([]);
+            setTaskResults([]);
             setDocResults([]);
           }}
         >
           <TabsList className="h-8 w-fit gap-0.5 rounded-lg bg-muted/60 p-0.5">
             <TabsTrigger
-              value="stories"
+              value="tasks"
               className="h-7 rounded-md px-3.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
-              Stories
+              Tasks
             </TabsTrigger>
             <TabsTrigger
               value="docs"
@@ -418,9 +419,9 @@ export function TaskRelationshipsSection({
       </div>
 
       <div className="space-y-2.5 px-3 py-2.5">
-        {popoverTab === 'stories' ? (
+        {popoverTab === 'tasks' ? (
           <>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Story...</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Task...</p>
             <div className="flex flex-wrap gap-1.5">
               {RELATIONSHIP_OPTIONS.map((option) => {
                 const OptionIcon = option.icon;
@@ -452,7 +453,7 @@ export function TaskRelationshipsSection({
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={popoverTab === 'stories' ? 'Search Story Title or ID' : 'Search documents'}
+            placeholder={popoverTab === 'tasks' ? 'Search Task Title or ID' : 'Search documents'}
             className="pl-8"
           />
         </div>
@@ -466,18 +467,18 @@ export function TaskRelationshipsSection({
           ) : null}
 
           {!searching &&
-            popoverTab === 'stories' &&
-            storyResults.map((story) => (
+            popoverTab === 'tasks' &&
+            taskResults.map((task) => (
               <button
-                key={story.id}
+                key={task.id}
                 type="button"
-                onClick={() => handleCreateRelationship(story.id)}
+                onClick={() => handleCreateRelationship(task.id)}
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{story.name}</span>
-                {story.display_id ? (
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{task.name}</span>
+                {task.display_id ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
-                    {story.display_id}
+                    {task.display_id}
                   </Badge>
                 ) : null}
               </button>
@@ -493,13 +494,13 @@ export function TaskRelationshipsSection({
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.name}</span>
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.name}</span>
               </button>
             ))}
 
           {!searching &&
             query.trim().length >= 2 &&
-            ((popoverTab === 'stories' && storyResults.length === 0) ||
+            ((popoverTab === 'tasks' && taskResults.length === 0) ||
               (popoverTab === 'docs' && docResults.length === 0)) ? (
             <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
               No results found.
@@ -507,18 +508,18 @@ export function TaskRelationshipsSection({
           ) : null}
         </div>
 
-        {popoverTab === 'stories' ? (
+        {popoverTab === 'tasks' ? (
           <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-            <span className="text-xs text-muted-foreground/70">Search for an existing story or</span>
+            <span className="text-xs text-muted-foreground/70">Search for an existing task or</span>
             <Button
               type="button"
               variant="outline"
               className="h-7 gap-1 rounded-lg border-border/60 px-2.5 text-xs font-medium transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
               disabled={query.trim().length === 0}
-              onClick={handleCreateRelatedStory}
+              onClick={handleCreateRelatedTask}
             >
               <Plus className="h-3 w-3" />
-              Create Related Story
+              Create Related Task
             </Button>
           </div>
         ) : null}
@@ -532,10 +533,10 @@ export function TaskRelationshipsSection({
   }
 
   return (
-    <section id="story-relationships-section" className={cn('mt-6', className)}>
+    <section id="task-relationships-section" className={cn('mt-6', className)}>
       <div className="flex items-center gap-1.5">
         <ArrowRightLeft className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Story Relationships</h3>
+        <h3 className="text-sm font-semibold">Task Relationships</h3>
       </div>
 
       {associationsQuery.error ? (
@@ -550,6 +551,10 @@ export function TaskRelationshipsSection({
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
           const resolved = item.link_type === 'blocks' && !item.is_active;
+          const relatedTask = item.task;
+          if (!relatedTask) {
+            return null;
+          }
           return (
             <div
               key={item.relationship_id}
@@ -563,20 +568,20 @@ export function TaskRelationshipsSection({
                 <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
                 <button
                   type="button"
-                  onClick={() => handleOpenStory(item.story.object_id)}
-                  className="min-w-0 truncate text-sm font-medium text-left transition-colors hover:text-primary"
+                  onClick={() => handleOpenTask(relatedTask.object_id)}
+                  className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
                 >
-                  {item.story.title}
+                  {relatedTask.title}
                 </button>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {item.story.display_id ? (
+                {relatedTask.display_id ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
-                    {item.story.task_type ? (
-                      <StoryTypeIcon storyType={item.story.task_type} className="h-3 w-3" />
+                    {relatedTask.task_type ? (
+                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
-                    {item.story.display_id}
-                    {(item.story.completed || resolved) ? (
+                    {relatedTask.display_id}
+                    {(relatedTask.completed || resolved) ? (
                       <Check className="h-3 w-3 text-green-600" />
                     ) : null}
                   </Badge>
@@ -597,7 +602,7 @@ export function TaskRelationshipsSection({
                       return (
                         <DropdownMenuItem
                           key={opt.value}
-                          onClick={() => handleUpdateRelationshipType(item.relationship_id, item.story.object_id, opt.value)}
+                          onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
                         >
                           <OptIcon className="mr-2 h-3.5 w-3.5" />
                           {opt.label}
@@ -627,7 +632,7 @@ export function TaskRelationshipsSection({
           >
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.title}</span>
+            <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
                 <DropdownMenu>

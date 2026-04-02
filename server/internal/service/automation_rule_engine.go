@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -30,14 +31,22 @@ func ruleExecCtxFromContext(ctx context.Context) *model.RuleExecutionContext {
 	return nil
 }
 
+func nilIfEmpty(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 // AutomationRuleEngine evaluates automation rules against events and executes actions.
 type AutomationRuleEngine struct {
 	ruleRepo        *repository.AutomationRuleRepository
-	storyRepo       *repository.PMStoryRepository
+	taskRepo       *repository.PMTaskRepository
 	workflowRepo    *repository.PMWorkflowRepository
-	deliveryRepo    *repository.StoryDeliveryTargetRepository
+	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	agentService    *AgentService
-	storyService    *PMStoryService
+	storyService    *PMTaskService
 	gitService      *GitService
 	commandService  *InternalCommandService
 	notificationSvc *NotificationService
@@ -50,9 +59,9 @@ type AutomationRuleEngine struct {
 // NewAutomationRuleEngine creates a new AutomationRuleEngine.
 func NewAutomationRuleEngine(
 	ruleRepo *repository.AutomationRuleRepository,
-	storyRepo *repository.PMStoryRepository,
+	taskRepo *repository.PMTaskRepository,
 	workflowRepo *repository.PMWorkflowRepository,
-	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	gitService *GitService,
 	notificationSvc *NotificationService,
 	activitySvc *PMActivityService,
@@ -60,7 +69,7 @@ func NewAutomationRuleEngine(
 ) *AutomationRuleEngine {
 	return &AutomationRuleEngine{
 		ruleRepo:        ruleRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		workflowRepo:    workflowRepo,
 		deliveryRepo:    deliveryRepo,
 		gitService:      gitService,
@@ -77,8 +86,8 @@ func (e *AutomationRuleEngine) SetAgentService(svc *AgentService) *AutomationRul
 	return e
 }
 
-// SetStoryService sets the story service (breaks circular dependency).
-func (e *AutomationRuleEngine) SetStoryService(svc *PMStoryService) *AutomationRuleEngine {
+// SetTaskService sets the task service (breaks circular dependency).
+func (e *AutomationRuleEngine) SetTaskService(svc *PMTaskService) *AutomationRuleEngine {
 	e.storyService = svc
 	return e
 }
@@ -180,7 +189,7 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 }
 
 // resolveStoryIfNeeded loads the story for story-based triggers, returns nil for cron triggers.
-func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event model.AutomationEvent) (*model.PMStory, error) {
+func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event model.AutomationEvent) (*model.PMTask, error) {
 	switch event.TriggerType {
 	case model.TriggerCron:
 		return nil, nil
@@ -188,7 +197,7 @@ func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event m
 		if event.StoryID == "" {
 			return nil, nil
 		}
-		story, err := e.storyRepo.GetRawByID(ctx, event.StoryID)
+		story, err := e.taskRepo.GetRawByID(ctx, event.StoryID)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +249,7 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 	}
 }
 
-func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMStory, event model.AutomationEvent) bool {
+func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMTask, event model.AutomationEvent) bool {
 	if story != nil {
 		if rule.WorkflowID != nil && *rule.WorkflowID != "" && *rule.WorkflowID != story.WorkflowID {
 			return false
@@ -259,7 +268,7 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *mo
 	return true
 }
 
-func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, execCtx *model.RuleExecutionContext) error {
+func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, execCtx *model.RuleExecutionContext) error {
 	switch rule.ActionType {
 	case model.ActionRunAgent:
 		return fmt.Errorf("run_agent is no longer supported")
@@ -300,44 +309,58 @@ func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.Au
 	}
 }
 
-func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
+func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigRunAgent) error {
 	if e.agentService == nil {
 		return fmt.Errorf("agent service not configured")
 	}
+	if strings.TrimSpace(cfg.AgentID) == "" {
+		return fmt.Errorf("start_agent_run requires agent_id")
+	}
 
-	targetType := event.TargetType
-	targetID := event.TargetID
-	if targetType == "" && story != nil {
+	targetType := strings.TrimSpace(cfg.TargetType)
+	targetID := strings.TrimSpace(cfg.TargetID)
+	if targetType == "" && targetID == "" {
+		targetType = strings.TrimSpace(event.TargetType)
+		targetID = strings.TrimSpace(event.TargetID)
+		if targetType == "" && targetID == "" {
+			if story != nil {
+				targetType = "task"
+				targetID = story.ID
+			} else if strings.TrimSpace(event.StoryID) != "" {
+				targetType = "task"
+				targetID = strings.TrimSpace(event.StoryID)
+			}
+		}
+	}
+	if targetType == "story" {
 		targetType = "task"
-		targetID = story.ID
 	}
-	if targetType != "task" && targetType != "story" || targetID == "" {
-		return fmt.Errorf("start_agent_run currently requires a task target")
-	}
-	if story == nil {
-		var err error
-		story, err = e.storyRepo.GetRawByID(ctx, targetID)
-		if err != nil {
-			return fmt.Errorf("load story for start_agent_run: %w", err)
-		}
-		if story == nil {
-			return fmt.Errorf("story %s not found", targetID)
-		}
+	if targetType == "" || targetID == "" {
+		return fmt.Errorf("start_agent_run requires target_type and target_id or an event target")
 	}
 
-	if cfg.AgentID != "" && (story.AssignedAgentID == nil || *story.AssignedAgentID != cfg.AgentID) {
-		story.AssignedAgentID = &cfg.AgentID
-		if err := e.storyRepo.Update(ctx, story); err != nil {
-			return fmt.Errorf("assign agent to story: %w", err)
-		}
+	now := time.Now().UTC()
+	trigger := &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceAutomationRule,
+		TriggerType: event.TriggerType,
+		RuleID:      &rule.ID,
+		FiredAt:     &now,
 	}
-
-	if _, err := e.agentService.RunAgent(ctx, event.WorkspaceID, story.ID, "system"); err != nil {
+	eventContext := &model.AgentRunEventContext{
+		StateID: nilIfEmpty(event.StateID),
+		TeamID:  nilIfEmpty(event.TeamID),
+		RunID:   nilIfEmpty(event.RunID),
+		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
+	}
+	if _, err := e.agentService.startTargetRun(ctx, event.WorkspaceID, targetType, targetID, model.StartAgentRunRequest{
+		AgentID:           cfg.AgentID,
+		AdditionalContext: cfg.AdditionalContext,
+	}, nil, trigger, eventContext); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
 
 	if e.activitySvc != nil {
-		_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", story.ID, nil,
+		_ = e.activitySvc.Log(ctx, event.WorkspaceID, targetType, targetID, nil,
 			fmt.Sprintf("automation rule '%s' started an agent run", rule.Name),
 			nil, nil, nil, nil)
 	}
@@ -345,8 +368,8 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	if e.wsPublisher != nil {
 		e.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
-			Entity:      "task",
-			EntityID:    story.ID,
+			Entity:      targetType,
+			EntityID:    targetID,
 			WorkspaceID: event.WorkspaceID,
 		})
 	}
@@ -354,7 +377,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
+func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
 	if e.storyService == nil {
 		return fmt.Errorf("task service not configured")
 	}
@@ -385,7 +408,7 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 
 	// Move the story. MoveToState triggers EvaluateEvent (with chain context
 	// from chainCtx) — no separate call needed here.
-	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveStoryRequest{
+	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveTaskRequest{
 		StateID: cfg.TargetStateID,
 	}, "system")
 	if err != nil {
@@ -399,7 +422,7 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMergeBranch) error {
+func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigMergeBranch) error {
 	if e.gitService == nil {
 		return fmt.Errorf("git service not configured")
 	}
@@ -408,7 +431,7 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 	}
 
 	// Load delivery target to get working branch
-	target, err := e.deliveryRepo.GetByStory(ctx, event.WorkspaceID, event.StoryID)
+	target, err := e.deliveryRepo.GetByTask(ctx, event.WorkspaceID, event.StoryID)
 	if err != nil {
 		return fmt.Errorf("load delivery target: %w", err)
 	}
@@ -460,7 +483,7 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeRunCommand(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunCommand) error {
+func (e *AutomationRuleEngine) executeRunCommand(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigRunCommand) error {
 	if e.commandService == nil {
 		return fmt.Errorf("command service not configured")
 	}
@@ -741,6 +764,14 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		}
 		if strings.TrimSpace(cfg.AgentID) == "" {
 			return fmt.Errorf("agent_id is required in action_config for %s", actionType)
+		}
+		targetType := strings.TrimSpace(cfg.TargetType)
+		targetID := strings.TrimSpace(cfg.TargetID)
+		if (targetType == "") != (targetID == "") {
+			return fmt.Errorf("target_type and target_id must both be set in action_config for %s", actionType)
+		}
+		if triggerType == model.TriggerCron && (targetType == "" || targetID == "") {
+			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
 		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState

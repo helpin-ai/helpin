@@ -25,13 +25,13 @@ export function SprintPlanningEmptyState({ canEdit, onCreateSprint }: SprintPlan
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
         {[
           { icon: CalendarDays, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
-          { icon: BarChart3, title: 'Track progress', desc: 'Monitor story and point completion in real time' },
+          { icon: BarChart3, title: 'Track progress', desc: 'Monitor task and point completion in real time' },
           { icon: CheckCircle2, title: 'Ship consistently', desc: 'Build momentum with regular delivery milestones' },
         ].map((item) => (
           <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
             <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
             <p className="text-sm font-medium mb-1">{item.title}</p>
-            <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
           </div>
         ))}
       </div>

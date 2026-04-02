@@ -64,9 +64,7 @@ pub async fn liveness() -> impl IntoResponse {
 /// Readiness probe: returns 200 when the pod can accept traffic, 503 during shutdown.
 /// K8s uses this to decide whether to route traffic to the pod.
 /// Note: We stay ready even when Kafka is down because FallbackSink buffers to disk.
-pub async fn readiness(
-    health: axum::extract::State<HealthRegistry>,
-) -> impl IntoResponse {
+pub async fn readiness(health: axum::extract::State<HealthRegistry>) -> impl IntoResponse {
     if health.is_ready() {
         (StatusCode::OK, "ready")
     } else {
@@ -75,9 +73,7 @@ pub async fn readiness(
 }
 
 /// Detailed health status for debugging and dashboards.
-pub async fn status(
-    health: axum::extract::State<HealthRegistry>,
-) -> impl IntoResponse {
+pub async fn status(health: axum::extract::State<HealthRegistry>) -> impl IntoResponse {
     let kafka_healthy = health.is_kafka_healthy();
     let ready = health.is_ready();
 

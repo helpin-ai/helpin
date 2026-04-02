@@ -49,7 +49,7 @@ type PMRecurringTemplate struct {
 	Description          *string         `json:"description"`
 	Status               string          `json:"status" gorm:"not null;default:'active';index"`
 	OwnerMemberID        *string         `json:"owner_member_id" gorm:"type:uuid;index"`
-	CreatedFromStoryID   *string         `json:"created_from_task_id" gorm:"column:created_from_task_id;type:uuid;index"`
+	CreatedFromTaskID    *string         `json:"created_from_task_id" gorm:"column:created_from_task_id;type:uuid;index"`
 	SeedPayload          json.RawMessage `json:"seed_payload" gorm:"type:jsonb;not null;default:'{}'"`
 	Config               json.RawMessage `json:"config" gorm:"type:jsonb;not null;default:'{}'"`
 	StartDate            *time.Time      `json:"start_date" gorm:"type:date"`
@@ -57,7 +57,7 @@ type PMRecurringTemplate struct {
 	EndsAfterOccurrences *int            `json:"ends_after_occurrences"`
 	NextRunAt            *time.Time      `json:"next_run_at" gorm:"index"`
 	LastRunAt            *time.Time      `json:"last_run_at"`
-	LastGeneratedStoryID *string         `json:"last_generated_task_id" gorm:"column:last_generated_task_id;type:uuid;index"`
+	LastGeneratedTaskID  *string         `json:"last_generated_task_id" gorm:"column:last_generated_task_id;type:uuid;index"`
 	LastError            *string         `json:"last_error"`
 	FailureCount         int             `json:"failure_count" gorm:"not null;default:0"`
 	GeneratedCount       int             `json:"generated_count" gorm:"not null;default:0"`
@@ -81,7 +81,7 @@ type PMRecurringRun struct {
 	StartedAt        *time.Time `json:"started_at"`
 	FinishedAt       *time.Time `json:"finished_at"`
 	Status           string     `json:"status" gorm:"not null;index"`
-	GeneratedStoryID *string    `json:"generated_task_id" gorm:"column:generated_task_id;type:uuid;index"`
+	GeneratedTaskID  *string    `json:"generated_task_id" gorm:"column:generated_task_id;type:uuid;index"`
 	DedupeKey        string     `json:"dedupe_key" gorm:"not null;uniqueIndex"`
 	ErrorMessage     *string    `json:"error_message"`
 	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -111,7 +111,7 @@ type PMRecurringTemplateConfig struct {
 type PMRecurringTaskSeed struct {
 	Name              string                      `json:"name"`
 	Description       *string                     `json:"description,omitempty"`
-	StoryType         string                      `json:"task_type,omitempty"`
+	TaskType          string                      `json:"task_type,omitempty"`
 	WorkflowID        string                      `json:"workflow_id"`
 	WorkflowStateID   string                      `json:"workflow_state_id"`
 	EpicID            *string                     `json:"epic_id,omitempty"`
@@ -132,14 +132,14 @@ type CreateRecurringTemplateRequest struct {
 	WorkspaceID string                   `json:"workspace_id"`
 	Title       string                   `json:"title"`
 	Description *string                  `json:"description,omitempty"`
-	StoryID     string                   `json:"task_id"`
+	TaskID      string                   `json:"task_id"`
 	Config      PMRecurringTemplateConfig `json:"config"`
 }
 
 type UpdateRecurringTemplateRequest struct {
 	Title       *string                    `json:"title,omitempty"`
 	Description *string                    `json:"description,omitempty"`
-	StoryID     *string                    `json:"task_id,omitempty"`
+	TaskID      *string                    `json:"task_id,omitempty"`
 	Config      *PMRecurringTemplateConfig `json:"config,omitempty"`
 }
 
@@ -152,7 +152,7 @@ type RecurringTemplateDetail struct {
 	Config            PMRecurringTemplateConfig `json:"config"`
 	Seed              PMRecurringTaskSeed       `json:"seed"`
 	RuleSummary       string                    `json:"rule_summary"`
-	LastGeneratedStory *PMTask                   `json:"last_generated_story,omitempty"`
+	LastGeneratedTask  *PMTask                   `json:"last_generated_task,omitempty"`
 	Runs               []PMRecurringRun          `json:"runs,omitempty"`
 }
 
@@ -165,6 +165,6 @@ type TaskRecurringSummary struct {
 	RuleSummary        string                    `json:"rule_summary"`
 	NextRunAt          *time.Time                `json:"next_run_at,omitempty"`
 	LastError          *string                   `json:"last_error,omitempty"`
-	LastGeneratedStory *PMTask                   `json:"last_generated_story,omitempty"`
+	LastGeneratedTask  *PMTask                   `json:"last_generated_task,omitempty"`
 	Config            PMRecurringTemplateConfig `json:"config"`
 }

@@ -165,9 +165,6 @@ func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *ht
 	}
 
 	taskID := strings.TrimSpace(req.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(req.StoryID)
-	}
 	if err := h.supportService.LinkConversationStory(r.Context(), workspaceID, ticketID, taskID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

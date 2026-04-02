@@ -2,6 +2,7 @@ package tiptap
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
 )
@@ -67,4 +68,10 @@ func init() {
 // SanitizeHTMLBlock sanitizes an HTML fragment for safe rendering.
 func SanitizeHTMLBlock(rawHTML string) string {
 	return htmlBlockPolicy.Sanitize(rawHTML)
+}
+
+// StripHTML removes all HTML tags and returns plain text.
+// Useful for generating notification bodies from rich-text content.
+func StripHTML(html string) string {
+	return strings.TrimSpace(bluemonday.StrictPolicy().Sanitize(html))
 }

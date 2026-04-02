@@ -8,7 +8,7 @@ import { RecurringTemplateSummary } from '../RecurringTemplateSummary';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('RecurringTemplateSummary', () => {
-  it('renders recurring status, rule summary, and last generated story details', () => {
+  it('renders recurring status, rule summary, and last generated task details', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -22,7 +22,7 @@ describe('RecurringTemplateSummary', () => {
           nextRunAt="2026-03-20T00:00:00Z"
           generatedCount={8}
           occurrenceNumber={3}
-          lastGeneratedStory={{ id: 'story-1', display_id: 321, name: 'Weekly Ops Review' }}
+          lastGeneratedTask={{ id: 'task-1', display_id: 321, name: 'Weekly Ops Review' }}
         />,
       );
     });

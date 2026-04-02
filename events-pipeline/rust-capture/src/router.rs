@@ -11,9 +11,12 @@ use axum::{
 };
 
 use crate::{
-    auth::http_tokens::HttpTokens, capture, health, health::HealthRegistry,
+    auth::http_tokens::HttpTokens,
+    capture, health,
+    health::HealthRegistry,
     metrics_recorder::{request_timeout, track_metrics},
-    sinks, utils::time::TimeSource,
+    sinks,
+    utils::time::TimeSource,
 };
 use tower_http::cors::{Any, CorsLayer};
 

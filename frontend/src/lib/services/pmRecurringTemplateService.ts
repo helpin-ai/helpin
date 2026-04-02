@@ -2,7 +2,7 @@ import { api } from '../api';
 import type {
   CreateRecurringTemplateRequest,
   RecurringTemplateDetail,
-  StoryRecurringSummary,
+  TaskRecurringSummary,
   UpdateRecurringTemplateRequest,
 } from '../pmTypes';
 
@@ -23,8 +23,8 @@ export const pmRecurringTemplateService = {
     api.get<RecurringTemplateDetail[]>(`/pm/recurring-templates${qs(workspaceId, opts)}`),
   get: (workspaceId: string, id: string) =>
     api.get<RecurringTemplateDetail>(`/pm/recurring-templates/${id}${qs(workspaceId)}`),
-  getByStory: (workspaceId: string, storyId: string) =>
-    api.get<StoryRecurringSummary>(`/pm/tasks/${storyId}/recurring-template${qs(workspaceId)}`),
+  getByTask: (workspaceId: string, taskId: string) =>
+    api.get<TaskRecurringSummary>(`/pm/tasks/${taskId}/recurring-template${qs(workspaceId)}`),
   create: (payload: CreateRecurringTemplateRequest) =>
     api.post<RecurringTemplateDetail>(`/pm/recurring-templates${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateRecurringTemplateRequest) =>

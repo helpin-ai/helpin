@@ -51,7 +51,7 @@ export function TeamRepoDefaultForm({
   return (
     <div className="space-y-5 py-2">
       <p className="text-sm text-muted-foreground">
-        Stories on this team inherit these delivery defaults. Story detail can still override the repository or base branch.
+        Tasks on this team inherit these delivery defaults. Task detail can still override the repository or base branch.
       </p>
       <div className="space-y-2">
         <Label>Repository</Label>
@@ -92,7 +92,7 @@ export function TeamRepoDefaultForm({
         <div>
           <p className="text-sm font-medium">Auto-sync workflow state from PR events</p>
           <p className="text-xs text-muted-foreground">
-            When enabled, pull request webhooks can move stories forward automatically.
+            When enabled, pull request webhooks can move tasks forward automatically.
           </p>
         </div>
         <Switch checked={autoSyncStates} onCheckedChange={setAutoSyncStates} />

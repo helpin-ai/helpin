@@ -21,9 +21,9 @@ type ExecutionContext struct {
 	TaskID                 string
 	ConversationID         string
 	Agent                  *model.Agent
-	Task                   *model.PMStory
+	Task                   *model.PMTask
 	Epic                   *model.PMEpic
-	EpicTasks              []model.PMStory
+	EpicTasks              []model.PMTask
 	Conversation           *model.SupportConversation
 	GitIntegration         *model.GitIntegration
 	GitAccessToken         string
@@ -120,7 +120,7 @@ type ServiceBridge struct {
 	AddComment          func(ctx context.Context, workspaceID, taskID, agentID, content string) error
 	UpdateTaskState     func(ctx context.Context, workspaceID, taskID, stateID string) error
 	ListChecklist       func(ctx context.Context, workspaceID, taskID string) ([]model.PMChecklistItem, error)
-	CreateTaskBatch     func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedStory) (CreateTaskBatchResult, error)
+	CreateTaskBatch     func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedTask) (CreateTaskBatchResult, error)
 	AssignTaskAgent     func(ctx context.Context, workspaceID, actorID, taskID, agentID string) error
 	SetTaskDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []TaskDependencyLink) error
 	ListEpicTasks       func(ctx context.Context, workspaceID, epicID string) ([]EpicTaskSummary, error)

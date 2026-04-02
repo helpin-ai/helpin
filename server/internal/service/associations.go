@@ -12,8 +12,8 @@ import (
 // AssociationsService aggregates task relationships, CRM/support links, and docs links into one read model.
 type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
-	storyLinkRepo    *repository.PMStoryLinkRepository
-	storyRepo        *repository.PMStoryRepository
+	taskLinkRepo     *repository.PMTaskLinkRepository
+	taskRepo        *repository.PMTaskRepository
 	supportRepo      *repository.SupportConversationRepository
 	docsLinkRepo     *repository.DocsLinkRepository
 	docsDocumentRepo *repository.DocsDocumentRepository
@@ -22,16 +22,16 @@ type AssociationsService struct {
 // NewAssociationsService creates a new AssociationsService.
 func NewAssociationsService(
 	assocRepo *repository.CRMAssociationRepository,
-	storyLinkRepo *repository.PMStoryLinkRepository,
-	storyRepo *repository.PMStoryRepository,
+	taskLinkRepo *repository.PMTaskLinkRepository,
+	taskRepo *repository.PMTaskRepository,
 	supportRepo *repository.SupportConversationRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsDocumentRepo *repository.DocsDocumentRepository,
 ) *AssociationsService {
 	return &AssociationsService{
 		assocRepo:        assocRepo,
-		storyLinkRepo:    storyLinkRepo,
-		storyRepo:        storyRepo,
+		taskLinkRepo:     taskLinkRepo,
+		taskRepo:        taskRepo,
 		supportRepo:      supportRepo,
 		docsLinkRepo:     docsLinkRepo,
 		docsDocumentRepo: docsDocumentRepo,
@@ -51,26 +51,26 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 	}
 
 	response := &model.GroupedAssociationsResponse{
-		StoryRelationships: model.StoryRelationshipGroups{
-			BlockedBy:    []model.StoryRelationshipSummary{},
-			Blocking:     []model.StoryRelationshipSummary{},
-			RelatesTo:    []model.StoryRelationshipSummary{},
-			RelatedBy:    []model.StoryRelationshipSummary{},
-			Duplicates:   []model.StoryRelationshipSummary{},
-			DuplicatedBy: []model.StoryRelationshipSummary{},
+		TaskRelationships: model.TaskRelationshipGroups{
+			BlockedBy:    []model.TaskRelationshipSummary{},
+			Blocking:     []model.TaskRelationshipSummary{},
+			RelatesTo:    []model.TaskRelationshipSummary{},
+			RelatedBy:    []model.TaskRelationshipSummary{},
+			Duplicates:   []model.TaskRelationshipSummary{},
+			DuplicatedBy: []model.TaskRelationshipSummary{},
 		},
-		Stories:              []model.AssociationObjectSummary{},
+		Tasks:                []model.AssociationObjectSummary{},
 		SupportConversations: []model.AssociationObjectSummary{},
 		CRMRecords:           []model.AssociationObjectSummary{},
 		Docs:                 []model.AssociationObjectSummary{},
 	}
 
-	if objectType == model.CRMObjectTask || objectType == model.CRMObjectStory {
-		relationships, err := s.loadStoryRelationships(ctx, workspaceID, objectID)
+	if objectType == model.CRMObjectTask {
+		relationships, err := s.loadTaskRelationships(ctx, workspaceID, objectID)
 		if err != nil {
 			return nil, err
 		}
-		response.StoryRelationships = relationships
+		response.TaskRelationships = relationships
 	}
 
 	if err := s.populateCrossObjectAssociations(ctx, workspaceID, objectType, objectID, response); err != nil {
@@ -86,38 +86,38 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 	return response, nil
 }
 
-// CreateStoryRelationship creates a canonical task relationship from the current task's point of view.
-func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, workspaceID, currentStoryID, actorID string, req model.CreateStoryRelationshipRequest) (*model.PMStoryLink, error) {
+// CreateTaskRelationship creates a canonical task relationship from the current task's point of view.
+func (s *AssociationsService) CreateTaskRelationship(ctx context.Context, workspaceID, currentTaskID, actorID string, req model.CreateTaskRelationshipRequest) (*model.PMTaskLink, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	if currentStoryID == "" {
-		return nil, fmt.Errorf("story id is required")
+	if currentTaskID == "" {
+		return nil, fmt.Errorf("task id is required")
 	}
 	if actorID == "" {
 		return nil, fmt.Errorf("actor_id is required")
 	}
-	if req.OtherStoryID == "" {
+	if req.OtherTaskID == "" {
 		return nil, fmt.Errorf("other_task_id is required")
 	}
 
-	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherStoryID})
+	tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, []string{currentTaskID, req.OtherTaskID})
 	if err != nil {
 		return nil, err
 	}
-	if len(stories) != 2 {
-		return nil, fmt.Errorf("both stories must exist in the workspace")
+	if len(tasks) != 2 {
+		return nil, fmt.Errorf("both tasks must exist in the workspace")
 	}
 
-	sourceStoryID, targetStoryID, linkType, err := resolveRelationshipInput(currentStoryID, req)
+	sourceTaskID, targetTaskID, linkType, err := resolveRelationshipInput(currentTaskID, req)
 	if err != nil {
 		return nil, err
 	}
-	if sourceStoryID == targetStoryID {
-		return nil, fmt.Errorf("a story cannot relate to itself")
+	if sourceTaskID == targetTaskID {
+		return nil, fmt.Errorf("a task cannot relate to itself")
 	}
 
-	existingLinks, err := s.storyLinkRepo.ListByStory(ctx, workspaceID, currentStoryID)
+	existingLinks, err := s.taskLinkRepo.ListByTask(ctx, workspaceID, currentTaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,47 +125,47 @@ func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, works
 		if link.LinkType != linkType {
 			continue
 		}
-		if isSameRelationshipPair(link, sourceStoryID, targetStoryID, linkType) || isReverseSymmetricPair(link, sourceStoryID, targetStoryID, linkType) {
+		if isSameRelationshipPair(link, sourceTaskID, targetTaskID, linkType) || isReverseSymmetricPair(link, sourceTaskID, targetTaskID, linkType) {
 			return &link, nil
 		}
 	}
 
-	if linkType == model.PMStoryLinkTypeBlocks {
-		links, err := s.storyLinkRepo.ListByWorkspaceAndType(ctx, workspaceID, model.PMStoryLinkTypeBlocks)
+	if linkType == model.PMTaskLinkTypeBlocks {
+		links, err := s.taskLinkRepo.ListByWorkspaceAndType(ctx, workspaceID, model.PMTaskLinkTypeBlocks)
 		if err != nil {
 			return nil, err
 		}
-		if wouldCreateBlockCycle(links, sourceStoryID, targetStoryID) {
+		if wouldCreateBlockCycle(links, sourceTaskID, targetTaskID) {
 			return nil, fmt.Errorf("this relationship would create a circular blocking chain")
 		}
 	}
 
-	link := &model.PMStoryLink{
-		WorkspaceID:   workspaceID,
-		SourceStoryID: sourceStoryID,
-		TargetStoryID: targetStoryID,
-		LinkType:      linkType,
-		CreatedBy:     actorID,
+	link := &model.PMTaskLink{
+		WorkspaceID:  workspaceID,
+		SourceTaskID: sourceTaskID,
+		TargetTaskID: targetTaskID,
+		LinkType:     linkType,
+		CreatedBy:    actorID,
 	}
-	if err := s.storyLinkRepo.Create(ctx, link); err != nil {
+	if err := s.taskLinkRepo.Create(ctx, link); err != nil {
 		return nil, err
 	}
 	return link, nil
 }
 
-// DeleteStoryRelationship removes a story relationship by ID.
-func (s *AssociationsService) DeleteStoryRelationship(ctx context.Context, workspaceID, relationshipID string) error {
+// DeleteTaskRelationship removes a task relationship by ID.
+func (s *AssociationsService) DeleteTaskRelationship(ctx context.Context, workspaceID, relationshipID string) error {
 	if workspaceID == "" {
 		return fmt.Errorf("workspace_id is required")
 	}
-	link, err := s.storyLinkRepo.GetByID(ctx, relationshipID)
+	link, err := s.taskLinkRepo.GetByID(ctx, relationshipID)
 	if err != nil {
 		return err
 	}
 	if link == nil || link.WorkspaceID != workspaceID {
 		return fmt.Errorf("relationship not found")
 	}
-	return s.storyLinkRepo.Delete(ctx, relationshipID)
+	return s.taskLinkRepo.Delete(ctx, relationshipID)
 }
 
 func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
@@ -186,26 +186,26 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 		enrichedByID[assoc.ID] = assoc
 	}
 
-	storyIDs := make([]string, 0)
+	taskIDs := make([]string, 0)
 	supportConversationIDs := make([]string, 0)
 	for _, assoc := range assocs {
 		otherType, otherID := otherAssociationSide(assoc, objectType, objectID)
 		switch otherType {
-		case model.CRMObjectTask, model.CRMObjectStory:
-			storyIDs = append(storyIDs, otherID)
+		case model.CRMObjectTask:
+			taskIDs = append(taskIDs, otherID)
 		case model.CRMObjectSupportConversation:
 			supportConversationIDs = append(supportConversationIDs, otherID)
 		}
 	}
 
-	storiesByID := make(map[string]model.PMStory)
-	if len(storyIDs) > 0 {
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, uniqueStrings(storyIDs))
+	tasksByID := make(map[string]model.PMTask)
+	if len(taskIDs) > 0 {
+		tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, uniqueStrings(taskIDs))
 		if err != nil {
 			return err
 		}
-		for _, story := range stories {
-			storiesByID[story.ID] = story
+		for _, task := range tasks {
+			tasksByID[task.ID] = task
 		}
 	}
 
@@ -220,23 +220,23 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 		}
 	}
 
-	seenStories := make(map[string]struct{})
+	seenTasks := make(map[string]struct{})
 	seenSupport := make(map[string]struct{})
 	seenCRM := make(map[string]struct{})
 
 	for _, assoc := range assocs {
 		otherType, otherID := otherAssociationSide(assoc, objectType, objectID)
 		switch otherType {
-		case model.CRMObjectTask, model.CRMObjectStory:
-			story, ok := storiesByID[otherID]
+		case model.CRMObjectTask:
+			task, ok := tasksByID[otherID]
 			if !ok {
 				continue
 			}
-			if _, exists := seenStories[story.ID]; exists {
+			if _, exists := seenTasks[task.ID]; exists {
 				continue
 			}
-			seenStories[story.ID] = struct{}{}
-			response.Stories = append(response.Stories, storyAssociationSummary(assoc.ID, story))
+			seenTasks[task.ID] = struct{}{}
+			response.Tasks = append(response.Tasks, taskAssociationSummary(assoc.ID, task))
 		case model.CRMObjectSupportConversation:
 			conversation, ok := conversationsByID[otherID]
 			if !ok {
@@ -260,7 +260,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 		}
 	}
 
-	sortAssociationObjects(response.Stories)
+	sortAssociationObjects(response.Tasks)
 	sortAssociationObjects(response.SupportConversations)
 	sortAssociationObjects(response.CRMRecords)
 
@@ -309,7 +309,7 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 
 func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
 	switch objectType {
-	case model.CRMObjectTask, model.CRMObjectStory:
+	case model.CRMObjectTask:
 		conversations, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
 		if err != nil {
 			return err
@@ -333,36 +333,36 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if conversation == nil || conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
 			return nil
 		}
-		existing := make(map[string]struct{}, len(response.Stories))
-		for _, item := range response.Stories {
+		existing := make(map[string]struct{}, len(response.Tasks))
+		for _, item := range response.Tasks {
 			existing[item.ObjectID] = struct{}{}
 		}
 		if _, ok := existing[*conversation.LinkedTaskID]; ok {
 			return nil
 		}
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
+		tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
 		if err != nil {
 			return err
 		}
-		if len(stories) == 1 {
-			response.Stories = append(response.Stories, storyAssociationSummary("", stories[0]))
-			sortAssociationObjects(response.Stories)
+		if len(tasks) == 1 {
+			response.Tasks = append(response.Tasks, taskAssociationSummary("", tasks[0]))
+			sortAssociationObjects(response.Tasks)
 		}
 	}
 	return nil
 }
 
-func (s *AssociationsService) loadStoryRelationships(ctx context.Context, workspaceID, storyID string) (model.StoryRelationshipGroups, error) {
-	response := model.StoryRelationshipGroups{
-		BlockedBy:    []model.StoryRelationshipSummary{},
-		Blocking:     []model.StoryRelationshipSummary{},
-		RelatesTo:    []model.StoryRelationshipSummary{},
-		RelatedBy:    []model.StoryRelationshipSummary{},
-		Duplicates:   []model.StoryRelationshipSummary{},
-		DuplicatedBy: []model.StoryRelationshipSummary{},
+func (s *AssociationsService) loadTaskRelationships(ctx context.Context, workspaceID, taskID string) (model.TaskRelationshipGroups, error) {
+	response := model.TaskRelationshipGroups{
+		BlockedBy:    []model.TaskRelationshipSummary{},
+		Blocking:     []model.TaskRelationshipSummary{},
+		RelatesTo:    []model.TaskRelationshipSummary{},
+		RelatedBy:    []model.TaskRelationshipSummary{},
+		Duplicates:   []model.TaskRelationshipSummary{},
+		DuplicatedBy: []model.TaskRelationshipSummary{},
 	}
 
-	links, err := s.storyLinkRepo.ListByStory(ctx, workspaceID, storyID)
+	links, err := s.taskLinkRepo.ListByTask(ctx, workspaceID, taskID)
 	if err != nil {
 		return response, err
 	}
@@ -372,52 +372,52 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 
 	otherIDs := make([]string, 0, len(links))
 	for _, link := range links {
-		if link.SourceStoryID == storyID {
-			otherIDs = append(otherIDs, link.TargetStoryID)
+		if link.SourceTaskID == taskID {
+			otherIDs = append(otherIDs, link.TargetTaskID)
 		} else {
-			otherIDs = append(otherIDs, link.SourceStoryID)
+			otherIDs = append(otherIDs, link.SourceTaskID)
 		}
 	}
-	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, uniqueStrings(otherIDs))
+	tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, uniqueStrings(otherIDs))
 	if err != nil {
 		return response, err
 	}
-	storiesByID := make(map[string]model.PMStory, len(stories))
-	for _, story := range stories {
-		storiesByID[story.ID] = story
+	tasksByID := make(map[string]model.PMTask, len(tasks))
+	for _, task := range tasks {
+		tasksByID[task.ID] = task
 	}
 
 	for _, link := range links {
-		otherID := link.SourceStoryID
-		if otherID == storyID {
-			otherID = link.TargetStoryID
+		otherID := link.SourceTaskID
+		if otherID == taskID {
+			otherID = link.TargetTaskID
 		}
-		otherStory, ok := storiesByID[otherID]
+		otherTask, ok := tasksByID[otherID]
 		if !ok {
 			continue
 		}
 
-		summary := model.StoryRelationshipSummary{
+		summary := model.TaskRelationshipSummary{
 			RelationshipID: link.ID,
 			LinkType:       link.LinkType,
-			IsActive:       !otherStory.Completed,
-			Task:           storyAssociationSummary("", otherStory),
+			IsActive:       !otherTask.Completed,
+			Task:           taskAssociationSummary("", otherTask),
 		}
 		switch link.LinkType {
-		case model.PMStoryLinkTypeBlocks:
-			if link.TargetStoryID == storyID {
+		case model.PMTaskLinkTypeBlocks:
+			if link.TargetTaskID == taskID {
 				response.BlockedBy = append(response.BlockedBy, summary)
 			} else {
 				response.Blocking = append(response.Blocking, summary)
 			}
-		case model.PMStoryLinkTypeRelatesTo:
-			if link.SourceStoryID == storyID {
+		case model.PMTaskLinkTypeRelatesTo:
+			if link.SourceTaskID == taskID {
 				response.RelatesTo = append(response.RelatesTo, summary)
 			} else {
 				response.RelatedBy = append(response.RelatedBy, summary)
 			}
-		case model.PMStoryLinkTypeDuplicates:
-			if link.SourceStoryID == storyID {
+		case model.PMTaskLinkTypeDuplicates:
+			if link.SourceTaskID == taskID {
 				response.Duplicates = append(response.Duplicates, summary)
 			} else {
 				response.DuplicatedBy = append(response.DuplicatedBy, summary)
@@ -425,58 +425,58 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 		}
 	}
 
-	sortStoryRelationshipGroup(response.BlockedBy)
-	sortStoryRelationshipGroup(response.Blocking)
-	sortStoryRelationshipGroup(response.RelatesTo)
-	sortStoryRelationshipGroup(response.RelatedBy)
-	sortStoryRelationshipGroup(response.Duplicates)
-	sortStoryRelationshipGroup(response.DuplicatedBy)
+	sortTaskRelationshipGroup(response.BlockedBy)
+	sortTaskRelationshipGroup(response.Blocking)
+	sortTaskRelationshipGroup(response.RelatesTo)
+	sortTaskRelationshipGroup(response.RelatedBy)
+	sortTaskRelationshipGroup(response.Duplicates)
+	sortTaskRelationshipGroup(response.DuplicatedBy)
 
 	return response, nil
 }
 
-func resolveRelationshipInput(currentStoryID string, req model.CreateStoryRelationshipRequest) (string, string, string, error) {
+func resolveRelationshipInput(currentTaskID string, req model.CreateTaskRelationshipRequest) (string, string, string, error) {
 	switch req.RelationshipType {
-	case model.StoryRelationshipActionRelatesTo:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeRelatesTo, nil
-	case model.StoryRelationshipActionBlocks:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeBlocks, nil
-	case model.StoryRelationshipActionIsBlockedBy:
-		return req.OtherStoryID, currentStoryID, model.PMStoryLinkTypeBlocks, nil
-	case model.StoryRelationshipActionDuplicates:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeDuplicates, nil
-	case model.StoryRelationshipActionIsDuplicatedBy:
-		return req.OtherStoryID, currentStoryID, model.PMStoryLinkTypeDuplicates, nil
+	case model.TaskRelationshipActionRelatesTo:
+		return currentTaskID, req.OtherTaskID, model.PMTaskLinkTypeRelatesTo, nil
+	case model.TaskRelationshipActionBlocks:
+		return currentTaskID, req.OtherTaskID, model.PMTaskLinkTypeBlocks, nil
+	case model.TaskRelationshipActionIsBlockedBy:
+		return req.OtherTaskID, currentTaskID, model.PMTaskLinkTypeBlocks, nil
+	case model.TaskRelationshipActionDuplicates:
+		return currentTaskID, req.OtherTaskID, model.PMTaskLinkTypeDuplicates, nil
+	case model.TaskRelationshipActionIsDuplicatedBy:
+		return req.OtherTaskID, currentTaskID, model.PMTaskLinkTypeDuplicates, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported relationship type %q", req.RelationshipType)
 	}
 }
 
-func isSameRelationshipPair(link model.PMStoryLink, sourceStoryID, targetStoryID, linkType string) bool {
-	return link.LinkType == linkType && link.SourceStoryID == sourceStoryID && link.TargetStoryID == targetStoryID
+func isSameRelationshipPair(link model.PMTaskLink, sourceTaskID, targetTaskID, linkType string) bool {
+	return link.LinkType == linkType && link.SourceTaskID == sourceTaskID && link.TargetTaskID == targetTaskID
 }
 
-func isReverseSymmetricPair(link model.PMStoryLink, sourceStoryID, targetStoryID, linkType string) bool {
+func isReverseSymmetricPair(link model.PMTaskLink, sourceTaskID, targetTaskID, linkType string) bool {
 	if link.LinkType != linkType {
 		return false
 	}
-	if linkType != model.PMStoryLinkTypeRelatesTo && linkType != model.PMStoryLinkTypeDuplicates {
+	if linkType != model.PMTaskLinkTypeRelatesTo && linkType != model.PMTaskLinkTypeDuplicates {
 		return false
 	}
-	return link.SourceStoryID == targetStoryID && link.TargetStoryID == sourceStoryID
+	return link.SourceTaskID == targetTaskID && link.TargetTaskID == sourceTaskID
 }
 
-func wouldCreateBlockCycle(existing []model.PMStoryLink, sourceStoryID, targetStoryID string) bool {
+func wouldCreateBlockCycle(existing []model.PMTaskLink, sourceTaskID, targetTaskID string) bool {
 	graph := make(map[string][]string)
 	for _, link := range existing {
-		graph[link.SourceStoryID] = append(graph[link.SourceStoryID], link.TargetStoryID)
+		graph[link.SourceTaskID] = append(graph[link.SourceTaskID], link.TargetTaskID)
 	}
-	graph[sourceStoryID] = append(graph[sourceStoryID], targetStoryID)
+	graph[sourceTaskID] = append(graph[sourceTaskID], targetTaskID)
 
 	seen := map[string]struct{}{}
 	var visit func(string) bool
 	visit = func(node string) bool {
-		if node == sourceStoryID {
+		if node == sourceTaskID {
 			return true
 		}
 		if _, ok := seen[node]; ok {
@@ -491,7 +491,7 @@ func wouldCreateBlockCycle(existing []model.PMStoryLink, sourceStoryID, targetSt
 		return false
 	}
 
-	return visit(targetStoryID)
+	return visit(targetTaskID)
 }
 
 func otherAssociationSide(assoc model.CRMAssociation, objectType, objectID string) (string, string) {
@@ -520,19 +520,19 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func storyAssociationSummary(associationID string, story model.PMStory) model.AssociationObjectSummary {
-	displayID := fmt.Sprintf("%d", story.DisplayID)
-	workflowStateID := story.WorkflowStateID
-	storyType := story.StoryType
+func taskAssociationSummary(associationID string, task model.PMTask) model.AssociationObjectSummary {
+	displayID := fmt.Sprintf("%d", task.DisplayID)
+	workflowStateID := task.WorkflowStateID
+	taskType := task.TaskType
 	return model.AssociationObjectSummary{
 		AssociationID:   associationID,
 		ObjectType:      model.CRMObjectTask,
-		ObjectID:        story.ID,
+		ObjectID:        task.ID,
 		DisplayID:       &displayID,
-		Title:           story.Name,
+		Title:           task.Name,
 		WorkflowStateID: &workflowStateID,
-		Completed:       story.Completed,
-		StoryType:       &storyType,
+		Completed:       task.Completed,
+		TaskType:        &taskType,
 	}
 }
 
@@ -573,7 +573,7 @@ func sortAssociationObjects(items []model.AssociationObjectSummary) {
 	})
 }
 
-func sortStoryRelationshipGroup(items []model.StoryRelationshipSummary) {
+func sortTaskRelationshipGroup(items []model.TaskRelationshipSummary) {
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].IsActive != items[j].IsActive {
 			return items[i].IsActive
@@ -584,7 +584,7 @@ func sortStoryRelationshipGroup(items []model.StoryRelationshipSummary) {
 
 func isSupportedAssociationsObjectType(objectType string) bool {
 	switch objectType {
-	case model.CRMObjectTask, model.CRMObjectStory, model.CRMObjectEpic, model.CRMObjectSupportConversation:
+	case model.CRMObjectTask, model.CRMObjectEpic, model.CRMObjectSupportConversation:
 		return true
 	default:
 		return false

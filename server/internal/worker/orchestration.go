@@ -49,15 +49,15 @@ func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID
 	proposal.EpicID = epicID
 	proposal.SpecVersionID = strings.TrimSpace(firstNonEmpty(proposal.SpecVersionID, specVersionID))
 	proposal.TokensUsed = tokensUsed
-	if len(proposal.ProposedStories) == 0 {
+	if len(proposal.ProposedTasks) == 0 {
 		return nil, fmt.Errorf("planning proposal did not include any tasks")
 	}
-	for idx, story := range proposal.ProposedStories {
+	for idx, story := range proposal.ProposedTasks {
 		if strings.TrimSpace(story.Name) == "" {
 			return nil, fmt.Errorf("planning proposal task %d is missing a name", idx+1)
 		}
 		if strings.TrimSpace(story.Ref) == "" {
-			proposal.ProposedStories[idx].Ref = fmt.Sprintf("task_%d", idx+1)
+			proposal.ProposedTasks[idx].Ref = fmt.Sprintf("task_%d", idx+1)
 		}
 	}
 	return &proposal, nil
@@ -122,11 +122,11 @@ func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed 
 	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
-func extractTaskCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
+func extractTaskCompletionAssessmentFromResponseText(responseText string) (*model.TaskCompletionAssessment, error) {
 	if strings.TrimSpace(responseText) == "" {
 		return nil, fmt.Errorf("task completion assessment returned no text")
 	}
-	var assessment model.StoryCompletionAssessment
+	var assessment model.TaskCompletionAssessment
 	if err := unmarshalLatestJSON(responseText, &assessment); err != nil {
 		return nil, fmt.Errorf("failed to parse task completion assessment: %w", err)
 	}

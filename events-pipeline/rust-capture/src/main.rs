@@ -1,9 +1,9 @@
+use dotenv::dotenv;
 use metrics_recorder::metrics_app;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use dotenv::dotenv;
 use tokio::signal;
 use tracing_subscriber::EnvFilter;
 
@@ -22,7 +22,7 @@ mod metrics_recorder;
 mod router;
 mod sinks;
 mod utils;
-use tracing_subscriber::{prelude::*, fmt};
+use tracing_subscriber::{fmt, prelude::*};
 
 #[tokio::main]
 async fn main() {
@@ -62,13 +62,21 @@ async fn start_main_server() {
     tracing::info!("Application booting");
 
     let tokens = auth::http_tokens::HttpTokens::new().await;
-    tracing::info!("tokens loaded: {:?}", tokens.lock().map(|t| t.tokens.len()).unwrap_or(0));
+    tracing::info!(
+        "tokens loaded: {:?}",
+        tokens.lock().map(|t| t.tokens.len()).unwrap_or(0)
+    );
 
     let health_registry = health::HealthRegistry::new();
 
     let app = if use_print_sink == "true" {
         tracing::info!("Using print sink");
-        router::router(SystemTime {}, sinks::print_sink::PrintSink {}, tokens, health_registry.clone())
+        router::router(
+            SystemTime {},
+            sinks::print_sink::PrintSink {},
+            tokens,
+            health_registry.clone(),
+        )
     } else {
         tracing::info!("Using kafka sink with disk fallback");
         let brokers = env::var("KAFKA_BROKERS").expect("Expected KAFKA_BROKERS");
@@ -78,15 +86,18 @@ async fn start_main_server() {
                 .expect("Failed to create Kafka sink"),
         );
 
-        let fallback_dir = PathBuf::from(
-            env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()),
-        );
+        let fallback_dir =
+            PathBuf::from(env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()));
         let disk_sink = Arc::new(sinks::disk_sink::DiskSink::new(fallback_dir));
-        let fallback_sink =
-            sinks::fallback_sink::FallbackSink::new(kafka_sink, disk_sink);
+        let fallback_sink = sinks::fallback_sink::FallbackSink::new(kafka_sink, disk_sink);
 
         tracing::info!("Kafka sink with disk fallback initialized");
-        router::router(SystemTime {}, fallback_sink, tokens, health_registry.clone())
+        router::router(
+            SystemTime {},
+            fallback_sink,
+            tokens,
+            health_registry.clone(),
+        )
     };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

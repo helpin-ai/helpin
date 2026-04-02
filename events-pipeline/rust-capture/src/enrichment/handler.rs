@@ -1,5 +1,5 @@
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use serde_json::to_string;
-use chrono::{DateTime, NaiveDateTime, Utc, Duration, TimeZone};
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ impl EnrichmentHandler {
         if is_bot {
             return 1;
         }
-        
+
         match proxy_type {
             "NOPROXY" => 0,
             "VPN" => 21,
@@ -125,7 +125,7 @@ impl EnrichmentHandler {
         };
 
         // check ip2proxy
-        
+
         let ip2proxy_result = match IP2ProxyWrapper::new(ip2proxy_resolver).resolve(&result.ip) {
             Ok(data) => data,
             Err(e) => {
@@ -138,7 +138,6 @@ impl EnrichmentHandler {
             }
         };
         let proxy_type = ip2proxy_result.proxy_type.as_deref().unwrap_or("NOPROXY");
-        
 
         let is_bot = if let Some(user_agent) = &data.event.user_agent {
             bot_resolver.check_bot(user_agent)
@@ -167,7 +166,10 @@ impl EnrichmentHandler {
         transformed_event.source_ip = result.ip;
 
         // If doc_host/doc_path/doc_search are missing, parse them from the url
-        let (parsed_host, parsed_path, parsed_search) = data.event.url.as_deref()
+        let (parsed_host, parsed_path, parsed_search) = data
+            .event
+            .url
+            .as_deref()
             .and_then(|u| url::Url::parse(u).ok())
             .map(|parsed| {
                 let host = parsed.host_str().map(|h| h.to_string());
@@ -237,7 +239,6 @@ impl EnrichmentHandler {
                     (custom_timestamp, 0)
                 };
 
-
                 // Create DateTime<Utc> from timestamp
                 if let Some(utc_datetime) = DateTime::<Utc>::from_timestamp(seconds, nanoseconds) {
                     let now = Utc::now();
@@ -261,17 +262,19 @@ impl EnrichmentHandler {
                             failed_event: FailedEvent {
                                 eventn_ctx_event_id: data.event_id.to_string(),
                                 project_id: transformed_event.project_id.clone(),
-                                error_description: "Timestamp is more than 24 hours in the future".to_string(),
+                                error_description: "Timestamp is more than 24 hours in the future"
+                                    .to_string(),
                                 error: 6,
                                 payload: payload.to_string(),
                             },
-                            description: "Timestamp is more than 24 hours in the future".to_string(),
+                            description: "Timestamp is more than 24 hours in the future"
+                                .to_string(),
                         }));
                     }
 
                     // utc_datetime.to_rfc3339() returns a string like "2021-06-01T13:45:30Z"
-                     
-                     // Format the timestamp
+
+                    // Format the timestamp
                     format!("{}", utc_datetime.format("%Y-%m-%dT%H:%M:%S.%9fZ"))
                 } else {
                     data.event.received_at.clone()
@@ -450,7 +453,7 @@ impl EnrichmentHandler {
             if let Some(company) = &data.event.company {
                 // Skip validation if the company object is empty (no fields)
                 let is_empty_object = company.is_empty();
-                
+
                 // Check if company.id exists when company is provided and not empty
                 if !is_empty_object && company.get("id").is_none() {
                     let mut failed = FailedEvent::default();
@@ -478,7 +481,6 @@ impl EnrichmentHandler {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,37 +489,56 @@ mod tests {
     async fn test_event_enrichment() {
         // Create necessary dependencies
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
         let handler = EnrichmentHandler::new();
 
-       // Define test cases
+        // Define test cases
         let test_cases = vec![
             // Test case 1: Valid event
-            (r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"first_space_activity","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"event_attributes":{"space_id":"xWVJR6maYAyprg94P7E1L8qp","active_domain":"test.com","space_code":"64ad4cc733099","space_name":"In perferendis"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#, true),
-            
+            (
+                r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"first_space_activity","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"event_attributes":{"space_id":"xWVJR6maYAyprg94P7E1L8qp","active_domain":"test.com","space_code":"64ad4cc733099","space_name":"In perferendis"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#,
+                true,
+            ),
             // Test case 2: Invalid event - missing user.id
-            (r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"event_attributes":{"space_id":"xWVJR6maYAyprg94P7E1L8qp","active_domain":"test.com","space_code":"64ad4cc733099","space_name":"In perferendis"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#, false),
-            
+            (
+                r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"event_attributes":{"space_id":"xWVJR6maYAyprg94P7E1L8qp","active_domain":"test.com","space_code":"64ad4cc733099","space_name":"In perferendis"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#,
+                false,
+            ),
             // Test case 3: Valid event - with utm parameters
-            (r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"utm":{"campaign":"summer_sale","source":"newsletter","medium":"email","term":"discount","content":"image_link"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#, true),
-            
+            (
+                r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"id":"xWVJR6maYAyprg94P7E1L8qp","custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"utm":{"campaign":"summer_sale","source":"newsletter","medium":"email","term":"discount","content":"image_link"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#,
+                true,
+            ),
             // Test case 4: Invalid event - missing company.id for user_identify event
-            (r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api", "timestamp": 1720253671},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#, false),
-            
+            (
+                r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{"custom":{"activity_status":"active","last_activity_at":null,"on_trial":false,"plan":"standard"},"created_at":"2023-07-11 14:36:23","name":"Rippin and Sons"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api", "timestamp": 1720253671},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#,
+                false,
+            ),
             // Test case 5: Valid event - user_identify with empty company object
-            (r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#, true),
-            
+            (
+                r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"user_identify","referrer":"","url":"https://app.futy.nl","user_agent":"curl/8.1.2","user":{"created_at":"2023-07-11 14:36:23","anonymous_id":"lebbuqvhk","first_name":"Camylle","id":"jk9bE4Y13xvL8vJL8d5waOr6","last_name":"Shields","email":"tess30@example.com"},"company":{},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"futy-api"},"event_id":"9b8faa58-1ef4-44b4-879f-21813cc6e75e"}"#,
+                true,
+            ),
             // Add more test cases as needed
         ];
 
-         // Run test cases
+        // Run test cases
 
         for (payload, expected_result) in test_cases {
-            let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-            
+            let result = handler
+                .process_payload(
+                    payload,
+                    &geo_resolver,
+                    &ip2proxy_resolver,
+                    &bot_resolver,
+                    &ua_parser,
+                )
+                .await;
+
             match (result, expected_result) {
                 (Ok(transformed_event), true) => {
                     // println!("Test case passed");
@@ -525,25 +546,35 @@ mod tests {
                     // Check the transformed event
                     // println!("{:?}", transformed_event);
 
-                    assert_eq!(transformed_event.event_id, "9b8faa58-1ef4-44b4-879f-21813cc6e75e");
+                    assert_eq!(
+                        transformed_event.event_id,
+                        "9b8faa58-1ef4-44b4-879f-21813cc6e75e"
+                    );
                     assert_eq!(transformed_event.project_id, "UMYwi4UKqF");
-                    assert_eq!(transformed_event.api_key, "UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7");
-                    
+                    assert_eq!(
+                        transformed_event.api_key,
+                        "UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7"
+                    );
+
                     // Check utm parameters
                     if transformed_event.event_type == "page_view" {
-                        assert_eq!(transformed_event.utm_campaign, Some("summer_sale".to_string()));
+                        assert_eq!(
+                            transformed_event.utm_campaign,
+                            Some("summer_sale".to_string())
+                        );
                         assert_eq!(transformed_event.utm_source, Some("newsletter".to_string()));
                         assert_eq!(transformed_event.utm_medium, Some("email".to_string()));
                         assert_eq!(transformed_event.utm_term, Some("discount".to_string()));
-                        assert_eq!(transformed_event.utm_content, Some("image_link".to_string()));
+                        assert_eq!(
+                            transformed_event.utm_content,
+                            Some("image_link".to_string())
+                        );
                     }
-                    
-                },
+                }
                 (Err(_), false) => println!("Test case passed"),
                 _ => panic!("Test case failed"),
             }
         }
-
     }
 
     /// Tests that events with IPs not found in MaxMind/IP2Proxy databases
@@ -551,7 +582,8 @@ mod tests {
     #[tokio::test]
     async fn test_event_with_unknown_ip_succeeds() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -560,24 +592,49 @@ mod tests {
         // Use a private IP that won't be in any GeoIP database
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://example.com","user_agent":"Mozilla/5.0","user":{"anonymous_id":"test123","id":"user1"},"ip":"192.168.1.1","received_at":"2024-05-10T09:08:20.443126000Z","src":"test"},"event_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-        assert!(result.is_ok(), "Event with unknown IP should not be dropped, got: {:?}", result.err());
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Event with unknown IP should not be dropped, got: {:?}",
+            result.err()
+        );
 
         let event = result.unwrap();
         assert_eq!(event.event_id, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
         assert_eq!(event.project_id, "UMYwi4UKqF");
         // Geo fields should be None (graceful fallback)
-        assert!(event.location_country.is_none(), "Country should be None for unknown IP");
-        assert!(event.location_city.is_none(), "City should be None for unknown IP");
-        assert!(event.location_lat.is_none(), "Lat should be None for unknown IP");
-        assert!(event.location_lon.is_none(), "Lon should be None for unknown IP");
+        assert!(
+            event.location_country.is_none(),
+            "Country should be None for unknown IP"
+        );
+        assert!(
+            event.location_city.is_none(),
+            "City should be None for unknown IP"
+        );
+        assert!(
+            event.location_lat.is_none(),
+            "Lat should be None for unknown IP"
+        );
+        assert!(
+            event.location_lon.is_none(),
+            "Lon should be None for unknown IP"
+        );
     }
 
     /// Tests with the exact IP that was causing production event drops.
     #[tokio::test]
     async fn test_event_with_production_failing_ip() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -586,8 +643,20 @@ mod tests {
         // IP 102.204.88.22 was causing "AddressNotFoundError" in production
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://example.com","user_agent":"Mozilla/5.0","user":{"anonymous_id":"test456","id":"user2"},"ip":"102.204.88.22","received_at":"2024-05-10T09:08:20.443126000Z","src":"test"},"event_id":"b2c3d4e5-f6a7-8901-bcde-f12345678901"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-        assert!(result.is_ok(), "Event with IP 102.204.88.22 should not be dropped, got: {:?}", result.err());
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Event with IP 102.204.88.22 should not be dropped, got: {:?}",
+            result.err()
+        );
 
         let event = result.unwrap();
         assert_eq!(event.event_id, "b2c3d4e5-f6a7-8901-bcde-f12345678901");
@@ -601,7 +670,8 @@ mod tests {
     #[tokio::test]
     async fn test_event_with_cookie_comply_and_unknown_ip() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -610,8 +680,20 @@ mod tests {
         // Event with cookie_policy=comply and a private IP
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://example.com","user_agent":"Mozilla/5.0","user":{"anonymous_id":"test789","id":"user3"},"cookie_policy":"comply","ip_policy":"comply","ip":"192.168.1.1","received_at":"2024-05-10T09:08:20.443126000Z","src":"test"},"event_id":"c3d4e5f6-a7b8-9012-cdef-123456789012"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-        assert!(result.is_ok(), "Event with comply policy and unknown IP should not fail, got: {:?}", result.err());
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Event with comply policy and unknown IP should not fail, got: {:?}",
+            result.err()
+        );
     }
 
     /// Tests that doc_host, doc_path, and doc_search are parsed from the url
@@ -619,7 +701,8 @@ mod tests {
     #[tokio::test]
     async fn test_server_side_event_parses_url_fields() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -628,13 +711,28 @@ mod tests {
         // Server-side event: has url but no doc_host/doc_path/doc_search
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://app.example.com/dashboard/analytics?period=30d&filter=active","user_agent":"Mozilla/5.0","user":{"anonymous_id":"srv123","id":"user1"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"usermaven-server"},"event_id":"d4e5f6a7-b8c9-0123-def0-234567890123"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-        assert!(result.is_ok(), "Server-side event should succeed, got: {:?}", result.err());
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Server-side event should succeed, got: {:?}",
+            result.err()
+        );
 
         let event = result.unwrap();
         assert_eq!(event.doc_host, Some("app.example.com".to_string()));
         assert_eq!(event.doc_path, Some("/dashboard/analytics".to_string()));
-        assert_eq!(event.doc_search, Some("?period=30d&filter=active".to_string()));
+        assert_eq!(
+            event.doc_search,
+            Some("?period=30d&filter=active".to_string())
+        );
     }
 
     /// Tests that explicitly provided doc_host/doc_path/doc_search are NOT overridden
@@ -642,7 +740,8 @@ mod tests {
     #[tokio::test]
     async fn test_client_side_event_preserves_explicit_doc_fields() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -651,8 +750,20 @@ mod tests {
         // Client-side event: has explicit doc_host/doc_path/doc_search
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://app.example.com/page","doc_host":"custom-host.com","doc_path":"/custom-path","doc_search":"?custom=true","user_agent":"Mozilla/5.0","user":{"anonymous_id":"cli123","id":"user2"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"usermaven"},"event_id":"e5f6a7b8-c9d0-1234-ef01-345678901234"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
-        assert!(result.is_ok(), "Client-side event should succeed, got: {:?}", result.err());
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "Client-side event should succeed, got: {:?}",
+            result.err()
+        );
 
         let event = result.unwrap();
         // Explicit values should be preserved, NOT overridden by URL parsing
@@ -665,7 +776,8 @@ mod tests {
     #[tokio::test]
     async fn test_url_parsing_edge_cases() {
         let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let ip2proxy_resolver =
+            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -674,12 +786,23 @@ mod tests {
         // URL with no path or query
         let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","referrer":"","url":"https://example.com","user_agent":"Mozilla/5.0","user":{"anonymous_id":"edge1","id":"user3"},"ip":"95.10.187.240","received_at":"2024-05-10T09:08:20.443126000Z","src":"test"},"event_id":"f6a7b8c9-d0e1-2345-f012-456789012345"}"#;
 
-        let result = handler.process_payload(payload, &geo_resolver, &ip2proxy_resolver, &bot_resolver, &ua_parser).await;
+        let result = handler
+            .process_payload(
+                payload,
+                &geo_resolver,
+                &ip2proxy_resolver,
+                &bot_resolver,
+                &ua_parser,
+            )
+            .await;
         assert!(result.is_ok());
 
         let event = result.unwrap();
         assert_eq!(event.doc_host, Some("example.com".to_string()));
         assert_eq!(event.doc_path, Some("/".to_string()));
-        assert!(event.doc_search.is_none(), "No query string means doc_search should be None");
+        assert!(
+            event.doc_search.is_none(),
+            "No query string means doc_search should be None"
+        );
     }
 }

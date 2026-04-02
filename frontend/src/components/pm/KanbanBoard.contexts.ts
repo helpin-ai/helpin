@@ -13,8 +13,8 @@ export interface BoardDataContextValue {
 }
 
 export interface BoardCallbacksContextValue {
-  onStoryPatched: (story: Task) => void;
-  onOpen: (story: Task) => void;
+  onTaskPatched: (task: Task) => void;
+  onOpen: (task: Task) => void;
   onCreate: (id: string) => void;
   onCreateForMember: (memberId: string | null) => void;
   onToggleCollapse: (id: string) => void;

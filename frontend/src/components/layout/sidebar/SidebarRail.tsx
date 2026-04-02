@@ -23,7 +23,7 @@ export function SidebarRail({
   accountMenu,
 }: SidebarRailProps) {
   return (
-    <div className="flex w-16 shrink-0 flex-col border-r border-border/70 py-2 dark:border-sidebar-border">
+    <div className="relative flex w-16 shrink-0 flex-col py-2 after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border/70 after:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
       <div className="flex flex-1 flex-col items-center gap-1.5">
         {railItems
           .filter((item) => isModuleEnabled(item.id, userEmail))

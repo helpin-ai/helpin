@@ -138,8 +138,8 @@ func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, 
 	}
 
 	var params struct {
-		Stories         []model.ProposedStory `json:"stories"`
-		ProposedStories []model.ProposedStory `json:"proposed_stories"`
+		Stories         []model.ProposedTask `json:"stories"`
+		ProposedStories []model.ProposedTask `json:"proposed_stories"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", plannerToolInputError("create_task_batch", err)
@@ -150,7 +150,7 @@ func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, 
 	if len(params.Stories) == 0 {
 		return "", fmt.Errorf("create_task_batch requires \"stories\" (legacy alias: \"proposed_stories\")")
 	}
-	if err := model.NormalizeProposedStories(params.Stories); err != nil {
+	if err := model.NormalizeProposedTasks(params.Stories); err != nil {
 		return "", fmt.Errorf("create_task_batch stories are invalid: %w", err)
 	}
 

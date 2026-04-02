@@ -125,7 +125,7 @@ vi.mock('@/hooks/useAssignableWorkspaceMembers', () => ({
 vi.mock('@/hooks/queries/useSettings', () => ({
   useTeamFieldVisibilityForTeam: () => ({
     priority: true,
-    story_type: true,
+    task_type: true,
     severity: true,
     labels: true,
     epic: true,
@@ -238,8 +238,8 @@ describe('CreateTaskModal', () => {
     document.body.innerHTML = ''
   })
 
-  it('shows a success toast for plain story creation before resetting the form when create more is enabled', async () => {
-    const onCreate = vi.fn(async () => ({ id: 'story-1' }))
+  it('shows a success toast for plain task creation before resetting the form when create more is enabled', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -261,7 +261,7 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
-    const titleInput = container.querySelector('#story-title') as HTMLInputElement | null
+    const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
     const createMoreToggle = Array.from(container.querySelectorAll('input')).find(
       (input) => (input as HTMLInputElement).type === 'checkbox',
     ) as HTMLInputElement | undefined
@@ -274,7 +274,7 @@ describe('CreateTaskModal', () => {
     expect(saveButton).toBeTruthy()
 
     await act(async () => {
-      setInputValue(titleInput!, 'New story')
+      setInputValue(titleInput!, 'New task')
       setChecked(createMoreToggle!, true)
       await Promise.resolve()
     })
@@ -287,13 +287,13 @@ describe('CreateTaskModal', () => {
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'New story',
+        name: 'New task',
         workspace_id: 'ws-1',
         workflow_id: 'workflow-1',
         workflow_state_id: 'state-1',
       }),
     )
-    expect(toastSuccess).toHaveBeenCalledWith('Story created')
+    expect(toastSuccess).toHaveBeenCalledWith('Task created')
 
     act(() => {
       root.unmount()
@@ -301,7 +301,7 @@ describe('CreateTaskModal', () => {
   })
 
   it('submits converted html when saving from markdown mode', async () => {
-    const onCreate = vi.fn(async () => ({ id: 'story-2' }))
+    const onCreate = vi.fn(async () => ({ id: 'task-2' }))
     const onOpenChange = vi.fn()
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -323,7 +323,7 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
-    const titleInput = container.querySelector('#story-title') as HTMLInputElement | null
+    const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
     const markdownButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Markdown'),
     ) as HTMLButtonElement | undefined
@@ -332,7 +332,7 @@ describe('CreateTaskModal', () => {
     expect(markdownButton).toBeTruthy()
 
     await act(async () => {
-      setInputValue(titleInput!, 'Markdown story')
+      setInputValue(titleInput!, 'Markdown task')
       markdownButton?.click()
       await Promise.resolve()
     })
@@ -360,7 +360,7 @@ describe('CreateTaskModal', () => {
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Markdown story',
+        name: 'Markdown task',
         description: expect.stringContaining('<h1>Problem</h1>'),
       }),
     )

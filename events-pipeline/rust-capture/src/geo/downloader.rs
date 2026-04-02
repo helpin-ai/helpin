@@ -7,7 +7,8 @@ use tar::Archive;
 use tokio::fs as async_fs;
 use walkdir::WalkDir;
 
-const DEFAULT_MAXMIND_URL: &str = "https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz";
+const DEFAULT_MAXMIND_URL: &str =
+    "https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz";
 const DEFAULT_TARGET_PATH: &str = "data/GeoLite2-City.mmdb";
 const TEMP_DIR: &str = "temp_data/";
 const TEMP_TARGET_PATH: &str = "data/GeoLite2-City.mmdb.temp";
@@ -21,8 +22,8 @@ pub async fn download_and_save() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "MAXMIND_ACCOUNT_ID env var must be set")?;
     let license_key = std::env::var("MAXMIND_LICENSE_KEY")
         .map_err(|_| "MAXMIND_LICENSE_KEY env var must be set")?;
-    let url = std::env::var("MAXMIND_DOWNLOAD_URL")
-        .unwrap_or_else(|_| DEFAULT_MAXMIND_URL.to_string());
+    let url =
+        std::env::var("MAXMIND_DOWNLOAD_URL").unwrap_or_else(|_| DEFAULT_MAXMIND_URL.to_string());
     let target = target_path();
 
     let client = Client::new();
@@ -72,10 +73,7 @@ pub async fn download_and_save() -> Result<(), Box<dyn std::error::Error>> {
     // Delete the temporary directory.
     fs::remove_dir_all(TEMP_DIR)?;
 
-    tracing::info!(
-        "✅ Successfully downloaded and extracted to {}",
-        target
-    );
+    tracing::info!("✅ Successfully downloaded and extracted to {}", target);
     Ok(())
 }
 
