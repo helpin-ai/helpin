@@ -129,6 +129,14 @@ interface EpicGroup {
   entries: EpicWithStats[];
 }
 
+function epicTaskCount(entry: EpicWithStats) {
+  return entry.stats.task_count ?? entry.stats.story_count ?? 0;
+}
+
+function epicDoneTaskCount(entry: EpicWithStats) {
+  return entry.stats.done_task_count ?? entry.stats.done_story_count ?? 0;
+}
+
 function applyEpicPatch(entry: EpicWithStats, patch: UpdateEpicRequest, allLabels: Label[]): EpicWithStats {
   const nextEpic = { ...entry.epic };
 
@@ -491,7 +499,7 @@ function EpicGroupSection({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const totalStories = group.entries.reduce((sum, entry) => sum + entry.stats.story_count, 0);
+  const totalStories = group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0);
   const totalPoints = group.entries.reduce((sum, entry) => sum + entry.stats.total_points, 0);
   const completedPoints = group.entries.reduce((sum, entry) => sum + entry.stats.done_points, 0);
 
@@ -971,8 +979,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     return map;
   }, [epicStates]);
   const completionPct = (entry: EpicWithStats) => {
-    if (entry.stats.story_count === 0) return 0;
-    return Math.round((entry.stats.done_story_count / entry.stats.story_count) * 100);
+    const totalTasks = epicTaskCount(entry);
+    if (totalTasks === 0) return 0;
+    return Math.round((epicDoneTaskCount(entry) / totalTasks) * 100);
   };
 
   const filterDefinitions = useMemo<EpicFilterDefinition[]>(() => [
@@ -1173,13 +1182,13 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
         ),
       }),
-      columnHelper.accessor((row) => row.stats.story_count, {
+      columnHelper.accessor((row) => epicTaskCount(row), {
         id: 'stories',
         header: 'Stories',
         size: 90,
         cell: (info) => (
           <span className="text-xs text-muted-foreground">
-            {info.row.original.stats.done_story_count}/{info.row.original.stats.story_count}
+            {epicDoneTaskCount(info.row.original)}/{epicTaskCount(info.row.original)}
           </span>
         ),
       }),
@@ -1559,7 +1568,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+        <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}

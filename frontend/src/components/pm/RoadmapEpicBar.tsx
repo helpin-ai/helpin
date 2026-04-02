@@ -34,14 +34,23 @@ interface RoadmapEpicBarProps {
   memberNameMap?: Map<string, string>;
 }
 
+function roadmapEpicTaskCount(epic: RoadmapEpic) {
+  return epic.stats.task_count ?? epic.stats.story_count ?? 0;
+}
+
+function roadmapEpicDoneTaskCount(epic: RoadmapEpic) {
+  return epic.stats.done_task_count ?? epic.stats.done_story_count ?? 0;
+}
+
 export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: RoadmapEpicBarProps) {
   const navigate = useNavigate();
   const e = epic.epic;
   const health = e.health || 'no_health';
 
   const progress = useMemo(() => {
-    if (epic.stats.story_count === 0) return 0;
-    return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
+    const totalTasks = roadmapEpicTaskCount(epic);
+    if (totalTasks === 0) return 0;
+    return Math.round((roadmapEpicDoneTaskCount(epic) / totalTasks) * 100);
   }, [epic.stats]);
 
   const ownerName = e.owner_member_id && memberNameMap?.get(e.owner_member_id);
@@ -97,7 +106,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
           </span>
           <span className="text-muted-foreground/30">|</span>
           <span className="text-[11px] text-muted-foreground">
-            {epic.stats.done_story_count}/{epic.stats.story_count} stories
+            {roadmapEpicDoneTaskCount(epic)}/{roadmapEpicTaskCount(epic)} tasks
           </span>
           <span className="text-muted-foreground/30">|</span>
           <span className="text-[11px] text-muted-foreground font-medium tabular-nums">{progress}%</span>

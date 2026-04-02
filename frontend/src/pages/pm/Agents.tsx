@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
@@ -799,6 +800,7 @@ export function AgentsPage() {
   const workspaceId = workspace?.id;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
+  const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
@@ -810,6 +812,11 @@ export function AgentsPage() {
   const { data: settings } = useWorkspaceSettings(workspaceId ?? '');
   const teams = settings?.teams ?? [];
   const teamMap = new Map(teams.map((t) => [t.id, t.name]));
+  const accessibleTeamIds = useMemo(
+    () => new Set(accessibleTeams.map((team) => team.id)),
+    [accessibleTeams],
+  );
+  const visibleTeams = isAdmin ? teams : accessibleTeams;
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
@@ -1025,9 +1032,16 @@ export function AgentsPage() {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
+  const visibleAgents = agents.filter((agent) => {
+    if (!agent.team_id) {
+      return true;
+    }
+    return accessibleTeamIds.has(agent.team_id);
+  });
+
   const builtInAgents = (() => {
     const byPreset = new Map<string, Agent>();
-    for (const agent of agents) {
+    for (const agent of visibleAgents) {
       if (!agent.is_system) {
         continue;
       }
@@ -1038,7 +1052,7 @@ export function AgentsPage() {
     }
     return Array.from(byPreset.values());
   })();
-  const customAgents = agents.filter((agent) => !agent.is_system);
+  const customAgents = visibleAgents.filter((agent) => !agent.is_system);
   const agentSections: AgentCollectionSection[] = [
     {
       key: 'built-in',
@@ -1141,7 +1155,7 @@ export function AgentsPage() {
     <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Agents</h1>
-        {agents.length > 0 && (
+        {visibleAgents.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-md border border-border">
               <button
@@ -1173,7 +1187,7 @@ export function AgentsPage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* ---- Empty state with onboarding ---- */}
-      {!loading && agents.length === 0 && !error && (
+      {!loading && visibleAgents.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
             <Bot className="h-7 w-7 text-violet-500" />
@@ -1201,7 +1215,7 @@ export function AgentsPage() {
       )}
 
       {/* ---- Agent list / grid ---- */}
-      {agents.length > 0 && viewMode === 'list' && (
+      {visibleAgents.length > 0 && viewMode === 'list' && (
         <div className="space-y-5">
           {agentSections.map((section) => (
             <div key={section.key} className="space-y-2">
@@ -1244,7 +1258,7 @@ export function AgentsPage() {
         </div>
       )}
 
-      {agents.length > 0 && viewMode === 'cards' && (
+      {visibleAgents.length > 0 && viewMode === 'cards' && (
         <div className="space-y-5">
           {agentSections.map((section) => (
             <div key={section.key} className="space-y-2">
@@ -1796,7 +1810,7 @@ export function AgentsPage() {
             </div>
 
             {/* Team selector */}
-            {teams.length > 0 && (
+            {visibleTeams.length > 0 && (
               <div className="space-y-2">
                 <FieldLabel tooltip="Assign this agent to a team so it only works on that team's tasks. Leave unassigned for workspace-wide access.">
                   Team
@@ -1810,7 +1824,7 @@ export function AgentsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">All teams (workspace-wide)</SelectItem>
-                    {teams.map((team) => (
+                    {visibleTeams.map((team) => (
                       <SelectItem key={team.id} value={team.id}>
                         {team.name}
                       </SelectItem>

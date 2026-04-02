@@ -31,6 +31,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 
@@ -384,8 +385,9 @@ function ObjectiveCard({
       {hasEpics && (
         <div className="mx-3.5 pb-3 pt-2 border-t border-border/40 space-y-0.5">
           {epics.slice(0, 4).map((e) => {
-            const epicPct = e.stats.story_count > 0
-              ? Math.round((e.stats.done_story_count / e.stats.story_count) * 100)
+            const totalTasks = getEpicTaskCount(e.stats);
+            const epicPct = totalTasks > 0
+              ? Math.round((getEpicDoneTaskCount(e.stats) / totalTasks) * 100)
               : 0;
             return (
               <div key={e.epic.id} className="flex items-center gap-1.5 py-0.5">

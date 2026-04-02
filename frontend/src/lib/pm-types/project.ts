@@ -114,12 +114,24 @@ export interface SpecClarification {
 }
 
 export interface EpicStats {
-  story_count: number;
-  done_story_count: number;
+  task_count?: number;
+  done_task_count?: number;
+  /** @deprecated Legacy alias */
+  story_count?: number;
+  /** @deprecated Legacy alias */
+  done_story_count?: number;
   total_points: number;
   done_points: number;
   in_progress_count: number;
   unstarted_count: number;
+}
+
+export function getEpicTaskCount(stats: EpicStats) {
+  return stats.task_count ?? stats.story_count ?? 0;
+}
+
+export function getEpicDoneTaskCount(stats: EpicStats) {
+  return stats.done_task_count ?? stats.done_story_count ?? 0;
 }
 
 export interface RoadmapObjectiveRef {
@@ -321,7 +333,9 @@ export interface StoryRelationshipSummary {
   relationship_id: string;
   link_type: string;
   is_active: boolean;
-  story: AssociationObjectSummary;
+  task?: AssociationObjectSummary;
+  /** @deprecated Legacy alias for task */
+  story?: AssociationObjectSummary;
 }
 
 export type TaskRelationshipSummary = StoryRelationshipSummary;

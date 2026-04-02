@@ -19,12 +19,12 @@ import { agentService } from '@/lib/services/agentService';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 
 interface Props {
-  storyId: string;
+  taskId: string;
   workspaceId: string;
   assignedAgentId?: string;
 }
 
-export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) {
+export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
         toast.error(res.error);
         return;
       }
-      setAgents((res.data ?? []).filter(isStoryRunnableAgent));
+      setAgents((res.data ?? []).filter(isTaskRunnableAgent));
     } finally {
       setLoadingAgents(false);
     }
@@ -50,13 +50,13 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
 
   const fetchRuns = useCallback(async () => {
     try {
-      const res = await agentService.listTargetRuns(workspaceId, 'task', storyId);
+      const res = await agentService.listTargetRuns(workspaceId, 'task', taskId);
       setRuns(res.data ?? []);
       setSelectedRunId((current) => current && (res.data ?? []).some((run) => run.id === current) ? current : (res.data?.[0]?.id ?? null));
     } finally {
       setLoading(false);
     }
-  }, [assignedAgentId, storyId, workspaceId]);
+  }, [assignedAgentId, taskId, workspaceId]);
 
   useEffect(() => {
     void fetchAgents();
@@ -66,21 +66,21 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     void fetchRuns();
   }, [fetchRuns]);
 
-  const storyRunnableAgents = useMemo(() => agents.filter(isStoryRunnableAgent), [agents]);
+  const taskRunnableAgents = useMemo(() => agents.filter(isTaskRunnableAgent), [agents]);
   const preferredAgent = useMemo(() => {
     if (assignedAgentId) {
-      return storyRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
+      return taskRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
     }
-    return storyRunnableAgents.find((agent) => agent.preset_key === 'task_planner')
-      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
-      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'code_builder')
-      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
-      ?? storyRunnableAgents[0]
+    return taskRunnableAgents.find((agent) => agent.preset_key === 'task_planner')
+      ?? taskRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
+      ?? taskRunnableAgents.find((agent) => agent.preset_key === 'code_builder')
+      ?? taskRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
+      ?? taskRunnableAgents[0]
       ?? null;
-  }, [assignedAgentId, storyRunnableAgents]);
+  }, [assignedAgentId, taskRunnableAgents]);
   const selectedAgent = useMemo(
-    () => storyRunnableAgents.find((agent) => agent.id === selectedAgentId) ?? null,
-    [selectedAgentId, storyRunnableAgents],
+    () => taskRunnableAgents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [selectedAgentId, taskRunnableAgents],
   );
 
   useEffect(() => {
@@ -88,15 +88,15 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       setSelectedAgentId(preferredAgent.id);
       return;
     }
-    if (selectedAgentId && !storyRunnableAgents.some((agent) => agent.id === selectedAgentId)) {
+    if (selectedAgentId && !taskRunnableAgents.some((agent) => agent.id === selectedAgentId)) {
       setSelectedAgentId(preferredAgent?.id ?? '');
     }
-  }, [preferredAgent, selectedAgentId, storyRunnableAgents]);
+  }, [preferredAgent, selectedAgentId, taskRunnableAgents]);
 
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
-      if (detail?.parent_type === 'task' && detail.parent_id === storyId) {
+      if (detail?.parent_type === 'task' && detail.parent_id === taskId) {
         void fetchRuns();
       }
     };
@@ -106,13 +106,13 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       window.removeEventListener('agent_run-updated', handler);
       window.removeEventListener('agent_run-created', handler);
     };
-  }, [fetchRuns, storyId]);
+  }, [fetchRuns, taskId]);
 
   const handleRunAgent = async () => {
     if (!selectedAgentId) return;
     setTriggering(true);
     try {
-      const res = await agentService.runTask(workspaceId, storyId, { agent_id: selectedAgentId });
+      const res = await agentService.runTask(workspaceId, taskId, { agent_id: selectedAgentId });
       if (res.error) {
         toast.error(res.error);
         return;
@@ -127,7 +127,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     }
   };
 
-  if (storyRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
+  if (taskRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
 
   return (
     <div className="mt-6">
@@ -146,7 +146,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">No agent selected</SelectItem>
-                {storyRunnableAgents.map((agent) => (
+                {taskRunnableAgents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id}>
                     <div className="flex items-center gap-2">
                       <AgentAvatar agent={agent} className="h-5 w-5" />
@@ -194,6 +194,6 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   );
 }
 
-function isStoryRunnableAgent(agent: Agent) {
+function isTaskRunnableAgent(agent: Agent) {
   return agent.allowed_targets.includes('task');
 }

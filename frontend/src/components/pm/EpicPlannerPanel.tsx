@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -54,6 +55,11 @@ export function EpicPlannerPanel({
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [starting, setStarting] = useState(false);
   const lastReportedCompletedRunIdRef = useRef<string | null>(null);
+  const { teams: accessibleTeams } = useAccessibleTeams(workspaceId);
+  const accessibleTeamIds = useMemo(
+    () => new Set(accessibleTeams.map((team) => team.id)),
+    [accessibleTeams],
+  );
 
   const loadAgents = useCallback(async () => {
     const res = await agentService.list(workspaceId);
@@ -125,12 +131,20 @@ export function EpicPlannerPanel({
   }, [loadRuns, runs]);
 
   const plannerAgents = useMemo(() => {
-    return agents.filter((agent) => agent.allowed_targets.includes('epic'));
-  }, [agents]);
+    return agents.filter((agent) => {
+      if (!agent.allowed_targets.includes('epic')) {
+        return false;
+      }
+      if (!agent.team_id) {
+        return true;
+      }
+      return accessibleTeamIds.has(agent.team_id);
+    });
+  }, [accessibleTeamIds, agents]);
 
   const selectedPlanner = useMemo(
-    () => plannerAgents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.id === selectedAgentId) ?? null,
-    [agents, plannerAgents, selectedAgentId],
+    () => plannerAgents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [plannerAgents, selectedAgentId],
   );
 
   const preferredPlanner = useMemo(
@@ -146,6 +160,16 @@ export function EpicPlannerPanel({
       setSelectedAgentId(preferredPlanner.id);
     }
   }, [preferredPlanner, selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) {
+      return;
+    }
+    if (plannerAgents.some((agent) => agent.id === selectedAgentId)) {
+      return;
+    }
+    setSelectedAgentId(preferredPlanner?.id ?? '');
+  }, [plannerAgents, preferredPlanner, selectedAgentId]);
 
   useEffect(() => {
     const latestRun = runs[0];

@@ -26,6 +26,7 @@ import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { pmRoadmapService } from '@/lib/services/pmRoadmapService';
 import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
 import type { RoadmapData, RoadmapEpic } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 
 type GroupBy = 'objective' | 'team' | 'epic';
 type Zoom = 'month' | 'quarter';
@@ -394,9 +395,10 @@ function UnscheduledEpicRow({
   const e = epic.epic;
   const health = e.health || 'no_health';
   const hc = HEALTH_CONFIG[health];
+  const totalTasks = getEpicTaskCount(epic.stats);
   const pct =
-    epic.stats.story_count > 0
-      ? Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100)
+    totalTasks > 0
+      ? Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100)
       : 0;
 
   return (

@@ -1131,7 +1131,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       {currentUser && (
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
-      <header className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+      <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
         <StoryFilterTrigger />
         <StoryOwnerAvatarFilterRow />
 

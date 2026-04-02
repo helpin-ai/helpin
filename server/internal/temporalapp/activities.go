@@ -3564,7 +3564,7 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
-	if !tools[workerpkg.ToolPublishPRDDraft] || !tools[workerpkg.ToolPublishStoryPlan] {
+	if !tools[workerpkg.ToolPublishPRDDraft] || (!tools[workerpkg.ToolPublishTaskPlan] && !tools[workerpkg.ToolPublishStoryPlan]) {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)

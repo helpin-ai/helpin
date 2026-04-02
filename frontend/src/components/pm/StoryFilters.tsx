@@ -460,7 +460,7 @@ export function StoryFilterBar() {
   if (activeCount === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-3 py-1.5">
+    <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
         .filter((def) => activeKeys.has(def.key))
         .map((def) => (
@@ -495,7 +495,7 @@ export function StoryOwnerAvatarFilterRow() {
   if (members.length === 0) return null;
 
   return (
-    <div className="ml-3 flex min-w-0 items-center gap-1">
+    <div className="ml-3 flex min-w-0 items-center -space-x-1">
       {members.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
@@ -504,9 +504,9 @@ export function StoryOwnerAvatarFilterRow() {
             <button
               type="button"
               onClick={() => handleToggle('owner_member_id', member.id)}
-              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all ${
+              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all hover:z-10 ${
                 isSelected
-                  ? 'ring-foreground'
+                  ? 'z-10 ring-foreground'
                   : 'ring-transparent opacity-70 hover:opacity-100'
               }`}
               aria-pressed={isSelected}
@@ -518,11 +518,6 @@ export function StoryOwnerAvatarFilterRow() {
                 className="h-6 w-6"
                 fallbackClassName="text-[8px]"
               />
-              {isSelected ? (
-                <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-background bg-primary text-primary-foreground">
-                  <Check className="h-1.5 w-1.5" />
-                </span>
-              ) : null}
             </button>
           </QuickTooltip>
         );

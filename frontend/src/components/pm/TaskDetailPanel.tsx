@@ -756,7 +756,7 @@ function TaskDetailPanelBody({
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && workspace && (
             <>
@@ -1097,7 +1097,7 @@ function TaskDetailPanelBody({
             <>
               <TaskGitPanel storyId={storyDetail.task.id} workspaceId={workspaceId} />
               <AgentRunPanel
-                storyId={storyDetail.task.id}
+                taskId={storyDetail.task.id}
                 workspaceId={workspaceId}
                 assignedAgentId={storyDetail.task.assigned_agent_id}
               />

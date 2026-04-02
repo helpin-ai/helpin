@@ -78,6 +78,27 @@
     pointer-events: none;
   }
 
+  .ui-divider-top-fade {
+    position: relative;
+  }
+
+  .ui-divider-top-fade::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    left: 0;
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      transparent 0,
+      color-mix(in oklab, var(--border) 74%, transparent) 18px,
+      color-mix(in oklab, var(--border) 74%, transparent) calc(100% - 18px),
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
   .ui-divider-right-fade {
     background-image: linear-gradient(
       to bottom,
