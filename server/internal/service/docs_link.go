@@ -12,14 +12,14 @@ import (
 // DocsLinkService handles business logic for document links.
 type DocsLinkService struct {
 	linkRepo    *repository.DocsLinkRepository
-	storyRepo   *repository.PMTaskRepository
+	taskRepo   *repository.PMTaskRepository
 	docRepo     *repository.DocsDocumentRepository
 	wsPublisher *websocket.Publisher
 }
 
 // NewDocsLinkService creates a new DocsLinkService.
-func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMTaskRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsLinkService {
-	return &DocsLinkService{linkRepo: linkRepo, storyRepo: storyRepo, docRepo: docRepo, wsPublisher: wsPublisher}
+func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, taskRepo *repository.PMTaskRepository, docRepo *repository.DocsDocumentRepository, wsPublisher *websocket.Publisher) *DocsLinkService {
+	return &DocsLinkService{linkRepo: linkRepo, taskRepo: taskRepo, docRepo: docRepo, wsPublisher: wsPublisher}
 }
 
 // Create creates a new link between a document and a PM/Support object.
@@ -72,7 +72,7 @@ func (s *DocsLinkService) ListByObject(ctx context.Context, workspaceID, objectT
 
 // enrichLinks populates transient LinkedObjectName and LinkedObjectDisplayID fields.
 func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLink) {
-	if len(links) == 0 || s.storyRepo == nil {
+	if len(links) == 0 || s.taskRepo == nil {
 		return
 	}
 
@@ -89,7 +89,7 @@ func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLin
 
 	// Batch-fetch stories. Use the workspace from the first link.
 	wsID := links[0].WorkspaceID
-	stories, err := s.storyRepo.ListByIDs(ctx, wsID, storyIDs)
+	stories, err := s.taskRepo.ListByIDs(ctx, wsID, storyIDs)
 	if err != nil {
 		return // best-effort enrichment
 	}

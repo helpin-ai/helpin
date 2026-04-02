@@ -594,7 +594,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
               <div className="flex items-center justify-between pt-1">
                 <div>
                   <p className="text-sm font-medium">Roll over unfinished work</p>
-                  <p className="text-xs text-muted-foreground">When a sprint ends, move incomplete stories to the next sprint</p>
+                  <p className="text-xs text-muted-foreground">When a sprint ends, move incomplete tasks to the next sprint</p>
                 </div>
                 <Switch
                   checked={automationPrompt.moveUnfinished}

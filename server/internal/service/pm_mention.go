@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // mentionPattern matches @username patterns (alphanumeric, dots, hyphens, underscores).
@@ -155,7 +156,7 @@ func emitMentionNotification(ctx context.Context, notifService *NotificationServ
 
 	body := input.NotificationBody
 	if body == "" {
-		body = truncate(input.Body, 200)
+		body = truncate(tiptap.StripHTML(input.Body), 200)
 	}
 
 	if err := notifService.Emit(ctx, model.NotificationEventInput{

@@ -24,14 +24,14 @@ type InternalCommandDefinition struct {
 
 type InternalCommandService struct {
 	agentService        *AgentService
-	storyService        *PMTaskService
+	taskService        *PMTaskService
 	crmDealService      *CRMDealService
 	crmActivityService  *CRMActivityService
 	docsContentService  *DocsContentService
 	docsLinkService     *DocsLinkService
 	pmAutomationService *PMAutomationService
 	gitService          *GitService
-	storyRepo           *repository.PMTaskRepository
+	taskRepo           *repository.PMTaskRepository
 	storyLinkRepo       *repository.PMTaskLinkRepository
 	definitions         map[string]InternalCommandDefinition
 }
@@ -48,22 +48,22 @@ func (s *InternalCommandService) SetGitService(svc *GitService) {
 
 func NewInternalCommandService(
 	agentService *AgentService,
-	storyService *PMTaskService,
+	taskService *PMTaskService,
 	crmDealService *CRMDealService,
 	crmActivityService *CRMActivityService,
 	docsContentService *DocsContentService,
 	docsLinkService *DocsLinkService,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	storyLinkRepo *repository.PMTaskLinkRepository,
 ) *InternalCommandService {
 	svc := &InternalCommandService{
 		agentService:       agentService,
-		storyService:       storyService,
+		taskService:       taskService,
 		crmDealService:     crmDealService,
 		crmActivityService: crmActivityService,
 		docsContentService: docsContentService,
 		docsLinkService:    docsLinkService,
-		storyRepo:          storyRepo,
+		taskRepo:          taskRepo,
 		storyLinkRepo:      storyLinkRepo,
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
@@ -282,11 +282,11 @@ func (s *InternalCommandService) registerDefaults() {
 				if sourceID == "" || targetID == "" {
 					return nil, fmt.Errorf("source_task_id and target_task_id are required")
 				}
-				source, err := s.storyRepo.GetRawByID(ctx, sourceID)
+				source, err := s.taskRepo.GetRawByID(ctx, sourceID)
 				if err != nil {
 					return nil, err
 				}
-				target, err := s.storyRepo.GetRawByID(ctx, targetID)
+				target, err := s.taskRepo.GetRawByID(ctx, targetID)
 				if err != nil {
 					return nil, err
 				}
@@ -361,7 +361,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse followup input: %w", err)
 			}
-			task, err := s.storyRepo.GetRawByID(ctx, meta.TargetID)
+			task, err := s.taskRepo.GetRawByID(ctx, meta.TargetID)
 			if err != nil {
 				return nil, err
 			}
@@ -388,11 +388,11 @@ func (s *InternalCommandService) registerDefaults() {
 					TeamID:      task.TeamID,
 					Priority:    followup.Priority,
 				}
-				detail, err := s.storyService.Create(ctx, createReq, fallbackActor(meta))
+				detail, err := s.taskService.Create(ctx, createReq, fallbackActor(meta))
 				if err != nil {
 					return nil, err
 				}
-				createdIDs = append(createdIDs, detail.Story.ID)
+				createdIDs = append(createdIDs, detail.Task.ID)
 			}
 			return mustJSON(map[string]any{"created_task_ids": createdIDs, "created_story_ids": createdIDs}), nil
 		},
@@ -426,7 +426,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if taskID == "" || strings.TrimSpace(req.StateID) == "" {
 				return nil, fmt.Errorf("task_id and state_id are required")
 			}
-			_, err := s.storyService.MoveToState(ctx, taskID, model.MoveTaskRequest{
+			_, err := s.taskService.MoveToState(ctx, taskID, model.MoveTaskRequest{
 				StateID:  req.StateID,
 				Position: req.Position,
 			}, fallbackActor(meta))

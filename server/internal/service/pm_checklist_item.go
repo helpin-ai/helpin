@@ -14,7 +14,7 @@ import (
 // PMChecklistItemService contains checklist item business logic.
 type PMChecklistItemService struct {
 	repo                *repository.PMChecklistItemRepository
-	storyRepo           *repository.PMTaskRepository
+	taskRepo           *repository.PMTaskRepository
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
@@ -23,14 +23,14 @@ type PMChecklistItemService struct {
 // NewPMChecklistItemService creates a new PMChecklistItemService.
 func NewPMChecklistItemService(
 	repo *repository.PMChecklistItemRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	wsPublisher *websocket.Publisher,
 	notificationService *NotificationService,
 	workspaceRepo *repository.WorkspaceRepository,
 ) *PMChecklistItemService {
 	return &PMChecklistItemService{
 		repo:                repo,
-		storyRepo:           storyRepo,
+		taskRepo:           taskRepo,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
 		workspaceRepo:       workspaceRepo,
@@ -147,8 +147,8 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 	entityTitle := item.TaskID
 	var entityTeamID string
 	readableTeamIDs := []string(nil)
-	if s.storyRepo != nil {
-		if story, _ := s.storyRepo.GetRawByID(ctx, item.TaskID); story != nil {
+	if s.taskRepo != nil {
+		if story, _ := s.taskRepo.GetRawByID(ctx, item.TaskID); story != nil {
 			entityTitle = story.Name
 			entityTeamID = derefString(story.TeamID)
 			readableTeamIDs = mentionScopeForTeamID(story.TeamID)

@@ -193,8 +193,8 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 	return stats, nil
 }
 
-// ListStories returns non-archived stories in an epic.
-func (r *PMEpicRepository) ListStories(ctx context.Context, epicID string) ([]model.PMTask, error) {
+// ListTasks returns non-archived tasks in an epic.
+func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
 	var stories []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Where("epic_id = ? AND archived = false", epicID).

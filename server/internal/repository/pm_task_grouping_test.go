@@ -50,14 +50,14 @@ func TestBuildDoneTaskGroupsBucketsByCompletionWeek(t *testing.T) {
 	if groups[0].Label != boardDoneGroupThisWeekLabel {
 		t.Fatalf("groups[0].label = %q, want %q", groups[0].Label, boardDoneGroupThisWeekLabel)
 	}
-	if len(groups[0].Stories) != 1 || groups[0].Stories[0].ID != "story-1" {
-		t.Fatalf("groups[0].stories = %#v, want story-1 only", groups[0].Stories)
+	if len(groups[0].Tasks) != 1 || groups[0].Tasks[0].ID != "story-1" {
+		t.Fatalf("groups[0].tasks = %#v, want story-1 only", groups[0].Tasks)
 	}
 	if groups[1].Label != "Week of Feb 16, 2026" {
 		t.Fatalf("groups[1].label = %q, want %q", groups[1].Label, "Week of Feb 16, 2026")
 	}
-	if len(groups[1].Stories) != 2 {
-		t.Fatalf("len(groups[1].stories) = %d, want 2", len(groups[1].Stories))
+	if len(groups[1].Tasks) != 2 {
+		t.Fatalf("len(groups[1].tasks) = %d, want 2", len(groups[1].Tasks))
 	}
 }
 

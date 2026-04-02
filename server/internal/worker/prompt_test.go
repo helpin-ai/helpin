@@ -123,7 +123,7 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	)
 
 	for _, marker := range []string{
-		"Please draft or refine the canonical story planning document for story: **Inbox triage automation**",
+		"Please draft or refine the canonical task planning document for task: **Inbox triage automation**",
 		"Operator notes:",
 	} {
 		if !strings.Contains(prompt, marker) {
@@ -131,7 +131,7 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 		}
 	}
 	for _, snippet := range []string{
-		"Create a reviewable story planning document",
+		"Create a reviewable task planning document",
 		"open questions",
 	} {
 		if strings.Contains(prompt, snippet) {

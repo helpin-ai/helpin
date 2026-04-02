@@ -115,7 +115,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		}
 		card := model.SprintPlanningCard{
 			Sprint:         sprints[i],
-			PreviewStories: []model.SprintPlanningTaskPreview{},
+			PreviewTasks:    []model.SprintPlanningTaskPreview{},
 		}
 		buckets[bucketKey].Sprints = append(buckets[bucketKey].Sprints, card)
 		cardBySprintID[sprints[i].ID] = &buckets[bucketKey].Sprints[len(buckets[bucketKey].Sprints)-1]
@@ -137,8 +137,8 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 				continue
 			}
 			card.Stats = statsBySprintID[sprintID]
-			card.PreviewStories = previewStoriesBySprintID[sprintID]
-			if overflow := card.Stats.TaskCount - len(card.PreviewStories); overflow > 0 {
+			card.PreviewTasks = previewStoriesBySprintID[sprintID]
+			if overflow := card.Stats.TaskCount - len(card.PreviewTasks); overflow > 0 {
 				card.TaskPreviewOverflow = overflow
 			}
 		}
@@ -160,7 +160,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 
 	return &model.SprintPlanningWorkspace{
 		Buckets:        orderedBuckets,
-		BacklogStories: backlogStories,
+		BacklogTasks:   backlogStories,
 		BacklogTotal:   backlogTotal,
 	}, nil
 }
@@ -282,8 +282,8 @@ func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string,
 	})
 }
 
-// ListStories returns stories in a sprint.
-func (r *PMSprintRepository) ListStories(ctx context.Context, sprintID string) ([]model.PMTask, error) {
+// ListTasks returns tasks in a sprint.
+func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
 	var stories []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND archived = false", sprintID).

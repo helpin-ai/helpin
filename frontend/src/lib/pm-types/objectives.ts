@@ -48,8 +48,8 @@ export interface ObjectiveStats {
   key_result_avg_pct: number;
   epic_count: number;
   epic_done_count: number;
-  epic_story_count: number;
-  epic_done_stories: number;
+  epic_task_count: number;
+  epic_done_tasks: number;
   epic_progress_pct: number;
 }
 

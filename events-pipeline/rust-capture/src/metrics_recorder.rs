@@ -1,4 +1,8 @@
-use std::{future::ready, sync::OnceLock, time::{Duration, Instant}};
+use std::{
+    future::ready,
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 
 use axum::{
     extract::MatchedPath,

@@ -160,7 +160,7 @@ export function RoadmapPage() {
           <div className="w-full max-w-4xl mt-10">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { icon: Layers, title: 'Create epics', description: 'Group related stories into epics — your key initiatives' },
+                { icon: Layers, title: 'Create epics', description: 'Group related tasks into epics — your key initiatives' },
                 { icon: Target, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
                 { icon: CalendarDays, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
               ].map(({ icon: Icon, title, description }) => (

@@ -647,7 +647,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			tools BLOB NOT NULL DEFAULT '[]',
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
-			active_story_id TEXT,
+			active_task_id TEXT,
 			team_id TEXT,
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			allowed_commands BLOB NOT NULL DEFAULT '[]',

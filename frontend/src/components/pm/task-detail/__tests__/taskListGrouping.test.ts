@@ -16,7 +16,7 @@ describe('getVisibleTaskListGroupOptions', () => {
       'None',
       'States',
       'Members',
-      'Story Type',
+      'Task Type',
       'Priority',
       'Severity',
       'Epic',

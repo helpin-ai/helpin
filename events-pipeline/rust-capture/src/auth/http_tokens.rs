@@ -133,9 +133,8 @@ impl HttpTokens {
     }
 
     async fn fetch_tokens() -> Result<Vec<Token>, String> {
-        let url = env::var("HTTP_TOKENS_URL").map_err(|_| {
-            "HTTP_TOKENS_URL env var is not set".to_string()
-        })?;
+        let url = env::var("HTTP_TOKENS_URL")
+            .map_err(|_| "HTTP_TOKENS_URL env var is not set".to_string())?;
 
         let client = reqwest::Client::new();
         let mut request = client.get(&url);
@@ -167,7 +166,6 @@ impl HttpTokens {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,14 +186,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_new() {
-        let fake_tokens = vec![
-            Token {
-                id: "1".to_string(),
-                client_secret: "secret".to_string(),
-                server_secret: "secret".to_string(),
-                origins: vec!["localhost".to_string()],
-            },
-        ];
+        let fake_tokens = vec![Token {
+            id: "1".to_string(),
+            client_secret: "secret".to_string(),
+            server_secret: "secret".to_string(),
+            origins: vec!["localhost".to_string()],
+        }];
 
         let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
 
@@ -209,14 +205,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens() {
-        let fake_tokens = vec![
-            Token {
-                id: "1".to_string(),
-                client_secret: "secret".to_string(),
-                server_secret: "secret".to_string(),
-                origins: vec!["localhost".to_string()],
-            },
-        ];
+        let fake_tokens = vec![Token {
+            id: "1".to_string(),
+            client_secret: "secret".to_string(),
+            server_secret: "secret".to_string(),
+            origins: vec!["localhost".to_string()],
+        }];
 
         let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
 

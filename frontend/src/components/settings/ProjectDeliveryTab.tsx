@@ -235,7 +235,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
               </span>
             )}
           </div>
-          <CardDescription>Choose which synced repositories are available to teams and story delivery targets.</CardDescription>
+          <CardDescription>Choose which synced repositories are available to teams and task delivery targets.</CardDescription>
         </CardHeader>
         <CardContent>
           {hasRepositories ? (

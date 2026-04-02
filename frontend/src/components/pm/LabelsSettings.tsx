@@ -90,9 +90,9 @@ function LabelCard({
           </div>
         )}
       </div>
-      {stats.story_count > 0 && (
+      {stats.task_count > 0 && (
         <span className="text-[11px] text-muted-foreground">
-          {stats.story_count} total, {stats.done_story_count} completed
+          {stats.task_count} total, {stats.done_task_count} completed
         </span>
       )}
     </div>
@@ -331,7 +331,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
             <span className="font-medium text-foreground">
               {labels.find((e) => e.label.id === deleteConfirmId)?.label.name}
             </span>
-            ? This will remove it from all stories and epics.
+            ? This will remove it from all tasks and epics.
           </p>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
@@ -348,7 +348,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
           <div>
             <p className="text-sm font-medium text-foreground">No labels yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Labels help you categorize and filter stories across your workspace.
+              Labels help you categorize and filter tasks across your workspace.
             </p>
           </div>
           {editable && (

@@ -170,8 +170,8 @@ export interface PMSprint {
 }
 
 export interface PMSprintStats {
-  story_count: number;
-  done_story_count: number;
+  task_count: number;
+  done_task_count: number;
   total_points: number;
   done_points: number;
 }
@@ -200,7 +200,7 @@ export interface SprintPlanningTaskPreview {
 export interface SprintPlanningCard {
   sprint: PMSprint;
   stats: PMSprintStats;
-  preview_stories: SprintPlanningTaskPreview[];
+  preview_tasks: SprintPlanningTaskPreview[];
   task_preview_overflow: number;
 }
 
@@ -212,7 +212,7 @@ export interface SprintPlanningBucket {
 
 export interface SprintPlanningWorkspace {
   buckets: SprintPlanningBucket[];
-  backlog_stories: SprintPlanningTaskPreview[];
+  backlog_tasks: SprintPlanningTaskPreview[];
   backlog_total: number;
 }
 
@@ -312,7 +312,7 @@ export interface AssociationObjectSummary {
   task_type?: TaskType;
 }
 
-export interface StoryRelationshipSummary {
+export interface TaskRelationshipSummary {
   relationship_id: string;
   link_type: string;
   is_active: boolean;
@@ -321,22 +321,22 @@ export interface StoryRelationshipSummary {
   story?: AssociationObjectSummary;
 }
 
-export type TaskRelationshipSummary = StoryRelationshipSummary;
+export type StoryRelationshipSummary = TaskRelationshipSummary;
 
-export interface StoryRelationshipGroups {
-  blocked_by: StoryRelationshipSummary[];
-  blocking: StoryRelationshipSummary[];
-  relates_to: StoryRelationshipSummary[];
-  related_by: StoryRelationshipSummary[];
-  duplicates: StoryRelationshipSummary[];
-  duplicated_by: StoryRelationshipSummary[];
+export interface TaskRelationshipGroups {
+  blocked_by: TaskRelationshipSummary[];
+  blocking: TaskRelationshipSummary[];
+  relates_to: TaskRelationshipSummary[];
+  related_by: TaskRelationshipSummary[];
+  duplicates: TaskRelationshipSummary[];
+  duplicated_by: TaskRelationshipSummary[];
 }
 
-export type TaskRelationshipGroups = StoryRelationshipGroups;
+export type StoryRelationshipGroups = TaskRelationshipGroups;
 
 export interface GroupedAssociations {
   task_relationships: TaskRelationshipGroups;
-  stories: AssociationObjectSummary[];
+  tasks: AssociationObjectSummary[];
   support_conversations: AssociationObjectSummary[];
   crm_records: AssociationObjectSummary[];
   docs: AssociationObjectSummary[];
@@ -382,7 +382,7 @@ export interface TaskDetail {
 
 export interface TaskStateColumn {
   state: WorkflowState;
-  stories: Task[];
+  tasks: Task[];
   task_groups?: TaskGroup[];
   task_count: number;
   point_total: number;
@@ -392,33 +392,31 @@ export interface TaskStateColumn {
 export interface TaskGroup {
   key: string;
   label: string;
-  stories: Task[];
+  tasks: Task[];
 }
 
 
 export interface ColumnTasksResponse {
-  stories: Task[];
+  tasks: Task[];
   task_groups?: TaskGroup[];
   total: number;
 }
 
 export interface TaskMemberColumn {
   member: AssignableMember | null;
-  stories: Task[];
-  story_count: number;
+  tasks: Task[];
+  task_count: number;
   point_total: number;
   has_more: boolean;
 }
 
 
-export interface StoryStateCount {
+export interface TaskStateCount {
   state_id: string;
   state_name: string;
   state_type: StateType;
-  story_count: number;
+  task_count: number;
 }
-
-export type TaskStateCount = StoryStateCount;
 
 export interface Comment {
   id: string;
@@ -524,8 +522,8 @@ export interface UpdateWorkflowStateRequest {
 }
 
 export interface LabelStats {
-  story_count: number;
-  done_story_count: number;
+  task_count: number;
+  done_task_count: number;
   total_points: number;
   done_points: number;
   epic_count: number;
@@ -553,7 +551,7 @@ export interface UpdateLabelRequest {
   archived?: boolean;
 }
 
-// ── Story Templates ─────────────────────────────────────────────────
+// ── Task Templates ─────────────────────────────────────────────────
 
 export interface TemplateChecklistItem {
   text: string;

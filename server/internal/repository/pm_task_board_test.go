@@ -39,13 +39,13 @@ func TestPMTaskRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 		insertPMTaskMemberBoardTask(t, db, "done-old", workspaceID, workflowID, doneStateID, memberID, 1, 5, now.Add(-4*time.Hour))
 		insertPMTaskMemberBoardTask(t, db, "done-new", workspaceID, workflowID, doneStateID, memberID, 2, 0, now.Add(-3*time.Hour))
 		if err := db.Exec(
-			`UPDATE pm_stories SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
+			`UPDATE pm_tasks SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
 			true, now.Add(-2*time.Hour), now.Add(-2*time.Hour), "done-old",
 		).Error; err != nil {
 			t.Fatalf("update done-old: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE pm_stories SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
+			`UPDATE pm_tasks SET completed = ?, completed_at = ?, moved_at = ? WHERE id = ?`,
 			true, now.Add(-30*time.Minute), now.Add(-30*time.Minute), "done-new",
 		).Error; err != nil {
 			t.Fatalf("update done-new: %v", err)
@@ -66,7 +66,7 @@ func TestPMTaskRepository_StateBoardOrderingAndNormalization(t *testing.T) {
 		if doneColumn == nil {
 			t.Fatal("expected done column")
 		}
-		got := []string{doneColumn.Stories[0].ID, doneColumn.Stories[1].ID}
+		got := []string{doneColumn.Tasks[0].ID, doneColumn.Tasks[1].ID}
 		want := []string{"done-new", "done-old"}
 		for i := range want {
 			if got[i] != want[i] {

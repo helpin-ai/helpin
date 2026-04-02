@@ -152,8 +152,8 @@ export function RecurringTemplateForm({
         </div>
         <p className="text-[11px] text-muted-foreground">
           {scheduleType === 'time'
-            ? 'Creates a new story on a fixed schedule (daily, weekly, etc.)'
-            : 'Creates a new story when the current one is marked done'}
+            ? 'Creates a new task on a fixed schedule (daily, weekly, etc.)'
+            : 'Creates a new task when the current one is marked done'}
         </p>
       </div>
 
@@ -209,7 +209,7 @@ export function RecurringTemplateForm({
         </div>
       ) : (
         <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <Label>Trigger when story moves to</Label>
+          <Label>Trigger when task moves to</Label>
           {workflowStates.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {workflowStates.map((state) => {
@@ -244,7 +244,7 @@ export function RecurringTemplateForm({
           )}
           <p className="text-[11px] text-muted-foreground">
             {completionStateIDs.length === 0
-              ? 'Select one or more states. A new story is created when the current one enters any selected state.'
+              ? 'Select one or more states. A new task is created when the current one enters any selected state.'
               : `Triggers on: ${completionStateIDs.length} state${completionStateIDs.length === 1 ? '' : 's'} selected`}
           </p>
         </div>
@@ -261,7 +261,7 @@ export function RecurringTemplateForm({
         {dueDateMode === 'offset_days' && (
           <div className="flex items-center gap-2 pt-1">
             <Input type="number" min={1} className="w-20" value={dueOffsetDays} onChange={(e) => setDueOffsetDays(Number(e.target.value) || 1)} />
-            <span className="text-xs text-muted-foreground">days after story is created</span>
+            <span className="text-xs text-muted-foreground">days after task is created</span>
           </div>
         )}
       </div>
@@ -309,7 +309,7 @@ export function RecurringTemplateForm({
           ))}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {sprintAssignmentMode === 'none' ? 'Story will not be assigned to any sprint' : sprintAssignmentMode === 'current_sprint' ? 'Assigned to whichever sprint is active when created' : 'Assigned to the sprint that contains the due date'}
+          {sprintAssignmentMode === 'none' ? 'Task will not be assigned to any sprint' : sprintAssignmentMode === 'current_sprint' ? 'Assigned to whichever sprint is active when created' : 'Assigned to the sprint that contains the due date'}
         </p>
       </div>
 

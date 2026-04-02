@@ -14,13 +14,13 @@ import { cn } from '@/lib/utils';
 interface SprintPlanningBacklogPanelProps {
   open: boolean;
   onToggle: () => void;
-  stories: SprintPlanningTaskPreview[];
+  tasks: SprintPlanningTaskPreview[];
   total: number;
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
-  onOpenStory: (storyId: string) => void;
-  onAddToActiveSprint: (story: SprintPlanningTaskPreview) => void;
-  onCreateStory: () => void;
+  onOpenTask: (taskId: string) => void;
+  onAddToActiveSprint: (task: SprintPlanningTaskPreview) => void;
+  onCreateTask: () => void;
 }
 
 const PRIORITY_OPTIONS: Array<{ value: Priority | '__all__'; label: string }> = [
@@ -42,13 +42,13 @@ const STATE_OPTIONS: Array<{ value: StateType | '__all__'; label: string }> = [
 export function SprintPlanningBacklogPanel({
   open,
   onToggle,
-  stories,
+  tasks,
   total,
   ownerByMemberId,
   canEdit,
-  onOpenStory,
+  onOpenTask,
   onAddToActiveSprint,
-  onCreateStory,
+  onCreateTask,
 }: SprintPlanningBacklogPanelProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: 'backlog-dropzone',
@@ -66,14 +66,14 @@ export function SprintPlanningBacklogPanel({
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [ownerByMemberId]);
 
-  const filteredStories = useMemo(() => {
-    return (stories ?? []).filter((story) => {
-      if (priority !== '__all__' && story.priority !== priority) return false;
-      if (stateType !== '__all__' && story.state_type !== stateType) return false;
-      if (ownerMemberId !== '__all__' && story.owner_member_id !== ownerMemberId) return false;
+  const filteredTasks = useMemo(() => {
+    return (tasks ?? []).filter((task) => {
+      if (priority !== '__all__' && task.priority !== priority) return false;
+      if (stateType !== '__all__' && task.state_type !== stateType) return false;
+      if (ownerMemberId !== '__all__' && task.owner_member_id !== ownerMemberId) return false;
       return true;
     });
-  }, [ownerMemberId, priority, stateType, stories]);
+  }, [ownerMemberId, priority, stateType,  tasks]);
 
   if (!open) {
     return (
@@ -109,7 +109,7 @@ export function SprintPlanningBacklogPanel({
             <div className="flex items-center gap-2">
               <CardTitle className="text-base">Backlog</CardTitle>
               <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-medium">
-                {filteredStories.length}/{total}
+                {filteredTasks.length}/{total}
               </Badge>
             </div>
             <button
@@ -188,17 +188,17 @@ export function SprintPlanningBacklogPanel({
         <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <div className="space-y-2">
-              {filteredStories.length > 0 ? (
-                filteredStories.map((story) => (
+              {filteredTasks.length > 0 ? (
+                filteredTasks.map((task) => (
                   <SprintPlanningTaskCard
-                    key={story.id}
-                    story={story}
-                    owner={story.owner_member_id ? ownerByMemberId.get(story.owner_member_id) : undefined}
+                    key={task.id}
+                    task={task}
+                    owner={task.owner_member_id ? ownerByMemberId.get(task.owner_member_id) : undefined}
                     compact
                     showBacklogAction={canEdit}
                     canDrag={canEdit}
-                    onOpen={() => onOpenStory(story.id)}
-                    onAddToSprint={canEdit ? () => onAddToActiveSprint(story) : undefined}
+                    onOpen={() => onOpenTask(task.id)}
+                    onAddToSprint={canEdit ? () => onAddToActiveSprint(task) : undefined}
                   />
                 ))
               ) : (
@@ -206,8 +206,8 @@ export function SprintPlanningBacklogPanel({
                   <Inbox className="h-5 w-5 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
                     {total === 0
-                      ? 'All stories are assigned to sprints.'
-                      : 'No backlog stories match the current filters.'}
+                      ? 'All tasks are assigned to sprints.'
+                      : 'No backlog tasks match the current filters.'}
                   </p>
                 </div>
               )}
@@ -215,9 +215,9 @@ export function SprintPlanningBacklogPanel({
           </div>
 
           {canEdit ? (
-            <Button variant="outline" className="gap-2" onClick={onCreateStory}>
+            <Button variant="outline" className="gap-2" onClick={onCreateTask}>
               <PlusCircle className="h-4 w-4" />
-              Create story
+              Create task
             </Button>
           ) : null}
         </CardContent>

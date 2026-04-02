@@ -38,13 +38,13 @@ export function PipelineBuilder({
       if (!stateId || !map.has(stateId)) continue;
       const entry = map.get(stateId)!;
       if (
-        rule.trigger_type === 'story.state_entered' &&
+        rule.trigger_type === 'task.state_entered' &&
         rule.action_type === 'start_agent_run'
       ) {
         entry.runRule = rule;
       } else if (rule.trigger_type === 'agent_run.approved' && rule.action_type === 'move_to_state') {
         entry.advanceRule = rule;
-      } else if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'merge_branch') {
+      } else if (rule.trigger_type === 'task.state_entered' && rule.action_type === 'merge_branch') {
         entry.mergeRule = rule;
       }
     }
@@ -68,7 +68,7 @@ export function PipelineBuilder({
         workspace_id: workspaceId,
         name: `Run agent on ${stateName}`,
         workflow_id: workflowId,
-        trigger_type: 'story.state_entered',
+        trigger_type: 'task.state_entered',
         trigger_config: { state_id: stateId },
         action_type: 'start_agent_run',
         action_config: { agent_id: agentId },
@@ -114,7 +114,7 @@ export function PipelineBuilder({
         workspace_id: workspaceId,
         name: `Merge branch on ${stateName}`,
         workflow_id: workflowId,
-        trigger_type: 'story.state_entered',
+        trigger_type: 'task.state_entered',
         trigger_config: { state_id: stateId },
         action_type: 'merge_branch',
         action_config: { target_branch: branch },
@@ -304,7 +304,7 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="{base_branch}">Story&apos;s base branch</SelectItem>
+            <SelectItem value="{base_branch}">Task&apos;s base branch</SelectItem>
             <SelectItem value="__custom__">Custom branch...</SelectItem>
           </SelectContent>
         </Select>

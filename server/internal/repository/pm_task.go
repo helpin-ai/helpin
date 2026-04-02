@@ -282,11 +282,11 @@ func buildDoneTaskGroups(stories []model.BoardTask, now time.Time) []model.TaskG
 			groups = append(groups, model.TaskGroup{
 				Key:     key,
 				Label:   label,
-				Stories: []model.BoardTask{},
+				Tasks: []model.BoardTask{},
 			})
 		}
 
-		groups[index].Stories = append(groups[index].Stories, story)
+		groups[index].Tasks = append(groups[index].Tasks, story)
 	}
 
 	return groups
@@ -865,7 +865,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 		}
 		columns = append(columns, model.TaskStateColumn{
 			State:       state,
-			Stories:     colStories,
+			Tasks:       colStories,
 			TaskGroups:  storyGroups,
 			TaskCount:   m.totalCount,
 			PointTotal:  m.pointTotal,
@@ -1601,7 +1601,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 		}
 		columns = append(columns, model.TaskMemberColumn{
 			Member:    nil,
-			Stories:   colStories,
+			Tasks:     colStories,
 			TaskCount: meta.totalCount,
 			PointTotal: meta.pointTotal,
 			HasMore:    meta.hasMore,
@@ -1609,7 +1609,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 	} else if includeEmpty {
 		columns = append(columns, model.TaskMemberColumn{
 			Member:    nil,
-			Stories:   []model.BoardTask{},
+			Tasks:     []model.BoardTask{},
 			TaskCount: 0,
 			PointTotal: 0,
 			HasMore:    false,
@@ -1677,7 +1677,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 		m := memberInfoMap[entry.memberID]
 		columns = append(columns, model.TaskMemberColumn{
 			Member:    &m,
-			Stories:   colStories,
+			Tasks:     colStories,
 			TaskCount: totalCount,
 			PointTotal: pointTotal,
 			HasMore:    hasMore,
@@ -1903,7 +1903,7 @@ func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, story model.PMTa
 	}
 
 	return &model.TaskDetail{
-		Story:           story,
+		Task:            story,
 		Owners:          owners,
 		Followers:       followers,
 		OwnerMember:     ownerMember,

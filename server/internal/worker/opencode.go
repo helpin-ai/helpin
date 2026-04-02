@@ -314,7 +314,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
 				return err
 			}
-		case model.PlanningStagePlanStories:
+		case model.PlanningStagePlanTasks:
 			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)

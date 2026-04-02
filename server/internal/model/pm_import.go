@@ -60,8 +60,8 @@ type ShortcutUserMatch struct {
 }
 
 type ShortcutImportPreviewSummary struct {
-	TotalStories        int            `json:"total_stories"`
-	StoriesByType       map[string]int `json:"stories_by_type"`
+	TotalTasks          int            `json:"total_tasks"`
+	TasksByType         map[string]int `json:"tasks_by_type"`
 	EpicsCount          int            `json:"epics_count"`
 	ObjectivesCount     int            `json:"objectives_count"`
 	SprintsCount        int            `json:"sprints_count"`
@@ -70,7 +70,7 @@ type ShortcutImportPreviewSummary struct {
 	WorkflowsCount      int            `json:"workflows_count"`
 	WorkflowStatesCount int            `json:"workflow_states_count"`
 	ChecklistItemsCount int            `json:"checklist_items_count"`
-	DuplicateStories    int            `json:"duplicate_stories"`
+	DuplicateTasks      int            `json:"duplicate_tasks"`
 }
 
 type ShortcutImportPreviewResponse struct {
@@ -143,8 +143,8 @@ type ShortcutImportResult struct {
 	ObjectivesCreated     int      `json:"objectives_created"`
 	EpicsCreated          int      `json:"epics_created"`
 	SprintsCreated        int      `json:"sprints_created"`
-	StoriesCreated        int      `json:"stories_created"`
-	StoriesSkipped        int      `json:"stories_skipped"`
+	TasksCreated          int      `json:"tasks_created"`
+	TasksSkipped          int      `json:"tasks_skipped"`
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`

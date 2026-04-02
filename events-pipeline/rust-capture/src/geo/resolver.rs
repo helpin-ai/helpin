@@ -47,7 +47,7 @@ mod tests {
         let country_not_in_eu = maxmind_resolver.resolve(ip_not_in_eu).unwrap();
         println!("{:?}", country_in_eu);
         println!("{:?}", country_not_in_eu);
-        
+
         // Print region_name if available
         if let Some(region_name) = &country_in_eu.region_name {
             println!("Region name for IP in EU: {}", region_name);
@@ -77,6 +77,5 @@ mod tests {
 
         let response = maxmind_resolver.resolve(ip).unwrap();
         println!("{:?}", response);
-        
     }
 }

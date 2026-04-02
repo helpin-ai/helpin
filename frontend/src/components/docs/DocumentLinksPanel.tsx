@@ -61,7 +61,7 @@ export function DocumentLinksPanel({
     (links ?? []).filter((l) => l.linked_object_type === 'task').map((l) => l.linked_object_id),
   )
 
-  const filteredTasks = (searchResults?.tasks ?? searchResults?.stories ?? []).filter((task) => !linkedTaskIds.has(task.id))
+  const filteredTasks = (searchResults?.tasks ?? searchResults?.tasks ?? []).filter((task) => !linkedTaskIds.has(task.id))
 
   const handleLinkTask = useCallback(
     async (task: SearchResult) => {

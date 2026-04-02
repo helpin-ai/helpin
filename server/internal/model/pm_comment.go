@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// PMComment represents comments for stories/epics/docs.
+// PMComment represents comments for tasks/epics/docs.
 type PMComment struct {
 	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	EntityType string    `json:"entity_type" gorm:"not null"`

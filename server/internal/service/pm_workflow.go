@@ -15,17 +15,17 @@ import (
 // PMWorkflowService contains workflow business logic.
 type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
-	storyRepo    *repository.PMTaskRepository
+	taskRepo    *repository.PMTaskRepository
 	labelRepo    *repository.PMLabelRepository
 	wsPublisher  *websocket.Publisher
 	logger       *slog.Logger
 }
 
 // NewPMWorkflowService creates a new PMWorkflowService.
-func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
+func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, taskRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
 	return &PMWorkflowService{
 		workflowRepo: workflowRepo,
-		storyRepo:    storyRepo,
+		taskRepo:    taskRepo,
 		labelRepo:    labelRepo,
 		wsPublisher:  wsPublisher,
 		logger:       slog.Default().With("service", "pm_workflow"),
@@ -172,7 +172,7 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 	}
 	var totalStories int64
 	for _, state := range wf.States {
-		count, err := s.storyRepo.CountByWorkflowState(ctx, state.ID)
+		count, err := s.taskRepo.CountByWorkflowState(ctx, state.ID)
 		if err != nil {
 			return err
 		}
@@ -354,7 +354,7 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 		return fmt.Errorf("workflow not found")
 	}
 
-	count, err := s.storyRepo.CountByWorkflowState(ctx, stateID)
+	count, err := s.taskRepo.CountByWorkflowState(ctx, stateID)
 	if err != nil {
 		return err
 	}
@@ -548,7 +548,7 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 // migrateTeamStories remaps stories from an old workflow to a new one by matching states.
 func (s *PMWorkflowService) migrateTeamStories(ctx context.Context, teamID string, oldWf, newWf *model.WorkflowWithStates) {
 	stateMap := buildStateMapping(oldWf.States, newWf.States, newWf.Workflow.DefaultStateID)
-	migrated, err := s.storyRepo.MigrateStoriesToWorkflow(ctx, teamID, oldWf.Workflow.ID, newWf.Workflow.ID, stateMap)
+	migrated, err := s.taskRepo.MigrateStoriesToWorkflow(ctx, teamID, oldWf.Workflow.ID, newWf.Workflow.ID, stateMap)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to migrate team stories to new workflow",
 			"error", err, "team_id", teamID,

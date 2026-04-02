@@ -51,11 +51,11 @@ func TestEnsureTaskPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context:     context.Background(),
 		WorkspaceID: "ws-1",
-		TargetType:  "story",
+		TargetType:  "task",
 		TargetID:    "story-1",
 		AgentID:     "agent-1",
 		AllowedTools: map[string]bool{
-			"ensure_story_plan_doc": true,
+			"ensure_task_plan_doc": true,
 		},
 		Services: &ServiceBridge{
 			EnsureTaskPlanDoc: func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
@@ -77,7 +77,7 @@ func TestEnsureTaskPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, "ensure_story_plan_doc", json.RawMessage(`{}`))
+	output, err := registry.ExecuteAllowed(ctx, "ensure_task_plan_doc", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 			ApprovedSpecVersionID: &versionID,
 		},
 		AllowedTools: map[string]bool{
-			"create_story_batch": true,
+			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
 			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
@@ -119,7 +119,7 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, "create_story_batch", json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
 		"proposed_stories": [
 			{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
 		]
@@ -127,7 +127,7 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"story_id":"story-db-1"`) {
+	if !strings.Contains(output, `"task_id":"story-db-1"`) {
 		t.Fatalf("expected created story batch result, got %s", output)
 	}
 }
@@ -146,7 +146,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 			ApprovedSpecVersionID: &versionID,
 		},
 		AllowedTools: map[string]bool{
-			"create_story_batch": true,
+			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
 			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
@@ -155,11 +155,11 @@ func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, "create_story_batch", json.RawMessage(`{"stories":`))
+	_, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{"stories":`))
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
-	if !strings.Contains(err.Error(), "create_story_batch input must be valid JSON") {
+	if !strings.Contains(err.Error(), "create_task_batch input must be valid JSON") {
 		t.Fatalf("expected repair-oriented parse error, got %v", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 			ApprovedSpecVersionID: &versionID,
 		},
 		AllowedTools: map[string]bool{
-			"create_story_batch": true,
+			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
 			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
@@ -187,7 +187,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, "create_story_batch", json.RawMessage(`{
+	_, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
 		"stories": [
 			{"description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
 		]
@@ -195,7 +195,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), `create_story_batch stories are invalid: story 1 is missing name; use field "name"`) {
+	if !strings.Contains(err.Error(), `create_task_batch stories are invalid: story 1 is missing name; use field "name"`) {
 		t.Fatalf("expected repair-oriented validation error, got %v", err)
 	}
 }
@@ -216,12 +216,12 @@ func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing
 			ApprovedSpecVersionID: &versionID,
 		},
 		AllowedTools: map[string]bool{
-			"create_story_batch": true,
+			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
 			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
 				called = true
-				if name != "pm.create_story_batch" {
+				if name != "pm.create_task_batch" {
 					t.Fatalf("unexpected command name %q", name)
 				}
 				if meta.WorkspaceID != "ws-1" || meta.TargetType != "epic" || meta.TargetID != "epic-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
@@ -232,7 +232,7 @@ func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, "create_story_batch", json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
 		"stories": [
 			{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
 		]

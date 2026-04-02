@@ -82,6 +82,19 @@ function getCategoryLabel(category: string): string {
   }
 }
 
+/** Split text on @mentions and wrap each mention in a highlighted span. */
+function highlightMentions(text: string): React.ReactNode {
+  const parts = text.split(/(@[a-zA-Z0-9][a-zA-Z0-9._-]*)/g)
+  if (parts.length === 1) return text
+  return parts.map((part, i) =>
+    part.startsWith('@') ? (
+      <span key={i} className="font-medium text-primary">{part}</span>
+    ) : (
+      part
+    ),
+  )
+}
+
 function NotificationListItem({
   notification,
   isSelected,
@@ -132,6 +145,9 @@ function NotificationListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className={cn('text-sm leading-snug line-clamp-2', isUnread && 'font-medium')}>
+            {notification.actor_snapshot?.name && (
+              <span className="text-primary">{notification.actor_snapshot.name}</span>
+            )}{' '}
             {notification.title}
           </p>
           <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap mt-0.5">
@@ -140,7 +156,7 @@ function NotificationListItem({
         </div>
         {notification.body && (
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-            {notification.body}
+            {highlightMentions(notification.body)}
           </p>
         )}
         <div className="mt-1.5 flex items-center gap-2">
@@ -278,13 +294,13 @@ function NotificationDetail({ notification }: { notification: Notification }) {
                 {actorName.charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="text-sm font-medium">{actorName}</p>
+                <p className="text-sm font-medium text-primary">{actorName}</p>
                 <p className="text-[11px] text-muted-foreground">{getTimeAgo(notification.last_event_at)}</p>
               </div>
             </div>
             <p className="text-sm">{notification.title}</p>
             {notification.body && (
-              <p className="mt-2 text-sm text-muted-foreground">{notification.body}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{highlightMentions(notification.body)}</p>
             )}
             {notification.metadata && Object.keys(notification.metadata).length > 0 && (
               <div className="mt-3 space-y-1">
@@ -319,7 +335,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm">
-                  <span className="font-medium">{actorName}</span>{' '}
+                  <span className="font-medium text-primary">{actorName}</span>{' '}
                   <span className="text-muted-foreground">
                     {getCategoryLabel(notification.latest_event_category).toLowerCase()} · {getTimeAgo(notification.last_event_at)}
                   </span>

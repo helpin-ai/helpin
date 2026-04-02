@@ -35,8 +35,8 @@ import { usePMBoardStore } from '../pmBoardStore'
 const mockedTaskService = vi.mocked(pmTaskService)
 
 const makeStory = (overrides: Record<string, unknown>) => ({
-  id: 'story-default',
-  name: 'Story',
+  id: 'task-default',
+  name: 'Task',
   workflow_state_id: 'state-todo',
   position: 0,
   updated_at: '2026-03-22T00:00:00Z',
@@ -51,9 +51,9 @@ const makeStateColumn = (overrides: Record<string, unknown>) => ({
     position: 0,
     ...((overrides.state as Record<string, unknown> | undefined) ?? {}),
   },
-  stories: [],
+  tasks: [],
   task_groups: [],
-  story_count: 0,
+  task_count: 0,
   point_total: 0,
   has_more: false,
   ...overrides,
@@ -74,32 +74,32 @@ describe('usePMBoardStore.moveMemberTask', () => {
       memberColumns: [
         {
           member: { id: 'member-1', display_name: 'Ada', email: 'ada@example.com', role: 'member', status: 'active' },
-          stories: [
+          tasks: [
             {
-              id: 'story-1',
-              name: 'Story 1',
+              id: 'task-1',
+              name: 'Task 1',
               owner_member_id: 'member-1',
               workflow_state_id: 'state-todo',
               position: 0,
               updated_at: '2026-03-22T00:00:00Z',
             },
             {
-              id: 'story-2',
-              name: 'Story 2',
+              id: 'task-2',
+              name: 'Task 2',
               owner_member_id: 'member-1',
               workflow_state_id: 'state-todo',
               position: 1,
               updated_at: '2026-03-22T00:00:01Z',
             },
           ],
-          story_count: 2,
+          task_count: 2,
           point_total: 0,
           has_more: false,
         },
         {
           member: { id: 'member-2', display_name: 'Grace', email: 'grace@example.com', role: 'member', status: 'active' },
-          stories: [],
-          story_count: 0,
+          tasks: [],
+          task_count: 0,
           point_total: 0,
           has_more: false,
         },
@@ -119,7 +119,7 @@ describe('usePMBoardStore.moveMemberTask', () => {
 
     await usePMBoardStore.getState().moveMemberTask({
       workspaceId: 'ws-1',
-      storyId: 'story-1',
+      taskId: 'task-1',
       fromMemberId: 'member-1',
       toMemberId: 'member-1',
       toIndex: 1,
@@ -132,25 +132,25 @@ describe('usePMBoardStore.moveMemberTask', () => {
 
   it('persists cross-member moves as reassignment only', async () => {
     mockedTaskService.update.mockResolvedValue({
-      data: { story: { id: 'story-1', owner_member_id: 'member-2' } },
+      data: { task: { id: 'task-1', owner_member_id: 'member-2' } },
       error: null,
       status: 200,
     } as never)
 
     await usePMBoardStore.getState().moveMemberTask({
       workspaceId: 'ws-1',
-      storyId: 'story-1',
+      taskId: 'task-1',
       fromMemberId: 'member-1',
       toMemberId: 'member-2',
       toIndex: 0,
     })
 
-    expect(mockedTaskService.update).toHaveBeenCalledWith('ws-1', 'story-1', {
+    expect(mockedTaskService.update).toHaveBeenCalledWith('ws-1', 'task-1', {
       owner_member_id: 'member-2',
     })
     expect(mockedTaskService.reorder).not.toHaveBeenCalled()
-    expect(usePMBoardStore.getState().memberColumns[0]?.stories.map((story) => story.id)).toEqual(['story-2'])
-    expect(usePMBoardStore.getState().memberColumns[1]?.stories.map((story) => story.id)).toEqual(['story-1'])
+    expect(usePMBoardStore.getState().memberColumns[0]?.tasks.map((task) => task.id)).toEqual(['task-2'])
+    expect(usePMBoardStore.getState().memberColumns[1]?.tasks.map((task) => task.id)).toEqual(['task-1'])
   })
 })
 
@@ -164,8 +164,8 @@ describe('usePMBoardStore.moveTask', () => {
     } as never)
     mockedTaskService.move.mockResolvedValue({
       data: {
-        story: makeStory({
-          id: 'story-1',
+        task: makeStory({
+          id: 'task-1',
           workflow_state_id: 'state-done',
           position: 3,
           completed: true,
@@ -196,11 +196,11 @@ describe('usePMBoardStore.moveTask', () => {
       columns: [
         makeStateColumn({
           state: { id: 'state-todo', name: 'To Do', state_type: 'unstarted', position: 0 },
-          story_count: 3,
-          stories: [
-            makeStory({ id: 'story-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
-            makeStory({ id: 'story-2', workflow_state_id: 'state-todo', position: 1, updated_at: '2026-03-24T10:01:00Z' }),
-            makeStory({ id: 'story-3', workflow_state_id: 'state-todo', position: 2, updated_at: '2026-03-24T10:02:00Z' }),
+          task_count: 3,
+          tasks: [
+            makeStory({ id: 'task-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
+            makeStory({ id: 'task-2', workflow_state_id: 'state-todo', position: 1, updated_at: '2026-03-24T10:01:00Z' }),
+            makeStory({ id: 'task-3', workflow_state_id: 'state-todo', position: 2, updated_at: '2026-03-24T10:02:00Z' }),
           ],
         }),
       ] as never,
@@ -208,7 +208,7 @@ describe('usePMBoardStore.moveTask', () => {
 
     await usePMBoardStore.getState().moveTask({
       workspaceId: 'ws-1',
-      storyId: 'story-1',
+      taskId: 'task-1',
       fromStateId: 'state-todo',
       toStateId: 'state-todo',
       toIndex: 2,
@@ -216,15 +216,15 @@ describe('usePMBoardStore.moveTask', () => {
 
     expect(mockedTaskService.reorder).toHaveBeenCalledWith(
       'ws-1',
-      'story-1',
+      'task-1',
       expect.objectContaining({
         position: 2,
         debug_trace_id: expect.any(String),
       }),
     )
-    const stories = usePMBoardStore.getState().columns[0]?.stories ?? []
-    expect(stories.map((story) => story.id)).toEqual(['story-2', 'story-3', 'story-1'])
-    expect(stories.map((story) => story.position)).toEqual([0, 1, 2])
+    const tasks = usePMBoardStore.getState().columns[0]?.tasks ?? []
+    expect(tasks.map((task) => task.id)).toEqual(['task-2', 'task-3', 'task-1'])
+    expect(tasks.map((task) => task.position)).toEqual([0, 1, 2])
   })
 
   it('omits manual position when moving into done', async () => {
@@ -235,17 +235,17 @@ describe('usePMBoardStore.moveTask', () => {
       columns: [
         makeStateColumn({
           state: { id: 'state-todo', name: 'To Do', state_type: 'started', position: 0 },
-          story_count: 1,
-          stories: [
-            makeStory({ id: 'story-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
+          task_count: 1,
+          tasks: [
+            makeStory({ id: 'task-1', workflow_state_id: 'state-todo', position: 0, updated_at: '2026-03-24T10:00:00Z' }),
           ],
         }),
         makeStateColumn({
           state: { id: 'state-done', name: 'Done', state_type: 'done', position: 1 },
-          story_count: 1,
-          stories: [
+          task_count: 1,
+          tasks: [
             makeStory({
-              id: 'story-done-old',
+              id: 'task-done-old',
               workflow_state_id: 'state-done',
               position: 0,
               completed: true,
@@ -260,7 +260,7 @@ describe('usePMBoardStore.moveTask', () => {
 
     await usePMBoardStore.getState().moveTask({
       workspaceId: 'ws-1',
-      storyId: 'story-1',
+      taskId: 'task-1',
       fromStateId: 'state-todo',
       toStateId: 'state-done',
       toIndex: 1,
@@ -268,7 +268,7 @@ describe('usePMBoardStore.moveTask', () => {
 
     expect(mockedTaskService.move).toHaveBeenCalledWith(
       'ws-1',
-      'story-1',
+      'task-1',
       expect.objectContaining({
         state_id: 'state-done',
         debug_trace_id: expect.any(String),

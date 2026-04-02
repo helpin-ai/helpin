@@ -8,9 +8,9 @@ import (
 
 const (
 	PlanningStageDraftSpec    = "draft_spec"
-	PlanningStagePlanStories   = "plan_stories"
-	PlanningStageStoryPlanDoc  = "story_plan_doc"
-	PlanningStageTaskPlanDoc   = "task_plan_doc"
+	PlanningStagePlanTasks    = "plan_stories"
+	PlanningStageStoryPlanDoc = "story_plan_doc" // compat alias
+	PlanningStageTaskPlanDoc  = "task_plan_doc"
 
 	EpicPlanningStateNotStarted          = "not_started"
 	EpicPlanningStateAwaitingClarification = "awaiting_spec_clarification"
@@ -208,7 +208,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		tasks[idx].SliceType = strings.TrimSpace(tasks[idx].SliceType)
 
 		if tasks[idx].Name == "" {
-			return fmt.Errorf("story %d is missing name; use field \"name\" for the story title", idx+1)
+			return fmt.Errorf("task %d is missing name; use field \"name\" for the task title", idx+1)
 		}
 
 		filteredCriteria := make([]string, 0, len(tasks[idx].AcceptanceCriteria))
@@ -220,12 +220,12 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		}
 		tasks[idx].AcceptanceCriteria = filteredCriteria
 		if len(filteredCriteria) == 0 {
-			return fmt.Errorf("story %d is missing acceptance_criteria; provide at least one acceptance criterion", idx+1)
+			return fmt.Errorf("task %d is missing acceptance_criteria; provide at least one acceptance criterion", idx+1)
 		}
 
 		tasks[idx].DependencyRefs = filterNonEmptyPlannerStrings(tasks[idx].DependencyRefs)
 		if tasks[idx].Ref == "" {
-			tasks[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+			tasks[idx].Ref = fmt.Sprintf("task_%d", idx+1)
 		}
 
 		if brief := tasks[idx].ImplementationBrief; brief != nil {
@@ -247,7 +247,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		}
 
 		if prev, exists := refToIdx[tasks[idx].Ref]; exists {
-			return fmt.Errorf("story refs must be unique; stories %d and %d both use ref %q", prev+1, idx+1, tasks[idx].Ref)
+			return fmt.Errorf("task refs must be unique; tasks %d and %d both use ref %q", prev+1, idx+1, tasks[idx].Ref)
 		}
 		refToIdx[tasks[idx].Ref] = idx
 	}
@@ -265,10 +265,10 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		task := tasks[refToIdx[ref]]
 		for _, depRef := range task.DependencyRefs {
 			if _, ok := refToIdx[depRef]; !ok {
-				return fmt.Errorf("story %d references unknown dependency ref %q in dependency_refs", refToIdx[ref]+1, depRef)
+				return fmt.Errorf("task %d references unknown dependency ref %q in dependency_refs", refToIdx[ref]+1, depRef)
 			}
 			if depRef == ref {
-				return fmt.Errorf("story %d cannot list its own ref in dependency_refs", refToIdx[ref]+1)
+				return fmt.Errorf("task %d cannot list its own ref in dependency_refs", refToIdx[ref]+1)
 			}
 			if err := visit(depRef); err != nil {
 				return err

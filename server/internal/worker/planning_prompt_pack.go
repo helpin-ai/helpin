@@ -16,7 +16,7 @@ func planningIdentity(agent *model.Agent, planningStage, methodology string) str
 		switch planningStage {
 		case model.PlanningStageDraftSpec:
 			return "You are a product planning agent for Teampulse. In this stage, work like a disciplined analyst and product manager: synthesize source material into a canonical product spec without drifting into implementation."
-		case model.PlanningStagePlanStories:
+		case model.PlanningStagePlanTasks:
 			return "You are a product planning agent for Teampulse. In this stage, work like an architect and scrum master: turn the approved spec plus live code context into implementation-ready, dependency-aware stories."
 		default:
 			return "You are a product planning agent for Teampulse. Produce reviewable planning output that fits the current workflow stage."
@@ -65,7 +65,7 @@ func basicPlanningStageGuidance(planningStage string) []string {
 			"- When external research tools are available, use them selectively and return cited sources separately from spec_markdown.",
 			"- Capture risks and open questions instead of guessing.",
 		}
-	case model.PlanningStagePlanStories:
+	case model.PlanningStagePlanTasks:
 		return []string{
 			"\n## Stage Focus",
 			"- Turn the approved spec into concrete stories.",
@@ -130,7 +130,7 @@ func structuredPlanningStageGuidance(planningStage string) []string {
 			"- Confirm citations are returned in the JSON sources field instead of spec_markdown when external research was used.",
 			"- Confirm the response is valid JSON with the required keys only.",
 		}
-	case model.PlanningStagePlanStories:
+	case model.PlanningStagePlanTasks:
 		return []string{
 			"\n## Internal Stance",
 			"- Think like an architect first: respect module boundaries, existing patterns, and integration points from the live codebase.",

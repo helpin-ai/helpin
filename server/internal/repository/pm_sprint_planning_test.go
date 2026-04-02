@@ -91,24 +91,24 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	if activeCard.Stats.TaskCount != 3 {
 		t.Fatalf("active story_count = %d, want 3", activeCard.Stats.TaskCount)
 	}
-	if len(activeCard.PreviewStories) != 2 {
-		t.Fatalf("active preview stories = %d, want 2", len(activeCard.PreviewStories))
+	if len(activeCard.PreviewTasks) != 2 {
+		t.Fatalf("active preview tasks = %d, want 2", len(activeCard.PreviewTasks))
 	}
 	if activeCard.TaskPreviewOverflow != 1 {
 		t.Fatalf("active preview overflow = %d, want 1", activeCard.TaskPreviewOverflow)
 	}
-	if activeCard.PreviewStories[0].ID != "story-active-1" || activeCard.PreviewStories[1].ID != "story-active-2" {
-		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewStories)
+	if activeCard.PreviewTasks[0].ID != "story-active-1" || activeCard.PreviewTasks[1].ID != "story-active-2" {
+		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewTasks)
 	}
 
 	if workspace.BacklogTotal != 2 {
 		t.Fatalf("backlog_total = %d, want 2", workspace.BacklogTotal)
 	}
-	if len(workspace.BacklogStories) != 2 {
-		t.Fatalf("backlog stories = %d, want 2", len(workspace.BacklogStories))
+	if len(workspace.BacklogTasks) != 2 {
+		t.Fatalf("backlog tasks = %d, want 2", len(workspace.BacklogTasks))
 	}
-	if workspace.BacklogStories[0].ID != "story-backlog-1" || workspace.BacklogStories[1].ID != "story-backlog-2" {
-		t.Fatalf("backlog order = %#v, want backlog one then backlog two", workspace.BacklogStories)
+	if workspace.BacklogTasks[0].ID != "story-backlog-1" || workspace.BacklogTasks[1].ID != "story-backlog-2" {
+		t.Fatalf("backlog order = %#v, want backlog one then backlog two", workspace.BacklogTasks)
 	}
 }
 
@@ -136,13 +136,13 @@ func newPMSprintPlanningTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -218,7 +218,7 @@ func seedPMSprintPlanningStory(t *testing.T, db *gorm.DB, id, workspaceID, workf
 		sprint = sprintID
 	}
 	if err := db.Exec(
-		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMTaskPriorityMedium, updatedAt, updatedAt,
 	).Error; err != nil {
 		t.Fatalf("seed story: %v", err)

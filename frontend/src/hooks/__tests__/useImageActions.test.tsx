@@ -93,7 +93,7 @@ describe('useImageActions', () => {
     const root = createRoot(container)
 
     act(() => {
-      root.render(<CopyImageButton src="https://cdn.example.com/story.png" />)
+      root.render(<CopyImageButton src="https://cdn.example.com/task.png" />)
     })
 
     const button = container.querySelector('button')

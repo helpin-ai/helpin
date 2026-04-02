@@ -317,7 +317,7 @@ mod tests {
         // token will be override
         let result =
             Event::from_bytes(bytes, headers, query_params, Some("key".to_string())).unwrap();
-            print!("{:?}", result);
+        print!("{:?}", result);
         assert_eq!(result.len(), 2);
 
         let event1 = &result[0];
@@ -332,7 +332,9 @@ mod tests {
     #[test]
     fn test_from_bytes_with_token_override() {
         // Setup bytes with api_key field
-        let bytes = Bytes::from_static(b"{\"api_key\": \"key\", \"event_type\": \"type\", \"user\": {\"id\": \"user\"}}");
+        let bytes = Bytes::from_static(
+            b"{\"api_key\": \"key\", \"event_type\": \"type\", \"user\": {\"id\": \"user\"}}",
+        );
 
         let headers = get_common_headers();
         let query_params = get_common_query_params();
@@ -372,22 +374,26 @@ mod tests {
 
         let result = Event::from_bytes(bytes, headers, query_params, None);
         // Should error because required fields (api_key, event_type, user) are missing
-        assert!(result.is_err(), "Empty JSON object should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Empty JSON object should fail deserialization"
+        );
     }
 
     #[test]
     fn test_from_bytes_missing_api_key_no_token_override() {
         // Missing api_key, no token to override — extract_and_set_request_context should handle gracefully
-        let bytes = Bytes::from_static(
-            b"{\"event_type\": \"type\", \"user\": {\"id\": \"user\"}}",
-        );
+        let bytes = Bytes::from_static(b"{\"event_type\": \"type\", \"user\": {\"id\": \"user\"}}");
         let headers = get_common_headers();
         let query_params = get_common_query_params();
 
         // No token override — api_key field missing from payload
         let result = Event::from_bytes(bytes, headers, query_params, None);
         // Deserialization fails because api_key is a required field in Event struct
-        assert!(result.is_err(), "Missing api_key should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Missing api_key should fail deserialization"
+        );
     }
 
     #[test]
@@ -420,7 +426,10 @@ mod tests {
         // Empty token should not override api_key
         let result = Event::from_bytes(bytes, headers, query_params, Some("".to_string())).unwrap();
         let event = &result[0];
-        assert_eq!(event.api_key, "original_key", "Empty token should not override api_key");
+        assert_eq!(
+            event.api_key, "original_key",
+            "Empty token should not override api_key"
+        );
     }
 
     #[test]
@@ -433,7 +442,10 @@ mod tests {
 
         let result = Event::from_bytes(bytes, headers, query_params, None).unwrap();
         let event = &result[0];
-        assert_eq!(event.api_key, "original_key", "None token should not override api_key");
+        assert_eq!(
+            event.api_key, "original_key",
+            "None token should not override api_key"
+        );
     }
 
     #[test]

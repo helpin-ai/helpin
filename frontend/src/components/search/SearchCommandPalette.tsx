@@ -26,7 +26,6 @@ import {
 
 const EMPTY: SearchResponse = {
   tasks: [],
-  stories: [],
   epics: [],
   sprints: [],
   objectives: [],
@@ -90,7 +89,7 @@ export function SearchCommandPalette({
   }, [query, workspace?.id]);
 
   const totalResults =
-    (results.tasks?.length ?? results.stories.length) +
+    results.tasks.length +
     results.epics.length +
     results.sprints.length +
     results.objectives.length +
@@ -98,7 +97,7 @@ export function SearchCommandPalette({
     (results.documents?.length ?? 0);
 
   const slug = workspace?.slug ?? '';
-  const taskResults = results.tasks ?? results.stories;
+  const taskResults = results.tasks;
 
   type EntityType = 'task' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
 

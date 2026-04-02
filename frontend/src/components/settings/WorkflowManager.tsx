@@ -729,7 +729,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                             )}
                             <span className="text-sm font-medium truncate">{state.name}</span>
                             {state.is_default && (
-                              <QuickTooltip label="New stories are created in this state">
+                              <QuickTooltip label="New tasks are created in this state">
                                 <Badge variant="secondary" className="text-xs gap-1 shrink-0 cursor-default">
                                   <Check className="h-3 w-3" /> Default
                                 </Badge>
@@ -861,7 +861,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                 <div>
                   <Label>Auto assign owner when moved to started state</Label>
-                  <p className="text-xs text-muted-foreground">Assign current user when story enters a started state and has no owner.</p>
+                  <p className="text-xs text-muted-foreground">Assign current user when task enters a started state and has no owner.</p>
                 </div>
                 <Switch checked={wfAutoAssign} onCheckedChange={setWfAutoAssign} />
               </div>
@@ -932,7 +932,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
         open={deleteWorkflowConfirm !== null}
         onOpenChange={(open) => { if (!open) setDeleteWorkflowConfirm(null); }}
         title="Delete workflow"
-        description="This will permanently delete the workflow and all its states. Stories using this workflow will need to be reassigned. This action cannot be undone."
+        description="This will permanently delete the workflow and all its states. Tasks using this workflow will need to be reassigned. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => { if (deleteWorkflowConfirm) handleDeleteWorkflow(deleteWorkflowConfirm); setDeleteWorkflowConfirm(null); }}
@@ -943,7 +943,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
         open={deleteStateConfirm}
         onOpenChange={setDeleteStateConfirm}
         title="Delete workflow state"
-        description="This will permanently delete this state. Stories in this state will need to be moved to another state. This action cannot be undone."
+        description="This will permanently delete this state. Tasks in this state will need to be moved to another state. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => { handleDeleteState(); setDeleteStateConfirm(false); }}

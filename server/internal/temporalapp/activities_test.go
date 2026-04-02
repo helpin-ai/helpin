@@ -111,7 +111,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
-			active_story_id TEXT,
+			active_task_id TEXT,
 			team_id TEXT,
 			allowed_tools TEXT NOT NULL DEFAULT '[]',
 			allowed_commands TEXT NOT NULL DEFAULT '[]',
@@ -127,7 +127,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -232,13 +232,13 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -658,7 +658,7 @@ func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *test
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
-	if !strings.Contains(err.Error(), "canonical story-plan shape {summary, proposed_stories}") {
+	if !strings.Contains(err.Error(), "canonical task-plan shape {summary, proposed_tasks}") {
 		t.Fatalf("expected canonical-shape error, got %v", err)
 	}
 }
@@ -1012,7 +1012,7 @@ func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessag
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -1186,7 +1186,7 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
-			story_id TEXT,
+			task_id TEXT,
 			conversation_id TEXT,
 			target_type TEXT NOT NULL DEFAULT 'story',
 			target_id TEXT NOT NULL,
@@ -1954,7 +1954,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &preview); err != nil {
 		t.Fatalf("unmarshal preview artifact: %v", err)
 	}
-	if preview.PanelKey != "story_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
+	if preview.PanelKey != "task_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
 		t.Fatalf("unexpected persisted story preview %#v", preview)
 	}
 
@@ -2285,7 +2285,7 @@ func TestFormatInteractivePlanningFacts(t *testing.T) {
 		"Current durable planning facts:",
 		"- approved_spec_exists=true",
 		"- draft_spec_exists=true",
-		"- existing_story_count=3",
+		"- existing_task_count=3",
 		"- spec_document_id=doc-1",
 		"- approved_spec_version_id=ver-1",
 	} {
@@ -2375,13 +2375,13 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -2729,16 +2729,16 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	commandExecutor := stubInternalCommandExecutor{
 		executeFn: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
 			executed = append(executed, name)
-			if name != "pm.create_story_batch" {
+			if name != "pm.create_task_batch" {
 				return json.RawMessage(`{}`), nil
 			}
 			var payload struct {
-				Stories []model.ProposedTask `json:"stories"`
+				Tasks []model.ProposedTask `json:"tasks"`
 			}
 			if err := json.Unmarshal(input, &payload); err != nil {
 				return nil, err
 			}
-			for _, planned := range payload.Stories {
+			for _, planned := range payload.Tasks {
 				story := &model.PMTask{
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
@@ -2781,11 +2781,11 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if err != nil {
 		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
 	}
-	if action != "create_stories" {
-		t.Fatalf("expected create_stories action, got %q", action)
+	if action != "create_tasks" {
+		t.Fatalf("expected create_tasks action, got %q", action)
 	}
-	if len(executed) != 1 || executed[0] != "pm.create_story_batch" {
-		t.Fatalf("expected story batch command, got %#v", executed)
+	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
+		t.Fatalf("expected task batch command, got %#v", executed)
 	}
 
 	var createdStories []model.PMTask
@@ -3086,7 +3086,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	}
 	preview := model.ApprovedRunPreview{
 		Phase:           "story_doc",
-		PanelKey:        "story_plan_doc",
+		PanelKey:        "task_plan_doc",
 		Format:          workerpkg.PreviewFormatMarkdown,
 		Content:         markdownJSON,
 		ApprovalSummary: "Approved story plan",
@@ -3139,8 +3139,8 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	if err != nil {
 		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
 	}
-	if action != "persist_story_doc" {
-		t.Fatalf("expected persist_story_doc action, got %q", action)
+	if action != "persist_task_doc" {
+		t.Fatalf("expected persist_task_doc action, got %q", action)
 	}
 	if len(executed) != 2 || executed[0] != "docs.write_document_content" || executed[1] != "docs.link_document_to_object" {
 		t.Fatalf("expected docs write then docs link commands, got %#v", executed)
@@ -3257,7 +3257,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			state_type TEXT NOT NULL
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			epic_id TEXT,
 			workflow_state_id TEXT,

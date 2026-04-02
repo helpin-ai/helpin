@@ -79,7 +79,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Alias:       "create_task_batch",
 		Category:    "PM / Tasks",
 		Description: "Create implementation-ready tasks for the current epic. Supports stable refs, direct assignment, and dependency refs.",
-		InputSchema: createStoryBatchSchema(),
+		InputSchema: createTaskBatchSchema(),
 	},
 	{
 		CommandName: "pm.assign_task_agent",
@@ -242,7 +242,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 	},
 }
 
-func createStoryBatchSchema() map[string]any {
+func createTaskBatchSchema() map[string]any {
 	fileChangeSchema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{

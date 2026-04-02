@@ -13,14 +13,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// PMTaskHandler handles PM story HTTP endpoints.
+// PMTaskHandler handles PM task HTTP endpoints.
 type PMTaskHandler struct {
-	storyService *service.PMTaskService
+	taskService *service.PMTaskService
 }
 
 // NewPMTaskHandler creates a new PMTaskHandler.
-func NewPMTaskHandler(storyService *service.PMTaskService) *PMTaskHandler {
-	return &PMTaskHandler{storyService: storyService}
+func NewPMTaskHandler(taskService *service.PMTaskService) *PMTaskHandler {
+	return &PMTaskHandler{taskService: taskService}
 }
 
 // List handles GET /api/pm/tasks.
@@ -63,13 +63,13 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	pagination := queryPagination(r)
 
-	stories, total, err := h.storyService.List(r.Context(), workspaceID, filters, pagination)
+	tasks, total, err := h.taskService.List(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stories == nil {
-		stories = []model.BoardTask{}
+	if tasks == nil {
+		tasks = []model.BoardTask{}
 	}
 
 	totalPages := 0
@@ -77,7 +77,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
 	}
 	writeJSON(w, http.StatusOK, model.PaginatedResponse{
-		Data:       stories,
+		Data:       tasks,
 		Total:      int(total),
 		Page:       pagination.Page,
 		PerPage:    pagination.PerPage,
@@ -94,7 +94,7 @@ func (h *PMTaskHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	filters := boardFilters(r)
 	perStateLimit := queryInt(r, "per_state_limit", 0)
-	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, filters, perStateLimit)
+	columns, err := h.taskService.ListByWorkflowState(r.Context(), workflowID, filters, perStateLimit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -115,25 +115,25 @@ func (h *PMTaskHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) 
 	filters := boardFilters(r)
 	offset := queryInt(r, "offset", 0)
 	limit := queryInt(r, "limit", 50)
-	stories, storyGroups, total, err := h.storyService.ListColumnStories(r.Context(), stateID, filters, offset, limit)
+	tasks, taskGroups, total, err := h.taskService.ListColumnTasks(r.Context(), stateID, filters, offset, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stories == nil {
-		stories = []model.BoardTask{}
+	if tasks == nil {
+		tasks = []model.BoardTask{}
 	}
-	if storyGroups == nil {
-		storyGroups = []model.TaskGroup{}
+	if taskGroups == nil {
+		taskGroups = []model.TaskGroup{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Stories:     stories,
-		TaskGroups:  storyGroups,
+		Tasks:       tasks,
+		TaskGroups:  taskGroups,
 		Total:       total,
 	})
 }
 
-// ListBoardByMember handles GET /api/pm/stories/board/members?workflow_id=...&workspace_id=...
+// ListBoardByMember handles GET /api/pm/tasks/board/members?workflow_id=...&workspace_id=...
 func (h *PMTaskHandler) ListBoardByMember(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -152,7 +152,7 @@ func (h *PMTaskHandler) ListBoardByMember(w http.ResponseWriter, r *http.Request
 	if raw := r.URL.Query().Get("member_ids"); raw != "" {
 		memberIDs = strings.Split(raw, ",")
 	}
-	columns, err := h.storyService.ListByMember(r.Context(), workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+	columns, err := h.taskService.ListByMember(r.Context(), workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -163,7 +163,7 @@ func (h *PMTaskHandler) ListBoardByMember(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, columns)
 }
 
-// ListBoardMemberColumn handles GET /api/pm/stories/board/members/column?workspace_id=...&workflow_id=...&member_id=...
+// ListBoardMemberColumn handles GET /api/pm/tasks/board/members/column?workspace_id=...&workflow_id=...&member_id=...
 func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -182,17 +182,17 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 	if raw := r.URL.Query().Get("member_id"); raw != "" {
 		memberID = &raw
 	}
-	stories, total, err := h.storyService.ListMemberColumnStories(r.Context(), workspaceID, workflowID, memberID, filters, offset, limit)
+	tasks, total, err := h.taskService.ListMemberColumnTasks(r.Context(), workspaceID, workflowID, memberID, filters, offset, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stories == nil {
-		stories = []model.BoardTask{}
+	if tasks == nil {
+		tasks = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Stories: stories,
-		Total:   total,
+		Tasks:  tasks,
+		Total:  total,
 	})
 }
 
@@ -223,14 +223,14 @@ func boardFilters(r *http.Request) model.PMTaskFilters {
 	}
 }
 
-// CountByState handles GET /api/pm/stories/counts?workflow_id=...
+// CountByState handles GET /api/pm/tasks/counts?workflow_id=...
 func (h *PMTaskHandler) CountByState(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
 		writeError(w, http.StatusBadRequest, "workflow_id is required")
 		return
 	}
-	counts, err := h.storyService.CountByState(r.Context(), workflowID)
+	counts, err := h.taskService.CountByState(r.Context(), workflowID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -241,7 +241,7 @@ func (h *PMTaskHandler) CountByState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, counts)
 }
 
-// Create handles POST /api/pm/stories.
+// Create handles POST /api/pm/tasks.
 func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	var req model.CreateTaskRequest
@@ -252,26 +252,26 @@ func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	story, err := h.storyService.Create(r.Context(), req, userID)
+	task, err := h.taskService.Create(r.Context(), req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, story)
+	writeJSON(w, http.StatusCreated, task)
 }
 
-// Get handles GET /api/pm/stories/{id}.
+// Get handles GET /api/pm/tasks/{id}.
 func (h *PMTaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	story, err := h.storyService.GetByID(r.Context(), id)
+	task, err := h.taskService.GetByID(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, story)
+	writeJSON(w, http.StatusOK, task)
 }
 
-// GetByDisplayID handles GET /api/pm/stories/display/{displayID}.
+// GetByDisplayID handles GET /api/pm/tasks/display/{displayID}.
 func (h *PMTaskHandler) GetByDisplayID(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -284,15 +284,15 @@ func (h *PMTaskHandler) GetByDisplayID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "displayID must be a positive integer")
 		return
 	}
-	story, err := h.storyService.GetByDisplayID(r.Context(), workspaceID, displayID)
+	task, err := h.taskService.GetByDisplayID(r.Context(), workspaceID, displayID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, story)
+	writeJSON(w, http.StatusOK, task)
 }
 
-// Update handles PUT /api/pm/stories/{id}.
+// Update handles PUT /api/pm/tasks/{id}.
 func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -301,19 +301,19 @@ func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	story, err := h.storyService.Update(r.Context(), id, req, userID)
+	task, err := h.taskService.Update(r.Context(), id, req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, story)
+	writeJSON(w, http.StatusOK, task)
 }
 
 // Delete handles DELETE /api/pm/tasks/{id}.
 func (h *PMTaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	if err := h.storyService.Delete(r.Context(), id, userID); err != nil {
+	if err := h.taskService.Delete(r.Context(), id, userID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -336,12 +336,12 @@ func (h *PMTaskHandler) Move(w http.ResponseWriter, r *http.Request) {
 		"state_id", req.StateID,
 		"position", req.Position,
 	)
-	story, err := h.storyService.MoveToState(r.Context(), id, req, userID)
+	task, err := h.taskService.MoveToState(r.Context(), id, req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, story)
+	writeJSON(w, http.StatusOK, task)
 }
 
 // Reorder handles PUT /api/pm/tasks/{id}/reorder.
@@ -359,14 +359,14 @@ func (h *PMTaskHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 		"actor_id", userID,
 		"position", req.Position,
 	)
-	if err := h.storyService.Reorder(r.Context(), id, req, userID); err != nil {
+	if err := h.taskService.Reorder(r.Context(), id, req, userID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "task reordered"})
 }
 
-// AddOwner handles POST /api/pm/stories/{id}/owners.
+// AddOwner handles POST /api/pm/tasks/{id}/owners.
 func (h *PMTaskHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -375,26 +375,26 @@ func (h *PMTaskHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.storyService.AddOwner(r.Context(), id, req.UserID, userID); err != nil {
+	if err := h.taskService.AddOwner(r.Context(), id, req.UserID, userID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, model.MessageResponse{Message: "owner added"})
 }
 
-// RemoveOwner handles DELETE /api/pm/stories/{id}/owners/{userId}.
+// RemoveOwner handles DELETE /api/pm/tasks/{id}/owners/{userId}.
 func (h *PMTaskHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	userID := chi.URLParam(r, "userId")
-	if err := h.storyService.RemoveOwner(r.Context(), id, userID, actorID); err != nil {
+	if err := h.taskService.RemoveOwner(r.Context(), id, userID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "owner removed"})
 }
 
-// AddFollower handles POST /api/pm/stories/{id}/followers.
+// AddFollower handles POST /api/pm/tasks/{id}/followers.
 func (h *PMTaskHandler) AddFollower(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -403,14 +403,14 @@ func (h *PMTaskHandler) AddFollower(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.storyService.AddFollower(r.Context(), id, req.UserID, actorID); err != nil {
+	if err := h.taskService.AddFollower(r.Context(), id, req.UserID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, model.MessageResponse{Message: "follower added"})
 }
 
-// RemoveFollower handles DELETE /api/pm/stories/{id}/followers.
+// RemoveFollower handles DELETE /api/pm/tasks/{id}/followers.
 func (h *PMTaskHandler) RemoveFollower(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -418,14 +418,14 @@ func (h *PMTaskHandler) RemoveFollower(w http.ResponseWriter, r *http.Request) {
 	if userID == "" {
 		userID = actorID
 	}
-	if err := h.storyService.RemoveFollower(r.Context(), id, userID, actorID); err != nil {
+	if err := h.taskService.RemoveFollower(r.Context(), id, userID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "follower removed"})
 }
 
-// AddLabel handles POST /api/pm/stories/{id}/labels.
+// AddLabel handles POST /api/pm/tasks/{id}/labels.
 func (h *PMTaskHandler) AddLabel(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -434,30 +434,30 @@ func (h *PMTaskHandler) AddLabel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.storyService.AddLabel(r.Context(), id, req.LabelID, actorID); err != nil {
+	if err := h.taskService.AddLabel(r.Context(), id, req.LabelID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, model.MessageResponse{Message: "label added"})
 }
 
-// RemoveLabel handles DELETE /api/pm/stories/{id}/labels/{labelId}.
+// RemoveLabel handles DELETE /api/pm/tasks/{id}/labels/{labelId}.
 func (h *PMTaskHandler) RemoveLabel(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	labelID := chi.URLParam(r, "labelId")
-	if err := h.storyService.RemoveLabel(r.Context(), id, labelID, actorID); err != nil {
+	if err := h.taskService.RemoveLabel(r.Context(), id, labelID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "label removed"})
 }
 
-// ListActivity handles GET /api/pm/stories/{id}/activity.
+// ListActivity handles GET /api/pm/tasks/{id}/activity.
 func (h *PMTaskHandler) ListActivity(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
-	entries, total, err := h.storyService.ListActivity(r.Context(), id, pagination)
+	entries, total, err := h.taskService.ListActivity(r.Context(), id, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

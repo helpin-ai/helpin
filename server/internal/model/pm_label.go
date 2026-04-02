@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// PMLabel represents labels that can be attached to stories/epics/sprints.
+// PMLabel represents labels that can be attached to tasks/epics/sprints.
 type PMLabel struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`

@@ -42,7 +42,7 @@ func nilIfEmpty(value string) *string {
 // AutomationRuleEngine evaluates automation rules against events and executes actions.
 type AutomationRuleEngine struct {
 	ruleRepo        *repository.AutomationRuleRepository
-	storyRepo       *repository.PMTaskRepository
+	taskRepo       *repository.PMTaskRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	agentService    *AgentService
@@ -59,7 +59,7 @@ type AutomationRuleEngine struct {
 // NewAutomationRuleEngine creates a new AutomationRuleEngine.
 func NewAutomationRuleEngine(
 	ruleRepo *repository.AutomationRuleRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	workflowRepo *repository.PMWorkflowRepository,
 	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	gitService *GitService,
@@ -69,7 +69,7 @@ func NewAutomationRuleEngine(
 ) *AutomationRuleEngine {
 	return &AutomationRuleEngine{
 		ruleRepo:        ruleRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		workflowRepo:    workflowRepo,
 		deliveryRepo:    deliveryRepo,
 		gitService:      gitService,
@@ -86,8 +86,8 @@ func (e *AutomationRuleEngine) SetAgentService(svc *AgentService) *AutomationRul
 	return e
 }
 
-// SetStoryService sets the story service (breaks circular dependency).
-func (e *AutomationRuleEngine) SetStoryService(svc *PMTaskService) *AutomationRuleEngine {
+// SetTaskService sets the task service (breaks circular dependency).
+func (e *AutomationRuleEngine) SetTaskService(svc *PMTaskService) *AutomationRuleEngine {
 	e.storyService = svc
 	return e
 }
@@ -197,7 +197,7 @@ func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event m
 		if event.StoryID == "" {
 			return nil, nil
 		}
-		story, err := e.storyRepo.GetRawByID(ctx, event.StoryID)
+		story, err := e.taskRepo.GetRawByID(ctx, event.StoryID)
 		if err != nil {
 			return nil, err
 		}

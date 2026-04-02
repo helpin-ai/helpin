@@ -245,9 +245,33 @@ All dependencies are wired in `cmd/api/main.go`:
 5. Router created from handlers + authorization service
 
 ### Database Migrations
-- GORM `AutoMigrate` runs on startup for struct-level schema
-- SQL migrations in `server/migrations/` numbered sequentially (001–022+)
-- Migrations are idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`)
+
+**Two migration systems** (both active):
+
+1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
+
+**dbmigrate CLI** (`server/cmd/migrate/`):
+```bash
+go run ./cmd/migrate up              # Apply all pending migrations
+go run ./cmd/migrate status          # Show all migrations (applied/pending)
+go run ./cmd/migrate head            # Show latest applied migration
+go run ./cmd/migrate pending         # List only unapplied migrations
+go run ./cmd/migrate validate        # CI check — exit 1 if issues found
+go run ./cmd/migrate repair          # Fix checksums after post-apply file edits
+go run ./cmd/migrate create <name>   # Scaffold new migration file
+```
+
+**Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
+
+**When to use which**:
+- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
+
+**Rules**:
+- Migrations MUST be idempotent (`IF NOT EXISTS`, `IF EXISTS`)
+- Never edit an already-applied migration file — create a new one instead (or run `migrate repair` if you must)
+- Legacy SQL migrations in `server/migrations/` are reference docs only — new migrations go in `server/internal/dbmigrate/sql/`
 
 ### WebSocket
 - Endpoint: `GET /api/ws?token=JWT&workspace_id=ID`

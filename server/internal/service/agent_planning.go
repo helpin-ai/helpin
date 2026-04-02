@@ -153,9 +153,9 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 
 	stage := parsePlanningRunStage(run.Input)
 	if stage == "" {
-		stage = model.PlanningStagePlanStories
+		stage = model.PlanningStagePlanTasks
 	}
-	if stage != model.PlanningStagePlanStories {
+	if stage != model.PlanningStagePlanTasks {
 		return nil, fmt.Errorf("run is not a task planning run")
 	}
 
@@ -166,7 +166,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if run.ApprovalState != "pending" {
 		return nil, fmt.Errorf("run does not have a pending task plan")
 	}
-	if s.storyService == nil {
+	if s.taskService == nil {
 		return nil, fmt.Errorf("task service is not configured")
 	}
 
@@ -243,7 +243,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	for idx, ps := range proposedStories {
 		externalIDs = append(externalIDs, planningTaskExternalID(runID, idx, ps.Ref))
 	}
-	existingTasks, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
+	existingTasks, err := s.taskRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
 	if err != nil {
 		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
@@ -269,13 +269,13 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		externalID := planningTaskExternalID(runID, idx, ps.Ref)
 		var detail *model.TaskDetail
 		if existing, ok := existingByExternalID[externalID]; ok {
-			detail, err = s.storyService.GetByID(ctx, existing.ID)
+			detail, err = s.taskService.GetByID(ctx, existing.ID)
 			if err != nil {
 				return nil, fmt.Errorf("reload existing task %d: %w", idx+1, err)
 			}
 		} else {
 			desc := renderPlannedTaskDescription(ps)
-			detail, err = s.storyService.Create(ctx, model.CreateTaskRequest{
+			detail, err = s.taskService.Create(ctx, model.CreateTaskRequest{
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
@@ -307,32 +307,32 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			}
 		}
 		if len(briefFields) > 0 {
-			if err := s.storyRepo.UpdateFields(ctx, detail.Story.ID, briefFields); err != nil {
+			if err := s.taskRepo.UpdateFields(ctx, detail.Task.ID, briefFields); err != nil {
 				slog.WarnContext(ctx, "failed to persist task brief fields",
-					"task_id", detail.Story.ID, "error", err)
+					"task_id", detail.Task.ID, "error", err)
 			}
 		}
 
 		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Task.ID, *ps.AssignAgentID, actorID); err != nil {
 				slog.WarnContext(ctx, "skipping agent assignment for planned task",
-					"task", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
+					"task", detail.Task.Name, "agent_id", *ps.AssignAgentID, "error", err)
 			} else {
-				detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
+				detail, err = s.taskService.GetByID(ctx, detail.Task.ID)
 				if err != nil {
 					return nil, fmt.Errorf("reload task %q: %w", ps.Name, err)
 				}
 			}
 		}
 
-		created = append(created, detail.Story)
-		createdIDs = append(createdIDs, detail.Story.ID)
+		created = append(created, detail.Task)
+		createdIDs = append(createdIDs, detail.Task.ID)
 		createdDetails = append(createdDetails, createdPlanningTask{
-			TaskID:              detail.Story.ID,
+			TaskID:              detail.Task.ID,
 			Ref:                 ps.Ref,
-			Name:                detail.Story.Name,
-			TaskType:            detail.Story.TaskType,
-			Estimate:            detail.Story.Estimate,
+			Name:                detail.Task.Name,
+			TaskType:            detail.Task.TaskType,
+			Estimate:            detail.Task.Estimate,
 			Priority:            ps.Priority,
 			AcceptanceCriteria:  slices.Clone(ps.AcceptanceCriteria),
 			DependencyRefs:      slices.Clone(ps.DependencyRefs),
@@ -340,7 +340,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			ImplementationBrief: briefJSON,
 		})
 		if strings.TrimSpace(ps.Ref) != "" {
-			refToTask[ps.Ref] = detail.Story
+			refToTask[ps.Ref] = detail.Task
 		}
 	}
 
@@ -389,7 +389,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	}
 	proposal.ProposedTasks = proposedStories
 	runSummary := epicPlanningRunSummary{
-		Stage:               model.PlanningStagePlanStories,
+		Stage:               model.PlanningStagePlanTasks,
 		SpecDocumentID:      derefString(epic.SpecDocumentID),
 		SpecVersionID:       derefString(epic.ApprovedSpecVersionID),
 		PlanningMethodology: parsePlanningMethodology(run.Input),
@@ -430,7 +430,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 // createStoriesFromProposal creates tasks from proposed items without requiring an agent run.
 // Used by the interactive task planning path.
 func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedTask) ([]model.PMTask, error) {
-	if s.storyService == nil {
+	if s.taskService == nil {
 		return nil, fmt.Errorf("task service is not configured")
 	}
 	if len(proposedStories) == 0 {
@@ -464,7 +464,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	for idx, ps := range proposedStories {
 		externalIDs = append(externalIDs, planningTaskExternalID(syntheticRunID, idx, ps.Ref))
 	}
-	existingTasks, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
+	existingTasks, err := s.taskRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
 	if err != nil {
 		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
@@ -488,13 +488,13 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		externalID := planningTaskExternalID(syntheticRunID, idx, ps.Ref)
 		var detail *model.TaskDetail
 		if existing, ok := existingByExternalID[externalID]; ok {
-			detail, err = s.storyService.GetByID(ctx, existing.ID)
+			detail, err = s.taskService.GetByID(ctx, existing.ID)
 			if err != nil {
 				return nil, fmt.Errorf("reload existing task %d: %w", idx+1, err)
 			}
 		} else {
 			desc := renderPlannedTaskDescription(ps)
-			detail, err = s.storyService.Create(ctx, model.CreateTaskRequest{
+			detail, err = s.taskService.Create(ctx, model.CreateTaskRequest{
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
@@ -524,27 +524,27 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 			}
 		}
 		if len(briefFields) > 0 {
-			if err := s.storyRepo.UpdateFields(ctx, detail.Story.ID, briefFields); err != nil {
+			if err := s.taskRepo.UpdateFields(ctx, detail.Task.ID, briefFields); err != nil {
 				slog.WarnContext(ctx, "failed to persist task brief fields",
-					"task_id", detail.Story.ID, "error", err)
+					"task_id", detail.Task.ID, "error", err)
 			}
 		}
 
 		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Task.ID, *ps.AssignAgentID, actorID); err != nil {
 				slog.WarnContext(ctx, "skipping agent assignment for planned task",
-					"task", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
+					"task", detail.Task.Name, "agent_id", *ps.AssignAgentID, "error", err)
 			} else {
-				detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
+				detail, err = s.taskService.GetByID(ctx, detail.Task.ID)
 				if err != nil {
 					return nil, fmt.Errorf("reload task %q: %w", ps.Name, err)
 				}
 			}
 		}
 
-		created = append(created, detail.Story)
+		created = append(created, detail.Task)
 		if strings.TrimSpace(ps.Ref) != "" {
-			refToTask[ps.Ref] = detail.Story
+			refToTask[ps.Ref] = detail.Task
 		}
 	}
 
@@ -668,7 +668,7 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 
 // EnsureTaskPlanDocument ensures the task has a canonical planning doc and returns it.
 func (s *AgentService) EnsureTaskPlanDocument(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
-	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	story, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
@@ -748,7 +748,7 @@ func (s *AgentService) ensureTaskPlanDocument(ctx context.Context, workspaceID s
 	}
 
 	story.PlanDocumentID = &doc.ID
-	if err := s.storyRepo.Update(ctx, story); err != nil {
+	if err := s.taskRepo.Update(ctx, story); err != nil {
 		return nil, err
 	}
 
@@ -828,12 +828,12 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	return nil
 }
 
-func loadPlanningTasksByID(ctx context.Context, storyRepo interface {
+func loadPlanningTasksByID(ctx context.Context, taskRepo interface {
 	GetRawByID(ctx context.Context, id string) (*model.PMTask, error)
 }, ids []string) ([]model.PMTask, error) {
 	stories := make([]model.PMTask, 0, len(ids))
 	for _, id := range ids {
-		story, err := storyRepo.GetRawByID(ctx, id)
+		story, err := taskRepo.GetRawByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -845,7 +845,7 @@ func loadPlanningTasksByID(ctx context.Context, storyRepo interface {
 }
 
 func (s *AgentService) loadCreatedTasks(ctx context.Context, ids []string) ([]model.PMTask, error) {
-	return loadPlanningTasksByID(ctx, s.storyRepo, ids)
+	return loadPlanningTasksByID(ctx, s.taskRepo, ids)
 }
 
 func validatePlanningTasks(stories []model.ProposedTask) error {
@@ -901,8 +901,8 @@ func (s *AgentService) resolvePlanningTaskWorkflow(ctx context.Context, workspac
 		}
 
 		// Defensive fallback for worker paths that forgot to inject PMWorkflowService.
-		if s.storyService != nil && s.storyService.workflowRepo != nil {
-			workflow, err := s.storyService.workflowRepo.GetByTeamID(ctx, workspaceID, normalizedTeamID)
+		if s.taskService != nil && s.taskService.workflowRepo != nil {
+			workflow, err := s.taskService.workflowRepo.GetByTeamID(ctx, workspaceID, normalizedTeamID)
 			if err != nil {
 				return "", "", fmt.Errorf("lookup team workflow: %w", err)
 			}
@@ -926,16 +926,16 @@ func (s *AgentService) resolvePlanningTaskWorkflow(ctx context.Context, workspac
 		}
 	}
 
-	if s.storyService == nil || s.storyService.workflowRepo == nil {
+	if s.taskService == nil || s.taskService.workflowRepo == nil {
 		return "", "", fmt.Errorf("workflow service is not configured")
 	}
 
-	defaultWorkflow, err := s.storyService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+	defaultWorkflow, err := s.taskService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
 	if err != nil {
 		return "", "", fmt.Errorf("resolve default workflow: %w", err)
 	}
 	if defaultWorkflow == nil {
-		defaultWorkflow, err = s.storyService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
+		defaultWorkflow, err = s.taskService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
 		if err != nil {
 			return "", "", fmt.Errorf("seed default workflow: %w", err)
 		}

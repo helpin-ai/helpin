@@ -29,7 +29,7 @@ const COLUMN_PAGE_SIZE = 50;
 
 interface MovePayload {
   workspaceId: string;
-  storyId: string;
+  taskId: string;
   fromStateId: string;
   toStateId: string;
   toIndex: number;
@@ -38,7 +38,7 @@ interface MovePayload {
 
 interface MemberMovePayload {
   workspaceId: string;
-  storyId: string;
+  taskId: string;
   fromMemberId: string | null;
   toMemberId: string | null;
   toIndex: number;
@@ -54,7 +54,7 @@ interface PMBoardState {
   teamId: string | null;
   filters: BoardFilters;
 
-  /** Map of state IDs currently loading more stories. */
+  /** Map of state IDs currently loading more tasks. */
   columnLoading: Record<string, boolean>;
 
   // Member board state
@@ -83,14 +83,6 @@ interface PMBoardState {
   loadMoreMemberColumn: (memberId: string | null) => Promise<void>;
   moveMemberTask: (payload: MemberMovePayload) => Promise<void>;
 
-  /** @deprecated Use createTask */
-  createStory: (payload: CreateTaskRequest) => Promise<Task | null>;
-  /** @deprecated Use moveTask */
-  moveStory: (payload: MovePayload) => Promise<void>;
-  /** @deprecated Use patchTask */
-  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
-  /** @deprecated Use moveMemberTask */
-  moveMemberStory: (payload: MemberMovePayload) => Promise<void>;
 
   // View actions
   loadViews: (workspaceId: string, currentMemberId: string) => Promise<void>;
@@ -105,16 +97,16 @@ interface PMBoardState {
 const cloneColumns = (columns: TaskStateColumn[]) =>
   columns.map((column) => ({
     ...column,
-    stories: [...column.stories],
+    tasks: [...column.tasks],
     task_groups: column.task_groups?.map((group: TaskGroup) => ({
       ...group,
-      stories: [...group.stories],
+      tasks: [...group.tasks],
     })) ?? [],
   }));
 
 const groupedStateType: StateType = 'done';
 
-const compareStories = (a: Task, b: Task, stateType?: StateType) => {
+const compareTasks = (a: Task, b: Task, stateType?: StateType) => {
   if (stateType === groupedStateType) {
     const aSortKey = a.completed_at ?? a.moved_at ?? a.updated_at;
     const bSortKey = b.completed_at ?? b.moved_at ?? b.updated_at;
@@ -126,35 +118,35 @@ const compareStories = (a: Task, b: Task, stateType?: StateType) => {
   return b.updated_at.localeCompare(a.updated_at);
 };
 
-const sortStories = (stories: Task[], stateType?: StateType) => [...stories].sort((a, b) => compareStories(a, b, stateType));
+const sortTasks = (tasks: Task[], stateType?: StateType) => [...tasks].sort((a, b) => compareTasks(a, b, stateType));
 
 const isGroupedColumn = (column: Pick<TaskStateColumn, 'state'>) => column.state.state_type === groupedStateType;
 
-const reindexLoadedStories = (column: TaskStateColumn) => {
+const reindexLoadedTasks = (column: TaskStateColumn) => {
   if (isGroupedColumn(column)) return;
-  column.stories = column.stories.map((story, index) => ({
-    ...story,
+  column.tasks = column.tasks.map((task, index) => ({
+    ...task,
     position: index,
   }));
 };
 
-const storyMatchesFilters = (story: Task, teamId: string | null, filters: BoardFilters) => {
+const taskMatchesFilters = (task: Task, teamId: string | null, filters: BoardFilters) => {
   const matchesCsv = (actual: string | undefined, value: string | undefined) => {
     if (!value) return true;
     return value.split(',').includes(actual ?? '');
   };
 
-  if (teamId && story.team_id !== teamId) return false;
-  if (!matchesCsv(story.priority, filters.priority)) return false;
-  if (!matchesCsv(story.severity, filters.severity)) return false;
-  if (!matchesCsv(story.task_type, filters.story_type)) return false;
-  if (!matchesCsv(story.epic_id, filters.epic_id)) return false;
-  if (!matchesCsv(story.sprint_id, filters.sprint_id)) return false;
-  if (!matchesCsv(story.owner_member_id, filters.owner_member_id)) return false;
-  if (!matchesCsv(story.requester_member_id, filters.requester_member_id)) return false;
-  if (filters.blocked && String(story.blocked) !== filters.blocked) return false;
-  if (filters.blocking && String(story.is_blocking_other_task ?? false) !== filters.blocking) return false;
-  if (filters.updated_after && story.updated_at < filters.updated_after) return false;
+  if (teamId && task.team_id !== teamId) return false;
+  if (!matchesCsv(task.priority, filters.priority)) return false;
+  if (!matchesCsv(task.severity, filters.severity)) return false;
+  if (!matchesCsv(task.task_type, filters.task_type)) return false;
+  if (!matchesCsv(task.epic_id, filters.epic_id)) return false;
+  if (!matchesCsv(task.sprint_id, filters.sprint_id)) return false;
+  if (!matchesCsv(task.owner_member_id, filters.owner_member_id)) return false;
+  if (!matchesCsv(task.requester_member_id, filters.requester_member_id)) return false;
+  if (filters.blocked && String(task.blocked) !== filters.blocked) return false;
+  if (filters.blocking && String(task.is_blocking_other_task ?? false) !== filters.blocking) return false;
+  if (filters.updated_after && task.updated_at < filters.updated_after) return false;
   return true;
 };
 
@@ -169,39 +161,39 @@ const hasAmbiguousPatchFilters = (filters: BoardFilters) => Boolean(
 const updateColumnTotals = (column: TaskStateColumn, countDelta: number, pointDelta: number) => {
   column.task_count = Math.max(0, column.task_count + countDelta);
   column.point_total = Math.max(0, column.point_total + pointDelta);
-  column.has_more = column.stories.length < column.task_count;
+  column.has_more = column.tasks.length < column.task_count;
 };
 
-const removeLoadedStory = (column: TaskStateColumn, storyId: string) => {
-  const index = column.stories.findIndex((candidate) => candidate.id === storyId);
+const removeLoadedTask = (column: TaskStateColumn, taskId: string) => {
+  const index = column.tasks.findIndex((candidate) => candidate.id === taskId);
   if (index === -1) return null;
-  const [removed] = column.stories.splice(index, 1);
+  const [removed] = column.tasks.splice(index, 1);
   return removed ?? null;
 };
 
-const replaceGroupedStory = (column: TaskStateColumn, story: Task) => {
+const replaceGroupedTask = (column: TaskStateColumn, task: Task) => {
   if (!column.task_groups?.length) return false;
   let replaced = false;
   column.task_groups = column.task_groups.map((group) => {
-    const storyIndex = group.stories.findIndex((candidate) => candidate.id === story.id);
-    if (storyIndex === -1) return group;
-    const stories = [...group.stories];
-    stories[storyIndex] = story;
+    const taskIndex = group.tasks.findIndex((candidate) => candidate.id === task.id);
+    if (taskIndex === -1) return group;
+    const tasks = [...group.tasks];
+    tasks[taskIndex] = task;
     replaced = true;
-    return { ...group, stories };
+    return { ...group, tasks };
   });
   return replaced;
 };
 
-const mergeStoryGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[] | undefined) => {
+const mergeTaskGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[] | undefined) => {
   if (!incoming?.length) return existing ?? [];
   if (!existing?.length) {
-    return incoming.map((group) => ({ ...group, stories: [...group.stories] }));
+    return incoming.map((group) => ({ ...group, tasks: [...group.tasks] }));
   }
 
   const merged = existing.map((group) => ({
     ...group,
-    stories: [...group.stories],
+    tasks: [...group.tasks],
   }));
   const groupIndexByKey = new Map(merged.map((group, index) => [group.key, index]));
 
@@ -209,22 +201,22 @@ const mergeStoryGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup
     const existingIndex = groupIndexByKey.get(nextGroup.key);
     if (existingIndex === undefined) {
       groupIndexByKey.set(nextGroup.key, merged.length);
-      merged.push({ ...nextGroup, stories: [...nextGroup.stories] });
+      merged.push({ ...nextGroup, tasks: [...nextGroup.tasks] });
       continue;
     }
 
     const existingGroup = merged[existingIndex];
-    const existingIds = new Set(existingGroup.stories.map((story) => story.id));
-    existingGroup.stories = [
-      ...existingGroup.stories,
-      ...nextGroup.stories.filter((story) => !existingIds.has(story.id)),
+    const existingIds = new Set(existingGroup.tasks.map((task) => task.id));
+    existingGroup.tasks = [
+      ...existingGroup.tasks,
+      ...nextGroup.tasks.filter((task) => !existingIds.has(task.id)),
     ];
   }
 
   return merged;
 };
 
-/** Preserve board-enriched display fields (owner_name, epic_name) from existing story when IDs match. */
+/** Preserve board-enriched display fields (owner_name, epic_name) from existing task when IDs match. */
 const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
   ...incoming,
   owner_name: incoming.owner_name ?? (
@@ -235,12 +227,12 @@ const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
   epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
 });
 
-const upsertLoadedStory = (column: TaskStateColumn, story: Task) => {
-  const nextStories = sortStories([
-    ...column.stories.filter((candidate) => candidate.id !== story.id),
-    story,
+const upsertLoadedTask = (column: TaskStateColumn, task: Task) => {
+  const nextTasks = sortTasks([
+    ...column.tasks.filter((candidate) => candidate.id !== task.id),
+    task,
   ], column.state.state_type);
-  column.stories = nextStories;
+  column.tasks = nextTasks;
 };
 
 const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<string, string | undefined> => {
@@ -502,7 +494,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     set({ columnLoading: { ...columnLoading, [stateId]: true } });
 
-    const offset = column.stories.length;
+    const offset = column.tasks.length;
     const res = await pmTaskService.listBoardColumn(
       workspaceId,
       stateId,
@@ -515,7 +507,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     delete doneLoading[stateId];
 
     if (res.error || !res.data) {
-      set({ columnLoading: doneLoading, error: res.error ?? 'Failed to load more stories' });
+      set({ columnLoading: doneLoading, error: res.error ?? 'Failed to load more tasks' });
       return;
     }
 
@@ -524,20 +516,20 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const target = cols.find((c) => c.state.id === stateId);
       if (!target) return { columnLoading: doneLoading };
 
-      // Deduplicate: only add stories not already loaded
-      const existingIds = new Set(target.stories.map((s) => s.id));
-      const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
-      target.stories = sortStories([...target.stories, ...newStories], target.state.state_type);
+      // Deduplicate: only add tasks not already loaded
+      const existingIds = new Set(target.tasks.map((s) => s.id));
+      const newTasks = res.data!.tasks.filter((s) => !existingIds.has(s.id));
+      target.tasks = sortTasks([...target.tasks, ...newTasks], target.state.state_type);
       if (isGroupedColumn(target)) {
-        target.task_groups = mergeStoryGroups(target.task_groups, res.data!.task_groups);
+        target.task_groups = mergeTaskGroups(target.task_groups, res.data!.task_groups);
       }
-      target.has_more = target.stories.length < res.data!.total;
+      target.has_more = target.tasks.length < res.data!.total;
 
       return { columns: cols, columnLoading: doneLoading };
     });
   },
 
-  patchTask: (action, storyId, story) => {
+  patchTask: (action, taskId, task) => {
     const { teamId, filters } = get();
     if (hasAmbiguousPatchFilters(filters)) {
       return false;
@@ -551,13 +543,13 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       if (action === 'deleted') {
         for (const col of columns) {
           if (isGroupedColumn(col)) {
-            if (col.stories.some((candidate) => candidate.id === storyId)) {
+            if (col.tasks.some((candidate) => candidate.id === taskId)) {
               patched = false;
               return state;
             }
             continue;
           }
-          const removed = removeLoadedStory(col, storyId);
+          const removed = removeLoadedTask(col, taskId);
           if (removed) {
             updateColumnTotals(col, -1, -(removed.estimate ?? 0));
             patched = true;
@@ -567,12 +559,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         return state;
       }
 
-      if (!story) return state;
+      if (!task) return state;
 
-      const matchesFilters = storyMatchesFilters(story, teamId, filters);
+      const matchesFilters = taskMatchesFilters(task, teamId, filters);
 
       if (action === 'created') {
-        const target = columns.find((c) => c.state.id === story.workflow_state_id);
+        const target = columns.find((c) => c.state.id === task.workflow_state_id);
         if (!target) return state;
         if (isGroupedColumn(target)) {
           patched = false;
@@ -582,19 +574,19 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
           patched = true;
           return state;
         }
-        updateColumnTotals(target, 1, story.estimate ?? 0);
-        if (!target.has_more || target.stories.length < PER_STATE_LIMIT) {
-          upsertLoadedStory(target, story);
+        updateColumnTotals(target, 1, task.estimate ?? 0);
+        if (!target.has_more || target.tasks.length < PER_STATE_LIMIT) {
+          upsertLoadedTask(target, task);
         }
         patched = !target.has_more;
         return { columns };
       }
 
-      // updated / moved — find the story in columns, update in-place or move between columns
+      // updated / moved — find the task in columns, update in-place or move between columns
       let fromCol: TaskStateColumn | undefined;
       let fromIdx = -1;
       for (const col of columns) {
-        const idx = col.stories.findIndex((s) => s.id === storyId);
+        const idx = col.tasks.findIndex((s) => s.id === taskId);
         if (idx >= 0) {
           fromCol = col;
           fromIdx = idx;
@@ -610,7 +602,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         return state;
       }
 
-      const existing = fromCol.stories[fromIdx];
+      const existing = fromCol.tasks[fromIdx];
       const existingEstimate = existing?.estimate ?? 0;
 
       if (!matchesFilters) {
@@ -618,24 +610,24 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
           patched = false;
           return state;
         }
-        const removed = removeLoadedStory(fromCol, storyId);
+        const removed = removeLoadedTask(fromCol, taskId);
         if (!removed) return state;
         updateColumnTotals(fromCol, -1, -(removed.estimate ?? 0));
         patched = true;
         return { columns };
       }
 
-      if (fromCol.state.id === story.workflow_state_id) {
+      if (fromCol.state.id === task.workflow_state_id) {
         if (isGroupedColumn(fromCol)) {
-          fromCol.stories[fromIdx] = mergeEnrichedFields(story, existing);
-          replaceGroupedStory(fromCol, fromCol.stories[fromIdx]);
-          updateColumnTotals(fromCol, 0, (story.estimate ?? 0) - existingEstimate);
+          fromCol.tasks[fromIdx] = mergeEnrichedFields(task, existing);
+          replaceGroupedTask(fromCol, fromCol.tasks[fromIdx]);
+          updateColumnTotals(fromCol, 0, (task.estimate ?? 0) - existingEstimate);
           patched = true;
           return { columns };
         }
-        fromCol.stories[fromIdx] = mergeEnrichedFields(story, existing);
-        fromCol.stories = sortStories(fromCol.stories, fromCol.state.state_type);
-        updateColumnTotals(fromCol, 0, (story.estimate ?? 0) - existingEstimate);
+        fromCol.tasks[fromIdx] = mergeEnrichedFields(task, existing);
+        fromCol.tasks = sortTasks(fromCol.tasks, fromCol.state.state_type);
+        updateColumnTotals(fromCol, 0, (task.estimate ?? 0) - existingEstimate);
         patched = true;
         return { columns };
       }
@@ -645,21 +637,21 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         return state;
       }
 
-      const removed = removeLoadedStory(fromCol, storyId);
+      const removed = removeLoadedTask(fromCol, taskId);
       if (!removed) return state;
       updateColumnTotals(fromCol, -1, -(removed.estimate ?? 0));
 
-      const toCol = columns.find((c) => c.state.id === story.workflow_state_id);
+      const toCol = columns.find((c) => c.state.id === task.workflow_state_id);
       if (!toCol) return { columns };
       if (isGroupedColumn(toCol)) {
         patched = false;
         return state;
       }
 
-      const merged = mergeEnrichedFields(story, removed);
-      updateColumnTotals(toCol, 1, story.estimate ?? 0);
-      if (!toCol.has_more || toCol.stories.length < PER_STATE_LIMIT) {
-        upsertLoadedStory(toCol, merged);
+      const merged = mergeEnrichedFields(task, removed);
+      updateColumnTotals(toCol, 1, task.estimate ?? 0);
+      if (!toCol.has_more || toCol.tasks.length < PER_STATE_LIMIT) {
+        upsertLoadedTask(toCol, merged);
         patched = !toCol.has_more;
       } else {
         patched = false;
@@ -677,26 +669,26 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       return null;
     }
 
-    const story = data.task;
+    const task = data.task;
     set((state) => {
       const columns = cloneColumns(state.columns);
-      const targetIndex = columns.findIndex((column) => column.state.id === story.workflow_state_id);
+      const targetIndex = columns.findIndex((column) => column.state.id === task.workflow_state_id);
       if (targetIndex === -1) return state;
       if (isGroupedColumn(columns[targetIndex])) return state;
-      updateColumnTotals(columns[targetIndex], 1, story.estimate ?? 0);
-      if (!columns[targetIndex].has_more || columns[targetIndex].stories.length < PER_STATE_LIMIT) {
-        upsertLoadedStory(columns[targetIndex], story);
+      updateColumnTotals(columns[targetIndex], 1, task.estimate ?? 0);
+      if (!columns[targetIndex].has_more || columns[targetIndex].tasks.length < PER_STATE_LIMIT) {
+        upsertLoadedTask(columns[targetIndex], task);
       }
       return { columns };
     });
-    const targetColumn = get().columns.find((column) => column.state.id === story.workflow_state_id);
+    const targetColumn = get().columns.find((column) => column.state.id === task.workflow_state_id);
     if (targetColumn && isGroupedColumn(targetColumn)) {
       await get().refreshBoard();
     }
-    return story;
+    return task;
   },
 
-  moveTask: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
+  moveTask: async ({ workspaceId, taskId, fromStateId, toStateId, toIndex, debugTraceID }) => {
     const snapshot = cloneColumns(get().columns);
     const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
     const targetStateType = snapshot.find((column) => column.state.id === toStateId)?.state.state_type;
@@ -709,7 +701,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     logPMDnD('store.move.begin', {
       trace_id: traceID,
       workspace_id: workspaceId,
-      story_id: storyId,
+      task_id: taskId,
       from_state_id: fromStateId,
       to_state_id: toStateId,
       to_index: toIndex,
@@ -726,42 +718,42 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const toCol = columns.find((column) => column.state.id === toStateId);
       if (!fromCol || !toCol) return state;
 
-      const sourceIndex = fromCol.stories.findIndex((candidate) => candidate.id === storyId);
+      const sourceIndex = fromCol.tasks.findIndex((candidate) => candidate.id === taskId);
       if (sourceIndex === -1) return state;
       if (fromStateId === toStateId && fromCol.state.state_type === 'done') {
         optimisticColumns = columns;
         return state;
       }
 
-      const [moving] = fromCol.stories.splice(sourceIndex, 1);
+      const [moving] = fromCol.tasks.splice(sourceIndex, 1);
       if (!moving) return state;
 
       moving.workflow_state_id = toStateId;
       if (fromStateId === toStateId) {
-        fromCol.stories.splice(toIndex, 0, moving);
-        reindexLoadedStories(fromCol);
+        fromCol.tasks.splice(toIndex, 0, moving);
+        reindexLoadedTasks(fromCol);
         optimisticColumns = columns;
         return { columns };
       }
 
       updateColumnTotals(fromCol, -1, -(moving.estimate ?? 0));
       updateColumnTotals(toCol, 1, moving.estimate ?? 0);
-      reindexLoadedStories(fromCol);
+      reindexLoadedTasks(fromCol);
       // For done columns, set completed_at so optimistic sort matches server behavior
       if (toCol.state.state_type === 'done') {
         moving.completed_at = new Date().toISOString();
         moving.moved_at = moving.completed_at;
         moving.completed = true;
-        moving.position = toCol.stories.length;
-        toCol.stories = sortStories([...toCol.stories, moving], toCol.state.state_type);
+        moving.position = toCol.tasks.length;
+        toCol.tasks = sortTasks([...toCol.tasks, moving], toCol.state.state_type);
       } else {
         // Clear done metadata when moving out of done
         if (moving.completed_at) {
           moving.completed_at = undefined as unknown as string;
           moving.completed = false;
         }
-        toCol.stories.splice(toIndex, 0, moving);
-        reindexLoadedStories(toCol);
+        toCol.tasks.splice(toIndex, 0, moving);
+        reindexLoadedTasks(toCol);
       }
       optimisticColumns = columns;
       return { columns };
@@ -770,14 +762,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     if (fromStateId === toStateId && targetStateType === 'done') {
       logPMDnD('store.move.skip_done_reorder', {
         trace_id: traceID,
-        story_id: storyId,
+        task_id: taskId,
         state_id: fromStateId,
       });
     } else if (optimisticColumns) {
       const loggedColumns = optimisticColumns as TaskStateColumn[];
       logPMDnD('store.move.optimistic_applied', {
         trace_id: traceID,
-        story_id: storyId,
+        task_id: taskId,
         from_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === fromStateId)),
         to_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === toStateId)),
       });
@@ -790,21 +782,21 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const reorderPayload = { position: toIndex, debug_trace_id: traceID };
       logPMDnD('store.move.reorder_request', {
         trace_id: traceID,
-        story_id: storyId,
+        task_id: taskId,
         payload: reorderPayload,
       });
-      const reorderRes = await pmTaskService.reorder(workspaceId, storyId, reorderPayload);
+      const reorderRes = await pmTaskService.reorder(workspaceId, taskId, reorderPayload);
       if (reorderRes.error && !contextChanged()) {
         logPMDnD('store.move.reorder_error', {
           trace_id: traceID,
-          story_id: storyId,
+          task_id: taskId,
           error: reorderRes.error,
         });
         set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder task' });
       } else {
         logPMDnD('store.move.reorder_success', {
           trace_id: traceID,
-          story_id: storyId,
+          task_id: taskId,
         });
       }
       return;
@@ -815,19 +807,19 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       : { state_id: toStateId, position: toIndex, debug_trace_id: traceID };
     logPMDnD('store.move.move_request', {
       trace_id: traceID,
-      story_id: storyId,
+      task_id: taskId,
       payload: movePayload,
     });
     const moveRes = await pmTaskService.move(
       workspaceId,
-      storyId,
+      taskId,
       movePayload,
     );
     if (moveRes.error) {
       if (!contextChanged()) {
         logPMDnD('store.move.move_error', {
           trace_id: traceID,
-          story_id: storyId,
+          task_id: taskId,
           error: moveRes.error,
         });
         set({ columns: snapshot, error: moveRes.error ?? 'Failed to move task' });
@@ -842,8 +834,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     if (updatedStory) {
       logPMDnD('store.move.move_success', {
         trace_id: traceID,
-        story_id: storyId,
-        response_story: {
+        task_id: taskId,
+        response_task: {
           id: updatedStory.id,
           workflow_state_id: updatedStory.workflow_state_id,
           position: updatedStory.position,
@@ -857,10 +849,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         const columns = cloneColumns(state.columns);
         const target = columns.find((column) => column.state.id === toStateId);
         if (!target) return state;
-        const idx = target.stories.findIndex((candidate) => candidate.id === storyId);
+        const idx = target.tasks.findIndex((candidate) => candidate.id === taskId);
         if (idx >= 0) {
-          target.stories[idx] = mergeEnrichedFields(updatedStory, target.stories[idx]);
-          target.stories = sortStories(target.stories, target.state.state_type);
+          target.tasks[idx] = mergeEnrichedFields(updatedStory, target.tasks[idx]);
+          target.tasks = sortTasks(target.tasks, target.state.state_type);
         }
         return { columns };
       });
@@ -872,7 +864,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     if (fromTruncated || toTruncated || targetStateType === 'done') {
       logPMDnD('store.move.refresh_requested', {
         trace_id: traceID,
-        story_id: storyId,
+        task_id: taskId,
         from_truncated: fromTruncated,
         to_truncated: toTruncated,
         target_state_type: targetStateType,
@@ -915,7 +907,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     set({ memberColumnLoading: { ...memberColumnLoading, [colKey]: true } });
 
-    const offset = column.stories.length;
+    const offset = column.tasks.length;
     const res = await pmTaskService.listBoardMemberColumn(
       workspaceId,
       workflowId,
@@ -929,32 +921,32 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     delete doneLoading[colKey];
 
     if (res.error || !res.data) {
-      set({ memberColumnLoading: doneLoading, error: res.error ?? 'Failed to load more stories' });
+      set({ memberColumnLoading: doneLoading, error: res.error ?? 'Failed to load more tasks' });
       return;
     }
 
     set((state) => {
-      const cols = state.memberColumns.map((c) => ({ ...c, stories: [...c.stories] }));
+      const cols = state.memberColumns.map((c) => ({ ...c, tasks: [...c.tasks] }));
       const target = cols.find((c) =>
         memberId ? c.member?.id === memberId : c.member === null,
       );
       if (!target) return { memberColumnLoading: doneLoading };
 
-      const existingIds = new Set(target.stories.map((s) => s.id));
-      const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
-      target.stories = [...target.stories, ...newStories];
-      target.has_more = target.stories.length < res.data!.total;
+      const existingIds = new Set(target.tasks.map((s) => s.id));
+      const newTasks = res.data!.tasks.filter((s) => !existingIds.has(s.id));
+      target.tasks = [...target.tasks, ...newTasks];
+      target.has_more = target.tasks.length < res.data!.total;
 
       return { memberColumns: cols, memberColumnLoading: doneLoading };
     });
   },
 
-  moveMemberTask: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
+  moveMemberTask: async ({ workspaceId, taskId, fromMemberId, toMemberId, toIndex }) => {
     if (fromMemberId === toMemberId) {
       return;
     }
 
-    const snapshot = get().memberColumns.map((c) => ({ ...c, stories: [...c.stories] }));
+    const snapshot = get().memberColumns.map((c) => ({ ...c, tasks: [...c.tasks] }));
     const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
     const contextChanged = () => {
       const s = get();
@@ -963,7 +955,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     // Optimistic update
     set((state) => {
-      const cols = state.memberColumns.map((c) => ({ ...c, stories: [...c.stories] }));
+      const cols = state.memberColumns.map((c) => ({ ...c, tasks: [...c.tasks] }));
       const fromCol = cols.find((c) =>
         fromMemberId ? c.member?.id === fromMemberId : c.member === null,
       );
@@ -972,37 +964,37 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       );
       if (!fromCol || !toCol) return state;
 
-      const sourceIndex = fromCol.stories.findIndex((s) => s.id === storyId);
+      const sourceIndex = fromCol.tasks.findIndex((s) => s.id === taskId);
       if (sourceIndex === -1) return state;
 
-      const [moving] = fromCol.stories.splice(sourceIndex, 1);
+      const [moving] = fromCol.tasks.splice(sourceIndex, 1);
       if (!moving) return state;
 
       if (fromMemberId === toMemberId) {
-        fromCol.stories.splice(toIndex, 0, moving);
+        fromCol.tasks.splice(toIndex, 0, moving);
         return { memberColumns: cols };
       }
 
       moving.owner_member_id = toMemberId ?? undefined;
-      fromCol.story_count = Math.max(0, fromCol.story_count - 1);
+      fromCol.task_count = Math.max(0, fromCol.task_count - 1);
       fromCol.point_total = Math.max(0, fromCol.point_total - (moving.estimate ?? 0));
-      fromCol.has_more = fromCol.stories.length < fromCol.story_count;
+      fromCol.has_more = fromCol.tasks.length < fromCol.task_count;
 
-      toCol.stories.splice(toIndex, 0, moving);
-      toCol.story_count += 1;
+      toCol.tasks.splice(toIndex, 0, moving);
+      toCol.task_count += 1;
       toCol.point_total += moving.estimate ?? 0;
-      toCol.has_more = toCol.stories.length < toCol.story_count;
+      toCol.has_more = toCol.tasks.length < toCol.task_count;
 
       return { memberColumns: cols };
     });
 
-    // Reassign owner only. Member-board ordering is derived from workflow state and story position,
+    // Reassign owner only. Member-board ordering is derived from workflow state and task position,
     // not a separate per-member manual ranking.
-    const updateRes = await pmTaskService.update(workspaceId, storyId, {
+    const updateRes = await pmTaskService.update(workspaceId, taskId, {
       owner_member_id: toMemberId ?? '',
     });
     if (updateRes.error && !contextChanged()) {
-      set({ memberColumns: snapshot, error: updateRes.error ?? 'Failed to reassign story' });
+      set({ memberColumns: snapshot, error: updateRes.error ?? 'Failed to reassign task' });
       return;
     }
   },
@@ -1129,10 +1121,5 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return updated;
   },
 
-  // Backward-compat aliases
-  get createStory() { return get().createTask; },
-  get moveStory() { return get().moveTask; },
-  get patchStory() { return get().patchTask; },
-  get moveMemberStory() { return get().moveMemberTask; },
   };
 });

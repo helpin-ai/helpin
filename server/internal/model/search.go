@@ -12,7 +12,7 @@ type SearchResult struct {
 
 // SearchResponse groups search results by entity type.
 type SearchResponse struct {
-	Stories    []SearchResult `json:"stories"`
+	Tasks      []SearchResult `json:"tasks"`
 	Epics      []SearchResult `json:"epics"`
 	Sprints    []SearchResult `json:"sprints"`
 	Objectives []SearchResult `json:"objectives"`

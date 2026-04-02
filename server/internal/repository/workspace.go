@@ -153,8 +153,6 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 		objectiveQ := "SELECT id FROM pm_objectives WHERE workspace_id = ?"
 		workflowQ := "SELECT id FROM pm_workflows WHERE workspace_id = ?"
 		invitationQ := "SELECT id FROM workspace_invitations WHERE workspace_id = ?"
-		goalQ := "SELECT id FROM reward_company_goals WHERE workspace_id = ?"
-		rewardSprintQ := "SELECT id FROM reward_sprints WHERE workspace_id = ?"
 		teamQ := "SELECT id FROM workspace_teams WHERE workspace_id = ?"
 		memberQ := "SELECT id FROM workspace_members WHERE workspace_id = ?"
 		ticketQ := "SELECT id FROM support_conversations WHERE workspace_id = ?"
@@ -190,10 +188,6 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 
 			// Invitation pre-assignments
 			"DELETE FROM invitation_team_preassignments WHERE invitation_id IN (" + invitationQ + ")",
-
-			// Reward indirect children
-			"DELETE FROM reward_goal_team_contributions WHERE goal_id IN (" + goalQ + ")",
-			"DELETE FROM reward_sprint_goals WHERE sprint_id IN (" + rewardSprintQ + ")",
 
 			// Team-scoped settings
 			"DELETE FROM pm_team_estimate_settings WHERE team_id IN (" + teamQ + ")",
@@ -239,21 +233,10 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
 			"DELETE FROM support_widget_installations WHERE workspace_id = ?",
 
-			// Reward module
-			"DELETE FROM reward_bonus_calculations WHERE workspace_id = ?",
-			"DELETE FROM reward_individual_checks WHERE workspace_id = ?",
-			"DELETE FROM reward_finance_settings WHERE workspace_id = ?",
-			"DELETE FROM reward_audit_log WHERE workspace_id = ?",
-			"DELETE FROM reward_company_goals WHERE workspace_id = ?",
-			"DELETE FROM reward_goal_drafts WHERE workspace_id = ?",
-			"DELETE FROM reward_sprints WHERE workspace_id = ?",
-			"DELETE FROM reward_quarters WHERE workspace_id = ?",
-
 			// Workspace structure
 			"DELETE FROM team_workspace_memberships WHERE team_id IN (" + teamQ + ") OR workspace_member_id IN (" + memberQ + ")",
 			"DELETE FROM workspace_managers WHERE workspace_id = ?",
 			"DELETE FROM job_role_criteria WHERE workspace_id = ?",
-			"DELETE FROM bonus_tiers WHERE workspace_id = ?",
 			"DELETE FROM workspace_teams WHERE workspace_id = ?",
 			"DELETE FROM workspace_settings WHERE workspace_id = ?",
 			"DELETE FROM workspace_invitations WHERE workspace_id = ?",

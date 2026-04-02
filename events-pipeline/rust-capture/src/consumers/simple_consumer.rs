@@ -4,10 +4,10 @@ use events_pipeline::enrichment::handler::{EnrichmentHandler, MyError};
 use events_pipeline::enrichment::ua_resolver::UaResolver;
 use events_pipeline::events::transform_event::TransformedEvent;
 use events_pipeline::geo::downloader::download_and_save;
-use events_pipeline::ip2location::downloader::ip2proxy_download_and_save;
 use events_pipeline::geo::resolver::GeoResolver;
-use events_pipeline::ip2location::resolver::IP2ProxyResolver;
 use events_pipeline::health::HealthRegistry;
+use events_pipeline::ip2location::downloader::ip2proxy_download_and_save;
+use events_pipeline::ip2location::resolver::IP2ProxyResolver;
 use events_pipeline::sinks;
 use events_pipeline::sinks::EventSink;
 use events_pipeline::utils::kafka_config::create_consumer_kafka_config;
@@ -89,7 +89,6 @@ async fn handle_maxmind_db() {
         });
     }
 }
-
 
 async fn handle_ip2proxy_download() {
     let app_env = env::var("APP_ENV").expect("APP_ENV must be set");
@@ -236,10 +235,12 @@ async fn start_simple_consumer() {
 
     let handler = EnrichmentHandler::new();
     let geo_resolver = GeoResolver::new(&events_pipeline::geo::downloader::target_path()).unwrap();
-    let ip2proxy_resolver: IP2ProxyResolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+    let ip2proxy_resolver: IP2ProxyResolver =
+        IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
     let bot_resolver = BotResolver::new();
     let config: ClientConfig = create_consumer_kafka_config(brokers);
-    let consumer: Arc<StreamConsumer> = Arc::new(config.create().expect("Consumer creation failed"));
+    let consumer: Arc<StreamConsumer> =
+        Arc::new(config.create().expect("Consumer creation failed"));
     let ua_parser = UaResolver::new();
     ua_parser.seed_to_lru_cache().unwrap();
     consumer

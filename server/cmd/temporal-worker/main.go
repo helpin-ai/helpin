@@ -329,7 +329,7 @@ func main() {
 		nil,
 	)
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
-	pmRecurringTemplateService.SetStoryService(pmStoryService)
+	pmRecurringTemplateService.SetTaskService(pmStoryService)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,

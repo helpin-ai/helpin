@@ -17,14 +17,14 @@ async fn main() {
         .with_env_filter(EnvFilter::new(log_level))
         .init();
 
-    let base_dir = PathBuf::from(
-        env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()),
-    );
+    let base_dir =
+        PathBuf::from(env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()));
+    let active_dir = base_dir.join("active");
     let pending_dir = base_dir.join("pending");
     let processing_dir = base_dir.join("processing");
     let completed_dir = base_dir.join("completed");
 
-    for dir in [&pending_dir, &processing_dir, &completed_dir] {
+    for dir in [&active_dir, &pending_dir, &processing_dir, &completed_dir] {
         fs::create_dir_all(dir).unwrap_or_else(|e| {
             panic!("Failed to create directory {:?}: {}", dir, e);
         });
@@ -44,10 +44,6 @@ async fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(24);
-    let stale_tmp_secs: u64 = env::var("REPLAY_STALE_TMP_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(120);
 
     let sink = KafkaSink::new(topic, brokers, HealthRegistry::new())
         .expect("Failed to create Kafka sink for replay");
@@ -58,9 +54,6 @@ async fn main() {
     recover_processing_files(&processing_dir, &pending_dir);
 
     loop {
-        // Recover stale .tmp files (from crashed writers)
-        recover_stale_tmp_files(&pending_dir, stale_tmp_secs);
-
         match process_pending_files(
             &pending_dir,
             &processing_dir,
@@ -109,50 +102,6 @@ fn recover_processing_files(processing_dir: &Path, pending_dir: &Path) {
     }
 }
 
-/// Rename stale .tmp files (from crashed capture servers) to .jsonl so they can be replayed.
-fn recover_stale_tmp_files(pending_dir: &Path, stale_secs: u64) {
-    let entries = match fs::read_dir(pending_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    let now = SystemTime::now();
-    let max_age = Duration::from_secs(stale_secs);
-
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if !path.to_string_lossy().ends_with(".jsonl.tmp") {
-            continue;
-        }
-
-        let modified = match entry.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-
-        if let Ok(age) = now.duration_since(modified) {
-            if age > max_age {
-                // Remove the .tmp suffix to get the .jsonl filename
-                let final_name = path
-                    .to_string_lossy()
-                    .trim_end_matches(".tmp")
-                    .to_string();
-                let final_path = PathBuf::from(final_name);
-                match fs::rename(&path, &final_path) {
-                    Ok(()) => tracing::info!(
-                        "Recovered stale tmp file: {:?}",
-                        path.file_name().unwrap_or_default()
-                    ),
-                    Err(e) => tracing::warn!(
-                        "Failed to recover stale tmp file {:?}: {}",
-                        path, e
-                    ),
-                }
-            }
-        }
-    }
-}
-
 async fn process_pending_files(
     pending_dir: &Path,
     processing_dir: &Path,
@@ -160,8 +109,8 @@ async fn process_pending_files(
     sink: &KafkaSink,
     batch_size: usize,
 ) -> Result<usize, String> {
-    let entries = fs::read_dir(pending_dir)
-        .map_err(|e| format!("Failed to read pending dir: {}", e))?;
+    let entries =
+        fs::read_dir(pending_dir).map_err(|e| format!("Failed to read pending dir: {}", e))?;
 
     let mut files: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok())
@@ -210,8 +159,8 @@ async fn replay_file(
     tracing::info!("Replaying file: {:?}", file_name);
 
     // Read and replay
-    let contents = fs::read_to_string(&processing_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let contents =
+        fs::read_to_string(&processing_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     let mut batch: Vec<EventTypes> = Vec::with_capacity(batch_size);
     let mut total_events = 0;
@@ -270,8 +219,8 @@ async fn replay_file(
 }
 
 fn cleanup_completed(completed_dir: &Path, max_age_hours: u64) -> Result<(), String> {
-    let entries = fs::read_dir(completed_dir)
-        .map_err(|e| format!("Failed to read completed dir: {}", e))?;
+    let entries =
+        fs::read_dir(completed_dir).map_err(|e| format!("Failed to read completed dir: {}", e))?;
 
     let max_age = Duration::from_secs(max_age_hours * 3600);
     let now = SystemTime::now();

@@ -11,7 +11,7 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 
 	var schema map[string]interface{}
 	for _, def := range registry.Definitions() {
-		if def.Name == "create_story_batch" {
+		if def.Name == "create_task_batch" {
 			var ok bool
 			schema, ok = def.InputSchema.(map[string]interface{})
 			if !ok {
@@ -21,7 +21,7 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 		}
 	}
 	if schema == nil {
-		t.Fatal("expected create_story_batch tool definition")
+		t.Fatal("expected create_task_batch tool definition")
 	}
 
 	properties := schema["properties"].(map[string]interface{})
@@ -51,7 +51,7 @@ func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 
 	var schema map[string]interface{}
 	for _, def := range registry.Definitions() {
-		if def.Name == "create_story_batch" {
+		if def.Name == "create_task_batch" {
 			var ok bool
 			schema, ok = def.InputSchema.(map[string]interface{})
 			if !ok {
@@ -61,7 +61,7 @@ func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 		}
 	}
 	if schema == nil {
-		t.Fatal("expected create_story_batch tool definition")
+		t.Fatal("expected create_task_batch tool definition")
 	}
 
 	properties := schema["properties"].(map[string]interface{})
@@ -87,7 +87,7 @@ func TestToolCatalogUsesSharedCommandToolMetadataForCategories(t *testing.T) {
 	}
 
 	for toolName, want := range map[string]string{
-		"approve_epic_spec":      "PM / Stories",
+		"approve_epic_spec":      "PM / Tasks",
 		"write_document_content": "Docs",
 		"update_deal_stage":      "CRM",
 	} {

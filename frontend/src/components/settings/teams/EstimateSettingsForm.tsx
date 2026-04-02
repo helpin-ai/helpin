@@ -34,7 +34,7 @@ export function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Enable estimates</p>
-          <p className="text-xs text-muted-foreground">Show effort estimates on stories</p>
+          <p className="text-xs text-muted-foreground">Show effort estimates on tasks</p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />
       </div>
@@ -80,7 +80,7 @@ export function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Allow zero estimates</p>
-              <p className="text-xs text-muted-foreground">Allow stories to be estimated as zero effort</p>
+              <p className="text-xs text-muted-foreground">Allow tasks to be estimated as zero effort</p>
             </div>
             <Switch checked={allowZero} onCheckedChange={setAllowZero} />
           </div>
@@ -88,7 +88,7 @@ export function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Count unestimated as 1 point</p>
-              <p className="text-xs text-muted-foreground">Unestimated stories count as 1 point in calculations</p>
+              <p className="text-xs text-muted-foreground">Unestimated tasks count as 1 point in calculations</p>
             </div>
             <Switch checked={countUnestimated} onCheckedChange={setCountUnestimated} />
           </div>

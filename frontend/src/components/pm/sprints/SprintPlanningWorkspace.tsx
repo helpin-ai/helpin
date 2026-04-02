@@ -23,10 +23,10 @@ interface SprintPlanningWorkspaceProps {
   canEdit: boolean;
   members: AssignableMember[];
   onOpenSprint: (sprintId: string) => void;
-  onOpenStory: (storyId: string) => void;
+  onOpenTask: (taskId: string) => void;
   onCreateSprint: () => void;
-  onCreateStory: (sprintId?: string) => void;
-  onAssignStory: (story: SprintPlanningTaskPreview, sprintId: string | null) => void;
+  onCreateTask: (sprintId?: string) => void;
+  onAssignTask: (task: SprintPlanningTaskPreview, sprintId: string | null) => void;
 }
 
 export function SprintPlanningWorkspace({
@@ -36,10 +36,10 @@ export function SprintPlanningWorkspace({
   canEdit,
   members,
   onOpenSprint,
-  onOpenStory,
+  onOpenTask,
   onCreateSprint,
-  onCreateStory,
-  onAssignStory,
+  onCreateTask,
+  onAssignTask,
 }: SprintPlanningWorkspaceProps) {
   const ownerByMemberId = useMemo(() => {
     const map = new Map<string, AssignableMember>();
@@ -57,10 +57,10 @@ export function SprintPlanningWorkspace({
     null;
   const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
 
-  const [activeStory, setActiveStory] = useState<SprintPlanningTaskPreview | null>(null);
-  // Ref persists the dropped story ID across the render gap where activeStory
+  const [activeTask, setActiveTask] = useState<SprintPlanningTaskPreview | null>(null);
+  // Ref persists the dropped task ID across the render gap where activeTask
   // is cleared but workspace data hasn't propagated yet
-  const droppedStoryIdRef = useRef<string | null>(null);
+  const droppedTaskIdRef = useRef<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -70,40 +70,40 @@ export function SprintPlanningWorkspace({
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    const story = event.active.data.current?.story as SprintPlanningTaskPreview | undefined;
-    droppedStoryIdRef.current = null;
-    setActiveStory(story ?? null);
+    const task = event.active.data.current?.task as SprintPlanningTaskPreview | undefined;
+    droppedTaskIdRef.current = null;
+    setActiveTask(task ?? null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const story = (event.active.data.current?.story as SprintPlanningTaskPreview | undefined) ?? activeStory;
+    const task = (event.active.data.current?.task as SprintPlanningTaskPreview | undefined) ?? activeTask;
     const overId = event.over?.id ? String(event.over.id) : null;
-    if (!story || !overId) {
-      setActiveStory(null);
+    if (!task || !overId) {
+      setActiveTask(null);
       return;
     }
-    // Remember which story was dropped — this ref survives the render gap
-    // between activeStory clearing and workspace data propagating
-    droppedStoryIdRef.current = story.id;
+    // Remember which task was dropped — this ref survives the render gap
+    // between activeTask clearing and workspace data propagating
+    droppedTaskIdRef.current = task.id;
     // Apply optimistic update
     if (overId === 'backlog-dropzone') {
-      onAssignStory(story, null);
+      onAssignTask(task, null);
     } else if (overId.startsWith('sprint:')) {
-      onAssignStory(story, overId.replace('sprint:', ''));
+      onAssignTask(task, overId.replace('sprint:', ''));
     }
-    setActiveStory(null);
+    setActiveTask(null);
   };
 
-  // Hide the story being dragged OR just dropped from the backlog list.
-  // The ref bridges the gap: when activeStory clears but workspace data
-  // hasn't updated yet, droppedStoryIdRef still filters the card out.
-  const hideStoryId = activeStory?.id ?? droppedStoryIdRef.current;
-  const backlogStories = useMemo(() => {
-    const raw = workspace?.backlog_stories ?? [];
+  // Hide the task being dragged OR just dropped from the backlog list.
+  // The ref bridges the gap: when activeTask clears but workspace data
+  // hasn't updated yet, droppedTaskIdRef still filters the card out.
+  const hideStoryId = activeTask?.id ?? droppedTaskIdRef.current;
+  const backlogTasks = useMemo(() => {
+    const raw = workspace?.backlog_tasks ?? [];
     if (!hideStoryId) return raw;
     return raw.filter((s) => s.id !== hideStoryId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hideStoryId uses ref, recompute when backlog changes
-  }, [workspace?.backlog_stories, activeStory]);
+  }, [workspace?.backlog_tasks, activeTask]);
 
   if (!workspace || !hasAnySprint) {
     return <SprintPlanningEmptyState canEdit={canEdit} onCreateSprint={onCreateSprint} />;
@@ -124,8 +124,8 @@ export function SprintPlanningWorkspace({
                 ownerByMemberId={ownerByMemberId}
                 canEdit={canEdit}
                 onOpenSprint={onOpenSprint}
-                onOpenStory={onOpenStory}
-                onCreateStory={onCreateStory}
+                onOpenTask={onOpenTask}
+                onCreateTask={onCreateTask}
               />
             ))}
           </div>
@@ -134,21 +134,21 @@ export function SprintPlanningWorkspace({
         <SprintPlanningBacklogPanel
           open={backlogOpen}
           onToggle={onBacklogToggle}
-          stories={backlogStories}
+          tasks={backlogTasks}
           total={workspace.backlog_total}
           ownerByMemberId={ownerByMemberId}
           canEdit={canEdit}
-          onOpenStory={onOpenStory}
-          onAddToActiveSprint={(story) => onAssignStory(story, preferredSprintId)}
-          onCreateStory={() => onCreateStory()}
+          onOpenTask={onOpenTask}
+          onAddToActiveSprint={(task) => onAssignTask(task, preferredSprintId)}
+          onCreateTask={() => onCreateTask()}
         />
       </div>
       <DragOverlay>
-        {activeStory ? (
+        {activeTask ? (
           <div className="w-[300px] rotate-[1deg] shadow-xl">
             <SprintPlanningTaskCard
-              story={activeStory}
-              owner={activeStory.owner_member_id ? ownerByMemberId.get(activeStory.owner_member_id) : undefined}
+              task={activeTask}
+              owner={activeTask.owner_member_id ? ownerByMemberId.get(activeTask.owner_member_id) : undefined}
               compact
             />
           </div>

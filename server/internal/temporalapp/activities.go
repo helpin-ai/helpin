@@ -87,7 +87,7 @@ type AgentRunActivities struct {
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	storyRepo           *repository.PMTaskRepository
+	taskRepo           *repository.PMTaskRepository
 	storyLinkRepo       *repository.PMTaskLinkRepository
 	epicRepo            *repository.PMEpicRepository
 	conversationRepo    *repository.SupportConversationRepository
@@ -124,7 +124,7 @@ func NewAgentRunActivities(
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	storyLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
@@ -159,7 +159,7 @@ func NewAgentRunActivities(
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
-		storyRepo:           storyRepo,
+		taskRepo:           taskRepo,
 		storyLinkRepo:       storyLinkRepo,
 		epicRepo:            epicRepo,
 		conversationRepo:    conversationRepo,
@@ -2949,7 +2949,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 		return fmt.Errorf("parse created task batch: %w", err)
 	}
 
-	tasks, err := a.epicRepo.ListStories(ctx, state.epic.ID)
+	tasks, err := a.epicRepo.ListTasks(ctx, state.epic.ID)
 	if err != nil {
 		return err
 	}
@@ -2969,7 +2969,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 	}
 
 	state.run.OutputSummary, _ = json.Marshal(planningRunSummary{
-		Stage:               model.PlanningStagePlanStories,
+		Stage:               model.PlanningStagePlanTasks,
 		SpecDocumentID:      strings.TrimSpace(firstNonEmptyString(input.SpecDocumentID, derefString(state.epic.SpecDocumentID))),
 		SpecVersionID:       proposal.SpecVersionID,
 		PlanningMethodology: input.PlanningMethodology,
@@ -3057,7 +3057,7 @@ func (a *AgentRunActivities) applyApprovedTaskDocPreview(ctx context.Context, st
 	}
 
 	state.task.PlanDocumentID = &doc.ID
-	if err := a.storyRepo.Update(ctx, state.task); err != nil {
+	if err := a.taskRepo.Update(ctx, state.task); err != nil {
 		return err
 	}
 	input.PlanDocumentID = doc.ID
@@ -3123,7 +3123,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 
 	if run.TaskID != nil {
-		task, err := a.storyRepo.GetRawByID(ctx, *run.TaskID)
+		task, err := a.taskRepo.GetRawByID(ctx, *run.TaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -3191,7 +3191,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			return nil, fmt.Errorf("epic not found")
 		}
 		state.epic = &epicWithStats.Epic
-		epicTasks, err := a.epicRepo.ListStories(ctx, run.TargetID)
+		epicTasks, err := a.epicRepo.ListTasks(ctx, run.TargetID)
 		if err != nil {
 			return nil, err
 		}
@@ -4095,7 +4095,7 @@ func (a *AgentRunActivities) ensureTaskPlanDocument(ctx context.Context, state *
 	}
 
 	state.task.PlanDocumentID = &doc.ID
-	if err := a.storyRepo.Update(ctx, state.task); err != nil {
+	if err := a.taskRepo.Update(ctx, state.task); err != nil {
 		return nil, err
 	}
 	if err := a.ensureTaskPlanLink(ctx, state.run.WorkspaceID, doc.ID, state.task.ID, actorID); err != nil {
@@ -4874,7 +4874,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return err
 			}
 			// TODO(flow-platform): remove direct fallback once all native runs are command-backed.
-			task, err := a.storyRepo.GetRawByID(ctx, storyID)
+			task, err := a.taskRepo.GetRawByID(ctx, storyID)
 			if err != nil {
 				return err
 			}
@@ -4882,7 +4882,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return fmt.Errorf("task not found")
 			}
 			task.WorkflowStateID = stateID
-			return a.storyRepo.Update(ctx, task)
+			return a.taskRepo.Update(ctx, task)
 		},
 		ListChecklist: func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error) {
 			return a.checklistRepo.List(ctx, storyID)
@@ -4937,7 +4937,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return err
 		},
 		ListEpicTasks: func(ctx context.Context, workspaceID, epicID string) ([]workerpkg.EpicTaskSummary, error) {
-			tasks, err := a.epicRepo.ListStories(ctx, epicID)
+			tasks, err := a.epicRepo.ListTasks(ctx, epicID)
 			if err != nil {
 				return nil, err
 			}

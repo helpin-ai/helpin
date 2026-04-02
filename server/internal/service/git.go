@@ -31,7 +31,7 @@ type GitService struct {
 	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	settingsRepo    *repository.SettingsRepository
 	workspaceRepo   *repository.WorkspaceRepository
-	storyRepo       *repository.PMTaskRepository
+	taskRepo       *repository.PMTaskRepository
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	githubApp       *githubapp.Client
@@ -48,7 +48,7 @@ func NewGitService(
 	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	githubApp *githubapp.Client,
@@ -63,7 +63,7 @@ func NewGitService(
 		deliveryRepo:    deliveryRepo,
 		settingsRepo:    settingsRepo,
 		workspaceRepo:   workspaceRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
 		githubApp:       githubApp,
@@ -356,7 +356,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 		return target, nil
 	}
 
-	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	story, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return nil, err
 	}
@@ -623,19 +623,19 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		}
 		_ = s.deliveryRepo.Save(ctx, target)
 
-		story, storyErr := s.storyRepo.GetRawByID(ctx, link.TaskID)
+		story, storyErr := s.taskRepo.GetRawByID(ctx, link.TaskID)
 		if storyErr == nil && story != nil && story.TeamID != nil && *story.TeamID != "" {
 			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates {
 				switch prStatus {
 				case "open":
 					if teamDefault.ReviewStateID != nil {
 						story.WorkflowStateID = *teamDefault.ReviewStateID
-						_ = s.storyRepo.Update(ctx, story)
+						_ = s.taskRepo.Update(ctx, story)
 					}
 				case "merged":
 					if teamDefault.DoneStateID != nil {
 						story.WorkflowStateID = *teamDefault.DoneStateID
-						_ = s.storyRepo.Update(ctx, story)
+						_ = s.taskRepo.Update(ctx, story)
 					}
 				}
 			}

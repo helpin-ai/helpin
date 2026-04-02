@@ -224,7 +224,7 @@ type TaskLabelLinkRequest struct {
 
 // TaskDetail is a task enriched with relation data.
 type TaskDetail struct {
-	Story           PMTask            `json:"task"`
+	Task            PMTask            `json:"task"`
 	Owners          []User            `json:"owners"`
 	Followers       []User            `json:"followers"`
 	OwnerMember     *AssignableMember `json:"owner_member,omitempty"`
@@ -267,13 +267,13 @@ type BoardTask struct {
 type TaskGroup struct {
 	Key     string      `json:"key"`
 	Label   string      `json:"label"`
-	Stories []BoardTask `json:"stories"`
+	Tasks []BoardTask `json:"tasks"`
 }
 
 // TaskStateColumn is the data shape used for board columns.
 type TaskStateColumn struct {
 	State       PMWorkflowState `json:"state"`
-	Stories     []BoardTask     `json:"stories"`
+	Tasks       []BoardTask     `json:"tasks"`
 	TaskGroups  []TaskGroup     `json:"task_groups,omitempty"`
 	TaskCount   int             `json:"task_count"`
 	PointTotal  int             `json:"point_total"`
@@ -283,7 +283,7 @@ type TaskStateColumn struct {
 // TaskMemberColumn is the data shape for member-grouped board columns.
 type TaskMemberColumn struct {
 	Member     *AssignableMember `json:"member"`
-	Stories    []BoardTask       `json:"stories"`
+	Tasks      []BoardTask       `json:"tasks"`
 	TaskCount  int               `json:"task_count"`
 	PointTotal int               `json:"point_total"`
 	HasMore    bool              `json:"has_more"`
@@ -291,7 +291,7 @@ type TaskMemberColumn struct {
 
 // ColumnTasksResponse is the paginated payload for a single board column.
 type ColumnTasksResponse struct {
-	Stories     []BoardTask `json:"stories"`
+	Tasks       []BoardTask `json:"tasks"`
 	TaskGroups  []TaskGroup `json:"task_groups,omitempty"`
 	Total       int         `json:"total"`
 }

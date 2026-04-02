@@ -6,7 +6,7 @@ describe('getStateBoardPreviewInsertIndex', () => {
   it('pins done-column drag previews to the top instead of a hovered slot', () => {
     expect(getStateBoardPreviewInsertIndex({
       toStateType: 'done',
-      overId: 'story-2',
+      overId: 'task-2',
       toStateId: 'state-done',
       overIdx: 1,
       columnLength: 3,
@@ -17,7 +17,7 @@ describe('getStateBoardPreviewInsertIndex', () => {
   it('keeps active-column previews using hovered-slot semantics', () => {
     expect(getStateBoardPreviewInsertIndex({
       toStateType: 'started',
-      overId: 'story-2',
+      overId: 'task-2',
       toStateId: 'state-started',
       overIdx: 1,
       columnLength: 3,
@@ -41,7 +41,7 @@ describe('getSameStateBoardDropIndex', () => {
   it('uses arrayMove semantics when dragging downward over another card', () => {
     expect(getSameStateBoardDropIndex({
       fromIndex: 1,
-      overId: 'story-4',
+      overId: 'task-4',
       stateId: 'state-started',
       overIndex: 3,
       columnLength: 5,
@@ -52,7 +52,7 @@ describe('getSameStateBoardDropIndex', () => {
   it('uses arrayMove semantics when dragging upward over another card', () => {
     expect(getSameStateBoardDropIndex({
       fromIndex: 4,
-      overId: 'story-2',
+      overId: 'task-2',
       stateId: 'state-started',
       overIndex: 1,
       columnLength: 5,
@@ -129,8 +129,8 @@ describe('DragPreviewManager', () => {
     manager.updatePreview(
       'state-todo',
       'state-doing',
-      [{ id: 'story-1' } as never],
-      [{ id: 'story-2' } as never, { id: 'story-1' } as never],
+      [{ id: 'task-1' } as never],
+      [{ id: 'task-2' } as never, { id: 'task-1' } as never],
       1,
     )
 
@@ -143,8 +143,8 @@ describe('DragPreviewManager', () => {
     manager.clearColumnOverrides()
 
     expect(manager.getDropTarget()).toBeNull()
-    expect(manager.getColumnStories('state-todo')).toBeNull()
-    expect(manager.getColumnStories('state-doing')).toBeNull()
+    expect(manager.getColumnTasks('state-todo')).toBeNull()
+    expect(manager.getColumnTasks('state-doing')).toBeNull()
   })
 })
 

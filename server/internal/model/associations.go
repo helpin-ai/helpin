@@ -50,7 +50,7 @@ type TaskRelationshipGroups struct {
 // GroupedAssociationsResponse is the umbrella associations payload for PM and support surfaces.
 type GroupedAssociationsResponse struct {
 	TaskRelationships    TaskRelationshipGroups     `json:"task_relationships"`
-	Stories              []AssociationObjectSummary `json:"stories"`
+	Tasks                []AssociationObjectSummary `json:"tasks"`
 	SupportConversations []AssociationObjectSummary `json:"support_conversations"`
 	CRMRecords           []AssociationObjectSummary `json:"crm_records"`
 	Docs                 []AssociationObjectSummary `json:"docs"`

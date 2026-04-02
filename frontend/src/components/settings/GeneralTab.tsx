@@ -405,7 +405,7 @@ export function GeneralTab({ workspaceId, editable }: {
               <div>
                 <p className="text-sm font-medium">Delete this workspace</p>
                 <p className="text-xs text-muted-foreground">
-                  Permanently delete this workspace and all of its data including stories, epics, sprints, attachments, and settings. This action cannot be undone.
+                  Permanently delete this workspace and all of its data including tasks, epics, sprints, attachments, and settings. This action cannot be undone.
                 </p>
               </div>
               <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
@@ -424,7 +424,7 @@ export function GeneralTab({ workspaceId, editable }: {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              This will permanently delete <span className="font-semibold text-foreground">{workspace?.name}</span> and all of its data including stories, epics, sprints, comments, attachments, and settings. This action cannot be undone.
+              This will permanently delete <span className="font-semibold text-foreground">{workspace?.name}</span> and all of its data including tasks, epics, sprints, comments, attachments, and settings. This action cannot be undone.
             </p>
             <div className="space-y-2">
               <Label htmlFor="delete-confirm">

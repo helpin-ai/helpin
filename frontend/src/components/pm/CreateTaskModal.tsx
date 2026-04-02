@@ -37,7 +37,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, STORY_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateTaskRequest,
   Label,
@@ -90,14 +90,14 @@ interface CreateTaskModalProps {
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<{ id: string } | void>;
-  mode?: 'story' | 'template';
+  mode?: 'task' | 'template';
   editingTemplate?: TaskTemplate | null;
   onSaveTemplate?: (template: TaskTemplate) => void;
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
 const severityOptions: Severity[] = ["none", "minor", "major", "critical"];
-const storyTypeOptions: TaskType[] = ["feature", "bug", "chore"];
+const taskTypeOptions: TaskType[] = ["feature", "bug", "chore"];
 
 interface ChecklistTemplateItem {
   text: string;
@@ -248,7 +248,7 @@ export function CreateTaskModal({
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
-  mode = 'story',
+  mode = 'task',
   editingTemplate,
   onSaveTemplate,
 }: CreateTaskModalProps) {
@@ -264,7 +264,7 @@ export function CreateTaskModal({
   const [descriptionMode, setDescriptionMode] = useState<'rich' | 'markdown'>('rich');
   const [sourceMarkdown, setSourceMarkdown] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [storyTypeDirty, setTaskTypeDirty] = useState(false);
+  const [taskTypeDirty, setTaskTypeDirty] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -355,16 +355,16 @@ export function CreateTaskModal({
     setShowAttachments(false);
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
-    if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
+    if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
     setForm((current) => {
       if (current.task_type === selectedTeamDefaultTaskType) return current;
       return { ...current, task_type: selectedTeamDefaultTaskType };
     });
-  }, [selectedTeamDefaultTaskType, storyTypeDirty, isTemplateMode, editingTemplate]);
+  }, [selectedTeamDefaultTaskType, taskTypeDirty, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (!open) return;
@@ -608,7 +608,7 @@ export function CreateTaskModal({
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
         });
 
-        // Upload pending files after story creation.
+        // Upload pending files after task creation.
         if (result?.id && pendingFiles.length > 0) {
           for (const file of pendingFiles) {
             try {
@@ -625,7 +625,7 @@ export function CreateTaskModal({
                 await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
               }
             } catch {
-              // Non-blocking — story already created
+              // Non-blocking — task already created
             }
           }
         }
@@ -672,7 +672,7 @@ export function CreateTaskModal({
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create story");
+      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create task");
     } finally {
       setSubmitting(false);
     }
@@ -748,7 +748,7 @@ export function CreateTaskModal({
 
               {/* Title */}
               <Input
-                id="story-title"
+                id="task-title"
                 autoFocus
                 placeholder={isTemplateMode ? "Template name" : "Title"}
                 className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
@@ -799,7 +799,7 @@ export function CreateTaskModal({
                       value={sourceMarkdown}
                       onChange={(event) => setSourceMarkdown(event.target.value)}
                       className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
-                      placeholder="## Write the story in Markdown"
+                      placeholder="## Write the task in Markdown"
                       spellCheck={false}
                     />
                   </div>
@@ -1019,7 +1019,7 @@ export function CreateTaskModal({
                 </div>
               )}
 
-              {/* Attachments (story mode only) */}
+              {/* Attachments (task mode only) */}
               {!isTemplateMode && showAttachments && (
                 <div className="shrink-0 rounded-lg border border-border/60 bg-background">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
@@ -1305,7 +1305,7 @@ export function CreateTaskModal({
                 <MetadataRow icon={Hash} label="Type">
                   <SidebarPopoverSelect
                     value={form.task_type}
-                    options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
+                    options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
                     onChange={(value) => {
                       setTaskTypeDirty(true);
                       setForm((prev) => ({ ...prev, task_type: value as TaskType }));
@@ -1313,10 +1313,10 @@ export function CreateTaskModal({
                     renderTrigger={() => (
                       <span className="inline-flex min-w-0 items-center gap-1.5">
                         <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{STORY_TYPE_CONFIG[form.task_type].label}</span>
+                        <span className="truncate">{TASK_TYPE_CONFIG[form.task_type].label}</span>
                       </span>
                     )}
-                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as TaskType].label}</span></>}
+                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
                   />
                 </MetadataRow>
                 )}
@@ -1462,12 +1462,12 @@ export function CreateTaskModal({
               <DialogHeader>
                 <DialogTitle>Configure recurrence</DialogTitle>
                 <DialogDescription>
-                  Automatically create copies of this story on a schedule.
+                  Automatically create copies of this task on a schedule.
                 </DialogDescription>
               </DialogHeader>
               <RecurringTemplateForm
                 initialValue={recurringDraft ?? {
-                  title: form.name.trim() || 'Recurring story',
+                  title: form.name.trim() || 'Recurring task',
                   description: '',
                   config: {
                     schedule_type: 'time',

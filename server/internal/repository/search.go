@@ -23,7 +23,7 @@ const searchLimit = 20
 func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string) (*model.SearchResponse, error) {
 	if query == "" {
 		return &model.SearchResponse{
-			Stories:    []model.SearchResult{},
+			Tasks:      []model.SearchResult{},
 			Epics:      []model.SearchResult{},
 			Sprints:    []model.SearchResult{},
 			Objectives: []model.SearchResult{},
@@ -171,7 +171,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	}
 
 	return &model.SearchResponse{
-		Stories:    stories,
+		Tasks:      stories,
 		Epics:      epics,
 		Sprints:    sprints,
 		Objectives: objectives,

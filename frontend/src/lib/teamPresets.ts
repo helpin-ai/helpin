@@ -1,11 +1,11 @@
 export type TeamType = 'engineering' | 'custom';
 
-export type DefaultStoryType = 'feature' | 'bug' | 'chore';
+export type DefaultTaskType = 'feature' | 'bug' | 'chore';
 
 export type VisibilityFieldKey = 'priority' | 'task_type' | 'severity' | 'labels' | 'epic' | 'sprint' | 'estimate' | 'due_date' | 'blocked' | 'delivery' | 'dev_history';
 
 interface TeamPreset {
-  defaultStoryType: DefaultStoryType;
+  defaultTaskType: DefaultTaskType;
   estimate: {
     enabled: boolean;
     scale: 'exponential' | 'fibonacci' | 'linear' | 'tshirt' | 'hours';
@@ -16,8 +16,8 @@ interface TeamPreset {
 }
 
 export const TEAM_TYPE_PRESETS: Record<TeamType, TeamPreset> = {
-  engineering: { defaultStoryType: 'feature', estimate: { enabled: true, scale: 'fibonacci', extended: false, allow_zero: false, count_unestimated_as_one: true } },
-  custom: { defaultStoryType: 'feature', estimate: { enabled: false, scale: 'linear', extended: false, allow_zero: false, count_unestimated_as_one: true } },
+  engineering: { defaultTaskType: 'feature', estimate: { enabled: true, scale: 'fibonacci', extended: false, allow_zero: false, count_unestimated_as_one: true } },
+  custom: { defaultTaskType: 'feature', estimate: { enabled: false, scale: 'linear', extended: false, allow_zero: false, count_unestimated_as_one: true } },
 };
 
 export const WORKSPACE_TEAM_SUGGESTIONS: { name: string; teamType: TeamType; selected: boolean }[] = [
