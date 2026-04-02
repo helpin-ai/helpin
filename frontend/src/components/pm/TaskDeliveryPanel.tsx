@@ -582,7 +582,8 @@ function isTaskDeliveryAgent(agent: { preset_key?: string; allowed_targets?: str
     agent.preset_key === 'review_agent';
 }
 
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
+  if (agent.role) return agent.role;
   switch (agent.preset_key) {
     case 'code_builder':
       return 'Code Builder';

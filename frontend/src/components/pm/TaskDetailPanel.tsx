@@ -1147,7 +1147,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={taskDetail.task.display_id} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskName={taskDetail.task.name} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1648,7 +1648,8 @@ export function TaskDetailPanel({
   );
 }
 
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
+  if (agent.role) return agent.role;
   switch (agent.preset_key) {
     case 'code_builder':
       return 'Code Builder';

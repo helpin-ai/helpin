@@ -150,7 +150,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
                   <SelectItem key={agent.id} value={agent.id}>
                     <div className="flex items-center gap-2">
                       <AgentAvatar agent={agent} className="h-5 w-5" />
-                      <span>{agent.is_system ? `${agent.name} (System)` : agent.name}</span>
+                      <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
                     </div>
                   </SelectItem>
                 ))}
