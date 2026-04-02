@@ -15,17 +15,7 @@ import (
 func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	stubs := []string{
-		`CREATE TABLE IF NOT EXISTS reward_company_goals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_goal_team_contributions (id TEXT PRIMARY KEY, goal_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_sprints (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_sprint_goals (id TEXT PRIMARY KEY, sprint_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS reward_profiles (id TEXT PRIMARY KEY, workspace_member_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_bonus_calculations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_individual_checks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_finance_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_audit_log (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_goal_drafts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS reward_quarters (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
@@ -48,7 +38,6 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS workspace_managers (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS job_role_criteria (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS bonus_tiers (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 	}
 	for _, stmt := range stubs {
 		if err := db.Exec(stmt).Error; err != nil {

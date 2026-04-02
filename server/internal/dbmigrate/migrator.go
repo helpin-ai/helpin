@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -97,6 +98,216 @@ func Status(ctx context.Context, db *sql.DB) ([]StatusRow, error) {
 
 		return rows, nil
 	})
+}
+
+// Head returns the latest applied migration, or nil if none have been applied.
+func Head(ctx context.Context, db *sql.DB) (*StatusRow, error) {
+	return withLockedConnResult(ctx, db, func(conn *sql.Conn) (*StatusRow, error) {
+		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
+			return nil, err
+		}
+
+		var version, name string
+		var appliedAt time.Time
+		err := conn.QueryRowContext(ctx,
+			`SELECT version, name, applied_at FROM schema_migrations ORDER BY version DESC LIMIT 1`,
+		).Scan(&version, &name, &appliedAt)
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("query head migration: %w", err)
+		}
+
+		ts := appliedAt
+		return &StatusRow{
+			Version:   version,
+			Name:      name,
+			Applied:   true,
+			AppliedAt: &ts,
+		}, nil
+	})
+}
+
+// Repair recalculates checksums for all applied migrations to match
+// the current file contents. This fixes checksum mismatches caused by
+// post-apply edits to migration files.
+func Repair(ctx context.Context, db *sql.DB) (int, error) {
+	return withLockedConnResult(ctx, db, func(conn *sql.Conn) (int, error) {
+		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
+			return 0, err
+		}
+
+		migrations, err := loadMigrations()
+		if err != nil {
+			return 0, err
+		}
+
+		applied, err := loadAppliedMigrations(ctx, conn)
+		if err != nil {
+			return 0, err
+		}
+
+		repaired := 0
+		for _, migration := range migrations {
+			existing, ok := applied[migration.Version]
+			if !ok || existing.Checksum == migration.Checksum {
+				continue
+			}
+			if _, err := conn.ExecContext(ctx,
+				`UPDATE schema_migrations SET checksum = $1 WHERE version = $2`,
+				migration.Checksum, migration.Version,
+			); err != nil {
+				return repaired, fmt.Errorf("update checksum for %s: %w", migration.Version, err)
+			}
+			repaired++
+		}
+
+		return repaired, nil
+	})
+}
+
+// ValidationIssue describes a single problem found by Validate.
+type ValidationIssue struct {
+	Version string
+	Name    string
+	Kind    string // "checksum_mismatch" or "pending"
+}
+
+// Validate checks for checksum mismatches and pending migrations without
+// modifying anything. Returns issues found; an empty slice means everything
+// is clean.
+func Validate(ctx context.Context, db *sql.DB) ([]ValidationIssue, error) {
+	return withLockedConnResult(ctx, db, func(conn *sql.Conn) ([]ValidationIssue, error) {
+		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
+			return nil, err
+		}
+
+		migrations, err := loadMigrations()
+		if err != nil {
+			return nil, err
+		}
+
+		applied, err := loadAppliedMigrations(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+
+		var issues []ValidationIssue
+		for _, migration := range migrations {
+			existing, ok := applied[migration.Version]
+			if !ok {
+				issues = append(issues, ValidationIssue{
+					Version: migration.Version,
+					Name:    migration.Name,
+					Kind:    "pending",
+				})
+				continue
+			}
+			if existing.Checksum != migration.Checksum {
+				issues = append(issues, ValidationIssue{
+					Version: migration.Version,
+					Name:    migration.Name,
+					Kind:    "checksum_mismatch",
+				})
+			}
+		}
+
+		return issues, nil
+	})
+}
+
+// Pending returns only unapplied migrations.
+func Pending(ctx context.Context, db *sql.DB) ([]StatusRow, error) {
+	return withLockedConnResult(ctx, db, func(conn *sql.Conn) ([]StatusRow, error) {
+		if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
+			return nil, err
+		}
+
+		migrations, err := loadMigrations()
+		if err != nil {
+			return nil, err
+		}
+
+		applied, err := loadAppliedMigrations(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+
+		var pending []StatusRow
+		for _, migration := range migrations {
+			if _, ok := applied[migration.Version]; !ok {
+				pending = append(pending, StatusRow{
+					Version: migration.Version,
+					Name:    migration.Name,
+				})
+			}
+		}
+
+		return pending, nil
+	})
+}
+
+// Create scaffolds a new migration SQL file in the given directory using the
+// naming convention YYYYMMDDNNNN_name.sql. It auto-increments the sequence
+// number based on existing files for today's date. Returns the created file path.
+func Create(dir string, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("migration name is required")
+	}
+
+	// Sanitize: lowercase, replace spaces/hyphens with underscores, strip invalid chars.
+	sanitized := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			return r
+		}
+		if r >= 'A' && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		if r == ' ' || r == '-' {
+			return '_'
+		}
+		return -1
+	}, name)
+	if sanitized == "" {
+		return "", fmt.Errorf("migration name %q contains no valid characters", name)
+	}
+
+	// Determine today's date prefix and next sequence number.
+	datePrefix := time.Now().UTC().Format("20060102")
+	seq := 1
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read migration directory %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" {
+			continue
+		}
+		version, _, ok := parseMigrationName(entry.Name())
+		if !ok || !strings.HasPrefix(version, datePrefix) {
+			continue
+		}
+		// Extract sequence from version (last 4 digits).
+		seqStr := version[len(datePrefix):]
+		var n int
+		if _, err := fmt.Sscanf(seqStr, "%d", &n); err == nil && n >= seq {
+			seq = n + 1
+		}
+	}
+
+	version := fmt.Sprintf("%s%04d", datePrefix, seq)
+	filename := fmt.Sprintf("%s_%s.sql", version, sanitized)
+	path := filepath.Join(dir, filename)
+
+	content := fmt.Sprintf("-- Migration: %s\n", sanitized)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write migration file: %w", err)
+	}
+
+	return path, nil
 }
 
 type appliedMigration struct {
