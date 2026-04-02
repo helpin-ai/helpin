@@ -202,6 +202,21 @@
   display: none;
 }
 
+/* Global scrollbar: transparent track, no rail lines */
+* {
+  scrollbar-color: oklch(0.7 0 0 / 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+/* Scrollbar hidden at rest, appears on hover — no layout shift */
+.scrollbar-hover {
+  scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
+}
+.scrollbar-hover:hover {
+  scrollbar-color: oklch(0.7 0 0 / 0.35) transparent;
+}
+
 /* Tiptap editor styles */
 .tiptap {
   outline: none;
