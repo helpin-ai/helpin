@@ -90,8 +90,9 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Verify KStreams runtime image
         run: |
-          docker run --rm --entrypoint java helpin-eventpipeline-kstreams:verify -version
+          docker run --rm --entrypoint /usr/bin/java helpin-eventpipeline-kstreams:verify -version
           docker run --rm --entrypoint sh helpin-eventpipeline-kstreams:verify -c 'test -f /app/app.jar'
+          docker run --rm -e PATH=/tmp helpin-eventpipeline-kstreams:verify -version
       - name: Build and push KStreams image
         uses: docker/build-push-action@v5
         with:
@@ -118,7 +119,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: "Events Pipeline ${{ needs.version.outputs.version }}"
+          name: "Release: Events Pipeline ${{ needs.version.outputs.version }}"
           generate_release_notes: true
       - name: Update K8s manifests
         run: |
