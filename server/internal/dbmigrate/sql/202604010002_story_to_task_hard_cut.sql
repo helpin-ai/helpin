@@ -303,6 +303,9 @@ DECLARE
     constraint_name text;
 BEGIN
     IF to_regclass('public.pm_comments') IS NOT NULL THEN
+        -- Backfill entity_type BEFORE altering the constraint
+        UPDATE pm_comments SET entity_type = 'task' WHERE entity_type = 'story';
+
         SELECT c.conname
           INTO constraint_name
           FROM pg_constraint c
@@ -345,9 +348,7 @@ END $$;
 
 DO $$
 BEGIN
-    IF to_regclass('public.pm_comments') IS NOT NULL THEN
-        UPDATE pm_comments SET entity_type = 'task' WHERE entity_type = 'story';
-    END IF;
+    -- pm_comments backfill already handled above (before CHECK constraint)
 
     IF to_regclass('public.pm_activity_log') IS NOT NULL THEN
         UPDATE pm_activity_log SET entity_type = 'task' WHERE entity_type = 'story';
