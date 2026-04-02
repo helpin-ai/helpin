@@ -5,6 +5,7 @@ import type { SpecClarification } from './project';
 export type AgentPresetKey =
   | 'epic_planner'
   | 'story_planner'
+  | 'task_planner'
   | 'crm_operator'
   | 'support_agent'
   | 'code_builder'
@@ -13,7 +14,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
+export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
@@ -40,6 +41,7 @@ export interface Agent {
   tools: unknown[];
   monthly_token_budget?: number;
   tokens_used_this_month: number;
+  active_task_id?: string;
   active_story_id?: string;
   team_id?: string;
   allowed_tools: string[];
@@ -60,6 +62,7 @@ export interface AgentRun {
   id: string;
   workspace_id: string;
   agent_id: string;
+  task_id?: string;
   story_id?: string;
   conversation_id?: string;
   target_type: AgentTargetType;
@@ -154,13 +157,15 @@ export interface CodexAuthState {
   updated_at: string;
 }
 
-export interface StoryImplementationBrief {
+export interface TaskImplementationBrief {
   approach: string;
   files_to_modify: FileChange[];
   test_strategy: string;
   vertical_layers?: string[];
   depends_on_files?: string[];
 }
+
+export type StoryImplementationBrief = TaskImplementationBrief;
 
 export interface FileChange {
   path: string;
@@ -170,15 +175,17 @@ export interface FileChange {
 
 export interface VerticalCoverageEntry {
   behavior: string;
-  story_refs: string[];
+  task_refs: string[];
+  story_refs?: string[];
   full_slice: boolean;
 }
 
-export interface ProposedStory {
+export interface ProposedTask {
   ref?: string;
   name: string;
   description: string;
-  story_type: string;
+  task_type: string;
+  story_type?: string;
   estimate?: number;
   priority?: string;
   acceptance_criteria?: string[];
@@ -186,8 +193,10 @@ export interface ProposedStory {
   source_refs?: PlanningSourceRef[];
   assign_agent_id?: string;
   slice_type?: 'vertical' | 'enabler' | 'spike';
-  implementation_brief?: StoryImplementationBrief;
+  implementation_brief?: TaskImplementationBrief;
 }
+
+export type ProposedStory = ProposedTask;
 
 export interface PlanningSourceRef {
   type: string;
@@ -199,7 +208,8 @@ export interface OrchestrationProposal {
   epic_id: string;
   summary: string;
   spec_version_id?: string;
-  proposed_stories: ProposedStory[];
+  proposed_tasks: ProposedTask[];
+  proposed_stories?: ProposedStory[];
   open_questions?: string[];
   risks?: string[];
   vertical_coverage?: VerticalCoverageEntry[];

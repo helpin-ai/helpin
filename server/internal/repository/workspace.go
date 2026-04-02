@@ -147,7 +147,7 @@ func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, descr
 func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Helper subqueries for indirect children.
-		storyQ := "SELECT id FROM pm_stories WHERE workspace_id = ?"
+		storyQ := "SELECT id FROM pm_tasks WHERE workspace_id = ?"
 		epicQ := "SELECT id FROM pm_epics WHERE workspace_id = ?"
 		sprintQ := "SELECT id FROM pm_sprints WHERE workspace_id = ?"
 		objectiveQ := "SELECT id FROM pm_objectives WHERE workspace_id = ?"
@@ -163,11 +163,11 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			// ── Phase 1: Indirect children (via subqueries) ──
 
 			// Story children
-			"DELETE FROM pm_story_owners WHERE story_id IN (" + storyQ + ")",
-			"DELETE FROM pm_story_followers WHERE story_id IN (" + storyQ + ")",
-			"DELETE FROM pm_story_labels WHERE story_id IN (" + storyQ + ")",
-			"DELETE FROM pm_checklist_items WHERE story_id IN (" + storyQ + ")",
-			"DELETE FROM pm_external_links WHERE story_id IN (" + storyQ + ")",
+			"DELETE FROM pm_task_owners WHERE task_id IN (" + storyQ + ")",
+			"DELETE FROM pm_task_followers WHERE task_id IN (" + storyQ + ")",
+			"DELETE FROM pm_task_labels WHERE task_id IN (" + storyQ + ")",
+			"DELETE FROM pm_checklist_items WHERE task_id IN (" + storyQ + ")",
+			"DELETE FROM pm_external_links WHERE task_id IN (" + storyQ + ")",
 
 			// Comments (polymorphic via entity_id on stories and epics)
 			"DELETE FROM pm_comments WHERE entity_id IN (" + storyQ + ") OR entity_id IN (" + epicQ + ")",
@@ -211,7 +211,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			// PM module
 			"DELETE FROM pm_attachments WHERE workspace_id = ?",
 			"DELETE FROM pm_activity_log WHERE workspace_id = ?",
-			"DELETE FROM pm_stories WHERE workspace_id = ?",
+			"DELETE FROM pm_tasks WHERE workspace_id = ?",
 			"DELETE FROM pm_epics WHERE workspace_id = ?",
 			"DELETE FROM pm_sprints WHERE workspace_id = ?",
 			"DELETE FROM pm_labels WHERE workspace_id = ?",

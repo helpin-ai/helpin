@@ -11,10 +11,10 @@ var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:               model.AgentPresetCodeBuilder,
 		RuntimeKind:        "opencode",
-		Description:        "Story-only code implementation with repository, git, and validation tools.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
+		Description:        "Task-only code implementation with repository, git, and validation tools.",
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr", "add_task_comment", "update_task_state", "list_task_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc", "rg"},
-		AllowedTargetTypes: []string{"story"},
+		AllowedTargetTypes: []string{"task"},
 		ApprovalRequired:   false,
 		RequiresRepo:       true,
 	},
@@ -22,19 +22,19 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Name:               model.AgentPresetEpicPlanner,
 		RuntimeKind:        "native_sdk",
 		Description:        "Cross-module product planning and review with repository-aware read access, versioned preview artifacts, and optional web research.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search_brave", "request_user_input", "request_review_checkpoint", "update_plan", "publish_prd_draft", "publish_story_plan", "publish_story_plan_doc", "add_story_comment", "list_story_checklist", "list_epic_stories", "list_workspace_teams", "list_documents", "read_document", "search_documents", "list_deals", "list_contacts", "list_buyer_signals"},
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search_brave", "request_user_input", "request_review_checkpoint", "update_plan", "publish_prd_draft", "publish_task_plan", "publish_task_plan_doc", "add_task_comment", "list_task_checklist", "list_epic_tasks", "list_workspace_teams", "list_documents", "read_document", "search_documents", "list_deals", "list_contacts", "list_buyer_signals"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
-		AllowedTargetTypes: []string{"epic", "story", "crm_deal"},
+		AllowedTargetTypes: []string{"epic", "task", "crm_deal"},
 		ApprovalRequired:   false,
 		RequiresRepo:       false,
 	},
 	{
 		Name:               model.AgentPresetReviewAgent,
 		RuntimeKind:        "opencode",
-		Description:        "Story-only validation and test execution with no repository mutation tools.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "add_story_comment", "list_story_checklist"},
+		Description:        "Task-only validation and test execution with no repository mutation tools.",
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "add_task_comment", "list_task_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
-		AllowedTargetTypes: []string{"story"},
+		AllowedTargetTypes: []string{"task"},
 		ApprovalRequired:   false,
 		RequiresRepo:       true,
 	},
@@ -72,7 +72,7 @@ func normalizeRuntimeProfileName(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "engineer", "coder", model.AgentPresetCodeBuilder:
 		return model.AgentPresetCodeBuilder
-	case "planner", "orchestrator", "product_planner", model.AgentPresetEpicPlanner, model.AgentPresetStoryPlanner, model.AgentPresetCRMOperator:
+	case "planner", "orchestrator", "product_planner", model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator:
 		return model.AgentPresetEpicPlanner
 	case "reviewer", "reviewer_tester", model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent

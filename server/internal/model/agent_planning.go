@@ -8,13 +8,15 @@ import (
 
 const (
 	PlanningStageDraftSpec    = "draft_spec"
-	PlanningStagePlanStories  = "plan_stories"
-	PlanningStageStoryPlanDoc = "story_plan_doc"
+	PlanningStagePlanStories   = "plan_stories"
+	PlanningStageStoryPlanDoc  = "story_plan_doc"
+	PlanningStageTaskPlanDoc   = "task_plan_doc"
 
-	EpicPlanningStateNotStarted            = "not_started"
+	EpicPlanningStateNotStarted          = "not_started"
 	EpicPlanningStateAwaitingClarification = "awaiting_spec_clarification"
 	EpicPlanningStateAwaitingSpecApproval  = "awaiting_spec_approval"
-	EpicPlanningStateReadyForStoryPlanning = "ready_for_story_planning"
+	EpicPlanningStateReadyForTaskPlanning  = "ready_for_task_planning"
+	EpicPlanningStateReadyForStoryPlanning = "ready_for_story_planning" // compat alias
 	EpicPlanningStateAwaitingPlanApproval  = "awaiting_plan_approval"
 	EpicPlanningStateStoriesCreated        = "stories_created"
 	EpicPlanningStateExecutionStarted      = "execution_started"
@@ -41,41 +43,41 @@ type SpecClarificationItem struct {
 	Response    string `json:"response,omitempty"`
 }
 
-// ProposedStory is a reviewable planning output before confirmation.
-type ProposedStory struct {
-	Ref                 string                    `json:"ref,omitempty"`
-	Name                string                    `json:"name"`
-	Description         string                    `json:"description"`
-	StoryType           string                    `json:"story_type"`
-	Estimate            *int                      `json:"estimate"`
-	Priority            *string                   `json:"priority,omitempty"`
-	AcceptanceCriteria  []string                  `json:"acceptance_criteria,omitempty"`
-	DependencyRefs      []string                  `json:"dependency_refs,omitempty"`
-	SourceRefs          []PlanningSourceRef       `json:"source_refs,omitempty"`
-	AssignAgentID       *string                   `json:"assign_agent_id,omitempty"`
-	SliceType           string                    `json:"slice_type,omitempty"`
-	ImplementationBrief *StoryImplementationBrief `json:"implementation_brief,omitempty"`
+// ProposedTask is a reviewable planning output before confirmation.
+type ProposedTask struct {
+	Ref                 string                   `json:"ref,omitempty"`
+	Name                string                   `json:"name"`
+	Description         string                   `json:"description"`
+	StoryType           string                   `json:"story_type"`
+	Estimate            *int                     `json:"estimate"`
+	Priority            *string                  `json:"priority,omitempty"`
+	AcceptanceCriteria  []string                 `json:"acceptance_criteria,omitempty"`
+	DependencyRefs      []string                 `json:"dependency_refs,omitempty"`
+	SourceRefs          []PlanningSourceRef      `json:"source_refs,omitempty"`
+	AssignAgentID       *string                  `json:"assign_agent_id,omitempty"`
+	SliceType           string                   `json:"slice_type,omitempty"`
+	ImplementationBrief *TaskImplementationBrief `json:"implementation_brief,omitempty"`
 }
 
-func (p *ProposedStory) UnmarshalJSON(data []byte) error {
-	type rawProposedStory struct {
-		Ref                 string                    `json:"ref,omitempty"`
-		Name                string                    `json:"name"`
-		Title               string                    `json:"title"`
-		Description         string                    `json:"description"`
-		StoryType           string                    `json:"story_type"`
-		Type                string                    `json:"type"`
-		Estimate            *int                      `json:"estimate"`
-		Priority            *string                   `json:"priority,omitempty"`
-		AcceptanceCriteria  []string                  `json:"acceptance_criteria,omitempty"`
-		DependencyRefs      []string                  `json:"dependency_refs,omitempty"`
-		SourceRefs          []PlanningSourceRef       `json:"source_refs,omitempty"`
-		AssignAgentID       *string                   `json:"assign_agent_id,omitempty"`
-		SliceType           string                    `json:"slice_type,omitempty"`
-		ImplementationBrief *StoryImplementationBrief `json:"implementation_brief,omitempty"`
+func (p *ProposedTask) UnmarshalJSON(data []byte) error {
+	type rawProposedTask struct {
+		Ref                 string                   `json:"ref,omitempty"`
+		Name                string                   `json:"name"`
+		Title               string                   `json:"title"`
+		Description         string                   `json:"description"`
+		StoryType           string                   `json:"story_type"`
+		Type                string                   `json:"type"`
+		Estimate            *int                     `json:"estimate"`
+		Priority            *string                  `json:"priority,omitempty"`
+		AcceptanceCriteria  []string                 `json:"acceptance_criteria,omitempty"`
+		DependencyRefs      []string                 `json:"dependency_refs,omitempty"`
+		SourceRefs          []PlanningSourceRef      `json:"source_refs,omitempty"`
+		AssignAgentID       *string                  `json:"assign_agent_id,omitempty"`
+		SliceType           string                   `json:"slice_type,omitempty"`
+		ImplementationBrief *TaskImplementationBrief `json:"implementation_brief,omitempty"`
 	}
 
-	var raw rawProposedStory
+	var raw rawProposedTask
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
@@ -95,8 +97,8 @@ func (p *ProposedStory) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// StoryImplementationBrief gives the coding agent a concrete build plan for a story.
-type StoryImplementationBrief struct {
+// TaskImplementationBrief gives the coding agent a concrete build plan for a task.
+type TaskImplementationBrief struct {
 	Approach       string       `json:"approach"`
 	FilesToModify  []FileChange `json:"files_to_modify"`
 	TestStrategy   string       `json:"test_strategy"`
@@ -104,8 +106,8 @@ type StoryImplementationBrief struct {
 	DependsOnFiles []string     `json:"depends_on_files,omitempty"`
 }
 
-func (b *StoryImplementationBrief) UnmarshalJSON(data []byte) error {
-	type rawStoryImplementationBrief struct {
+func (b *TaskImplementationBrief) UnmarshalJSON(data []byte) error {
+	type rawTaskImplementationBrief struct {
 		Approach       string          `json:"approach"`
 		FilesToModify  []FileChange    `json:"files_to_modify"`
 		TestStrategy   json.RawMessage `json:"test_strategy"`
@@ -113,7 +115,7 @@ func (b *StoryImplementationBrief) UnmarshalJSON(data []byte) error {
 		DependsOnFiles []string        `json:"depends_on_files,omitempty"`
 	}
 
-	var raw rawStoryImplementationBrief
+	var raw rawTaskImplementationBrief
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
@@ -188,44 +190,44 @@ type OrchestrationProposal struct {
 	EpicID           string                  `json:"epic_id"`
 	Summary          string                  `json:"summary"`
 	SpecVersionID    string                  `json:"spec_version_id,omitempty"`
-	ProposedStories  []ProposedStory         `json:"proposed_stories"`
+	ProposedStories  []ProposedTask          `json:"proposed_stories"`
 	OpenQuestions    []string                `json:"open_questions,omitempty"`
 	Risks            []string                `json:"risks,omitempty"`
 	VerticalCoverage []VerticalCoverageEntry `json:"vertical_coverage,omitempty"`
 	TokensUsed       int                     `json:"tokens_used"`
 }
 
-func NormalizeProposedStories(stories []ProposedStory) error {
-	refToIdx := make(map[string]int, len(stories))
-	for idx := range stories {
-		stories[idx].Ref = strings.TrimSpace(stories[idx].Ref)
-		stories[idx].Name = strings.TrimSpace(stories[idx].Name)
-		stories[idx].Description = strings.TrimSpace(stories[idx].Description)
-		stories[idx].StoryType = strings.TrimSpace(stories[idx].StoryType)
-		stories[idx].SliceType = strings.TrimSpace(stories[idx].SliceType)
+func NormalizeProposedTasks(tasks []ProposedTask) error {
+	refToIdx := make(map[string]int, len(tasks))
+	for idx := range tasks {
+		tasks[idx].Ref = strings.TrimSpace(tasks[idx].Ref)
+		tasks[idx].Name = strings.TrimSpace(tasks[idx].Name)
+		tasks[idx].Description = strings.TrimSpace(tasks[idx].Description)
+		tasks[idx].StoryType = strings.TrimSpace(tasks[idx].StoryType)
+		tasks[idx].SliceType = strings.TrimSpace(tasks[idx].SliceType)
 
-		if stories[idx].Name == "" {
+		if tasks[idx].Name == "" {
 			return fmt.Errorf("story %d is missing name; use field \"name\" for the story title", idx+1)
 		}
 
-		filteredCriteria := make([]string, 0, len(stories[idx].AcceptanceCriteria))
-		for _, item := range stories[idx].AcceptanceCriteria {
+		filteredCriteria := make([]string, 0, len(tasks[idx].AcceptanceCriteria))
+		for _, item := range tasks[idx].AcceptanceCriteria {
 			item = strings.TrimSpace(item)
 			if item != "" {
 				filteredCriteria = append(filteredCriteria, item)
 			}
 		}
-		stories[idx].AcceptanceCriteria = filteredCriteria
+		tasks[idx].AcceptanceCriteria = filteredCriteria
 		if len(filteredCriteria) == 0 {
 			return fmt.Errorf("story %d is missing acceptance_criteria; provide at least one acceptance criterion", idx+1)
 		}
 
-		stories[idx].DependencyRefs = filterNonEmptyPlannerStrings(stories[idx].DependencyRefs)
-		if stories[idx].Ref == "" {
-			stories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+		tasks[idx].DependencyRefs = filterNonEmptyPlannerStrings(tasks[idx].DependencyRefs)
+		if tasks[idx].Ref == "" {
+			tasks[idx].Ref = fmt.Sprintf("story_%d", idx+1)
 		}
 
-		if brief := stories[idx].ImplementationBrief; brief != nil {
+		if brief := tasks[idx].ImplementationBrief; brief != nil {
 			brief.Approach = strings.TrimSpace(brief.Approach)
 			brief.TestStrategy = strings.TrimSpace(brief.TestStrategy)
 			brief.VerticalLayers = filterNonEmptyPlannerStrings(brief.VerticalLayers)
@@ -243,13 +245,13 @@ func NormalizeProposedStories(stories []ProposedStory) error {
 			brief.FilesToModify = files
 		}
 
-		if prev, exists := refToIdx[stories[idx].Ref]; exists {
-			return fmt.Errorf("story refs must be unique; stories %d and %d both use ref %q", prev+1, idx+1, stories[idx].Ref)
+		if prev, exists := refToIdx[tasks[idx].Ref]; exists {
+			return fmt.Errorf("story refs must be unique; stories %d and %d both use ref %q", prev+1, idx+1, tasks[idx].Ref)
 		}
-		refToIdx[stories[idx].Ref] = idx
+		refToIdx[tasks[idx].Ref] = idx
 	}
 
-	visited := make(map[string]uint8, len(stories))
+	visited := make(map[string]uint8, len(tasks))
 	var visit func(ref string) error
 	visit = func(ref string) error {
 		switch visited[ref] {
@@ -259,8 +261,8 @@ func NormalizeProposedStories(stories []ProposedStory) error {
 			return nil
 		}
 		visited[ref] = 1
-		story := stories[refToIdx[ref]]
-		for _, depRef := range story.DependencyRefs {
+		task := tasks[refToIdx[ref]]
+		for _, depRef := range task.DependencyRefs {
 			if _, ok := refToIdx[depRef]; !ok {
 				return fmt.Errorf("story %d references unknown dependency ref %q in dependency_refs", refToIdx[ref]+1, depRef)
 			}
@@ -275,15 +277,15 @@ func NormalizeProposedStories(stories []ProposedStory) error {
 		return nil
 	}
 
-	for _, story := range stories {
-		if err := visit(story.Ref); err != nil {
+	for _, task := range tasks {
+		if err := visit(task.Ref); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// VerticalCoverageEntry maps a user-facing behavior to the stories that deliver it.
+// VerticalCoverageEntry maps a user-facing behavior to the tasks that deliver it.
 type VerticalCoverageEntry struct {
 	Behavior  string   `json:"behavior"`
 	StoryRefs []string `json:"story_refs"`
@@ -307,10 +309,10 @@ type PlanningResearchSource struct {
 	PublishedAt string `json:"published_at,omitempty"`
 }
 
-// ConfirmPlanningRequest confirms a story plan and optionally edits proposed stories first.
+// ConfirmPlanningRequest confirms a task plan and optionally edits proposed tasks first.
 type ConfirmPlanningRequest struct {
-	RunID           string          `json:"run_id"`
-	ProposedStories []ProposedStory `json:"proposed_stories"`
+	RunID          string         `json:"run_id"`
+	ProposedStories []ProposedTask `json:"proposed_stories"`
 }
 
 type ApprovedSpecSummary struct {

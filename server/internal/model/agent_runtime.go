@@ -15,16 +15,16 @@ type ToolInvocation struct {
 	DurationMs    int64           `json:"duration_ms"`
 }
 
-type StoryCompletionFollowupProposal struct {
+type TaskCompletionFollowupProposal struct {
 	Title       string  `json:"title"`
 	Description string  `json:"description,omitempty"`
 	StoryType   string  `json:"story_type,omitempty"`
 	Priority    *string `json:"priority,omitempty"`
 }
 
-type StoryCompletionAssessment struct {
-	Summary   string                            `json:"summary"`
-	Followups []StoryCompletionFollowupProposal `json:"followups,omitempty"`
+type TaskCompletionAssessment struct {
+	Summary   string                          `json:"summary"`
+	Followups []TaskCompletionFollowupProposal `json:"followups,omitempty"`
 }
 
 type CRMDealReviewActionPlan struct {

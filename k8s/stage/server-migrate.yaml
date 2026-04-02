@@ -30,14 +30,7 @@ spec:
       containers:
         - name: migrate
           image: ghcr.io/helpin-ai/helpin/server:stage-latest
-          command:
-            - /bin/sh
-            - -lc
-            - |
-              if [ -x ./migrate ]; then
-                exec ./migrate up
-              fi
-              echo "migrate binary not present in image; skipping bootstrap hook"
+          command: ["./migrate", "up"]
           envFrom:
             - secretRef:
                 name: helpin-secrets

@@ -82,10 +82,10 @@ type UpdateSprintRequest struct {
 
 // PMSprintStats contains derived sprint progress metrics.
 type PMSprintStats struct {
-	StoryCount     int `json:"story_count"`
-	DoneStoryCount int `json:"done_story_count"`
-	TotalPoints    int `json:"total_points"`
-	DonePoints     int `json:"done_points"`
+	TaskCount     int `json:"task_count"`
+	DoneTaskCount int `json:"done_task_count"`
+	TotalPoints   int `json:"total_points"`
+	DonePoints    int `json:"done_points"`
 }
 
 // SprintWithStats is a sprint with computed progress metrics.
@@ -95,8 +95,8 @@ type SprintWithStats struct {
 	Stats  PMSprintStats `json:"stats"`
 }
 
-// SprintPlanningStoryPreview is the lightweight story payload used by the sprint planning page.
-type SprintPlanningStoryPreview struct {
+// SprintPlanningTaskPreview is the lightweight task payload used by the sprint planning page.
+type SprintPlanningTaskPreview struct {
 	ID              string  `json:"id"`
 	DisplayID       int     `json:"display_id"`
 	Name            string  `json:"name"`
@@ -114,8 +114,8 @@ type SprintPlanningStoryPreview struct {
 type SprintPlanningCard struct {
 	Sprint               PMSprint                     `json:"sprint"`
 	Stats                PMSprintStats                `json:"stats"`
-	PreviewStories       []SprintPlanningStoryPreview `json:"preview_stories"`
-	StoryPreviewOverflow int                          `json:"story_preview_overflow"`
+	PreviewStories       []SprintPlanningTaskPreview `json:"preview_stories"`
+	StoryPreviewOverflow int                         `json:"story_preview_overflow"`
 }
 
 // SprintPlanningBucket groups planning cards by temporal bucket.
@@ -128,6 +128,6 @@ type SprintPlanningBucket struct {
 // SprintPlanningWorkspace is the top-level response for the sprint planning page.
 type SprintPlanningWorkspace struct {
 	Buckets        []SprintPlanningBucket       `json:"buckets"`
-	BacklogStories []SprintPlanningStoryPreview `json:"backlog_stories"`
+	BacklogStories []SprintPlanningTaskPreview  `json:"backlog_stories"`
 	BacklogTotal   int                          `json:"backlog_total"`
 }

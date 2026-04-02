@@ -111,14 +111,21 @@ const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: string; runtime_kind: AgentRuntimeKind; default_invocation_mode: AgentInvocationMode; supported_modes: AgentInvocationMode[] }> = {
   epic_planner: {
     label: 'Epic Planner',
-    description: 'Interactive product planning for epics, PRDs, docs, and stories.',
+    description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  task_planner: {
+    label: 'Task Planner',
+    description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
   story_planner: {
-    label: 'Story Planner',
-    description: 'Interactive decomposition and refinement for stories and execution plans.',
+    label: 'Task Planner',
+    description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
@@ -381,7 +388,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     trigger_mode: 'manual',
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
-    allowed_targets: ['story'],
+    allowed_targets: ['task'],
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -1046,7 +1053,7 @@ export function AgentsPage() {
   const effectiveTargets =
     editingAgent && editingAgent.allowed_targets.length > 0
       ? editingAgent.allowed_targets
-      : (editingSystemAgent ? (selectedPreset?.allowed_target_types ?? []) : ['story']);
+      : (editingSystemAgent ? (selectedPreset?.allowed_target_types ?? []) : ['task']);
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);

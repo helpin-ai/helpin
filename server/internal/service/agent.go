@@ -39,7 +39,7 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		return defaultSystemEpicPlannerName
-	case model.AgentPresetStoryPlanner:
+	case model.AgentPresetTaskPlanner:
 		return "Scribe"
 	case model.AgentPresetCRMOperator:
 		return "CRM Operator"
@@ -642,7 +642,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		TeamID:                 trimPtr(req.TeamID),
 		AllowedTools:           normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
 		AllowedCommands:        normalizeJSONSlice(req.AllowedCommands),
-		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"story"}),
+		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"task"}),
 		Schedule:               trimPtr(req.Schedule),
 		ApprovalMode:           approvalMode,
 		MaxConcurrentRuns:      maxConcurrentRuns,
@@ -960,7 +960,7 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 	if agent == nil {
 		return fmt.Errorf("agent not found")
 	}
-	if err := validateAgentTarget(agent, "story"); err != nil {
+	if err := validateAgentTarget(agent, "task"); err != nil {
 		return err
 	}
 
@@ -977,9 +977,9 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 		return fmt.Errorf("update story: %w", err)
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "story", storyID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
 
-	s.publishSimpleEvent("updated", "story", storyID, workspaceID, actorID)
+	s.publishSimpleEvent("updated", "task", storyID, workspaceID, actorID)
 
 	if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
 		if errors.Is(err, ErrStoryDeliveryTargetRequired) {
@@ -1074,7 +1074,7 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
-	return s.StartTargetRun(ctx, workspaceID, "story", storyID, model.StartAgentRunRequest{}, actorID)
+	return s.StartTargetRun(ctx, workspaceID, "task", storyID, model.StartAgentRunRequest{}, actorID)
 }
 
 // RunEpicAgent starts a direct planner run for an epic.
@@ -1085,13 +1085,13 @@ func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, ac
 // StartTargetRun starts a direct agent run for a supported target type.
 func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID string) (*model.AgentRun, error) {
 	switch targetType {
-	case "story":
+	case "task", "story":
 		story, err := s.storyRepo.GetRawByID(ctx, targetID)
 		if err != nil {
-			return nil, fmt.Errorf("get story: %w", err)
+			return nil, fmt.Errorf("get task: %w", err)
 		}
 		if story == nil || story.WorkspaceID != workspaceID {
-			return nil, fmt.Errorf("story not found")
+			return nil, fmt.Errorf("task not found")
 		}
 
 		agentID := strings.TrimSpace(req.AgentID)
@@ -1099,7 +1099,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			agentID = strings.TrimSpace(*story.AssignedAgentID)
 		}
 		if agentID == "" {
-			return nil, fmt.Errorf("no agent assigned to this story")
+			return nil, fmt.Errorf("no agent assigned to this task")
 		}
 		if story.AssignedAgentID == nil || *story.AssignedAgentID != agentID {
 			if err := s.AssignAgentToStory(ctx, workspaceID, story.ID, agentID, actorID); err != nil {
@@ -1108,7 +1108,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			story.AssignedAgentID = &agentID
 		}
 
-		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "story")
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "task")
 		if err != nil {
 			return nil, err
 		}
@@ -1122,7 +1122,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			}
 		}
 
-		input := map[string]any{"story_id": story.ID}
+		input := map[string]any{"story_id": story.ID, "task_id": story.ID}
 		if req.AdditionalContext != nil && strings.TrimSpace(*req.AdditionalContext) != "" {
 			input["additional_context"] = strings.TrimSpace(*req.AdditionalContext)
 		}
@@ -1131,7 +1131,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 		run, err := s.createRun(ctx, createRunParams{
 			workspaceID:    workspaceID,
 			agent:          agent,
-			targetType:     "story",
+			targetType:     "task",
 			targetID:       story.ID,
 			storyID:        &story.ID,
 			actorID:        &actorID,
@@ -1143,7 +1143,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, err
 		}
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "story", story.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "task", story.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 		}
 		s.publishRunEvent(run, actorID)
 		return run, nil
@@ -1362,7 +1362,7 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.StoryID != nil {
 		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
 		if storyErr == nil && story != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
@@ -1909,10 +1909,10 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 
 	content := append(json.RawMessage(nil), preview.Content...)
 	if strings.EqualFold(strings.TrimSpace(approval.Phase), "stories") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
-		normalizedContent, err := worker.NormalizeStoryPlanPreviewContent(content)
+		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
-				slog.ErrorContext(ctx, "approved story plan preview normalization failed during approval persistence",
+				slog.ErrorContext(ctx, "approved task plan preview normalization failed during approval persistence",
 					"run_id", run.ID,
 					"workspace_id", run.WorkspaceID,
 					"phase", strings.TrimSpace(approval.Phase),
@@ -1922,7 +1922,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 					"error", err,
 				)
 			}
-			return fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+			return fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; use task fields like name, description, task_type, acceptance_criteria, and dependency_refs")
 		}
 		content = normalizedContent
 	}
@@ -2001,9 +2001,9 @@ func previewPanelKeyForApprovalPhase(phase string) string {
 	case "prd":
 		return "prd_draft"
 	case "story_doc":
-		return "story_plan_doc"
+		return "task_plan_doc"
 	case "stories":
-		return "story_plan"
+		return "task_plan"
 	default:
 		return ""
 	}

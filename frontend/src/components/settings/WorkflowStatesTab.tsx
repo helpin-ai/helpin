@@ -220,7 +220,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                   <div className="flex w-full items-center justify-between rounded-xl border border-border px-3 py-2.5">
                     <div>
                       <Label>Auto assign owner</Label>
-                      <p className="text-xs text-muted-foreground">Assign current user when stories move into started state without owner.</p>
+                      <p className="text-xs text-muted-foreground">Assign current user when tasks move into a started state without an owner.</p>
                     </div>
                     <Switch
                       checked={selectedWorkflow.workflow.auto_assign_owner}

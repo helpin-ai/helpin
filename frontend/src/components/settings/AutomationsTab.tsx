@@ -166,7 +166,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <CardTitle className="text-base">Epic Automations</CardTitle>
-          <CardDescription>Automatically transition epics based on story progress.</CardDescription>
+          <CardDescription>Automatically transition epics based on task progress.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
@@ -179,7 +179,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
             <div className="flex-1">
               <p className="text-sm font-medium">Auto Start Epic</p>
               <p className="text-xs text-muted-foreground">
-                When any story moves to a started state, auto-transition its parent epic.
+                When any task moves to a started state, auto-transition its parent epic.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -217,7 +217,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
             <div className="flex-1">
               <p className="text-sm font-medium">Auto Complete Epic</p>
               <p className="text-xs text-muted-foreground">
-                When all stories in an epic reach a done state, auto-transition the epic.
+                When all tasks in an epic reach a done state, auto-transition the epic.
               </p>
             </div>
             <div className="flex items-center gap-3">

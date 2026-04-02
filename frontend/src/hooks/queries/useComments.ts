@@ -4,7 +4,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type { CreateCommentRequest, UpdateCommentRequest } from '@/lib/pmTypes'
 
-export function useComments(wsId: string, entityType: 'story' | 'epic' | 'doc', entityId: string) {
+export function useComments(wsId: string, entityType: 'task' | 'epic' | 'doc', entityId: string) {
   return useQuery({
     queryKey: queryKeys.pm.comments(wsId, entityId),
     queryFn: async () => unwrap(await pmCommentService.list(wsId, entityType, entityId)),

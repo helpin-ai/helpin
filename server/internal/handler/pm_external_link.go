@@ -20,7 +20,7 @@ func NewPMExternalLinkHandler(service *service.PMExternalLinkService) *PMExterna
 	return &PMExternalLinkHandler{service: service}
 }
 
-// List handles GET /api/pm/stories/{id}/links
+// List handles GET /api/pm/tasks/{id}/links
 func (h *PMExternalLinkHandler) List(w http.ResponseWriter, r *http.Request) {
 	storyID := chi.URLParam(r, "id")
 	links, err := h.service.List(r.Context(), storyID)
@@ -34,7 +34,7 @@ func (h *PMExternalLinkHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, links)
 }
 
-// Create handles POST /api/pm/stories/{id}/links
+// Create handles POST /api/pm/tasks/{id}/links
 func (h *PMExternalLinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	storyID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())

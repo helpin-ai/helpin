@@ -20,7 +20,7 @@ This folder is the domain-split home for the old `@/lib/pmTypes` monolith.
 
 - `project.ts`
   - Core PM entities and requests.
-  - Workflows, labels, stories, epics, sprints, story templates, recurring, comments, attachments, associations.
+  - Workflows, labels, tasks, epics, sprints, task templates, recurring, comments, attachments, associations.
 - `objectives.ts`
   - Objectives, key results, objective requests.
 - `automations.ts`

@@ -1,35 +1,35 @@
-# Product Requirements Document: Stories Scale And Performance
+# Product Requirements Document: Tasks Scale And Performance
 
 **Product**: Helpin PM Module  
 **Date**: March 5, 2026  
 **Status**: Draft  
 **Author**: Codex  
-**Scope**: Stories board, stories list/table, realtime updates, supporting PM APIs, and frontend performance readiness for large workspaces
+**Scope**: Tasks board, tasks list/table, realtime updates, supporting PM APIs, and frontend performance readiness for large workspaces
 
 ---
 
 ## 1. Executive Summary
 
-Helpin's current stories experience is functional for small to medium datasets, but it is not production-ready for large workspaces with 10,000+ stories.
+Helpin's current tasks experience is functional for small to medium datasets, but it is not production-ready for large workspaces with 10,000+ tasks.
 
 The current bottlenecks are structural:
 
-1. The kanban board fetches and renders all stories in a workflow at once.
+1. The kanban board fetches and renders all tasks in a workflow at once.
 2. The list view uses row virtualization, but still fetches only a partial fixed page and performs grouping client-side.
 3. Realtime updates trigger full board refreshes instead of targeted state patching.
 4. Drag-and-drop, filtering, and grouping all assume in-memory full datasets.
 
-This PRD defines the changes required to make stories views operationally safe and performant for large datasets while preserving current functionality.
+This PRD defines the changes required to make tasks views operationally safe and performant for large datasets while preserving current functionality.
 
 ---
 
 ## 2. Problem Statement
 
-If a workspace contains 10,000 stories across all work, the current frontend and API approach will degrade in predictable ways:
+If a workspace contains 10,000 tasks across all work, the current frontend and API approach will degrade in predictable ways:
 
 - Board load time increases sharply because all cards are fetched and mounted.
 - Drag-and-drop becomes expensive because every card participates in the sortable system.
-- Realtime activity amplifies cost because a single story update can force a full board refetch.
+- Realtime activity amplifies cost because a single task update can force a full board refetch.
 - List view does not provide a complete large-dataset experience because it fetches a fixed 500-row slice.
 - Memory, DOM node count, and React work scale with total dataset size instead of visible dataset size.
 
@@ -41,7 +41,7 @@ The product risk is not just slower UX. At this scale, some views will become un
 
 ### Primary Goals
 
-1. Make stories board and list views usable in workspaces with 10,000+ stories.
+1. Make tasks board and list views usable in workspaces with 10,000+ tasks.
 2. Ensure the UI scales with visible data, not total data, wherever possible.
 3. Reduce full-page and full-board refetches caused by websocket updates and inline edits.
 4. Preserve current filtering, grouping, sorting, and detail interactions.
@@ -59,11 +59,11 @@ The product risk is not just slower UX. At this scale, some views will become un
 
 This PRD does not include:
 
-- Roadmap/Gantt scaling work outside stories views
+- Roadmap/Gantt scaling work outside tasks views
 - Full-text search redesign
 - Cross-workspace analytics redesign
 - Mobile-native optimization beyond reasonable responsive behavior
-- Infinite historical activity redesign for story detail, except where necessary for story-list performance consistency
+- Infinite historical activity redesign for task detail, except where necessary for task-list performance consistency
 
 ---
 
@@ -71,19 +71,19 @@ This PRD does not include:
 
 ### Frontend
 
-- Stories page routes into a single `KanbanBoard` surface that owns both board and list modes.
-- Board mode renders every story card in every visible column.
-- Story cards participate in drag-and-drop individually.
+- Tasks page routes into a single `KanbanBoard` surface that owns both board and list modes.
+- Board mode renders every task card in every visible column.
+- Task cards participate in drag-and-drop individually.
 - List mode uses `@tanstack/react-virtual` for rows.
 - List mode currently self-fetches with `per_page=500`.
 - Grouping and row-model construction happen client-side.
-- Websocket story events trigger a full board refresh.
+- Websocket task events trigger a full board refresh.
 
 ### Backend
 
-- General stories list endpoint supports pagination.
+- General tasks list endpoint supports pagination.
 - Board endpoint does not support pagination, cursors, or per-column incremental loading.
-- Board endpoint loads all workflow stories matching filters in one query and returns complete columns.
+- Board endpoint loads all workflow tasks matching filters in one query and returns complete columns.
 - Filtered board responses are recomputed and returned in full on every refresh.
 
 ---
@@ -114,11 +114,11 @@ The user should understand when a view is partially loaded, loading more, or ful
 
 ## 7. User Stories
 
-1. As a PM user, I can open a stories board in a large workspace without the browser freezing.
+1. As a PM user, I can open a tasks board in a large workspace without the browser freezing.
 2. As a PM user, I can scroll large columns and progressively load more cards.
-3. As a PM user, I can use list/table view to browse all matching stories, not only an arbitrary first 500.
+3. As a PM user, I can use list/table view to browse all matching tasks, not only an arbitrary first 500.
 4. As a PM user, I can filter and group large result sets without major UI lag.
-5. As a PM user, I can move a story between columns without the full board reloading.
+5. As a PM user, I can move a task between columns without the full board reloading.
 6. As a PM user, I can receive websocket updates without the board visibly thrashing.
 7. As an engineer, I can reason about scaling behavior through explicit APIs, metrics, and tests.
 
@@ -128,16 +128,16 @@ The user should understand when a view is partially loaded, loading more, or ful
 
 ### Functional
 
-- Board view can open and operate on workflows whose filtered result set exceeds 10,000 stories.
-- List view can navigate and display full filtered datasets above 10,000 stories.
-- No stories are silently omitted because of a hardcoded frontend fetch limit.
+- Board view can open and operate on workflows whose filtered result set exceeds 10,000 tasks.
+- List view can navigate and display full filtered datasets above 10,000 tasks.
+- No tasks are silently omitted because of a hardcoded frontend fetch limit.
 
 ### Performance
 
 - Initial board payload loads counts and first slices without fetching all cards.
 - Scrolling a large column does not cause visible sustained jank under normal desktop hardware.
 - List scrolling remains smooth with large filtered result sets due to virtualization plus incremental fetch.
-- A single story websocket update does not trigger full board reload in the common case.
+- A single task websocket update does not trigger full board reload in the common case.
 
 ### Reliability
 
@@ -153,13 +153,13 @@ The user should understand when a view is partially loaded, loading more, or ful
 
 #### R1. Column-level incremental loading
 
-The board must stop loading every story for every column on initial page load.
+The board must stop loading every task for every column on initial page load.
 
 Required behavior:
 
-- Initial board load returns workflow metadata, column metadata, counts, and the first page of stories per column.
+- Initial board load returns workflow metadata, column metadata, counts, and the first page of tasks per column.
 - Each column independently supports pagination or cursor-based loading.
-- The UI can load more stories within a column through scroll-based or explicit "Load more" behavior.
+- The UI can load more tasks within a column through scroll-based or explicit "Load more" behavior.
 - Collapsed columns load only summary metadata, not full card payloads.
 
 #### R2. Board card rendering optimization
@@ -174,11 +174,11 @@ Required behavior:
 
 #### R3. Realtime incremental patching
 
-The board must not default to full refresh on every story event.
+The board must not default to full refresh on every task event.
 
 Required behavior:
 
-- Story create/update/move/delete websocket events patch local board state when the affected story is already known.
+- Task create/update/move/delete websocket events patch local board state when the affected task is already known.
 - If a local patch cannot be safely applied, fallback refresh must be scoped to the affected column or current query, not necessarily the whole board.
 - Periodic or manual full refresh may remain as a recovery path.
 
@@ -188,7 +188,7 @@ The board must support drag-and-drop in large columns without scanning the full 
 
 Required behavior:
 
-- Story-to-column lookup should use indexes/maps, not repeated full-array scans.
+- Task-to-column lookup should use indexes/maps, not repeated full-array scans.
 - Reorder/move operations should operate within loaded windows plus server-backed positions.
 - Drag targets must remain correct when columns are partially loaded.
 
@@ -196,7 +196,7 @@ Required behavior:
 
 #### R5. Full-dataset browsing
 
-The list view must support all matching stories, not only a fixed first page.
+The list view must support all matching tasks, not only a fixed first page.
 
 Required behavior:
 
@@ -226,9 +226,9 @@ Inline edits in list mode must patch local rows and avoid broad refetches unless
 Introduce a board summary contract that returns:
 
 - workflow and state metadata
-- filtered story counts per state
+- filtered task counts per state
 - aggregate metrics per state
-- first-page story slices per state
+- first-page task slices per state
 - pagination metadata or cursors per state
 
 #### R9. Per-column continuation endpoint
@@ -237,7 +237,7 @@ The API must support fetching the next slice for a specific state/column under t
 
 #### R10. Stable ordering contract
 
-The API must define how story order is preserved across partial loading, moves, and reorders.
+The API must define how task order is preserved across partial loading, moves, and reorders.
 
 #### R11. Filter-consistent pagination
 
@@ -270,20 +270,20 @@ Initial load returns:
 - workflow
 - columns/states
 - total filtered count per state
-- first N stories per state
+- first N tasks per state
 - pagination metadata per state
 
 Recommended defaults:
 
-- 30 to 50 stories per column initial load
+- 30 to 50 tasks per column initial load
 - smaller initial slice when many columns are open
-- zero story payload for collapsed columns until expanded
+- zero task payload for collapsed columns until expanded
 
 ### Level 2: Column Window Management
 
 Each column owns:
 
-- loaded stories
+- loaded tasks
 - total count
 - next cursor or page
 - loading state
@@ -339,10 +339,10 @@ Replace unconditional board-wide refresh with targeted updates.
 
 Examples:
 
-- `story.updated`: patch story in current column/list cache
-- `story.moved`: remove from old loaded column slice, insert into new loaded column slice if visible, adjust counts
-- `story.created`: increment relevant count; insert only if the target column slice policy says the new story belongs in the loaded window
-- `story.deleted`: remove locally if loaded and decrement counts
+- `task.updated`: patch task in current column/list cache
+- `task.moved`: remove from old loaded column slice, insert into new loaded column slice if visible, adjust counts
+- `task.created`: increment relevant count; insert only if the target column slice policy says the new task belongs in the loaded window
+- `task.deleted`: remove locally if loaded and decrement counts
 
 Fallback behavior:
 
@@ -354,17 +354,17 @@ Fallback behavior:
 
 ### 11.1 Board UX
 
-- Show per-column story counts immediately.
+- Show per-column task counts immediately.
 - Show loading skeletons inside columns while first slice loads.
 - Show "Load more" or auto-load sentinel at the bottom of each column.
-- Show a clear "All stories loaded" state when complete.
+- Show a clear "All tasks loaded" state when complete.
 - Preserve collapsed state across sessions.
 - Preserve current filters and views.
 
 ### 11.2 List UX
 
 - Keep current group-by selector.
-- Show total matching stories, not only loaded stories.
+- Show total matching tasks, not only loaded tasks.
 - Indicate loaded count versus total when not fully loaded.
 - Support continuous scroll without visible jumps.
 
@@ -390,7 +390,7 @@ Required behavior:
 
 ### 12.1 Proposed Board Summary Response
 
-`GET /api/pm/stories/board`
+`GET /api/pm/tasks/board`
 
 Query:
 
@@ -408,18 +408,18 @@ Example response shape:
   "columns": [
     {
       "state": { "id": "s_1", "name": "Backlog", "position": 0 },
-      "story_count": 2480,
+      "task_count": 2480,
       "point_total": 7312,
-      "stories": [],
+      "tasks": [],
       "page_size": 0,
       "next_cursor": null,
       "fully_loaded": false
     },
     {
       "state": { "id": "s_2", "name": "In Progress", "position": 1 },
-      "story_count": 312,
+      "task_count": 312,
       "point_total": 921,
-      "stories": [{ "...": "..." }],
+      "tasks": [{ "...": "..." }],
       "page_size": 30,
       "next_cursor": "cursor_abc",
       "fully_loaded": false
@@ -430,7 +430,7 @@ Example response shape:
 
 ### 12.2 Proposed Column Continuation Response
 
-`GET /api/pm/stories/board/columns/{stateId}`
+`GET /api/pm/tasks/board/columns/{stateId}`
 
 Query:
 
@@ -445,7 +445,7 @@ Response:
 ```json
 {
   "state_id": "s_2",
-  "stories": [{ "...": "..." }],
+  "tasks": [{ "...": "..." }],
   "next_cursor": "cursor_def",
   "fully_loaded": false
 }
@@ -453,7 +453,7 @@ Response:
 
 ### 12.3 Proposed List Endpoint Contract
 
-Continue using `/api/pm/stories`, but standardize for large datasets:
+Continue using `/api/pm/tasks`, but standardize for large datasets:
 
 - keep `page/per_page` or migrate to cursoring
 - always return `total`
@@ -484,7 +484,7 @@ Current integer `position` ordering is workable, but partial loading requires a 
 Requirements:
 
 - reorders must remain deterministic within a state
-- moves between states must place the story predictably
+- moves between states must place the task predictably
 - continuation requests must use the same ordering as initial load
 
 ### 13.3 Count Accuracy
@@ -502,14 +502,14 @@ Replace monolithic board state with:
 - board metadata
 - filters and active view
 - per-column slices and pagination state
-- story index map by ID
+- task index map by ID
 - per-column load status
 
 Suggested store shape:
 
 - `columnsByStateId`
 - `orderedStateIds`
-- `storyIndex`
+- `taskIndex`
 - `columnPagination`
 - `totalCounts`
 
@@ -517,8 +517,8 @@ Suggested store shape:
 
 Introduce O(1) or near-O(1) lookup helpers for:
 
-- story ID to state ID
-- story ID to loaded position
+- task ID to state ID
+- task ID to loaded position
 - state ID to column metadata
 
 This removes repeated full-array scans during drag events and local patching.
@@ -527,7 +527,7 @@ This removes repeated full-array scans during drag events and local patching.
 
 Create a dedicated reconciliation layer that:
 
-- applies websocket events to the story index and affected column slices
+- applies websocket events to the task index and affected column slices
 - tracks whether a fallback fetch is required
 - prevents repeated duplicate refreshes
 
@@ -536,7 +536,7 @@ Create a dedicated reconciliation layer that:
 Add development-only warnings when:
 
 - rendered board cards exceed a threshold
-- a full board refresh occurs after a single-story event
+- a full board refresh occurs after a single-task event
 - a list query result is truncated unexpectedly
 
 ---
@@ -551,8 +551,8 @@ Deliverables:
 
 - board endpoint supports initial per-column slices
 - board UI supports per-column load-more
-- collapsed columns skip story payloads
-- websocket story events stop forcing whole-board refresh by default
+- collapsed columns skip task payloads
+- websocket task events stop forcing whole-board refresh by default
 - list view removes fixed 500-row cap and adopts paginated infinite loading
 
 ### Phase 2: Rendering Optimization
@@ -583,14 +583,14 @@ Deliverables:
 
 ### Board
 
-- Opening a board with a filtered result set above 10,000 stories does not fetch all story cards in one response.
+- Opening a board with a filtered result set above 10,000 tasks does not fetch all task cards in one response.
 - Expanding or scrolling a large column loads additional slices without blocking the rest of the board.
-- Updating a single story does not trigger a whole-board refetch in the common case.
-- Dragging a story between loaded columns remains responsive.
+- Updating a single task does not trigger a whole-board refetch in the common case.
+- Dragging a task between loaded columns remains responsive.
 
 ### List
 
-- List mode can browse beyond the first 500 stories.
+- List mode can browse beyond the first 500 tasks.
 - Row virtualization remains enabled.
 - Loaded-row count and total-result count are both visible or derivable.
 - Inline row edits do not trigger full list reload by default.
@@ -620,7 +620,7 @@ Deliverables:
 
 ### Staging Validation
 
-- Seed workspace with 10,000+ stories distributed across multiple states
+- Seed workspace with 10,000+ tasks distributed across multiple states
 - Validate board open, column scrolling, filtering, list browsing, and move operations
 - Validate websocket updates during active board/list sessions
 
@@ -648,7 +648,7 @@ Mitigation:
 
 ### Risk 3: Realtime ordering ambiguity
 
-A websocket update may not provide enough data to locally place a story correctly under active filters.
+A websocket update may not provide enough data to locally place a task correctly under active filters.
 
 Mitigation:
 
@@ -678,7 +678,7 @@ Recommendation:
 The highest-value path is:
 
 1. Replace full-board fetching with per-column initial slices plus continuation.
-2. Remove whole-board refreshes for single-story realtime updates.
+2. Remove whole-board refreshes for single-task realtime updates.
 3. Upgrade list view from "virtualized first 500" to "virtualized full query via incremental fetch."
 4. Add board card visibility gating or virtualization only after the data-loading model is fixed.
 

@@ -190,23 +190,23 @@ func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMe
 	if len(tools) == 0 || !slices.Contains(tools, worker.ToolPublishPreview) {
 		return raw
 	}
-	if slices.Contains(tools, worker.ToolPublishPRDDraft) || slices.Contains(tools, worker.ToolPublishStoryPlan) || slices.Contains(tools, worker.ToolPublishStoryPlanDoc) {
+	if slices.Contains(tools, worker.ToolPublishPRDDraft) || slices.Contains(tools, worker.ToolPublishTaskPlan) || slices.Contains(tools, worker.ToolPublishTaskPlanDoc) {
 		return raw
 	}
 
 	migrated := make([]string, 0, len(tools)+3)
 	for _, toolName := range tools {
 		switch toolName {
-		case worker.ToolPublishPreview, worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan, worker.ToolPublishStoryPlanDoc:
+		case worker.ToolPublishPreview, worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan, worker.ToolPublishTaskPlanDoc:
 			continue
 		}
 		migrated = append(migrated, toolName)
 	}
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
-		migrated = append(migrated, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan)
-	case model.AgentPresetStoryPlanner:
-		migrated = append(migrated, worker.ToolPublishStoryPlanDoc)
+		migrated = append(migrated, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan)
+	case model.AgentPresetTaskPlanner:
+		migrated = append(migrated, worker.ToolPublishTaskPlanDoc)
 	}
 	return mustJSONStringSlice(migrated)
 }
@@ -242,41 +242,41 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
 			worker.ToolPublishPRDDraft,
-			worker.ToolPublishStoryPlan,
+			worker.ToolPublishTaskPlan,
 		}
 		policy.disallowedExtraTools = []string{
 			worker.ToolPreviewMarkdown,
 			worker.ToolPreviewJSON,
 			worker.ToolPublishPreview,
-			worker.ToolPublishStoryPlanDoc,
+			worker.ToolPublishTaskPlanDoc,
 			"ensure_epic_spec_doc",
-			"ensure_story_plan_doc",
+			"ensure_task_plan_doc",
 			"write_document_content",
 			"link_document_to_object",
 			"approve_epic_spec",
-			"create_story_batch",
-			"assign_story_agent",
-			"set_story_dependencies",
+			"create_task_batch",
+			"assign_task_agent",
+			"set_task_dependencies",
 		}
-	case model.AgentPresetStoryPlanner:
+	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
-			worker.ToolPublishStoryPlanDoc,
+			worker.ToolPublishTaskPlanDoc,
 		}
 		policy.disallowedExtraTools = []string{
 			worker.ToolPreviewMarkdown,
 			worker.ToolPreviewJSON,
 			worker.ToolPublishPreview,
 			worker.ToolPublishPRDDraft,
-			worker.ToolPublishStoryPlan,
+			worker.ToolPublishTaskPlan,
 			"ensure_epic_spec_doc",
-			"ensure_story_plan_doc",
+			"ensure_task_plan_doc",
 			"write_document_content",
 			"link_document_to_object",
 			"approve_epic_spec",
-			"create_story_batch",
-			"assign_story_agent",
-			"set_story_dependencies",
+			"create_task_batch",
+			"assign_task_agent",
+			"set_task_dependencies",
 		}
 	default:
 		return raw

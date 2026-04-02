@@ -3,7 +3,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, GitBranch, ListTodo, PlayCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { RecurringRun, RecurringTemplateStatus, Story } from '@/lib/pmTypes';
+import type { RecurringRun, RecurringTemplateStatus, Task } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 interface RecurringTemplateSummaryProps {
@@ -14,11 +14,11 @@ interface RecurringTemplateSummaryProps {
   generatedCount?: number;
   occurrenceNumber?: number;
   lastError?: string;
-  lastGeneratedStory?: Pick<Story, 'id' | 'display_id' | 'name'> | null;
+  lastGeneratedTask?: Pick<Task, 'id' | 'display_id' | 'name'> | null;
   runs?: RecurringRun[];
   actions?: ReactNode;
   compact?: boolean;
-  onOpenStory?: (storyId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 const statusClasses: Record<RecurringTemplateStatus, string> = {
@@ -52,7 +52,7 @@ function formatRunLabel(run: RecurringRun) {
 
 const PAGE_SIZE = 10;
 
-function RunsSection({ runs, compact, onOpenStory }: { runs: RecurringRun[]; compact: boolean; onOpenStory?: (storyId: string) => void }) {
+function RunsSection({ runs, compact, onOpenTask }: { runs: RecurringRun[]; compact: boolean; onOpenTask?: (taskId: string) => void }) {
   const perPage = compact ? 3 : PAGE_SIZE;
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(runs.length / perPage);
@@ -84,13 +84,13 @@ function RunsSection({ runs, compact, onOpenStory }: { runs: RecurringRun[]; com
             <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-            {run.generated_story_id && onOpenStory ? (
+            {run.generated_story_id && onOpenTask ? (
               <button
                 type="button"
                 className="shrink-0 text-primary hover:underline"
-                onClick={() => onOpenStory(run.generated_story_id!)}
+                onClick={() => onOpenTask(run.generated_story_id!)}
               >
-                View story
+                View task
               </button>
             ) : null}
           </div>
@@ -108,11 +108,11 @@ export function RecurringTemplateSummary({
   generatedCount,
   occurrenceNumber,
   lastError,
-  lastGeneratedStory,
+  lastGeneratedTask,
   runs,
   actions,
   compact = false,
-  onOpenStory,
+  onOpenTask,
 }: RecurringTemplateSummaryProps) {
   return (
     <section className={cn('rounded-lg border border-border/60 bg-background', compact ? 'p-3' : 'p-4')}>
@@ -145,11 +145,11 @@ export function RecurringTemplateSummary({
           <span>{formatRelative(nextRunAt)}</span>
         </div>
 
-        {lastGeneratedStory ? (
+        {lastGeneratedTask ? (
           <div className="flex items-start gap-2 text-muted-foreground">
             <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">
-              Last generated: {lastGeneratedStory.display_id} {lastGeneratedStory.name}
+              Last generated: {lastGeneratedTask.display_id} {lastGeneratedTask.name}
             </span>
           </div>
         ) : null}
@@ -163,7 +163,7 @@ export function RecurringTemplateSummary({
       </div>
 
       {runs && runs.length > 0 ? (
-        <RunsSection runs={runs} compact={compact} onOpenStory={onOpenStory} />
+        <RunsSection runs={runs} compact={compact} onOpenTask={onOpenTask} />
       ) : null}
     </section>
   );

@@ -9,7 +9,7 @@ import type {
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const pmCommentService = {
-  list: (workspaceId: string, entityType: 'story' | 'epic' | 'doc', entityId: string) =>
+  list: (workspaceId: string, entityType: 'task' | 'epic' | 'doc', entityId: string) =>
     api.get<CommentWithAuthor[]>(
       `/pm/comments?${qs(workspaceId)}&entity_type=${encodeURIComponent(entityType)}&entity_id=${encodeURIComponent(entityId)}`
     ),

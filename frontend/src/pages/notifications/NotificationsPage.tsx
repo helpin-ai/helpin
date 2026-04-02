@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation'
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -224,9 +224,9 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
     const id = notification.entity_id
-    if (type === 'story') {
+    if (type === 'task') {
       if (!wsSlug) return
-      openStoryRoute(navigate as never, location as never, wsSlug, id)
+      openTaskRoute(navigate as never, location as never, wsSlug, id)
     } else if (type === 'epic') {
       navigate({ to: '/w/$slug/pm/epics/$epicId' as string, params: { slug: wsSlug, epicId: id } })
     } else if (type === 'objective') {

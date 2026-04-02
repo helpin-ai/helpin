@@ -2,10 +2,10 @@ package model
 
 import "time"
 
-// PMExternalLink represents an external link attached to a story.
+// PMExternalLink represents an external link attached to a task.
 type PMExternalLink struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	StoryID     string    `json:"story_id" gorm:"type:uuid;not null;index"`
+	TaskID      string    `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
 	Title       string    `json:"title" gorm:"not null"`
 	URL         string    `json:"url" gorm:"not null"`
 	CreatedByID string    `json:"created_by_id" gorm:"type:uuid;not null"`

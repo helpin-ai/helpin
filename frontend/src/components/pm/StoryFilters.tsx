@@ -12,21 +12,21 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
-import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { Priority, Severity, TaskType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember, TeamUserMembership } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { filterAssignableMembersForTeam } from '@/components/pm/story-detail/storyFilterMembers';
+import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
 
 // ── Types ──────────────────────────────────────────────────────────
 
 type FilterKey =
   | 'priority'
   | 'severity'
-  | 'story_type'
+  | 'task_type'
   | 'owner_member_id'
   | 'requester_member_id'
   | 'label_id'
@@ -236,7 +236,7 @@ export function StoryFilterProvider({
       return { value: s, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
     });
 
-    const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as StoryType[]).map((t) => {
+    const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as TaskType[]).map((t) => {
       const cfg = STORY_TYPE_CONFIG[t];
       const Icon = cfg.icon;
       return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
@@ -297,7 +297,7 @@ export function StoryFilterProvider({
     return [
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
       { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
-      { key: 'story_type' as FilterKey, label: 'Type', options: typeOptions },
+      { key: 'task_type' as FilterKey, label: 'Type', options: typeOptions },
       { key: 'owner_member_id' as FilterKey, label: 'Owner', options: memberOptions },
       { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions },
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },

@@ -1,5 +1,5 @@
 import { createContext, type MutableRefObject } from 'react';
-import type { Agent, Story } from '@/lib/pmTypes';
+import type { Agent, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import type { DragPreviewManager } from './KanbanBoard.dnd';
 
@@ -13,8 +13,8 @@ export interface BoardDataContextValue {
 }
 
 export interface BoardCallbacksContextValue {
-  onStoryPatched: (story: Story) => void;
-  onOpen: (story: Story) => void;
+  onStoryPatched: (story: Task) => void;
+  onOpen: (story: Task) => void;
   onCreate: (id: string) => void;
   onCreateForMember: (memberId: string | null) => void;
   onToggleCollapse: (id: string) => void;

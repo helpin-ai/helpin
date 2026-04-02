@@ -157,7 +157,7 @@ func (h *GitHandler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, repo)
 }
 
-// GetStoryGitLinks handles GET /api/pm/stories/{id}/git-links.
+// GetStoryGitLinks handles GET /api/pm/tasks/{id}/git-links.
 func (h *GitHandler) GetStoryGitLinks(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
@@ -173,7 +173,12 @@ func (h *GitHandler) GetStoryGitLinks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, links)
 }
 
-// GetStoryDeliveryTarget handles GET /api/pm/stories/{id}/delivery-target.
+// GetTaskGitLinks handles GET /api/pm/tasks/{id}/git-links.
+func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
+	h.GetStoryGitLinks(w, r)
+}
+
+// GetStoryDeliveryTarget handles GET /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) GetStoryDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
@@ -186,7 +191,12 @@ func (h *GitHandler) GetStoryDeliveryTarget(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, target)
 }
 
-// UpdateStoryDeliveryTarget handles PUT /api/pm/stories/{id}/delivery-target.
+// GetTaskDeliveryTarget handles GET /api/pm/tasks/{id}/delivery-target.
+func (h *GitHandler) GetTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
+	h.GetStoryDeliveryTarget(w, r)
+}
+
+// UpdateStoryDeliveryTarget handles PUT /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) UpdateStoryDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
@@ -206,7 +216,12 @@ func (h *GitHandler) UpdateStoryDeliveryTarget(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, target)
 }
 
-// CreateBranch handles POST /api/pm/stories/{id}/create-branch.
+// UpdateTaskDeliveryTarget handles PUT /api/pm/tasks/{id}/delivery-target.
+func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
+	h.UpdateStoryDeliveryTarget(w, r)
+}
+
+// CreateBranch handles POST /api/pm/tasks/{id}/create-branch.
 func (h *GitHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")

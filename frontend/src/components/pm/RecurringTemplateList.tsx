@@ -53,7 +53,7 @@ export function RecurringTemplateList({
               nextRunAt={item.template.next_run_at}
               generatedCount={item.template.generated_count}
               lastError={item.template.last_error}
-              lastGeneratedStory={item.last_generated_story ?? null}
+              lastGeneratedTask={item.last_generated_story ?? null}
               compact
               actions={
                 <>
@@ -74,7 +74,7 @@ export function RecurringTemplateList({
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {teamName ? <span>Team: {teamName}</span> : null}
               {ownerName ? <span>Owner: {ownerName}</span> : null}
-              {item.seed.name ? <span>Story seed: {item.seed.name}</span> : null}
+              {item.seed.name ? <span>Task seed: {item.seed.name}</span> : null}
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">

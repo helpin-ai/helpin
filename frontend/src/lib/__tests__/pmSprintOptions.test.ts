@@ -15,7 +15,7 @@ const teams: WorkspaceTeam[] = [
     team_type: 'product',
     created_at: '2026-03-27T00:00:00Z',
     updated_at: '2026-03-27T00:00:00Z',
-    default_story_type: 'feature',
+    default_task_type: 'feature',
   },
   {
     id: 'team-mkt',
@@ -27,7 +27,7 @@ const teams: WorkspaceTeam[] = [
     team_type: 'general',
     created_at: '2026-03-27T00:00:00Z',
     updated_at: '2026-03-27T00:00:00Z',
-    default_story_type: 'feature',
+    default_task_type: 'feature',
   },
 ];
 

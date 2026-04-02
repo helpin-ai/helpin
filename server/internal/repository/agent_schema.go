@@ -53,7 +53,7 @@ BEGIN
         -- Backfill from story_id (only if legacy column exists)
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='story_id') THEN
             UPDATE agent_runs
-               SET target_type = 'story', target_id = story_id::uuid
+               SET target_type = 'task', target_id = story_id::uuid
              WHERE target_id IS NULL AND story_id IS NOT NULL;
         END IF;
 
@@ -71,7 +71,7 @@ BEGIN
 
         -- Default any remaining nulls so NOT NULL constraint can be applied
         UPDATE agent_runs
-           SET target_type = 'story'
+           SET target_type = 'task'
          WHERE target_type IS NULL;
 
         DELETE FROM agent_runs WHERE target_id IS NULL;

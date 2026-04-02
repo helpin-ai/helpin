@@ -323,8 +323,8 @@ slog.SetDefault(logger)
 **Usage patterns**:
 ```go
 // Basic structured logging
-slog.Info("story created", "story_id", story.ID, "workspace_id", story.WorkspaceID)
-slog.Error("failed to save", "error", err, "story_id", id)
+slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
+slog.Error("failed to save", "error", err, "task_id", id)
 
 // Context-aware (carries request_id, user_id from middleware)
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
@@ -345,7 +345,7 @@ logger.Info("emitting notification", "event_type", event.EventType)
 
 **Levels**:
 - `DEBUG`: Detailed diagnostic info (request params, intermediate values)
-- `INFO`: Normal operations (story created, email sent, workflow started)
+- `INFO`: Normal operations (task created, email sent, workflow started)
 - `WARN`: Recoverable issues (slow query, retry, deprecated usage)
 - `ERROR`: Failures requiring attention (DB error, external API failure)
 
@@ -367,7 +367,7 @@ src/routes/
   __root.tsx                  # Global layout
   _authenticated.tsx          # Auth guard (redirects to /login)
     w/$slug.tsx               # Workspace layout (loads workspace, settings, access)
-      pm/stories/index.tsx    # /w/:slug/pm/stories
+      pm/tasks/index.tsx      # /w/:slug/pm/tasks
       settings/$section.tsx   # /w/:slug/settings/:section
     workspaces.tsx            # /workspaces
 ```

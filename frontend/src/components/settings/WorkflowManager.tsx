@@ -39,7 +39,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const TRIGGER_LABELS: Record<string, string> = {
-  'story.state_entered': 'On state entry',
+  'task.state_entered': 'On state entry',
   'agent_run.approved': 'On run approved',
 };
 
@@ -63,7 +63,7 @@ function PipelineRulesSection({
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [newTrigger, setNewTrigger] = useState<string>('story.state_entered');
+  const [newTrigger, setNewTrigger] = useState<string>('task.state_entered');
   const [newAction, setNewAction] = useState<string>('start_agent_run');
   const [newAgentId, setNewAgentId] = useState<string>('');
   const [newTargetStateId, setNewTargetStateId] = useState<string>('');
@@ -136,7 +136,7 @@ function PipelineRulesSection({
         <Bot className="h-3.5 w-3.5 text-violet-500" />
         Pipeline Rules
       </Label>
-      <p className="text-xs text-muted-foreground">Automation rules triggered when stories enter or are approved in this state.</p>
+      <p className="text-xs text-muted-foreground">Automation rules triggered when tasks enter or are approved in this state.</p>
 
       {rules.length > 0 && (
         <div className="space-y-1">
@@ -165,7 +165,7 @@ function PipelineRulesSection({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="story.state_entered">On state entry</SelectItem>
+                <SelectItem value="task.state_entered">On state entry</SelectItem>
                 <SelectItem value="agent_run.approved">On run approved</SelectItem>
               </SelectContent>
             </Select>

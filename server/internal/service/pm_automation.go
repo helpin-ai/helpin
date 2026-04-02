@@ -269,7 +269,7 @@ func (s *PMAutomationService) HandleEpicAutoComplete(ctx context.Context, worksp
 	epic := epicWithStats.Epic
 	stats := epicWithStats.Stats
 
-	if stats.StoryCount == 0 || stats.DoneStoryCount != stats.StoryCount {
+	if stats.TaskCount == 0 || stats.DoneTaskCount != stats.TaskCount {
 		return false, nil
 	}
 	if epic.Completed {
@@ -541,11 +541,11 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 				continue
 			}
 			if err := s.storyRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
-				s.logger.ErrorContext(ctx, "failed to move unfinished story to next sprint", "error", err, "story_id", story.ID, "next_sprint_id", nextSprint.ID)
+				s.logger.ErrorContext(ctx, "failed to move unfinished task to next sprint", "error", err, "task_id", story.ID, "next_sprint_id", nextSprint.ID)
 				continue
 			}
 			metrics["stories_moved"] = metrics["stories_moved"].(int) + 1
-			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
 		}
 		if !failed {
 			s.observeSuccess(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, metrics)

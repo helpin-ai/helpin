@@ -527,7 +527,7 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 	return conversations, nil
 }
 
-// ListByLinkedStoryIDs returns conversations linked to any of the provided stories.
+// ListByLinkedStoryIDs returns conversations linked to any of the provided tasks.
 func (r *SupportConversationRepository) ListByLinkedStoryIDs(ctx context.Context, workspaceID string, storyIDs []string) ([]model.SupportConversation, error) {
 	if len(storyIDs) == 0 {
 		return []model.SupportConversation{}, nil
@@ -535,7 +535,7 @@ func (r *SupportConversationRepository) ListByLinkedStoryIDs(ctx context.Context
 
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND linked_story_id IN ?", workspaceID, storyIDs).
+		Where("workspace_id = ? AND linked_task_id IN ?", workspaceID, storyIDs).
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by linked stories: %w", err)

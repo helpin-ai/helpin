@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import {
   useConversationAssociations,
   useCreatePMAssociation,
@@ -27,11 +27,11 @@ import {
   useDeleteDocAssociation,
   useWorkflows,
 } from '@/hooks/queries';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
-import type { GroupedAssociations, CreateStoryRequest } from '@/lib/pmTypes';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
 
 interface SidebarAssociationsProps {
   workspaceId: string;
@@ -55,7 +55,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
 
   const handleNavigateStory = (storyId: string) => {
     if (!slug) return;
-    openStoryRoute(navigate as never, location as never, slug, storyId);
+    openTaskRoute(navigate as never, location as never, slug, storyId);
   };
 
   const handleNavigateDoc = (docId: string) => {
@@ -108,27 +108,27 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
         workspace_id: workspaceId,
         from_object_type: 'support_conversation',
         from_object_id: conversationId,
-        to_object_type: 'story',
+        to_object_type: 'task',
         to_object_id: id,
       });
     }
     setPickerSection(null);
   };
 
-  const handleCreateAndLinkStory = async (payload: CreateStoryRequest) => {
-    const { data, error } = await pmStoryService.create(payload);
+  const handleCreateAndLinkStory = async (payload: CreateTaskRequest) => {
+    const { data, error } = await pmTaskService.create(payload);
     if (error) throw new Error(error);
-    const storyId = data?.story?.id;
-    if (storyId) {
+    const taskId = data?.task?.id;
+    if (taskId) {
       await createAssociation.mutateAsync({
         workspace_id: workspaceId,
         from_object_type: 'support_conversation',
         from_object_id: conversationId,
-        to_object_type: 'story',
-        to_object_id: storyId,
+        to_object_type: 'task',
+        to_object_id: taskId,
       });
     }
-    return storyId ? { id: storyId } : undefined;
+    return taskId ? { id: taskId } : undefined;
   };
 
   if (associationsQuery.isLoading) {
@@ -146,14 +146,14 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   return (
     <div>
       <CollapsibleSection
-        title="Stories"
+        title="Tasks"
         icon={GitBranch}
         count={stories.length}
         defaultOpen={stories.length > 0}
         onAdd={() => setPickerSection('stories')}
       >
         {stories.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground italic py-1">No linked stories</p>
+          <p className="text-[11px] text-muted-foreground italic py-1">No linked tasks</p>
         ) : (
           stories.map((item) => (
             <CompactChip
@@ -194,7 +194,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              Link {pickerSection === 'stories' ? 'Story' : 'Document'}
+              Link {pickerSection === 'stories' ? 'Task' : 'Document'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -209,7 +209,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                 }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Create New Story
+                Create New Task
               </Button>
             )}
             <div className="relative">
@@ -217,7 +217,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={pickerSection === 'stories' ? 'Search existing stories...' : 'Search documents...'}
+                placeholder={pickerSection === 'stories' ? 'Search existing tasks...' : 'Search documents...'}
                 className="pl-9"
                 autoFocus
               />
@@ -257,9 +257,9 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
         </DialogContent>
       </Dialog>
 
-      {/* Create Story modal — creates and auto-links to this conversation */}
+      {/* Create Task modal — creates and auto-links to this conversation */}
       {workflow && (
-        <CreateStoryModal
+        <CreateTaskModal
           open={createStoryOpen}
           onOpenChange={setCreateStoryOpen}
           workspaceId={workspaceId}

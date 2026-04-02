@@ -125,8 +125,8 @@ type UpdateEpicHealthRequest struct {
 
 // PMEpicStats contains derived epic progress metrics.
 type PMEpicStats struct {
-	StoryCount      int `json:"story_count"`
-	DoneStoryCount  int `json:"done_story_count"`
+	TaskCount       int `json:"task_count"`
+	DoneTaskCount   int `json:"done_task_count"`
 	TotalPoints     int `json:"total_points"`
 	DonePoints      int `json:"done_points"`
 	InProgressCount int `json:"in_progress_count"`

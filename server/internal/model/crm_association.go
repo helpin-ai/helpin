@@ -4,11 +4,12 @@ import "time"
 
 // CRM object types for associations.
 const (
-	CRMObjectContact = "contact"
-	CRMObjectCompany = "company"
-	CRMObjectDeal    = "deal"
-	CRMObjectEpic    = "epic"
-	CRMObjectStory   = "story"
+	CRMObjectContact             = "contact"
+	CRMObjectCompany             = "company"
+	CRMObjectDeal                = "deal"
+	CRMObjectEpic                = "epic"
+	CRMObjectStory               = "story" // Deprecated: use CRMObjectTask
+	CRMObjectTask                = "task"
 	CRMObjectSupportConversation = "support_conversation"
 )
 

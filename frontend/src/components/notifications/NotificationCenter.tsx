@@ -3,7 +3,7 @@ import { Bell, CheckCheck, Archive, Clock, Trash2, Eye, EyeOff } from 'lucide-re
 import { formatDistanceToNow } from 'date-fns'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation'
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -190,10 +190,10 @@ export function NotificationCenter() {
   const notifications = data?.pages.flatMap((p) => p.data) ?? []
 
   const handleNavigate = (notification: Notification) => {
-    if (notification.entity_type === 'story') {
+    if (notification.entity_type === 'task') {
       if (!slug) return
       setOpen(false)
-      openStoryRoute(navigate as never, location as never, slug, notification.entity_id)
+      openTaskRoute(navigate as never, location as never, slug, notification.entity_id)
       return
     }
     const route = getEntityRoute(slug, notification.entity_type, notification.entity_id)

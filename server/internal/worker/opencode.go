@@ -83,11 +83,11 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	}
 
 	var checklist []model.PMChecklistItem
-	if execCtx.StoryID != "" && execCtx.Services != nil && execCtx.Services.ListChecklist != nil {
-		items, err := execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.StoryID)
+	if execCtx.TaskID != "" && execCtx.Services != nil && execCtx.Services.ListChecklist != nil {
+		items, err := execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.TaskID)
 		if err != nil {
 			slog.WarnContext(execCtx.Context, "failed to list checklist for opencode run",
-				"error", err, "story_id", execCtx.StoryID)
+				"error", err, "task_id", execCtx.TaskID)
 		} else {
 			checklist = items
 		}
@@ -104,15 +104,15 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	userPrompt := BuildUserPrompt(
 		execCtx.Agent,
-		execCtx.Story,
+		execCtx.Task,
 		execCtx.Epic,
-		execCtx.EpicStories,
+		execCtx.EpicTasks,
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
@@ -512,7 +512,7 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 		return fmt.Errorf("inspect staged files: %s", strings.TrimSpace(firstNonEmptyText(filesOutput, err.Error())))
 	}
 	changedFiles := strings.Fields(filesOutput)
-	commitMessage := buildEngineerCommitMessage(execCtx.Story)
+	commitMessage := buildEngineerCommitMessage(execCtx.Task)
 	if strings.TrimSpace(diff) == "" || len(changedFiles) == 0 {
 		committedChange, err := detectCommittedEngineerChange(execCtx)
 		if err != nil {
@@ -587,7 +587,7 @@ func normalizeOpenCodePostRunError(ctx context.Context, err error) error {
 }
 
 func isEngineerStoryRun(execCtx *ExecutionContext) bool {
-	return execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
+	return execCtx != nil && execCtx.Task != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
 }
 
 func isInteractiveRunInvocation(run *model.AgentRun) bool {
@@ -614,9 +614,9 @@ func buildEngineerCommitMessage(story *model.PMStory) string {
 		return "tp: apply engineer run changes"
 	}
 	if story.DisplayID > 0 {
-		return fmt.Sprintf("tp: story #%d %s", story.DisplayID, story.Name)
+		return fmt.Sprintf("tp: task #%d %s", story.DisplayID, story.Name)
 	}
-	return fmt.Sprintf("tp: story %s", story.Name)
+	return fmt.Sprintf("tp: task %s", story.Name)
 }
 
 type engineerCommittedChange struct {

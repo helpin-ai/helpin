@@ -20,11 +20,11 @@ func NewPMExternalLinkRepository(db *gorm.DB) *PMExternalLinkRepository {
 	return &PMExternalLinkRepository{db: db}
 }
 
-// List returns external links for a story.
+// List returns external links for a task.
 func (r *PMExternalLinkRepository) List(ctx context.Context, storyID string) ([]model.PMExternalLink, error) {
 	var links []model.PMExternalLink
 	if err := r.db.WithContext(ctx).
-		Where("story_id = ?", storyID).
+		Where("task_id = ?", storyID).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list external links: %w", err)
@@ -68,10 +68,10 @@ func (r *PMExternalLinkRepository) Delete(ctx context.Context, id string) error 
 	return nil
 }
 
-// Count returns number of external links for a story.
+// Count returns number of external links for a task.
 func (r *PMExternalLinkRepository) Count(ctx context.Context, storyID string) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.PMExternalLink{}).Where("story_id = ?", storyID).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.PMExternalLink{}).Where("task_id = ?", storyID).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count external links: %w", err)
 	}
 	return count, nil

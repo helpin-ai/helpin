@@ -76,10 +76,10 @@ func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLin
 		return
 	}
 
-	// Collect story IDs.
+	// Collect task IDs.
 	var storyIDs []string
 	for _, l := range links {
-		if l.LinkedObjectType == "story" {
+		if l.LinkedObjectType == "task" || l.LinkedObjectType == "story" {
 			storyIDs = append(storyIDs, l.LinkedObjectID)
 		}
 	}
@@ -100,7 +100,7 @@ func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLin
 	}
 
 	for i := range links {
-		if links[i].LinkedObjectType == "story" {
+		if links[i].LinkedObjectType == "task" || links[i].LinkedObjectType == "story" {
 			if st, ok := storyMap[links[i].LinkedObjectID]; ok {
 				links[i].LinkedObjectName = st.Name
 				links[i].LinkedObjectDisplayID = st.DisplayID

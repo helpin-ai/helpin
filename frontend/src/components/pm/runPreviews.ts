@@ -16,6 +16,8 @@ const PREVIEW_TOOL_NAMES = new Set([
   'preview_md',
   'preview_json',
   'publish_prd_draft',
+  'publish_task_plan',
+  'publish_task_plan_doc',
   'publish_story_plan',
   'publish_story_plan_doc',
 ]);
@@ -55,7 +57,12 @@ function parsePreviewInput(input: unknown, surroundingText: string): PublishedPr
   const payload = asRecord(input);
   if (!payload) return null;
 
-  const panelKey = asString(payload.panel_key)?.toLowerCase();
+  const rawPanelKey = asString(payload.panel_key)?.toLowerCase();
+  const panelKey = rawPanelKey === 'story_plan'
+    ? 'task_plan'
+    : rawPanelKey === 'story_plan_doc'
+      ? 'task_plan_doc'
+      : rawPanelKey;
   const title = asString(payload.title);
   const format = normalizePreviewFormat(payload.format);
   if (!panelKey || !title || !format || !Object.prototype.hasOwnProperty.call(payload, 'content')) {
@@ -138,10 +145,10 @@ function defaultPreviewTitle(panelKey: string): string {
   switch (panelKey) {
     case 'prd_draft':
       return 'PRD Draft';
-    case 'story_plan':
-      return 'Story Plan';
-    case 'story_plan_doc':
-      return 'Story Planning Document';
+    case 'task_plan':
+      return 'Task Plan';
+    case 'task_plan_doc':
+      return 'Task Planning Document';
     default:
       return '';
   }
@@ -158,12 +165,14 @@ function buildFixedToolPreviewInput(toolName: string, input: unknown): unknown {
       panelKey = 'prd_draft';
       format = 'markdown';
       break;
+    case 'publish_task_plan':
     case 'publish_story_plan':
-      panelKey = 'story_plan';
+      panelKey = 'task_plan';
       format = 'json';
       break;
+    case 'publish_task_plan_doc':
     case 'publish_story_plan_doc':
-      panelKey = 'story_plan_doc';
+      panelKey = 'task_plan_doc';
       format = 'markdown';
       break;
     default:

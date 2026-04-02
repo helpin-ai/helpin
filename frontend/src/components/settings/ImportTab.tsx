@@ -12,7 +12,7 @@ const IMPORT_SOURCES = [
   {
     key: 'shortcut' as const,
     title: 'Shortcut',
-    description: 'Import stories, epics, workflows, and members from Shortcut.',
+    description: 'Import tasks, epics, workflows, and members from Shortcut.',
     icon: Import,
     comingSoon: false,
   },

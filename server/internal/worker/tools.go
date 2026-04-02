@@ -421,7 +421,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolRequestHumanApproval)
 
-	r.register("update_plan", "Update the current execution plan for this run. Use this for short working-step checklists, not for PRDs, story plans, or canonical planning documents.", map[string]interface{}{
+	r.register("update_plan", "Update the current execution plan for this run. Use this for short working-step checklists, not for PRDs, task plans, or canonical planning documents.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"note": map[string]interface{}{
@@ -493,12 +493,12 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolPublishPRDDraft)
 
-	r.register("publish_story_plan", "Publish the current epic story plan JSON for review.", map[string]interface{}{
+	r.register("publish_task_plan", "Publish the current epic task plan JSON for review.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"title": map[string]interface{}{"type": "string"},
 			"content": map[string]interface{}{
-				"description": "Story plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
+				"description": "Task plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
 				"type":        "object",
 				"properties": map[string]interface{}{
 					"summary":          map[string]interface{}{"type": "string"},
@@ -510,9 +510,9 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required":             []string{"content"},
 		"additionalProperties": false,
-	}, toolPublishStoryPlan)
+	}, toolPublishTaskPlan)
 
-	r.register("publish_story_plan_doc", "Publish the current story planning document markdown for review.", map[string]interface{}{
+	r.register("publish_task_plan_doc", "Publish the current task planning document markdown for review.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"title":   map[string]interface{}{"type": "string"},
@@ -521,7 +521,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required":             []string{"content"},
 		"additionalProperties": false,
-	}, toolPublishStoryPlanDoc)
+	}, toolPublishTaskPlanDoc)
 
 	r.register("publish_preview", "Publish a structured preview panel in the interactive run drawer right pane. Use this for markdown drafts and JSON plans that should be reviewed separately from the main chat.", map[string]interface{}{
 		"type": "object",
@@ -546,7 +546,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolPublishPreview)
 
-	r.register("add_story_comment", "Add a comment to the current story visible in Helpin.", map[string]interface{}{
+	r.register("add_task_comment", "Add a comment to the current task visible in Helpin.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"content": map[string]interface{}{
@@ -555,12 +555,12 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 		},
 		"required": []string{"content"},
-	}, toolAddStoryComment)
+	}, toolAddTaskComment)
 
-	r.register("list_story_checklist", "List the checklist items for the current story.", map[string]interface{}{
+	r.register("list_task_checklist", "List the checklist items for the current task.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
-	}, toolListStoryChecklist)
+	}, toolListTaskChecklist)
 
 	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
 		"type":       "object",
@@ -674,23 +674,23 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
-	r.register("list_epic_stories", "List all non-archived stories linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
+	r.register("list_epic_tasks", "List all non-archived tasks linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
-	}, toolListEpicStories)
+	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
-		"update_story_state":      toolUpdateStoryState,
+		"update_task_state":       toolUpdateTaskState,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
-		"ensure_story_plan_doc":   toolEnsureStoryPlanDoc,
+		"ensure_task_plan_doc":    toolEnsureTaskPlanDoc,
 		"approve_epic_spec":       toolApproveEpicSpec,
-		"create_story_batch":      toolCreateStoryBatch,
-		"assign_story_agent":      toolAssignStoryAgent,
-		"set_story_dependencies":  toolSetStoryDependencies,
+		"create_task_batch":       toolCreateTaskBatch,
+		"assign_task_agent":       toolAssignTaskAgent,
+		"set_task_dependencies":   toolSetTaskDependencies,
 	})
 
 	return r

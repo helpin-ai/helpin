@@ -253,7 +253,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 	}
 
 	if s.activityService != nil {
-		_ = s.activityService.Log(ctx, req.WorkspaceID, "story", rawStory.ID, optionalActor(actorID), "made this story recurring", nil, nil, nil, nil)
+		_ = s.activityService.Log(ctx, req.WorkspaceID, "task", rawStory.ID, optionalActor(actorID), "made this task recurring", nil, nil, nil, nil)
 	}
 
 	detail, err := s.buildDetail(ctx, tmpl, true)

@@ -168,7 +168,7 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 		Points    int
 	}
 	if err := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Select("ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 		Where("s.epic_id = ? AND s.archived = false", epicID).
@@ -178,11 +178,11 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 	}
 
 	for _, row := range rows {
-		stats.StoryCount += row.Count
+		stats.TaskCount += row.Count
 		stats.TotalPoints += row.Points
 		switch row.StateType {
 		case model.PMStateTypeDone:
-			stats.DoneStoryCount += row.Count
+			stats.DoneTaskCount += row.Count
 			stats.DonePoints += row.Points
 		case model.PMStateTypeStarted:
 			stats.InProgressCount += row.Count

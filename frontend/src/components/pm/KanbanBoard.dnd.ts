@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import type { Story } from '@/lib/pmTypes';
+import type { Task } from '@/lib/pmTypes';
 
 // ── DragPreviewManager ─────────────────────────────────────────────
 // Stores drag preview state outside React's render cycle.
@@ -14,15 +14,15 @@ export interface PreviewDropTarget {
 }
 
 export class DragPreviewManager {
-  private activeStory: Story | null = null;
-  private columnOverrides = new Map<string, Story[]>();
+  private activeStory: Task | null = null;
+  private columnOverrides = new Map<string, Task[]>();
   private dropTarget: PreviewDropTarget | null = null;
   private columnListeners = new Map<string, Set<Listener>>();
   private globalListeners = new Set<Listener>();
 
   // ── Mutations ──
 
-  setActiveStory(story: Story | null) {
+  setActiveStory(story: Task | null) {
     this.activeStory = story;
     if (story === null) {
       this.dropTarget = null;
@@ -30,7 +30,7 @@ export class DragPreviewManager {
     this.notifyGlobal();
   }
 
-  updatePreview(fromId: string, toId: string, newFromStories: Story[], newToStories: Story[], toIndex: number) {
+  updatePreview(fromId: string, toId: string, newFromStories: Task[], newToStories: Task[], toIndex: number) {
     this.columnOverrides.set(fromId, newFromStories);
     this.columnOverrides.set(toId, newToStories);
     this.dropTarget = {
@@ -59,11 +59,11 @@ export class DragPreviewManager {
 
   // ── Reads ──
 
-  getActiveStory(): Story | null {
+  getActiveStory(): Task | null {
     return this.activeStory;
   }
 
-  getColumnStories(columnId: string): Story[] | null {
+  getColumnStories(columnId: string): Task[] | null {
     return this.columnOverrides.get(columnId) ?? null;
   }
 
@@ -116,8 +116,8 @@ const NOOP_UNSUB = () => {};
 export function useColumnDragPreview(
   manager: DragPreviewManager | null | undefined,
   columnId: string,
-  baseStories: Story[],
-): Story[] {
+  baseStories: Task[],
+): Task[] {
   const subscribe = useCallback(
     (cb: () => void) => manager ? manager.subscribeColumn(columnId, cb) : NOOP_UNSUB,
     [manager, columnId],
@@ -133,7 +133,7 @@ export function useColumnDragPreview(
 /**
  * Subscribe to the active dragged story (for DragOverlay).
  */
-export function useActiveStory(manager: DragPreviewManager | null | undefined): Story | null {
+export function useActiveStory(manager: DragPreviewManager | null | undefined): Task | null {
   const subscribe = useCallback(
     (cb: () => void) => manager ? manager.subscribeGlobal(cb) : NOOP_UNSUB,
     [manager],

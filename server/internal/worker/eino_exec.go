@@ -1152,9 +1152,9 @@ func isParallelSafeTool(name string) bool {
 	switch strings.TrimSpace(name) {
 	case "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols",
 		"web_search_brave",
-		"list_story_checklist", "list_workspace_teams", "list_conversation_messages",
+		"list_task_checklist", "list_workspace_teams", "list_conversation_messages",
 		"list_deals", "list_contacts", "list_buyer_signals",
-		"list_documents", "read_document", "search_documents", "list_epic_stories":
+		"list_documents", "read_document", "search_documents", "list_epic_tasks":
 		return true
 	default:
 		return false

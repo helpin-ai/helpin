@@ -16,7 +16,7 @@ import type { RecurringRun, RecurringTemplateDetail } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { toast } from 'sonner';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 const RUN_PAGE_SIZE = 10;
 
@@ -34,7 +34,7 @@ function formatRunTrigger(run: RecurringRun) {
   }
 }
 
-function RunHistory({ runs, onOpenStory }: { runs: RecurringRun[]; onOpenStory?: (storyId: string) => void }) {
+function RunHistory({ runs, onOpenTask }: { runs: RecurringRun[]; onOpenTask?: (taskId: string) => void }) {
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(runs.length / RUN_PAGE_SIZE);
   const visible = runs.slice(page * RUN_PAGE_SIZE, (page + 1) * RUN_PAGE_SIZE);
@@ -65,9 +65,9 @@ function RunHistory({ runs, onOpenStory }: { runs: RecurringRun[]; onOpenStory?:
             <span className="min-w-0 flex-1 truncate">{formatRunTrigger(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRunRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-            {run.generated_story_id && onOpenStory ? (
-              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenStory(run.generated_story_id!)}>
-                View story
+            {run.generated_story_id && onOpenTask ? (
+              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenTask(run.generated_story_id!)}>
+                View task
               </button>
             ) : null}
           </div>
@@ -153,9 +153,9 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
     [editTemplate, loadTemplateDetail, reload, viewTemplate],
   );
 
-  const handleOpenStory = (storyId?: string) => {
-    if (!storyId || !workspace?.slug) return;
-    openStoryRoute(navigate as never, location as never, workspace.slug, storyId);
+  const handleOpenTask = (taskId?: string) => {
+    if (!taskId || !workspace?.slug) return;
+    openTaskRoute(navigate as never, location as never, workspace.slug, taskId);
   };
 
   const handleEditSubmit = async (value: RecurringTemplateFormValue) => {
@@ -254,7 +254,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
                 <DialogDescription>{viewTemplate.template.title}</DialogDescription>
               </DialogHeader>
               {viewTemplate.runs && viewTemplate.runs.length > 0 ? (
-                <RunHistory runs={viewTemplate.runs} onOpenStory={(storyId) => handleOpenStory(storyId)} />
+                <RunHistory runs={viewTemplate.runs} onOpenTask={(taskId) => handleOpenTask(taskId)} />
               ) : (
                 <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Stories will appear here after the first scheduled run.</p>
               )}

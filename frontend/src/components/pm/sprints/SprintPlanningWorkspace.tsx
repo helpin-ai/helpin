@@ -14,7 +14,7 @@ import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlan
 import { SprintPlanningBacklogPanel } from './SprintPlanningBacklogPanel';
 import { SprintPlanningColumn } from './SprintPlanningColumn';
 import { SprintPlanningEmptyState } from './SprintPlanningEmptyState';
-import { SprintPlanningStoryCard } from './SprintPlanningStoryCard';
+import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 
 interface SprintPlanningWorkspaceProps {
   workspace: SprintPlanningWorkspaceData | null;
@@ -146,7 +146,7 @@ export function SprintPlanningWorkspace({
       <DragOverlay>
         {activeStory ? (
           <div className="w-[300px] rotate-[1deg] shadow-xl">
-            <SprintPlanningStoryCard
+            <SprintPlanningTaskCard
               story={activeStory}
               owner={activeStory.owner_member_id ? ownerByMemberId.get(activeStory.owner_member_id) : undefined}
               compact

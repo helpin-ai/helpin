@@ -178,20 +178,27 @@ const (
 
 // EventTypeToCategory maps individual event types to their notification category.
 var EventTypeToCategory = map[string]string{
+	"task.created":       NotifCategorySubscriptions,
+	"task.assigned":      NotifCategoryAssignments,
 	"story.created":      NotifCategorySubscriptions,
 	"story.assigned":     NotifCategoryAssignments,
 	"objective.assigned": NotifCategoryAssignments,
 
+	"task.status_changed":  NotifCategoryStatusChanges,
+	"task.blocked":         NotifCategoryStatusChanges,
+	"task.updated":         NotifCategoryStatusChanges,
 	"story.status_changed": NotifCategoryStatusChanges,
 	"story.blocked":        NotifCategoryStatusChanges,
 	"story.updated":        NotifCategoryStatusChanges,
 
-	"comment.created":   NotifCategoryComments,
-	"story.comment":     NotifCategoryComments,
-	"objective.comment": NotifCategoryComments,
-	"epic.comment":      NotifCategoryComments,
-	"sprint.comment":    NotifCategoryComments,
+	"comment.created":    NotifCategoryComments,
+	"task.comment":       NotifCategoryComments,
+	"story.comment":      NotifCategoryComments,
+	"objective.comment":  NotifCategoryComments,
+	"epic.comment":       NotifCategoryComments,
+	"sprint.comment":     NotifCategoryComments,
 
+	"task.mention":      NotifCategoryMentions,
 	"story.mention":     NotifCategoryMentions,
 	"comment.mention":   NotifCategoryMentions,
 	"checklist.mention": NotifCategoryMentions,
@@ -240,8 +247,8 @@ func (EntityFollower) TableName() string { return "entity_followers" }
 type NotificationEventInput struct {
 	WorkspaceID          string
 	ActorID              string
-	EventType            string // e.g. "story.assigned"
-	EntityType           string // e.g. "story"
+	EventType            string // e.g. "task.assigned"
+	EntityType           string // e.g. "task"
 	EntityID             string
 	Title                string
 	Body                 string

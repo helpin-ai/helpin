@@ -30,6 +30,14 @@ The result should be internally consistent: after rollout, the system should not
 
 Do **not** use GORM `AutoMigrate` as the primary mechanism for this rename.
 
+This repo now has a dedicated runtime migration path and the rename should use that path:
+
+- `server/cmd/migrate` is the migration runner binary
+- `server/internal/dbmigrate` owns the `schema_migrations` ledger, embedded SQL loading, checksums, and advisory lock
+- ArgoCD should execute migrations through the `PreSync` Jobs in `k8s/stage/server-migrate.yaml` and `k8s/prod/server-migrate.yaml`
+- `RUN_AUTO_MIGRATE` in `cmd/api/main.go` must be set to `false` for the Story -> Task cutover release so the app does not recreate story-era tables/columns after the rename
+- startup `AutoMigrate` remains acceptable only for normal additive schema evolution outside this hard-cut rename
+
 Use explicit numbered SQL migrations for:
 
 - table renames like `pm_stories` -> `pm_tasks`
@@ -40,6 +48,15 @@ Use explicit numbered SQL migrations for:
 - event/preset/target-type backfills such as `story` -> `task` and `story_planner` -> `task_planner`
 
 `AutoMigrate` may remain enabled for normal additive schema evolution after the cutover, but it must not be trusted to carry the rename itself.
+
+Execution model for this rename:
+
+1. Add the forward Story -> Task SQL file under `server/internal/dbmigrate/sql/`
+2. Rehearse `./migrate up` against staging data
+3. Deploy the cutover release with the ArgoCD `PreSync` migration Job enabled
+4. Set `RUN_AUTO_MIGRATE=false` on the application Deployment for that release
+5. Let ArgoCD run the migration Job before rolling the new API pods
+6. Re-enable `RUN_AUTO_MIGRATE=true` later only if desired for additive-only post-cutover changes
 
 ### 2. Port existing stories by in-place rename
 
@@ -68,6 +85,8 @@ No permanent compatibility layer is planned. If operationally needed during roll
 ### 1. Database and schema layer
 
 Rename schema objects in place.
+
+The Story -> Task rename SQL should be implemented as one or more new versioned files in `server/internal/dbmigrate/sql/`, not by editing historical files in `server/migrations/` and not by relying on startup `AutoMigrate`.
 
 Primary expected changes:
 
@@ -315,6 +334,18 @@ Update repo-level documentation that references "story" as the canonical term:
 - This is a coordinated release and should not be partially deployed.
 - Migration execution order must be documented and rehearsed against a seeded staging database.
 - Existing bookmarked `/pm/stories/...` URLs will break after cutover by design, so release notes and internal comms should call out the route change.
+
+### Migration runner sequence
+
+For this rename, Kubernetes/ArgoCD rollout should be:
+
+1. Build and publish the server image that contains `./migrate` and the new Story -> Task SQL migration files
+2. Ensure the `PreSync` Job manifest points at that exact image tag
+3. Set `RUN_AUTO_MIGRATE=false` on the API Deployment for the cutover release
+4. Let ArgoCD run the `PreSync` migration Job (`./migrate up`) before applying the new Deployment
+5. Roll the new task-era API pods only after the migration Job succeeds
+
+Do not rely on API startup to perform the rename. The runner is now the canonical path for this class of migration.
 
 ### Temporary redirects (recommended)
 
