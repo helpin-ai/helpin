@@ -392,7 +392,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             key: 'general',
             icon: Settings2,
             title: 'General',
-            description: 'Name, identifier, team type, and story defaults',
+            description: 'Name, identifier, team type, and task defaults',
             meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering / dev team' : 'Non-engineering team']
               .filter(Boolean)
               .join(' · '),
@@ -470,12 +470,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         ],
       },
       {
-        label: 'Story options',
+        label: 'Task options',
         rows: [
           {
             key: 'field-visibility',
             icon: Eye,
-            title: 'Story fields',
+            title: 'Task fields',
             description: 'Configure which fields and panels appear on tasks',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
@@ -484,7 +484,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           {
             key: 'labels',
             icon: Tag,
-            title: 'Story labels',
+            title: 'Task labels',
             description: "Labels available to this team's tasks",
             meta: '',
             action: () => openSettingsSection('labels'),
@@ -493,7 +493,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           {
             key: 'estimates',
             icon: LayoutGrid,
-            title: 'Story estimates',
+            title: 'Task estimates',
             description: 'Configure estimate scale and options',
             meta: estimateMeta,
             action: () => setEstimateDialogOpen(true),
@@ -909,7 +909,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         <Dialog open={estimateDialogOpen} onOpenChange={setEstimateDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Story Estimates</DialogTitle>
+              <DialogTitle>Task Estimates</DialogTitle>
             </DialogHeader>
             <EstimateSettingsForm
               teamId={selectedTeam.id}
@@ -997,11 +997,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           </DialogContent>
         </Dialog>
 
-        {/* Story Display Dialog */}
+        {/* Task Display Dialog */}
         <Dialog open={fieldVisDialogOpen} onOpenChange={setFieldVisDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Story Fields</DialogTitle>
+              <DialogTitle>Task Fields</DialogTitle>
             </DialogHeader>
             <FieldVisibilityForm
               teamId={selectedTeam.id}
@@ -1017,7 +1017,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 if (error) {
                   toast.error(error);
                 } else {
-                  toast.success('Story fields updated');
+                  toast.success('Task fields updated');
                   setFieldVisDialogOpen(false);
                   await onRefresh();
                 }

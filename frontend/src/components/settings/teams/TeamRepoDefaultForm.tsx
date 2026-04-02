@@ -51,7 +51,7 @@ export function TeamRepoDefaultForm({
   return (
     <div className="space-y-5 py-2">
       <p className="text-sm text-muted-foreground">
-        Tasks on this team inherit these delivery defaults. Story detail can still override the repository or base branch.
+        Tasks on this team inherit these delivery defaults. Task detail can still override the repository or base branch.
       </p>
       <div className="space-y-2">
         <Label>Repository</Label>

@@ -240,7 +240,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
           onResume={editable ? (item) => void runAction(() => pmRecurringTemplateService.resume(workspaceId, item.template.id), 'Recurring template resumed') : undefined}
           onStop={editable ? (item) => setDeleteConfirm(item) : undefined}
           onSkipNext={editable ? (item) => void runAction(() => pmRecurringTemplateService.skipNext(workspaceId, item.template.id), 'Next occurrence skipped') : undefined}
-          onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring story generated') : undefined}
+          onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring task generated') : undefined}
           onDuplicate={editable ? (item) => void runAction(() => pmRecurringTemplateService.duplicate(workspaceId, item.template.id), 'Recurring template duplicated') : undefined}
         />
       )}

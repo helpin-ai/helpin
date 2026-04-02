@@ -282,8 +282,8 @@ func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string,
 	})
 }
 
-// ListStories returns stories in a sprint.
-func (r *PMSprintRepository) ListStories(ctx context.Context, sprintID string) ([]model.PMTask, error) {
+// ListTasks returns tasks in a sprint.
+func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
 	var stories []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND archived = false", sprintID).

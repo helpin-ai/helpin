@@ -15,7 +15,7 @@ import (
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
-	storyRepo           *repository.PMTaskRepository
+	taskRepo           *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -25,10 +25,10 @@ type PMCommentService struct {
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
-		storyRepo:           storyRepo,
+		taskRepo:           taskRepo,
 		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
@@ -75,7 +75,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 
 	// Auto-follow task when someone comments.
 	if req.EntityType == "task" || req.EntityType == "story" {
-		if err := s.storyRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
+		if err := s.taskRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to auto-follow story on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
 		}
 	}
@@ -106,7 +106,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
 		if req.EntityType == "task" || req.EntityType == "story" {
-			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
+			if story, _ := s.taskRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
@@ -274,7 +274,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
 		if comment.EntityType == "task" || comment.EntityType == "story" {
-			if story, _ := s.storyRepo.GetRawByID(ctx, comment.EntityID); story != nil {
+			if story, _ := s.taskRepo.GetRawByID(ctx, comment.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)

@@ -11,10 +11,7 @@ pub struct FallbackSink {
 }
 
 impl FallbackSink {
-    pub fn new(
-        primary: Arc<dyn EventSink + Send + Sync>,
-        fallback: Arc<DiskSink>,
-    ) -> Self {
+    pub fn new(primary: Arc<dyn EventSink + Send + Sync>, fallback: Arc<DiskSink>) -> Self {
         FallbackSink { primary, fallback }
     }
 
@@ -39,9 +36,7 @@ impl EventSink for FallbackSink {
         match self.primary.send(event).await {
             Ok(()) => Ok(()),
             Err(CaptureError::RetryableSinkError) => {
-                tracing::warn!(
-                    "Primary sink failed with retryable error, falling back to disk"
-                );
+                tracing::warn!("Primary sink failed with retryable error, falling back to disk");
                 metrics::counter!("capture_fallback_failovers_total", 1);
                 self.fallback.send(fallback_event).await
             }
@@ -122,8 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_primary_success_no_fallback() {
-        let dir =
-            std::env::temp_dir().join(format!("fallback_success_{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fallback_success_{}", Uuid::new_v4()));
         let primary: Arc<dyn EventSink + Send + Sync> = Arc::new(SuccessSink);
         let fallback = Arc::new(DiskSink::new(dir.clone()));
         let sink = FallbackSink::new(primary, fallback.clone());
@@ -146,8 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retryable_error_falls_to_disk() {
-        let dir =
-            std::env::temp_dir().join(format!("fallback_retry_{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fallback_retry_{}", Uuid::new_v4()));
         let primary: Arc<dyn EventSink + Send + Sync> = Arc::new(RetryableFailSink);
         let fallback = Arc::new(DiskSink::new(dir.clone()));
         let sink = FallbackSink::new(primary, fallback.clone());
@@ -172,8 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_non_retryable_error_propagates() {
-        let dir =
-            std::env::temp_dir().join(format!("fallback_nonretry_{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fallback_nonretry_{}", Uuid::new_v4()));
         let primary: Arc<dyn EventSink + Send + Sync> = Arc::new(NonRetryableFailSink);
         let fallback = Arc::new(DiskSink::new(dir.clone()));
         let sink = FallbackSink::new(primary, fallback.clone());
@@ -200,8 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_retryable_falls_to_disk() {
-        let dir =
-            std::env::temp_dir().join(format!("fallback_batch_retry_{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fallback_batch_retry_{}", Uuid::new_v4()));
         let primary: Arc<dyn EventSink + Send + Sync> = Arc::new(RetryableFailSink);
         let fallback = Arc::new(DiskSink::new(dir.clone()));
         let sink = FallbackSink::new(primary, fallback.clone());
@@ -232,8 +223,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_non_retryable_propagates() {
-        let dir = std::env::temp_dir()
-            .join(format!("fallback_batch_nonretry_{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fallback_batch_nonretry_{}", Uuid::new_v4()));
         let primary: Arc<dyn EventSink + Send + Sync> = Arc::new(NonRetryableFailSink);
         let fallback = Arc::new(DiskSink::new(dir.clone()));
         let sink = FallbackSink::new(primary, fallback.clone());
@@ -241,7 +231,10 @@ mod tests {
         let events = vec![make_test_event("b1"), make_test_event("b2")];
 
         let result = sink.send_batch(events).await;
-        assert!(result.is_err(), "Non-retryable batch errors should propagate");
+        assert!(
+            result.is_err(),
+            "Non-retryable batch errors should propagate"
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

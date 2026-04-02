@@ -40,7 +40,11 @@ impl PrivacyEnrichmentService {
         let country = match geo_resolver.lookup_country(client_ip) {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Could not look up country for ip {:?}: {:?}, defaulting to non-EU", client_ip, e);
+                tracing::warn!(
+                    "Could not look up country for ip {:?}: {:?}, defaulting to non-EU",
+                    client_ip,
+                    e
+                );
                 return false;
             }
         };
@@ -216,5 +220,4 @@ mod tests {
         assert_eq!(Some(data.ip.clone()), Some("157.90.23.1".to_string()));
         assert_ne!(Some(data.ip), Some("157.90.23.154".to_string()));
     }
-
 }

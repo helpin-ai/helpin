@@ -9,7 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// PMTaskTemplateHandler handles PM story template HTTP endpoints.
+// PMTaskTemplateHandler handles PM task template HTTP endpoints.
 type PMTaskTemplateHandler struct {
 	templateService *service.PMTaskTemplateService
 }
@@ -99,5 +99,5 @@ func (h *PMTaskTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "story template deleted"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "task template deleted"})
 }

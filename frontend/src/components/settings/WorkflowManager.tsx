@@ -861,7 +861,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                 <div>
                   <Label>Auto assign owner when moved to started state</Label>
-                  <p className="text-xs text-muted-foreground">Assign current user when story enters a started state and has no owner.</p>
+                  <p className="text-xs text-muted-foreground">Assign current user when task enters a started state and has no owner.</p>
                 </div>
                 <Switch checked={wfAutoAssign} onCheckedChange={setWfAutoAssign} />
               </div>

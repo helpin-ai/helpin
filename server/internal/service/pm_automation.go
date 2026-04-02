@@ -15,7 +15,7 @@ import (
 type PMAutomationService struct {
 	automationRepo  *repository.PMAutomationRepository
 	epicRepo        *repository.PMEpicRepository
-	storyRepo       *repository.PMTaskRepository
+	taskRepo       *repository.PMTaskRepository
 	sprintRepo      *repository.PMSprintRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
@@ -28,7 +28,7 @@ type PMAutomationService struct {
 func NewPMAutomationService(
 	automationRepo *repository.PMAutomationRepository,
 	epicRepo *repository.PMEpicRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	sprintRepo *repository.PMSprintRepository,
 	workflowRepo *repository.PMWorkflowRepository,
 	activityService *PMActivityService,
@@ -37,7 +37,7 @@ func NewPMAutomationService(
 	return &PMAutomationService{
 		automationRepo:  automationRepo,
 		epicRepo:        epicRepo,
-		storyRepo:       storyRepo,
+		taskRepo:       taskRepo,
 		sprintRepo:      sprintRepo,
 		workflowRepo:    workflowRepo,
 		activityService: activityService,
@@ -524,7 +524,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		}
 
 		// Move non-done stories from ended sprint to next sprint
-		stories, err := s.sprintRepo.ListStories(ctx, endedSprint.ID)
+		stories, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to list stories for move-unfinished", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
 			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, err, metrics)
@@ -540,7 +540,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			if state.StateType == model.PMStateTypeDone {
 				continue
 			}
-			if err := s.storyRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
+			if err := s.taskRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
 				s.logger.ErrorContext(ctx, "failed to move unfinished task to next sprint", "error", err, "task_id", story.ID, "next_sprint_id", nextSprint.ID)
 				continue
 			}

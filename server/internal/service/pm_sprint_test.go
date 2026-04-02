@@ -757,7 +757,7 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 	}
 }
 
-func TestListStories_Empty(t *testing.T) {
+func TestListTasks_Empty(t *testing.T) {
 	t.Parallel()
 	svc, wsID := newSprintTestService(t)
 	ctx := context.Background()
@@ -765,7 +765,7 @@ func TestListStories_Empty(t *testing.T) {
 	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
 	created, err := svc.Create(ctx, model.CreateSprintRequest{
 		WorkspaceID: wsID,
-		Name:        "Sprint No Stories",
+		Name:        "Sprint No Tasks",
 		StartDate:   start,
 		EndDate:     end,
 	}, "actor-1")
@@ -773,12 +773,12 @@ func TestListStories_Empty(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	stories, err := svc.ListStories(ctx, created.Sprint.ID)
+	tasks, err := svc.ListTasks(ctx, created.Sprint.ID)
 	if err != nil {
-		t.Fatalf("ListStories: %v", err)
+		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(stories) != 0 {
-		t.Fatalf("ListStories count = %d, want 0", len(stories))
+	if len(tasks) != 0 {
+		t.Fatalf("ListTasks count = %d, want 0", len(tasks))
 	}
 }
 

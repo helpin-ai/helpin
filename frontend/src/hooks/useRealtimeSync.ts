@@ -59,10 +59,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
 
       if (event.action === 'deleted') {
         // Delete can be patched locally without re-fetching
-        const patched = store.patchStory('deleted', event.entity_id)
+        const patched = store.patchTask('deleted', event.entity_id)
         if (!patched) scheduleRefresh()
       } else if (event.action === 'moved' || event.action === 'reordered') {
-        // Position changes renumber siblings; patching only the moved story leaves stale ordering.
+        // Position changes renumber siblings; patching only the moved task leaves stale ordering.
         logPMDnD('ws.task_event_refresh', {
           trace_id: traceID,
           action: event.action,
@@ -78,7 +78,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             if (task.owner_member_id && !task.owner_name && res.data.owner_member) {
               task.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
-            const patched = store.patchStory(event.action as 'created' | 'updated', event.entity_id, task)
+            const patched = store.patchTask(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {
             // Task might have been archived/deleted by the time we fetch.

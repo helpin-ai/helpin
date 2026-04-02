@@ -1903,7 +1903,7 @@ func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, story model.PMTa
 	}
 
 	return &model.TaskDetail{
-		Story:           story,
+		Task:            story,
 		Owners:          owners,
 		Followers:       followers,
 		OwnerMember:     ownerMember,

@@ -224,7 +224,7 @@ type TaskLabelLinkRequest struct {
 
 // TaskDetail is a task enriched with relation data.
 type TaskDetail struct {
-	Story           PMTask            `json:"task"`
+	Task            PMTask            `json:"task"`
 	Owners          []User            `json:"owners"`
 	Followers       []User            `json:"followers"`
 	OwnerMember     *AssignableMember `json:"owner_member,omitempty"`

@@ -162,10 +162,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       })),
     );
 
-    // Build user story counts from preview
-    const userStoryCount = new Map<string, number>();
+    // Build user task counts from preview
+    const userTaskCount = new Map<string, number>();
     for (const u of data.users) {
-      userStoryCount.set(u.email, (userStoryCount.get(u.email) || 0) + 1);
+      userTaskCount.set(u.email, (userTaskCount.get(u.email) || 0) + 1);
     }
 
     setUserMappings(
@@ -591,7 +591,7 @@ function UploadStep({
                 <div>
                   <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and story comments.
+                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and task comments.
                     Generate a token at Settings &rarr; API Tokens in Shortcut.
                   </p>
                 </div>

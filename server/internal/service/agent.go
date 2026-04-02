@@ -98,7 +98,7 @@ type AgentService struct {
 	artifactRepo               *repository.AgentRunArtifactRepository
 	interactionRepo            *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
-	storyRepo                  *repository.PMTaskRepository
+	taskRepo                  *repository.PMTaskRepository
 	storyLinkRepo              *repository.PMTaskLinkRepository
 	epicRepo                   *repository.PMEpicRepository
 	conversationRepo           *repository.SupportConversationRepository
@@ -112,7 +112,7 @@ type AgentService struct {
 	docsLinkRepo               *repository.DocsLinkRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
-	storyService               *PMTaskService
+	taskService               *PMTaskService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	wsPublisher                *websocket.Publisher
@@ -136,7 +136,7 @@ func NewAgentService(
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	storyLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
@@ -150,7 +150,7 @@ func NewAgentService(
 	docsLinkRepo *repository.DocsLinkRepository,
 	runEngine *temporalapp.RunEngine,
 	gitService *GitService,
-	storyService *PMTaskService,
+	taskService *PMTaskService,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
@@ -162,7 +162,7 @@ func NewAgentService(
 		artifactRepo:               artifactRepo,
 		interactionRepo:            interactionRepo,
 		sessionSnapshotRepo:        sessionSnapshotRepo,
-		storyRepo:                  storyRepo,
+		taskRepo:                  taskRepo,
 		storyLinkRepo:              storyLinkRepo,
 		epicRepo:                   epicRepo,
 		conversationRepo:           conversationRepo,
@@ -176,7 +176,7 @@ func NewAgentService(
 		docsLinkRepo:               docsLinkRepo,
 		runEngine:                  runEngine,
 		gitService:                 gitService,
-		storyService:               storyService,
+		taskService:               taskService,
 		activitySvc:                activitySvc,
 		wsPublisher:                wsPublisher,
 	}
@@ -999,7 +999,7 @@ func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskI
 		return err
 	}
 
-	story, err := s.storyRepo.GetRawByID(ctx, taskID)
+	story, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
@@ -1011,7 +1011,7 @@ func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskI
 	}
 
 	story.AssignedAgentID = &agentID
-	if err := s.storyRepo.Update(ctx, story); err != nil {
+	if err := s.taskRepo.Update(ctx, story); err != nil {
 		return fmt.Errorf("update story: %w", err)
 	}
 
@@ -1117,7 +1117,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, taskID, actorI
 
 // RunTaskAgent starts a task-targeted agent run using task assignment defaults.
 func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
-	story, err := s.storyRepo.GetRawByID(ctx, taskID)
+	story, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
@@ -1213,7 +1213,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 	switch targetType {
 	case "task", "story":
-		story, err := s.storyRepo.GetRawByID(ctx, targetID)
+		story, err := s.taskRepo.GetRawByID(ctx, targetID)
 		if err != nil {
 			return nil, fmt.Errorf("get task: %w", err)
 		}
@@ -1450,7 +1450,7 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 		return nil, err
 	}
 	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.TaskID != nil {
-		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.TaskID)
+		story, storyErr := s.taskRepo.GetRawByID(ctx, *run.TaskID)
 		if storyErr == nil && story != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 				WorkspaceID: run.WorkspaceID,

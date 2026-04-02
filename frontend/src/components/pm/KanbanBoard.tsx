@@ -33,7 +33,7 @@ import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibi
 import { UserAvatar } from './UserAvatar';
 import { TaskCard } from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
-import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar, StoryOwnerAvatarFilterRow } from './StoryFilters';
+import { TaskFilterProvider, TaskFilterTrigger, TaskFilterBar, TaskOwnerAvatarFilterRow } from './StoryFilters';
 import { TaskListView } from './TaskListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
@@ -667,7 +667,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   // Listen for global panel events to patch board state
   useEffect(() => {
     const onUpdated = (e: Event) => {
-      const updated = (e as CustomEvent)?.detail?.story ?? (e as CustomEvent)?.detail?.task;
+      const updated = (e as CustomEvent)?.detail?.task;
       if (!updated) return;
       const task = { ...updated.task };
       const ownerKey = task.owner_member_id;
@@ -1116,7 +1116,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   };
 
   return (
-    <StoryFilterProvider
+    <TaskFilterProvider
       workspaceId={workspaceId}
       assignableMembers={assignableMembers}
       activeTeamId={storeTeamId}
@@ -1132,8 +1132,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
       <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
-        <StoryFilterTrigger />
-        <StoryOwnerAvatarFilterRow />
+        <TaskFilterTrigger />
+        <TaskOwnerAvatarFilterRow />
 
         {/* Team selector — only shown when no team is pre-selected via URL */}
         {!teamId && teams.length > 0 && (
@@ -1215,7 +1215,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       </header>
 
-      <StoryFilterBar />
+      <TaskFilterBar />
 
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1309,6 +1309,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       ) : null}
 
     </div>
-    </StoryFilterProvider>
+    </TaskFilterProvider>
   );
 }

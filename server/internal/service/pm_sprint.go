@@ -318,9 +318,9 @@ func (s *PMSprintService) GetCurrentSprint(ctx context.Context, workspaceID stri
 	return s.sprintRepo.GetCurrentSprint(ctx, workspaceID, teamID)
 }
 
-// ListStories returns stories in a sprint.
-func (s *PMSprintService) ListStories(ctx context.Context, sprintID string) ([]model.PMTask, error) {
-	return s.sprintRepo.ListStories(ctx, sprintID)
+// ListTasks returns tasks in a sprint.
+func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
+	return s.sprintRepo.ListTasks(ctx, sprintID)
 }
 
 // ComputeStats returns computed story/point stats for a sprint.

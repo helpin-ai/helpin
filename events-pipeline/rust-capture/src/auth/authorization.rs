@@ -386,7 +386,10 @@ mod tests {
 
         // Mutex is now poisoned — validate_token should return error, not panic
         let result = validate_token(params, headers, tokens);
-        assert!(result.is_err(), "Poisoned mutex should return error, not panic");
+        assert!(
+            result.is_err(),
+            "Poisoned mutex should return error, not panic"
+        );
     }
 
     #[test]
@@ -404,10 +407,7 @@ mod tests {
     fn test_validate_token_via_server_secret_as_api_key() {
         // Tests the found_api_key_in_server_secret path
         let mut params = BTreeMap::new();
-        params.insert(
-            "api_key".to_string(),
-            "server_secret_value".to_string(),
-        );
+        params.insert("api_key".to_string(), "server_secret_value".to_string());
 
         let headers = HeaderMap::new();
 

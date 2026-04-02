@@ -31,8 +31,8 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   const contextualTaskId = useTaskPanelStore((s) => s.taskId);
   const requestKey = useTaskPanelStore((s) => s.requestKey);
   const closeContextualTask = useTaskPanelStore((s) => s.close);
-  const activeStoryRoute = useMemo(() => getActiveTaskRoute(overlayLocation), [overlayLocation]);
-  const activeTaskId = activeStoryRoute?.taskId ?? contextualTaskId;
+  const activeTaskRoute = useMemo(() => getActiveTaskRoute(overlayLocation), [overlayLocation]);
+  const activeTaskId = activeTaskRoute?.taskId ?? contextualTaskId;
 
   const [loadedTask, setLoadedTask] = useState<LoadedTaskState | null>(null);
   const presentation = useMemo(
@@ -40,7 +40,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     [activeTaskId, loadedTask],
   );
 
-  // Use refs for close handler to avoid re-triggering story load effect
+  // Use refs for close handler to avoid re-triggering task load effect
   const locationRef = useRef(overlayLocation);
   locationRef.current = overlayLocation;
   const navigateRef = useRef(navigate);
@@ -70,7 +70,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         ]);
         if (cancelled) return;
         if (!taskRes.data) {
-          toast.error('Failed to load story');
+          toast.error('Failed to load task');
           handleClose();
           return;
         }
@@ -94,7 +94,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         });
       } catch {
         if (!cancelled) {
-          toast.error('Failed to load story');
+          toast.error('Failed to load task');
           handleClose();
         }
       }

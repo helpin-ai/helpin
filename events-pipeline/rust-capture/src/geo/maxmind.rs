@@ -15,7 +15,7 @@ pub struct Data {
     pub region_name: Option<String>,
     pub is_in_european_union: Option<bool>,
     // NOTE: We do not need for now. Maybe later down the road.
-    
+
     // asn: Option<u32>,
     // aso: Option<String>,
     // isp: Option<String>,

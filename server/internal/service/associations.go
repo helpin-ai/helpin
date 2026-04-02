@@ -13,7 +13,7 @@ import (
 type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
 	storyLinkRepo    *repository.PMTaskLinkRepository
-	storyRepo        *repository.PMTaskRepository
+	taskRepo        *repository.PMTaskRepository
 	supportRepo      *repository.SupportConversationRepository
 	docsLinkRepo     *repository.DocsLinkRepository
 	docsDocumentRepo *repository.DocsDocumentRepository
@@ -23,7 +23,7 @@ type AssociationsService struct {
 func NewAssociationsService(
 	assocRepo *repository.CRMAssociationRepository,
 	storyLinkRepo *repository.PMTaskLinkRepository,
-	storyRepo *repository.PMTaskRepository,
+	taskRepo *repository.PMTaskRepository,
 	supportRepo *repository.SupportConversationRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsDocumentRepo *repository.DocsDocumentRepository,
@@ -31,7 +31,7 @@ func NewAssociationsService(
 	return &AssociationsService{
 		assocRepo:        assocRepo,
 		storyLinkRepo:    storyLinkRepo,
-		storyRepo:        storyRepo,
+		taskRepo:        taskRepo,
 		supportRepo:      supportRepo,
 		docsLinkRepo:     docsLinkRepo,
 		docsDocumentRepo: docsDocumentRepo,
@@ -101,7 +101,7 @@ func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, works
 		return nil, fmt.Errorf("other_task_id is required")
 	}
 
-	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherTaskID})
+	stories, err := s.taskRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherTaskID})
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 
 	storiesByID := make(map[string]model.PMTask)
 	if len(storyIDs) > 0 {
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, uniqueStrings(storyIDs))
+		stories, err := s.taskRepo.ListByIDs(ctx, workspaceID, uniqueStrings(storyIDs))
 		if err != nil {
 			return err
 		}
@@ -340,7 +340,7 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if _, ok := existing[*conversation.LinkedTaskID]; ok {
 			return nil
 		}
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
+		stories, err := s.taskRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
 		if err != nil {
 			return err
 		}
@@ -378,7 +378,7 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 			otherIDs = append(otherIDs, link.SourceStoryID)
 		}
 	}
-	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, uniqueStrings(otherIDs))
+	stories, err := s.taskRepo.ListByIDs(ctx, workspaceID, uniqueStrings(otherIDs))
 	if err != nil {
 		return response, err
 	}

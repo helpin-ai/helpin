@@ -82,7 +82,7 @@ export function SprintPlanningWorkspace({
       setActiveTask(null);
       return;
     }
-    // Remember which story was dropped — this ref survives the render gap
+    // Remember which task was dropped — this ref survives the render gap
     // between activeTask clearing and workspace data propagating
     droppedTaskIdRef.current = task.id;
     // Apply optimistic update

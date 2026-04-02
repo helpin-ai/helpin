@@ -4,8 +4,8 @@ use events_pipeline::enrichment::handler::{EnrichmentHandler, MyError};
 use events_pipeline::enrichment::ua_resolver::UaResolver;
 use events_pipeline::geo::downloader::download_and_save;
 use events_pipeline::geo::resolver::GeoResolver;
-use events_pipeline::ip2location::resolver::IP2ProxyResolver;
 use events_pipeline::health::HealthRegistry;
+use events_pipeline::ip2location::resolver::IP2ProxyResolver;
 use events_pipeline::sinks;
 use events_pipeline::sinks::EventSink;
 use events_pipeline::utils::kafka_config::create_consumer_kafka_config;
@@ -173,10 +173,12 @@ async fn start_consumer() {
 
     let handler = EnrichmentHandler::new();
     let geo_resolver = GeoResolver::new(&events_pipeline::geo::downloader::target_path()).unwrap();
-    let ip2proxy_resolver: IP2ProxyResolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+    let ip2proxy_resolver: IP2ProxyResolver =
+        IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
     let bot_resolver = BotResolver::new();
     let config: ClientConfig = create_consumer_kafka_config(brokers);
-    let consumer: Arc<StreamConsumer> = Arc::new(config.create().expect("Consumer creation failed"));
+    let consumer: Arc<StreamConsumer> =
+        Arc::new(config.create().expect("Consumer creation failed"));
     let ua_parser = UaResolver::new();
     consumer
         .subscribe(&[&topic])
@@ -245,25 +247,23 @@ async fn start_consumer() {
                                 }
                             }
                         }
-                        Err(e) => {
-                            match e.downcast::<MyError>() {
-                                Ok(my_error) => {
-                                    let failed_event = my_error.failed_event;
-                                    let event = sinks::EventTypes::Failed(failed_event.clone());
-                                    match context.failed_sink.send(event).await {
-                                        Ok(()) => {
-                                            send_ok = true;
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Failed to send event to sink: {:?}", e);
-                                        }
+                        Err(e) => match e.downcast::<MyError>() {
+                            Ok(my_error) => {
+                                let failed_event = my_error.failed_event;
+                                let event = sinks::EventTypes::Failed(failed_event.clone());
+                                match context.failed_sink.send(event).await {
+                                    Ok(()) => {
+                                        send_ok = true;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to send event to sink: {:?}", e);
                                     }
                                 }
-                                Err(err) => {
-                                    tracing::error!("Failed to process payload:{:?}", err);
-                                }
                             }
-                        }
+                            Err(err) => {
+                                tracing::error!("Failed to process payload:{:?}", err);
+                            }
+                        },
                     }
 
                     // Manually commit offset after successful processing

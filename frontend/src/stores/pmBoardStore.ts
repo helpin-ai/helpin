@@ -83,14 +83,6 @@ interface PMBoardState {
   loadMoreMemberColumn: (memberId: string | null) => Promise<void>;
   moveMemberTask: (payload: MemberMovePayload) => Promise<void>;
 
-  /** @deprecated Use createTask */
-  createStory: (payload: CreateTaskRequest) => Promise<Task | null>;
-  /** @deprecated Use moveTask */
-  moveStory: (payload: MovePayload) => Promise<void>;
-  /** @deprecated Use patchTask */
-  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
-  /** @deprecated Use moveMemberTask */
-  moveMemberStory: (payload: MemberMovePayload) => Promise<void>;
 
   // View actions
   loadViews: (workspaceId: string, currentMemberId: string) => Promise<void>;
@@ -1129,10 +1121,5 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return updated;
   },
 
-  // Backward-compat aliases
-  get createStory() { return get().createTask; },
-  get moveStory() { return get().moveTask; },
-  get patchStory() { return get().patchTask; },
-  get moveMemberStory() { return get().moveMemberTask; },
   };
 });

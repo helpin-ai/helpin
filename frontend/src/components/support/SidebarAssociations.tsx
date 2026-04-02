@@ -66,7 +66,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [createStoryOpen, setCreateStoryOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
 
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const workflow = workflows[0] ?? null;
@@ -205,7 +205,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                 className="w-full gap-1.5 text-xs"
                 onClick={() => {
                   setPickerSection(null);
-                  setCreateStoryOpen(true);
+                  setCreateTaskOpen(true);
                 }}
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -260,8 +260,8 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
       {/* Create Task modal — creates and auto-links to this conversation */}
       {workflow && (
         <CreateTaskModal
-          open={createStoryOpen}
-          onOpenChange={setCreateStoryOpen}
+          open={createTaskOpen}
+          onOpenChange={setCreateTaskOpen}
           workspaceId={workspaceId}
           workflow={workflow}
           initialStateId={workflow.states?.[0]?.id ?? ''}

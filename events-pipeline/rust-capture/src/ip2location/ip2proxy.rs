@@ -1,5 +1,5 @@
 use crate::ip2location::resolver::{IP2ProxyResolver, IP2ProxyResult};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 #[derive(Default, Debug)]
 pub struct Data {
@@ -28,13 +28,12 @@ impl<'a> IP2ProxyWrapper<'a> {
     }
 
     pub fn resolve(&self, ip: &str) -> Result<Data> {
-        let result: IP2ProxyResult = self.ip2proxy_resolver.lookup(ip)?
+        let result: IP2ProxyResult = self
+            .ip2proxy_resolver
+            .lookup(ip)?
             .ok_or_else(|| anyhow!("IP not found in the database"))?;
 
-        tracing::debug!(
-            "IP2Proxy information: {:?}",
-            result
-        );
+        tracing::debug!("IP2Proxy information: {:?}", result);
 
         Ok(Data {
             proxy_type: result.proxy_type,
@@ -67,6 +66,11 @@ mod tests {
         let result = wrapper.resolve("38.153.15.49").unwrap();
         assert_eq!(result.proxy_type, Some(String::from("VPN")));
         assert_eq!(result.country_short, Some(String::from("GB")));
-        assert_eq!(result.country_long, Some(String::from("United Kingdom of Great Britain and Northern Ireland")));
+        assert_eq!(
+            result.country_long,
+            Some(String::from(
+                "United Kingdom of Great Britain and Northern Ireland"
+            ))
+        );
     }
 }

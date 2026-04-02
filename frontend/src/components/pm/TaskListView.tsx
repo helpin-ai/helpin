@@ -31,7 +31,7 @@ import {
   StateTypeIcon,
   PRIORITY_CONFIG,
   SEVERITY_CONFIG,
-  STORY_TYPE_CONFIG,
+  TASK_TYPE_CONFIG,
 } from '@/lib/pmConstants';
 import { UserAvatar } from './UserAvatar';
 import type {
@@ -645,7 +645,7 @@ export function TaskListView({
         cell: (info) => <InlineAssociationListCell items={info.row.original.support_conversations} emptyLabel="No tickets" />,
       }),
       columnHelper.accessor(
-        (row) => (row.task_type ? STORY_TYPE_CONFIG[row.task_type].label : 'Unknown'),
+        (row) => (row.task_type ? TASK_TYPE_CONFIG[row.task_type].label : 'Unknown'),
         {
           id: 'typeName',
           header: 'Type',

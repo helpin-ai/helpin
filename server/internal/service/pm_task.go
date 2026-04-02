@@ -15,9 +15,9 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// PMTaskService contains story business logic.
+// PMTaskService contains task business logic.
 type PMTaskService struct {
-	storyRepo           *repository.PMTaskRepository
+	taskRepo           *repository.PMTaskRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -38,9 +38,9 @@ type PMTaskService struct {
 }
 
 // NewPMTaskService creates a new PMTaskService.
-func NewPMTaskService(storyRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
+func NewPMTaskService(taskRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
 	return &PMTaskService{
-		storyRepo:           storyRepo,
+		taskRepo:           taskRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
 		epicRepo:            epicRepo,
@@ -123,19 +123,19 @@ func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters mo
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.storyRepo.List(ctx, workspaceID, filters, pagination)
+	return s.taskRepo.List(ctx, workspaceID, filters, pagination)
 }
 
 // GetByID returns story detail.
 func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.TaskDetail, error) {
-	story, err := s.storyRepo.GetByID(ctx, id)
+	story, err := s.taskRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if story == nil {
 		return nil, fmt.Errorf("story not found")
 	}
-	if err := requireTeamAccess(ctx, story.Story.TeamID); err != nil {
+	if err := requireTeamAccess(ctx, story.Task.TeamID); err != nil {
 		return nil, fmt.Errorf("story not found")
 	}
 	return story, nil
@@ -143,14 +143,14 @@ func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.TaskDeta
 
 // GetByDisplayID returns story detail by display ID.
 func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.TaskDetail, error) {
-	story, err := s.storyRepo.GetByDisplayID(ctx, workspaceID, displayID)
+	story, err := s.taskRepo.GetByDisplayID(ctx, workspaceID, displayID)
 	if err != nil {
 		return nil, err
 	}
 	if story == nil {
 		return nil, fmt.Errorf("story not found")
 	}
-	if err := requireTeamAccess(ctx, story.Story.TeamID); err != nil {
+	if err := requireTeamAccess(ctx, story.Task.TeamID); err != nil {
 		return nil, fmt.Errorf("story not found")
 	}
 	return story, nil
@@ -283,14 +283,14 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if req.Position != nil {
 		story.Position = *req.Position
 	} else {
-		position, err := s.storyRepo.NextPosition(ctx, req.WorkspaceID, stateID)
+		position, err := s.taskRepo.NextPosition(ctx, req.WorkspaceID, stateID)
 		if err != nil {
 			return nil, err
 		}
 		story.Position = position
 	}
 
-	if err := s.storyRepo.Create(ctx, story); err != nil {
+	if err := s.taskRepo.Create(ctx, story); err != nil {
 		return nil, err
 	}
 	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
@@ -305,7 +305,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		ownerIDs = dedupeIDs(ownerIDs)
 	}
 	for _, ownerID := range ownerIDs {
-		if err := s.storyRepo.AddOwner(ctx, story.ID, ownerID); err != nil {
+		if err := s.taskRepo.AddOwner(ctx, story.ID, ownerID); err != nil {
 			return nil, err
 		}
 	}
@@ -319,7 +319,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 	followerIDs = dedupeIDs(followerIDs)
 	for _, followerID := range followerIDs {
-		if err := s.storyRepo.AddFollower(ctx, story.ID, followerID); err != nil {
+		if err := s.taskRepo.AddFollower(ctx, story.ID, followerID); err != nil {
 			return nil, err
 		}
 	}
@@ -329,7 +329,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, err
 	}
 	for _, labelID := range labelIDs {
-		if err := s.storyRepo.AddLabel(ctx, story.ID, labelID); err != nil {
+		if err := s.taskRepo.AddLabel(ctx, story.ID, labelID); err != nil {
 			return nil, err
 		}
 	}
@@ -379,7 +379,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 
-	if err := s.storyRepo.UpdateStartedCompleted(ctx, story.ID); err != nil {
+	if err := s.taskRepo.UpdateStartedCompleted(ctx, story.ID); err != nil {
 		return nil, err
 	}
 
@@ -464,12 +464,12 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 
 	s.logger.InfoContext(ctx, "task created", "task_id", story.ID, "workspace_id", story.WorkspaceID, "actor_id", actorID)
-	return s.storyRepo.GetByID(ctx, story.ID)
+	return s.taskRepo.GetByID(ctx, story.ID)
 }
 
 // Update updates story fields.
 func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateTaskRequest, actorID string) (*model.TaskDetail, error) {
-	current, err := s.storyRepo.GetRawByID(ctx, id)
+	current, err := s.taskRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +483,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 
-	previousDetail, err := s.storyRepo.GetByID(ctx, id)
+	previousDetail, err := s.taskRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +624,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		current.MovedAt = &now
 	}
 
-	if err := s.storyRepo.Update(ctx, current); err != nil {
+	if err := s.taskRepo.Update(ctx, current); err != nil {
 		return nil, err
 	}
 
@@ -634,13 +634,13 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			owners = append(owners, *current.OwnerID)
 			owners = dedupeIDs(owners)
 		}
-		if err := s.storyRepo.ReplaceOwners(ctx, current.ID, owners); err != nil {
+		if err := s.taskRepo.ReplaceOwners(ctx, current.ID, owners); err != nil {
 			return nil, err
 		}
 		if req.FollowerIDs == nil {
 			// Auto-follow owners if explicit follower list was not provided.
 			for _, ownerID := range owners {
-				if err := s.storyRepo.AddFollower(ctx, current.ID, ownerID); err != nil {
+				if err := s.taskRepo.AddFollower(ctx, current.ID, ownerID); err != nil {
 					return nil, err
 				}
 			}
@@ -655,7 +655,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			followers = append(followers, *current.RequesterID)
 		}
 		followers = dedupeIDs(followers)
-		if err := s.storyRepo.ReplaceFollowers(ctx, current.ID, followers); err != nil {
+		if err := s.taskRepo.ReplaceFollowers(ctx, current.ID, followers); err != nil {
 			return nil, err
 		}
 	}
@@ -664,13 +664,13 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, labelIDs, allowedTeamIDs(current.TeamID)); err != nil {
 			return nil, err
 		}
-		if err := s.storyRepo.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
+		if err := s.taskRepo.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
 			return nil, err
 		}
 	}
 
 	if stateChanged {
-		if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
+		if err := s.taskRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 			return nil, err
 		}
 		// Legacy path: evaluate epic automations from pm_automations table.
@@ -694,7 +694,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		}
 	}
 
-	updatedDetail, err := s.storyRepo.GetByID(ctx, current.ID)
+	updatedDetail, err := s.taskRepo.GetByID(ctx, current.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -747,11 +747,11 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			s.logger.ErrorContext(ctx, "failed to log activity for task archived", "error", err, "task_id", current.ID)
 		}
 	}
-	oldTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, previousDetail.Story.TeamID)
+	oldTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, previousDetail.Task.TeamID)
 	if err != nil {
 		return nil, err
 	}
-	newTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, updatedDetail.Story.TeamID)
+	newTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, updatedDetail.Task.TeamID)
 	if err != nil {
 		return nil, err
 	}
@@ -884,7 +884,7 @@ func nullableString(value *string) *string {
 
 // Delete archives a story.
 func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, id)
+	current, err := s.taskRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -894,7 +894,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 	if err := s.requireAdmin(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.storyRepo.Delete(ctx, id); err != nil {
+	if err := s.taskRepo.Delete(ctx, id); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "archived this task", nil, nil, nil, nil); err != nil {
@@ -907,7 +907,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 
 // MoveToState moves story to another state.
 func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.MoveTaskRequest, actorID string) (*model.TaskDetail, error) {
-	current, err := s.storyRepo.GetRawByID(ctx, id)
+	current, err := s.taskRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -940,10 +940,10 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 	if req.Position != nil && *req.Position < 0 {
 		return nil, fmt.Errorf("position must be >= 0")
 	}
-	if err := s.storyRepo.MoveToState(ctx, current.ID, req.StateID, req.Position, req.DebugTraceID); err != nil {
+	if err := s.taskRepo.MoveToState(ctx, current.ID, req.StateID, req.Position, req.DebugTraceID); err != nil {
 		return nil, err
 	}
-	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
+	if err := s.taskRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
 	}
 	// Legacy path: evaluate epic automations from pm_automations table.
@@ -1013,20 +1013,20 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 	}
 
 	s.logger.InfoContext(ctx, "task moved", "task_id", current.ID, "workspace_id", current.WorkspaceID, "new_state", newStateName, "actor_id", actorID)
-	detail, err := s.storyRepo.GetByID(ctx, current.ID)
+	detail, err := s.taskRepo.GetByID(ctx, current.ID)
 	if err != nil {
 		return nil, err
 	}
 	if detail != nil {
 		s.logger.InfoContext(ctx, "[pm-dnd] service move result",
 			"trace_id", req.DebugTraceID,
-			"task_id", detail.Story.ID,
-			"final_state_id", detail.Story.WorkflowStateID,
-			"final_position", detail.Story.Position,
-			"completed", detail.Story.Completed,
-			"completed_at", detail.Story.CompletedAt,
-			"moved_at", detail.Story.MovedAt,
-			"updated_at", detail.Story.UpdatedAt,
+			"task_id", detail.Task.ID,
+			"final_state_id", detail.Task.WorkflowStateID,
+			"final_position", detail.Task.Position,
+			"completed", detail.Task.Completed,
+			"completed_at", detail.Task.CompletedAt,
+			"moved_at", detail.Task.MovedAt,
+			"updated_at", detail.Task.UpdatedAt,
 		)
 	}
 	return detail, nil
@@ -1034,7 +1034,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 
 // Reorder changes story position in its state.
 func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.ReorderTaskRequest, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, id)
+	current, err := s.taskRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -1056,7 +1056,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 	if req.Position < 0 {
 		return fmt.Errorf("position must be >= 0")
 	}
-	if err := s.storyRepo.Reorder(ctx, id, req.Position, req.DebugTraceID); err != nil {
+	if err := s.taskRepo.Reorder(ctx, id, req.Position, req.DebugTraceID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position}); err != nil {
@@ -1070,7 +1070,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 		ActorID:     actorID,
 		Data:        pmDnDWebsocketData(req.DebugTraceID),
 	})
-	if raw, err := s.storyRepo.GetRawByID(ctx, id); err == nil && raw != nil {
+	if raw, err := s.taskRepo.GetRawByID(ctx, id); err == nil && raw != nil {
 		s.logger.InfoContext(ctx, "[pm-dnd] service reorder result",
 			"trace_id", req.DebugTraceID,
 			"task_id", raw.ID,
@@ -1083,7 +1083,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 
 // AddOwner adds an owner and auto-follows them.
 func (s *PMTaskService) AddOwner(ctx context.Context, storyID, userID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1096,10 +1096,10 @@ func (s *PMTaskService) AddOwner(ctx context.Context, storyID, userID, actorID s
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
 	}
-	if err := s.storyRepo.AddOwner(ctx, storyID, userID); err != nil {
+	if err := s.taskRepo.AddOwner(ctx, storyID, userID); err != nil {
 		return err
 	}
-	if err := s.storyRepo.AddFollower(ctx, storyID, userID); err != nil {
+	if err := s.taskRepo.AddFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil); err != nil {
@@ -1140,7 +1140,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, storyID, userID, actorID s
 
 // RemoveOwner removes an owner.
 func (s *PMTaskService) RemoveOwner(ctx context.Context, storyID, userID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1150,7 +1150,7 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, storyID, userID, actorI
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.storyRepo.RemoveOwner(ctx, storyID, userID); err != nil {
+	if err := s.taskRepo.RemoveOwner(ctx, storyID, userID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil); err != nil {
@@ -1162,7 +1162,7 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, storyID, userID, actorI
 
 // AddFollower adds a follower.
 func (s *PMTaskService) AddFollower(ctx context.Context, storyID, userID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1175,7 +1175,7 @@ func (s *PMTaskService) AddFollower(ctx context.Context, storyID, userID, actorI
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
 	}
-	if err := s.storyRepo.AddFollower(ctx, storyID, userID); err != nil {
+	if err := s.taskRepo.AddFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil); err != nil {
@@ -1187,7 +1187,7 @@ func (s *PMTaskService) AddFollower(ctx context.Context, storyID, userID, actorI
 
 // RemoveFollower removes a follower.
 func (s *PMTaskService) RemoveFollower(ctx context.Context, storyID, userID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1197,7 +1197,7 @@ func (s *PMTaskService) RemoveFollower(ctx context.Context, storyID, userID, act
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.storyRepo.RemoveFollower(ctx, storyID, userID); err != nil {
+	if err := s.taskRepo.RemoveFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil); err != nil {
@@ -1209,7 +1209,7 @@ func (s *PMTaskService) RemoveFollower(ctx context.Context, storyID, userID, act
 
 // AddLabel adds a label to a story.
 func (s *PMTaskService) AddLabel(ctx context.Context, storyID, labelID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1222,7 +1222,7 @@ func (s *PMTaskService) AddLabel(ctx context.Context, storyID, labelID, actorID 
 	if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, []string{labelID}, allowedTeamIDs(current.TeamID)); err != nil {
 		return err
 	}
-	if err := s.storyRepo.AddLabel(ctx, storyID, labelID); err != nil {
+	if err := s.taskRepo.AddLabel(ctx, storyID, labelID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
@@ -1234,7 +1234,7 @@ func (s *PMTaskService) AddLabel(ctx context.Context, storyID, labelID, actorID 
 
 // RemoveLabel removes a label from a story.
 func (s *PMTaskService) RemoveLabel(ctx context.Context, storyID, labelID, actorID string) error {
-	current, err := s.storyRepo.GetRawByID(ctx, storyID)
+	current, err := s.taskRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
 	}
@@ -1244,7 +1244,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, storyID, labelID, actor
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.storyRepo.RemoveLabel(ctx, storyID, labelID); err != nil {
+	if err := s.taskRepo.RemoveLabel(ctx, storyID, labelID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
@@ -1261,11 +1261,11 @@ func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID stri
 		return nil, fmt.Errorf("workflow_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
+	return s.taskRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
 }
 
-// ListColumnStories returns a page of stories for a single board column.
-func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, []model.TaskGroup, int, error) {
+// ListColumnTasks returns a page of tasks for a single board column.
+func (s *PMTaskService) ListColumnTasks(ctx context.Context, stateID string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, []model.TaskGroup, int, error) {
 	if stateID == "" {
 		return nil, nil, 0, fmt.Errorf("state_id is required")
 	}
@@ -1273,7 +1273,7 @@ func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, f
 	if limit <= 0 {
 		limit = 50
 	}
-	return s.storyRepo.ListColumnStories(ctx, stateID, filters, offset, limit)
+	return s.taskRepo.ListColumnStories(ctx, stateID, filters, offset, limit)
 }
 
 // ListByMember returns board columns grouped by owner member.
@@ -1282,11 +1282,11 @@ func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowI
 		return nil, fmt.Errorf("workspace_id and workflow_id are required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.storyRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+	return s.taskRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
 }
 
-// ListMemberColumnStories returns a page of stories for a single member board column.
-func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, int, error) {
+// ListMemberColumnTasks returns a page of tasks for a single member board column.
+func (s *PMTaskService) ListMemberColumnTasks(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMTaskFilters, offset, limit int) ([]model.BoardTask, int, error) {
 	if workspaceID == "" || workflowID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
 	}
@@ -1294,7 +1294,7 @@ func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID
 	if limit <= 0 {
 		limit = 50
 	}
-	return s.storyRepo.ListMemberColumnStories(ctx, workspaceID, workflowID, memberID, filters, offset, limit)
+	return s.taskRepo.ListMemberColumnStories(ctx, workspaceID, workflowID, memberID, filters, offset, limit)
 }
 
 // CountByState returns state-level story counts for a workflow.
@@ -1302,7 +1302,7 @@ func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return s.storyRepo.CountByState(ctx, workflowID)
+	return s.taskRepo.CountByState(ctx, workflowID)
 }
 
 // ListActivity returns story activity entries.

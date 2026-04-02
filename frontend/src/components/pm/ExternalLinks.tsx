@@ -7,7 +7,7 @@ import type { ExternalLink } from '@/lib/pmTypes';
 
 interface ExternalLinksProps {
   workspaceId: string;
-  storyId: string;
+  taskId: string;
 }
 
 function getHostname(url: string): string {
@@ -18,16 +18,16 @@ function getHostname(url: string): string {
   }
 }
 
-export function ExternalLinks({ workspaceId, storyId }: ExternalLinksProps) {
+export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
-    const { data } = await pmExternalLinkService.list(workspaceId, storyId);
+    const { data } = await pmExternalLinkService.list(workspaceId, taskId);
     setLinks(data ?? []);
-  }, [workspaceId, storyId]);
+  }, [workspaceId, taskId]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -35,23 +35,23 @@ export function ExternalLinks({ workspaceId, storyId }: ExternalLinksProps) {
   useEffect(() => {
     const handler = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.parent_id === storyId && d?.entity === 'external_link') reload();
+      if (d?.parent_id === taskId && d?.entity === 'external_link') reload();
     };
-    window.addEventListener('story-child-updated', handler);
-    return () => window.removeEventListener('story-child-updated', handler);
-  }, [storyId, reload]);
+    window.addEventListener('task-child-updated', handler);
+    return () => window.removeEventListener('task-child-updated', handler);
+  }, [taskId, reload]);
 
   const handleAdd = useCallback(async () => {
     const url = newUrl.trim();
     if (!url) return;
     setAdding(true);
-    const { data, error } = await pmExternalLinkService.create(workspaceId, storyId, { url });
+    const { data, error } = await pmExternalLinkService.create(workspaceId, taskId, { url });
     setAdding(false);
     if (error || !data) return;
     setLinks((prev) => [...prev, data]);
     setNewUrl('');
     inputRef.current?.focus();
-  }, [workspaceId, storyId, newUrl]);
+  }, [workspaceId, taskId, newUrl]);
 
   const handleDelete = useCallback(
     async (id: string) => {

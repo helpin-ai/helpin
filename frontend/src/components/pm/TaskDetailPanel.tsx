@@ -38,7 +38,7 @@ import {
   SeverityIcon,
   SprintIcon,
   StateTypeIcon,
-  STORY_TYPE_CONFIG,
+  TASK_TYPE_CONFIG,
   TaskTypeIcon,
 } from '@/lib/pmConstants';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -142,8 +142,8 @@ interface TaskDetailPanelProps {
   taskDetail: TaskDetail | null;
   states: WorkflowState[];
   initialRecurringSummary?: TaskRecurringSummary | null;
-  onTaskUpdated: (story: TaskDetail) => void;
-  onTaskArchived: (storyId: string) => void;
+  onTaskUpdated: (task: TaskDetail) => void;
+  onTaskArchived: (taskId: string) => void;
 }
 
 interface FormState {
@@ -167,26 +167,26 @@ interface FormState {
 
 const priorityOptions: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 const severityOptions: Severity[] = ['none', 'minor', 'major', 'critical'];
-const storyTypeOptions: TaskType[] = ['feature', 'bug', 'chore'];
+const taskTypeOptions: TaskType[] = ['feature', 'bug', 'chore'];
 
-const buildFormState = (story: TaskDetail): FormState => ({
-  name: story.task.name,
-  description: story.task.description ?? '',
-  task_type: story.task.task_type,
-  workflow_state_id: story.task.workflow_state_id,
-  priority: story.task.priority,
-  severity: story.task.severity,
+const buildFormState = (detail: TaskDetail): FormState => ({
+  name: detail.task.name,
+  description: detail.task.description ?? '',
+  task_type: detail.task.task_type,
+  workflow_state_id: detail.task.workflow_state_id,
+  priority: detail.task.priority,
+  severity: detail.task.severity,
   estimate:
-    story.task.estimate === undefined || story.task.estimate === null
+    detail.task.estimate === undefined || detail.task.estimate === null
       ? ''
-      : String(story.task.estimate),
-  deadline: story.task.deadline ? story.task.deadline.slice(0, 10) : '',
-  epic_id: story.task.epic_id ?? '',
-  sprint_id: story.task.sprint_id ?? '',
-  team_id: story.task.team_id ?? '',
-  owner_member_id: story.task.owner_member_id ?? '',
-  requester_member_id: story.task.requester_member_id ?? '',
-  blocker: story.task.blocker ?? '',
+      : String(detail.task.estimate),
+  deadline: detail.task.deadline ? detail.task.deadline.slice(0, 10) : '',
+  epic_id: detail.task.epic_id ?? '',
+  sprint_id: detail.task.sprint_id ?? '',
+  team_id: detail.task.team_id ?? '',
+  owner_member_id: detail.task.owner_member_id ?? '',
+  requester_member_id: detail.task.requester_member_id ?? '',
+  blocker: detail.task.blocker ?? '',
 });
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -275,16 +275,16 @@ function TaskDetailPanelBody({
   states,
   initialRecurringSummary,
   onOpenChange,
-  onStoryUpdated,
-  onStoryArchived,
+  onTaskUpdated,
+  onTaskArchived,
 }: {
   workspaceId: string;
   taskDetail: TaskDetail;
   states: WorkflowState[];
   initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
-  onStoryUpdated: (story: TaskDetail) => void;
-  onStoryArchived: (storyId: string) => void;
+  onTaskUpdated: (story: TaskDetail) => void;
+  onTaskArchived: (taskId: string) => void;
 }) {
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -307,7 +307,7 @@ function TaskDetailPanelBody({
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
-  const storyId = taskDetail.task.id;
+  const taskId = taskDetail.task.id;
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -367,12 +367,12 @@ function TaskDetailPanelBody({
     setRecurringDetail(response.data);
     await loadRecurringSummary(taskDetail.task.id);
     setRecurringDialogOpen(false);
-    toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Story is now recurring');
+    toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Task is now recurring');
   }, [workspaceId, taskDetail.task.id, recurringSummary?.template_id, loadRecurringSummary]);
 
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
-  const delivery = useTaskDelivery(workspaceId, taskDetail, onStoryUpdated);
+  const delivery = useTaskDelivery(workspaceId, taskDetail, onTaskUpdated);
   const { checkRef: checkDeliveryTruncation, isTruncated: isDeliveryTruncated } = useTruncationDetection();
 
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
@@ -442,24 +442,24 @@ function TaskDetailPanelBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- use ref for pendingPatch to avoid resetting form mid-edit
   }, [taskDetail, reloadActivity]);
 
-  // Re-fetch comments when comment events arrive; activity on any story change
+  // Re-fetch comments when comment events arrive; activity on any task change
   useEffect(() => {
-    const storyId = taskDetail.task.id;
+    const taskId = taskDetail.task.id;
     const onChildEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.parent_id === storyId && d?.entity === 'comment') {
+      if (d?.parent_id === taskId && d?.entity === 'comment') {
         reloadComments();
         reloadActivity();
       }
     };
     const onStoryEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.entity_id === storyId) reloadActivity();
+      if (d?.entity_id === taskId) reloadActivity();
     };
-    window.addEventListener('story-child-updated', onChildEvent);
+    window.addEventListener('task-child-updated', onChildEvent);
     window.addEventListener('task-updated', onStoryEvent);
     return () => {
-      window.removeEventListener('story-child-updated', onChildEvent);
+      window.removeEventListener('task-child-updated', onChildEvent);
       window.removeEventListener('task-updated', onStoryEvent);
     };
   }, [taskDetail.task.id, reloadComments, reloadActivity]);
@@ -546,13 +546,13 @@ function TaskDetailPanelBody({
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
-      const { data, error } = await pmTaskService.update(workspaceId, storyId, patch);
+      const { data, error } = await pmTaskService.update(workspaceId, taskId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
         setSaveError(null);
-        onStoryUpdated(data);
+        onTaskUpdated(data);
         void reloadActivity();
         // Invalidate sprint planning if sprint/state/estimate changed
         if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
@@ -575,12 +575,12 @@ function TaskDetailPanelBody({
     return () => window.clearTimeout(timer);
   }, [
     descriptionPendingUploads,
-    onStoryUpdated,
+    onTaskUpdated,
     pendingPatch,
     queryClient,
     reloadActivity,
     saving,
-    storyId,
+    taskId,
     workspaceId,
   ]);
 
@@ -594,12 +594,12 @@ function TaskDetailPanelBody({
         return;
       }
 
-      void pmTaskService.update(workspaceId, storyId, patch).then(({ data }) => {
+      void pmTaskService.update(workspaceId, taskId, patch).then(({ data }) => {
         if (!data) {
           return;
         }
 
-        onStoryUpdated(data);
+        onTaskUpdated(data);
         if (
           patch.sprint_id !== undefined ||
           patch.workflow_state_id !== undefined ||
@@ -609,7 +609,7 @@ function TaskDetailPanelBody({
         }
       });
     };
-  }, [onStoryUpdated, queryClient, storyId, workspaceId]);
+  }, [onTaskUpdated, queryClient, taskId, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -636,7 +636,7 @@ function TaskDetailPanelBody({
       });
       setSaving(true);
 
-      const { data, error } = await pmTaskService.update(workspaceId, storyId, {
+      const { data, error } = await pmTaskService.update(workspaceId, taskId, {
         description: nextDescription,
       });
       if (error || !data) {
@@ -647,23 +647,23 @@ function TaskDetailPanelBody({
       }
 
       setSaveError(null);
-      onStoryUpdated(data);
+      onTaskUpdated(data);
       savedDescriptionRef.current = data.task.description ?? '';
       await pmAttachmentService.remove(workspaceId, entry.attachment.id);
       setSaving(false);
       return 'handled' as const;
     },
-    [confirm, form.description, onStoryUpdated, storyId, workspaceId],
+    [confirm, form.description, onTaskUpdated, taskId, workspaceId],
   );
 
   // ── Archive ────────────────────────────────────────────────────
   const archiveStory = async () => {
-    const { error } = await pmTaskService.remove(workspaceId, storyId);
+    const { error } = await pmTaskService.remove(workspaceId, taskId);
     if (error) {
       setSaveError(error);
       return;
     }
-    onStoryArchived(storyId);
+    onTaskArchived(taskId);
     onOpenChange(false);
   };
 
@@ -688,7 +688,7 @@ function TaskDetailPanelBody({
     for (const rule of pipelineRules) {
       if (
         rule.enabled &&
-        rule.trigger_type === 'story.state_entered' &&
+        rule.trigger_type === 'task.state_entered' &&
         rule.action_type === 'start_agent_run'
       ) {
         const stateId = rule.trigger_config?.state_id;
@@ -730,28 +730,28 @@ function TaskDetailPanelBody({
     return memberNameMap.get(form.requester_member_id) ?? 'No requester';
   }, [form.requester_member_id, memberNameMap]);
 
-  const storyLabels = taskDetail.labels ?? [];
+  const taskLabels = taskDetail.labels ?? [];
   const isSaving = saving || labelSaving || hasPendingTaskSave(pendingPatch, descriptionPendingUploads);
 
   useEffect(() => {
     if (!form) return;
-    const validLabelIds = storyLabels
+    const validLabelIds = taskLabels
       .filter((label) => !label.team_id || (form.team_id ? label.team_id === form.team_id : false))
       .map((label) => label.id);
-    if (validLabelIds.length === storyLabels.length) return;
+    if (validLabelIds.length === taskLabels.length) return;
     void syncTaskLabelsWithFeedback({
       workspaceId,
-      storyId: taskDetail.task.id,
-      currentLabelIds: storyLabels.map((label) => label.id),
+      taskId: taskDetail.task.id,
+      currentLabelIds: taskLabels.map((label) => label.id),
       nextLabelIds: validLabelIds,
       syncLabels: pmTaskService.syncLabels,
       reloadTask: pmTaskService.get,
-      onTaskUpdated: onStoryUpdated,
+      onTaskUpdated: onTaskUpdated,
       onSaved: reloadActivity,
       setSaving: setLabelSaving,
       setSaveError,
     });
-  }, [form?.team_id, onStoryUpdated, taskDetail.task.id, storyLabels, workspaceId]);
+  }, [form?.team_id, onTaskUpdated, taskDetail.task.id, taskLabels, workspaceId]);
 
   return (
     <div className="flex h-full flex-col">
@@ -917,7 +917,7 @@ function TaskDetailPanelBody({
           {/* Title */}
           <input
             type="text"
-            aria-label="Story title"
+            aria-label="Task title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
             className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
@@ -968,7 +968,7 @@ function TaskDetailPanelBody({
             )}
           </div>
 
-          {/* Action bar — "Add to Story" */}
+          {/* Action bar — "Add to Task" */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1044,7 +1044,7 @@ function TaskDetailPanelBody({
 
           <TaskRelationshipsSection
             workspaceId={workspaceId}
-            storyId={taskDetail.task.id}
+            taskId={taskDetail.task.id}
             storyName={taskDetail.task.name}
             storyDisplayId={taskDetail.task.display_id}
             workflowId={taskDetail.task.workflow_id}
@@ -1067,7 +1067,7 @@ function TaskDetailPanelBody({
             <div className="mt-6">
               <ChecklistItems
                 workspaceId={workspaceId}
-                storyId={taskDetail.task.id}
+                taskId={taskDetail.task.id}
                 members={assignableMembers}
                 teams={mentionTeams}
               />
@@ -1077,7 +1077,7 @@ function TaskDetailPanelBody({
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} storyId={taskDetail.task.id} />
+              <ExternalLinks workspaceId={workspaceId} taskId={taskDetail.task.id} />
             </div>
           )}
 
@@ -1095,7 +1095,7 @@ function TaskDetailPanelBody({
           {/* Git Links & Agent Runs */}
           {hasGitIntegration && fieldVis.dev_history && (
             <>
-              <TaskGitPanel storyId={taskDetail.task.id} workspaceId={workspaceId} />
+              <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
               <AgentRunPanel
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
@@ -1301,15 +1301,15 @@ function TaskDetailPanelBody({
             <MetadataRow icon={Hash} label="Type">
               <SidebarPopoverSelect
                 value={form.task_type}
-                options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
+                options={storyTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
                 onChange={(v) => updateField('task_type', v as TaskType, { task_type: v as TaskType })}
                 renderTrigger={() => (
                   <>
                     <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5" />
-                    <span>{STORY_TYPE_CONFIG[form.task_type].label}</span>
+                    <span>{TASK_TYPE_CONFIG[form.task_type].label}</span>
                   </>
                 )}
-                renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as TaskType].label}</span></>}
+                renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
               />
             </MetadataRow>
             )}
@@ -1321,17 +1321,17 @@ function TaskDetailPanelBody({
                 workspaceId={workspaceId}
                 teamId={form.team_id || undefined}
                 labels={allLabels}
-                selectedLabelIds={storyLabels.map((l) => l.id)}
+                selectedLabelIds={taskLabels.map((l) => l.id)}
                 onLabelsChange={setAllLabels}
                 onChange={async (labelIds) => {
                   await syncTaskLabelsWithFeedback({
                     workspaceId,
-                    storyId: taskDetail.task.id,
-                    currentLabelIds: storyLabels.map((label) => label.id),
+                    taskId: taskDetail.task.id,
+                    currentLabelIds: taskLabels.map((label) => label.id),
                     nextLabelIds: labelIds,
                     syncLabels: pmTaskService.syncLabels,
                     reloadTask: pmTaskService.get,
-                    onTaskUpdated: onStoryUpdated,
+                    onTaskUpdated: onTaskUpdated,
                     onSaved: reloadActivity,
                     setSaving: setLabelSaving,
                     setSaveError,
@@ -1545,10 +1545,10 @@ function TaskDetailPanelBody({
       <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{recurringSummary ? 'Edit recurring template' : 'Make story recurring'}</DialogTitle>
+            <DialogTitle>{recurringSummary ? 'Edit recurring template' : 'Make task recurring'}</DialogTitle>
             <DialogDescription>
               {recurringSummary
-                ? 'Update the schedule and future generation behavior for this recurring story.'
+                ? 'Update the schedule and future generation behavior for this recurring task.'
                 : 'Create a recurring template from this task so future occurrences are generated automatically.'}
             </DialogDescription>
           </DialogHeader>
@@ -1576,8 +1576,8 @@ function TaskDetailPanelBody({
       <ConfirmDialog
         open={archiveConfirmOpen}
         onOpenChange={setArchiveConfirmOpen}
-        title="Archive story"
-        description="This story will be hidden from the board and lists. You can restore it later from archived items."
+        title="Archive task"
+        description="This task will be hidden from the board and lists. You can restore it later from archived items."
         confirmLabel="Archive"
         variant="default"
         onConfirm={archiveStory}
@@ -1635,8 +1635,8 @@ export function TaskDetailPanel({
             states={states}
             initialRecurringSummary={initialRecurringSummary ?? null}
             onOpenChange={onOpenChange}
-            onStoryUpdated={onTaskUpdated}
-            onStoryArchived={onTaskArchived}
+            onTaskUpdated={onTaskUpdated}
+            onTaskArchived={onTaskArchived}
           />
         ) : loading ? (
           <div className="flex h-full items-center justify-center">

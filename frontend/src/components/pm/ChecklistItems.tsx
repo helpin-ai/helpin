@@ -31,7 +31,7 @@ import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
 interface ChecklistItemsProps {
   workspaceId: string;
-  storyId: string;
+  taskId: string;
   members?: AssignableMember[];
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
 }
@@ -158,7 +158,7 @@ function SortableItem({
   );
 }
 
-export function ChecklistItems({ workspaceId, storyId, members = [], teams = [] }: ChecklistItemsProps) {
+export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }: ChecklistItemsProps) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newText, setNewText] = useState('');
   const [adding, setAdding] = useState(false);
@@ -181,9 +181,9 @@ export function ChecklistItems({ workspaceId, storyId, members = [], teams = [] 
   );
 
   const reload = useCallback(async () => {
-    const { data } = await pmChecklistService.list(workspaceId, storyId);
+    const { data } = await pmChecklistService.list(workspaceId, taskId);
     if (data) setItems(data.sort((a, b) => a.position - b.position));
-  }, [workspaceId, storyId]);
+  }, [workspaceId, taskId]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -191,11 +191,11 @@ export function ChecklistItems({ workspaceId, storyId, members = [], teams = [] 
   useEffect(() => {
     const handler = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.parent_id === storyId && d?.entity === 'checklist_item') reload();
+      if (d?.parent_id === taskId && d?.entity === 'checklist_item') reload();
     };
-    window.addEventListener('story-child-updated', handler);
-    return () => window.removeEventListener('story-child-updated', handler);
-  }, [storyId, reload]);
+    window.addEventListener('task-child-updated', handler);
+    return () => window.removeEventListener('task-child-updated', handler);
+  }, [taskId, reload]);
 
   const completedCount = useMemo(() => items.filter((i) => i.completed).length, [items]);
 
@@ -223,7 +223,7 @@ export function ChecklistItems({ workspaceId, storyId, members = [], teams = [] 
     const text = textRef.current.trim();
     if (!text || adding) return;
     setAdding(true);
-    const { data } = await pmChecklistService.create(workspaceId, storyId, { text });
+    const { data } = await pmChecklistService.create(workspaceId, taskId, { text });
     setAdding(false);
     if (!data) return;
     // Don't optimistically append — the WebSocket event triggers reload()

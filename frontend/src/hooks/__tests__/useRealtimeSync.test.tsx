@@ -48,7 +48,7 @@ describe('useRealtimeSync task ordering events', () => {
     useAuthStore.setState({ user: { id: 'user-1' } as never })
     usePMBoardStore.setState({
       refreshBoard: vi.fn() as never,
-      patchStory: vi.fn() as never,
+      patchTask: vi.fn() as never,
     })
     useSupportPresenceStore.setState({
       typingIndicators: {},
@@ -78,8 +78,8 @@ describe('useRealtimeSync task ordering events', () => {
       status: 200,
     } as never)
     const refreshBoard = vi.fn()
-    const patchStory = vi.fn(() => true)
-    usePMBoardStore.setState({ refreshBoard, patchStory })
+    const patchTask = vi.fn(() => true)
+    usePMBoardStore.setState({ refreshBoard, patchTask })
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const container = document.createElement('div')
@@ -107,7 +107,7 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(pmTaskService.get).not.toHaveBeenCalled()
-    expect(patchStory).not.toHaveBeenCalled()
+    expect(patchTask).not.toHaveBeenCalled()
     expect(refreshBoard).toHaveBeenCalledTimes(1)
 
     act(() => root.unmount())
@@ -127,8 +127,8 @@ describe('useRealtimeSync task ordering events', () => {
       status: 200,
     } as never)
     const refreshBoard = vi.fn()
-    const patchStory = vi.fn(() => true)
-    usePMBoardStore.setState({ refreshBoard, patchStory })
+    const patchTask = vi.fn(() => true)
+    usePMBoardStore.setState({ refreshBoard, patchTask })
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const container = document.createElement('div')
@@ -156,7 +156,7 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(pmTaskService.get).not.toHaveBeenCalled()
-    expect(patchStory).not.toHaveBeenCalled()
+    expect(patchTask).not.toHaveBeenCalled()
     expect(refreshBoard).toHaveBeenCalledTimes(1)
 
     act(() => root.unmount())
@@ -180,8 +180,8 @@ describe('useRealtimeSync task ordering events', () => {
       status: 200,
     } as never)
     const refreshBoard = vi.fn()
-    const patchStory = vi.fn(() => true)
-    usePMBoardStore.setState({ refreshBoard, patchStory })
+    const patchTask = vi.fn(() => true)
+    usePMBoardStore.setState({ refreshBoard, patchTask })
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const container = document.createElement('div')
@@ -208,7 +208,7 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(pmTaskService.get).toHaveBeenCalledWith('ws-1', 'task-1')
-    expect(patchStory).toHaveBeenCalledWith(
+    expect(patchTask).toHaveBeenCalledWith(
       'updated',
       'task-1',
       expect.objectContaining({
