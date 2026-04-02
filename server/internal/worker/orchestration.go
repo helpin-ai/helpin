@@ -50,28 +50,28 @@ func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID
 	proposal.SpecVersionID = strings.TrimSpace(firstNonEmpty(proposal.SpecVersionID, specVersionID))
 	proposal.TokensUsed = tokensUsed
 	if len(proposal.ProposedStories) == 0 {
-		return nil, fmt.Errorf("planning proposal did not include any stories")
+		return nil, fmt.Errorf("planning proposal did not include any tasks")
 	}
 	for idx, story := range proposal.ProposedStories {
 		if strings.TrimSpace(story.Name) == "" {
-			return nil, fmt.Errorf("planning proposal story %d is missing a name", idx+1)
+			return nil, fmt.Errorf("planning proposal task %d is missing a name", idx+1)
 		}
 		if strings.TrimSpace(story.Ref) == "" {
-			proposal.ProposedStories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
+			proposal.ProposedStories[idx].Ref = fmt.Sprintf("task_%d", idx+1)
 		}
 	}
 	return &proposal, nil
 }
 
-func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
+func NormalizeTaskPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
-		return nil, fmt.Errorf("story plan content is empty")
+		return nil, fmt.Errorf("task plan content is empty")
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err == nil {
-		if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+		if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
 			return nil, err
 		}
 		normalized, _ := json.Marshal(payload)
@@ -80,17 +80,17 @@ func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, err
 
 	var encoded string
 	if err := json.Unmarshal(raw, &encoded); err != nil {
-		return nil, fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+		return nil, fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
 	encoded = strings.TrimSpace(encoded)
 	if encoded == "" {
-		return nil, fmt.Errorf("story plan content is empty")
+		return nil, fmt.Errorf("task plan content is empty")
 	}
 
 	if err := unmarshalLatestJSON(encoded, &payload); err != nil {
-		return nil, fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+		return nil, fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
-	if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+	if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
 		return nil, err
 	}
 
@@ -98,18 +98,20 @@ func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, err
 	return normalized, nil
 }
 
-func validateCanonicalStoryPlanPreviewPayload(payload map[string]any) error {
+func validateCanonicalTaskPlanPreviewPayload(payload map[string]any) error {
 	if len(payload) == 0 {
-		return fmt.Errorf("story plan content must be a JSON object with summary and proposed_stories")
+		return fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
 
 	summary, ok := payload["summary"].(string)
 	if !ok || strings.TrimSpace(summary) == "" {
-		return fmt.Errorf("story plan content must include a non-empty summary")
+		return fmt.Errorf("task plan content must include a non-empty summary")
 	}
 
-	if _, ok := payload["proposed_stories"].([]any); !ok {
-		return fmt.Errorf("story plan content must include proposed_stories as an array")
+	if _, ok := payload["proposed_tasks"].([]any); !ok {
+		if _, legacyOK := payload["proposed_stories"].([]any); !legacyOK {
+			return fmt.Errorf("task plan content must include proposed_tasks as an array")
+		}
 	}
 
 	return nil
@@ -120,16 +122,16 @@ func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed 
 	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
-func extractStoryCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
+func extractTaskCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
 	if strings.TrimSpace(responseText) == "" {
-		return nil, fmt.Errorf("story completion assessment returned no text")
+		return nil, fmt.Errorf("task completion assessment returned no text")
 	}
 	var assessment model.StoryCompletionAssessment
 	if err := unmarshalLatestJSON(responseText, &assessment); err != nil {
-		return nil, fmt.Errorf("failed to parse story completion assessment: %w", err)
+		return nil, fmt.Errorf("failed to parse task completion assessment: %w", err)
 	}
 	if strings.TrimSpace(assessment.Summary) == "" {
-		return nil, fmt.Errorf("story completion assessment is missing a summary")
+		return nil, fmt.Errorf("task completion assessment is missing a summary")
 	}
 	return &assessment, nil
 }

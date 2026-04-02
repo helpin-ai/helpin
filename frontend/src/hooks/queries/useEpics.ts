@@ -27,9 +27,9 @@ export function useEpic(wsId: string, id: string) {
   })
 }
 
-export function useEpicStories(wsId: string, epicId: string) {
+export function useEpicTasks(wsId: string, epicId: string) {
   return useQuery({
-    queryKey: queryKeys.pm.epicStories(wsId, epicId),
+    queryKey: queryKeys.pm.epicTasks(wsId, epicId),
     queryFn: async () => unwrap(await pmEpicService.listStories(wsId, epicId)),
     enabled: !!wsId && !!epicId,
   })

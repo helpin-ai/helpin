@@ -72,8 +72,8 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		}
 	}
 
-	// Auto-follow story when someone comments.
-	if req.EntityType == "story" {
+	// Auto-follow task when someone comments.
+	if req.EntityType == "task" || req.EntityType == "story" {
 		if err := s.storyRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to auto-follow story on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
 		}
@@ -104,7 +104,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		entityTitle := req.EntityID
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
-		if req.EntityType == "story" {
+		if req.EntityType == "task" || req.EntityType == "story" {
 			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
@@ -272,7 +272,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		entityTitle := comment.EntityID
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
-		if comment.EntityType == "story" {
+		if comment.EntityType == "task" || comment.EntityType == "story" {
 			if story, _ := s.storyRepo.GetRawByID(ctx, comment.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)

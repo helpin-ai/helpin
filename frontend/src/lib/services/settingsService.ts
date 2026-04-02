@@ -56,7 +56,7 @@ export const settingsService = {
     return { data: null, error: primary.error ?? fallback.error };
   },
   initialize: (workspaceId: string) => api.post(`/settings/initialize${qs(workspaceId)}`, { workspace_id: workspaceId }),
-  createTeam: (data: { workspace_id: string; name: string; handle?: string; description?: string; manager_id?: string; team_type?: WorkspaceTeam['team_type']; default_story_type?: WorkspaceTeam['default_story_type'] }) =>
+  createTeam: (data: { workspace_id: string; name: string; handle?: string; description?: string; manager_id?: string; team_type?: WorkspaceTeam['team_type']; default_task_type?: WorkspaceTeam['default_task_type'] }) =>
     api.post<WorkspaceTeam>(`/settings/teams${qs(data.workspace_id)}`, data),
   updateTeam: (workspaceId: string, id: string, data: Partial<WorkspaceTeam>) =>
     api.put<WorkspaceTeam>(`/settings/teams/${id}${qs(workspaceId)}`, data),

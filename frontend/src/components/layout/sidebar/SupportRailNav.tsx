@@ -113,7 +113,7 @@ export function SupportRailNav({
       </SidebarGroup>
 
       <SidebarGroup className="p-0 pb-3">
-        <div className="flex items-center justify-between px-2">
+        <div className="flex items-center justify-between px-2 pr-3">
           <SidebarGroupLabel className="h-7 px-0 text-[11px] uppercase tracking-wide text-muted-foreground/90">
             Team Inboxes
           </SidebarGroupLabel>

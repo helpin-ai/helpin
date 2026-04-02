@@ -159,10 +159,10 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 	return runs, total, nil
 }
 
-// ListByStory returns runs for a story.
+// ListByStory returns runs for a task.
 func (r *AgentRunRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND story_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&runs).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&runs).Error; err != nil {
 		return nil, fmt.Errorf("list story agent runs: %w", err)
 	}
 	return runs, nil

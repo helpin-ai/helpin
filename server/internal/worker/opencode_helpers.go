@@ -381,7 +381,7 @@ func readOnlyGitPermissionPatterns() []string {
 
 func buildOpenCodeUserPrompt(execCtx *ExecutionContext, userPrompt string) string {
 	parts := []string{strings.TrimSpace(userPrompt)}
-	if execCtx != nil && execCtx.Story != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools) {
+	if execCtx != nil && execCtx.Task != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools) {
 		parts = append(parts, "This is an implementation run, not an analysis-only pass. Make the code changes in the repository, run relevant validation when practical, and finish with a concise summary of the concrete files changed.")
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))

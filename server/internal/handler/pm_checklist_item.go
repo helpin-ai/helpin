@@ -20,7 +20,7 @@ func NewPMChecklistItemHandler(service *service.PMChecklistItemService) *PMCheck
 	return &PMChecklistItemHandler{service: service}
 }
 
-// List handles GET /api/pm/stories/{id}/checklist
+// List handles GET /api/pm/tasks/{id}/checklist
 func (h *PMChecklistItemHandler) List(w http.ResponseWriter, r *http.Request) {
 	storyID := chi.URLParam(r, "id")
 	items, err := h.service.List(r.Context(), storyID)
@@ -34,7 +34,7 @@ func (h *PMChecklistItemHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// Create handles POST /api/pm/stories/{id}/checklist
+// Create handles POST /api/pm/tasks/{id}/checklist
 func (h *PMChecklistItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 	storyID := chi.URLParam(r, "id")
 	workspaceID := middleware.GetWorkspaceID(r.Context())

@@ -27,7 +27,7 @@ import defaultIcon from '@/assets/attachment/default-icon.png';
 
 interface AttachmentsProps {
   workspaceId: string;
-  entityType: 'story' | 'epic' | 'objective' | 'sprint' | 'comment';
+  entityType: 'task' | 'epic' | 'objective' | 'sprint' | 'comment';
   entityId: string;
   memberNameMap?: Map<string, string>;
   onDeleteAttachment?: (attachment: AttachmentResponse) => Promise<'handled' | 'prevent' | 'fallback'>;

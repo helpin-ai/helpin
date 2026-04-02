@@ -161,8 +161,8 @@ export function LabelPicker({
               setOpen(true);
             }}
           >
-            <Tag className="h-3 w-3" />
-            {selectedLabels.length === 0 ? 'Add label' : 'Add'}
+            {selectedLabels.length > 0 && <Tag className="h-3 w-3" />}
+            {selectedLabels.length === 0 ? '+ Add label' : 'Add'}
           </button>
         </PopoverTrigger>
         {open && (

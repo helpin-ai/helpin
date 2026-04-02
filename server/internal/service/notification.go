@@ -1282,8 +1282,8 @@ func buildEntityURL(baseURL, slug, entityType, entityID string) string {
 	}
 	base := baseURL + "/w/" + slug
 	switch entityType {
-	case "story":
-		return base + "/pm/stories/" + entityID
+	case "task", "story":
+		return base + "/pm/tasks/" + entityID
 	case "epic":
 		return base + "/pm/epics/" + entityID
 	case "objective":

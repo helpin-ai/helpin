@@ -37,7 +37,7 @@ import { Route as AuthenticatedWSlugSupportConversationIdRouteImport } from './r
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
-import { Route as AuthenticatedWSlugSettingsStoryTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/story-templates'
+import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
@@ -68,7 +68,7 @@ import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenti
 import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
 import { Route as AuthenticatedWSlugCrmReviewRouteImport } from './routes/_authenticated/w/$slug/crm/review'
 import { Route as AuthenticatedWSlugCrmInsightsRouteImport } from './routes/_authenticated/w/$slug/crm/insights'
-import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/stories/index'
+import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_authenticated/w/$slug/pm/tasks/index'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
@@ -77,7 +77,7 @@ import { Route as AuthenticatedWSlugCrmListsIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
-import { Route as AuthenticatedWSlugPmStoriesStoryIdRouteImport } from './routes/_authenticated/w/$slug/pm/stories/$storyId'
+import { Route as AuthenticatedWSlugPmTasksTaskIdRouteImport } from './routes/_authenticated/w/$slug/pm/tasks/$taskId'
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
@@ -241,10 +241,10 @@ const AuthenticatedWSlugSettingsTeamsRoute =
     path: '/settings/teams',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugSettingsStoryTemplatesRoute =
-  AuthenticatedWSlugSettingsStoryTemplatesRouteImport.update({
-    id: '/settings/story-templates',
-    path: '/settings/story-templates',
+const AuthenticatedWSlugSettingsTaskTemplatesRoute =
+  AuthenticatedWSlugSettingsTaskTemplatesRouteImport.update({
+    id: '/settings/task-templates',
+    path: '/settings/task-templates',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsRedirectsRoute =
@@ -427,10 +427,10 @@ const AuthenticatedWSlugCrmInsightsRoute =
     path: '/crm/insights',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugPmStoriesIndexRoute =
-  AuthenticatedWSlugPmStoriesIndexRouteImport.update({
-    id: '/pm/stories/',
-    path: '/pm/stories/',
+const AuthenticatedWSlugPmTasksIndexRoute =
+  AuthenticatedWSlugPmTasksIndexRouteImport.update({
+    id: '/pm/tasks/',
+    path: '/pm/tasks/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmSprintsIndexRoute =
@@ -481,10 +481,10 @@ const AuthenticatedWSlugCrmCompaniesIndexRoute =
     path: '/crm/companies/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugPmStoriesStoryIdRoute =
-  AuthenticatedWSlugPmStoriesStoryIdRouteImport.update({
-    id: '/pm/stories/$storyId',
-    path: '/pm/stories/$storyId',
+const AuthenticatedWSlugPmTasksTaskIdRoute =
+  AuthenticatedWSlugPmTasksTaskIdRouteImport.update({
+    id: '/pm/tasks/$taskId',
+    path: '/pm/tasks/$taskId',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmSprintsSprintIdRoute =
@@ -596,7 +596,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
-  '/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
+  '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -617,7 +617,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
-  '/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
+  '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
@@ -626,7 +626,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
-  '/w/$slug/pm/stories/': typeof AuthenticatedWSlugPmStoriesIndexRoute
+  '/w/$slug/pm/tasks/': typeof AuthenticatedWSlugPmTasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -674,7 +674,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
-  '/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
+  '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -695,7 +695,7 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
-  '/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
+  '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
@@ -704,7 +704,7 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
-  '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesIndexRoute
+  '/w/$slug/pm/tasks': typeof AuthenticatedWSlugPmTasksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -756,7 +756,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
-  '/_authenticated/w/$slug/settings/story-templates': typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
+  '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -777,7 +777,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
-  '/_authenticated/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
+  '/_authenticated/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
@@ -786,7 +786,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
-  '/_authenticated/w/$slug/pm/stories/': typeof AuthenticatedWSlugPmStoriesIndexRoute
+  '/_authenticated/w/$slug/pm/tasks/': typeof AuthenticatedWSlugPmTasksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -838,7 +838,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
-    | '/w/$slug/settings/story-templates'
+    | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
@@ -859,7 +859,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
-    | '/w/$slug/pm/stories/$storyId'
+    | '/w/$slug/pm/tasks/$taskId'
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
@@ -868,7 +868,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
-    | '/w/$slug/pm/stories/'
+    | '/w/$slug/pm/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -916,7 +916,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
-    | '/w/$slug/settings/story-templates'
+    | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
@@ -937,7 +937,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
-    | '/w/$slug/pm/stories/$storyId'
+    | '/w/$slug/pm/tasks/$taskId'
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
@@ -946,7 +946,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
-    | '/w/$slug/pm/stories'
+    | '/w/$slug/pm/tasks'
   id:
     | '__root__'
     | '/'
@@ -997,7 +997,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/members'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
-    | '/_authenticated/w/$slug/settings/story-templates'
+    | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
     | '/_authenticated/w/$slug/sprints/$sprintId'
@@ -1018,7 +1018,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/epics/$epicId'
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
-    | '/_authenticated/w/$slug/pm/stories/$storyId'
+    | '/_authenticated/w/$slug/pm/tasks/$taskId'
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
@@ -1027,7 +1027,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
-    | '/_authenticated/w/$slug/pm/stories/'
+    | '/_authenticated/w/$slug/pm/tasks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1240,11 +1240,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTeamsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/settings/story-templates': {
-      id: '/_authenticated/w/$slug/settings/story-templates'
-      path: '/settings/story-templates'
-      fullPath: '/w/$slug/settings/story-templates'
-      preLoaderRoute: typeof AuthenticatedWSlugSettingsStoryTemplatesRouteImport
+    '/_authenticated/w/$slug/settings/task-templates': {
+      id: '/_authenticated/w/$slug/settings/task-templates'
+      path: '/settings/task-templates'
+      fullPath: '/w/$slug/settings/task-templates'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/redirects': {
@@ -1457,11 +1457,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmInsightsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/pm/stories/': {
-      id: '/_authenticated/w/$slug/pm/stories/'
-      path: '/pm/stories'
-      fullPath: '/w/$slug/pm/stories/'
-      preLoaderRoute: typeof AuthenticatedWSlugPmStoriesIndexRouteImport
+    '/_authenticated/w/$slug/pm/tasks/': {
+      id: '/_authenticated/w/$slug/pm/tasks/'
+      path: '/pm/tasks'
+      fullPath: '/w/$slug/pm/tasks/'
+      preLoaderRoute: typeof AuthenticatedWSlugPmTasksIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/sprints/': {
@@ -1520,11 +1520,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/pm/stories/$storyId': {
-      id: '/_authenticated/w/$slug/pm/stories/$storyId'
-      path: '/pm/stories/$storyId'
-      fullPath: '/w/$slug/pm/stories/$storyId'
-      preLoaderRoute: typeof AuthenticatedWSlugPmStoriesStoryIdRouteImport
+    '/_authenticated/w/$slug/pm/tasks/$taskId': {
+      id: '/_authenticated/w/$slug/pm/tasks/$taskId'
+      path: '/pm/tasks/$taskId'
+      fullPath: '/w/$slug/pm/tasks/$taskId'
+      preLoaderRoute: typeof AuthenticatedWSlugPmTasksTaskIdRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/sprints/$sprintId': {
@@ -1660,7 +1660,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
-  AuthenticatedWSlugSettingsStoryTemplatesRoute: typeof AuthenticatedWSlugSettingsStoryTemplatesRoute
+  AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
   AuthenticatedWSlugSprintsSprintIdRoute: typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -1678,7 +1678,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugPmEpicsEpicIdRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   AuthenticatedWSlugPmSprintsSprintIdRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRoute
-  AuthenticatedWSlugPmStoriesStoryIdRoute: typeof AuthenticatedWSlugPmStoriesStoryIdRoute
+  AuthenticatedWSlugPmTasksTaskIdRoute: typeof AuthenticatedWSlugPmTasksTaskIdRoute
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
@@ -1687,7 +1687,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugPmEpicsIndexRoute: typeof AuthenticatedWSlugPmEpicsIndexRoute
   AuthenticatedWSlugPmObjectivesIndexRoute: typeof AuthenticatedWSlugPmObjectivesIndexRoute
   AuthenticatedWSlugPmSprintsIndexRoute: typeof AuthenticatedWSlugPmSprintsIndexRoute
-  AuthenticatedWSlugPmStoriesIndexRoute: typeof AuthenticatedWSlugPmStoriesIndexRoute
+  AuthenticatedWSlugPmTasksIndexRoute: typeof AuthenticatedWSlugPmTasksIndexRoute
 }
 
 const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
@@ -1739,8 +1739,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRecurringTasksRoute,
   AuthenticatedWSlugSettingsRedirectsRoute:
     AuthenticatedWSlugSettingsRedirectsRoute,
-  AuthenticatedWSlugSettingsStoryTemplatesRoute:
-    AuthenticatedWSlugSettingsStoryTemplatesRoute,
+  AuthenticatedWSlugSettingsTaskTemplatesRoute:
+    AuthenticatedWSlugSettingsTaskTemplatesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,
   AuthenticatedWSlugSettingsWorkflowsRoute:
     AuthenticatedWSlugSettingsWorkflowsRoute,
@@ -1767,8 +1767,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugPmObjectivesObjectiveIdRoute,
   AuthenticatedWSlugPmSprintsSprintIdRoute:
     AuthenticatedWSlugPmSprintsSprintIdRoute,
-  AuthenticatedWSlugPmStoriesStoryIdRoute:
-    AuthenticatedWSlugPmStoriesStoryIdRoute,
+  AuthenticatedWSlugPmTasksTaskIdRoute: AuthenticatedWSlugPmTasksTaskIdRoute,
   AuthenticatedWSlugCrmCompaniesIndexRoute:
     AuthenticatedWSlugCrmCompaniesIndexRoute,
   AuthenticatedWSlugCrmContactsIndexRoute:
@@ -1781,7 +1780,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugPmObjectivesIndexRoute:
     AuthenticatedWSlugPmObjectivesIndexRoute,
   AuthenticatedWSlugPmSprintsIndexRoute: AuthenticatedWSlugPmSprintsIndexRoute,
-  AuthenticatedWSlugPmStoriesIndexRoute: AuthenticatedWSlugPmStoriesIndexRoute,
+  AuthenticatedWSlugPmTasksIndexRoute: AuthenticatedWSlugPmTasksIndexRoute,
 }
 
 const AuthenticatedWSlugRouteWithChildren =

@@ -8,16 +8,16 @@
 
 ## 1. Problem Statement
 
-Teams migrating from Shortcut (formerly Clubhouse) to Helpin have no way to bring their existing project data with them. This means they would lose all historical stories, epics, objectives, labels, iterations, and team structure — forcing a painful manual recreation or abandoning institutional knowledge altogether.
+Teams migrating from Shortcut (formerly Clubhouse) to Helpin have no way to bring their existing project data with them. This means they would lose all historical tasks, epics, objectives, labels, iterations, and team structure — forcing a painful manual recreation or abandoning institutional knowledge altogether.
 
-Shortcut provides a CSV export of all workspace stories. We need a robust importer that reads this CSV and maps the data into Helpin's existing PM data model, preserving as much context and structure as possible.
+Shortcut provides a CSV export of all workspace tasks (stories). We need a robust importer that reads this CSV and maps the data into Helpin's existing PM data model, preserving as much context and structure as possible.
 
 ---
 
 ## 2. Goals
 
 1. **Guided migration** — A workspace admin uploads a Shortcut CSV, reviews mappings, and the importer creates all entities in the correct hierarchy.
-2. **Preserve structure** — Objectives, epics, sprints (iterations), labels, workflows/states, teams, and stories are all recreated with their relationships intact.
+2. **Preserve structure** — Objectives, epics, sprints (iterations), labels, workflows/states, teams, and tasks are all recreated with their relationships intact.
 3. **Preserve history** — Timestamps (created, started, completed), completion status, and archived flags are carried over.
 4. **User mapping** — Provide a UI step to map Shortcut email addresses to existing Helpin workspace members.
 5. **Safe & idempotent** — The import is wrapped in a transaction. If it fails, nothing is half-created. Re-importing the same CSV does not create duplicates (keyed on Shortcut external IDs stored on imported entities).
@@ -40,9 +40,9 @@ The Shortcut CSV export analyzed (`workspace-60ae676e-...csv`) contains:
 
 | Metric | Value |
 |---|---|
-| Total rows (stories) | 1,626 |
+| Total rows (tasks) | 1,626 |
 | Columns | 54 |
-| Story types | `feature` (1020), `bug` (415), `chore` (191) |
+| Task types | `feature` (1020), `bug` (415), `chore` (191) |
 | Unique epics | 107 |
 | Unique objectives | 17 |
 | Unique iterations (sprints) | 74 |
@@ -50,44 +50,44 @@ The Shortcut CSV export analyzed (`workspace-60ae676e-...csv`) contains:
 | Unique workflows | 2 (`Product Development`, `Docs`) |
 | Unique workflow states | 10 |
 | Unique teams | 3 (`Dev Team`, `Customer Support`, `Founders`) |
-| Stories with epics | 1,111 (68%) |
-| Stories with objectives | 1,044 (64%) |
-| Stories with iterations | 886 (55%) |
-| Stories with descriptions | 1,162 (71%) |
-| Stories with tasks (checklists) | 143 (9%) |
-| Stories with multiple owners | 240 (15%) |
-| Stories with labels | 331 (20%) |
-| Completed stories | 1,482 (91%) |
-| Archived stories | 68 (4%) |
+| Tasks with epics | 1,111 (68%) |
+| Tasks with objectives | 1,044 (64%) |
+| Tasks with iterations | 886 (55%) |
+| Tasks with descriptions | 1,162 (71%) |
+| Tasks with checklists | 143 (9%) |
+| Tasks with multiple owners | 240 (15%) |
+| Tasks with labels | 331 (20%) |
+| Completed tasks | 1,482 (91%) |
+| Archived tasks | 68 (4%) |
 
 ### 4.1 CSV Columns
 
 | # | Column | Maps to | Notes |
 |---|--------|---------|-------|
-| 1 | `id` | `pm_stories.external_id` | Shortcut numeric story ID |
-| 2 | `name` | `pm_stories.name` | |
-| 3 | `type` | `pm_stories.story_type` | Values: `feature`, `bug`, `chore` — direct match |
-| 4 | `requester` | `pm_stories.requester_id` | Email — needs user mapping |
-| 5 | `owners` | `pm_story_owners` | Semicolon-separated emails — needs user mapping |
-| 6 | `description` | `pm_stories.description` | Markdown with embedded Shortcut CDN image URLs |
-| 7 | `is_completed` | `pm_stories.completed` | `true`/`false` |
-| 8 | `created_at` | `pm_stories.created_at` | Format: `YYYY/MM/DD HH:MM:SS` |
-| 9 | `started_at` | `pm_stories.started_at` | |
-| 10 | `updated_at` | `pm_stories.updated_at` | |
-| 11 | `moved_at` | `pm_stories.moved_at` | |
-| 12 | `completed_at` | `pm_stories.completed_at` | |
-| 13 | `estimate` | `pm_stories.estimate` | Integer points (sparse — only 63 stories) |
-| 14 | `is_blocked` | `pm_stories.blocked` | |
-| 15 | `due_date` | `pm_stories.deadline` | Very sparse (2 stories) |
-| 16 | `labels` | `pm_story_labels` | Semicolon-separated label names |
+| 1 | `id` | `pm_tasks.external_id` | Shortcut numeric task ID |
+| 2 | `name` | `pm_tasks.name` | |
+| 3 | `type` | `pm_tasks.task_type` | Values: `feature`, `bug`, `chore` — direct match |
+| 4 | `requester` | `pm_tasks.requester_id` | Email — needs user mapping |
+| 5 | `owners` | `pm_task_owners` | Semicolon-separated emails — needs user mapping |
+| 6 | `description` | `pm_tasks.description` | Markdown with embedded Shortcut CDN image URLs |
+| 7 | `is_completed` | `pm_tasks.completed` | `true`/`false` |
+| 8 | `created_at` | `pm_tasks.created_at` | Format: `YYYY/MM/DD HH:MM:SS` |
+| 9 | `started_at` | `pm_tasks.started_at` | |
+| 10 | `updated_at` | `pm_tasks.updated_at` | |
+| 11 | `moved_at` | `pm_tasks.moved_at` | |
+| 12 | `completed_at` | `pm_tasks.completed_at` | |
+| 13 | `estimate` | `pm_tasks.estimate` | Integer points (sparse — only 63 tasks) |
+| 14 | `is_blocked` | `pm_tasks.blocked` | |
+| 15 | `due_date` | `pm_tasks.deadline` | Very sparse (2 tasks) |
+| 16 | `labels` | `pm_task_labels` | Semicolon-separated label names |
 | 17 | `tasks` | `pm_checklist_items` | Semicolon-separated; format: `[X] text` or `[ ] text` |
-| 18 | `state` | `pm_stories.workflow_state_id` | State name — needs workflow state mapping |
+| 18 | `state` | `pm_tasks.workflow_state_id` | State name — needs workflow state mapping |
 | 19 | `epic_id` | `pm_epics.external_id` | Shortcut epic ID — used to group/deduplicate epics |
 | 20 | `epic` | `pm_epics.name` | |
 | 21 | `project_id` / `project` | — | Ignored (Shortcut-specific grouping) |
 | 22 | `iteration_id` / `iteration` | `pm_sprints.external_id`, `pm_sprints.name`, `pm_sprints.start_date`, `pm_sprints.end_date` | Sprint dates are parsed from iteration name when possible; otherwise set to null |
-| 23 | `team_id` / `team` | `pm_stories.team_id` | Team name — needs team mapping; null if missing or intentionally skipped |
-| 24 | `is_archived` | `pm_stories.archived` | |
+| 23 | `team_id` / `team` | `pm_tasks.team_id` | Team name — needs team mapping; null if missing or intentionally skipped |
+| 24 | `is_archived` | `pm_tasks.archived` | |
 | 25 | `epic_state` | `pm_epics.epic_state_id` | Values: `in progress`, `done` |
 | 26 | `epic_is_archived` | `pm_epics.archived` | |
 | 27 | `epic_created_at` | `pm_epics.created_at` | |
@@ -101,9 +101,9 @@ The Shortcut CSV export analyzed (`workspace-60ae676e-...csv`) contains:
 | 35 | `objective_started_at` | `pm_objectives.planned_start_date` | |
 | 36 | `objective_due_date` | `pm_objectives.deadline` | |
 | 37 | `workflow` / `workflow_id` | `pm_workflows.name` | |
-| 38 | `priority` | `pm_stories.priority` | See mapping table below |
-| 39 | `severity` | `pm_stories.severity` | See mapping table below |
-| 40 | `parent_story_id` | — | Not used in dataset (no sub-stories) |
+| 38 | `priority` | `pm_tasks.priority` | See mapping table below |
+| 39 | `severity` | `pm_tasks.severity` | See mapping table below |
+| 40 | `parent_task_id` | — | Not used in dataset (no sub-tasks) |
 | 41 | `custom_fields` | — | Sparse; key=value format (e.g., `Plan=premium`). Not mapped. |
 
 ### 4.2 Enum Mappings
@@ -128,7 +128,7 @@ The Shortcut CSV export analyzed (`workspace-60ae676e-...csv`) contains:
 | `Severity 2` | `minor` |
 | (empty) | `none` |
 
-**Story State Type** (Shortcut state → Helpin state type):
+**Task State Type** (Shortcut state → Helpin state type):
 
 | Shortcut State | Helpin State Type |
 |---|---|
@@ -167,9 +167,9 @@ The import must create entities in dependency order:
 5. Epics (from unique `epic_id` + epic metadata)
 6. Epic ↔ Objective links (from `objective_id` on epic rows)
 7. Sprints (from unique `iteration_id` + iteration name)
-8. Stories (one per CSV row)
-9. Story ↔ Owner links (from `owners` column)
-10. Story ↔ Label links (from `labels` column)
+8. Tasks (one per CSV row)
+9. Task ↔ Owner links (from `owners` column)
+10. Task ↔ Label links (from `labels` column)
 11. Checklist items (from `tasks` column)
 ```
 
@@ -181,7 +181,7 @@ The import must create entities in dependency order:
 - **Labels**: Keyed by name (case-insensitive) within the workspace.
 - **Teams**: Keyed by name within the workspace.
 - **Workflows**: Keyed by name within the workspace.
-- **Stories**: Keyed by Shortcut `id` stored in `external_id`. If a story with the same `external_id` already exists in the workspace, skip it.
+- **Tasks**: Keyed by Shortcut `id` stored in `external_id`. If a task with the same `external_id` already exists in the workspace, skip it.
 
 ### 5.3 User Mapping
 
@@ -191,8 +191,8 @@ Shortcut exports reference users by email. The importer needs a mapping step:
 2. Auto-match emails to existing Helpin workspace members by exact email match.
 3. For unmatched emails, the user can:
    - **Manually map** to an existing workspace member via dropdown.
-   - **Invite & Map** — sends a workspace invitation email. The system creates the user record immediately (with `pending` status) so that imported stories can reference them by ID. When the invited user accepts and signs up, their account links to the pre-created record and they see their assigned stories.
-   - **Skip** — stories from this user import without `requester_id` / owner links.
+   - **Invite & Map** — sends a workspace invitation email. The system creates the user record immediately (with `pending` status) so that imported tasks can reference them by ID. When the invited user accepts and signs up, their account links to the pre-created record and they see their assigned tasks.
+   - **Skip** — tasks from this user import without `requester_id` / owner links.
 4. "Invite All Unmatched" performs the invite-and-map action for every unmatched email in one click.
 5. The invite flow reuses the existing workspace invitation system (`POST /api/workspaces/{wid}/invitations`).
 
@@ -241,8 +241,8 @@ file: <csv file>
 ```json
 {
   "summary": {
-    "total_stories": 1626,
-    "stories_by_type": { "feature": 1020, "bug": 415, "chore": 191 },
+    "total_tasks": 1626,
+    "tasks_by_type": { "feature": 1020, "bug": 415, "chore": 191 },
     "epics_count": 107,
     "objectives_count": 17,
     "sprints_count": 74,
@@ -251,44 +251,44 @@ file: <csv file>
     "workflows_count": 2,
     "workflow_states_count": 10,
     "checklist_items_count": 312,
-    "duplicate_stories": 0
+    "duplicate_tasks": 0
   },
   "users": [
     { "email": "azhar@contentstudio.io", "matched_user_id": "uuid-or-null", "matched_name": "Azhar K" },
     { "email": "sheharyar.khalid@d4interactive.io", "matched_user_id": null, "matched_name": null }
   ],
   "teams": [
-    { "name": "Dev Team", "story_count": 1500 },
-    { "name": "Customer Support", "story_count": 80 },
-    { "name": "Founders", "story_count": 46 }
+    { "name": "Dev Team", "task_count": 1500 },
+    { "name": "Customer Support", "task_count": 80 },
+    { "name": "Founders", "task_count": 46 }
   ],
   "workflows": [
     {
       "name": "Product Development",
-      "story_count": 1580,
+      "task_count": 1580,
       "states": [
-        { "name": "Backlog", "suggested_type": "backlog", "story_count": 108 },
-        { "name": "Refinement", "suggested_type": "unstarted", "story_count": 18 },
-        { "name": "Up next", "suggested_type": "unstarted", "story_count": 8 },
-        { "name": "Ready for Development", "suggested_type": "unstarted", "story_count": 1 },
-        { "name": "In Development", "suggested_type": "started", "story_count": 2 },
-        { "name": "Ready for Review", "suggested_type": "started", "story_count": 6 },
-        { "name": "Ready for Deploy", "suggested_type": "started", "story_count": 1 },
-        { "name": "Completed", "suggested_type": "done", "story_count": 1429 },
-        { "name": "Abandoned", "suggested_type": "done", "story_count": 7 }
+        { "name": "Backlog", "suggested_type": "backlog", "task_count": 108 },
+        { "name": "Refinement", "suggested_type": "unstarted", "task_count": 18 },
+        { "name": "Up next", "suggested_type": "unstarted", "task_count": 8 },
+        { "name": "Ready for Development", "suggested_type": "unstarted", "task_count": 1 },
+        { "name": "In Development", "suggested_type": "started", "task_count": 2 },
+        { "name": "Ready for Review", "suggested_type": "started", "task_count": 6 },
+        { "name": "Ready for Deploy", "suggested_type": "started", "task_count": 1 },
+        { "name": "Completed", "suggested_type": "done", "task_count": 1429 },
+        { "name": "Abandoned", "suggested_type": "done", "task_count": 7 }
       ]
     },
     {
       "name": "Docs",
-      "story_count": 46,
+      "task_count": 46,
       "states": [
-        { "name": "Backlog", "suggested_type": "backlog", "story_count": 10 },
-        { "name": "Done", "suggested_type": "done", "story_count": 36 }
+        { "name": "Backlog", "suggested_type": "backlog", "task_count": 10 },
+        { "name": "Done", "suggested_type": "done", "task_count": 36 }
       ]
     }
   ],
   "warnings": [
-    "2 stories have descriptions longer than 64KB and will be truncated"
+    "2 tasks have descriptions longer than 64KB and will be truncated"
   ]
 }
 ```
@@ -314,7 +314,7 @@ options: JSON string — {
 
 **`workflow_state_mappings` schema:**
 
-Each Shortcut workflow is configured in one of two modes: **create new** (a new Helpin workflow is created mirroring the Shortcut workflow) or **use existing** (stories are mapped into an already-configured Helpin workflow).
+Each Shortcut workflow is configured in one of two modes: **create new** (a new Helpin workflow is created mirroring the Shortcut workflow) or **use existing** (tasks are mapped into an already-configured Helpin workflow).
 
 ```json
 [
@@ -382,7 +382,7 @@ Returns current import progress. The frontend polls this during import.
   "import_id": "uuid",
   "status": "completed",
   "progress": {
-    "current_step": "stories",
+    "current_step": "tasks",
     "steps_completed": 8,
     "steps_total": 8,
     "entities_processed": 1626,
@@ -397,13 +397,13 @@ Returns current import progress. The frontend polls this during import.
     "objectives_created": 17,
     "epics_created": 107,
     "sprints_created": 74,
-    "stories_created": 1626,
-    "stories_skipped": 0,
+    "tasks_created": 1626,
+    "tasks_skipped": 0,
     "checklist_items_created": 312,
     "owner_links_created": 1866,
     "label_links_created": 331,
     "warnings": [
-      "2 invitations sent — stories assigned, awaiting invite acceptance",
+      "2 invitations sent — tasks assigned, awaiting invite acceptance",
       "11 imported sprints had null dates because iteration names could not be parsed"
     ]
   }
@@ -467,14 +467,14 @@ Begin Transaction
     │     └── Link epics ↔ objectives
     │     └── Link epics ↔ labels
     ├── Create Sprints (keyed by external iteration_id; preserve name; nullable dates when unparseable)
-    ├── Create Stories (keyed by external story id)
+    ├── Create Tasks (keyed by external task id)
     │     └── Map workflow state by name within workflow
     │     └── Map team by name, else null
     │     └── Map requester/owners by email
     │     └── Set timestamps, priority, severity, estimate, etc.
     │     └── Set `owner_id` to first mapped owner when available
-    ├── Create Story ↔ Owner links
-    ├── Create Story ↔ Label links
+    ├── Create Task ↔ Owner links
+    ├── Create Task ↔ Label links
     └── Create Checklist Items (parse `[X]`/`[ ]` prefix)
     │
     ▼
@@ -486,16 +486,16 @@ Update Import Job → status: completed, result: { counts }
 
 ### 7.4 Batch Insertion
 
-For performance with ~1,600 stories:
+For performance with ~1,600 tasks:
 - Use GORM `CreateInBatches` with batch size of 100.
-- Collect all join-table records (story_owners, story_labels) and bulk-insert after stories.
+- Collect all join-table records (task_owners, task_labels) and bulk-insert after tasks.
 - Estimated import time: < 10 seconds for this dataset size.
 
 ### 7.5 Import-Specific Behavior
 
-- Stories, epics, objectives, and sprints persist Shortcut IDs into `external_id` for idempotency.
-- Story `owner_id` is set to the first successfully mapped owner email, if any; all mapped owners are still inserted into `pm_story_owners`.
-- Story, epic, objective, and sprint `team_id` may be null when the CSV does not provide a team or when the source spans multiple teams.
+- Tasks, epics, objectives, and sprints persist Shortcut IDs into `external_id` for idempotency.
+- Task `owner_id` is set to the first successfully mapped owner email, if any; all mapped owners are still inserted into `pm_task_owners`.
+- Task, epic, objective, and sprint `team_id` may be null when the CSV does not provide a team or when the source spans multiple teams.
 - Imported timestamps are written directly from CSV values and must not be recomputed from workflow state.
 
 ---
@@ -514,15 +514,15 @@ Route: `/w/{slug}/settings/import`
 - File upload dropzone accepting `.csv` files.
 - Source selector (only "Shortcut" for now, designed to be extensible).
 - After upload, calls the preview endpoint and shows:
-  - Summary card: story count, epic count, objective count, sprint count, label count.
-  - Breakdown by story type (feature/bug/chore).
+  - Summary card: task count, epic count, objective count, sprint count, label count.
+  - Breakdown by task type (feature/bug/chore).
   - Warning badges for any issues detected.
 
 **Step 2 — Map Workflows & States**
 
 This is the critical step. For each Shortcut workflow found in the CSV, the user decides whether to **create a new Helpin workflow** (mirroring the Shortcut workflow) or **map to an existing Helpin workflow**. Either way, every Shortcut state must be assigned a Helpin state type so that boards, metrics, and completion tracking work correctly.
 
-**Per-workflow card** (one collapsible card per Shortcut workflow, e.g., "Product Development — 9 states, 1,580 stories"):
+**Per-workflow card** (one collapsible card per Shortcut workflow, e.g., "Product Development — 9 states, 1,580 tasks"):
 
 - **One-click default** — Each workflow card starts in **"Create new workflow"** mode with all state names, positions, and state types **already pre-filled** from auto-detection. The user sees a ready-to-go table with green checkmarks. For most imports, no manual editing is needed — the user just reviews and clicks "Next".
 
@@ -532,7 +532,7 @@ This is the critical step. For each Shortcut workflow found in the CSV, the user
 
 - **Create new workflow mode** — state mapping table:
   - **State Name** — the Shortcut state name (editable — user can rename during import).
-  - **Story Count** — how many stories are in this state (helps understand impact).
+  - **Task Count** — how many tasks are in this state (helps understand impact).
   - **State Type** — dropdown: `Backlog`, `Unstarted`, `Started`, `Done`.
     Pre-filled with `suggested_type` from the preview response (auto-detected from well-known names). Color-coded pills per state type (gray=backlog, blue=unstarted, yellow=started, green=done).
   - **Position** — drag handle to reorder states (defaults to the order they appear in the CSV).
@@ -540,7 +540,7 @@ This is the critical step. For each Shortcut workflow found in the CSV, the user
 
 - **Use existing workflow mode** — state mapping table:
   - **Shortcut State** — the state name from the CSV (read-only).
-  - **Story Count** — count of stories in this state.
+  - **Task Count** — count of tasks in this state.
   - **Helpin State** — dropdown of states from the selected existing workflow. Multiple Shortcut states can map to the same Helpin state (e.g., both "Completed" and "Done" → the existing "Done" state).
 
 - **Validation:**
@@ -551,31 +551,31 @@ This is the critical step. For each Shortcut workflow found in the CSV, the user
 
 **Why this step matters:** Helpin uses `state_type` to determine:
   - Board column grouping (backlog/unstarted/started/done columns)
-  - Whether a story is considered "started" or "completed" for metrics
+  - Whether a task is considered "started" or "completed" for metrics
   - Sprint velocity and burndown calculations
   - Epic/objective progress percentages
 
 Getting this wrong would make the entire board and reporting layer incorrect for all imported data.
 
 **Step 3 — Map Users**
-- Table showing all unique emails from the CSV with story count per user.
+- Table showing all unique emails from the CSV with task count per user.
 - Auto-matched emails (exact email match to existing workspace members) show a green checkmark.
 - **"Match All by Email"** button at the top auto-assigns all exact matches in one click.
 - For unmatched emails, three options per row:
   - **Select existing member** — dropdown of workspace members to manually map to.
-  - **Invite & Map** — sends a workspace invitation to that email. The invited user is created immediately in the system so that stories can be assigned to them during import. When the user accepts the invite, they gain full access. This ensures no stories are left unassigned.
-  - **Skip** — no mapping; stories from this user import without owner/requester.
+  - **Invite & Map** — sends a workspace invitation to that email. The invited user is created immediately in the system so that tasks can be assigned to them during import. When the user accepts the invite, they gain full access. This ensures no tasks are left unassigned.
+  - **Skip** — no mapping; tasks from this user import without owner/requester.
 - **"Invite All Unmatched"** button — one-click to send invitations to all unmatched emails at once, mapping them all in a single action.
 - Invited users are shown with a pending badge so the admin can distinguish between already-active members and newly-invited ones.
 
 **Step 4 — Configure & Import**
 - Toggle options:
-  - **Import archived stories** (default: on)
-  - **Import completed stories** (default: on)
+  - **Import archived tasks** (default: on)
+  - **Import completed tasks** (default: on)
 - Summary of what will be created (final counts).
 - Warning list for inferred sprint dates and sprints imported with null dates.
 - "Start Import" button.
-- Progress bar with step labels (Teams → Workflows → Labels → Objectives → Epics → Sprints → Stories → Links).
+- Progress bar with step labels (Teams → Workflows → Labels → Objectives → Epics → Sprints → Tasks → Links).
 - On completion: success summary with created/skipped counts and any warnings.
 
 ### 8.3 ASCII Wireframes
@@ -597,7 +597,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │ Account          │  │  ┌───────────────────────────────────────────┐  │   │
 │  │ ────────────     │  │  │                                           │  │   │
 │  │▸Import / Export  │  │  │   📋  Shortcut                            │  │   │
-│  │                  │  │  │   Import stories, epics, objectives,      │  │   │
+│  │                  │  │  │   Import tasks, epics, objectives,        │  │   │
 │  │                  │  │  │   and sprints from a Shortcut CSV export.  │  │   │
 │  │                  │  │  │                                           │  │   │
 │  │                  │  │  │                    [ Start Import ]        │  │   │
@@ -689,7 +689,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  ✓ workspace-60ae676e-...-exported.csv              [ Change File ] │     │
 │  │                                                                     │     │
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │     │
-│  │  │   Stories    │ │    Epics    │ │ Objectives  │ │   Sprints   │   │     │
+│  │  │    Tasks     │ │    Epics    │ │ Objectives  │ │   Sprints   │   │     │
 │  │  │             │ │             │ │             │ │             │   │     │
 │  │  │    1,626    │ │     107     │ │      17     │ │      74     │   │     │
 │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │     │
@@ -700,14 +700,14 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │      10     │ │       3     │ │       2     │ │     312     │   │     │
 │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │     │
 │  │                                                                     │     │
-│  │  Stories by Type                                                    │     │
+│  │  Tasks by Type                                                      │     │
 │  │  ┌──────────────────────────────────────────────────────────────┐   │     │
 │  │  │ ██████████████████████████████████████  feature    1,020     │   │     │
 │  │  │ ████████████████                       bug          415     │   │     │
 │  │  │ ████████                               chore        191     │   │     │
 │  │  └──────────────────────────────────────────────────────────────┘   │     │
 │  │                                                                     │     │
-│  │  ⚠ 2 stories have descriptions longer than 64KB (will truncate)    │     │
+│  │  ⚠ 2 tasks have descriptions longer than 64KB (will truncate)      │     │
 │  │                                                                     │     │
 │  └─────────────────────────────────────────────────────────────────────┘     │
 │                                                                             │
@@ -733,14 +733,14 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  types. Review and adjust if needed, or just continue.              │     │
 │  │                                                                     │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │ ▾ Product Development           ✓ Ready     1,580 stories  │     │     │
+│  │  │ ▾ Product Development           ✓ Ready       1,580 tasks  │     │     │
 │  │  │                                                             │     │     │
 │  │  │   ( ● Create new workflow ) ( ○ Use existing workflow )     │     │     │
 │  │  │                                                             │     │     │
 │  │  │   Workflow name: [ Product Development          ]           │     │     │
 │  │  │                                                             │     │     │
 │  │  │   ┌────┬──────────────────────────┬────────┬─────────────┐  │     │     │
-│  │  │   │ ⠿  │ State Name               │ Stories│ State Type   │  │     │     │
+│  │  │   │ ⠿  │ State Name               │  Tasks │ State Type   │  │     │     │
 │  │  │   ├────┼──────────────────────────┼────────┼─────────────┤  │     │     │
 │  │  │   │ ⠿  │ [ Backlog              ] │    108 │ ■ Backlog  ▾│  │     │     │
 │  │  │   │ ⠿  │ [ Refinement           ] │     18 │ ■ Unstarted▾│  │     │     │
@@ -758,7 +758,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │ ▸ Docs                           ✓ Ready       46 stories  │     │     │
+│  │  │ ▸ Docs                           ✓ Ready         46 tasks  │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
 │  └─────────────────────────────────────────────────────────────────────┘     │
@@ -775,14 +775,14 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  │  ┌─────────────────────────────────────────────────────────────┐     │    │
-│  │  │ ▾ Docs                                       46 stories     │     │    │
+│  │  │ ▾ Docs                                         46 tasks     │     │    │
 │  │  │                                                             │     │    │
 │  │  │   ( ○ Create new workflow ) ( ● Use existing workflow )     │     │    │
 │  │  │                                                             │     │    │
 │  │  │   Existing workflow: [▾ Documentation Workflow     ]        │     │    │
 │  │  │                                                             │     │    │
 │  │  │   ┌──────────────────────────┬────────┬──────────────────┐  │     │    │
-│  │  │   │ Shortcut State           │ Stories│ Helpin State      │  │     │    │
+│  │  │   │ Shortcut State           │  Tasks │ Helpin State      │  │     │    │
 │  │  │   ├──────────────────────────┼────────┼──────────────────┤  │     │    │
 │  │  │   │ Backlog                  │     10 │ [▾ To Do       ] │  │     │    │
 │  │  │   │ Done                     │     36 │ [▾ Published   ] │  │     │    │
@@ -798,7 +798,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 
 ```
 │  │   ┌────┬──────────────────────────┬────────┬─────────────┐  │     │
-│  │   │ ⠿  │ State Name               │ Stories│ State Type   │  │     │
+│  │   │ ⠿  │ State Name               │  Tasks │ State Type   │  │     │
 │  │   ├────┼──────────────────────────┼────────┼─────────────┤  │     │
 │  │   │ ⠿  │ [ Backlog              ] │    108 │ [▾ Backlog ] │  │     │
 │  │   │ ⠿  │ [ In Progress          ] │     20 │ [▾ Started ] │  │     │
@@ -806,7 +806,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │   └────┴──────────────────────────┴────────┴─────────────┘  │     │
 │  │                                                             │     │
 │  │   ✗ This workflow has no Done state. At least one is required.     │
-│  │   ⚠ No Unstarted states — new stories will start in Backlog.       │
+│  │   ⚠ No Unstarted states — new tasks will start in Backlog.         │
 ```
 
 #### Step 3 — Map Users
@@ -823,7 +823,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │                                                                     │     │
 │  │  Map Users                                                          │     │
 │  │  Match Shortcut users to Helpin workspace members. You can          │     │
-│  │  invite unmatched users so their stories are properly assigned.     │     │
+│  │  invite unmatched users so their tasks are properly assigned.       │     │
 │  │                                                                     │     │
 │  │  7 of 9 users auto-matched                                          │     │
 │  │                                                                     │     │
@@ -831,7 +831,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │                                                                     │     │
 │  │  Matched Members                                                    │     │
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
-│  │  │ Shortcut User                    │ Stories│ Helpin Member     │   │     │
+│  │  │ Shortcut User                    │  Tasks │ Helpin Member     │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
 │  │  │ ✓ azhar@contentstudio.io         │    312 │ Azhar Khan       │   │     │
 │  │  │ ✓ amad.ali@usermaven.com         │    287 │ Amad Ali         │   │     │
@@ -844,7 +844,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │                                                                     │     │
 │  │  Unmatched Users (2)                                                │     │
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
-│  │  │ Shortcut User                    │ Stories│ Action            │   │     │
+│  │  │ Shortcut User                    │  Tasks │ Action            │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
 │  │  │ ⚠ john@oldcompany.com            │     42 │ [▾ Select...   ] │   │     │
 │  │  │ ⚠ jane.contractor@gmail.com      │     12 │ [▾ Select...   ] │   │     │
@@ -878,13 +878,13 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 ```
 │  │  Unmatched Users (0)    ✓ All users mapped                          │     │
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
-│  │  │ Shortcut User                    │ Stories│ Status            │   │     │
+│  │  │ Shortcut User                    │  Tasks │ Status            │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
 │  │  │ ✉ john@oldcompany.com            │     42 │ Invited (pending)│   │     │
 │  │  │ ✉ jane.contractor@gmail.com      │     12 │ Invited (pending)│   │     │
 │  │  └──────────────────────────────────┴────────┴──────────────────┘   │     │
 │  │                                                                     │     │
-│  │  Invitations will be sent when the import starts. Stories will       │     │
+│  │  Invitations will be sent when the import starts. Tasks will         │     │
 │  │  be assigned to these users. They'll see their work once they       │     │
 │  │  accept the invite and sign in.                                     │     │
 ```
@@ -905,8 +905,8 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │                                                                     │     │
 │  │  Options                                                            │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │  [✓] Import archived stories              68 stories        │     │     │
-│  │  │  [✓] Import completed stories           1,482 stories       │     │     │
+│  │  │  [✓] Import archived tasks                68 tasks          │     │     │
+│  │  │  [✓] Import completed tasks           1,482 tasks           │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
 │  │  Summary                                                            │     │
@@ -920,7 +920,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │  Objectives                         17                     │     │     │
 │  │  │  Epics                             107                     │     │     │
 │  │  │  Sprints                            74                     │     │     │
-│  │  │  Stories                          1,626                    │     │     │
+│  │  │  Tasks                            1,626                    │     │     │
 │  │  │  Checklist Items                   312                     │     │     │
 │  │  │  User Mappings          7 matched, 2 invited (pending)     │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
@@ -958,8 +958,8 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │                                                             │     │     │
 │  │  │  ████████████████████████████████░░░░░░░░░░░░  68%          │     │     │
 │  │  │                                                             │     │     │
-│  │  │  Step 6 of 8 — Creating stories                             │     │     │
-│  │  │  1,108 of 1,626 stories processed                           │     │     │
+│  │  │  Step 6 of 8 — Creating tasks                               │     │     │
+│  │  │  1,108 of 1,626 tasks processed                             │     │     │
 │  │  │                                                             │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
@@ -970,8 +970,8 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │  ✓ Labels                             10 created            │     │     │
 │  │  │  ✓ Objectives                         17 created            │     │     │
 │  │  │  ✓ Epics                              107 created           │     │     │
-│  │  │  ◐ Stories                            1,108 / 1,626         │     │     │
-│  │  │  ○ Story Links                        pending               │     │     │
+│  │  │  ◐ Tasks                              1,108 / 1,626         │     │     │
+│  │  │  ○ Task Links                         pending               │     │     │
 │  │  │  ○ Checklist Items                    pending               │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
@@ -1015,7 +1015,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │  Objectives                    17         0                 │     │     │
 │  │  │  Epics                        107         0                 │     │     │
 │  │  │  Sprints                       74         0                 │     │     │
-│  │  │  Stories                    1,626         0                 │     │     │
+│  │  │  Tasks                      1,626         0                 │     │     │
 │  │  │  Checklist Items              312         0                 │     │     │
 │  │  │  Owner Links                1,866         0                 │     │     │
 │  │  │  Label Links                  331         0                 │     │     │
@@ -1025,7 +1025,7 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  Warnings (3)                                                       │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
 │  │  │  ✉ 2 invitations sent: john@oldcompany.com,                  │     │     │
-│  │  │    jane.contractor@gmail.com — stories assigned, awaiting   │     │     │
+│  │  │    jane.contractor@gmail.com — tasks assigned, awaiting     │     │     │
 │  │  │    invite acceptance.                                       │     │     │
 │  │  │  ⚠ 11 sprints imported with null dates (unparseable         │     │     │
 │  │  │    iteration names).                                        │     │     │
@@ -1049,12 +1049,12 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  │                                                             │     │     │
 │  │  │  ████████████████████████░░░░░░░░░░░░░░░░░░░░  45%          │     │     │
 │  │  │                                                             │     │     │
-│  │  │  Failed at step 6 — Creating stories                        │     │     │
+│  │  │  Failed at step 6 — Creating tasks                          │     │     │
 │  │  │                                                             │     │     │
 │  │  └─────────────────────────────────────────────────────────────┘     │     │
 │  │                                                                     │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │  ✗ Error: Database constraint violation on story row 847.   │     │     │
+│  │  │  ✗ Error: Database constraint violation on task row 847.    │     │     │
 │  │  │    Duplicate external_id "85463" detected.                  │     │     │
 │  │  │                                                             │     │     │
 │  │  │  All changes have been rolled back. No data was imported.   │     │     │
@@ -1124,19 +1124,19 @@ interface ImportState {
 
 ## 9. Detailed Field Mapping Reference
 
-### 9.1 Story Fields
+### 9.1 Task Fields
 
 | CSV Column | Helpin Field | Transform |
 |---|---|---|
 | `id` | `external_id` | Cast to string |
 | `name` | `name` | Direct |
-| `type` | `story_type` | Direct (`feature`, `bug`, `chore`) |
+| `type` | `task_type` | Direct (`feature`, `bug`, `chore`) |
 | `description` | `description` | Direct (Markdown preserved) |
 | `state` | `workflow_state_id` | Resolved via `workflow_state_mappings`: if `create_new`, lookup by new state name; if `use_existing`, lookup by `existing_state_id` |
 | `workflow` | `workflow_id` | Resolved via `workflow_state_mappings`: if `create_new`, ID of newly created workflow; if `use_existing`, `existing_workflow_id` |
 | `team` | `team_id` | Lookup by team name; null if missing or unmapped |
 | `requester` | `requester_id` | User mapping by email |
-| `owners` | `owner_id`, `pm_story_owners` | Split by `;`, user mapping by email; first mapped owner becomes `owner_id`, all mapped owners go to `pm_story_owners` |
+| `owners` | `owner_id`, `pm_task_owners` | Split by `;`, user mapping by email; first mapped owner becomes `owner_id`, all mapped owners go to `pm_task_owners` |
 | `estimate` | `estimate` | Parse int, null if empty |
 | `priority` | `priority` | Enum mapping (see 4.2) |
 | `severity` | `severity` | Enum mapping (see 4.2) |
@@ -1151,7 +1151,7 @@ interface ImportState {
 | `updated_at` | `updated_at` | Parse datetime |
 | `epic_id` | `epic_id` | Lookup by mapped epic UUID |
 | `iteration_id` | `sprint_id` | Lookup by mapped sprint UUID |
-| `labels` | `pm_story_labels` | Split by `;`, lookup by label name |
+| `labels` | `pm_task_labels` | Split by `;`, lookup by label name |
 | `tasks` | `pm_checklist_items` | Split by `;`, parse `[X]`/`[ ]` prefix |
 
 ### 9.2 Epic Fields
@@ -1230,14 +1230,14 @@ The architecture is designed to support future import sources:
 |---|---|
 | CSV has no header row | Reject with clear error |
 | CSV missing required columns (`id`, `name`, `type`, `state`) | Reject with list of missing columns |
-| Duplicate imported `external_id` in workspace | Skip the matching story/epic/objective/sprint, count it in the import summary |
-| Empty story name | Use `"Untitled Story (SC-{id})"` |
+| Duplicate imported `external_id` in workspace | Skip the matching task/epic/objective/sprint, count it in the import summary |
+| Empty task name | Use `"Untitled Task (SC-{id})"` |
 | Description > 64KB | Truncate with warning |
-| Unknown story type | Default to `feature` with warning |
+| Unknown task type | Default to `feature` with warning |
 | Unknown state name | Assign to workflow's default state with warning |
 | Sprint date parsing failure | Import the sprint with null `start_date` / `end_date` and warn |
-| Story/epic/objective date parsing failure | Set the affected field to null with warning |
-| Missing or unmapped story team | Import with `team_id = null` |
+| Task/epic/objective date parsing failure | Set the affected field to null with warning |
+| Missing or unmapped task team | Import with `team_id = null` |
 | Epic or sprint spans multiple teams | Import with `team_id = null` |
 | CSV file > 50MB | Reject at upload with size limit error |
 | Concurrent imports on same workspace | Block — only one active import per workspace |

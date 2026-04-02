@@ -50,7 +50,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
 
   const fetchRuns = useCallback(async () => {
     try {
-      const res = await agentService.listTargetRuns(workspaceId, 'story', storyId);
+      const res = await agentService.listTargetRuns(workspaceId, 'task', storyId);
       setRuns(res.data ?? []);
       setSelectedRunId((current) => current && (res.data ?? []).some((run) => run.id === current) ? current : (res.data?.[0]?.id ?? null));
     } finally {
@@ -71,7 +71,8 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     if (assignedAgentId) {
       return storyRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
     }
-    return storyRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
+    return storyRunnableAgents.find((agent) => agent.preset_key === 'task_planner')
+      ?? storyRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
       ?? storyRunnableAgents.find((agent) => agent.preset_key === 'code_builder')
       ?? storyRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
       ?? storyRunnableAgents[0]
@@ -95,7 +96,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
-      if (detail?.parent_type === 'story' && detail.parent_id === storyId) {
+      if (detail?.parent_type === 'task' && detail.parent_id === storyId) {
         void fetchRuns();
       }
     };
@@ -111,7 +112,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     if (!selectedAgentId) return;
     setTriggering(true);
     try {
-      const res = await agentService.runStory(workspaceId, storyId, { agent_id: selectedAgentId });
+      const res = await agentService.runTask(workspaceId, storyId, { agent_id: selectedAgentId });
       if (res.error) {
         toast.error(res.error);
         return;
@@ -185,7 +186,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
         sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
         onOpenChange={setDrawerOpen}
-        title="Story Agent Run"
+        title="Task Agent Run"
       />
 
       <Separator className="mt-4" />
@@ -194,5 +195,5 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
 }
 
 function isStoryRunnableAgent(agent: Agent) {
-  return agent.allowed_targets.includes('story');
+  return agent.allowed_targets.includes('task');
 }

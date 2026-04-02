@@ -3,7 +3,7 @@ import { uploadToS3 } from '@/lib/api';
 
 export interface EditorUploadConfig {
   workspaceId: string;
-  entityType: 'story' | 'epic' | 'objective' | 'sprint' | 'editor_upload';
+  entityType: 'task' | 'epic' | 'objective' | 'sprint' | 'editor_upload';
   entityId: string;
 }
 

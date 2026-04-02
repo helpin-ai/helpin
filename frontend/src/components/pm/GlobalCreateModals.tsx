@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
-import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
@@ -30,7 +30,7 @@ import { useEpicStates } from '@/hooks/queries/useWorkflows';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
@@ -56,9 +56,9 @@ import {
 } from '@/components/pm/sprintAutomationPrompt';
 
 
-// ── Story wrapper ────────────────────────────────────────────────────
+// ── Task wrapper ─────────────────────────────────────────────────────
 
-function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const [workflow, setWorkflow] = useState<WorkflowWithStates | null>(null);
   const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
@@ -66,7 +66,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
   const initialSprintId = useGlobalCreateStore((s) => s.initialSprintId);
 
   useEffect(() => {
-    // Try board store first (already loaded if on stories page)
+    // Try board store first (already loaded if on tasks page)
     const boardWorkflow = usePMBoardStore.getState().workflow;
     if (boardWorkflow) {
       setWorkflow(boardWorkflow);
@@ -80,7 +80,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
   if (!workflow) return null;
 
   return (
-    <CreateStoryModal
+    <CreateTaskModal
       open
       onOpenChange={(open) => !open && onClose()}
       workspaceId={workspaceId}
@@ -90,18 +90,18 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       initialOwnerMemberId={initialOwnerMemberId}
       initialSprintId={initialSprintId}
       onCreate={async (payload) => {
-        const { data, error } = await pmStoryService.create(payload);
+        const { data, error } = await pmTaskService.create(payload);
         if (error) throw new Error(error);
         // Refresh the board if it's loaded
         const boardWs = usePMBoardStore.getState().workspaceId;
         if (boardWs) usePMBoardStore.getState().refreshBoard();
         // Invalidate TanStack Query caches
-        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] });
+        qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
-        window.dispatchEvent(new CustomEvent('story-created', {
-          detail: { ownerMemberId: data?.story?.owner_member_id, teamId: data?.story?.team_id },
+        window.dispatchEvent(new CustomEvent('task-created', {
+          detail: { ownerMemberId: data?.task?.owner_member_id, teamId: data?.task?.team_id },
         }));
-        return data?.story ? { id: data.story.id } : undefined;
+        return data?.task ? { id: data.task.id } : undefined;
       }}
     />
   );
@@ -220,7 +220,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
               <Input
                 autoFocus
@@ -253,7 +253,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
             <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
               <p className="mb-4 text-xs text-muted-foreground">
-                Epics are collections of stories that together represent a major initiative or feature.
+                Epics are collections of tasks that together represent a major initiative or feature.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
                 <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
@@ -274,7 +274,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <MemberPickerPopover
                   value={form.ownerMemberId || '__none__'}
                   members={assignableMembers}
-                  noneLabel="None"
+                  noneLabel="No owner"
                   onChange={(value) => setForm((f) => ({ ...f, ownerMemberId: value === '__none__' ? '' : value }))}
                   renderTrigger={() => {
                     const selectedMember = findAssignableMember(assignableMembers, form.ownerMemberId);
@@ -288,7 +288,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                             fallbackClassName="text-[7px]"
                           />
                         ) : null}
-                        <span>{selectedMember?.display_name || selectedMember?.email || 'None'}</span>
+                        <span>{selectedMember?.display_name || selectedMember?.email || 'No owner'}</span>
                       </>
                     );
                   }}
@@ -313,7 +313,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -322,7 +323,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <DatePicker
                   value={form.targetDate}
                   onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -653,10 +655,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <input
-                type="text"
+              <Input
                 autoFocus
                 aria-label="Sprint title"
                 value={form.name}
@@ -668,7 +669,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     editor?.focus();
                   }
                 }}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Sprint title"
               />
               <div className="mt-4">
@@ -708,7 +709,8 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -717,7 +719,8 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <DatePicker
                   value={form.endDate}
                   onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
               </div>
@@ -896,10 +899,9 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <input
-                type="text"
+              <Input
                 autoFocus
                 aria-label="Objective title"
                 value={form.name}
@@ -911,7 +913,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                     editor?.focus();
                   }
                 }}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Objective title"
               />
               <div className="mt-4">
@@ -1033,7 +1035,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
@@ -1042,7 +1045,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <DatePicker
                   value={form.targetDate}
                   onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
-                  placeholder="Pick a date"
+                  placeholder="None"
+                  hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
               </div>
@@ -1077,7 +1081,7 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
 
   return (
     <>
-      {activeModal === 'story' && <GlobalCreateStory workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'task' && <GlobalCreateTask workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'sprint' && <GlobalCreateSprint workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}

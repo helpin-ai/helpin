@@ -20,6 +20,7 @@ interface AgentPersonaMeta {
 
 const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
   epic_planner: 'atlas',
+  task_planner: 'scribe',
   story_planner: 'scribe',
   code_builder: 'forge',
   support_agent: 'echo',
@@ -28,7 +29,7 @@ const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
 
 const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
   atlas: { key: 'atlas', label: 'Atlas', role: 'Epic planner' },
-  scribe: { key: 'scribe', label: 'Scribe', role: 'Story planner' },
+  scribe: { key: 'scribe', label: 'Scribe', role: 'Task planner' },
   forge: { key: 'forge', label: 'Forge', role: 'Coding agent' },
   echo: { key: 'echo', label: 'Echo', role: 'Help chat agent' },
   lens: { key: 'lens', label: 'Lens', role: 'QA reviewer' },

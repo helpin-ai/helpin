@@ -155,7 +155,7 @@ func TestUpdateAgentRejectsPresetFieldsForCustomAgents(t *testing.T) {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
 
-	presetKey := model.AgentPresetStoryPlanner
+	presetKey := model.AgentPresetTaskPlanner
 	if _, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
 		PresetKey: &presetKey,
 	}, "user-1"); err == nil {

@@ -50,7 +50,7 @@ func (r *PMRecurringTemplateRepository) GetByStoryID(ctx context.Context, storyI
 	if err := r.db.WithContext(ctx).
 		Table("pm_recurring_templates t").
 		Select("t.*").
-		Joins("JOIN pm_stories s ON s.recurring_template_id = t.id").
+		Joins("JOIN pm_tasks s ON s.recurring_template_id = t.id").
 		Where("s.id = ?", storyID).
 		First(&tmpl).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

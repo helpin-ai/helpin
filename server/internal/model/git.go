@@ -62,11 +62,11 @@ type PMTeamRepoDefault struct {
 
 func (PMTeamRepoDefault) TableName() string { return "pm_team_repo_defaults" }
 
-// StoryDeliveryTarget stores the current delivery lane for a story.
-type StoryDeliveryTarget struct {
+// TaskDeliveryTarget stores the current delivery lane for a task.
+type TaskDeliveryTarget struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID        string     `json:"story_id" gorm:"type:uuid;not null;uniqueIndex"`
+	StoryID        string     `json:"task_id" gorm:"column:task_id;type:uuid;not null;uniqueIndex"`
 	RepositoryID   *string    `json:"repository_id" gorm:"type:uuid;index"`
 	RepoFullName   *string    `json:"repo_full_name"`
 	IntegrationID  *string    `json:"integration_id" gorm:"type:uuid;index"`
@@ -84,13 +84,13 @@ type StoryDeliveryTarget struct {
 	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (StoryDeliveryTarget) TableName() string { return "story_delivery_targets" }
+func (TaskDeliveryTarget) TableName() string { return "task_delivery_targets" }
 
-// StoryGitLink links a story to a repo/branch/PR.
-type StoryGitLink struct {
+// TaskGitLink links a task to a repo/branch/PR.
+type TaskGitLink struct {
 	ID            string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID       string    `json:"story_id" gorm:"type:uuid;not null;index"`
+	StoryID       string    `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
 	IntegrationID string    `json:"integration_id" gorm:"type:uuid;not null"`
 	RepositoryID  *string   `json:"repository_id" gorm:"type:uuid;index"`
 	RunID         *string   `json:"run_id" gorm:"type:uuid;index"`
@@ -106,7 +106,7 @@ type StoryGitLink struct {
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (StoryGitLink) TableName() string { return "story_git_links" }
+func (TaskGitLink) TableName() string { return "task_git_links" }
 
 // CreateGitIntegrationRequest is the payload for creating a git integration.
 type CreateGitIntegrationRequest struct {
@@ -122,8 +122,8 @@ type CreateGitIntegrationRequest struct {
 	AccessToken    string  `json:"access_token"`
 }
 
-// UpdateStoryDeliveryTargetRequest updates the selected delivery target for a story.
-type UpdateStoryDeliveryTargetRequest struct {
+// UpdateTaskDeliveryTargetRequest updates the selected delivery target for a task.
+type UpdateTaskDeliveryTargetRequest struct {
 	RepositoryID  *string `json:"repository_id"`
 	BaseBranch    *string `json:"base_branch"`
 	WorkingBranch *string `json:"working_branch"`
@@ -145,7 +145,7 @@ type GitHubInstallURLResponse struct {
 	Action     string `json:"action"`
 }
 
-// CreateBranchRequest is the payload for creating a branch from a story.
+// CreateBranchRequest is the payload for creating a branch from a task.
 type CreateBranchRequest struct {
 	IntegrationID string `json:"integration_id"`
 	Repo          string `json:"repo"`

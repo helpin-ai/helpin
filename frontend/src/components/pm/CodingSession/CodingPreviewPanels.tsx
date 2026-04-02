@@ -67,7 +67,7 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
     return [{
       ref: asString(story.ref).trim() || undefined,
       title,
-      type: asString(story.story_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
+      type: asString(story.task_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
       description: asString(story.description).trim() || undefined,
       acceptanceCriteria: asStringArray(story.acceptance_criteria),
       dependencyRefs: asStringArray(story.dependency_refs),
@@ -212,10 +212,10 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
     return null;
   })();
 
-  const latestStoryPlanPreview = parseStoryPlanPreviewModel(previewsByKey.get('story_plan'));
+  const latestStoryPlanPreview = parseStoryPlanPreviewModel(previewsByKey.get('task_plan'));
   const otherPreviewPanels = Array.from(previewsByKey.values()).filter((preview) => {
     if (preview.panelKey === 'prd_draft' && latestSpecDraftPreview) return false;
-    if (preview.panelKey === 'story_plan' && latestStoryPlanPreview) return false;
+    if (preview.panelKey === 'task_plan' && latestStoryPlanPreview) return false;
     return true;
   });
 
@@ -241,7 +241,7 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
 
       {latestStoryPlanPreview ? (
         <StoryPlanPanel
-          title={previewsByKey.get('story_plan')?.title || 'Story Plan'}
+          title={previewsByKey.get('task_plan')?.title || 'Task Plan'}
           preview={latestStoryPlanPreview}
         />
       ) : null}

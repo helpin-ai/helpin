@@ -60,7 +60,7 @@ func (s *CRMAssociationService) ListByObject(ctx context.Context, workspaceID, o
 
 func isValidObjectType(t string) bool {
 	switch t {
-	case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal, model.CRMObjectEpic, model.CRMObjectStory, model.CRMObjectSupportConversation:
+	case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal, model.CRMObjectEpic, model.CRMObjectTask, model.CRMObjectStory, model.CRMObjectSupportConversation:
 		return true
 	default:
 		return false

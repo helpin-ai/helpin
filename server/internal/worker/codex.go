@@ -139,7 +139,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	defer cancel()
 	runExecCtx := cloneExecutionContext(execCtx, ctx)
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
 			`{"status":"open|in_progress|pending|resolved|closed","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
@@ -686,7 +686,7 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 	artifactWriter.Save(execCtx.Context, "diff", "patch", diff, false)
 	artifactWriter.Save(execCtx.Context, "file_bundle", "json", toJSONString(changedFiles), false)
 
-	commitMessage := buildEngineerCommitMessage(execCtx.Story)
+	commitMessage := buildEngineerCommitMessage(execCtx.Task)
 	if out, err := runGit(execCtx, "commit", "-m", commitMessage); err != nil {
 		return fmt.Errorf("commit repository changes: %s", strings.TrimSpace(firstNonEmptyText(out, err.Error())))
 	}
@@ -973,8 +973,8 @@ func isCodexMissingLastMessageWarning(stderrText string) bool {
 
 func codexFallbackSummary(execCtx *ExecutionContext) string {
 	if isEngineerStoryRun(execCtx) {
-		if execCtx.Story != nil && strings.TrimSpace(execCtx.Story.Name) != "" {
-			return fmt.Sprintf("Codex completed work for story %q. Review the repository changes, diff, and git persistence artifacts for the implementation details.", execCtx.Story.Name)
+		if execCtx.Task != nil && strings.TrimSpace(execCtx.Task.Name) != "" {
+			return fmt.Sprintf("Codex completed work for task %q. Review the repository changes, diff, and git persistence artifacts for the implementation details.", execCtx.Task.Name)
 		}
 		return "Codex completed the requested story work. Review the repository changes, diff, and git persistence artifacts for the implementation details."
 	}

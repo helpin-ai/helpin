@@ -44,7 +44,7 @@ export function SidebarPopoverSelect<T extends string>({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
           >
             {renderTrigger()}
           </button>
@@ -79,7 +79,7 @@ export function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>
@@ -91,10 +91,10 @@ export function SidebarPopoverSelect<T extends string>({
               key={option.value}
               type="button"
               className={cn(
-                'flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer',
+                'flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-foreground transition-colors cursor-pointer',
                 value === option.value
-                  ? 'bg-accent text-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  ? 'bg-accent font-medium'
+                  : 'hover:bg-accent',
               )}
               onClick={() => { onChange(option.value); setOpen(false); }}
             >

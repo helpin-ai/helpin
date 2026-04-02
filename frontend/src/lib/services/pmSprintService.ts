@@ -57,5 +57,5 @@ export const pmSprintService = {
       end_date: toRFC3339(payload.end_date),
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
-  listStories: (workspaceId: string, id: string) => api.get<Story[]>(`/pm/sprints/${id}/stories${qs(workspaceId)}`),
+  listStories: (workspaceId: string, id: string) => api.get<Story[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
 };

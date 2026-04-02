@@ -33,7 +33,7 @@ export interface GitRepository {
   updated_at: string;
 }
 
-export interface StoryDeliveryTarget {
+export interface TaskDeliveryTarget {
   id: string;
   workspace_id: string;
   story_id: string;
@@ -54,7 +54,9 @@ export interface StoryDeliveryTarget {
   updated_at: string;
 }
 
-export interface StoryGitLink {
+export type StoryDeliveryTarget = TaskDeliveryTarget;
+
+export interface TaskGitLink {
   id: string;
   workspace_id: string;
   story_id: string;
@@ -72,6 +74,8 @@ export interface StoryGitLink {
   created_at: string;
   updated_at: string;
 }
+
+export type StoryGitLink = TaskGitLink;
 
 export interface CreateGitIntegrationRequest {
   provider: string;
@@ -100,8 +104,10 @@ export interface CreateBranchRequest {
   branch_name: string;
 }
 
-export interface UpdateStoryDeliveryTargetRequest {
+export interface UpdateTaskDeliveryTargetRequest {
   repository_id?: string;
   base_branch?: string;
   working_branch?: string;
 }
+
+export type UpdateStoryDeliveryTargetRequest = UpdateTaskDeliveryTargetRequest;

@@ -7,6 +7,7 @@ export interface AgentHandoff {
   to_agent_id?: string;
   to_user_id?: string;
   story_id?: string;
+  task_id?: string;
   epic_id?: string;
   run_id?: string;
   handoff_type: string;

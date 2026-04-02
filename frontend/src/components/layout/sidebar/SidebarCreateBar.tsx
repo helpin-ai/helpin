@@ -27,7 +27,7 @@ export function SidebarCreateBar({
   options,
 }: SidebarCreateBarProps) {
   return (
-    <div className="mb-2 flex w-full">
+    <div className="mb-2 flex w-full px-1">
       <Button
         size="sm"
         className="h-7 flex-1 gap-1.5 rounded-r-none text-xs"

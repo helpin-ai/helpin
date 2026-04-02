@@ -23,13 +23,13 @@ vi.mock('../useWebSocket', () => ({
   useWSStore: { setState: vi.fn() },
 }))
 
-vi.mock('@/lib/services/pmStoryService', () => ({
-  pmStoryService: {
+vi.mock('@/lib/services/pmTaskService', () => ({
+  pmTaskService: {
     get: vi.fn(),
   },
 }))
 
-import { pmStoryService } from '@/lib/services/pmStoryService'
+import { pmTaskService } from '@/lib/services/pmTaskService'
 import { useRealtimeSync } from '../useRealtimeSync'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -66,7 +66,7 @@ describe('useRealtimeSync story ordering events', () => {
   })
 
   it('refreshes the board for moved story events instead of hydrating a single story', async () => {
-    vi.mocked(pmStoryService.get).mockResolvedValue({
+    vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
         story: {
           id: 'story-1',
@@ -106,7 +106,7 @@ describe('useRealtimeSync story ordering events', () => {
       await Promise.resolve()
     })
 
-    expect(pmStoryService.get).not.toHaveBeenCalled()
+    expect(pmTaskService.get).not.toHaveBeenCalled()
     expect(patchStory).not.toHaveBeenCalled()
     expect(refreshBoard).toHaveBeenCalledTimes(1)
 
@@ -115,7 +115,7 @@ describe('useRealtimeSync story ordering events', () => {
   })
 
   it('refreshes the board for reordered story events instead of hydrating a single story', async () => {
-    vi.mocked(pmStoryService.get).mockResolvedValue({
+    vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
         story: {
           id: 'story-1',
@@ -155,7 +155,7 @@ describe('useRealtimeSync story ordering events', () => {
       await Promise.resolve()
     })
 
-    expect(pmStoryService.get).not.toHaveBeenCalled()
+    expect(pmTaskService.get).not.toHaveBeenCalled()
     expect(patchStory).not.toHaveBeenCalled()
     expect(refreshBoard).toHaveBeenCalledTimes(1)
 
@@ -164,7 +164,7 @@ describe('useRealtimeSync story ordering events', () => {
   })
 
   it('still hydrates and patches plain story updates', async () => {
-    vi.mocked(pmStoryService.get).mockResolvedValue({
+    vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
         story: {
           id: 'story-1',
@@ -207,7 +207,7 @@ describe('useRealtimeSync story ordering events', () => {
       await Promise.resolve()
     })
 
-    expect(pmStoryService.get).toHaveBeenCalledWith('ws-1', 'story-1')
+    expect(pmTaskService.get).toHaveBeenCalledWith('ws-1', 'story-1')
     expect(patchStory).toHaveBeenCalledWith(
       'updated',
       'story-1',

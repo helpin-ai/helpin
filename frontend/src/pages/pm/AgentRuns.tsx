@@ -47,7 +47,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TARGET_LABELS: Record<string, string> = {
   epic: 'Epic',
-  story: 'Story',
+  task: 'Task',
   support_conversation: 'Support',
   document: 'Document',
   crm_deal: 'Deal',
@@ -260,7 +260,7 @@ export function AgentRunsPage() {
           <Bot className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
           <p className="text-sm font-medium">No agent runs yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Start an agent from a story, epic, or support conversation and it will appear here.
+            Start an agent from a task, epic, or support conversation and it will appear here.
           </p>
         </div>
       ) : (

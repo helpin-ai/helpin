@@ -26,7 +26,7 @@ type Handlers struct {
 	PMLabel             *handler.PMLabelHandler
 	PMEpic              *handler.PMEpicHandler
 	PMSprint            *handler.PMSprintHandler
-	PMStory             *handler.PMStoryHandler
+	PMTask              *handler.PMTaskHandler
 	PMComment           *handler.PMCommentHandler
 	PMAttachment        *handler.PMAttachmentHandler
 	PMObjective         *handler.PMObjectiveHandler
@@ -34,7 +34,7 @@ type Handlers struct {
 	PMExternalLink      *handler.PMExternalLinkHandler
 	PMView              *handler.PMViewHandler
 	PMAutomation        *handler.PMAutomationHandler
-	PMStoryTemplate     *handler.PMStoryTemplateHandler
+	PMTaskTemplate      *handler.PMTaskTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	Agent               *handler.AgentHandler
@@ -450,7 +450,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/tickets/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/messages", h.SupportInbox.ListConversationMessages)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/messages", h.SupportInbox.CreateConversationMessage)
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-story", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-task", h.SupportInbox.LinkConversationStory)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/run-agent", h.SupportInbox.RunAgent)
 
@@ -482,7 +482,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)
 				}
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-story", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationStory)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
@@ -551,12 +551,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMAdminLabels)).Put("/labels/{id}", h.PMLabel.Update)
 				r.With(requirePerm(authorization.PermPMAdminLabels)).Delete("/labels/{id}", h.PMLabel.Delete)
 
-				// Story Templates — pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/story-templates", h.PMStoryTemplate.List)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/story-templates/{id}", h.PMStoryTemplate.Get)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/story-templates", h.PMStoryTemplate.Create)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/story-templates/{id}", h.PMStoryTemplate.Update)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
+				// Task Templates — pm.edit
+				r.With(requirePerm(authorization.PermPMRead)).Get("/task-templates", h.PMTaskTemplate.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/task-templates/{id}", h.PMTaskTemplate.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/task-templates", h.PMTaskTemplate.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/task-templates/{id}", h.PMTaskTemplate.Update)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/task-templates/{id}", h.PMTaskTemplate.Delete)
 
 				// Recurring Templates — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/recurring-templates", h.PMRecurringTemplate.List)
@@ -579,7 +579,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}", h.PMEpic.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}", h.PMEpic.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/stories", h.PMEpic.ListStories)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/tasks", h.PMEpic.ListStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit
@@ -589,37 +589,37 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/stories", h.PMSprint.ListStories)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListStories)
 
-				// Stories — pm.read / pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories", h.PMStory.List)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories", h.PMStory.Create)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/board", h.PMStory.ListBoard)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/board/column", h.PMStory.ListBoardColumn)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/board/members", h.PMStory.ListBoardByMember)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/board/members/column", h.PMStory.ListBoardMemberColumn)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/counts", h.PMStory.CountByState)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/display/{displayID}", h.PMStory.GetByDisplayID)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}", h.PMStory.Get)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/stories/{id}", h.PMStory.Update)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}", h.PMStory.Delete)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/stories/{id}/move", h.PMStory.Move)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/stories/{id}/reorder", h.PMStory.Reorder)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/owners", h.PMStory.AddOwner)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/owners/{userId}", h.PMStory.RemoveOwner)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/followers", h.PMStory.AddFollower)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/labels", h.PMStory.AddLabel)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{storyId}/recurring-template", h.PMRecurringTemplate.GetByStory)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.Associations.ListStoryAssociations)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/relationships", h.Associations.CreateStoryRelationship)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-relationships/{id}", h.Associations.DeleteStoryRelationship)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/activity", h.PMStory.ListActivity)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/git-links", h.Git.GetStoryGitLinks)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/delivery-target", h.Git.GetStoryDeliveryTarget)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/stories/{id}/delivery-target", h.Git.UpdateStoryDeliveryTarget)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/create-branch", h.Git.CreateBranch)
+				// Tasks — pm.read / pm.edit
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks", h.PMTask.Create)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board", h.PMTask.ListBoard)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/column", h.PMTask.ListBoardColumn)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members", h.PMTask.ListBoardByMember)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members/column", h.PMTask.ListBoardMemberColumn)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}", h.PMTask.Delete)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/move", h.PMTask.Move)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/reorder", h.PMTask.Reorder)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/owners", h.PMTask.AddOwner)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}/owners/{userId}", h.PMTask.RemoveOwner)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/followers", h.PMTask.AddFollower)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}/followers", h.PMTask.RemoveFollower)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/labels", h.PMTask.AddLabel)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}/labels/{labelId}", h.PMTask.RemoveLabel)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{taskId}/recurring-template", h.PMRecurringTemplate.GetByStory)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/associations", h.Associations.ListTaskAssociations)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/relationships", h.Associations.CreateTaskRelationship)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/task-relationships/{id}", h.Associations.DeleteTaskRelationship)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/activity", h.PMTask.ListActivity)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/git-links", h.Git.GetTaskGitLinks)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/delivery-target", h.Git.GetTaskDeliveryTarget)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/delivery-target", h.Git.UpdateTaskDeliveryTarget)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/create-branch", h.Git.CreateBranch)
 
 				// Comments — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/comments", h.PMComment.List)
@@ -651,14 +651,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/key-results/{id}", h.PMObjective.DeleteKeyResult)
 
 				// Checklist items — pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/checklist", h.PMChecklistItem.List)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/checklist", h.PMChecklistItem.Create)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/checklist", h.PMChecklistItem.List)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/checklist", h.PMChecklistItem.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/checklist-items/{id}", h.PMChecklistItem.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/checklist-items/{id}", h.PMChecklistItem.Delete)
 
 				// External links — pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/links", h.PMExternalLink.List)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/links", h.PMExternalLink.Create)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/links", h.PMExternalLink.List)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/links", h.PMExternalLink.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/links/{id}", h.PMExternalLink.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/links/{id}", h.PMExternalLink.Delete)
 
@@ -709,8 +709,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages/{pageId}", h.SupportAI.GetContentSourcePage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunStoryAgent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/assign-agent", h.Agent.AssignAgentToStory)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunStoryAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)

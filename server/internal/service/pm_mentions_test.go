@@ -456,7 +456,7 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create checklist item: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", item.StoryID), "checklist.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "story", item.TaskID), "checklist.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("update emits checklist mention notifications", func(t *testing.T) {

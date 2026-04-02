@@ -970,7 +970,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	return msg, nil
 }
 
-// LinkConversationStory links a conversation to a story.
+// LinkConversationStory links a conversation to a task.
 func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
@@ -980,7 +980,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		return fmt.Errorf("ticket not found")
 	}
 
-	ticket.LinkedStoryID = &storyID
+	ticket.LinkedTaskID = &storyID
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
@@ -989,7 +989,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		WorkspaceID:    workspaceID,
 		FromObjectType: model.CRMObjectSupportConversation,
 		FromObjectID:   ticketID,
-		ToObjectType:   model.CRMObjectStory,
+		ToObjectType:   model.CRMObjectTask,
 		ToObjectID:     storyID,
 	}
 	if err := s.assocRepo.Create(ctx, assoc); err != nil {
@@ -997,7 +997,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 	}
 
 	if s.activitySvc != nil {
-		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_story_id"), nil, &storyID, nil)
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, &storyID, nil)
 	}
 
 	s.wsPublisher.Publish(websocket.Event{

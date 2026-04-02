@@ -501,11 +501,11 @@ func (s *PMEpicService) syncProgress(ctx context.Context, epicID string) error {
 
 	started := false
 	completed := false
-	if stats.StoryCount > 0 {
-		if stats.DoneStoryCount == stats.StoryCount {
+	if stats.TaskCount > 0 {
+		if stats.DoneTaskCount == stats.TaskCount {
 			started = true
 			completed = true
-		} else if stats.DoneStoryCount > 0 || stats.InProgressCount > 0 {
+		} else if stats.DoneTaskCount > 0 || stats.InProgressCount > 0 {
 			started = true
 		}
 	}
@@ -560,7 +560,7 @@ func computeEpicSuggestedHealthAt(epic *model.EpicWithStats, now time.Time) stri
 	if epic.Epic.PlannedStartDate == nil || epic.Epic.Deadline == nil {
 		return model.PMEpicHealthNone
 	}
-	if epic.Stats.StoryCount == 0 {
+	if epic.Stats.TaskCount == 0 {
 		return model.PMEpicHealthNone
 	}
 
@@ -580,7 +580,7 @@ func computeEpicSuggestedHealthAt(epic *model.EpicWithStats, now time.Time) stri
 	}
 
 	// Past deadline with incomplete work
-	if today.After(end) && epic.Stats.DoneStoryCount < epic.Stats.StoryCount {
+	if today.After(end) && epic.Stats.DoneTaskCount < epic.Stats.TaskCount {
 		return model.PMEpicHealthOffTrack
 	}
 
@@ -599,8 +599,8 @@ func computeEpicSuggestedHealthAt(epic *model.EpicWithStats, now time.Time) stri
 		expectedPct = 100
 	}
 	actualPct := float64(0)
-	if epic.Stats.StoryCount > 0 {
-		actualPct = float64(epic.Stats.DoneStoryCount) / float64(epic.Stats.StoryCount) * 100
+	if epic.Stats.TaskCount > 0 {
+		actualPct = float64(epic.Stats.DoneTaskCount) / float64(epic.Stats.TaskCount) * 100
 	}
 	gap := expectedPct - actualPct
 

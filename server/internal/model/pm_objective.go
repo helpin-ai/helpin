@@ -166,8 +166,8 @@ type PMObjectiveStats struct {
 	KeyResultAvgPct float64 `json:"key_result_avg_pct"`
 	EpicCount       int     `json:"epic_count"`
 	EpicDoneCount   int     `json:"epic_done_count"`
-	EpicStoryCount  int     `json:"epic_story_count"`
-	EpicDoneStories int     `json:"epic_done_stories"`
+	EpicTaskCount   int     `json:"epic_task_count"`
+	EpicDoneTasks   int     `json:"epic_done_tasks"`
 	EpicProgressPct float64 `json:"epic_progress_pct"`
 }
 

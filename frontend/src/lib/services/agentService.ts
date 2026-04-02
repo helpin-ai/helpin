@@ -42,10 +42,10 @@ export const agentService = {
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
-  assignToStory: (workspaceId: string, storyId: string, agentId: string) =>
-    api.post(`/pm/stories/${storyId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
-  runStory: (workspaceId: string, storyId: string, payload?: StartAgentRunRequest) =>
-    api.post<AgentRun>(`/pm/stories/${storyId}/run-agent${qs(workspaceId)}`, payload ?? {}),
+  assignToTask: (workspaceId: string, taskId: string, agentId: string) =>
+    api.post(`/pm/tasks/${taskId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
+  runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
+    api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, payload),
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
@@ -107,4 +107,8 @@ export const agentService = {
     api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
   updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
     api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
+  assignToStory: (workspaceId: string, storyId: string, agentId: string) =>
+    api.post(`/pm/tasks/${storyId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
+  runStory: (workspaceId: string, storyId: string, payload?: StartAgentRunRequest) =>
+    api.post<AgentRun>(`/pm/tasks/${storyId}/run-agent${qs(workspaceId)}`, payload ?? {}),
 };

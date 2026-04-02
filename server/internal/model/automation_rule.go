@@ -7,7 +7,8 @@ import (
 
 // Trigger type constants.
 const (
-	TriggerStoryStateEntered = "story.state_entered"
+	TriggerTaskStateEntered  = "task.state_entered"
+	TriggerStoryStateEntered = TriggerTaskStateEntered // legacy alias
 	TriggerAgentRunApproved  = "agent_run.approved"
 	TriggerCron              = "cron"
 )
@@ -46,7 +47,7 @@ func (AutomationRule) TableName() string { return "automation_rules" }
 
 // Trigger config shapes (deserialized from JSONB).
 
-// TriggerConfigStateEntered holds config for story.state_entered triggers.
+// TriggerConfigStateEntered holds config for task.state_entered triggers.
 type TriggerConfigStateEntered struct {
 	StateID   string `json:"state_id,omitempty"`
 	StateType string `json:"state_type,omitempty"` // "started", "done" — match any state of this type
@@ -127,15 +128,16 @@ type UpdateAutomationRuleRequest struct {
 type AutomationEvent struct {
 	WorkspaceID string
 	TriggerType string
-	// Story-specific (existing, kept for backward compat)
-	StoryID string
+	// Task-specific context.
+	TaskID  string
+	StoryID string // legacy alias
 	StateID string
 	AgentID string
 	RunID   string
-	// Generic fields for non-story triggers
-	TargetType string // "story", "epic", "sprint", ""
+	// Generic fields for non-task triggers
+	TargetType string // "task", "epic", "sprint", ""
 	TargetID   string // entity UUID
-	TeamID     string // for scope matching without a story
+	TeamID     string // for scope matching without a task
 }
 
 // RuleExecutionContext tracks chain depth and prevents loops.

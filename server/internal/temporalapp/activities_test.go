@@ -362,7 +362,7 @@ func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
 		{Ref: "story_b", Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_a"}},
 	}
 
-	err := validatePlanningProposalStories(stories)
+	err := validatePlanningProposalTasks(stories)
 	if err == nil {
 		t.Fatal("expected circular dependency error")
 	}
@@ -434,8 +434,8 @@ func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
 		{Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_1"}},
 	}
 
-	if err := validatePlanningProposalStories(stories); err != nil {
-		t.Fatalf("validatePlanningProposalStories returned error: %v", err)
+	if err := validatePlanningProposalTasks(stories); err != nil {
+		t.Fatalf("validatePlanningProposalTasks returned error: %v", err)
 	}
 	if stories[0].Ref != "story_1" {
 		t.Fatalf("expected first story ref to default to story_1, got %q", stories[0].Ref)
@@ -475,9 +475,9 @@ func TestMarkdownToDocsJSONPreservesHeadingsAndBullets(t *testing.T) {
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.T) {
 	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
 
-	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
-		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
@@ -490,9 +490,9 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing.T) {
 	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
 
-	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
-		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
@@ -519,9 +519,9 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testin
 		}]
 	}`)
 
-	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
-		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	brief := proposal.ProposedStories[0].ImplementationBrief
 	if brief == nil {
@@ -545,9 +545,9 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 		}]
 	}`)
 
-	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
-		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedStories) != 1 {
 		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
@@ -632,9 +632,9 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 		}]
 	}`)
 
-	proposal, err := decodeApprovedStoryPlanPreviewContent(raw)
+	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
-		t.Fatalf("decodeApprovedStoryPlanPreviewContent returned error: %v", err)
+		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedStories) != 1 {
 		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
@@ -654,7 +654,7 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *testing.T) {
 	raw := json.RawMessage(`{"summary":"Breakdown"}`)
 
-	_, err := decodeApprovedStoryPlanPreviewContent(raw)
+	_, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
@@ -1918,8 +1918,8 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 	activities := &AgentRunActivities{artifactRepo: artifactRepo}
 	run := &model.AgentRun{ID: "run-story-1", WorkspaceID: "ws-1", TargetType: "story"}
 	state := &resolvedRunState{
-		run:   run,
-		story: &model.PMStory{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
+		run:  run,
+		task: &model.PMStory{ID: "story-1", WorkspaceID: "ws-1", Name: "Kafka health monitoring"},
 	}
 	execCtx := &workerpkg.ExecutionContext{
 		LastExecutionResult: &workerpkg.ExecutionResult{
@@ -2201,7 +2201,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			WorkspaceID: "ws-1",
 			TeamID:      strPtr("team-agent"),
 		},
-		story: &model.PMStory{
+		task: &model.PMStory{
 			ID:             "story-1",
 			EpicID:         strPtr("epic-1"),
 			TeamID:         strPtr("team-story"),
@@ -2754,10 +2754,10 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					return nil, err
 				}
 			}
-			return mustJSON(workerpkg.CreateStoryBatchResult{
-				Stories: []workerpkg.CreateStoryBatchStoryResult{
-					{Ref: "story_1", StoryID: "db-story_1", Name: "Add tracking helper"},
-					{Ref: "story_2", StoryID: "db-story_2", Name: "Wire tracking into capture errors"},
+			return mustJSON(workerpkg.CreateTaskBatchResult{
+				Tasks: []workerpkg.CreateTaskBatchTaskResult{
+					{Ref: "story_1", TaskID: "db-story_1", Name: "Add tracking helper"},
+					{Ref: "story_2", TaskID: "db-story_2", Name: "Wire tracking into capture errors"},
 				},
 			}), nil
 		},
@@ -3130,8 +3130,8 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		commandExecutor: commandExecutor,
 	}
 	state := &resolvedRunState{
-		run:   run,
-		story: story,
+		run:  run,
+		task: story,
 	}
 	input := planningRunInput{Stage: model.PlanningStageStoryPlanDoc}
 

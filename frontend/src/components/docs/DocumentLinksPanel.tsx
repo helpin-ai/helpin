@@ -56,29 +56,27 @@ export function DocumentLinksPanel({
     }
   }, [showSearch])
 
-  // Already linked story IDs to filter from search results
-  const linkedStoryIds = new Set(
-    (links ?? []).filter((l) => l.linked_object_type === 'story').map((l) => l.linked_object_id),
+  // Already linked task IDs to filter from search results
+  const linkedTaskIds = new Set(
+    (links ?? []).filter((l) => l.linked_object_type === 'task').map((l) => l.linked_object_id),
   )
 
-  const filteredStories = (searchResults?.stories ?? []).filter(
-    (s) => !linkedStoryIds.has(s.id),
-  )
+  const filteredTasks = (searchResults?.tasks ?? searchResults?.stories ?? []).filter((task) => !linkedTaskIds.has(task.id))
 
-  const handleLinkStory = useCallback(
-    async (story: SearchResult) => {
+  const handleLinkTask = useCallback(
+    async (task: SearchResult) => {
       try {
         await createLink.mutateAsync({
           docId,
-          linked_object_type: 'story',
-          linked_object_id: story.id,
+          linked_object_type: 'task',
+          linked_object_id: task.id,
           link_context: 'attached',
         })
-        toast.success(`Linked story #${story.display_id}`)
+        toast.success(`Linked task #${task.display_id}`)
         setQuery('')
         setShowSearch(false)
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to link story')
+        toast.error(err instanceof Error ? err.message : 'Failed to link task')
       }
     },
     [createLink, docId],
@@ -88,7 +86,7 @@ export function DocumentLinksPanel({
     async (link: DocsLink) => {
       try {
         await deleteLink.mutateAsync({ linkId: link.id, docId })
-        toast.success('Story unlinked')
+        toast.success('Task unlinked')
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to unlink')
       }
@@ -96,12 +94,13 @@ export function DocumentLinksPanel({
     [deleteLink, docId],
   )
 
-  const navigateToStory = useCallback(
+  const navigateToTask = useCallback(
     (displayId?: number) => {
       if (!displayId) return
       navigate({
-        to: '/w/$slug/pm/stories',
+        to: '/w/$slug/pm/tasks',
         params: { slug: wsSlug },
+        search: { task: String(displayId) },
       })
     },
     [navigate, wsSlug],
@@ -113,7 +112,7 @@ export function DocumentLinksPanel({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Link2 className="h-4 w-4" />
-            Linked Stories
+            Linked Tasks
           </SheetTitle>
         </SheetHeader>
 
@@ -127,7 +126,7 @@ export function DocumentLinksPanel({
               onClick={() => setShowSearch(true)}
             >
               <Plus className="h-3.5 w-3.5" />
-              Link a Story
+              Link a Task
             </Button>
           )}
 
@@ -138,7 +137,7 @@ export function DocumentLinksPanel({
                 <Input
                   ref={inputRef}
                   className="h-8 pl-8 pr-8 text-xs"
-                  placeholder="Search stories by name..."
+                  placeholder="Search tasks by name..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -154,24 +153,24 @@ export function DocumentLinksPanel({
               {/* Search results */}
               {query.length >= 2 && (
                 <div className="max-h-48 overflow-y-auto rounded-md border border-border/60">
-                  {filteredStories.length === 0 ? (
+                  {filteredTasks.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                      No matching stories found
+                      No matching tasks found
                     </p>
                   ) : (
-                    filteredStories.map((story) => (
+                    filteredTasks.map((task) => (
                       <button
-                        key={story.id}
+                        key={task.id}
                         type="button"
-                        onClick={() => handleLinkStory(story)}
+                        onClick={() => handleLinkTask(task)}
                         disabled={createLink.isPending}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/40 disabled:opacity-50"
                       >
                         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="shrink-0 font-medium text-muted-foreground">
-                          #{story.display_id}
+                          #{task.display_id}
                         </span>
-                        <span className="min-w-0 truncate">{story.name}</span>
+                        <span className="min-w-0 truncate">{task.name}</span>
                       </button>
                     ))
                   )}
@@ -180,7 +179,7 @@ export function DocumentLinksPanel({
             </div>
           )}
 
-          {/* Linked stories list */}
+          {/* Linked tasks list */}
           {isLoading ? (
             <div className="space-y-2 py-4">
               {[1, 2].map((i) => (
@@ -189,7 +188,7 @@ export function DocumentLinksPanel({
             </div>
           ) : !links || links.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No linked stories yet.
+              No linked tasks yet.
             </p>
           ) : (
             <div className="space-y-1">
@@ -200,7 +199,7 @@ export function DocumentLinksPanel({
                 >
                   <button
                     type="button"
-                    onClick={() => navigateToStory(link.linked_object_display_id)}
+                    onClick={() => navigateToTask(link.linked_object_display_id)}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     disabled={!link.linked_object_display_id}
                   >
@@ -215,7 +214,7 @@ export function DocumentLinksPanel({
                         </span>
                       </>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Story (deleted)</span>
+                      <span className="text-xs text-muted-foreground">Task (deleted)</span>
                     )}
                   </button>
                   {canEdit && (

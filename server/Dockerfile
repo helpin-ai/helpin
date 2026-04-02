@@ -13,6 +13,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
 
 # ---- Run stage ----
 FROM alpine:3.19
@@ -25,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /app/server .
 COPY --from=builder /app/temporal-worker .
+COPY --from=builder /app/migrate .
 RUN chown -R app:app /app
 
 USER app:app

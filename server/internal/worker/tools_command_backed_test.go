@@ -14,7 +14,7 @@ func TestUpdateStoryStateToolUsesInternalCommandExecutorWhenAvailable(t *testing
 	ctx := &ExecutionContext{
 		Context:     context.Background(),
 		WorkspaceID: "ws-1",
-		StoryID:     "story-1",
+		TaskID:      "story-1",
 		AgentID:     "agent-1",
 		RunID:       "run-1",
 		AllowedTools: map[string]bool{

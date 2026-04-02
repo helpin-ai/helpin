@@ -2,7 +2,8 @@ import type { AssignableMember } from '../types';
 import type { StoryImplementationBrief } from './agents';
 import type { Objective } from './objectives';
 
-export type StoryType = 'feature' | 'bug' | 'chore';
+export type TaskType = 'feature' | 'bug' | 'chore';
+export type StoryType = TaskType;
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
@@ -202,13 +203,13 @@ export interface SprintPlanningWorkspace {
   backlog_total: number;
 }
 
-export interface Story {
+export interface Task {
   id: string;
   workspace_id: string;
   display_id: number;
   name: string;
   description?: string;
-  story_type: StoryType;
+  task_type: TaskType;
   workflow_id: string;
   workflow_state_id: string;
   epic_id?: string;
@@ -228,12 +229,12 @@ export interface Story {
   moved_at?: string;
   blocked: boolean;
   blocker?: string;
-  is_blocked_by_story?: boolean;
+  is_blocked_by_task?: boolean;
   blocked_by_count?: number;
-  is_blocking_other_story?: boolean;
+  is_blocking_other_task?: boolean;
   blocking_count?: number;
-  blocked_by_stories?: StoryDependencyStory[];
-  blocking_stories?: StoryDependencyStory[];
+  blocked_by_tasks?: TaskDependencyTask[];
+  blocking_tasks?: TaskDependencyTask[];
   archived: boolean;
   assigned_agent_id?: string;
   template_id?: string;
@@ -257,9 +258,22 @@ export interface Story {
   companies?: AssociationObjectSummary[];
   deals?: AssociationObjectSummary[];
   support_conversations?: AssociationObjectSummary[];
+  /** @deprecated Use task_type */
+  story_type?: TaskType;
+  /** @deprecated Use is_blocked_by_task */
+  is_blocked_by_story?: boolean;
+  /** @deprecated Use is_blocking_other_task */
+  is_blocking_other_story?: boolean;
+  /** @deprecated Use blocked_by_tasks */
+  blocked_by_stories?: TaskDependencyTask[];
+  /** @deprecated Use blocking_tasks */
+  blocking_stories?: TaskDependencyTask[];
 }
 
-export interface StoryDependencyStory {
+/** @deprecated Use Task */
+export type Story = Task;
+
+export interface TaskDependencyTask {
   id: string;
   display_id: number;
   name: string;
@@ -267,7 +281,11 @@ export interface StoryDependencyStory {
   completed: boolean;
 }
 
+/** @deprecated Use TaskDependencyTask */
+export type StoryDependencyStory = TaskDependencyTask;
+
 export type AssociationEntityType =
+  | 'task'
   | 'story'
   | 'epic'
   | 'support_conversation'
@@ -276,12 +294,14 @@ export type AssociationEntityType =
   | 'deal'
   | 'document';
 
-export type StoryRelationshipAction =
+export type TaskRelationshipAction =
   | 'relates_to'
   | 'blocks'
   | 'is_blocked_by'
   | 'duplicates'
   | 'is_duplicated_by';
+
+export type StoryRelationshipAction = TaskRelationshipAction;
 
 export interface AssociationObjectSummary {
   association_id?: string;
@@ -292,6 +312,8 @@ export interface AssociationObjectSummary {
   status?: string;
   workflow_state_id?: string;
   completed?: boolean;
+  task_type?: TaskType;
+  /** @deprecated Use task_type */
   story_type?: StoryType;
 }
 
@@ -302,6 +324,8 @@ export interface StoryRelationshipSummary {
   story: AssociationObjectSummary;
 }
 
+export type TaskRelationshipSummary = StoryRelationshipSummary;
+
 export interface StoryRelationshipGroups {
   blocked_by: StoryRelationshipSummary[];
   blocking: StoryRelationshipSummary[];
@@ -311,21 +335,34 @@ export interface StoryRelationshipGroups {
   duplicated_by: StoryRelationshipSummary[];
 }
 
+export type TaskRelationshipGroups = StoryRelationshipGroups;
+
 export interface GroupedAssociations {
-  story_relationships: StoryRelationshipGroups;
+  task_relationships: TaskRelationshipGroups;
+  /** @deprecated Use task_relationships */
+  story_relationships?: StoryRelationshipGroups;
   stories: AssociationObjectSummary[];
   support_conversations: AssociationObjectSummary[];
   crm_records: AssociationObjectSummary[];
   docs: AssociationObjectSummary[];
 }
 
-export interface CreateStoryRelationshipRequest {
-  relationship_type: StoryRelationshipAction;
-  other_story_id: string;
+export type GroupedTaskAssociations = GroupedAssociations;
+
+export interface CreateTaskRelationshipRequest {
+  relationship_type: TaskRelationshipAction;
+  other_task_id: string;
 }
 
-export interface StoryDetail {
-  story: Story;
+/** @deprecated Use CreateTaskRelationshipRequest */
+export type CreateStoryRelationshipRequest = CreateTaskRelationshipRequest;
+
+export type CreateTaskRelationshipPayload = CreateTaskRelationshipRequest;
+
+export interface TaskDetail {
+  task: Task;
+  /** @deprecated Use task */
+  story?: Task;
   owners: Array<{
     id: string;
     email: string;
@@ -352,34 +389,44 @@ export interface StoryDetail {
   state?: WorkflowState;
 }
 
-export interface StoryStateColumn {
+export type StoryDetail = TaskDetail;
+
+export interface TaskStateColumn {
   state: WorkflowState;
-  stories: Story[];
-  story_groups?: StoryGroup[];
+  stories: Task[];
+  story_groups?: TaskGroup[];
   story_count: number;
   point_total: number;
   has_more: boolean;
 }
 
-export interface StoryGroup {
+export type StoryStateColumn = TaskStateColumn;
+
+export interface TaskGroup {
   key: string;
   label: string;
-  stories: Story[];
+  stories: Task[];
 }
 
-export interface ColumnStoriesResponse {
-  stories: Story[];
-  story_groups?: StoryGroup[];
+export type StoryGroup = TaskGroup;
+
+export interface ColumnTasksResponse {
+  stories: Task[];
+  story_groups?: TaskGroup[];
   total: number;
 }
 
-export interface StoryMemberColumn {
+export type ColumnStoriesResponse = ColumnTasksResponse;
+
+export interface TaskMemberColumn {
   member: AssignableMember | null;
-  stories: Story[];
+  stories: Task[];
   story_count: number;
   point_total: number;
   has_more: boolean;
 }
+
+export type StoryMemberColumn = TaskMemberColumn;
 
 export interface StoryStateCount {
   state_id: string;
@@ -388,9 +435,11 @@ export interface StoryStateCount {
   story_count: number;
 }
 
+export type TaskStateCount = StoryStateCount;
+
 export interface Comment {
   id: string;
-  entity_type: 'story' | 'epic' | 'doc';
+  entity_type: 'task' | 'epic' | 'doc';
   entity_id: string;
   author_id: string;
   body: string;
@@ -528,13 +577,13 @@ export interface TemplateChecklistItem {
   position?: number;
 }
 
-export interface StoryTemplate {
+export interface TaskTemplate {
   id: string;
   workspace_id: string;
   team_id?: string;
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -549,6 +598,9 @@ export interface StoryTemplate {
   created_at: string;
   updated_at: string;
 }
+
+/** @deprecated Use TaskTemplate */
+export type StoryTemplate = TaskTemplate;
 
 export interface RecurringTemplateConfig {
   schedule_type: RecurringScheduleType;
@@ -569,7 +621,7 @@ export interface RecurringTemplateConfig {
 export interface RecurringStorySeed {
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id: string;
   workflow_state_id: string;
   epic_id?: string;
@@ -585,6 +637,8 @@ export interface RecurringStorySeed {
   checklist_items?: CreateChecklistItemRequest[];
   external_links?: CreateExternalLinkRequest[];
 }
+
+export type RecurringTaskSeed = RecurringStorySeed;
 
 export interface RecurringTemplate {
   id: string;
@@ -613,6 +667,11 @@ export interface RecurringTemplate {
   updated_at: string;
 }
 
+export interface RecurringTaskTemplate extends Omit<RecurringTemplate, 'created_from_story_id' | 'last_generated_story_id'> {
+  created_from_task_id?: string;
+  last_generated_task_id?: string;
+}
+
 export interface RecurringRun {
   id: string;
   workspace_id: string;
@@ -630,6 +689,10 @@ export interface RecurringRun {
   updated_at: string;
 }
 
+export interface RecurringTaskRun extends Omit<RecurringRun, 'generated_story_id'> {
+  generated_task_id?: string;
+}
+
 export interface RecurringTemplateDetail {
   template: RecurringTemplate;
   config: RecurringTemplateConfig;
@@ -637,6 +700,11 @@ export interface RecurringTemplateDetail {
   rule_summary: string;
   last_generated_story?: Story;
   runs?: RecurringRun[];
+}
+
+export interface RecurringTaskTemplateDetail extends Omit<RecurringTemplateDetail, 'seed' | 'last_generated_story'> {
+  seed: RecurringTaskSeed;
+  last_generated_task?: Task;
 }
 
 export interface StoryRecurringSummary {
@@ -652,27 +720,39 @@ export interface StoryRecurringSummary {
   config: RecurringTemplateConfig;
 }
 
+export interface TaskRecurringSummary extends Omit<StoryRecurringSummary, 'last_generated_story'> {
+  last_generated_task?: Task;
+}
+
 export interface CreateRecurringTemplateRequest {
   workspace_id: string;
   title: string;
   description?: string;
-  story_id: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   config: RecurringTemplateConfig;
 }
+
+export interface CreateRecurringTaskTemplateRequest extends Omit<CreateRecurringTemplateRequest, 'story_id'> {}
 
 export interface UpdateRecurringTemplateRequest {
   title?: string;
   description?: string;
+  task_id?: string;
+  /** @deprecated Use task_id */
   story_id?: string;
   config?: RecurringTemplateConfig;
 }
 
-export interface CreateStoryTemplateRequest {
+export interface UpdateRecurringTaskTemplateRequest extends Omit<UpdateRecurringTemplateRequest, 'story_id'> {}
+
+export interface CreateTaskTemplateRequest {
   workspace_id: string;
   team_id?: string;
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -685,11 +765,13 @@ export interface CreateStoryTemplateRequest {
   external_links?: string;
 }
 
-export interface UpdateStoryTemplateRequest {
+export type CreateStoryTemplateRequest = CreateTaskTemplateRequest;
+
+export interface UpdateTaskTemplateRequest {
   team_id?: string;
   name?: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -702,6 +784,8 @@ export interface UpdateStoryTemplateRequest {
   external_links?: string;
   archived?: boolean;
 }
+
+export type UpdateStoryTemplateRequest = UpdateTaskTemplateRequest;
 
 export interface CreateEpicRequest {
   workspace_id: string;
@@ -769,12 +853,12 @@ export interface SprintPlanningFilters {
   include_completed?: boolean;
 }
 
-export interface CreateStoryRequest {
+export interface CreateTaskRequest {
   workspace_id: string;
   name: string;
   description?: string;
   attachment_ids?: string[];
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
@@ -798,10 +882,12 @@ export interface CreateStoryRequest {
   external_links?: { url: string; title?: string }[];
 }
 
-export interface UpdateStoryRequest {
+export type CreateStoryRequest = CreateTaskRequest;
+
+export interface UpdateTaskRequest {
   name?: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
@@ -824,31 +910,43 @@ export interface UpdateStoryRequest {
   label_ids?: string[];
 }
 
-export interface MoveStoryRequest {
+export type UpdateStoryRequest = UpdateTaskRequest;
+
+export interface MoveTaskRequest {
   state_id: string;
   position?: number;
   debug_trace_id?: string;
 }
 
-export interface ReorderStoryRequest {
+export type MoveStoryRequest = MoveTaskRequest;
+
+export interface ReorderTaskRequest {
   position: number;
   debug_trace_id?: string;
 }
 
-export interface StoryUserLinkRequest {
+export type ReorderStoryRequest = ReorderTaskRequest;
+
+export interface TaskUserLinkRequest {
   user_id?: string;
   workspace_member_id?: string;
 }
 
-export interface StoryLabelLinkRequest {
+export type StoryUserLinkRequest = TaskUserLinkRequest;
+
+export interface TaskLabelLinkRequest {
   label_id: string;
 }
+
+export type StoryLabelLinkRequest = TaskLabelLinkRequest;
 
 // ── Checklist Items ─────────────────────────────────────────────────
 
 export interface ChecklistItem {
   id: string;
-  story_id: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   text: string;
   completed: boolean;
   position: number;
@@ -874,7 +972,9 @@ export interface UpdateChecklistItemRequest {
 
 export interface ExternalLink {
   id: string;
-  story_id: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   title: string;
   url: string;
   created_by_id: string;
@@ -896,7 +996,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'story' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -914,7 +1014,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'story' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -922,7 +1022,7 @@ export interface CreateAttachmentRequest {
 }
 
 export interface CreateCommentRequest {
-  entity_type: 'story' | 'epic' | 'doc';
+  entity_type: 'task' | 'epic' | 'doc';
   entity_id: string;
   body: string;
   parent_id?: string;
@@ -932,3 +1032,5 @@ export interface CreateCommentRequest {
 export interface UpdateCommentRequest {
   body: string;
 }
+
+// Task is now the canonical type, Story is an alias (defined above)

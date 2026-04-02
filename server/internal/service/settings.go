@@ -95,7 +95,7 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 		req.DefaultStoryType = model.PMStoryTypeFeature
 	}
 	if !isValidDefaultStoryType(req.DefaultStoryType) {
-		return nil, fmt.Errorf("invalid default_story_type")
+		return nil, fmt.Errorf("invalid default_task_type")
 	}
 
 	team, err := s.settingsRepo.CreateTeam(ctx, req)
@@ -177,7 +177,7 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 			defaultStoryType = model.PMStoryTypeFeature
 		}
 		if !isValidDefaultStoryType(defaultStoryType) {
-			return nil, fmt.Errorf("invalid default_story_type")
+			return nil, fmt.Errorf("invalid default_task_type")
 		}
 		req.DefaultStoryType = &defaultStoryType
 	}

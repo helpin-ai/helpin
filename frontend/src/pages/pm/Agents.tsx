@@ -105,14 +105,21 @@ const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: string; runtime_kind: AgentRuntimeKind; default_invocation_mode: AgentInvocationMode; supported_modes: AgentInvocationMode[] }> = {
   epic_planner: {
     label: 'Epic Planner',
-    description: 'Interactive product planning for epics, PRDs, docs, and stories.',
+    description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  task_planner: {
+    label: 'Task Planner',
+    description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
   story_planner: {
-    label: 'Story Planner',
-    description: 'Interactive decomposition and refinement for stories and execution plans.',
+    label: 'Task Planner',
+    description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
@@ -200,7 +207,7 @@ interface AgentFormData {
 }
 
 const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
-  { value: 'story', label: 'Story', description: 'Run on stories and story planning tasks.' },
+  { value: 'task', label: 'Task', description: 'Run on tasks and task planning loops.' },
   { value: 'epic', label: 'Epic', description: 'Run on epics and planning loops.' },
   { value: 'crm_deal', label: 'CRM Deal', description: 'Run on CRM deal records.' },
   { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
@@ -341,7 +348,7 @@ function createEmptyCustomForm(): AgentFormData {
     system_prompt: '',
     monthly_token_budget: '',
     team_id: '',
-    allowed_targets: ['story'],
+    allowed_targets: ['task'],
     allowed_tools: [],
     schedule: '',
     approval_mode: 'never',
@@ -1070,7 +1077,7 @@ export function AgentsPage() {
   const effectiveTargets =
     editingSystemAgent
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
-      : form.allowed_targets;
+      : (form.allowed_targets.length > 0 ? form.allowed_targets : ['task']);
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);

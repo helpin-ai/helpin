@@ -79,7 +79,7 @@ func TestProductPlannerPromptNeedsRefreshForLegacyApprovalPrompt(t *testing.T) {
 }
 
 func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
-	prompt := defaultSystemPromptForPreset(model.AgentPresetStoryPlanner)
+	prompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	if prompt == nil {
 		t.Fatal("expected story planner prompt")
 	}
@@ -114,7 +114,7 @@ func TestStoryPlannerPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
 		t.Fatal("expected legacy story planner prompt to require refresh")
 	}
 
-	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetStoryPlanner)
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	if currentPrompt == nil {
 		t.Fatal("expected story planner prompt")
 	}

@@ -163,7 +163,7 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
-// AssignAgentToStory handles POST /api/pm/stories/{id}/assign-agent.
+// AssignAgentToStory handles POST /api/pm/tasks/{id}/assign-agent.
 func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
@@ -182,7 +182,7 @@ func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
-// RunStoryAgent handles POST /api/pm/stories/{id}/run-agent.
+// RunStoryAgent handles POST /api/pm/tasks/{id}/run-agent.
 func (h *AgentHandler) RunStoryAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")

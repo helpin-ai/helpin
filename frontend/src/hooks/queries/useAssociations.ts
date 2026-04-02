@@ -5,13 +5,13 @@ import { unwrap } from '@/lib/queryUtils';
 import { associationsService } from '@/lib/services/associationsService';
 import type { CreateCRMAssociationRequest } from '@/lib/crmTypes';
 import type { CreateDocsLinkRequest } from '@/lib/docsTypes';
-import type { CreateStoryRelationshipRequest } from '@/lib/pmTypes';
+import type { CreateTaskRelationshipRequest } from '@/lib/pmTypes';
 
-export function useStoryAssociations(wsId: string, storyId: string) {
+export function useTaskAssociations(wsId: string, taskId: string) {
   return useQuery({
-    queryKey: queryKeys.pm.storyAssociations(wsId, storyId),
-    queryFn: async () => unwrap(await associationsService.listByStory(wsId, storyId)),
-    enabled: !!wsId && !!storyId,
+    queryKey: queryKeys.pm.taskAssociations(wsId, taskId),
+    queryFn: async () => unwrap(await associationsService.listByTask(wsId, taskId)),
+    enabled: !!wsId && !!taskId,
   });
 }
 
@@ -31,29 +31,29 @@ export function useConversationAssociations(wsId: string, conversationId: string
   });
 }
 
-export function useCreateStoryRelationship(wsId: string, storyId: string) {
+export function useCreateTaskRelationship(wsId: string, taskId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: CreateStoryRelationshipRequest) =>
-      unwrap(await associationsService.createStoryRelationship(wsId, storyId, payload)),
+    mutationFn: async (payload: CreateTaskRelationshipRequest) =>
+      unwrap(await associationsService.createTaskRelationship(wsId, taskId, payload)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.pm.storyAssociations(wsId, storyId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pm.story(wsId, storyId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pm.stories(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.taskAssociations(wsId, taskId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.task(wsId, taskId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.tasks(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.pm.board(wsId) });
     },
   });
 }
 
-export function useDeleteStoryRelationship(wsId: string, storyId: string) {
+export function useDeleteTaskRelationship(wsId: string, taskId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (relationshipId: string) =>
-      unwrap(await associationsService.deleteStoryRelationship(wsId, relationshipId)),
+      unwrap(await associationsService.deleteTaskRelationship(wsId, relationshipId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.pm.storyAssociations(wsId, storyId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pm.story(wsId, storyId) });
-      qc.invalidateQueries({ queryKey: queryKeys.pm.stories(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.taskAssociations(wsId, taskId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.task(wsId, taskId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.tasks(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.pm.board(wsId) });
     },
   });
@@ -72,10 +72,10 @@ export function useCreatePMAssociation(wsId: string) {
         qc.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(wsId, conversationId) });
         qc.invalidateQueries({ queryKey: queryKeys.support.conversation(wsId, conversationId) });
       }
-      if (payload.from_object_type === 'story' || payload.to_object_type === 'story') {
-        const storyId = payload.from_object_type === 'story' ? payload.from_object_id : payload.to_object_id;
-        qc.invalidateQueries({ queryKey: queryKeys.pm.storyAssociations(wsId, storyId) });
-        qc.invalidateQueries({ queryKey: queryKeys.pm.story(wsId, storyId) });
+      if (payload.from_object_type === 'task' || payload.to_object_type === 'task') {
+        const taskId = payload.from_object_type === 'task' ? payload.from_object_id : payload.to_object_id;
+        qc.invalidateQueries({ queryKey: queryKeys.pm.taskAssociations(wsId, taskId) });
+        qc.invalidateQueries({ queryKey: queryKeys.pm.task(wsId, taskId) });
       }
       if (payload.from_object_type === 'epic' || payload.to_object_type === 'epic') {
         const epicId = payload.from_object_type === 'epic' ? payload.from_object_id : payload.to_object_id;
@@ -98,15 +98,15 @@ export function useDeletePMAssociation(wsId: string) {
   });
 }
 
-export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_conversation', objectId: string) {
+export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'task' | 'support_conversation', objectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ documentId, payload }: { documentId: string; payload: CreateDocsLinkRequest }) =>
       unwrap(await associationsService.createDocAssociation(wsId, documentId, payload)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.linkedDocs(wsId, objectType, objectId) });
-      if (objectType === 'story') {
-        qc.invalidateQueries({ queryKey: queryKeys.pm.storyAssociations(wsId, objectId) });
+      if (objectType === 'task') {
+        qc.invalidateQueries({ queryKey: queryKeys.pm.taskAssociations(wsId, objectId) });
       } else if (objectType === 'epic') {
         qc.invalidateQueries({ queryKey: queryKeys.pm.epicAssociations(wsId, objectId) });
       } else {
@@ -116,15 +116,15 @@ export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'stor
   });
 }
 
-export function useDeleteDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_conversation', objectId: string) {
+export function useDeleteDocAssociation(wsId: string, objectType: 'epic' | 'task' | 'support_conversation', objectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (linkId: string) =>
       unwrap(await associationsService.deleteDocAssociation(wsId, linkId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.linkedDocs(wsId, objectType, objectId) });
-      if (objectType === 'story') {
-        qc.invalidateQueries({ queryKey: queryKeys.pm.storyAssociations(wsId, objectId) });
+      if (objectType === 'task') {
+        qc.invalidateQueries({ queryKey: queryKeys.pm.taskAssociations(wsId, objectId) });
       } else if (objectType === 'epic') {
         qc.invalidateQueries({ queryKey: queryKeys.pm.epicAssociations(wsId, objectId) });
       } else {

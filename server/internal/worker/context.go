@@ -18,12 +18,12 @@ type ExecutionContext struct {
 	RunID                  string
 	TargetType             string
 	TargetID               string
-	StoryID                string
+	TaskID                 string
 	ConversationID         string
 	Agent                  *model.Agent
-	Story                  *model.PMStory
+	Task                   *model.PMStory
 	Epic                   *model.PMEpic
-	EpicStories            []model.PMStory
+	EpicTasks              []model.PMStory
 	Conversation           *model.SupportConversation
 	GitIntegration         *model.GitIntegration
 	GitAccessToken         string
@@ -116,14 +116,14 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 type ServiceBridge struct {
 	ExecuteInternalCommand func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error)
 
-	// PM / Stories
-	AddComment           func(ctx context.Context, workspaceID, storyID, agentID, content string) error
-	UpdateStoryState     func(ctx context.Context, workspaceID, storyID, stateID string) error
-	ListChecklist        func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
-	CreateStoryBatch     func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error)
-	AssignStoryAgent     func(ctx context.Context, workspaceID, actorID, storyID, agentID string) error
-	SetStoryDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []StoryDependencyLink) error
-	ListEpicStories      func(ctx context.Context, workspaceID, epicID string) ([]EpicStorySummary, error)
+	// PM / Tasks
+	AddComment          func(ctx context.Context, workspaceID, taskID, agentID, content string) error
+	UpdateTaskState     func(ctx context.Context, workspaceID, taskID, stateID string) error
+	ListChecklist       func(ctx context.Context, workspaceID, taskID string) ([]model.PMChecklistItem, error)
+	CreateTaskBatch     func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedStory) (CreateTaskBatchResult, error)
+	AssignTaskAgent     func(ctx context.Context, workspaceID, actorID, taskID, agentID string) error
+	SetTaskDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []TaskDependencyLink) error
+	ListEpicTasks       func(ctx context.Context, workspaceID, epicID string) ([]EpicTaskSummary, error)
 	ListWorkspaceTeams   func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
 	ApproveEpicSpec      func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
 
@@ -144,7 +144,7 @@ type ServiceBridge struct {
 	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
 	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
-	EnsureStoryPlanDoc   func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error)
+	EnsureTaskPlanDoc    func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
@@ -157,26 +157,26 @@ type DocsSearchHit struct {
 	Excerpt string `json:"excerpt"`
 }
 
-type StoryDependencyLink struct {
-	SourceStoryID string `json:"source_story_id"`
-	TargetStoryID string `json:"target_story_id"`
+type TaskDependencyLink struct {
+	SourceTaskID string `json:"source_task_id"`
+	TargetTaskID string `json:"target_task_id"`
 }
 
-type CreateStoryBatchStoryResult struct {
-	Ref     string `json:"ref,omitempty"`
-	StoryID string `json:"story_id"`
-	Name    string `json:"name"`
+type CreateTaskBatchTaskResult struct {
+	Ref    string `json:"ref,omitempty"`
+	TaskID string `json:"task_id"`
+	Name   string `json:"name"`
 }
 
-type CreateStoryBatchResult struct {
-	Stories []CreateStoryBatchStoryResult `json:"stories"`
+type CreateTaskBatchResult struct {
+	Tasks []CreateTaskBatchTaskResult `json:"tasks"`
 }
 
-// EpicStorySummary is a simplified story for the list_epic_stories tool.
-type EpicStorySummary struct {
+// EpicTaskSummary is a simplified task for the list_epic_tasks tool.
+type EpicTaskSummary struct {
 	ID              string  `json:"id"`
 	Name            string  `json:"name"`
-	StoryType       string  `json:"story_type"`
+	TaskType        string  `json:"task_type"`
 	Status          string  `json:"status"` // "not_started", "in_progress", "done"
 	Estimate        *int    `json:"estimate,omitempty"`
 	Priority        string  `json:"priority"`
@@ -184,11 +184,11 @@ type EpicStorySummary struct {
 }
 
 type WorkspaceTeamSummary struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	Handle           *string `json:"handle,omitempty"`
-	TeamType         string  `json:"team_type,omitempty"`
-	DefaultStoryType string  `json:"default_story_type,omitempty"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Handle          *string `json:"handle,omitempty"`
+	TeamType        string  `json:"team_type,omitempty"`
+	DefaultTaskType string  `json:"default_task_type,omitempty"`
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

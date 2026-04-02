@@ -56,17 +56,17 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 
 	var checklist []model.PMChecklistItem
-	if execCtx.StoryID != "" && execCtx.Services != nil {
+	if execCtx.TaskID != "" && execCtx.Services != nil {
 		var err error
-		checklist, err = execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.StoryID)
+		checklist, err = execCtx.Services.ListChecklist(execCtx.Context, execCtx.WorkspaceID, execCtx.TaskID)
 		if err != nil {
 			slog.WarnContext(execCtx.Context, "native runtime checklist preload failed",
 				"workspace_id", execCtx.WorkspaceID,
 				"run_id", execCtx.RunID,
-				"story_id", execCtx.StoryID,
+				"task_id", execCtx.TaskID,
 				"error", err,
 			)
 		}
@@ -88,9 +88,9 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	userPrompt := BuildUserPrompt(
 		execCtx.Agent,
-		execCtx.Story,
+		execCtx.Task,
 		execCtx.Epic,
-		execCtx.EpicStories,
+		execCtx.EpicTasks,
 		execCtx.Conversation,
 		ticketMessages,
 		checklist,
@@ -245,7 +245,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	if flowOutputKind := flowOutputKindFromRunInput(run.Input); flowOutputKind != "" {
 		switch flowOutputKind {
 		case "pm.story_completion_followups":
-			assessment, err := extractStoryCompletionAssessmentFromResponseText(result.AssistantText)
+			assessment, err := extractTaskCompletionAssessmentFromResponseText(result.AssistantText)
 			if err != nil {
 				fallback := &model.StoryCompletionAssessment{
 					Summary: strings.TrimSpace(result.AssistantText),

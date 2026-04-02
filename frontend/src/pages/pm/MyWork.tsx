@@ -16,11 +16,11 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
 import type { Story, StateType } from '@/lib/pmTypes';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 type Mode = 'assigned' | 'requested';
 type DeadlineStatus = 'overdue' | 'approaching' | 'normal';
@@ -66,7 +66,7 @@ export function MyWorkPage() {
         ? { owner_member_id: memberId, archived: false as const }
         : { requester_member_id: memberId, archived: false as const };
 
-    pmStoryService
+    pmTaskService
       .list(workspaceId, { ...filters, per_page: 200 })
       .then((res) => {
         if (res.data) {
@@ -76,25 +76,25 @@ export function MyWorkPage() {
       .finally(() => setLoading(false));
   }, [workspaceId, memberId, mode, refreshKey]);
 
-  // Refresh list when a story is updated or archived via the global panel
+    // Refresh list when a task is updated or archived via the global panel
   useEffect(() => {
     const refresh = () => setRefreshKey((k) => k + 1);
     const handleStoryCreated = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      // Navigate to the team's stories board so the user sees their new story
+      // Navigate to the team's task board so the user sees their new task
       if (detail?.teamId && wsSlug) {
-        navigate({ to: '/w/$slug/pm/stories', params: { slug: wsSlug }, search: { team: detail.teamId } });
+        navigate({ to: '/w/$slug/pm/tasks', params: { slug: wsSlug }, search: { team: detail.teamId } });
         return;
       }
       setRefreshKey((k) => k + 1);
     };
-    window.addEventListener('story-panel-updated', refresh);
-    window.addEventListener('story-panel-archived', refresh);
-    window.addEventListener('story-created', handleStoryCreated);
+    window.addEventListener('task-panel-updated', refresh);
+    window.addEventListener('task-panel-archived', refresh);
+    window.addEventListener('task-created', handleStoryCreated);
     return () => {
-      window.removeEventListener('story-panel-updated', refresh);
-      window.removeEventListener('story-panel-archived', refresh);
-      window.removeEventListener('story-created', handleStoryCreated);
+      window.removeEventListener('task-panel-updated', refresh);
+      window.removeEventListener('task-panel-archived', refresh);
+      window.removeEventListener('task-created', handleStoryCreated);
     };
   }, [memberId]);
 
@@ -172,7 +172,7 @@ export function MyWorkPage() {
 
   const openStory = (story: Story) => {
     if (!wsSlug) return;
-    openStoryRoute(navigate as never, location as never, wsSlug, story.id);
+    openTaskRoute(navigate as never, location as never, wsSlug, story.id);
   };
 
   return (
@@ -182,8 +182,8 @@ export function MyWorkPage() {
           <h2 className="text-lg font-semibold">My Work</h2>
           <p className="text-sm text-muted-foreground">
             {mode === 'assigned'
-              ? `Stories assigned to you across ${isAdmin ? 'all' : 'your'} teams.`
-              : `Stories you requested across ${isAdmin ? 'all' : 'your'} teams.`}
+              ? `Tasks assigned to you across ${isAdmin ? 'all' : 'your'} teams.`
+              : `Tasks you requested across ${isAdmin ? 'all' : 'your'} teams.`}
           </p>
         </div>
 

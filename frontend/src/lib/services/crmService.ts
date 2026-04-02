@@ -154,8 +154,8 @@ export const crmAssociationService = {
     api.del(`/pm/associations/${id}${qs(workspaceId)}`),
   listByEpic: (workspaceId: string, epicId: string) =>
     api.get<CRMAssociationEnriched[]>(`/pm/epics/${epicId}/associations${qs(workspaceId)}`),
-  listByStory: (workspaceId: string, storyId: string) =>
-    api.get<CRMAssociationEnriched[]>(`/pm/stories/${storyId}/associations${qs(workspaceId)}`),
+  listByTask: (workspaceId: string, taskId: string) =>
+    api.get<CRMAssociationEnriched[]>(`/pm/tasks/${taskId}/associations${qs(workspaceId)}`),
 };
 
 export const crmActivityService = {

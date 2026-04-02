@@ -31,7 +31,7 @@ import {
   extractInlineAttachmentIds,
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
-import { StoryListView } from '@/components/pm/StoryListView';
+import { TaskListView } from '@/components/pm/TaskListView';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -53,7 +53,7 @@ import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -332,7 +332,7 @@ export function EpicDetailPage() {
   const currentStateColor = currentEpicState ? STATE_TYPE_ICON_CONFIG[currentEpicState.state_type as StateType]?.color : '';
 
   const currentTeamName = useMemo(
-    () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
+    () => (form?.team_id ? findTeamName(form.team_id) ?? 'Select team' : 'Select team'),
     [form?.team_id, findTeamName],
   );
   const selectedTeam = useMemo(
@@ -342,7 +342,7 @@ export function EpicDetailPage() {
   const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
   const noHealthSuggestionMessage = useMemo(() => getNoHealthSuggestionMessage(epic), [epic]);
   const currentOwnerName = useMemo(() => {
-    if (!form?.owner_member_id) return 'Nobody';
+    if (!form?.owner_member_id) return 'No owner';
     return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
   }, [form?.owner_member_id, assignableMemberNames]);
   const currentPlanningRepositoryName = useMemo(() => {
@@ -383,7 +383,7 @@ export function EpicDetailPage() {
 
   const openStory = useCallback(
     (story: Story) => {
-      openStoryRoute(navigate as never, location as never, slug, story.id);
+      openTaskRoute(navigate as never, location as never, slug, story.id);
     },
     [location, navigate, slug],
   );
@@ -440,11 +440,11 @@ export function EpicDetailPage() {
         if (res.data) setStories(res.data);
       });
     };
-    window.addEventListener('story-panel-updated', refresh);
-    window.addEventListener('story-panel-archived', refresh);
+    window.addEventListener('task-panel-updated', refresh);
+    window.addEventListener('task-panel-archived', refresh);
     return () => {
-      window.removeEventListener('story-panel-updated', refresh);
-      window.removeEventListener('story-panel-archived', refresh);
+      window.removeEventListener('task-panel-updated', refresh);
+      window.removeEventListener('task-panel-archived', refresh);
     };
   }, [workspaceId, epicId]);
 
@@ -625,16 +625,16 @@ export function EpicDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* Stories */}
+          {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Stories ({stories.length})
+              Tasks ({stories.length})
             </h3>
             {stories.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No stories linked yet.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
-                <StoryListView
+                <TaskListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
                   workflows={workflows}
@@ -643,7 +643,7 @@ export function EpicDetailPage() {
                   epics={allEpics}
                   sprints={allSprints}
                   externalStories={stories}
-                  onOpenStory={openStory}
+                  onOpenTask={openStory}
                 />
               </div>
             ) : (
@@ -718,7 +718,7 @@ export function EpicDetailPage() {
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No team' },
+                  { value: '__none__', label: 'Select team' },
                   ...teams.map((t) => ({ value: t.id, label: t.name })),
                 ]}
                 onChange={(v) => {
@@ -749,7 +749,7 @@ export function EpicDetailPage() {
                 selectedObjectives={selectedObjectives}
                 onChange={updateObjectives}
                 addLabel="Add objective"
-                emptyLabel="No objectives"
+                emptyLabel="None"
                 className="min-h-6"
               />
             </MetadataRow>
@@ -759,7 +759,7 @@ export function EpicDetailPage() {
               <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
                 members={assignableMembers}
-                noneLabel="Nobody"
+                noneLabel="No owner"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val || undefined });
@@ -789,6 +789,7 @@ export function EpicDetailPage() {
                 value={form.planned_start_date}
                 onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
                 placeholder="None"
+                hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -799,6 +800,8 @@ export function EpicDetailPage() {
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
                 placeholder="None"
+                hideIcon
+                urgencyColor
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>

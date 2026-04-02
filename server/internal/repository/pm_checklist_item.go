@@ -20,11 +20,11 @@ func NewPMChecklistItemRepository(db *gorm.DB) *PMChecklistItemRepository {
 	return &PMChecklistItemRepository{db: db}
 }
 
-// List returns checklist items for a story ordered by position.
+// List returns checklist items for a task ordered by position.
 func (r *PMChecklistItemRepository) List(ctx context.Context, storyID string) ([]model.PMChecklistItem, error) {
 	var items []model.PMChecklistItem
 	if err := r.db.WithContext(ctx).
-		Where("story_id = ?", storyID).
+		Where("task_id = ?", storyID).
 		Order("position ASC, created_at ASC").
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("list checklist items: %w", err)
@@ -68,10 +68,10 @@ func (r *PMChecklistItemRepository) Delete(ctx context.Context, id string) error
 	return nil
 }
 
-// Count returns number of checklist items for a story.
+// Count returns number of checklist items for a task.
 func (r *PMChecklistItemRepository) Count(ctx context.Context, storyID string) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.PMChecklistItem{}).Where("story_id = ?", storyID).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.PMChecklistItem{}).Where("task_id = ?", storyID).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count checklist items: %w", err)
 	}
 	return count, nil

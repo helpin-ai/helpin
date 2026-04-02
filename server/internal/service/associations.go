@@ -9,7 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// AssociationsService aggregates story relationships, CRM/support links, and docs links into one read model.
+// AssociationsService aggregates task relationships, CRM/support links, and docs links into one read model.
 type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
 	storyLinkRepo    *repository.PMStoryLinkRepository
@@ -38,7 +38,7 @@ func NewAssociationsService(
 	}
 }
 
-// ListGrouped returns grouped associations for a story, epic, or support ticket.
+// ListGrouped returns grouped associations for a task, epic, or support ticket.
 func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, objectType, objectID string) (*model.GroupedAssociationsResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
@@ -65,7 +65,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 		Docs:                 []model.AssociationObjectSummary{},
 	}
 
-	if objectType == model.CRMObjectStory {
+	if objectType == model.CRMObjectTask || objectType == model.CRMObjectStory {
 		relationships, err := s.loadStoryRelationships(ctx, workspaceID, objectID)
 		if err != nil {
 			return nil, err
@@ -86,7 +86,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 	return response, nil
 }
 
-// CreateStoryRelationship creates a canonical story relationship from the current story's point of view.
+// CreateStoryRelationship creates a canonical task relationship from the current task's point of view.
 func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, workspaceID, currentStoryID, actorID string, req model.CreateStoryRelationshipRequest) (*model.PMStoryLink, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
@@ -98,7 +98,7 @@ func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, works
 		return nil, fmt.Errorf("actor_id is required")
 	}
 	if req.OtherStoryID == "" {
-		return nil, fmt.Errorf("other_story_id is required")
+		return nil, fmt.Errorf("other_task_id is required")
 	}
 
 	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherStoryID})
@@ -191,7 +191,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	for _, assoc := range assocs {
 		otherType, otherID := otherAssociationSide(assoc, objectType, objectID)
 		switch otherType {
-		case model.CRMObjectStory:
+		case model.CRMObjectTask, model.CRMObjectStory:
 			storyIDs = append(storyIDs, otherID)
 		case model.CRMObjectSupportConversation:
 			supportConversationIDs = append(supportConversationIDs, otherID)
@@ -227,7 +227,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	for _, assoc := range assocs {
 		otherType, otherID := otherAssociationSide(assoc, objectType, objectID)
 		switch otherType {
-		case model.CRMObjectStory:
+		case model.CRMObjectTask, model.CRMObjectStory:
 			story, ok := storiesByID[otherID]
 			if !ok {
 				continue
@@ -309,7 +309,7 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 
 func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
 	switch objectType {
-	case model.CRMObjectStory:
+	case model.CRMObjectTask, model.CRMObjectStory:
 		conversations, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
 		if err != nil {
 			return err
@@ -330,17 +330,17 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if err != nil {
 			return err
 		}
-		if conversation == nil || conversation.LinkedStoryID == nil || *conversation.LinkedStoryID == "" {
+		if conversation == nil || conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
 			return nil
 		}
 		existing := make(map[string]struct{}, len(response.Stories))
 		for _, item := range response.Stories {
 			existing[item.ObjectID] = struct{}{}
 		}
-		if _, ok := existing[*conversation.LinkedStoryID]; ok {
+		if _, ok := existing[*conversation.LinkedTaskID]; ok {
 			return nil
 		}
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedStoryID})
+		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
 		if err != nil {
 			return err
 		}
@@ -401,7 +401,7 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 			RelationshipID: link.ID,
 			LinkType:       link.LinkType,
 			IsActive:       !otherStory.Completed,
-			Story:          storyAssociationSummary("", otherStory),
+			Task:           storyAssociationSummary("", otherStory),
 		}
 		switch link.LinkType {
 		case model.PMStoryLinkTypeBlocks:
@@ -526,7 +526,7 @@ func storyAssociationSummary(associationID string, story model.PMStory) model.As
 	storyType := story.StoryType
 	return model.AssociationObjectSummary{
 		AssociationID:   associationID,
-		ObjectType:      model.CRMObjectStory,
+		ObjectType:      model.CRMObjectTask,
 		ObjectID:        story.ID,
 		DisplayID:       &displayID,
 		Title:           story.Name,
@@ -578,13 +578,13 @@ func sortStoryRelationshipGroup(items []model.StoryRelationshipSummary) {
 		if items[i].IsActive != items[j].IsActive {
 			return items[i].IsActive
 		}
-		return items[i].Story.Title < items[j].Story.Title
+		return items[i].Task.Title < items[j].Task.Title
 	})
 }
 
 func isSupportedAssociationsObjectType(objectType string) bool {
 	switch objectType {
-	case model.CRMObjectStory, model.CRMObjectEpic, model.CRMObjectSupportConversation:
+	case model.CRMObjectTask, model.CRMObjectStory, model.CRMObjectEpic, model.CRMObjectSupportConversation:
 		return true
 	default:
 		return false

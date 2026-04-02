@@ -103,11 +103,8 @@ export function CommentEditor({
 
   const getContent = useCallback((editor: ReturnType<typeof useEditor>) => {
     if (!editor) return ''
-    // If the editor has images, return HTML; otherwise return plain text for backward compat
-    const html = editor.getHTML()
-    const hasImages = html.includes('<img ')
-    if (hasImages) return html
-    return editor.getText()
+    // Always return HTML so links, formatting, and mentions are preserved
+    return editor.getHTML()
   }, [])
 
   const handleImageUpload = useCallback(
@@ -221,6 +218,11 @@ export function CommentEditor({
         bulletList: false,
         orderedList: false,
         listItem: false,
+        link: {
+          openOnClick: false,
+          autolink: true,
+          HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
+        },
       }),
       Placeholder.configure({ placeholder }),
       MentionHighlight,

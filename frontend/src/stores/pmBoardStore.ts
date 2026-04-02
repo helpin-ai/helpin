@@ -1,16 +1,16 @@
 import { create } from 'zustand';
 import type {
-  CreateStoryRequest,
+  CreateTaskRequest,
   PMView,
-  Story,
-  StoryGroup,
-  StoryMemberColumn,
-  StoryStateColumn,
+  Task,
+  TaskGroup,
+  TaskMemberColumn,
+  TaskStateColumn,
   StateType,
   WorkflowWithStates,
 } from '@/lib/pmTypes';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmViewService } from '@/lib/services/pmViewService';
 import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
 import { createDebouncedBoardFetchScheduler } from './pmBoardFetchScheduler';
@@ -18,13 +18,13 @@ import { createPMDnDTraceID, logPMDnD, summarizePMDnDColumn } from '@/lib/pmDnDD
 
 export type BoardFilters = Record<string, string | undefined>;
 
-/** Default number of stories loaded per column on initial board fetch. */
+/** Default number of tasks loaded per column on initial board fetch. */
 const PER_STATE_LIMIT = 25;
 
 /** Debounce window for board filter fetches. */
 const FILTER_FETCH_DEBOUNCE_MS = 250;
 
-/** Number of additional stories fetched when a column nears the bottom. */
+/** Number of additional tasks fetched when a column nears the bottom. */
 const COLUMN_PAGE_SIZE = 50;
 
 interface MovePayload {
@@ -48,7 +48,7 @@ interface PMBoardState {
   workspaceId: string | null;
   workflows: WorkflowWithStates[];
   workflow: WorkflowWithStates | null;
-  columns: StoryStateColumn[];
+  columns: TaskStateColumn[];
   loading: boolean;
   error: string | null;
   teamId: string | null;
@@ -58,7 +58,7 @@ interface PMBoardState {
   columnLoading: Record<string, boolean>;
 
   // Member board state
-  memberColumns: StoryMemberColumn[];
+  memberColumns: TaskMemberColumn[];
   memberColumnLoading: Record<string, boolean>;
 
   // View state
@@ -71,16 +71,25 @@ interface PMBoardState {
   setTeamFilter: (teamId: string | null) => Promise<void>;
   setFilters: (filters: BoardFilters) => Promise<void>;
   refreshBoard: () => Promise<void>;
-  createStory: (payload: CreateStoryRequest) => Promise<Story | null>;
-  moveStory: (payload: MovePayload) => Promise<void>;
+  createTask: (payload: CreateTaskRequest) => Promise<Task | null>;
+  moveTask: (payload: MovePayload) => Promise<void>;
   loadMoreColumn: (stateId: string) => Promise<void>;
 
-  /** Incremental patch: add, update, remove, or move a single story in the board state. Returns true when reconciled locally. */
-  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', storyId: string, story?: Story) => boolean;
+  /** Incremental patch: add, update, remove, or move a single task in the board state. Returns true when reconciled locally. */
+  patchTask: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
 
   // Member board actions
   loadMemberBoard: (memberIds?: string[], includeEmpty?: boolean) => Promise<void>;
   loadMoreMemberColumn: (memberId: string | null) => Promise<void>;
+  moveMemberTask: (payload: MemberMovePayload) => Promise<void>;
+
+  /** @deprecated Use createTask */
+  createStory: (payload: CreateTaskRequest) => Promise<Task | null>;
+  /** @deprecated Use moveTask */
+  moveStory: (payload: MovePayload) => Promise<void>;
+  /** @deprecated Use patchTask */
+  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
+  /** @deprecated Use moveMemberTask */
   moveMemberStory: (payload: MemberMovePayload) => Promise<void>;
 
   // View actions
@@ -93,7 +102,7 @@ interface PMBoardState {
   updateView: (workspaceId: string, id: string, payload: Parameters<typeof pmViewService.update>[2]) => Promise<PMView | null>;
 }
 
-const cloneColumns = (columns: StoryStateColumn[]) =>
+const cloneColumns = (columns: TaskStateColumn[]) =>
   columns.map((column) => ({
     ...column,
     stories: [...column.stories],
@@ -105,7 +114,7 @@ const cloneColumns = (columns: StoryStateColumn[]) =>
 
 const groupedStateType: StateType = 'done';
 
-const compareStories = (a: Story, b: Story, stateType?: StateType) => {
+const compareStories = (a: Task, b: Task, stateType?: StateType) => {
   if (stateType === groupedStateType) {
     const aSortKey = a.completed_at ?? a.moved_at ?? a.updated_at;
     const bSortKey = b.completed_at ?? b.moved_at ?? b.updated_at;
@@ -117,11 +126,11 @@ const compareStories = (a: Story, b: Story, stateType?: StateType) => {
   return b.updated_at.localeCompare(a.updated_at);
 };
 
-const sortStories = (stories: Story[], stateType?: StateType) => [...stories].sort((a, b) => compareStories(a, b, stateType));
+const sortStories = (stories: Task[], stateType?: StateType) => [...stories].sort((a, b) => compareStories(a, b, stateType));
 
-const isGroupedColumn = (column: Pick<StoryStateColumn, 'state'>) => column.state.state_type === groupedStateType;
+const isGroupedColumn = (column: Pick<TaskStateColumn, 'state'>) => column.state.state_type === groupedStateType;
 
-const reindexLoadedStories = (column: StoryStateColumn) => {
+const reindexLoadedStories = (column: TaskStateColumn) => {
   if (isGroupedColumn(column)) return;
   column.stories = column.stories.map((story, index) => ({
     ...story,
@@ -129,7 +138,7 @@ const reindexLoadedStories = (column: StoryStateColumn) => {
   }));
 };
 
-const storyMatchesFilters = (story: Story, teamId: string | null, filters: BoardFilters) => {
+const storyMatchesFilters = (story: Task, teamId: string | null, filters: BoardFilters) => {
   const matchesCsv = (actual: string | undefined, value: string | undefined) => {
     if (!value) return true;
     return value.split(',').includes(actual ?? '');
@@ -138,7 +147,7 @@ const storyMatchesFilters = (story: Story, teamId: string | null, filters: Board
   if (teamId && story.team_id !== teamId) return false;
   if (!matchesCsv(story.priority, filters.priority)) return false;
   if (!matchesCsv(story.severity, filters.severity)) return false;
-  if (!matchesCsv(story.story_type, filters.story_type)) return false;
+  if (!matchesCsv(story.task_type, filters.story_type)) return false;
   if (!matchesCsv(story.epic_id, filters.epic_id)) return false;
   if (!matchesCsv(story.sprint_id, filters.sprint_id)) return false;
   if (!matchesCsv(story.owner_member_id, filters.owner_member_id)) return false;
@@ -157,20 +166,20 @@ const hasAmbiguousPatchFilters = (filters: BoardFilters) => Boolean(
 	filters.support_conversation_id,
 );
 
-const updateColumnTotals = (column: StoryStateColumn, countDelta: number, pointDelta: number) => {
+const updateColumnTotals = (column: TaskStateColumn, countDelta: number, pointDelta: number) => {
   column.story_count = Math.max(0, column.story_count + countDelta);
   column.point_total = Math.max(0, column.point_total + pointDelta);
   column.has_more = column.stories.length < column.story_count;
 };
 
-const removeLoadedStory = (column: StoryStateColumn, storyId: string) => {
+const removeLoadedStory = (column: TaskStateColumn, storyId: string) => {
   const index = column.stories.findIndex((candidate) => candidate.id === storyId);
   if (index === -1) return null;
   const [removed] = column.stories.splice(index, 1);
   return removed ?? null;
 };
 
-const replaceGroupedStory = (column: StoryStateColumn, story: Story) => {
+const replaceGroupedStory = (column: TaskStateColumn, story: Task) => {
   if (!column.story_groups?.length) return false;
   let replaced = false;
   column.story_groups = column.story_groups.map((group) => {
@@ -184,7 +193,7 @@ const replaceGroupedStory = (column: StoryStateColumn, story: Story) => {
   return replaced;
 };
 
-const mergeStoryGroups = (existing: StoryGroup[] | undefined, incoming: StoryGroup[] | undefined) => {
+const mergeStoryGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[] | undefined) => {
   if (!incoming?.length) return existing ?? [];
   if (!existing?.length) {
     return incoming.map((group) => ({ ...group, stories: [...group.stories] }));
@@ -216,7 +225,7 @@ const mergeStoryGroups = (existing: StoryGroup[] | undefined, incoming: StoryGro
 };
 
 /** Preserve board-enriched display fields (owner_name, epic_name) from existing story when IDs match. */
-const mergeEnrichedFields = (incoming: Story, existing: Story): Story => ({
+const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
   ...incoming,
   owner_name: incoming.owner_name ?? (
     incoming.owner_member_id === existing.owner_member_id
@@ -226,7 +235,7 @@ const mergeEnrichedFields = (incoming: Story, existing: Story): Story => ({
   epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
 });
 
-const upsertLoadedStory = (column: StoryStateColumn, story: Story) => {
+const upsertLoadedStory = (column: TaskStateColumn, story: Task) => {
   const nextStories = sortStories([
     ...column.stories.filter((candidate) => candidate.id !== story.id),
     story,
@@ -240,7 +249,7 @@ const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<s
   return result;
 };
 
-const sortColumns = (data: StoryStateColumn[]) =>
+const sortColumns = (data: TaskStateColumn[]) =>
   [...data].sort((a, b) => a.state.position - b.state.position);
 
 type BoardFetchArgs = {
@@ -286,7 +295,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       set({ error: null });
     }
 
-    const boardRes = await pmStoryService.listBoard(
+    const boardRes = await pmTaskService.listBoard(
       args.workspaceId,
       args.workflowId,
       buildApiFilters(args.teamId, args.filters),
@@ -494,7 +503,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     set({ columnLoading: { ...columnLoading, [stateId]: true } });
 
     const offset = column.stories.length;
-    const res = await pmStoryService.listBoardColumn(
+    const res = await pmTaskService.listBoardColumn(
       workspaceId,
       stateId,
       offset,
@@ -528,7 +537,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     });
   },
 
-  patchStory: (action, storyId, story) => {
+  patchTask: (action, storyId, story) => {
     const { teamId, filters } = get();
     if (hasAmbiguousPatchFilters(filters)) {
       return false;
@@ -582,7 +591,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       }
 
       // updated / moved — find the story in columns, update in-place or move between columns
-      let fromCol: StoryStateColumn | undefined;
+      let fromCol: TaskStateColumn | undefined;
       let fromIdx = -1;
       for (const col of columns) {
         const idx = col.stories.findIndex((s) => s.id === storyId);
@@ -661,14 +670,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return patched;
   },
 
-  createStory: async (payload) => {
-    const { data, error } = await pmStoryService.create(payload);
+  createTask: async (payload) => {
+    const { data, error } = await pmTaskService.create(payload);
     if (error || !data) {
-      set({ error: error ?? 'Failed to create story' });
+      set({ error: error ?? 'Failed to create task' });
       return null;
     }
 
-    const story = data.story;
+    const story = data.task;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const targetIndex = columns.findIndex((column) => column.state.id === story.workflow_state_id);
@@ -687,7 +696,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return story;
   },
 
-  moveStory: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
+  moveTask: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
     const snapshot = cloneColumns(get().columns);
     const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
     const targetStateType = snapshot.find((column) => column.state.id === toStateId)?.state.state_type;
@@ -710,7 +719,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     });
 
     // Always optimistically move the card immediately
-    let optimisticColumns: StoryStateColumn[] | null = null;
+    let optimisticColumns: TaskStateColumn[] | null = null;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const fromCol = columns.find((column) => column.state.id === fromStateId);
@@ -765,7 +774,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         state_id: fromStateId,
       });
     } else if (optimisticColumns) {
-      const loggedColumns = optimisticColumns as StoryStateColumn[];
+      const loggedColumns = optimisticColumns as TaskStateColumn[];
       logPMDnD('store.move.optimistic_applied', {
         trace_id: traceID,
         story_id: storyId,
@@ -784,14 +793,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         story_id: storyId,
         payload: reorderPayload,
       });
-      const reorderRes = await pmStoryService.reorder(workspaceId, storyId, reorderPayload);
+      const reorderRes = await pmTaskService.reorder(workspaceId, storyId, reorderPayload);
       if (reorderRes.error && !contextChanged()) {
         logPMDnD('store.move.reorder_error', {
           trace_id: traceID,
           story_id: storyId,
           error: reorderRes.error,
         });
-        set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder story' });
+        set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder task' });
       } else {
         logPMDnD('store.move.reorder_success', {
           trace_id: traceID,
@@ -809,7 +818,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       story_id: storyId,
       payload: movePayload,
     });
-    const moveRes = await pmStoryService.move(
+    const moveRes = await pmTaskService.move(
       workspaceId,
       storyId,
       movePayload,
@@ -821,7 +830,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
           story_id: storyId,
           error: moveRes.error,
         });
-        set({ columns: snapshot, error: moveRes.error ?? 'Failed to move story' });
+        set({ columns: snapshot, error: moveRes.error ?? 'Failed to move task' });
       }
       return;
     }
@@ -829,7 +838,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     // Skip patching if user switched board context mid-flight
     if (contextChanged()) return;
 
-    const updatedStory = moveRes.data?.story;
+    const updatedStory = moveRes.data?.task;
     if (updatedStory) {
       logPMDnD('store.move.move_success', {
         trace_id: traceID,
@@ -878,7 +887,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     const { workspaceId, workflow, teamId, filters } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const res = await pmStoryService.listBoardByMember(
+    const res = await pmTaskService.listBoardByMember(
       workspaceId,
       workflowId,
       buildApiFilters(teamId, filters),
@@ -907,7 +916,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     set({ memberColumnLoading: { ...memberColumnLoading, [colKey]: true } });
 
     const offset = column.stories.length;
-    const res = await pmStoryService.listBoardMemberColumn(
+    const res = await pmTaskService.listBoardMemberColumn(
       workspaceId,
       workflowId,
       memberId,
@@ -940,7 +949,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     });
   },
 
-  moveMemberStory: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
+  moveMemberTask: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
     if (fromMemberId === toMemberId) {
       return;
     }
@@ -989,7 +998,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     // Reassign owner only. Member-board ordering is derived from workflow state and story position,
     // not a separate per-member manual ranking.
-    const updateRes = await pmStoryService.update(workspaceId, storyId, {
+    const updateRes = await pmTaskService.update(workspaceId, storyId, {
       owner_member_id: toMemberId ?? '',
     });
     if (updateRes.error && !contextChanged()) {
@@ -1119,5 +1128,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     }));
     return updated;
   },
+
+  // Backward-compat aliases
+  get createStory() { return get().createTask; },
+  get moveStory() { return get().moveTask; },
+  get patchStory() { return get().patchTask; },
+  get moveMemberStory() { return get().moveMemberTask; },
   };
 });

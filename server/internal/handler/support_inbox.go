@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -151,7 +152,7 @@ func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r
 	writeJSON(w, http.StatusCreated, msg)
 }
 
-// LinkConversationStory handles POST /api/support/tickets/{id}/link-story.
+// LinkConversationStory handles POST /api/support/tickets/{id}/link-task.
 func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
@@ -163,7 +164,11 @@ func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if err := h.supportService.LinkConversationStory(r.Context(), workspaceID, ticketID, req.StoryID, actorID); err != nil {
+	taskID := strings.TrimSpace(req.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(req.StoryID)
+	}
+	if err := h.supportService.LinkConversationStory(r.Context(), workspaceID, ticketID, taskID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

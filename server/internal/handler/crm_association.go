@@ -67,9 +67,9 @@ func (h *CRMAssociationHandler) ListEpicAssociations(w http.ResponseWriter, r *h
 	h.listByObject(w, r, model.CRMObjectEpic)
 }
 
-// ListStoryAssociations handles GET /api/pm/stories/{id}/associations.
+// ListStoryAssociations handles GET /api/pm/tasks/{id}/associations.
 func (h *CRMAssociationHandler) ListStoryAssociations(w http.ResponseWriter, r *http.Request) {
-	h.listByObject(w, r, model.CRMObjectStory)
+	h.listByObject(w, r, model.CRMObjectTask)
 }
 
 func (h *CRMAssociationHandler) listByObject(w http.ResponseWriter, r *http.Request, objectType string) {
