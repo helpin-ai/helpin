@@ -93,7 +93,7 @@ export function SprintPlanningTaskCard({
         </div>
 
         {/* Row 2: Title */}
-        <h4 className={cn('mt-2 line-clamp-2 font-medium leading-snug text-foreground', compact ? 'mb-2 text-[13px]' : 'mb-3 text-[13px]')}>
+        <h4 className={cn('mt-2 line-clamp-2 font-medium leading-snug text-foreground', compact ? 'mb-2 text-sm' : 'mb-3 text-sm')}>
           {story.name}
         </h4>
 

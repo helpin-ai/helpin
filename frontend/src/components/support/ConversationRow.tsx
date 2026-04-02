@@ -191,7 +191,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
           {/* Context: message preview + activity */}
           <div className="grid items-center gap-1.5 mt-0.5" style={{ gridTemplateColumns: '1fr auto' }}>
             <p
-              className={`text-[13px] m-0 leading-[18px] ${isUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
+              className={`text-sm m-0 leading-[18px] ${isUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
               style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '18px' }}
             >
               {isCustomerTyping ? (

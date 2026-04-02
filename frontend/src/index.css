@@ -7,7 +7,7 @@
 
 @theme {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.24 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -56,6 +56,63 @@
   }
 }
 
+@layer components {
+  .ui-divider-bottom-fade {
+    position: relative;
+  }
+
+  .ui-divider-bottom-fade::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      transparent 0,
+      color-mix(in oklab, var(--border) 74%, transparent) 18px,
+      color-mix(in oklab, var(--border) 74%, transparent) calc(100% - 18px),
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  .ui-divider-top-fade {
+    position: relative;
+  }
+
+  .ui-divider-top-fade::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    left: 0;
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      transparent 0,
+      color-mix(in oklab, var(--border) 74%, transparent) 18px,
+      color-mix(in oklab, var(--border) 74%, transparent) calc(100% - 18px),
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  .ui-divider-right-fade {
+    background-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      color-mix(in oklab, var(--border) 74%, transparent) 18px,
+      color-mix(in oklab, var(--border) 74%, transparent) calc(100% - 18px),
+      transparent 100%
+    );
+    background-position: right top;
+    background-repeat: no-repeat;
+    background-size: 1px 100%;
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -64,6 +121,8 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -102,7 +161,7 @@
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.24 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -141,6 +200,21 @@
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Global scrollbar: transparent track, no rail lines */
+* {
+  scrollbar-color: oklch(0.7 0 0 / 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+/* Scrollbar hidden at rest, appears on hover — no layout shift */
+.scrollbar-hover {
+  scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
+}
+.scrollbar-hover:hover {
+  scrollbar-color: oklch(0.7 0 0 / 0.35) transparent;
 }
 
 /* Tiptap editor styles */
@@ -464,19 +538,19 @@
 
 .dark {
   --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  --foreground: oklch(0.88 0 0);
   --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
+  --card-foreground: oklch(0.88 0 0);
   --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --popover-foreground: oklch(0.88 0 0);
   --primary: oklch(0.985 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --secondary-foreground: oklch(0.88 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent-foreground: oklch(0.88 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
@@ -487,11 +561,11 @@
   --chart-4: oklch(0.508 0.118 165.612);
   --chart-5: oklch(0.432 0.095 166.913);
   --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.88 0 0);
   --sidebar-primary: oklch(0.985 0 0);
   --sidebar-primary-foreground: oklch(0.205 0 0);
   --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: oklch(0.88 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }

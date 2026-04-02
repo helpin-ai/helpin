@@ -419,7 +419,7 @@ function AssistantMessageBubble({
 }) {
   return (
     <div className={cn(
-      'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm',
+      'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
         ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
         : 'rounded-br-sm border border-blue-200/80 bg-blue-50 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-50',
@@ -548,7 +548,7 @@ function ThinkingStrip({
         </div>
       </summary>
 
-      <div className="mt-3 border-t border-border pt-3 text-[13px] text-muted-foreground">
+      <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">
         {hasVisibleContent ? (
           <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
         ) : (

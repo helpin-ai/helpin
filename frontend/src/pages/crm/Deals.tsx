@@ -70,7 +70,7 @@ export function DealsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header bar */}
-      <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+      <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         {/* Pipeline selector */}
         {pipelines && pipelines.length > 1 && (
           <Select

@@ -60,6 +60,7 @@ import type {
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
 } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
@@ -755,7 +756,7 @@ export function ObjectiveDetailPage() {
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -1011,8 +1012,9 @@ export function ObjectiveDetailPage() {
             {data.epics.length > 0 ? (
               <div className="space-y-2">
                 {data.epics.map((e) => {
-                  const pct = e.stats.story_count > 0
-                    ? Math.round((e.stats.done_story_count / e.stats.story_count) * 100)
+                  const totalTasks = getEpicTaskCount(e.stats);
+                  const pct = totalTasks > 0
+                    ? Math.round((getEpicDoneTaskCount(e.stats) / totalTasks) * 100)
                     : 0;
                   const epicState = e.epic.completed ? 'Done' : e.epic.started ? 'In Progress' : 'Not Started';
                   const epicStateColor = e.epic.completed ? 'text-green-500' : e.epic.started ? 'text-amber-500' : 'text-zinc-400';

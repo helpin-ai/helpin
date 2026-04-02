@@ -34,6 +34,7 @@ const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
 const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
+const supportAutoTriggerType = "support.auto"
 
 func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
@@ -52,6 +53,40 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	default:
 		return "Agent"
 	}
+}
+
+func manualRunTriggerContext() *model.AgentRunTriggerContext {
+	now := time.Now().UTC()
+	return &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceManual,
+		TriggerType: model.AgentRunTriggerTypeManual,
+		FiredAt:     &now,
+	}
+}
+
+func systemRunTriggerContext(triggerType string) *model.AgentRunTriggerContext {
+	triggerType = strings.TrimSpace(triggerType)
+	if triggerType == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	return &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceSystem,
+		TriggerType: triggerType,
+		FiredAt:     &now,
+	}
+}
+
+func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, additionalContext *string) ([]byte, error) {
+	payload := model.AgentRunInputPayload{
+		Trigger: trigger,
+		Event:   event,
+	}
+	payload.SetTarget(targetType, targetID)
+	if additionalContext != nil {
+		payload.AdditionalContext = strings.TrimSpace(*additionalContext)
+	}
+	return json.Marshal(payload)
 }
 
 // AgentService contains agent business logic.
@@ -951,8 +986,8 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	return nil
 }
 
-// AssignAgentToStory assigns an agent to a story.
-func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, storyID, agentID, actorID string) error {
+// AssignAgentToTask assigns an agent to a task.
+func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskID, agentID, actorID string) error {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil {
 		return err
@@ -964,12 +999,15 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 		return err
 	}
 
-	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	story, err := s.storyRepo.GetRawByID(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("get story: %w", err)
+		return fmt.Errorf("get task: %w", err)
 	}
 	if story == nil {
-		return fmt.Errorf("story not found")
+		return fmt.Errorf("task not found")
+	}
+	if err := validateAgentTeamScope(agent, "task", story.TeamID); err != nil {
+		return err
 	}
 
 	story.AssignedAgentID = &agentID
@@ -977,11 +1015,11 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 		return fmt.Errorf("update story: %w", err)
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "task", taskID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
 
-	s.publishSimpleEvent("updated", "task", storyID, workspaceID, actorID)
+	s.publishSimpleEvent("updated", "task", taskID, workspaceID, actorID)
 
-	if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
+	if _, err := s.RunAgent(ctx, workspaceID, taskID, actorID); err != nil {
 		if errors.Is(err, ErrTaskDeliveryTargetRequired) {
 			return nil
 		}
@@ -1072,18 +1110,107 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), nil
 }
 
-// RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
-func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
-	return s.StartTargetRun(ctx, workspaceID, "task", storyID, model.StartAgentRunRequest{}, actorID)
+// RunAgent creates a new task-targeted agent run and starts its Temporal workflow.
+func (s *AgentService) RunAgent(ctx context.Context, workspaceID, taskID, actorID string) (*model.AgentRun, error) {
+	return s.RunTaskAgent(ctx, workspaceID, taskID, actorID, model.StartAgentRunRequest{})
+}
+
+// RunTaskAgent starts a task-targeted agent run using task assignment defaults.
+func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
+	story, err := s.storyRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("get task: %w", err)
+	}
+	if story == nil || story.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("task not found")
+	}
+
+	agentID := strings.TrimSpace(req.AgentID)
+	if agentID == "" && story.AssignedAgentID != nil {
+		agentID = strings.TrimSpace(*story.AssignedAgentID)
+	}
+	if agentID == "" {
+		return nil, fmt.Errorf("no agent assigned to this task")
+	}
+	if story.AssignedAgentID == nil || *story.AssignedAgentID != agentID {
+		if err := s.AssignAgentToTask(ctx, workspaceID, story.ID, agentID, actorID); err != nil {
+			return nil, err
+		}
+	}
+
+	req.AgentID = agentID
+	return s.StartTargetRun(ctx, workspaceID, "task", story.ID, req, actorID)
 }
 
 // RunEpicAgent starts a direct planner run for an epic.
 func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
-	return s.StartTargetRun(ctx, workspaceID, "epic", epicID, req, actorID)
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+
+	agentID := strings.TrimSpace(req.AgentID)
+	if agentID == "" {
+		systemPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+		if err != nil {
+			return nil, err
+		}
+		agentID = systemPlanner.ID
+	}
+
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
+	if err != nil {
+		if strings.TrimSpace(req.AgentID) == "" {
+			systemPlanner, ensureErr := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+			if ensureErr == nil && systemPlanner != nil && systemPlanner.ID != agentID {
+				agent, err = s.requireRunnableAgent(ctx, workspaceID, systemPlanner.ID, "epic")
+				if err == nil {
+					agentID = systemPlanner.ID
+				}
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if agent.IsSystem && normalizePresetKey(agent.PresetKey) == model.AgentPresetEpicPlanner {
+		refreshedPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
+		if err != nil {
+			return nil, err
+		}
+		if refreshedPlanner != nil {
+			agentID = refreshedPlanner.ID
+		}
+	}
+
+	req.AgentID = agentID
+	run, err := s.StartTargetRun(ctx, workspaceID, "epic", epic.ID, req, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	epic.LastPlanningRunID = &run.ID
+	if err := s.epicRepo.Update(ctx, epic); err != nil {
+		return nil, err
+	}
+	return run, nil
 }
 
 // StartTargetRun starts a direct agent run for a supported target type.
 func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID string) (*model.AgentRun, error) {
+	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil)
+}
+
+func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext) (*model.AgentRun, error) {
+	agentID := strings.TrimSpace(req.AgentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+
 	switch targetType {
 	case "task", "story":
 		story, err := s.storyRepo.GetRawByID(ctx, targetID)
@@ -1094,22 +1221,11 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, fmt.Errorf("task not found")
 		}
 
-		agentID := strings.TrimSpace(req.AgentID)
-		if agentID == "" && story.AssignedAgentID != nil {
-			agentID = strings.TrimSpace(*story.AssignedAgentID)
-		}
-		if agentID == "" {
-			return nil, fmt.Errorf("no agent assigned to this task")
-		}
-		if story.AssignedAgentID == nil || *story.AssignedAgentID != agentID {
-			if err := s.AssignAgentToStory(ctx, workspaceID, story.ID, agentID, actorID); err != nil {
-				return nil, err
-			}
-			story.AssignedAgentID = &agentID
-		}
-
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "task")
 		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "task", story.TeamID); err != nil {
 			return nil, err
 		}
 		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
@@ -1122,11 +1238,10 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			}
 		}
 
-		input := map[string]any{"story_id": story.ID, "task_id": story.ID}
-		if req.AdditionalContext != nil && strings.TrimSpace(*req.AdditionalContext) != "" {
-			input["additional_context"] = strings.TrimSpace(*req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("task", story.ID, trigger, event, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build task run input: %w", err)
 		}
-		payload, _ := json.Marshal(input)
 
 		run, err := s.createRun(ctx, createRunParams{
 			workspaceID:    workspaceID,
@@ -1134,7 +1249,7 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			targetType:     "task",
 			targetID:       story.ID,
 			storyID:        &story.ID,
-			actorID:        &actorID,
+			actorID:        actorID,
 			input:          payload,
 			delivery:       delivery,
 			invocationMode: resolveInvocationMode(agent),
@@ -1143,9 +1258,9 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, err
 		}
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "task", story.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "task", story.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 		}
-		s.publishRunEvent(run, actorID)
+		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
 
 	case "epic":
@@ -1158,52 +1273,24 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 		epic := &epicWithStats.Epic
 
-		agentID := strings.TrimSpace(req.AgentID)
-		if agentID == "" {
-			systemPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
-			if err != nil {
-				return nil, err
-			}
-			agentID = systemPlanner.ID
-		}
-
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
 		if err != nil {
-			if strings.TrimSpace(req.AgentID) == "" {
-				systemPlanner, ensureErr := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
-				if ensureErr == nil && systemPlanner != nil && systemPlanner.ID != agentID {
-					agent, err = s.requireRunnableAgent(ctx, workspaceID, systemPlanner.ID, "epic")
-					if err == nil {
-						agentID = systemPlanner.ID
-					}
-				}
-			}
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
-		if agent.IsSystem && normalizePresetKey(agent.PresetKey) == model.AgentPresetEpicPlanner {
-			refreshedPlanner, err := s.ensureSystemProductPlannerAgent(ctx, workspaceID, actorID)
-			if err != nil {
-				return nil, err
-			}
-			if refreshedPlanner != nil {
-				agent = refreshedPlanner
-				agentID = refreshedPlanner.ID
-			}
+		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
+			return nil, err
 		}
-		input := map[string]any{"epic_id": epic.ID}
-		if req.AdditionalContext != nil && strings.TrimSpace(*req.AdditionalContext) != "" {
-			input["additional_context"] = strings.TrimSpace(*req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build epic run input: %w", err)
 		}
-		payload, _ := json.Marshal(input)
 
 		run, err := s.createRun(ctx, createRunParams{
 			workspaceID:    workspaceID,
 			agent:          agent,
 			targetType:     "epic",
 			targetID:       epic.ID,
-			actorID:        &actorID,
+			actorID:        actorID,
 			input:          payload,
 			invocationMode: resolveInvocationMode(agent),
 		})
@@ -1211,14 +1298,10 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, err
 		}
 
-		epic.LastPlanningRunID = &run.ID
-		if err := s.epicRepo.Update(ctx, epic); err != nil {
-			return nil, err
-		}
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 		}
-		s.publishRunEvent(run, actorID)
+		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
 
 	default:
@@ -1252,10 +1335,14 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if err != nil {
 		return nil, err
 	}
-	input, _ := json.Marshal(map[string]any{
-		"conversation_id": conversationID,
-		"source":          conversation.Source,
-	})
+	trigger := manualRunTriggerContext()
+	if actorID == nil || strings.TrimSpace(*actorID) == "" {
+		trigger = systemRunTriggerContext(supportAutoTriggerType)
+	}
+	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build conversation run input: %w", err)
+	}
 
 	run, err := s.createRun(ctx, createRunParams{
 		workspaceID:    workspaceID,
@@ -2789,6 +2876,21 @@ func validateTriggerMode(triggerMode string) error {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID *string) error {
+	agentTeamID := strings.TrimSpace(derefString(agent.TeamID))
+	if agentTeamID == "" {
+		return nil
+	}
+	actualTargetTeamID := strings.TrimSpace(derefString(targetTeamID))
+	if actualTargetTeamID == "" {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", agentTeamID, targetType)
+	}
+	if actualTargetTeamID != agentTeamID {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", agentTeamID, targetType, actualTargetTeamID)
+	}
+	return nil
 }
 
 func derefString(value *string) string {

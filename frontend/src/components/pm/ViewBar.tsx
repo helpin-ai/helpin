@@ -497,7 +497,7 @@ export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
   );
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-border/70 px-3 overflow-x-auto">
+    <div className="ui-divider-bottom-fade flex items-center gap-0.5 px-3 overflow-x-auto">
       <ViewsDropdown
         workspaceId={workspaceId}
         currentUserId={currentUserId}

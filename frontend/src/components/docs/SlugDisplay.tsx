@@ -45,7 +45,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
     return (
       <div className="mb-3 flex items-center gap-1.5">
         <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="text-[13px] font-mono text-muted-foreground">/</span>
+        <span className="text-sm font-mono text-muted-foreground">/</span>
         <input
           ref={inputRef}
           value={draft}
@@ -54,7 +54,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
             if (e.key === 'Enter') void handleSave()
             if (e.key === 'Escape') setEditing(false)
           }}
-          className="min-w-[120px] rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[13px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+          className="min-w-[120px] rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
           disabled={saving}
         />
         <QuickTooltip label="Save slug">
@@ -85,7 +85,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
       <button
         type="button"
         onClick={canEdit ? handleStartEdit : undefined}
-        className={`flex items-center gap-1.5 text-[13px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover/title:opacity-100 ${canEdit ? 'cursor-pointer hover:text-muted-foreground' : ''}`}
+        className={`flex items-center gap-1.5 text-sm font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover/title:opacity-100 ${canEdit ? 'cursor-pointer hover:text-muted-foreground' : ''}`}
       >
         <Link2 className="h-3.5 w-3.5" />
         /{slug}

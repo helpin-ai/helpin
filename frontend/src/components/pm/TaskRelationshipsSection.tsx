@@ -475,7 +475,7 @@ export function TaskRelationshipsSection({
                 onClick={() => handleCreateRelationship(story.id)}
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{story.name}</span>
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{story.name}</span>
                 {story.display_id ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
                     {story.display_id}
@@ -494,7 +494,7 @@ export function TaskRelationshipsSection({
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.name}</span>
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.name}</span>
               </button>
             ))}
 
@@ -551,6 +551,10 @@ export function TaskRelationshipsSection({
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
           const resolved = item.link_type === 'blocks' && !item.is_active;
+          const relatedTask = item.task ?? item.story;
+          if (!relatedTask) {
+            return null;
+          }
           return (
             <div
               key={item.relationship_id}
@@ -564,20 +568,20 @@ export function TaskRelationshipsSection({
                 <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
                 <button
                   type="button"
-                  onClick={() => handleOpenStory(item.story.object_id)}
-                  className="min-w-0 truncate text-sm font-medium text-left transition-colors hover:text-primary"
+                  onClick={() => handleOpenStory(relatedTask.object_id)}
+                  className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
                 >
-                  {item.story.title}
+                  {relatedTask.title}
                 </button>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {item.story.display_id ? (
+                {relatedTask.display_id ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
-                    {item.story.task_type ? (
-                      <StoryTypeIcon storyType={item.story.task_type} className="h-3 w-3" />
+                    {relatedTask.task_type ? (
+                      <StoryTypeIcon storyType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
-                    {item.story.display_id}
-                    {(item.story.completed || resolved) ? (
+                    {relatedTask.display_id}
+                    {(relatedTask.completed || resolved) ? (
                       <Check className="h-3 w-3 text-green-600" />
                     ) : null}
                   </Badge>
@@ -598,7 +602,7 @@ export function TaskRelationshipsSection({
                       return (
                         <DropdownMenuItem
                           key={opt.value}
-                          onClick={() => handleUpdateRelationshipType(item.relationship_id, item.story.object_id, opt.value)}
+                          onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
                         >
                           <OptIcon className="mr-2 h-3.5 w-3.5" />
                           {opt.label}
@@ -628,7 +632,7 @@ export function TaskRelationshipsSection({
           >
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.title}</span>
+            <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
                 <DropdownMenu>

@@ -41,6 +41,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -130,8 +131,8 @@ function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null
   if (end < start) {
     return 'No suggestion yet: fix the schedule dates.';
   }
-  if (epic.stats.story_count === 0) {
-    return 'No suggestion yet: add stories with workflow states to this epic.';
+  if (getEpicTaskCount(epic.stats) === 0) {
+    return 'No suggestion yet: add tasks with workflow states to this epic.';
   }
   if (today && today < start) {
     return 'No suggestion yet: this epic has not started yet.';
@@ -319,8 +320,10 @@ export function EpicDetailPage() {
 
   // Derived data
   const progress = useMemo(() => {
-    if (!epic || epic.stats.story_count === 0) return 0;
-    return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
+    if (!epic) return 0;
+    const totalTasks = getEpicTaskCount(epic.stats);
+    if (totalTasks === 0) return 0;
+    return Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100);
   }, [epic]);
 
   const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
@@ -477,7 +480,7 @@ export function EpicDetailPage() {
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -600,7 +603,7 @@ export function EpicDetailPage() {
             </div>
             <Progress value={progress} />
             <p className="text-xs text-muted-foreground">
-              {epic.stats.done_story_count}/{epic.stats.story_count} stories done · {epic.stats.done_points}/{epic.stats.total_points} points
+              {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks done · {epic.stats.done_points}/{epic.stats.total_points} points
             </p>
           </div>
 

@@ -31,7 +31,7 @@ export function ContactsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header bar */}
-      <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+      <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input

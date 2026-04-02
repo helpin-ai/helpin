@@ -436,7 +436,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		worker.ToolUpdatePlan,
 		worker.ToolRequestReviewCheckpoint,
 		worker.ToolPublishPRDDraft,
-		worker.ToolPublishStoryPlan,
+		worker.ToolPublishTaskPlan,
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected migrated tool list to contain %q, got %v", required, tools)
@@ -446,7 +446,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		worker.ToolPublishPreview,
 		worker.ToolPreviewMarkdown,
 		worker.ToolPreviewJSON,
-		worker.ToolPublishStoryPlanDoc,
+		worker.ToolPublishTaskPlanDoc,
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected migrated tool list to exclude %q, got %v", unexpected, tools)
@@ -467,8 +467,8 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 	normalizeAgentRecord(agent)
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
-	if !slices.Contains(tools, worker.ToolPublishStoryPlanDoc) {
-		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolPublishStoryPlanDoc, tools)
+	if !slices.Contains(tools, worker.ToolPublishTaskPlanDoc) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolPublishTaskPlanDoc, tools)
 	}
 	if !slices.Contains(tools, worker.ToolUpdatePlan) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolUpdatePlan, tools)
@@ -481,7 +481,7 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 		worker.ToolPreviewJSON,
 		worker.ToolPublishPreview,
 		worker.ToolPublishPRDDraft,
-		worker.ToolPublishStoryPlan,
+		worker.ToolPublishTaskPlan,
 		"write_document_content",
 	} {
 		if slices.Contains(tools, unexpected) {
@@ -510,7 +510,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 		worker.ToolUpdatePlan,
 		worker.ToolRequestReviewCheckpoint,
 		worker.ToolPublishPRDDraft,
-		worker.ToolPublishStoryPlan,
+		worker.ToolPublishTaskPlan,
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
@@ -520,7 +520,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 		worker.ToolPreviewMarkdown,
 		worker.ToolPreviewJSON,
 		worker.ToolPublishPreview,
-		worker.ToolPublishStoryPlanDoc,
+		worker.ToolPublishTaskPlanDoc,
 		"create_story_batch",
 	} {
 		if slices.Contains(tools, unexpected) {

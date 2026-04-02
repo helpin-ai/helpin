@@ -341,7 +341,7 @@ export function SprintDetailPage() {
   return (
     <div className="flex h-full flex-col max-w-7xl mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>

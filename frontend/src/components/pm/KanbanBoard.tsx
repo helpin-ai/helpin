@@ -138,7 +138,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   }
 
   return (
-    <section className="flex h-full w-[340px] shrink-0 flex-col">
+    <section className="flex h-full w-[300px] shrink-0 flex-col">
       <header className="group/header flex items-center justify-between px-3 pt-4 pb-3 relative">
         {column.state.color && (
           <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
@@ -207,7 +207,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
+          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${
             isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'
           }`}
         >
@@ -383,7 +383,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
+          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
         >
           {stories.map((story) => (
             <TaskCard
@@ -1131,7 +1131,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       {currentUser && (
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
-      <header className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
+      <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
         <StoryFilterTrigger />
         <StoryOwnerAvatarFilterRow />
 

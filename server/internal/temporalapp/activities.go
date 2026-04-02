@@ -427,10 +427,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		config = workerpkg.DefaultWorkflowConfig()
 	}
 
-	allowedTools := resolvedAllowedToolSet(state.resolved)
-	if len(planningInput.AllowedTools) > 0 {
-		allowedTools = stringSliceToSet(planningInput.AllowedTools)
-	}
+	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
@@ -3488,9 +3485,10 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 		return planningRunInput{}, err
 	}
 
-	if state.run.TargetType == "task" && state.task != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
+	tools := effectiveToolSet(state.resolved, input.AllowedTools)
+	if state.run.TargetType == "task" && state.task != nil && tools[workerpkg.ToolPublishTaskPlanDoc] {
 		if input.Stage == "" {
-			input.Stage = model.PlanningStageStoryPlanDoc
+			input.Stage = model.PlanningStageTaskPlanDoc
 		}
 		if input.PlanDocumentID == "" && state.task.PlanDocumentID != nil {
 			input.PlanDocumentID = strings.TrimSpace(*state.task.PlanDocumentID)
@@ -3556,13 +3554,17 @@ func (a *AgentRunActivities) normalizeEpicSpecState(ctx context.Context, state *
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	tools := effectiveToolSet(state.resolved, input.AllowedTools)
 	if strings.TrimSpace(input.FlowOutputKind) != "" {
 		return a.buildFlowOutputInstructions(ctx, state, input)
 	}
-	if state.run.TargetType == "task" && state.task != nil && strings.EqualFold(strings.TrimSpace(state.agent.PresetKey), model.AgentPresetTaskPlanner) {
+	if state.run.TargetType == "task" && state.task != nil && tools[workerpkg.ToolPublishTaskPlanDoc] {
 		return a.buildTaskPlannerInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
+		return runInputAdditionalContext(state.run.Input), nil
+	}
+	if !tools[workerpkg.ToolPublishPRDDraft] || (!tools[workerpkg.ToolPublishTaskPlan] && !tools[workerpkg.ToolPublishStoryPlan]) {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)
@@ -5753,6 +5755,13 @@ func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool 
 	return set
 }
 
+func effectiveToolSet(resolved workerpkg.ResolvedProfile, explicitAllowed []string) map[string]bool {
+	if len(explicitAllowed) > 0 {
+		return stringSliceToSet(explicitAllowed)
+	}
+	return resolvedAllowedToolSet(resolved)
+}
+
 func stringSliceToSet(items []string) map[string]bool {
 	set := make(map[string]bool, len(items))
 	for _, item := range items {
@@ -5762,23 +5771,6 @@ func stringSliceToSet(items []string) map[string]bool {
 		}
 	}
 	return set
-}
-
-func toolAllowedForPlanningRun(resolved workerpkg.ResolvedProfile, explicitAllowed []string, toolName string) bool {
-	if len(explicitAllowed) > 0 {
-		for _, allowed := range explicitAllowed {
-			if strings.TrimSpace(allowed) == toolName {
-				return true
-			}
-		}
-		return false
-	}
-	for _, allowed := range resolved.Tools {
-		if strings.TrimSpace(allowed) == toolName {
-			return true
-		}
-	}
-	return false
 }
 
 func mustJSON(value any) json.RawMessage {

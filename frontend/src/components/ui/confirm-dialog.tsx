@@ -24,8 +24,15 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
 
 export function useConfirm(): ConfirmFn {
   const fn = useContext(ConfirmContext);
-  if (!fn) throw new Error('useConfirm must be used within <ConfirmProvider>');
-  return fn;
+  if (fn) return fn;
+
+  return async (options) => {
+    if (typeof window === 'undefined') return false;
+    const message = options.description
+      ? `${options.title}\n\n${options.description}`
+      : options.title;
+    return window.confirm(message);
+  };
 }
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {

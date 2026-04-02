@@ -470,7 +470,7 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-[13px] hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenTask(info.row.original);
@@ -1001,7 +1001,7 @@ export function TaskListView({
             {/* Pinned sticky group header — offset below the table header */}
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
-                <div className="bg-background border-b border-border/50">
+                <div className="ui-divider-bottom-fade bg-background">
                   <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(pinnedGroupRow)} />
                 </div>
               </div>

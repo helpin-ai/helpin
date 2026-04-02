@@ -334,7 +334,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if targetID == "" || strings.TrimSpace(req.AgentID) == "" {
 				return nil, fmt.Errorf("task_id and agent_id are required")
 			}
-			if err := s.agentService.AssignAgentToStory(ctx, meta.WorkspaceID, targetID, req.AgentID, fallbackActor(meta)); err != nil {
+			if err := s.agentService.AssignAgentToTask(ctx, meta.WorkspaceID, targetID, req.AgentID, fallbackActor(meta)); err != nil {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"task_id": targetID, "story_id": targetID, "agent_id": req.AgentID}), nil
