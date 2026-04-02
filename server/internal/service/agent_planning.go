@@ -314,7 +314,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		}
 
 		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
 				slog.WarnContext(ctx, "skipping agent assignment for planned task",
 					"task", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
 			} else {
@@ -367,10 +367,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	}
 
 	handoffContext, _ := json.Marshal(map[string]any{
-		"created_task_ids":    createdIDs,
-		"created_task_count":  len(created),
-		"epic_id":             epicID,
-		"run_id":              runID,
+		"created_task_ids":   createdIDs,
+		"created_task_count": len(created),
+		"epic_id":            epicID,
+		"run_id":             runID,
 	})
 	handoff := &model.AgentHandoff{
 		WorkspaceID: workspaceID,
@@ -531,7 +531,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		}
 
 		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
 				slog.WarnContext(ctx, "skipping agent assignment for planned task",
 					"task", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
 			} else {

@@ -107,8 +107,4 @@ export const agentService = {
     api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
   updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
     api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
-  assignToStory: (workspaceId: string, storyId: string, agentId: string) =>
-    api.post(`/pm/tasks/${storyId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
-  runStory: (workspaceId: string, storyId: string, payload?: StartAgentRunRequest) =>
-    api.post<AgentRun>(`/pm/tasks/${storyId}/run-agent${qs(workspaceId)}`, payload ?? {}),
 };

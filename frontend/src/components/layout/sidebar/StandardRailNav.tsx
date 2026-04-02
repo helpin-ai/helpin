@@ -30,7 +30,7 @@ export function StandardRailNav({ groups, isActive, onNavigate }: StandardRailNa
                   asChild
                   tooltip={item.label}
                   isActive={isActive(item.link)}
-                  className="h-8 rounded-md px-2 text-[13px]"
+                  className="h-8 rounded-md px-2 text-sm"
                 >
                   <a
                     href={item.link}

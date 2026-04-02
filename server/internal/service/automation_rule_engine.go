@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -28,6 +29,14 @@ func ruleExecCtxFromContext(ctx context.Context) *model.RuleExecutionContext {
 		return v
 	}
 	return nil
+}
+
+func nilIfEmpty(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // AutomationRuleEngine evaluates automation rules against events and executes actions.
@@ -304,40 +313,54 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	if e.agentService == nil {
 		return fmt.Errorf("agent service not configured")
 	}
+	if strings.TrimSpace(cfg.AgentID) == "" {
+		return fmt.Errorf("start_agent_run requires agent_id")
+	}
 
-	targetType := event.TargetType
-	targetID := event.TargetID
-	if targetType == "" && story != nil {
+	targetType := strings.TrimSpace(cfg.TargetType)
+	targetID := strings.TrimSpace(cfg.TargetID)
+	if targetType == "" && targetID == "" {
+		targetType = strings.TrimSpace(event.TargetType)
+		targetID = strings.TrimSpace(event.TargetID)
+		if targetType == "" && targetID == "" {
+			if story != nil {
+				targetType = "task"
+				targetID = story.ID
+			} else if strings.TrimSpace(event.StoryID) != "" {
+				targetType = "task"
+				targetID = strings.TrimSpace(event.StoryID)
+			}
+		}
+	}
+	if targetType == "story" {
 		targetType = "task"
-		targetID = story.ID
 	}
-	if targetType != "task" && targetType != "story" || targetID == "" {
-		return fmt.Errorf("start_agent_run currently requires a task target")
-	}
-	if story == nil {
-		var err error
-		story, err = e.storyRepo.GetRawByID(ctx, targetID)
-		if err != nil {
-			return fmt.Errorf("load story for start_agent_run: %w", err)
-		}
-		if story == nil {
-			return fmt.Errorf("story %s not found", targetID)
-		}
+	if targetType == "" || targetID == "" {
+		return fmt.Errorf("start_agent_run requires target_type and target_id or an event target")
 	}
 
-	if cfg.AgentID != "" && (story.AssignedAgentID == nil || *story.AssignedAgentID != cfg.AgentID) {
-		story.AssignedAgentID = &cfg.AgentID
-		if err := e.storyRepo.Update(ctx, story); err != nil {
-			return fmt.Errorf("assign agent to story: %w", err)
-		}
+	now := time.Now().UTC()
+	trigger := &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceAutomationRule,
+		TriggerType: event.TriggerType,
+		RuleID:      &rule.ID,
+		FiredAt:     &now,
 	}
-
-	if _, err := e.agentService.RunAgent(ctx, event.WorkspaceID, story.ID, "system"); err != nil {
+	eventContext := &model.AgentRunEventContext{
+		StateID: nilIfEmpty(event.StateID),
+		TeamID:  nilIfEmpty(event.TeamID),
+		RunID:   nilIfEmpty(event.RunID),
+		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
+	}
+	if _, err := e.agentService.startTargetRun(ctx, event.WorkspaceID, targetType, targetID, model.StartAgentRunRequest{
+		AgentID:           cfg.AgentID,
+		AdditionalContext: cfg.AdditionalContext,
+	}, nil, trigger, eventContext); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
 
 	if e.activitySvc != nil {
-		_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", story.ID, nil,
+		_ = e.activitySvc.Log(ctx, event.WorkspaceID, targetType, targetID, nil,
 			fmt.Sprintf("automation rule '%s' started an agent run", rule.Name),
 			nil, nil, nil, nil)
 	}
@@ -345,8 +368,8 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	if e.wsPublisher != nil {
 		e.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
-			Entity:      "task",
-			EntityID:    story.ID,
+			Entity:      targetType,
+			EntityID:    targetID,
 			WorkspaceID: event.WorkspaceID,
 		})
 	}
@@ -741,6 +764,14 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		}
 		if strings.TrimSpace(cfg.AgentID) == "" {
 			return fmt.Errorf("agent_id is required in action_config for %s", actionType)
+		}
+		targetType := strings.TrimSpace(cfg.TargetType)
+		targetID := strings.TrimSpace(cfg.TargetID)
+		if (targetType == "") != (targetID == "") {
+			return fmt.Errorf("target_type and target_id must both be set in action_config for %s", actionType)
+		}
+		if triggerType == model.TriggerCron && (targetType == "" || targetID == "") {
+			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
 		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState

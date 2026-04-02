@@ -411,14 +411,14 @@ function TaskCardComponent({
       {titleIsLong ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+            <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
               {story.name}
             </h4>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[300px]">{story.name}</TooltipContent>
         </Tooltip>
       ) : (
-        <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+        <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
           {story.name}
         </h4>
       )}

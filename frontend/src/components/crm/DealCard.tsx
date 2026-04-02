@@ -116,7 +116,7 @@ export function DealCard({
       </div>
 
       {/* Row 2: Deal name */}
-      <h4 className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+      <h4 className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-foreground">
         {deal.name}
       </h4>
 

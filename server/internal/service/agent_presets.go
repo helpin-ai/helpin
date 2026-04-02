@@ -235,13 +235,13 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishPRDDraft,
-		worker.ToolPublishStoryPlan,
+		worker.ToolPublishTaskPlan,
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
-		worker.ToolPublishStoryPlanDoc,
+		worker.ToolPublishTaskPlanDoc,
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,
 	)
@@ -378,7 +378,14 @@ func filterPresetTools(base []string, required ...string) []string {
 	filtered := make([]string, 0, len(base))
 	for _, toolName := range base {
 		switch toolName {
-		case worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPreview, worker.ToolPublishPRDDraft, worker.ToolPublishStoryPlan, worker.ToolPublishStoryPlanDoc:
+		case worker.ToolPreviewMarkdown,
+			worker.ToolPreviewJSON,
+			worker.ToolPublishPreview,
+			worker.ToolPublishPRDDraft,
+			worker.ToolPublishTaskPlan,
+			worker.ToolPublishTaskPlanDoc,
+			worker.ToolPublishStoryPlan,
+			worker.ToolPublishStoryPlanDoc:
 			if !requiredSet[toolName] {
 				continue
 			}

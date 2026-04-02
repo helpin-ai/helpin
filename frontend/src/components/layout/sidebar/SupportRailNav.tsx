@@ -76,7 +76,7 @@ export function SupportRailNav({
             <SidebarMenuItem key={item.key}>
               <SidebarMenuButton
                 isActive={navFilter === item.key && activeContext === 'nav'}
-                className="h-8 rounded-md px-2 text-[13px]"
+                className="h-8 rounded-md px-2 text-sm"
                 onClick={() => onNavFilterChange(item.key)}
               >
                 <item.icon />
@@ -101,7 +101,7 @@ export function SupportRailNav({
             <SidebarMenuItem key={item.key}>
               <SidebarMenuButton
                 isActive={navFilter === item.key && activeContext === 'nav'}
-                className="h-8 rounded-md px-2 text-[13px]"
+                className="h-8 rounded-md px-2 text-sm"
                 onClick={() => onNavFilterChange(item.key)}
               >
                 <item.icon />
@@ -142,7 +142,7 @@ export function SupportRailNav({
               <SidebarMenuItem key={mailbox.id}>
                 <SidebarMenuButton
                   isActive={isActiveMailbox}
-                  className="h-8 rounded-md px-2 text-[13px]"
+                  className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onMailboxSelect(isActiveMailbox ? 'shared' : mailbox.id)}
                 >
                   <MailboxIcon className="h-4 w-4" />
@@ -159,7 +159,7 @@ export function SupportRailNav({
           {mailboxes.length === 0 && (
             <SidebarMenuItem>
               <SidebarMenuButton
-                className="h-8 rounded-md px-2 text-[13px]"
+                className="h-8 rounded-md px-2 text-sm"
                 onClick={onCreateMailbox}
               >
                 <Plus className="h-4 w-4" />

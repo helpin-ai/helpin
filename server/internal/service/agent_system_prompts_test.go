@@ -25,7 +25,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"`request_user_input`",
 		"`request_review_checkpoint`",
 		"`publish_prd_draft`",
-		"`publish_story_plan`",
+		"`publish_task_plan`",
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
@@ -86,7 +86,7 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 
 	for _, snippet := range []string{
 		"Run a single interactive planning conversation for one story.",
-		"`publish_story_plan_doc`",
+		"`publish_task_plan_doc`",
 		"`request_user_input`",
 		"`request_review_checkpoint`",
 		"`phase=\"story_doc\"`",

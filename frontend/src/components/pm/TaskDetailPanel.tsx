@@ -756,7 +756,7 @@ function TaskDetailPanelBody({
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {storyDetail.objective_name && storyDetail.objective_id && workspace && (
             <>
@@ -932,7 +932,7 @@ function TaskDetailPanelBody({
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
-                  className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
+                  className="border-transparent shadow-none [&_.ProseMirror]:text-sm"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
@@ -951,7 +951,7 @@ function TaskDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-[13px] [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
@@ -1097,7 +1097,7 @@ function TaskDetailPanelBody({
             <>
               <TaskGitPanel storyId={storyDetail.task.id} workspaceId={workspaceId} />
               <AgentRunPanel
-                storyId={storyDetail.task.id}
+                taskId={storyDetail.task.id}
                 workspaceId={workspaceId}
                 assignedAgentId={storyDetail.task.assigned_agent_id}
               />

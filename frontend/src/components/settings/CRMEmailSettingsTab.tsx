@@ -43,7 +43,7 @@ function SectionHeader({
           <div className="h-px w-4 bg-border" />
           <h3 className="text-[15px] font-semibold tracking-tight">{title}</h3>
         </div>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -271,7 +271,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
           />
           <div className="ml-[52px] space-y-5">
             <div className="space-y-2">
-              <Label className="text-[13px] font-medium">Filter Mode</Label>
+              <Label className="text-sm font-medium">Filter Mode</Label>
               <div className="flex items-center gap-3">
                 <Select value={filterMode} onValueChange={(v) => setFilterMode(v as CRMFilterMode)}>
                   <SelectTrigger className="w-40">
@@ -291,7 +291,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
             </div>
 
             <div className="space-y-2.5">
-              <Label className="text-[13px] font-medium">Patterns</Label>
+              <Label className="text-sm font-medium">Patterns</Label>
               <div className="flex gap-2">
                 <Input
                   placeholder="e.g. support@example.com, *@example.org"
@@ -337,7 +337,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
           />
           <div className="ml-[52px] space-y-5">
             <div className="space-y-2">
-              <Label className="text-[13px] font-medium">Internal Exclusion</Label>
+              <Label className="text-sm font-medium">Internal Exclusion</Label>
               <Select
                 value={internalExclusion}
                 onValueChange={(v) => setInternalExclusion(v as CRMInternalExclusion)}
@@ -359,7 +359,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
 
             <div className="flex items-center justify-between py-0.5">
               <div>
-                <Label className="text-[13px] font-medium">Include private meetings</Label>
+                <Label className="text-sm font-medium">Include private meetings</Label>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Enable ingestion of meetings marked as private
                 </p>
@@ -369,7 +369,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
 
             <div className="flex items-center justify-between py-0.5">
               <div>
-                <Label className="text-[13px] font-medium">Include solo meetings</Label>
+                <Label className="text-sm font-medium">Include solo meetings</Label>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Enable ingestion of meetings with no additional participants
                 </p>
