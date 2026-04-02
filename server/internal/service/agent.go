@@ -99,7 +99,7 @@ type AgentService struct {
 	interactionRepo            *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
 	taskRepo                  *repository.PMTaskRepository
-	storyLinkRepo              *repository.PMTaskLinkRepository
+	taskLinkRepo              *repository.PMTaskLinkRepository
 	epicRepo                   *repository.PMEpicRepository
 	conversationRepo           *repository.SupportConversationRepository
 	messageRepo                *repository.SupportMessageRepository
@@ -137,7 +137,7 @@ func NewAgentService(
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
 	taskRepo *repository.PMTaskRepository,
-	storyLinkRepo *repository.PMTaskLinkRepository,
+	taskLinkRepo *repository.PMTaskLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
@@ -163,7 +163,7 @@ func NewAgentService(
 		interactionRepo:            interactionRepo,
 		sessionSnapshotRepo:        sessionSnapshotRepo,
 		taskRepo:                  taskRepo,
-		storyLinkRepo:              storyLinkRepo,
+		taskLinkRepo:              taskLinkRepo,
 		epicRepo:                   epicRepo,
 		conversationRepo:           conversationRepo,
 		messageRepo:                messageRepo,
@@ -999,20 +999,20 @@ func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskI
 		return err
 	}
 
-	story, err := s.taskRepo.GetRawByID(ctx, taskID)
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
-	if story == nil {
+	if task == nil {
 		return fmt.Errorf("task not found")
 	}
-	if err := validateAgentTeamScope(agent, "task", story.TeamID); err != nil {
+	if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
 		return err
 	}
 
-	story.AssignedAgentID = &agentID
-	if err := s.taskRepo.Update(ctx, story); err != nil {
-		return fmt.Errorf("update story: %w", err)
+	task.AssignedAgentID = &agentID
+	if err := s.taskRepo.Update(ctx, task); err != nil {
+		return fmt.Errorf("update task: %w", err)
 	}
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "task", taskID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
@@ -1117,29 +1117,29 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, taskID, actorI
 
 // RunTaskAgent starts a task-targeted agent run using task assignment defaults.
 func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
-	story, err := s.taskRepo.GetRawByID(ctx, taskID)
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
-	if story == nil || story.WorkspaceID != workspaceID {
+	if task == nil || task.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("task not found")
 	}
 
 	agentID := strings.TrimSpace(req.AgentID)
-	if agentID == "" && story.AssignedAgentID != nil {
-		agentID = strings.TrimSpace(*story.AssignedAgentID)
+	if agentID == "" && task.AssignedAgentID != nil {
+		agentID = strings.TrimSpace(*task.AssignedAgentID)
 	}
 	if agentID == "" {
 		return nil, fmt.Errorf("no agent assigned to this task")
 	}
-	if story.AssignedAgentID == nil || *story.AssignedAgentID != agentID {
-		if err := s.AssignAgentToTask(ctx, workspaceID, story.ID, agentID, actorID); err != nil {
+	if task.AssignedAgentID == nil || *task.AssignedAgentID != agentID {
+		if err := s.AssignAgentToTask(ctx, workspaceID, task.ID, agentID, actorID); err != nil {
 			return nil, err
 		}
 	}
 
 	req.AgentID = agentID
-	return s.StartTargetRun(ctx, workspaceID, "task", story.ID, req, actorID)
+	return s.StartTargetRun(ctx, workspaceID, "task", task.ID, req, actorID)
 }
 
 // RunEpicAgent starts a direct planner run for an epic.
@@ -1213,11 +1213,11 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 	switch targetType {
 	case "task", "story":
-		story, err := s.taskRepo.GetRawByID(ctx, targetID)
+		task, err := s.taskRepo.GetRawByID(ctx, targetID)
 		if err != nil {
 			return nil, fmt.Errorf("get task: %w", err)
 		}
-		if story == nil || story.WorkspaceID != workspaceID {
+		if task == nil || task.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("task not found")
 		}
 
@@ -1225,20 +1225,20 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "task", story.TeamID); err != nil {
+		if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
 			return nil, err
 		}
 		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
 		if s.gitService != nil {
-			delivery, err = s.gitService.ResolveTaskDeliveryTargetForRun(ctx, workspaceID, story.ID, resolved.RequiresRepo)
+			delivery, err = s.gitService.ResolveTaskDeliveryTargetForRun(ctx, workspaceID, task.ID, resolved.RequiresRepo)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		payload, err := buildAgentRunInputPayload("task", story.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
@@ -1247,8 +1247,8 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			workspaceID:    workspaceID,
 			agent:          agent,
 			targetType:     "task",
-			targetID:       story.ID,
-			storyID:        &story.ID,
+			targetID:       task.ID,
+			taskID:         &task.ID,
 			actorID:        actorID,
 			input:          payload,
 			delivery:       delivery,
@@ -1258,7 +1258,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, err
 		}
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "task", story.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "task", task.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -1450,13 +1450,14 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 		return nil, err
 	}
 	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.TaskID != nil {
-		story, storyErr := s.taskRepo.GetRawByID(ctx, *run.TaskID)
-		if storyErr == nil && story != nil {
+		task, taskErr := s.taskRepo.GetRawByID(ctx, *run.TaskID)
+		if taskErr == nil && task != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 				WorkspaceID: run.WorkspaceID,
 				TriggerType: model.TriggerAgentRunApproved,
-				StoryID:     story.ID,
-				StateID:     story.WorkflowStateID,
+				TaskID:      task.ID,
+				StoryID:     task.ID, // backward-compat alias
+				StateID:     task.WorkflowStateID,
 				AgentID:     run.AgentID,
 				RunID:       run.ID,
 			}, nil)
@@ -2298,7 +2299,7 @@ type createRunParams struct {
 	agent          *model.Agent
 	targetType     string
 	targetID       string
-	storyID        *string
+	taskID         *string
 	conversationID *string
 	actorID        *string
 	input          []byte
@@ -2331,7 +2332,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	run := &model.AgentRun{
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
-		TaskID:            params.storyID,
+		TaskID:            params.taskID,
 		ConversationID:    params.conversationID,
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
@@ -2358,8 +2359,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	params.agent.Status = "working"
-	if params.storyID != nil {
-		params.agent.ActiveTaskID = params.storyID
+	if params.taskID != nil {
+		params.agent.ActiveTaskID = params.taskID
 	} else {
 		params.agent.ActiveTaskID = nil
 	}
@@ -2409,13 +2410,13 @@ func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID s
 	return s.agentRepo.Update(ctx, agent)
 }
 
-func (s *AgentService) markAgentWorking(ctx context.Context, workspaceID, agentID string, storyID *string) error {
+func (s *AgentService) markAgentWorking(ctx context.Context, workspaceID, agentID string, taskID *string) error {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return err
 	}
 	agent.Status = "working"
-	agent.ActiveTaskID = storyID
+	agent.ActiveTaskID = taskID
 	return s.agentRepo.Update(ctx, agent)
 }
 

@@ -1550,7 +1550,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         {showHeaderIntro ? (
           <div>
             <h2 className="text-xl font-semibold">Epics{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
-            <p className="text-sm text-muted-foreground">Track long-running initiatives and their story progress.</p>
+            <p className="text-sm text-muted-foreground">Track long-running initiatives and their task progress.</p>
           </div>
         ) : <div />}
         {showHeaderActions && canEdit ? (

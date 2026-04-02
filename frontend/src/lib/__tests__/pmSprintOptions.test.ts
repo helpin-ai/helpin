@@ -47,7 +47,7 @@ const sprints: SprintWithStats[] = [
       updated_at: '2026-03-27T00:00:00Z',
     },
     labels: [],
-    stats: { story_count: 0, done_story_count: 0, total_points: 0, done_points: 0 },
+    stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
   },
   {
     sprint: {
@@ -64,7 +64,7 @@ const sprints: SprintWithStats[] = [
       updated_at: '2026-03-27T00:00:00Z',
     },
     labels: [],
-    stats: { story_count: 0, done_story_count: 0, total_points: 0, done_points: 0 },
+    stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
   },
   {
     sprint: {
@@ -81,7 +81,7 @@ const sprints: SprintWithStats[] = [
       updated_at: '2026-03-27T00:00:00Z',
     },
     labels: [],
-    stats: { story_count: 0, done_story_count: 0, total_points: 0, done_points: 0 },
+    stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
   },
 ];
 

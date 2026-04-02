@@ -53,9 +53,9 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const createDocAssociation = useCreateDocAssociation(workspaceId, 'support_conversation', conversationId);
   const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'support_conversation', conversationId);
 
-  const handleNavigateStory = (storyId: string) => {
+  const handleNavigateTask = (taskId: string) => {
     if (!slug) return;
-    openTaskRoute(navigate as never, location as never, slug, storyId);
+    openTaskRoute(navigate as never, location as never, slug, taskId);
   };
 
   const handleNavigateDoc = (docId: string) => {
@@ -160,7 +160,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
               displayId={item.display_id}
-              onClick={() => handleNavigateStory(item.object_id)}
+              onClick={() => handleNavigateTask(item.object_id)}
               onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
             />
           ))

@@ -1,4 +1,4 @@
-import { TasksPage } from '@/pages/pm/Stories';
+import { TasksPage } from '@/pages/pm/Tasks';
 
 interface TaskRouteFallbackBackgroundProps {
   teamId?: string;

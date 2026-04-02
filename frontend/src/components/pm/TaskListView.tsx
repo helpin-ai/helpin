@@ -240,7 +240,7 @@ export function TaskListView({
   }, [sprints]);
 
   // ── Flat pagination (non-state grouping) ──
-  const fetchStoriesFlat = useCallback(async (page = 1, append = false) => {
+  const fetchTasksFlat = useCallback(async (page = 1, append = false) => {
     if (isExternal) return;
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
@@ -266,7 +266,7 @@ export function TaskListView({
   }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal, includeAssociationData]);
 
   // ── Per-state pagination (workflow_state grouping) ──
-  const fetchStoriesByState = useCallback(async () => {
+  const fetchTasksByState = useCallback(async () => {
     if (isExternal) return;
     setLoading(true);
     const boardFilters: Record<string, string | undefined> = {};
@@ -348,20 +348,20 @@ export function TaskListView({
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMore) {
-      fetchStoriesFlat(currentPage + 1, true);
+      fetchTasksFlat(currentPage + 1, true);
     }
-  }, [fetchStoriesFlat, currentPage, loadingMore, hasMore]);
+  }, [fetchTasksFlat, currentPage, loadingMore, hasMore]);
 
   // Fetch on mount and when dependencies change
   useEffect(() => {
     if (isExternal) return;
     if (isPerGroupMode) {
-      fetchStoriesByState();
+      fetchTasksByState();
     } else {
-      fetchStoriesFlat(1, false);
+      fetchTasksFlat(1, false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExternal, isPerGroupMode, fetchStoriesByState, fetchStoriesFlat]);
+  }, [isExternal, isPerGroupMode, fetchTasksByState, fetchTasksFlat]);
 
   // Sync external tasks when they change
   useEffect(() => {

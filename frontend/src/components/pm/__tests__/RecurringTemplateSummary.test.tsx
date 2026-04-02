@@ -22,7 +22,7 @@ describe('RecurringTemplateSummary', () => {
           nextRunAt="2026-03-20T00:00:00Z"
           generatedCount={8}
           occurrenceNumber={3}
-          lastGeneratedStory={{ id: 'task-1', display_id: 321, name: 'Weekly Ops Review' }}
+          lastGeneratedTask={{ id: 'task-1', display_id: 321, name: 'Weekly Ops Review' }}
         />,
       );
     });

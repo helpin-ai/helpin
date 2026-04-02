@@ -103,7 +103,7 @@ func main() {
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
-	storyLinkRepo := repository.NewPMTaskLinkRepository(db)
+	taskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
@@ -354,7 +354,7 @@ func main() {
 		interactionRepo,
 		sessionSnapshotRepo,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 		epicRepo,
 		conversationRepo,
 		supportMessageRepo,
@@ -420,7 +420,7 @@ func main() {
 		docsContentService,
 		docsLinkService,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 	)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
@@ -430,7 +430,7 @@ func main() {
 		interactionRepo,
 		sessionSnapshotRepo,
 		storyRepo,
-		storyLinkRepo,
+		taskLinkRepo,
 		epicRepo,
 		conversationRepo,
 		commentRepo,

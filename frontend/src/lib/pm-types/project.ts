@@ -1,8 +1,9 @@
 import type { AssignableMember } from '../types';
-import type { StoryImplementationBrief } from './agents';
+import type { TaskImplementationBrief } from './agents';
 import type { Objective } from './objectives';
 
 export type TaskType = 'feature' | 'bug' | 'chore';
+/** @deprecated Use TaskType instead */
 export type StoryType = TaskType;
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
@@ -256,7 +257,7 @@ export interface Task {
   recurring_occurrence_number?: number;
   external_id?: string;
   slice_type?: string;
-  implementation_brief?: StoryImplementationBrief;
+  implementation_brief?: TaskImplementationBrief;
   created_at: string;
   updated_at: string;
   // Enriched by board/list endpoints
@@ -298,6 +299,7 @@ export type TaskRelationshipAction =
   | 'duplicates'
   | 'is_duplicated_by';
 
+/** @deprecated Use TaskRelationshipAction instead */
 export type StoryRelationshipAction = TaskRelationshipAction;
 
 export interface AssociationObjectSummary {
@@ -321,6 +323,7 @@ export interface TaskRelationshipSummary {
   story?: AssociationObjectSummary;
 }
 
+/** @deprecated Use TaskRelationshipSummary instead */
 export type StoryRelationshipSummary = TaskRelationshipSummary;
 
 export interface TaskRelationshipGroups {
@@ -332,6 +335,7 @@ export interface TaskRelationshipGroups {
   duplicated_by: TaskRelationshipSummary[];
 }
 
+/** @deprecated Use TaskRelationshipGroups instead */
 export type StoryRelationshipGroups = TaskRelationshipGroups;
 
 export interface GroupedAssociations {
@@ -624,7 +628,7 @@ export interface RecurringTemplate {
   description?: string;
   status: RecurringTemplateStatus;
   owner_member_id?: string;
-  created_from_story_id?: string;
+  created_from_task_id?: string;
   seed_payload: string;
   config: string;
   start_date?: string;
@@ -632,7 +636,7 @@ export interface RecurringTemplate {
   ends_after_occurrences?: number;
   next_run_at?: string;
   last_run_at?: string;
-  last_generated_story_id?: string;
+  last_generated_task_id?: string;
   last_error?: string;
   failure_count: number;
   generated_count: number;
@@ -643,10 +647,7 @@ export interface RecurringTemplate {
   updated_at: string;
 }
 
-export interface RecurringTaskTemplate extends Omit<RecurringTemplate, 'created_from_story_id' | 'last_generated_story_id'> {
-  created_from_task_id?: string;
-  last_generated_task_id?: string;
-}
+export type RecurringTaskTemplate = RecurringTemplate;
 
 export interface RecurringRun {
   id: string;
@@ -658,16 +659,14 @@ export interface RecurringRun {
   started_at?: string;
   finished_at?: string;
   status: RecurringRunStatus;
-  generated_story_id?: string;
+  generated_task_id?: string;
   dedupe_key: string;
   error_message?: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface RecurringTaskRun extends Omit<RecurringRun, 'generated_story_id'> {
-  generated_task_id?: string;
-}
+export type RecurringTaskRun = RecurringRun;
 
 export interface RecurringTemplateDetail {
   template: RecurringTemplate;

@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { RoadmapEpic } from '@/lib/pmTypes';
+import { getEpicTaskCount, getEpicDoneTaskCount } from '@/lib/pmTypes';
 
 const HEALTH_BAR_COLOR: Record<string, string> = {
   no_health: 'border-l-zinc-400 bg-zinc-500/6 hover:bg-zinc-500/12 dark:bg-zinc-500/8 dark:hover:bg-zinc-500/14',
@@ -35,11 +36,11 @@ interface RoadmapEpicBarProps {
 }
 
 function roadmapEpicTaskCount(epic: RoadmapEpic) {
-  return epic.stats.task_count ?? epic.stats.story_count ?? 0;
+  return getEpicTaskCount(epic.stats);
 }
 
 function roadmapEpicDoneTaskCount(epic: RoadmapEpic) {
-  return epic.stats.done_task_count ?? epic.stats.done_story_count ?? 0;
+  return getEpicDoneTaskCount(epic.stats);
 }
 
 export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: RoadmapEpicBarProps) {

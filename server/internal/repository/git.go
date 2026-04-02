@@ -176,8 +176,8 @@ func NewTaskDeliveryTargetRepository(db *gorm.DB) *TaskDeliveryTargetRepository 
 	return &TaskDeliveryTargetRepository{db: db}
 }
 
-// GetByStory returns the delivery target for a task.
-func (r *TaskDeliveryTargetRepository) GetByStory(ctx context.Context, workspaceID, storyID string) (*model.TaskDeliveryTarget, error) {
+// GetByTask returns the delivery target for a task.
+func (r *TaskDeliveryTargetRepository) GetByTask(ctx context.Context, workspaceID, storyID string) (*model.TaskDeliveryTarget, error) {
 	var target model.TaskDeliveryTarget
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).
@@ -232,8 +232,8 @@ func NewTaskGitLinkRepository(db *gorm.DB) *TaskGitLinkRepository {
 	return &TaskGitLinkRepository{db: db}
 }
 
-// ListByStory returns git links for a task.
-func (r *TaskGitLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.TaskGitLink, error) {
+// ListByTask returns git links for a task.
+func (r *TaskGitLinkRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.TaskGitLink, error) {
 	var links []model.TaskGitLink
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list story git links: %w", err)

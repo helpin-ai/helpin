@@ -208,24 +208,24 @@ func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 		t.Fatalf("create story with pending owner: %v", err)
 	}
 
-	if story.Story.OwnerMemberID == nil || *story.Story.OwnerMemberID != pendingOwner.ID {
-		t.Fatalf("story owner_member_id = %#v, want %s", story.Story.OwnerMemberID, pendingOwner.ID)
+	if story.Task.OwnerMemberID == nil || *story.Task.OwnerMemberID != pendingOwner.ID {
+		t.Fatalf("story owner_member_id = %#v, want %s", story.Task.OwnerMemberID, pendingOwner.ID)
 	}
-	if story.Story.OwnerID != nil {
-		t.Fatalf("story owner_id = %#v, want nil for pending member", story.Story.OwnerID)
+	if story.Task.OwnerID != nil {
+		t.Fatalf("story owner_id = %#v, want nil for pending member", story.Task.OwnerID)
 	}
 	if story.OwnerMember == nil || story.OwnerMember.Email != "pending-owner@example.com" {
 		t.Fatalf("story owner member = %#v", story.OwnerMember)
 	}
-	if story.Story.RequesterMemberID == nil || *story.Story.RequesterMemberID != actorMember.ID {
-		t.Fatalf("story requester_member_id = %#v, want %s", story.Story.RequesterMemberID, actorMember.ID)
+	if story.Task.RequesterMemberID == nil || *story.Task.RequesterMemberID != actorMember.ID {
+		t.Fatalf("story requester_member_id = %#v, want %s", story.Task.RequesterMemberID, actorMember.ID)
 	}
-	if story.Story.RequesterID == nil || *story.Story.RequesterID != actor.ID {
-		t.Fatalf("story requester_id = %#v, want %s", story.Story.RequesterID, actor.ID)
+	if story.Task.RequesterID == nil || *story.Task.RequesterID != actor.ID {
+		t.Fatalf("story requester_id = %#v, want %s", story.Task.RequesterID, actor.ID)
 	}
 
 	var ownerLinks int64
-	if err := db.Table("pm_task_owners").Where("task_id = ?", story.Story.ID).Count(&ownerLinks).Error; err != nil {
+	if err := db.Table("pm_task_owners").Where("task_id = ?", story.Task.ID).Count(&ownerLinks).Error; err != nil {
 		t.Fatalf("count story owners: %v", err)
 	}
 	if ownerLinks != 0 {
@@ -233,7 +233,7 @@ func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	}
 
 	var followerLinks int64
-	if err := db.Table("pm_task_followers").Where("task_id = ?", story.Story.ID).Count(&followerLinks).Error; err != nil {
+	if err := db.Table("pm_task_followers").Where("task_id = ?", story.Task.ID).Count(&followerLinks).Error; err != nil {
 		t.Fatalf("count story followers: %v", err)
 	}
 	if followerLinks != 1 {
@@ -276,8 +276,8 @@ func TestPMTaskRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 	}
 
 	links := []model.PMTaskLink{
-		{ID: "link-1", WorkspaceID: "ws-1", SourceStoryID: "source-active", TargetStoryID: "target-active", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "link-2", WorkspaceID: "ws-1", SourceStoryID: "source-done", TargetStoryID: "target-cleared", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "link-1", WorkspaceID: "ws-1", SourceTaskID: "source-active", TargetTaskID: "target-active", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "link-2", WorkspaceID: "ws-1", SourceTaskID: "source-done", TargetTaskID: "target-cleared", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 	}
 	for _, link := range links {
 		if err := db.Create(&link).Error; err != nil {
@@ -291,30 +291,30 @@ func TestPMTaskRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get active blocked story: %v", err)
 	}
-	if !active.Story.Blocked || !active.Story.IsBlockedByTask || active.Story.BlockedByCount != 1 {
-		t.Fatalf("active dependency state mismatch: %#v", active.Story)
+	if !active.Task.Blocked || !active.Task.IsBlockedByTask || active.Task.BlockedByCount != 1 {
+		t.Fatalf("active dependency state mismatch: %#v", active.Task)
 	}
-	if len(active.Story.BlockedByTasks) != 1 || active.Story.BlockedByTasks[0].ID != "source-active" {
-		t.Fatalf("expected active blocker to be visible in detail: %#v", active.Story.BlockedByTasks)
+	if len(active.Task.BlockedByTasks) != 1 || active.Task.BlockedByTasks[0].ID != "source-active" {
+		t.Fatalf("expected active blocker to be visible in detail: %#v", active.Task.BlockedByTasks)
 	}
 
 	cleared, err := repo.GetByID(ctx, "target-cleared")
 	if err != nil {
 		t.Fatalf("get cleared blocked story: %v", err)
 	}
-	if cleared.Story.Blocked || cleared.Story.IsBlockedByTask || cleared.Story.BlockedByCount != 0 {
-		t.Fatalf("completed blocker should not keep task blocked: %#v", cleared.Story)
+	if cleared.Task.Blocked || cleared.Task.IsBlockedByTask || cleared.Task.BlockedByCount != 0 {
+		t.Fatalf("completed blocker should not keep task blocked: %#v", cleared.Task)
 	}
-	if len(cleared.Story.BlockedByTasks) != 1 || !cleared.Story.BlockedByTasks[0].Completed {
-		t.Fatalf("completed blocker should remain visible in detail: %#v", cleared.Story.BlockedByTasks)
+	if len(cleared.Task.BlockedByTasks) != 1 || !cleared.Task.BlockedByTasks[0].Completed {
+		t.Fatalf("completed blocker should remain visible in detail: %#v", cleared.Task.BlockedByTasks)
 	}
 
 	legacy, err := repo.GetByID(ctx, "legacy-external")
 	if err != nil {
 		t.Fatalf("get legacy blocked story: %v", err)
 	}
-	if !legacy.Story.Blocked || legacy.Story.BlockedByCount != 0 {
-		t.Fatalf("legacy blocked fallback mismatch: %#v", legacy.Story)
+	if !legacy.Task.Blocked || legacy.Task.BlockedByCount != 0 {
+		t.Fatalf("legacy blocked fallback mismatch: %#v", legacy.Task)
 	}
 
 	_, total, err := repo.List(ctx, "ws-1", model.PMTaskFilters{Blocked: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})

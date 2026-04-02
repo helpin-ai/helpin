@@ -125,7 +125,7 @@ vi.mock('@/hooks/useAssignableWorkspaceMembers', () => ({
 vi.mock('@/hooks/queries/useSettings', () => ({
   useTeamFieldVisibilityForTeam: () => ({
     priority: true,
-    story_type: true,
+    task_type: true,
     severity: true,
     labels: true,
     epic: true,

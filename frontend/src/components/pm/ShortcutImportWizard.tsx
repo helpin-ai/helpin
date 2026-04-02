@@ -1396,7 +1396,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Objectives', created: result.objectives_created },
     { label: 'Epics', created: result.epics_created },
     { label: 'Sprints', created: result.sprints_created },
-    { label: 'Tasks', created: result.stories_created, skipped: result.stories_skipped },
+    { label: 'Tasks', created: result.tasks_created, skipped: result.tasks_skipped },
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },

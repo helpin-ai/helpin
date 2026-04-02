@@ -29,7 +29,7 @@ export interface ShortcutWorkflowPreview {
 
 export interface ShortcutTeamPreview {
   name: string;
-  story_count: number;
+  task_count: number;
 }
 
 export interface ShortcutUserMatch {
@@ -55,8 +55,8 @@ export interface ShortcutImportResult {
   objectives_created: number;
   epics_created: number;
   sprints_created: number;
-  stories_created: number;
-  stories_skipped: number;
+  tasks_created: number;
+  tasks_skipped: number;
   checklist_items_created: number;
   owner_links_created: number;
   label_links_created: number;

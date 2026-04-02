@@ -343,12 +343,12 @@ func (s *GitService) GetTaskGitLinks(ctx context.Context, workspaceID, storyID s
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.linkRepo.ListByStory(ctx, workspaceID, storyID)
+	return s.linkRepo.ListByTask(ctx, workspaceID, storyID)
 }
 
 // GetTaskDeliveryTarget resolves or creates the current delivery target for a story.
 func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, storyID string) (*model.TaskDeliveryTarget, error) {
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, storyID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, storyID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +510,7 @@ func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID stri
 
 // MergeBranch merges the story's working branch into the target branch via GitHub API.
 func (s *GitService) MergeBranch(ctx context.Context, workspaceID, storyID, targetBranch string) error {
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, storyID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, storyID)
 	if err != nil {
 		return fmt.Errorf("load delivery target: %w", err)
 	}
@@ -558,7 +558,7 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.TaskID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.LastCommitSHA = &commitSHA
 		now := time.Now()
@@ -605,7 +605,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.TaskID)
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.ActivePRNumber = &prNumber
 		target.ActivePRTitle = &prTitle

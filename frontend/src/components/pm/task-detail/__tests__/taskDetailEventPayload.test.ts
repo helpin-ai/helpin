@@ -13,7 +13,7 @@ describe('buildPatchedTaskFromDetail', () => {
         workflow_state_id: 'state-1',
         name: 'Refine onboarding',
         description: '',
-        story_type: 'feature',
+        task_type: 'feature',
         priority: 'medium',
         severity: 'none',
         position: 0,

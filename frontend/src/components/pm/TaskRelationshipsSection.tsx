@@ -48,8 +48,8 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 interface TaskRelationshipsSectionProps {
   workspaceId: string;
   taskId: string;
-  storyName: string;
-  storyDisplayId: number;
+  taskName: string;
+  taskDisplayId: number;
   workflowId?: string;
   workflowStateId?: string;
   epicId?: string;
@@ -219,8 +219,8 @@ function FloatingPopover({
 export function TaskRelationshipsSection({
   workspaceId,
   taskId,
-  storyName: _storyName,
-  storyDisplayId: _storyDisplayId,
+  taskName: _taskName,
+  taskDisplayId: _taskDisplayId,
   workflowId,
   workflowStateId,
   epicId,
@@ -314,9 +314,9 @@ export function TaskRelationshipsSection({
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
   const hasContent = allRelationships.length > 0 || linkedDocs.length > 0 || !!externalBlocker;
 
-  const handleOpenStory = (targetStoryId: string) => {
+  const handleOpenTask = (targetTaskId: string) => {
     if (!workspace?.slug) return;
-    openTaskRoute(navigate as never, location as never, workspace.slug, targetStoryId);
+    openTaskRoute(navigate as never, location as never, workspace.slug, targetTaskId);
   };
 
   const handleCreateRelationship = async (otherTaskId: string) => {
@@ -568,7 +568,7 @@ export function TaskRelationshipsSection({
                 <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
                 <button
                   type="button"
-                  onClick={() => handleOpenStory(relatedTask.object_id)}
+                  onClick={() => handleOpenTask(relatedTask.object_id)}
                   className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
                 >
                   {relatedTask.title}

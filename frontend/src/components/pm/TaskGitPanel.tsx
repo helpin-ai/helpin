@@ -3,7 +3,7 @@ import { ExternalLink, GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
-import type { StoryGitLink } from '@/lib/pmTypes';
+import type { TaskGitLink } from '@/lib/pmTypes';
 
 const PR_STATUS_COLORS: Record<string, string> = {
   open: 'bg-green-100 text-green-700 border-green-500/30 dark:bg-green-900/30 dark:text-green-400',
@@ -12,20 +12,20 @@ const PR_STATUS_COLORS: Record<string, string> = {
 };
 
 export function TaskGitPanel({
-  storyId,
+  taskId,
   workspaceId,
 }: {
-  storyId: string;
+  taskId: string;
   workspaceId: string;
 }) {
-  const [links, setLinks] = useState<StoryGitLink[]>([]);
+  const [links, setLinks] = useState<TaskGitLink[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadLinks = useCallback(async () => {
-    const res = await gitService.getStoryGitLinks(workspaceId, storyId);
+    const res = await gitService.getTaskGitLinks(workspaceId, taskId);
     setLinks(res.data ?? []);
     setLoading(false);
-  }, [workspaceId, storyId]);
+  }, [workspaceId, taskId]);
 
   useEffect(() => {
     loadLinks();

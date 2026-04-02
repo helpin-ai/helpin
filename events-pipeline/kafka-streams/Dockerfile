@@ -34,5 +34,6 @@ RUN java -version
 # # Make sure that the application is accessible from outside the container
 # EXPOSE 8080
 
-# Run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Run the application with an absolute Java path so container startup does not
+# depend on PATH inherited from Kubernetes secrets/envFrom.
+ENTRYPOINT ["/usr/bin/java", "-jar", "/app/app.jar"]

@@ -65,25 +65,25 @@ func TestDeleteArchivedOlderThan_DeletesOldArchived(t *testing.T) {
 	notifs := []model.Notification{
 		{
 			ID: "old-archived", WorkspaceID: "ws-1", RecipientID: "user-1",
-			EntityType: "story", EntityID: "story-1", EventType: "story.assigned",
+			EntityType: "task", EntityID: "task-1", EventType: "task.assigned",
 			Title: "old", LatestEventCategory: "assignments", Status: "archived",
 			Priority: "normal", LastEventAt: oldDate, CreatedAt: oldDate, UpdatedAt: oldDate,
 		},
 		{
 			ID: "recent-archived", WorkspaceID: "ws-1", RecipientID: "user-1",
-			EntityType: "story", EntityID: "story-2", EventType: "story.assigned",
+			EntityType: "task", EntityID: "task-2", EventType: "task.assigned",
 			Title: "recent", LatestEventCategory: "assignments", Status: "archived",
 			Priority: "normal", LastEventAt: recentDate, CreatedAt: recentDate, UpdatedAt: recentDate,
 		},
 		{
 			ID: "old-unread", WorkspaceID: "ws-1", RecipientID: "user-1",
-			EntityType: "story", EntityID: "story-3", EventType: "story.assigned",
+			EntityType: "task", EntityID: "task-3", EventType: "task.assigned",
 			Title: "old unread", LatestEventCategory: "assignments", Status: "unread",
 			Priority: "normal", LastEventAt: oldDate, CreatedAt: oldDate, UpdatedAt: oldDate,
 		},
 		{
 			ID: "old-read", WorkspaceID: "ws-1", RecipientID: "user-1",
-			EntityType: "story", EntityID: "story-4", EventType: "story.assigned",
+			EntityType: "task", EntityID: "task-4", EventType: "task.assigned",
 			Title: "old read", LatestEventCategory: "assignments", Status: "read",
 			Priority: "normal", LastEventAt: oldDate, CreatedAt: oldDate, UpdatedAt: oldDate,
 		},
@@ -126,7 +126,7 @@ func TestDeleteArchivedOlderThan_NoMatchReturnsZero(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "recent-archived", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "story-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "task-1", EventType: "task.assigned",
 		Title: "recent", LatestEventCategory: "assignments", Status: "archived",
 		Priority: "normal", LastEventAt: recentDate, CreatedAt: recentDate, UpdatedAt: recentDate,
 	}).Error; err != nil {

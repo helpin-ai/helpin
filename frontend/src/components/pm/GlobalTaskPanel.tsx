@@ -52,10 +52,10 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   }, [workspaceSlug]);
 
   useEffect(() => {
-    if (activeStoryRoute && contextualTaskId) {
+    if (activeTaskRoute && contextualTaskId) {
       closeContextualTask();
     }
-  }, [activeStoryRoute, closeContextualTask, contextualTaskId]);
+  }, [activeTaskRoute, closeContextualTask, contextualTaskId]);
 
   useEffect(() => {
     if (!activeTaskId || !workspaceId) return;
@@ -77,7 +77,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
 
         let recurring: TaskRecurringSummary | null = null;
         if (taskRes.data.task.recurring_template_id) {
-          const { data } = await pmRecurringTemplateService.getByStory(workspaceId, activeTaskId);
+          const { data } = await pmRecurringTemplateService.getByTask(workspaceId, activeTaskId);
           if (!cancelled) recurring = data ?? null;
         }
         if (cancelled) return;

@@ -65,8 +65,8 @@ function RunHistory({ runs, onOpenTask }: { runs: RecurringRun[]; onOpenTask?: (
             <span className="min-w-0 flex-1 truncate">{formatRunTrigger(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRunRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-            {run.generated_story_id && onOpenTask ? (
-              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenTask(run.generated_story_id!)}>
+            {run.generated_task_id && onOpenTask ? (
+              <button type="button" className="shrink-0 text-primary hover:underline" onClick={() => onOpenTask(run.generated_task_id!)}>
                 View task
               </button>
             ) : null}

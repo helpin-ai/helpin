@@ -84,11 +84,11 @@ function RunsSection({ runs, compact, onOpenTask }: { runs: RecurringRun[]; comp
             <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-            {run.generated_story_id && onOpenTask ? (
+            {run.generated_task_id && onOpenTask ? (
               <button
                 type="button"
                 className="shrink-0 text-primary hover:underline"
-                onClick={() => onOpenTask(run.generated_story_id!)}
+                onClick={() => onOpenTask(run.generated_task_id!)}
               >
                 View task
               </button>

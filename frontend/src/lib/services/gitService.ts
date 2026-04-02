@@ -34,10 +34,13 @@ export const gitService = {
     api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
   createBranch: (workspaceId: string, taskId: string, payload: CreateBranchRequest) =>
     api.post<TaskGitLink>(`/pm/tasks/${taskId}/create-branch${qs(workspaceId)}`, payload),
-  getStoryGitLinks: (workspaceId: string, storyId: string) =>
-    api.get<TaskGitLink[]>(`/pm/tasks/${storyId}/git-links${qs(workspaceId)}`),
-  getStoryDeliveryTarget: (workspaceId: string, storyId: string) =>
-    api.get<TaskDeliveryTarget>(`/pm/tasks/${storyId}/delivery-target${qs(workspaceId)}`),
-  updateStoryDeliveryTarget: (workspaceId: string, storyId: string, payload: UpdateTaskDeliveryTargetRequest) =>
-    api.put<TaskDeliveryTarget>(`/pm/tasks/${storyId}/delivery-target${qs(workspaceId)}`, payload),
+  /** @deprecated Use getTaskGitLinks instead */
+  getStoryGitLinks: (workspaceId: string, taskId: string) =>
+    api.get<TaskGitLink[]>(`/pm/tasks/${taskId}/git-links${qs(workspaceId)}`),
+  /** @deprecated Use getTaskDeliveryTarget instead */
+  getStoryDeliveryTarget: (workspaceId: string, taskId: string) =>
+    api.get<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`),
+  /** @deprecated Use updateTaskDeliveryTarget instead */
+  updateStoryDeliveryTarget: (workspaceId: string, taskId: string, payload: UpdateTaskDeliveryTargetRequest) =>
+    api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
 };
