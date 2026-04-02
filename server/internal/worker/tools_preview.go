@@ -366,7 +366,7 @@ func normalizePublishedPreviewRequestWithContext(ctx *ExecutionContext, req *Pub
 		return nil, err
 	}
 	if panelKey == "task_plan" && format == PreviewFormatJSON {
-		content, err = NormalizeStoryPlanPreviewContent(content)
+		content, err = NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			return nil, err
 		}

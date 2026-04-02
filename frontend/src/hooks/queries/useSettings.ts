@@ -35,7 +35,7 @@ export function useTeamEstimateSettingsForTeam(wsId: string, teamId: string | un
 
 const DEFAULT_VISIBILITY: Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'> = {
   priority: true,
-  story_type: true,
+  task_type: true,
   severity: true,
   labels: true,
   epic: true,

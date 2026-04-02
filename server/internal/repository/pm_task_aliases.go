@@ -4,28 +4,30 @@ import (
 	"gorm.io/gorm"
 )
 
-type PMTaskRepository = PMStoryRepository
-type PMTaskTemplateRepository = PMStoryTemplateRepository
-type PMTaskLinkRepository = PMStoryLinkRepository
-type TaskDeliveryTargetRepository = StoryDeliveryTargetRepository
-type TaskGitLinkRepository = StoryGitLinkRepository
+// Backward-compat aliases: Story-era names → Task-era canonical types.
+type PMStoryRepository = PMTaskRepository
+type PMStoryTemplateRepository = PMTaskTemplateRepository
+type PMStoryLinkRepository = PMTaskLinkRepository
+type StoryDeliveryTargetRepository = TaskDeliveryTargetRepository
+type StoryGitLinkRepository = TaskGitLinkRepository
+type PMStoryTemplateListOptions = PMTaskTemplateListOptions
 
-func NewPMTaskRepository(db *gorm.DB) *PMTaskRepository {
-	return NewPMStoryRepository(db)
+func NewPMStoryRepository(db *gorm.DB) *PMStoryRepository {
+	return NewPMTaskRepository(db)
 }
 
-func NewPMTaskTemplateRepository(db *gorm.DB) *PMTaskTemplateRepository {
-	return NewPMStoryTemplateRepository(db)
+func NewPMStoryTemplateRepository(db *gorm.DB) *PMStoryTemplateRepository {
+	return NewPMTaskTemplateRepository(db)
 }
 
-func NewPMTaskLinkRepository(db *gorm.DB) *PMTaskLinkRepository {
-	return NewPMStoryLinkRepository(db)
+func NewPMStoryLinkRepository(db *gorm.DB) *PMStoryLinkRepository {
+	return NewPMTaskLinkRepository(db)
 }
 
-func NewTaskDeliveryTargetRepository(db *gorm.DB) *TaskDeliveryTargetRepository {
-	return NewStoryDeliveryTargetRepository(db)
+func NewStoryDeliveryTargetRepository(db *gorm.DB) *StoryDeliveryTargetRepository {
+	return NewTaskDeliveryTargetRepository(db)
 }
 
-func NewTaskGitLinkRepository(db *gorm.DB) *TaskGitLinkRepository {
-	return NewStoryGitLinkRepository(db)
+func NewStoryGitLinkRepository(db *gorm.DB) *StoryGitLinkRepository {
+	return NewTaskGitLinkRepository(db)
 }

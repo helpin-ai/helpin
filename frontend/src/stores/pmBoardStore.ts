@@ -71,16 +71,25 @@ interface PMBoardState {
   setTeamFilter: (teamId: string | null) => Promise<void>;
   setFilters: (filters: BoardFilters) => Promise<void>;
   refreshBoard: () => Promise<void>;
-  createStory: (payload: CreateTaskRequest) => Promise<Task | null>;
-  moveStory: (payload: MovePayload) => Promise<void>;
+  createTask: (payload: CreateTaskRequest) => Promise<Task | null>;
+  moveTask: (payload: MovePayload) => Promise<void>;
   loadMoreColumn: (stateId: string) => Promise<void>;
 
-  /** Incremental patch: add, update, remove, or move a single story in the board state. Returns true when reconciled locally. */
-  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', storyId: string, story?: Task) => boolean;
+  /** Incremental patch: add, update, remove, or move a single task in the board state. Returns true when reconciled locally. */
+  patchTask: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
 
   // Member board actions
   loadMemberBoard: (memberIds?: string[], includeEmpty?: boolean) => Promise<void>;
   loadMoreMemberColumn: (memberId: string | null) => Promise<void>;
+  moveMemberTask: (payload: MemberMovePayload) => Promise<void>;
+
+  /** @deprecated Use createTask */
+  createStory: (payload: CreateTaskRequest) => Promise<Task | null>;
+  /** @deprecated Use moveTask */
+  moveStory: (payload: MovePayload) => Promise<void>;
+  /** @deprecated Use patchTask */
+  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', taskId: string, task?: Task) => boolean;
+  /** @deprecated Use moveMemberTask */
   moveMemberStory: (payload: MemberMovePayload) => Promise<void>;
 
   // View actions
@@ -138,7 +147,7 @@ const storyMatchesFilters = (story: Task, teamId: string | null, filters: BoardF
   if (teamId && story.team_id !== teamId) return false;
   if (!matchesCsv(story.priority, filters.priority)) return false;
   if (!matchesCsv(story.severity, filters.severity)) return false;
-  if (!matchesCsv(story.story_type, filters.story_type)) return false;
+  if (!matchesCsv(story.task_type, filters.story_type)) return false;
   if (!matchesCsv(story.epic_id, filters.epic_id)) return false;
   if (!matchesCsv(story.sprint_id, filters.sprint_id)) return false;
   if (!matchesCsv(story.owner_member_id, filters.owner_member_id)) return false;
@@ -528,7 +537,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     });
   },
 
-  patchStory: (action, storyId, story) => {
+  patchTask: (action, storyId, story) => {
     const { teamId, filters } = get();
     if (hasAmbiguousPatchFilters(filters)) {
       return false;
@@ -661,7 +670,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return patched;
   },
 
-  createStory: async (payload) => {
+  createTask: async (payload) => {
     const { data, error } = await pmTaskService.create(payload);
     if (error || !data) {
       set({ error: error ?? 'Failed to create task' });
@@ -687,7 +696,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     return story;
   },
 
-  moveStory: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
+  moveTask: async ({ workspaceId, storyId, fromStateId, toStateId, toIndex, debugTraceID }) => {
     const snapshot = cloneColumns(get().columns);
     const moveCtx = { workflowId: get().workflow?.workflow.id, teamId: get().teamId };
     const targetStateType = snapshot.find((column) => column.state.id === toStateId)?.state.state_type;
@@ -940,7 +949,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     });
   },
 
-  moveMemberStory: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
+  moveMemberTask: async ({ workspaceId, storyId, fromMemberId, toMemberId, toIndex }) => {
     if (fromMemberId === toMemberId) {
       return;
     }
@@ -1119,5 +1128,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     }));
     return updated;
   },
+
+  // Backward-compat aliases
+  get createStory() { return get().createTask; },
+  get moveStory() { return get().moveTask; },
+  get patchStory() { return get().patchTask; },
+  get moveMemberStory() { return get().moveMemberTask; },
   };
 });

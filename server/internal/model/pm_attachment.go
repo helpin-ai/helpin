@@ -2,11 +2,11 @@ package model
 
 import "time"
 
-// PMAttachment represents a file attachment on a story, epic, or comment.
+// PMAttachment represents a file attachment on a task, epic, or comment.
 type PMAttachment struct {
 	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID  string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	EntityType   string    `json:"entity_type" gorm:"not null"` // "story" | "epic" | "comment"
+	EntityType   string    `json:"entity_type" gorm:"not null"` // "task" | "story" | "epic" | "comment"
 	EntityID     string    `json:"entity_id" gorm:"type:uuid;not null;index"`
 	FileName     string    `json:"file_name" gorm:"not null"`
 	FileSize     int64     `json:"file_size" gorm:"not null"`

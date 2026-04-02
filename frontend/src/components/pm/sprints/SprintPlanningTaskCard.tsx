@@ -38,7 +38,7 @@ export function SprintPlanningTaskCard({
     disabled: !canDrag,
   });
 
-  const storyTypeCfg = STORY_TYPE_CONFIG[(story as { story_type?: string }).story_type as keyof typeof STORY_TYPE_CONFIG] ?? null;
+  const storyTypeCfg = STORY_TYPE_CONFIG[(story as { task_type?: string }).task_type as keyof typeof STORY_TYPE_CONFIG] ?? null;
 
   return (
     <article
@@ -69,7 +69,7 @@ export function SprintPlanningTaskCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="shrink-0">
-                  <StoryTypeIcon storyType={(story as { story_type?: string }).story_type as import('@/lib/pmTypes').StoryType} className="h-3.5 w-3.5" />
+                  <StoryTypeIcon storyType={(story as { task_type?: string }).task_type as import('@/lib/pmTypes').TaskType} className="h-3.5 w-3.5" />
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>

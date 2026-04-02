@@ -2,7 +2,7 @@ export type TeamType = 'engineering' | 'custom';
 
 export type DefaultStoryType = 'feature' | 'bug' | 'chore';
 
-export type VisibilityFieldKey = 'priority' | 'story_type' | 'severity' | 'labels' | 'epic' | 'sprint' | 'estimate' | 'due_date' | 'blocked' | 'delivery' | 'dev_history';
+export type VisibilityFieldKey = 'priority' | 'task_type' | 'severity' | 'labels' | 'epic' | 'sprint' | 'estimate' | 'due_date' | 'blocked' | 'delivery' | 'dev_history';
 
 interface TeamPreset {
   defaultStoryType: DefaultStoryType;
@@ -46,7 +46,7 @@ export function normalizeTeamType(raw?: string): TeamType {
 export function buildPresetFieldVisibility(teamType: TeamType): Record<VisibilityFieldKey, boolean> {
   const engineering: Record<VisibilityFieldKey, boolean> = {
     priority: true,
-    story_type: true,
+    task_type: true,
     severity: false,
     labels: true,
     epic: true,
@@ -62,7 +62,7 @@ export function buildPresetFieldVisibility(teamType: TeamType): Record<Visibilit
 
   return {
     ...engineering,
-    story_type: false,
+    task_type: false,
     estimate: false,
     delivery: false,
     dev_history: false,

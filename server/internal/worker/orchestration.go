@@ -63,7 +63,7 @@ func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID
 	return &proposal, nil
 }
 
-func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
+func NormalizeTaskPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
 		return nil, fmt.Errorf("task plan content is empty")
@@ -71,7 +71,7 @@ func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, err
 
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err == nil {
-		if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+		if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
 			return nil, err
 		}
 		normalized, _ := json.Marshal(payload)
@@ -90,7 +90,7 @@ func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, err
 	if err := unmarshalLatestJSON(encoded, &payload); err != nil {
 		return nil, fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
-	if err := validateCanonicalStoryPlanPreviewPayload(payload); err != nil {
+	if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
 		return nil, err
 	}
 
@@ -98,7 +98,7 @@ func NormalizeStoryPlanPreviewContent(raw json.RawMessage) (json.RawMessage, err
 	return normalized, nil
 }
 
-func validateCanonicalStoryPlanPreviewPayload(payload map[string]any) error {
+func validateCanonicalTaskPlanPreviewPayload(payload map[string]any) error {
 	if len(payload) == 0 {
 		return fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
@@ -122,7 +122,7 @@ func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed 
 	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
-func extractStoryCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
+func extractTaskCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
 	if strings.TrimSpace(responseText) == "" {
 		return nil, fmt.Errorf("task completion assessment returned no text")
 	}

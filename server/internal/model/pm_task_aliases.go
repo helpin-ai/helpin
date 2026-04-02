@@ -1,54 +1,86 @@
 package model
 
+// ── Backward-compatibility aliases: Story → Task ──────────────────────────────
+// The canonical types are now PMTask, CreateTaskRequest, etc.
+// These aliases ensure existing code that references Story-era names still compiles.
+
 const (
-	PMTaskTypeFeature = PMStoryTypeFeature
-	PMTaskTypeBug     = PMStoryTypeBug
-	PMTaskTypeChore   = PMStoryTypeChore
+	PMStoryTypeFeature = PMTaskTypeFeature
+	PMStoryTypeBug     = PMTaskTypeBug
+	PMStoryTypeChore   = PMTaskTypeChore
 
-	PMTaskPriorityNone   = PMStoryPriorityNone
-	PMTaskPriorityLow    = PMStoryPriorityLow
-	PMTaskPriorityMedium = PMStoryPriorityMedium
-	PMTaskPriorityHigh   = PMStoryPriorityHigh
-	PMTaskPriorityUrgent = PMStoryPriorityUrgent
+	PMStoryPriorityNone   = PMTaskPriorityNone
+	PMStoryPriorityLow    = PMTaskPriorityLow
+	PMStoryPriorityMedium = PMTaskPriorityMedium
+	PMStoryPriorityHigh   = PMTaskPriorityHigh
+	PMStoryPriorityUrgent = PMTaskPriorityUrgent
 
-	PMTaskSeverityNone     = PMStorySeverityNone
-	PMTaskSeverityMinor    = PMStorySeverityMinor
-	PMTaskSeverityMajor    = PMStorySeverityMajor
-	PMTaskSeverityCritical = PMStorySeverityCritical
+	PMStorySeverityNone     = PMTaskSeverityNone
+	PMStorySeverityMinor    = PMTaskSeverityMinor
+	PMStorySeverityMajor    = PMTaskSeverityMajor
+	PMStorySeverityCritical = PMTaskSeverityCritical
 
-	PMTaskLinkTypeBlocks     = PMStoryLinkTypeBlocks
-	PMTaskLinkTypeRelatesTo  = PMStoryLinkTypeRelatesTo
-	PMTaskLinkTypeDuplicates = PMStoryLinkTypeDuplicates
+	PMStoryLinkTypeBlocks     = PMTaskLinkTypeBlocks
+	PMStoryLinkTypeRelatesTo  = PMTaskLinkTypeRelatesTo
+	PMStoryLinkTypeDuplicates = PMTaskLinkTypeDuplicates
 )
 
-type PMTask = PMStory
-type PMTaskOwner = PMStoryOwner
-type PMTaskFollower = PMStoryFollower
-type PMTaskLabel = PMStoryLabel
-type PMTaskFilters = PMStoryFilters
+// Core model aliases.
+type PMStory = PMTask
+type PMStoryOwner = PMTaskOwner
+type PMStoryFollower = PMTaskFollower
+type PMStoryLabel = PMTaskLabel
+type PMStoryFilters = PMTaskFilters
 
-type CreateTaskRequest = CreateStoryRequest
-type UpdateTaskRequest = UpdateStoryRequest
-type MoveTaskRequest = MoveStoryRequest
-type ReorderTaskRequest = ReorderStoryRequest
-type TaskUserLinkRequest = StoryUserLinkRequest
-type TaskLabelLinkRequest = StoryLabelLinkRequest
+// Request/response aliases.
+type CreateStoryRequest = CreateTaskRequest
+type UpdateStoryRequest = UpdateTaskRequest
+type MoveStoryRequest = MoveTaskRequest
+type ReorderStoryRequest = ReorderTaskRequest
+type StoryUserLinkRequest = TaskUserLinkRequest
+type StoryLabelLinkRequest = TaskLabelLinkRequest
 
-type TaskDetail = StoryDetail
-type TaskDependencyTask = StoryDependencyStory
-type BoardTask = BoardStory
-type TaskGroup = StoryGroup
-type TaskStateColumn = StoryStateColumn
-type TaskMemberColumn = StoryMemberColumn
-type TaskStateCount = StoryStateCount
+// Detail and board aliases.
+type StoryDetail = TaskDetail
+type StoryDependencyStory = TaskDependencyTask
+type BoardStory = BoardTask
+type StoryGroup = TaskGroup
+type StoryStateColumn = TaskStateColumn
+type StoryMemberColumn = TaskMemberColumn
+type StoryStateCount = TaskStateCount
+type ColumnStoriesResponse = ColumnTasksResponse
 
-type PMTaskLink = PMStoryLink
-type CreateTaskRelationshipRequest = CreateStoryRelationshipRequest
+// Link aliases.
+type PMStoryLink = PMTaskLink
+type StoryDependencyEdge = TaskDependencyEdge
 
-type PMTaskTemplate = PMStoryTemplate
-type CreateTaskTemplateRequest = CreateStoryTemplateRequest
-type UpdateTaskTemplateRequest = UpdateStoryTemplateRequest
+// Template aliases.
+type PMStoryTemplate = PMTaskTemplate
+type CreateStoryTemplateRequest = CreateTaskTemplateRequest
+type UpdateStoryTemplateRequest = UpdateTaskTemplateRequest
 
-type TaskDeliveryTarget = StoryDeliveryTarget
-type TaskGitLink = StoryGitLink
-type UpdateTaskDeliveryTargetRequest = UpdateStoryDeliveryTargetRequest
+// Git aliases.
+type StoryDeliveryTarget = TaskDeliveryTarget
+type StoryGitLink = TaskGitLink
+type UpdateStoryDeliveryTargetRequest = UpdateTaskDeliveryTargetRequest
+
+// Agent planning aliases.
+type ProposedStory = ProposedTask
+type StoryImplementationBrief = TaskImplementationBrief
+var NormalizeProposedStories = NormalizeProposedTasks
+
+// Agent runtime aliases.
+type StoryCompletionFollowupProposal = TaskCompletionFollowupProposal
+type StoryCompletionAssessment = TaskCompletionAssessment
+
+// Recurring template aliases.
+type PMRecurringStorySeed = PMRecurringTaskSeed
+type StoryRecurringSummary = TaskRecurringSummary
+
+// Association aliases.
+type CreateStoryRelationshipRequest = CreateTaskRelationshipRequest
+type StoryRelationshipSummary = TaskRelationshipSummary
+type StoryRelationshipGroups = TaskRelationshipGroups
+
+// Sprint planning aliases.
+type SprintPlanningStoryPreview = SprintPlanningTaskPreview

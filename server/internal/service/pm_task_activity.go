@@ -73,8 +73,8 @@ func estimateActivityAction(oldValue, newValue *int) string {
 }
 
 func deadlineActivityAction(oldValue, newValue *time.Time) string {
-	oldDate := formatStoryActivityDate(oldValue)
-	newDate := formatStoryActivityDate(newValue)
+	oldDate := formatTaskActivityDate(oldValue)
+	newDate := formatTaskActivityDate(newValue)
 
 	switch {
 	case oldDate == "" && newDate == "":
@@ -94,13 +94,13 @@ func blockerReasonActivityAction(oldValue, newValue *string, oldBlocked, newBloc
 	if !oldBlocked || !newBlocked {
 		return ""
 	}
-	if normalizedStoryText(oldValue) == normalizedStoryText(newValue) {
+	if normalizedTaskText(oldValue) == normalizedTaskText(newValue) {
 		return ""
 	}
 	return "updated blocker reason"
 }
 
-func resolveStoryTeamName(ctx context.Context, workspaceRepo *repository.WorkspaceRepository, workspaceID string, teamID *string) (string, error) {
+func resolveTaskTeamName(ctx context.Context, workspaceRepo *repository.WorkspaceRepository, workspaceID string, teamID *string) (string, error) {
 	if workspaceRepo == nil || teamID == nil || strings.TrimSpace(*teamID) == "" {
 		return "", nil
 	}
@@ -114,7 +114,7 @@ func resolveStoryTeamName(ctx context.Context, workspaceRepo *repository.Workspa
 	return team.Name, nil
 }
 
-func storyMemberName(member *model.AssignableMember) string {
+func taskMemberName(member *model.AssignableMember) string {
 	if member == nil {
 		return ""
 	}
@@ -124,14 +124,14 @@ func storyMemberName(member *model.AssignableMember) string {
 	return member.Email
 }
 
-func formatStoryActivityDate(value *time.Time) string {
+func formatTaskActivityDate(value *time.Time) string {
 	if value == nil || value.IsZero() {
 		return ""
 	}
 	return value.UTC().Format("2006-01-02")
 }
 
-func normalizedStoryText(value *string) string {
+func normalizedTaskText(value *string) string {
 	if value == nil {
 		return ""
 	}

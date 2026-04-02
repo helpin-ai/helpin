@@ -108,7 +108,7 @@ interface TaskListViewProps {
 const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
   none: null,
   workflow_state: 'stateName',
-  story_type: 'typeName',
+  task_type: 'typeName',
   priority: 'priorityName',
   severity: 'severityName',
   epic: 'epicName',
@@ -476,8 +476,8 @@ export function TaskListView({
               onOpenTask(info.row.original);
             }}
           >
-            {fieldVis.story_type && displayProps.story_type ? (
-              <StoryTypeIcon storyType={info.row.original.story_type} className="h-4 w-4 shrink-0" />
+            {fieldVis.task_type && displayProps.task_type ? (
+              <StoryTypeIcon storyType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
@@ -645,7 +645,7 @@ export function TaskListView({
         cell: (info) => <InlineAssociationListCell items={info.row.original.support_conversations} emptyLabel="No tickets" />,
       }),
       columnHelper.accessor(
-        (row) => (row.story_type ? STORY_TYPE_CONFIG[row.story_type].label : 'Unknown'),
+        (row) => (row.task_type ? STORY_TYPE_CONFIG[row.task_type].label : 'Unknown'),
         {
           id: 'typeName',
           header: 'Type',
@@ -735,7 +735,7 @@ export function TaskListView({
         ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug, fieldVis.story_type, displayProps.story_type]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -743,7 +743,7 @@ export function TaskListView({
     const keys = new Set<DisplayPropertyKey>();
     if (!fieldVis.priority) keys.add('priority');
     if (!fieldVis.severity) keys.add('severity');
-    if (!fieldVis.story_type) keys.add('story_type');
+    if (!fieldVis.task_type) keys.add('task_type');
     if (!fieldVis.estimate) keys.add('estimate');
     if (!fieldVis.epic) keys.add('epic');
     if (!fieldVis.sprint) keys.add('sprint');
@@ -756,13 +756,13 @@ export function TaskListView({
   const visibleGroupOptions = useMemo(
     () =>
       getVisibleTaskListGroupOptions({
-        story_type: fieldVis.story_type,
+        task_type: fieldVis.task_type,
         priority: fieldVis.priority,
         severity: fieldVis.severity,
         epic: fieldVis.epic,
         sprint: fieldVis.sprint,
       }),
-    [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.story_type],
+    [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.task_type],
   );
 
   useEffect(() => {
@@ -778,7 +778,7 @@ export function TaskListView({
     // Team-level visibility (overrides everything)
     if (!fieldVis.priority) { vis['priorityIcon'] = false; vis['priorityName'] = false; }
     if (!fieldVis.severity) { vis['severityIcon'] = false; vis['severityName'] = false; }
-    if (!fieldVis.story_type) { vis['typeName'] = false; }
+    if (!fieldVis.task_type) { vis['typeName'] = false; }
     if (!fieldVis.estimate) vis['estimate'] = false;
     if (!fieldVis.epic) vis['epicName'] = false;
     if (!fieldVis.sprint) vis['sprintName'] = false;

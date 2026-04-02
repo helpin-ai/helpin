@@ -338,7 +338,7 @@ export function TaskRelationshipsSection({
       epic_id: epicId,
       sprint_id: sprintId,
       team_id: teamId,
-      story_type: storyType,
+      task_type: storyType,
       priority,
       severity,
     };
@@ -572,8 +572,8 @@ export function TaskRelationshipsSection({
               <div className="flex shrink-0 items-center gap-1.5">
                 {item.story.display_id ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
-                    {item.story.story_type ? (
-                      <StoryTypeIcon storyType={item.story.story_type} className="h-3 w-3" />
+                    {item.story.task_type ? (
+                      <StoryTypeIcon storyType={item.story.task_type} className="h-3 w-3" />
                     ) : null}
                     {item.story.display_id}
                     {(item.story.completed || resolved) ? (

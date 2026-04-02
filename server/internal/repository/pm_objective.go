@@ -339,8 +339,8 @@ func (r *PMObjectiveRepository) ComputeStats(ctx context.Context, objectiveID st
 			Scan(&storyRow).Error; err != nil {
 			return stats, fmt.Errorf("compute epic story stats: %w", err)
 		}
-		stats.EpicStoryCount = storyRow.Total
-		stats.EpicDoneStories = storyRow.Done
+		stats.EpicTaskCount = storyRow.Total
+		stats.EpicDoneTasks = storyRow.Done
 		if storyRow.Total > 0 {
 			stats.EpicProgressPct = float64(storyRow.Done) / float64(storyRow.Total) * 100
 		}
@@ -463,11 +463,11 @@ func (r *PMObjectiveRepository) listEpics(ctx context.Context, objectiveID strin
 			return nil, fmt.Errorf("compute epic stats: %w", err)
 		}
 		for _, row := range rows {
-			stats.StoryCount += row.Count
+			stats.TaskCount += row.Count
 			stats.TotalPoints += row.Points
 			switch row.StateType {
 			case model.PMStateTypeDone:
-				stats.DoneStoryCount += row.Count
+				stats.DoneTaskCount += row.Count
 				stats.DonePoints += row.Points
 			case model.PMStateTypeStarted:
 				stats.InProgressCount += row.Count

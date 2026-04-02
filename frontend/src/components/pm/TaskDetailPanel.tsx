@@ -149,7 +149,7 @@ interface TaskDetailPanelProps {
 interface FormState {
   name: string;
   description: string;
-  story_type: StoryType;
+  task_type: StoryType;
   workflow_state_id: string;
   priority: Priority;
   severity: Severity;
@@ -172,7 +172,7 @@ const storyTypeOptions: StoryType[] = ['feature', 'bug', 'chore'];
 const buildFormState = (story: StoryDetail): FormState => ({
   name: story.story.name,
   description: story.story.description ?? '',
-  story_type: story.story.story_type,
+  task_type: story.story.task_type,
   workflow_state_id: story.story.workflow_state_id,
   priority: story.story.priority,
   severity: story.story.severity,
@@ -349,12 +349,12 @@ function TaskDetailPanelBody({
       ? await pmRecurringTemplateService.update(workspaceId, recurringSummary.template_id, {
           title: value.title,
           description: value.description || undefined,
-          story_id: storyDetail.story.id,
+          task_id: storyDetail.story.id,
           config: value.config,
         })
       : await pmRecurringTemplateService.create({
           workspace_id: workspaceId,
-          story_id: storyDetail.story.id,
+          task_id: storyDetail.story.id,
           title: value.title,
           description: value.description || undefined,
           config: value.config,
@@ -1052,7 +1052,7 @@ function TaskDetailPanelBody({
             epicId={storyDetail.story.epic_id}
             sprintId={storyDetail.story.sprint_id}
             teamId={storyDetail.story.team_id}
-            storyType={storyDetail.story.story_type}
+            storyType={storyDetail.story.task_type}
             priority={storyDetail.story.priority}
             severity={storyDetail.story.severity}
             externalBlocker={form.blocker}
@@ -1297,16 +1297,16 @@ function TaskDetailPanelBody({
             )}
 
             {/* Type */}
-            {fieldVis.story_type && (
+            {fieldVis.task_type && (
             <MetadataRow icon={Hash} label="Type">
               <SidebarPopoverSelect
-                value={form.story_type}
+                value={form.task_type}
                 options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
-                onChange={(v) => updateField('story_type', v as StoryType, { story_type: v as StoryType })}
+                onChange={(v) => updateField('task_type', v as StoryType, { task_type: v as StoryType })}
                 renderTrigger={() => (
                   <>
-                    <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
-                    <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
+                    <StoryTypeIcon storyType={form.task_type} className="h-3.5 w-3.5" />
+                    <span>{STORY_TYPE_CONFIG[form.task_type].label}</span>
                   </>
                 )}
                 renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}

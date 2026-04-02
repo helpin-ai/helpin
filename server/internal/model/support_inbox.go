@@ -23,7 +23,7 @@ type SupportConversation struct {
 	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
-	LinkedStoryID     *string    `json:"linked_story_id" gorm:"column:linked_task_id;type:uuid"`
+	LinkedTaskID      *string    `json:"linked_task_id" gorm:"column:linked_task_id;type:uuid"`
 	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID       *string    `json:"anonymous_id" gorm:"index"`
 	CRMContactID      *string    `json:"crm_contact_id" gorm:"type:uuid;index"`

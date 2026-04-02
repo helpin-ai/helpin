@@ -32,7 +32,7 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 	}
 
 	hasApprovedSpec := ctx.Epic != nil && ctx.Epic.ApprovedSpecVersionID != nil && strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) != ""
-	storyCount := len(ctx.EpicStories)
+	taskCount := len(ctx.EpicTasks)
 
 	// Check if spec doc has draft content (written but not approved).
 	hasDraftContent := false
@@ -44,10 +44,10 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 
 	var planningHint string
 	switch {
-	case hasApprovedSpec && storyCount > 0:
-		planningHint = "prd_approved_stories_exist"
+	case hasApprovedSpec && taskCount > 0:
+		planningHint = "prd_approved_tasks_exist"
 	case hasApprovedSpec:
-		planningHint = "prd_approved_no_stories"
+		planningHint = "prd_approved_no_tasks"
 	case hasDraftContent:
 		planningHint = "prd_draft_exists"
 	default:
@@ -60,7 +60,7 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 		"status":            doc.Status,
 		"has_approved_spec": hasApprovedSpec,
 		"has_draft_content": hasDraftContent,
-		"story_count":       storyCount,
+		"task_count":        taskCount,
 		"planning_hint":     planningHint,
 	}
 	if hasApprovedSpec {
@@ -70,15 +70,15 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 	return toCompactJSONString(result), nil
 }
 
-func toolEnsureStoryPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.TargetType != "story" || ctx.TargetID == "" {
+func toolEnsureTaskPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.TargetType != "task" || ctx.TargetID == "" {
 		return "", fmt.Errorf("ensure_task_plan_doc is only available for task runs")
 	}
-	if ctx.Services == nil || ctx.Services.EnsureStoryPlanDoc == nil {
+	if ctx.Services == nil || ctx.Services.EnsureTaskPlanDoc == nil {
 		return "", fmt.Errorf("task plan document service is not available")
 	}
 
-	doc, err := ctx.Services.EnsureStoryPlanDoc(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID)
+	doc, err := ctx.Services.EnsureTaskPlanDoc(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID)
 	if err != nil {
 		return "", fmt.Errorf("ensure task plan doc: %w", err)
 	}
@@ -132,7 +132,7 @@ func toolApproveEpicSpec(ctx *ExecutionContext, input json.RawMessage) (string, 
 	return toCompactJSONString(summary), nil
 }
 
-func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
 		return "", fmt.Errorf("create_task_batch is only available for epic runs")
 	}
@@ -167,46 +167,51 @@ func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string,
 		}
 		return string(output), nil
 	}
-	if ctx.Services == nil || ctx.Services.CreateStoryBatch == nil {
+	if ctx.Services == nil || ctx.Services.CreateTaskBatch == nil {
 		return "", fmt.Errorf("task batch creation is not available")
 	}
 
-	result, err := ctx.Services.CreateStoryBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
+	result, err := ctx.Services.CreateTaskBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
 	if err != nil {
 		return "", fmt.Errorf("create task batch: %w", err)
 	}
 	return toCompactJSONString(result), nil
 }
 
-func toolAssignStoryAgent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolAssignTaskAgent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
 		StoryID string `json:"story_id"`
+		TaskID  string `json:"task_id"`
 		AgentID string `json:"agent_id"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", plannerToolInputError("assign_task_agent", err)
 	}
-	if strings.TrimSpace(params.StoryID) == "" || strings.TrimSpace(params.AgentID) == "" {
-		return "", fmt.Errorf("assign_task_agent requires \"story_id\" or \"task_id\" and \"agent_id\"")
+	taskID := strings.TrimSpace(params.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(params.StoryID)
 	}
-	if output, ok, err := executeInternalCommand(ctx, "task", params.StoryID, "pm.assign_task_agent", input); ok {
+	if taskID == "" || strings.TrimSpace(params.AgentID) == "" {
+		return "", fmt.Errorf("assign_task_agent requires \"task_id\" and \"agent_id\"")
+	}
+	if output, ok, err := executeInternalCommand(ctx, "task", taskID, "pm.assign_task_agent", input); ok {
 		if err != nil {
 			return "", fmt.Errorf("assign task agent: %w", err)
 		}
 		return string(output), nil
 	}
-	if ctx.Services == nil || ctx.Services.AssignStoryAgent == nil {
+	if ctx.Services == nil || ctx.Services.AssignTaskAgent == nil {
 		return "", fmt.Errorf("task assignment is not available")
 	}
-	if err := ctx.Services.AssignStoryAgent(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.StoryID, params.AgentID); err != nil {
+	if err := ctx.Services.AssignTaskAgent(ctx.Context, ctx.WorkspaceID, ctx.AgentID, taskID, params.AgentID); err != nil {
 		return "", fmt.Errorf("assign task agent: %w", err)
 	}
-	return fmt.Sprintf("Assigned task %s to agent %s.", params.StoryID, params.AgentID), nil
+	return fmt.Sprintf("Assigned task %s to agent %s.", taskID, params.AgentID), nil
 }
 
-func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolSetTaskDependencies(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
-		Dependencies []StoryDependencyLink `json:"dependencies"`
+		Dependencies []TaskDependencyLink `json:"dependencies"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", plannerToolInputError("set_task_dependencies", err)
@@ -215,7 +220,7 @@ func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", fmt.Errorf("set_task_dependencies requires \"dependencies\"")
 	}
 	for idx, link := range params.Dependencies {
-		if strings.TrimSpace(link.SourceStoryID) == "" || strings.TrimSpace(link.TargetStoryID) == "" {
+		if strings.TrimSpace(link.SourceTaskID) == "" || strings.TrimSpace(link.TargetTaskID) == "" {
 			return "", fmt.Errorf("set_task_dependencies dependencies[%d] must include \"source_task_id\"/\"source_story_id\" and \"target_task_id\"/\"target_story_id\"", idx)
 		}
 	}
@@ -225,31 +230,31 @@ func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (str
 		}
 		return string(output), nil
 	}
-	if ctx.Services == nil || ctx.Services.SetStoryDependencies == nil {
+	if ctx.Services == nil || ctx.Services.SetTaskDependencies == nil {
 		return "", fmt.Errorf("task dependency updates are not available")
 	}
-	if err := ctx.Services.SetStoryDependencies(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.Dependencies); err != nil {
+	if err := ctx.Services.SetTaskDependencies(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.Dependencies); err != nil {
 		return "", fmt.Errorf("set task dependencies: %w", err)
 	}
 	return fmt.Sprintf("Created %d dependency links.", len(params.Dependencies)), nil
 }
 
-func toolListEpicStories(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolListEpicTasks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
 		return "", fmt.Errorf("list_epic_tasks is only available for epic runs")
 	}
-	if ctx.Services == nil || ctx.Services.ListEpicStories == nil {
+	if ctx.Services == nil || ctx.Services.ListEpicTasks == nil {
 		return "", fmt.Errorf("epic story listing is not available")
 	}
 
-	stories, err := ctx.Services.ListEpicStories(ctx.Context, ctx.WorkspaceID, ctx.TargetID)
+	tasks, err := ctx.Services.ListEpicTasks(ctx.Context, ctx.WorkspaceID, ctx.TargetID)
 	if err != nil {
-		return "", fmt.Errorf("list epic stories: %w", err)
+		return "", fmt.Errorf("list epic tasks: %w", err)
 	}
 
 	return toCompactJSONString(map[string]any{
-		"epic_id":     ctx.TargetID,
-		"story_count": len(stories),
-		"stories":     stories,
+		"epic_id":    ctx.TargetID,
+		"task_count": len(tasks),
+		"tasks":      tasks,
 	}), nil
 }

@@ -159,8 +159,8 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	for i, label := range labels {
 		stats := model.LabelStats{}
 		if ss, ok := storyMap[label.ID]; ok {
-			stats.StoryCount = ss.Total
-			stats.DoneStoryCount = ss.Done
+			stats.TaskCount = ss.Total
+			stats.DoneTaskCount = ss.Done
 			stats.TotalPoints = ss.Points
 			stats.DonePoints = ss.DonePts
 		}

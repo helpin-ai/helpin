@@ -110,7 +110,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
       team_id: tmpl.team_id,
       name: `${tmpl.name} (copy)`,
       description: tmpl.description,
-      story_type: tmpl.story_type,
+      task_type: tmpl.task_type,
       priority: tmpl.priority,
       severity: tmpl.severity,
       estimate: tmpl.estimate,

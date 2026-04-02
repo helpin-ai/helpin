@@ -5,7 +5,7 @@ import "testing"
 func TestChecklistItem_AssigneeID_Nil(t *testing.T) {
 	item := PMChecklistItem{
 		ID:      "item-1",
-		StoryID: "story-1",
+		TaskID: "story-1",
 		Text:    "Fix the bug",
 	}
 	if item.AssigneeID != nil {
@@ -17,7 +17,7 @@ func TestChecklistItem_AssigneeID_Set(t *testing.T) {
 	uid := "user-abc"
 	item := PMChecklistItem{
 		ID:         "item-2",
-		StoryID:    "story-1",
+		TaskID:     "story-1",
 		Text:       "Review PR",
 		AssigneeID: &uid,
 	}

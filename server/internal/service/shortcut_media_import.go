@@ -109,14 +109,14 @@ func (s *PMImportService) importShortcutStoryMedia(ctx context.Context, workspac
 	}
 
 	var checklistItems []struct {
-		ID      string
-		StoryID string
-		Text    string
+		ID     string
+		TaskID string
+		Text   string
 	}
 	if err := s.db.WithContext(ctx).
 		Model(&model.PMChecklistItem{}).
-		Select("id, story_id, text").
-		Where("story_id IN ?", storyIDs).
+		Select("id, task_id, text").
+		Where("task_id IN ?", storyIDs).
 		Order("position ASC, created_at ASC").
 		Scan(&checklistItems).Error; err != nil {
 		return 0, []string{fmt.Sprintf("Failed to load imported checklist items for media migration: %s", err.Error())}
@@ -129,7 +129,7 @@ func (s *PMImportService) importShortcutStoryMedia(ctx context.Context, workspac
 
 	for _, story := range stories {
 		if story.Description != nil && strings.TrimSpace(*story.Description) != "" {
-			rewritten, created, mediaWarnings := s.rewriteShortcutMediaBody(ctx, workspaceID, actorID, "story", story.ID, *story.Description, apiToken)
+			rewritten, created, mediaWarnings := s.rewriteShortcutMediaBody(ctx, workspaceID, actorID, "task", story.ID, *story.Description, apiToken)
 			attachmentsCreated += created
 			warnings = appendUniqueWarnings(warnings, mediaWarnings)
 			if rewritten != *story.Description {
@@ -147,7 +147,7 @@ func (s *PMImportService) importShortcutStoryMedia(ctx context.Context, workspac
 
 	for _, item := range checklistItems {
 		if strings.TrimSpace(item.Text) != "" {
-			rewritten, created, mediaWarnings := s.rewriteShortcutMediaText(ctx, workspaceID, actorID, "story", item.StoryID, item.Text, apiToken)
+			rewritten, created, mediaWarnings := s.rewriteShortcutMediaText(ctx, workspaceID, actorID, "task", item.TaskID, item.Text, apiToken)
 			attachmentsCreated += created
 			warnings = appendUniqueWarnings(warnings, mediaWarnings)
 			if rewritten != item.Text {

@@ -55,7 +55,7 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	}
 
 	item := &model.PMChecklistItem{
-		StoryID:    storyID,
+		TaskID:     storyID,
 		Text:       strings.TrimSpace(req.Text),
 		AssigneeID: req.AssigneeID,
 	}
@@ -107,7 +107,7 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 	if err := s.repo.Update(ctx, item); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.TaskID})
 
 	// Emit notifications for new @mentions when text changes.
 	if textChanged {
@@ -129,7 +129,7 @@ func (s *PMChecklistItemService) Delete(ctx context.Context, id string, workspac
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.TaskID})
 	return nil
 }
 
@@ -144,11 +144,11 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		return
 	}
 
-	entityTitle := item.StoryID
+	entityTitle := item.TaskID
 	var entityTeamID string
 	readableTeamIDs := []string(nil)
 	if s.storyRepo != nil {
-		if story, _ := s.storyRepo.GetRawByID(ctx, item.StoryID); story != nil {
+		if story, _ := s.storyRepo.GetRawByID(ctx, item.TaskID); story != nil {
 			entityTitle = story.Name
 			entityTeamID = derefString(story.TeamID)
 			readableTeamIDs = mentionScopeForTeamID(story.TeamID)
@@ -161,7 +161,7 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		Body:             item.Text,
 		EventType:        "checklist.mention",
 		EntityType:       "task",
-		EntityID:         item.StoryID,
+		EntityID:         item.TaskID,
 		Title:            "mentioned you in a checklist item on " + entityTitle,
 		TeamID:           entityTeamID,
 		ReadableTeamIDs:  readableTeamIDs,
@@ -169,7 +169,7 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		NotificationBody: truncate(item.Text, 200),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to emit checklist mention notification", "error", err, "story_id", item.StoryID)
+		slog.ErrorContext(ctx, "failed to emit checklist mention notification", "error", err, "task_id", item.TaskID)
 		return
 	}
 	if len(mentionedUserIDs) == 0 {
@@ -178,7 +178,7 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 
 	slog.InfoContext(ctx, "emitting checklist mention notification",
 		"checklist_item_id", item.ID,
-		"story_id", item.StoryID,
+		"task_id", item.TaskID,
 		"mentioned_user_ids", mentionedUserIDs,
 	)
 }

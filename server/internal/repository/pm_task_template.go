@@ -11,21 +11,21 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// PMStoryTemplateRepository handles DB operations for story templates.
-type PMStoryTemplateRepository struct {
+// PMTaskTemplateRepository handles DB operations for story templates.
+type PMTaskTemplateRepository struct {
 	db *gorm.DB
 }
 
-// PMStoryTemplateListOptions aliases ScopeFilterOptions for story templates.
-type PMStoryTemplateListOptions = ScopeFilterOptions
+// PMTaskTemplateListOptions aliases ScopeFilterOptions for story templates.
+type PMTaskTemplateListOptions = ScopeFilterOptions
 
-// NewPMStoryTemplateRepository creates a new PMStoryTemplateRepository.
-func NewPMStoryTemplateRepository(db *gorm.DB) *PMStoryTemplateRepository {
-	return &PMStoryTemplateRepository{db: db}
+// NewPMTaskTemplateRepository creates a new PMTaskTemplateRepository.
+func NewPMTaskTemplateRepository(db *gorm.DB) *PMTaskTemplateRepository {
+	return &PMTaskTemplateRepository{db: db}
 }
 
 // ListByWorkspace lists story templates by workspace.
-func (r *PMStoryTemplateRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMStoryTemplateListOptions) ([]model.PMStoryTemplate, error) {
+func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMTaskTemplateListOptions) ([]model.PMStoryTemplate, error) {
 	var templates []model.PMStoryTemplate
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
@@ -36,7 +36,7 @@ func (r *PMStoryTemplateRepository) ListByWorkspace(ctx context.Context, workspa
 }
 
 // GetByID returns a story template by ID.
-func (r *PMStoryTemplateRepository) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
+func (r *PMTaskTemplateRepository) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
 	var tmpl model.PMStoryTemplate
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&tmpl).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -48,7 +48,7 @@ func (r *PMStoryTemplateRepository) GetByID(ctx context.Context, id string) (*mo
 }
 
 // GetByName returns a story template by workspace/name within a scope.
-func (r *PMStoryTemplateRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMStoryTemplate, error) {
+func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMStoryTemplate, error) {
 	var tmpl model.PMStoryTemplate
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND LOWER(name) = LOWER(?)", workspaceID, strings.TrimSpace(name))
@@ -67,7 +67,7 @@ func (r *PMStoryTemplateRepository) GetByName(ctx context.Context, workspaceID s
 }
 
 // Create inserts a story template.
-func (r *PMStoryTemplateRepository) Create(ctx context.Context, tmpl *model.PMStoryTemplate) error {
+func (r *PMTaskTemplateRepository) Create(ctx context.Context, tmpl *model.PMStoryTemplate) error {
 	if err := r.db.WithContext(ctx).Create(tmpl).Error; err != nil {
 		return fmt.Errorf("create story template: %w", err)
 	}
@@ -75,7 +75,7 @@ func (r *PMStoryTemplateRepository) Create(ctx context.Context, tmpl *model.PMSt
 }
 
 // Update updates a story template.
-func (r *PMStoryTemplateRepository) Update(ctx context.Context, tmpl *model.PMStoryTemplate) error {
+func (r *PMTaskTemplateRepository) Update(ctx context.Context, tmpl *model.PMStoryTemplate) error {
 	if err := r.db.WithContext(ctx).Save(tmpl).Error; err != nil {
 		return fmt.Errorf("update story template: %w", err)
 	}
@@ -83,7 +83,7 @@ func (r *PMStoryTemplateRepository) Update(ctx context.Context, tmpl *model.PMSt
 }
 
 // Delete hard-deletes a story template.
-func (r *PMStoryTemplateRepository) Delete(ctx context.Context, id string) error {
+func (r *PMTaskTemplateRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.PMStoryTemplate{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("delete story template: %w", err)
 	}

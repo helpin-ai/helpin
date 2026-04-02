@@ -44,7 +44,7 @@ type WorkspaceTeam struct {
 	Description          *string   `json:"description"`
 	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
 	TeamType             string    `json:"team_type" gorm:"not null;default:'engineering'"`
-	DefaultStoryType     string    `json:"default_story_type" gorm:"column:default_task_type;not null;default:'feature'"`
+	DefaultStoryType     string    `json:"default_task_type" gorm:"column:default_task_type;not null;default:'feature'"`
 	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
 	SprintsEnabled       bool      `json:"sprints_enabled" gorm:"not null;default:true"`
 	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -167,7 +167,7 @@ type PMTeamFieldVisibility struct {
 	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	TeamID     string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
 	Priority   bool      `json:"priority" gorm:"not null;default:true"`
-	StoryType  bool      `json:"story_type" gorm:"column:task_type;not null;default:true"`
+	StoryType  bool      `json:"task_type" gorm:"column:task_type;not null;default:true"`
 	Severity   bool      `json:"severity" gorm:"not null;default:true"`
 	Labels     bool      `json:"labels" gorm:"not null;default:true"`
 	Epic       bool      `json:"epic" gorm:"not null;default:true"`
@@ -186,7 +186,7 @@ func (PMTeamFieldVisibility) TableName() string { return "pm_team_field_visibili
 // UpdateTeamFieldVisibilityRequest is the payload for updating team field visibility.
 type UpdateTeamFieldVisibilityRequest struct {
 	Priority   *bool `json:"priority"`
-	StoryType  *bool `json:"story_type"`
+	StoryType  *bool `json:"task_type"`
 	Severity   *bool `json:"severity"`
 	Labels     *bool `json:"labels"`
 	Epic       *bool `json:"epic"`
@@ -251,7 +251,7 @@ type CreateTeamRequest struct {
 	Description      *string `json:"description"`
 	ManagerID        *string `json:"manager_id"`
 	TeamType         string  `json:"team_type"`
-	DefaultStoryType string  `json:"default_story_type"`
+	DefaultStoryType string  `json:"default_task_type"`
 }
 
 // UpdateTeamRequest is the payload for updating a team.
@@ -261,7 +261,7 @@ type UpdateTeamRequest struct {
 	Description      *string `json:"description"`
 	ManagerID        *string `json:"manager_id"`
 	TeamType         *string `json:"team_type"`
-	DefaultStoryType *string `json:"default_story_type"`
+	DefaultStoryType *string `json:"default_task_type"`
 	SprintsEnabled   *bool   `json:"sprints_enabled"`
 }
 

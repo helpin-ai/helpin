@@ -10,7 +10,7 @@ type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other' | 'Panels';
 
 export const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
   { key: 'priority', label: 'Priority', group: 'Classification' },
-  { key: 'story_type', label: 'Type', group: 'Classification' },
+  { key: 'task_type', label: 'Type', group: 'Classification' },
   { key: 'severity', label: 'Severity', group: 'Classification' },
   { key: 'epic', label: 'Epic', group: 'Planning' },
   { key: 'sprint', label: 'Sprint', group: 'Planning' },
@@ -24,7 +24,7 @@ export const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; 
 
 const FIELD_VISIBILITY_HELP: Record<VisibilityFieldKey, string> = {
   priority: 'Shows the urgency level for a story so the team can quickly sort what matters most.',
-  story_type: 'Shows whether the story is a feature, bug, or chore.',
+  task_type: 'Shows whether the task is a feature, bug, or chore.',
   severity: 'Shows impact level, usually for bugs or operational issues. This starts off for new teams by default.',
   epic: 'Lets stories roll up into larger initiatives.',
   sprint: 'Lets stories be assigned to sprint cycles.',

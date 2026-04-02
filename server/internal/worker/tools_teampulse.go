@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func toolAddStoryComment(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolAddTaskComment(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
 		Content string `json:"content"`
 	}
@@ -14,18 +14,18 @@ func toolAddStoryComment(ctx *ExecutionContext, input json.RawMessage) (string, 
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
-	if ctx.StoryID == "" {
+	if ctx.TaskID == "" {
 		return "", fmt.Errorf("no task associated with this run")
 	}
 
-	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, ctx.StoryID, ctx.AgentID, params.Content); err != nil {
+	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, ctx.TaskID, ctx.AgentID, params.Content); err != nil {
 		return "", fmt.Errorf("add comment: %w", err)
 	}
 
 	return "Comment added to task.", nil
 }
 
-func toolUpdateStoryState(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolUpdateTaskState(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
 		StateID string `json:"state_id"`
 	}
@@ -33,34 +33,34 @@ func toolUpdateStoryState(ctx *ExecutionContext, input json.RawMessage) (string,
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
-	if ctx.StoryID == "" {
+	if ctx.TaskID == "" {
 		return "", fmt.Errorf("no task associated with this run")
 	}
 
 	commandInput, _ := json.Marshal(map[string]any{
-		"task_id":  ctx.StoryID,
+		"task_id":  ctx.TaskID,
 		"state_id": params.StateID,
 	})
-	if output, ok, err := executeInternalCommand(ctx, "task", ctx.StoryID, "pm.update_task_state", commandInput); ok {
+	if output, ok, err := executeInternalCommand(ctx, "task", ctx.TaskID, "pm.update_task_state", commandInput); ok {
 		if err != nil {
 			return "", fmt.Errorf("update task state: %w", err)
 		}
 		return string(output), nil
 	}
 
-	if err := ctx.Services.UpdateStoryState(ctx.Context, ctx.WorkspaceID, ctx.StoryID, params.StateID); err != nil {
+	if err := ctx.Services.UpdateTaskState(ctx.Context, ctx.WorkspaceID, ctx.TaskID, params.StateID); err != nil {
 		return "", fmt.Errorf("update task state: %w", err)
 	}
 
 	return fmt.Sprintf("Task state updated to %s.", params.StateID), nil
 }
 
-func toolListStoryChecklist(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.StoryID == "" {
+func toolListTaskChecklist(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.TaskID == "" {
 		return "", fmt.Errorf("no task associated with this run")
 	}
 
-	items, err := ctx.Services.ListChecklist(ctx.Context, ctx.WorkspaceID, ctx.StoryID)
+	items, err := ctx.Services.ListChecklist(ctx.Context, ctx.WorkspaceID, ctx.TaskID)
 	if err != nil {
 		return "", fmt.Errorf("list checklist: %w", err)
 	}

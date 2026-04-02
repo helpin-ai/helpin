@@ -15,19 +15,19 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// PMStoryRepository handles DB operations for stories and relations.
-type PMStoryRepository struct {
+// PMTaskRepository handles DB operations for tasks and relations.
+type PMTaskRepository struct {
 	db *gorm.DB
 }
 
 const boardDoneGroupThisWeekLabel = "This Week"
 
-// NewPMStoryRepository creates a new PMStoryRepository.
-func NewPMStoryRepository(db *gorm.DB) *PMStoryRepository {
-	return &PMStoryRepository{db: db}
+// NewPMTaskRepository creates a new PMTaskRepository.
+func NewPMTaskRepository(db *gorm.DB) *PMTaskRepository {
+	return &PMTaskRepository{db: db}
 }
 
-func boardStoryOrderClause(stateType string) string {
+func boardTaskOrderClause(stateType string) string {
 	if stateType == "done" {
 		return "COALESCE(completed_at, moved_at, updated_at) DESC, updated_at DESC, position ASC"
 	}
@@ -47,7 +47,7 @@ func loadWorkflowStateType(tx *gorm.DB, stateID string) (string, error) {
 	return state.StateType, nil
 }
 
-func memberBoardStoryOrderClause() string {
+func memberBoardTaskOrderClause() string {
 	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_tasks.position ASC, pm_tasks.updated_at DESC"
 }
 
@@ -75,7 +75,7 @@ func splitFilterValues(value *string) []string {
 	return values
 }
 
-func applyStoryStringFilter(q *gorm.DB, column string, value *string) *gorm.DB {
+func applyTaskStringFilter(q *gorm.DB, column string, value *string) *gorm.DB {
 	values := splitFilterValues(value)
 	if len(values) == 0 {
 		return q
@@ -86,7 +86,7 @@ func applyStoryStringFilter(q *gorm.DB, column string, value *string) *gorm.DB {
 	return q.Where(column+" IN ?", values)
 }
 
-func applyStoryAssociationFilter(q *gorm.DB, objectType string, value *string) *gorm.DB {
+func applyTaskAssociationFilter(q *gorm.DB, objectType string, value *string) *gorm.DB {
 	values := splitFilterValues(value)
 	if len(values) == 0 {
 		return q
@@ -108,7 +108,7 @@ func applyStoryAssociationFilter(q *gorm.DB, objectType string, value *string) *
 	)
 }
 
-func applyStorySupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
+func applyTaskSupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
 	values := splitFilterValues(value)
 	if len(values) == 0 {
 		return q
@@ -141,7 +141,7 @@ func applyStorySupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
 	)
 }
 
-func normalizeStateStoryPositions(tx *gorm.DB, workspaceID, stateID string) error {
+func normalizeStateTaskPositions(tx *gorm.DB, workspaceID, stateID string) error {
 	stateType, err := loadWorkflowStateType(tx, stateID)
 	if err != nil {
 		return err
@@ -154,7 +154,7 @@ func normalizeStateStoryPositions(tx *gorm.DB, workspaceID, stateID string) erro
 	if err := tx.Model(&model.PMStory{}).
 		Select("id, position").
 		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID).
-		Order(boardStoryOrderClause(stateType)).
+		Order(boardTaskOrderClause(stateType)).
 		Find(&stories).Error; err != nil {
 		return fmt.Errorf("load state stories for normalization: %w", err)
 	}
@@ -173,7 +173,7 @@ func normalizeStateStoryPositions(tx *gorm.DB, workspaceID, stateID string) erro
 	return nil
 }
 
-func normalizeBoardPosition(tx *gorm.DB, workspaceID, stateID, excludeStoryID string, requested *int) (int, error) {
+func normalizeTaskBoardPosition(tx *gorm.DB, workspaceID, stateID, excludeStoryID string, requested *int) (int, error) {
 	query := tx.Model(&model.PMStory{}).
 		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID)
 	if excludeStoryID != "" {
@@ -198,7 +198,7 @@ func normalizeBoardPosition(tx *gorm.DB, workspaceID, stateID, excludeStoryID st
 	return *requested, nil
 }
 
-type pmDnDStorySnapshot struct {
+type pmDnDTaskSnapshot struct {
 	ID          string
 	Position    int
 	UpdatedAt   time.Time
@@ -206,24 +206,24 @@ type pmDnDStorySnapshot struct {
 	MovedAt     *time.Time
 }
 
-type storyEnrichOptions struct {
+type taskEnrichOptions struct {
 	includeContacts  bool
 	includeCompanies bool
 	includeDeals     bool
 	includeSupport   bool
 }
 
-func summarizePMDnDStateSnapshot(tx *gorm.DB, workspaceID, stateID string) ([]string, error) {
+func summarizePMDnDTaskStateSnapshot(tx *gorm.DB, workspaceID, stateID string) ([]string, error) {
 	stateType, err := loadWorkflowStateType(tx, stateID)
 	if err != nil {
 		return nil, err
 	}
 
-	var stories []pmDnDStorySnapshot
+	var stories []pmDnDTaskSnapshot
 	if err := tx.Model(&model.PMStory{}).
 		Select("id, position, updated_at, completed_at, moved_at").
 		Where("workspace_id = ? AND workflow_state_id = ? AND archived = false", workspaceID, stateID).
-		Order(boardStoryOrderClause(stateType)).
+		Order(boardTaskOrderClause(stateType)).
 		Limit(10).
 		Find(&stories).Error; err != nil {
 		return nil, fmt.Errorf("load state snapshot: %w", err)
@@ -242,7 +242,7 @@ func summarizePMDnDStateSnapshot(tx *gorm.DB, workspaceID, stateID string) ([]st
 	return summary, nil
 }
 
-func boardStoryGroupDate(story model.PMStory) time.Time {
+func boardTaskGroupDate(story model.PMStory) time.Time {
 	if story.CompletedAt != nil {
 		return story.CompletedAt.UTC()
 	}
@@ -258,7 +258,7 @@ func startOfBoardWeek(t time.Time) time.Time {
 	return time.Date(utc.Year(), utc.Month(), utc.Day()-offset, 0, 0, 0, 0, time.UTC)
 }
 
-func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.StoryGroup {
+func buildDoneTaskGroups(stories []model.BoardStory, now time.Time) []model.StoryGroup {
 	if len(stories) == 0 {
 		return nil
 	}
@@ -268,7 +268,7 @@ func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.Sto
 	groupIndexByKey := make(map[string]int, len(stories))
 
 	for _, story := range stories {
-		weekStart := startOfBoardWeek(boardStoryGroupDate(story.PMStory))
+		weekStart := startOfBoardWeek(boardTaskGroupDate(story.PMStory))
 		key := weekStart.Format("2006-01-02")
 		label := "Week of " + weekStart.Format("Jan 2, 2006")
 		if weekStart.Equal(currentWeekStart) {
@@ -293,25 +293,25 @@ func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.Sto
 }
 
 // List returns stories with filters and pagination.
-func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
+func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("workspace_id = ?", workspaceID)
 
-	query = applyStoryStringFilter(query, "pm_tasks.team_id", filters.TeamID)
-	query = applyStoryStringFilter(query, "pm_tasks.epic_id", filters.EpicID)
-	query = applyStoryStringFilter(query, "pm_tasks.sprint_id", filters.SprintID)
-	query = applyStoryAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
-	query = applyStoryAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
-	query = applyStoryAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
-	query = applyStorySupportConversationFilter(query, filters.SupportConversationID)
-	query = applyStoryStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
-	query = applyStoryStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
-	query = applyStoryStringFilter(query, "pm_tasks.task_type", filters.StoryType)
-	query = applyStoryStringFilter(query, "pm_tasks.owner_id", filters.OwnerID)
-	query = applyStoryStringFilter(query, "pm_tasks.owner_member_id", filters.OwnerMemberID)
-	query = applyStoryStringFilter(query, "pm_tasks.priority", filters.Priority)
-	query = applyStoryStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
-	query = applyStoryStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
-	query = applyStoryStringFilter(query, "pm_tasks.severity", filters.Severity)
+	query = applyTaskStringFilter(query, "pm_tasks.team_id", filters.TeamID)
+	query = applyTaskStringFilter(query, "pm_tasks.epic_id", filters.EpicID)
+	query = applyTaskStringFilter(query, "pm_tasks.sprint_id", filters.SprintID)
+	query = applyTaskAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
+	query = applyTaskAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
+	query = applyTaskAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
+	query = applyTaskSupportConversationFilter(query, filters.SupportConversationID)
+	query = applyTaskStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
+	query = applyTaskStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
+	query = applyTaskStringFilter(query, "pm_tasks.task_type", filters.StoryType)
+	query = applyTaskStringFilter(query, "pm_tasks.owner_id", filters.OwnerID)
+	query = applyTaskStringFilter(query, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	query = applyTaskStringFilter(query, "pm_tasks.priority", filters.Priority)
+	query = applyTaskStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
+	query = applyTaskStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
+	query = applyTaskStringFilter(query, "pm_tasks.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}
@@ -359,7 +359,7 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 		return nil, 0, fmt.Errorf("list stories: %w", err)
 	}
 
-	return r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+	return r.collectAndEnrich(ctx, stories, taskEnrichOptions{
 		includeContacts:  filters.IncludeContacts,
 		includeCompanies: filters.IncludeCompanies,
 		includeDeals:     filters.IncludeDeals,
@@ -368,7 +368,7 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 }
 
 // GetByID returns a story detail payload.
-func (r *PMStoryRepository) GetByID(ctx context.Context, id string) (*model.StoryDetail, error) {
+func (r *PMTaskRepository) GetByID(ctx context.Context, id string) (*model.StoryDetail, error) {
 	var story model.PMStory
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&story).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -376,11 +376,11 @@ func (r *PMStoryRepository) GetByID(ctx context.Context, id string) (*model.Stor
 		}
 		return nil, fmt.Errorf("get story: %w", err)
 	}
-	return r.buildStoryDetail(ctx, story)
+	return r.buildTaskDetail(ctx, story)
 }
 
 // GetByDisplayID returns a story detail by display ID.
-func (r *PMStoryRepository) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.StoryDetail, error) {
+func (r *PMTaskRepository) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.StoryDetail, error) {
 	var story model.PMStory
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND display_id = ?", workspaceID, displayID).
@@ -390,11 +390,11 @@ func (r *PMStoryRepository) GetByDisplayID(ctx context.Context, workspaceID stri
 		}
 		return nil, fmt.Errorf("get story by display id: %w", err)
 	}
-	return r.buildStoryDetail(ctx, story)
+	return r.buildTaskDetail(ctx, story)
 }
 
 // GetRawByID returns a raw story model by ID.
-func (r *PMStoryRepository) GetRawByID(ctx context.Context, id string) (*model.PMStory, error) {
+func (r *PMTaskRepository) GetRawByID(ctx context.Context, id string) (*model.PMStory, error) {
 	var story model.PMStory
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&story).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -406,7 +406,7 @@ func (r *PMStoryRepository) GetRawByID(ctx context.Context, id string) (*model.P
 }
 
 // ListByIDs returns raw stories by ID for a workspace.
-func (r *PMStoryRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMStory, error) {
+func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMStory, error) {
 	if len(ids) == 0 {
 		return []model.PMStory{}, nil
 	}
@@ -421,7 +421,7 @@ func (r *PMStoryRepository) ListByIDs(ctx context.Context, workspaceID string, i
 }
 
 // ListByEpicAndExternalIDs returns raw stories for an epic keyed by external IDs.
-func (r *PMStoryRepository) ListByEpicAndExternalIDs(ctx context.Context, workspaceID, epicID string, externalIDs []string) ([]model.PMStory, error) {
+func (r *PMTaskRepository) ListByEpicAndExternalIDs(ctx context.Context, workspaceID, epicID string, externalIDs []string) ([]model.PMStory, error) {
 	if len(externalIDs) == 0 {
 		return []model.PMStory{}, nil
 	}
@@ -436,7 +436,7 @@ func (r *PMStoryRepository) ListByEpicAndExternalIDs(ctx context.Context, worksp
 }
 
 // Create inserts a story and auto-populates display_id per workspace.
-func (r *PMStoryRepository) Create(ctx context.Context, story *model.PMStory) error {
+func (r *PMTaskRepository) Create(ctx context.Context, story *model.PMStory) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if story.DisplayID == 0 {
 			var maxDisplayID int
@@ -450,7 +450,7 @@ func (r *PMStoryRepository) Create(ctx context.Context, story *model.PMStory) er
 		}
 
 		if story.WorkflowStateID != "" {
-			if err := normalizeStateStoryPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
+			if err := normalizeStateTaskPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
 				return fmt.Errorf("normalize create state positions: %w", err)
 			}
 		}
@@ -464,12 +464,12 @@ func (r *PMStoryRepository) Create(ctx context.Context, story *model.PMStory) er
 
 // NextPosition returns the next append position for a workflow state after
 // normalizing any existing duplicate or sparse positions in that column.
-func (r *PMStoryRepository) NextPosition(ctx context.Context, workspaceID, stateID string) (int, error) {
+func (r *PMTaskRepository) NextPosition(ctx context.Context, workspaceID, stateID string) (int, error) {
 	tx := r.db.WithContext(ctx)
-	if err := normalizeStateStoryPositions(tx, workspaceID, stateID); err != nil {
+	if err := normalizeStateTaskPositions(tx, workspaceID, stateID); err != nil {
 		return 0, fmt.Errorf("normalize next position state: %w", err)
 	}
-	position, err := normalizeBoardPosition(tx, workspaceID, stateID, "", nil)
+	position, err := normalizeTaskBoardPosition(tx, workspaceID, stateID, "", nil)
 	if err != nil {
 		return 0, fmt.Errorf("calculate next position: %w", err)
 	}
@@ -477,7 +477,7 @@ func (r *PMStoryRepository) NextPosition(ctx context.Context, workspaceID, state
 }
 
 // Update updates a story model.
-func (r *PMStoryRepository) Update(ctx context.Context, story *model.PMStory) error {
+func (r *PMTaskRepository) Update(ctx context.Context, story *model.PMStory) error {
 	if err := r.db.WithContext(ctx).Save(story).Error; err != nil {
 		return fmt.Errorf("update story: %w", err)
 	}
@@ -485,7 +485,7 @@ func (r *PMStoryRepository) Update(ctx context.Context, story *model.PMStory) er
 }
 
 // UpdateFields updates specific fields on a story by ID.
-func (r *PMStoryRepository) UpdateFields(ctx context.Context, id string, fields map[string]interface{}) error {
+func (r *PMTaskRepository) UpdateFields(ctx context.Context, id string, fields map[string]interface{}) error {
 	if err := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("id = ?", id).Updates(fields).Error; err != nil {
 		return fmt.Errorf("update story fields: %w", err)
 	}
@@ -493,7 +493,7 @@ func (r *PMStoryRepository) UpdateFields(ctx context.Context, id string, fields 
 }
 
 // Delete archives a story.
-func (r *PMStoryRepository) Delete(ctx context.Context, id string) error {
+func (r *PMTaskRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMStory{}).
 		Where("id = ?", id).
@@ -505,7 +505,7 @@ func (r *PMStoryRepository) Delete(ctx context.Context, id string) error {
 
 // MoveToState moves a story to a new state at the given position,
 // renumbering siblings in both the source and target columns transactionally.
-func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID string, position *int, debugTraceID string) error {
+func (r *PMTaskRepository) MoveToState(ctx context.Context, storyID, stateID string, position *int, debugTraceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Fetch the story to get its current state and position.
 		var story model.PMStory
@@ -515,11 +515,11 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 		}
 
 		oldStateID := story.WorkflowStateID
-		if err := normalizeStateStoryPositions(tx, story.WorkspaceID, oldStateID); err != nil {
+		if err := normalizeStateTaskPositions(tx, story.WorkspaceID, oldStateID); err != nil {
 			return fmt.Errorf("normalize source state positions: %w", err)
 		}
 		if stateID != oldStateID {
-			if err := normalizeStateStoryPositions(tx, story.WorkspaceID, stateID); err != nil {
+			if err := normalizeStateTaskPositions(tx, story.WorkspaceID, stateID); err != nil {
 				return fmt.Errorf("normalize target state positions: %w", err)
 			}
 		}
@@ -528,13 +528,13 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 			return fmt.Errorf("move story refetch: %w", err)
 		}
 
-		normalizedPosition, err := normalizeBoardPosition(tx, story.WorkspaceID, stateID, storyID, position)
+		normalizedPosition, err := normalizeTaskBoardPosition(tx, story.WorkspaceID, stateID, storyID, position)
 		if err != nil {
 			return fmt.Errorf("move story normalize position: %w", err)
 		}
 		slog.InfoContext(ctx, "[pm-dnd] repo move normalized",
 			"trace_id", debugTraceID,
-			"story_id", storyID,
+			"task_id", storyID,
 			"workspace_id", story.WorkspaceID,
 			"from_state_id", oldStateID,
 			"to_state_id", stateID,
@@ -570,11 +570,11 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 			return fmt.Errorf("move story update: %w", err)
 		}
 
-		fromSummary, fromErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, oldStateID)
-		toSummary, toErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, stateID)
+		fromSummary, fromErr := summarizePMDnDTaskStateSnapshot(tx, story.WorkspaceID, oldStateID)
+		toSummary, toErr := summarizePMDnDTaskStateSnapshot(tx, story.WorkspaceID, stateID)
 		slog.InfoContext(ctx, "[pm-dnd] repo move applied",
 			"trace_id", debugTraceID,
-			"story_id", storyID,
+			"task_id", storyID,
 			"from_state_id", oldStateID,
 			"to_state_id", stateID,
 			"from_state_order", fromSummary,
@@ -589,14 +589,14 @@ func (r *PMStoryRepository) MoveToState(ctx context.Context, storyID, stateID st
 
 // Reorder moves a story to a new position within its current column,
 // renumbering siblings transactionally to keep positions contiguous.
-func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, position int, debugTraceID string) error {
+func (r *PMTaskRepository) Reorder(ctx context.Context, storyID string, position int, debugTraceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var story model.PMStory
 		if err := tx.Select("id, workflow_state_id, position, workspace_id").
 			Where("id = ?", storyID).First(&story).Error; err != nil {
 			return fmt.Errorf("reorder story fetch: %w", err)
 		}
-		if err := normalizeStateStoryPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
+		if err := normalizeStateTaskPositions(tx, story.WorkspaceID, story.WorkflowStateID); err != nil {
 			return fmt.Errorf("normalize reorder state positions: %w", err)
 		}
 		if err := tx.Select("id, workflow_state_id, position, workspace_id").
@@ -604,13 +604,13 @@ func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, positio
 			return fmt.Errorf("reorder story refetch: %w", err)
 		}
 
-		normalizedPosition, err := normalizeBoardPosition(tx, story.WorkspaceID, story.WorkflowStateID, storyID, &position)
+		normalizedPosition, err := normalizeTaskBoardPosition(tx, story.WorkspaceID, story.WorkflowStateID, storyID, &position)
 		if err != nil {
 			return fmt.Errorf("reorder normalize position: %w", err)
 		}
 		slog.InfoContext(ctx, "[pm-dnd] repo reorder normalized",
 			"trace_id", debugTraceID,
-			"story_id", storyID,
+			"task_id", storyID,
 			"workspace_id", story.WorkspaceID,
 			"state_id", story.WorkflowStateID,
 			"old_position", story.Position,
@@ -647,10 +647,10 @@ func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, positio
 			return fmt.Errorf("reorder update: %w", err)
 		}
 
-		summary, snapshotErr := summarizePMDnDStateSnapshot(tx, story.WorkspaceID, story.WorkflowStateID)
+		summary, snapshotErr := summarizePMDnDTaskStateSnapshot(tx, story.WorkspaceID, story.WorkflowStateID)
 		slog.InfoContext(ctx, "[pm-dnd] repo reorder applied",
 			"trace_id", debugTraceID,
-			"story_id", storyID,
+			"task_id", storyID,
 			"state_id", story.WorkflowStateID,
 			"state_order", summary,
 			"state_snapshot_error", snapshotErr,
@@ -661,8 +661,8 @@ func (r *PMStoryRepository) Reorder(ctx context.Context, storyID string, positio
 }
 
 // AddOwner links an owner to a story.
-func (r *PMStoryRepository) AddOwner(ctx context.Context, storyID, userID string) error {
-	owner := model.PMStoryOwner{StoryID: storyID, UserID: userID}
+func (r *PMTaskRepository) AddOwner(ctx context.Context, storyID, userID string) error {
+	owner := model.PMStoryOwner{TaskID: storyID, UserID: userID}
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&owner).Error; err != nil {
@@ -672,7 +672,7 @@ func (r *PMStoryRepository) AddOwner(ctx context.Context, storyID, userID string
 }
 
 // RemoveOwner unlinks an owner from a story.
-func (r *PMStoryRepository) RemoveOwner(ctx context.Context, storyID, userID string) error {
+func (r *PMTaskRepository) RemoveOwner(ctx context.Context, storyID, userID string) error {
 	if err := r.db.WithContext(ctx).
 		Delete(&model.PMStoryOwner{}, "task_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
 		return fmt.Errorf("remove story owner: %w", err)
@@ -681,8 +681,8 @@ func (r *PMStoryRepository) RemoveOwner(ctx context.Context, storyID, userID str
 }
 
 // AddFollower links a follower to a story.
-func (r *PMStoryRepository) AddFollower(ctx context.Context, storyID, userID string) error {
-	follower := model.PMStoryFollower{StoryID: storyID, UserID: userID}
+func (r *PMTaskRepository) AddFollower(ctx context.Context, storyID, userID string) error {
+	follower := model.PMStoryFollower{TaskID: storyID, UserID: userID}
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&follower).Error; err != nil {
@@ -692,7 +692,7 @@ func (r *PMStoryRepository) AddFollower(ctx context.Context, storyID, userID str
 }
 
 // RemoveFollower unlinks a follower from a story.
-func (r *PMStoryRepository) RemoveFollower(ctx context.Context, storyID, userID string) error {
+func (r *PMTaskRepository) RemoveFollower(ctx context.Context, storyID, userID string) error {
 	if err := r.db.WithContext(ctx).
 		Delete(&model.PMStoryFollower{}, "task_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
 		return fmt.Errorf("remove story follower: %w", err)
@@ -701,8 +701,8 @@ func (r *PMStoryRepository) RemoveFollower(ctx context.Context, storyID, userID 
 }
 
 // AddLabel links a label to a story.
-func (r *PMStoryRepository) AddLabel(ctx context.Context, storyID, labelID string) error {
-	link := model.PMStoryLabel{StoryID: storyID, LabelID: labelID}
+func (r *PMTaskRepository) AddLabel(ctx context.Context, storyID, labelID string) error {
+	link := model.PMStoryLabel{TaskID: storyID, LabelID: labelID}
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&link).Error; err != nil {
@@ -712,7 +712,7 @@ func (r *PMStoryRepository) AddLabel(ctx context.Context, storyID, labelID strin
 }
 
 // RemoveLabel unlinks a label from a story.
-func (r *PMStoryRepository) RemoveLabel(ctx context.Context, storyID, labelID string) error {
+func (r *PMTaskRepository) RemoveLabel(ctx context.Context, storyID, labelID string) error {
 	if err := r.db.WithContext(ctx).
 		Delete(&model.PMStoryLabel{}, "task_id = ? AND label_id = ?", storyID, labelID).Error; err != nil {
 		return fmt.Errorf("remove story label: %w", err)
@@ -721,13 +721,13 @@ func (r *PMStoryRepository) RemoveLabel(ctx context.Context, storyID, labelID st
 }
 
 // ReplaceOwners replaces all story owners.
-func (r *PMStoryRepository) ReplaceOwners(ctx context.Context, storyID string, userIDs []string) error {
+func (r *PMTaskRepository) ReplaceOwners(ctx context.Context, storyID string, userIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMStoryOwner{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story owners: %w", err)
 		}
 		for _, userID := range userIDs {
-			if err := tx.Create(&model.PMStoryOwner{StoryID: storyID, UserID: userID}).Error; err != nil {
+			if err := tx.Create(&model.PMStoryOwner{TaskID: storyID, UserID: userID}).Error; err != nil {
 				return fmt.Errorf("replace story owners: %w", err)
 			}
 		}
@@ -736,13 +736,13 @@ func (r *PMStoryRepository) ReplaceOwners(ctx context.Context, storyID string, u
 }
 
 // ReplaceFollowers replaces all story followers.
-func (r *PMStoryRepository) ReplaceFollowers(ctx context.Context, storyID string, userIDs []string) error {
+func (r *PMTaskRepository) ReplaceFollowers(ctx context.Context, storyID string, userIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMStoryFollower{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story followers: %w", err)
 		}
 		for _, userID := range userIDs {
-			if err := tx.Create(&model.PMStoryFollower{StoryID: storyID, UserID: userID}).Error; err != nil {
+			if err := tx.Create(&model.PMStoryFollower{TaskID: storyID, UserID: userID}).Error; err != nil {
 				return fmt.Errorf("replace story followers: %w", err)
 			}
 		}
@@ -751,13 +751,13 @@ func (r *PMStoryRepository) ReplaceFollowers(ctx context.Context, storyID string
 }
 
 // ReplaceLabels replaces all story labels.
-func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, labelIDs []string) error {
+func (r *PMTaskRepository) ReplaceLabels(ctx context.Context, storyID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMStoryLabel{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story labels: %w", err)
 		}
 		for _, labelID := range labelIDs {
-			if err := tx.Create(&model.PMStoryLabel{StoryID: storyID, LabelID: labelID}).Error; err != nil {
+			if err := tx.Create(&model.PMStoryLabel{TaskID: storyID, LabelID: labelID}).Error; err != nil {
 				return fmt.Errorf("replace story labels: %w", err)
 			}
 		}
@@ -767,7 +767,7 @@ func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, l
 
 // ListByWorkflowState returns board columns grouped by workflow state with optional filters.
 // perStateLimit controls how many stories are returned per column (0 = unlimited).
-func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
+func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
@@ -788,23 +788,23 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 
 	var aggregateRows []struct {
 		StateID    string `gorm:"column:state_id"`
-		StoryCount int    `gorm:"column:story_count"`
+		TaskCount  int    `gorm:"column:task_count"`
 		PointTotal int    `gorm:"column:point_total"`
 	}
 	if err := baseQuery.
-		Select("pm_tasks.workflow_state_id AS state_id, COUNT(pm_tasks.id) AS story_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Select("pm_tasks.workflow_state_id AS state_id, COUNT(pm_tasks.id) AS task_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
 		Group("pm_tasks.workflow_state_id").
 		Scan(&aggregateRows).Error; err != nil {
 		return nil, fmt.Errorf("list board aggregates: %w", err)
 	}
 
 	type aggregateMeta struct {
-		storyCount int
+		taskCount  int
 		pointTotal int
 	}
 	aggregates := map[string]aggregateMeta{}
 	for _, row := range aggregateRows {
-		aggregates[row.StateID] = aggregateMeta{storyCount: row.StoryCount, pointTotal: row.PointTotal}
+		aggregates[row.StateID] = aggregateMeta{taskCount: row.TaskCount, pointTotal: row.PointTotal}
 	}
 
 	type columnMeta struct {
@@ -819,7 +819,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		query := r.db.WithContext(ctx).
 			Where("workflow_state_id = ? AND archived = false", state.ID)
 		query = r.applyBoardFilters(query, filters)
-		query = query.Order(boardStoryOrderClause(state.StateType))
+		query = query.Order(boardTaskOrderClause(state.StateType))
 		if perStateLimit > 0 {
 			query = query.Limit(perStateLimit)
 		}
@@ -833,14 +833,14 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 
 		aggregate := aggregates[state.ID]
 		metas[i] = columnMeta{
-			totalCount: aggregate.storyCount,
+			totalCount: aggregate.taskCount,
 			pointTotal: aggregate.pointTotal,
-			hasMore:    aggregate.storyCount > len(visibleStories),
+			hasMore:    aggregate.taskCount > len(visibleStories),
 			visible:    visibleStories,
 		}
 	}
 
-	enriched := r.collectAndEnrich(ctx, allStories, storyEnrichOptions{
+	enriched := r.collectAndEnrich(ctx, allStories, taskEnrichOptions{
 		includeContacts:  filters.IncludeContacts,
 		includeCompanies: filters.IncludeCompanies,
 		includeDeals:     filters.IncludeDeals,
@@ -861,13 +861,13 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		}
 		var storyGroups []model.StoryGroup
 		if state.StateType == "done" {
-			storyGroups = buildDoneStoryGroups(colStories, time.Now().UTC())
+			storyGroups = buildDoneTaskGroups(colStories, time.Now().UTC())
 		}
 		columns = append(columns, model.StoryStateColumn{
 			State:       state,
 			Stories:     colStories,
 			StoryGroups: storyGroups,
-			StoryCount:  m.totalCount,
+			TaskCount:   m.totalCount,
 			PointTotal:  m.pointTotal,
 			HasMore:     m.hasMore,
 		})
@@ -876,7 +876,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 }
 
 // ListColumnStories returns a page of stories for a single workflow state, enriched for board display.
-func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
+func (r *PMTaskRepository) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
 	var state model.PMWorkflowState
 	if err := r.db.WithContext(ctx).Where("id = ?", stateID).First(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -896,13 +896,13 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 
 	var stories []model.PMStory
 	if err := storyQuery.
-		Order(boardStoryOrderClause(state.StateType)).
+		Order(boardTaskOrderClause(state.StateType)).
 		Offset(offset).Limit(limit).
 		Find(&stories).Error; err != nil {
 		return nil, nil, 0, fmt.Errorf("list column stories: %w", err)
 	}
 
-	enriched := r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+	enriched := r.collectAndEnrich(ctx, stories, taskEnrichOptions{
 		includeContacts:  filters.IncludeContacts,
 		includeCompanies: filters.IncludeCompanies,
 		includeDeals:     filters.IncludeDeals,
@@ -910,13 +910,13 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 	})
 	var storyGroups []model.StoryGroup
 	if state.StateType == "done" {
-		storyGroups = buildDoneStoryGroups(enriched, time.Now().UTC())
+		storyGroups = buildDoneTaskGroups(enriched, time.Now().UTC())
 	}
 	return enriched, storyGroups, int(total), nil
 }
 
 // collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.
-func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory, options storyEnrichOptions) []model.BoardStory {
+func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory, options taskEnrichOptions) []model.BoardStory {
 	stories = r.applyDependencySummaries(ctx, stories)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
@@ -944,16 +944,16 @@ func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []mode
 	sprintNameMap := r.batchSprintNames(ctx, sprintIDs)
 	ownerNameMap := r.batchMemberNames(ctx, ownerMemberIDs)
 	legacyOwnerNameMap := r.batchOwnerNames(ctx, ownerIDs)
-	labelMap := r.batchStoryLabels(ctx, storyIDs)
+	labelMap := r.batchTaskLabels(ctx, storyIDs)
 	stateInfoMap := r.batchStateInfo(ctx, stateIDs)
 	contactsMap := map[string][]model.AssociationObjectSummary{}
 	companiesMap := map[string][]model.AssociationObjectSummary{}
 	dealsMap := map[string][]model.AssociationObjectSummary{}
 	supportMap := map[string][]model.AssociationObjectSummary{}
 	if options.includeContacts || options.includeCompanies || options.includeDeals || options.includeSupport {
-		contactsMap, companiesMap, dealsMap, supportMap = r.batchStoryAssociations(ctx, storyIDs, options)
+		contactsMap, companiesMap, dealsMap, supportMap = r.batchTaskAssociations(ctx, storyIDs, options)
 	}
-	return r.enrichBoardStories(stories, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
+	return r.enrichBoardTasks(stories, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
 }
 
 // stateInfo holds denormalized workflow state metadata for board stories.
@@ -963,8 +963,8 @@ type stateInfo struct {
 	Color     string
 }
 
-// enrichBoardStories maps epic/owner names, state info, and labels onto raw stories for board display.
-func (r *PMStoryRepository) enrichBoardStories(
+// enrichBoardTasks maps epic/owner names, state info, and labels onto raw stories for board display.
+func (r *PMTaskRepository) enrichBoardTasks(
 	stories []model.PMStory,
 	epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap map[string]string,
 	labelMap map[string][]model.PMLabel,
@@ -1013,12 +1013,12 @@ func (r *PMStoryRepository) enrichBoardStories(
 	return result
 }
 
-type storyAssociationLinkRow struct {
-	StoryID  string `gorm:"column:story_id"`
+type taskAssociationLinkRow struct {
+	TaskID   string `gorm:"column:task_id"`
 	ObjectID string `gorm:"column:object_id"`
 }
 
-func (r *PMStoryRepository) batchStoryAssociations(ctx context.Context, storyIDs []string, options storyEnrichOptions) (
+func (r *PMTaskRepository) batchTaskAssociations(ctx context.Context, storyIDs []string, options taskEnrichOptions) (
 	map[string][]model.AssociationObjectSummary,
 	map[string][]model.AssociationObjectSummary,
 	map[string][]model.AssociationObjectSummary,
@@ -1033,30 +1033,30 @@ func (r *PMStoryRepository) batchStoryAssociations(ctx context.Context, storyIDs
 	}
 
 	if options.includeContacts {
-		contacts = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectContact)
+		contacts = r.batchTaskCRMObjectAssociations(ctx, storyIDs, model.CRMObjectContact)
 	}
 	if options.includeCompanies {
-		companies = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectCompany)
+		companies = r.batchTaskCRMObjectAssociations(ctx, storyIDs, model.CRMObjectCompany)
 	}
 	if options.includeDeals {
-		deals = r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectDeal)
+		deals = r.batchTaskCRMObjectAssociations(ctx, storyIDs, model.CRMObjectDeal)
 	}
 	if options.includeSupport {
-		support = r.batchSupportConversationAssociations(ctx, storyIDs)
+		support = r.batchTaskSupportConversationAssociations(ctx, storyIDs)
 	}
 	return contacts, companies, deals, support
 }
 
-func (r *PMStoryRepository) batchCRMObjectAssociations(ctx context.Context, storyIDs []string, objectType string) map[string][]model.AssociationObjectSummary {
+func (r *PMTaskRepository) batchTaskCRMObjectAssociations(ctx context.Context, storyIDs []string, objectType string) map[string][]model.AssociationObjectSummary {
 	result := map[string][]model.AssociationObjectSummary{}
-	var links []storyAssociationLinkRow
+	var links []taskAssociationLinkRow
 	if err := r.db.WithContext(ctx).
 		Table("crm_associations ca").
 		Select(`
 			CASE
 				WHEN ca.from_object_type = ? THEN ca.from_object_id
 				ELSE ca.to_object_id
-			END AS story_id,
+			END AS task_id,
 			CASE
 				WHEN ca.from_object_type = ? THEN ca.to_object_id
 				ELSE ca.from_object_id
@@ -1090,17 +1090,17 @@ func (r *PMStoryRepository) batchCRMObjectAssociations(ctx context.Context, stor
 		if !ok {
 			continue
 		}
-		result[link.StoryID] = append(result[link.StoryID], summary)
+		result[link.TaskID] = append(result[link.TaskID], summary)
 	}
 	return result
 }
 
-func (r *PMStoryRepository) batchSupportConversationAssociations(ctx context.Context, storyIDs []string) map[string][]model.AssociationObjectSummary {
-	result := r.batchCRMObjectAssociations(ctx, storyIDs, model.CRMObjectSupportConversation)
+func (r *PMTaskRepository) batchTaskSupportConversationAssociations(ctx context.Context, storyIDs []string) map[string][]model.AssociationObjectSummary {
+	result := r.batchTaskCRMObjectAssociations(ctx, storyIDs, model.CRMObjectSupportConversation)
 
 	var rows []struct {
 		ID            string `gorm:"column:id"`
-		LinkedStoryID string `gorm:"column:linked_task_id"`
+		LinkedTaskID string `gorm:"column:linked_task_id"`
 		DisplayID     int    `gorm:"column:display_id"`
 		Subject       string `gorm:"column:subject"`
 		Status        string `gorm:"column:status"`
@@ -1123,28 +1123,28 @@ func (r *PMStoryRepository) batchSupportConversationAssociations(ctx context.Con
 	}
 
 	for _, row := range rows {
-		if _, ok := seen[row.LinkedStoryID]; !ok {
-			seen[row.LinkedStoryID] = map[string]struct{}{}
+		if _, ok := seen[row.LinkedTaskID]; !ok {
+			seen[row.LinkedTaskID] = map[string]struct{}{}
 		}
-		if _, ok := seen[row.LinkedStoryID][row.ID]; ok {
+		if _, ok := seen[row.LinkedTaskID][row.ID]; ok {
 			continue
 		}
 		displayID := fmt.Sprintf("%d", row.DisplayID)
 		status := row.Status
-		result[row.LinkedStoryID] = append(result[row.LinkedStoryID], model.AssociationObjectSummary{
+		result[row.LinkedTaskID] = append(result[row.LinkedTaskID], model.AssociationObjectSummary{
 			ObjectType: model.CRMObjectSupportConversation,
 			ObjectID:   row.ID,
 			DisplayID:  &displayID,
 			Title:      row.Subject,
 			Status:     &status,
 		})
-		seen[row.LinkedStoryID][row.ID] = struct{}{}
+		seen[row.LinkedTaskID][row.ID] = struct{}{}
 	}
 
 	return result
 }
 
-func (r *PMStoryRepository) loadAssociationObjectSummaries(ctx context.Context, objectType string, objectIDs []string) map[string]model.AssociationObjectSummary {
+func (r *PMTaskRepository) loadAssociationObjectSummaries(ctx context.Context, objectType string, objectIDs []string) map[string]model.AssociationObjectSummary {
 	result := map[string]model.AssociationObjectSummary{}
 	if len(objectIDs) == 0 {
 		return result
@@ -1254,21 +1254,21 @@ func (r *PMStoryRepository) loadAssociationObjectSummaries(ctx context.Context, 
 }
 
 // applyBoardFilters adds board-specific WHERE clauses to a query (shared between ListByWorkflowState and ListColumnStories).
-func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
-	q = applyStoryStringFilter(q, "pm_tasks.team_id", filters.TeamID)
-	q = applyStoryStringFilter(q, "pm_tasks.priority", filters.Priority)
-	q = applyStoryStringFilter(q, "pm_tasks.task_type", filters.StoryType)
-	q = applyStoryStringFilter(q, "pm_tasks.epic_id", filters.EpicID)
-	q = applyStoryStringFilter(q, "pm_tasks.sprint_id", filters.SprintID)
-	q = applyStoryAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
-	q = applyStoryAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
-	q = applyStoryAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
-	q = applyStorySupportConversationFilter(q, filters.SupportConversationID)
-	q = applyStoryStringFilter(q, "pm_tasks.owner_id", filters.OwnerID)
-	q = applyStoryStringFilter(q, "pm_tasks.owner_member_id", filters.OwnerMemberID)
-	q = applyStoryStringFilter(q, "pm_tasks.requester_id", filters.RequesterID)
-	q = applyStoryStringFilter(q, "pm_tasks.requester_member_id", filters.RequesterMemberID)
-	q = applyStoryStringFilter(q, "pm_tasks.severity", filters.Severity)
+func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
+	q = applyTaskStringFilter(q, "pm_tasks.team_id", filters.TeamID)
+	q = applyTaskStringFilter(q, "pm_tasks.priority", filters.Priority)
+	q = applyTaskStringFilter(q, "pm_tasks.task_type", filters.StoryType)
+	q = applyTaskStringFilter(q, "pm_tasks.epic_id", filters.EpicID)
+	q = applyTaskStringFilter(q, "pm_tasks.sprint_id", filters.SprintID)
+	q = applyTaskAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
+	q = applyTaskAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
+	q = applyTaskAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
+	q = applyTaskSupportConversationFilter(q, filters.SupportConversationID)
+	q = applyTaskStringFilter(q, "pm_tasks.owner_id", filters.OwnerID)
+	q = applyTaskStringFilter(q, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	q = applyTaskStringFilter(q, "pm_tasks.requester_id", filters.RequesterID)
+	q = applyTaskStringFilter(q, "pm_tasks.requester_member_id", filters.RequesterMemberID)
+	q = applyTaskStringFilter(q, "pm_tasks.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
 	}
@@ -1303,7 +1303,7 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 }
 
 // batchEpicNames looks up epic names by IDs.
-func (r *PMStoryRepository) batchSprintNames(ctx context.Context, sprintIDs map[string]struct{}) map[string]string {
+func (r *PMTaskRepository) batchSprintNames(ctx context.Context, sprintIDs map[string]struct{}) map[string]string {
 	result := map[string]string{}
 	if len(sprintIDs) == 0 {
 		return result
@@ -1325,7 +1325,7 @@ func (r *PMStoryRepository) batchSprintNames(ctx context.Context, sprintIDs map[
 	return result
 }
 
-func (r *PMStoryRepository) batchEpicNames(ctx context.Context, epicIDs map[string]struct{}) map[string]string {
+func (r *PMTaskRepository) batchEpicNames(ctx context.Context, epicIDs map[string]struct{}) map[string]string {
 	epicNameMap := map[string]string{}
 	if len(epicIDs) == 0 {
 		return epicNameMap
@@ -1348,7 +1348,7 @@ func (r *PMStoryRepository) batchEpicNames(ctx context.Context, epicIDs map[stri
 }
 
 // batchOwnerNames looks up user full names by IDs.
-func (r *PMStoryRepository) batchOwnerNames(ctx context.Context, ownerIDs map[string]struct{}) map[string]string {
+func (r *PMTaskRepository) batchOwnerNames(ctx context.Context, ownerIDs map[string]struct{}) map[string]string {
 	ownerNameMap := map[string]string{}
 	if len(ownerIDs) == 0 {
 		return ownerNameMap
@@ -1371,7 +1371,7 @@ func (r *PMStoryRepository) batchOwnerNames(ctx context.Context, ownerIDs map[st
 }
 
 // batchMemberNames looks up workspace member display names by IDs.
-func (r *PMStoryRepository) batchMemberNames(ctx context.Context, memberIDs map[string]struct{}) map[string]string {
+func (r *PMTaskRepository) batchMemberNames(ctx context.Context, memberIDs map[string]struct{}) map[string]string {
 	memberNameMap := map[string]string{}
 	if len(memberIDs) == 0 {
 		return memberNameMap
@@ -1398,15 +1398,15 @@ func (r *PMStoryRepository) batchMemberNames(ctx context.Context, memberIDs map[
 	return memberNameMap
 }
 
-// batchStoryLabels loads labels for a set of story IDs, keyed by story ID.
-func (r *PMStoryRepository) batchStoryLabels(ctx context.Context, storyIDs []string) map[string][]model.PMLabel {
+// batchTaskLabels loads labels for a set of story IDs, keyed by story ID.
+func (r *PMTaskRepository) batchTaskLabels(ctx context.Context, storyIDs []string) map[string][]model.PMLabel {
 	result := map[string][]model.PMLabel{}
 	if len(storyIDs) == 0 {
 		return result
 	}
 	var rows []struct {
 		model.PMLabel
-		StoryID string `gorm:"column:task_id"`
+		TaskID string `gorm:"column:task_id"`
 	}
 	if err := r.db.WithContext(ctx).
 		Table("pm_labels").
@@ -1419,13 +1419,13 @@ func (r *PMStoryRepository) batchStoryLabels(ctx context.Context, storyIDs []str
 	}
 	for _, row := range rows {
 		label := row.PMLabel
-		result[row.StoryID] = append(result[row.StoryID], label)
+		result[row.TaskID] = append(result[row.TaskID], label)
 	}
 	return result
 }
 
 // batchStateInfo batch-loads workflow state name, type, and color for a set of state IDs.
-func (r *PMStoryRepository) batchStateInfo(ctx context.Context, stateIDs map[string]struct{}) map[string]stateInfo {
+func (r *PMTaskRepository) batchStateInfo(ctx context.Context, stateIDs map[string]struct{}) map[string]stateInfo {
 	result := map[string]stateInfo{}
 	if len(stateIDs) == 0 {
 		return result
@@ -1454,7 +1454,7 @@ func (r *PMStoryRepository) batchStateInfo(ctx context.Context, stateIDs map[str
 }
 
 // ListByMember returns board columns grouped by owner member.
-func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
+func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
 	// Get all workflow state IDs for the selected workflow.
 	var stateIDs []string
 	if err := r.db.WithContext(ctx).
@@ -1475,12 +1475,12 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 	// Aggregate counts per owner_member_id (NULL grouped as unassigned).
 	type memberAggregate struct {
 		OwnerMemberID *string `gorm:"column:owner_member_id"`
-		StoryCount    int     `gorm:"column:story_count"`
+		TaskCount     int     `gorm:"column:task_count"`
 		PointTotal    int     `gorm:"column:point_total"`
 	}
 	var aggregateRows []memberAggregate
 	if err := baseQuery.
-		Select("pm_tasks.owner_member_id, COUNT(pm_tasks.id) AS story_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Select("pm_tasks.owner_member_id, COUNT(pm_tasks.id) AS task_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
 		Group("pm_tasks.owner_member_id").
 		Scan(&aggregateRows).Error; err != nil {
 		return nil, fmt.Errorf("list member board aggregates: %w", err)
@@ -1523,7 +1523,7 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 			query = query.Where("owner_member_id = ?", key)
 		}
 		query = query.Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
-			Order(memberBoardStoryOrderClause())
+			Order(memberBoardTaskOrderClause())
 		if perMemberLimit > 0 {
 			query = query.Limit(perMemberLimit)
 		}
@@ -1537,15 +1537,15 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 		agg := aggregates[key]
 		metaMap[key] = &columnMeta{
 			memberKey:  key,
-			totalCount: agg.StoryCount,
+			totalCount: agg.TaskCount,
 			pointTotal: agg.PointTotal,
-			hasMore:    agg.StoryCount > len(stories),
+			hasMore:    agg.TaskCount > len(stories),
 			visible:    stories,
 		}
 	}
 
 	// Enrich all stories at once.
-	enriched := r.collectAndEnrich(ctx, allStories, storyEnrichOptions{
+	enriched := r.collectAndEnrich(ctx, allStories, taskEnrichOptions{
 		includeContacts:  filters.IncludeContacts,
 		includeCompanies: filters.IncludeCompanies,
 		includeDeals:     filters.IncludeDeals,
@@ -1600,17 +1600,17 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 			colStories = append(colStories, enrichedMap[s.ID])
 		}
 		columns = append(columns, model.StoryMemberColumn{
-			Member:     nil,
-			Stories:    colStories,
-			StoryCount: meta.totalCount,
+			Member:    nil,
+			Stories:   colStories,
+			TaskCount: meta.totalCount,
 			PointTotal: meta.pointTotal,
 			HasMore:    meta.hasMore,
 		})
 	} else if includeEmpty {
 		columns = append(columns, model.StoryMemberColumn{
-			Member:     nil,
-			Stories:    []model.BoardStory{},
-			StoryCount: 0,
+			Member:    nil,
+			Stories:   []model.BoardStory{},
+			TaskCount: 0,
 			PointTotal: 0,
 			HasMore:    false,
 		})
@@ -1676,9 +1676,9 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 
 		m := memberInfoMap[entry.memberID]
 		columns = append(columns, model.StoryMemberColumn{
-			Member:     &m,
-			Stories:    colStories,
-			StoryCount: totalCount,
+			Member:    &m,
+			Stories:   colStories,
+			TaskCount: totalCount,
 			PointTotal: pointTotal,
 			HasMore:    hasMore,
 		})
@@ -1688,7 +1688,7 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 }
 
 // ListMemberColumnStories returns a page of stories for a single member column, enriched for board display.
-func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+func (r *PMTaskRepository) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
 	var stateIDs []string
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMWorkflowState{}).
@@ -1719,13 +1719,13 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 	var stories []model.PMStory
 	if err := storyQuery.
 		Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
-		Order(memberBoardStoryOrderClause()).
+		Order(memberBoardTaskOrderClause()).
 		Offset(offset).Limit(limit).
 		Find(&stories).Error; err != nil {
 		return nil, 0, fmt.Errorf("list member column stories: %w", err)
 	}
 
-	enriched := r.collectAndEnrich(ctx, stories, storyEnrichOptions{
+	enriched := r.collectAndEnrich(ctx, stories, taskEnrichOptions{
 		includeContacts:  filters.IncludeContacts,
 		includeCompanies: filters.IncludeCompanies,
 		includeDeals:     filters.IncludeDeals,
@@ -1735,11 +1735,11 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 }
 
 // CountByState returns story counts grouped by state for a workflow.
-func (r *PMStoryRepository) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
+func (r *PMTaskRepository) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
 	var counts []model.StoryStateCount
 	if err := r.db.WithContext(ctx).
 		Table("pm_workflow_states ws").
-		Select("ws.id AS state_id, ws.name AS state_name, ws.state_type AS state_type, COUNT(s.id) AS story_count").
+		Select("ws.id AS state_id, ws.name AS state_name, ws.state_type AS state_type, COUNT(s.id) AS task_count").
 		Joins("LEFT JOIN pm_tasks s ON s.workflow_state_id = ws.id AND s.archived = false").
 		Where("ws.workflow_id = ?", workflowID).
 		Group("ws.id, ws.name, ws.state_type, ws.position").
@@ -1751,7 +1751,7 @@ func (r *PMStoryRepository) CountByState(ctx context.Context, workflowID string)
 }
 
 // CountByWorkflowState returns number of active stories in a state.
-func (r *PMStoryRepository) CountByWorkflowState(ctx context.Context, stateID string) (int64, error) {
+func (r *PMTaskRepository) CountByWorkflowState(ctx context.Context, stateID string) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMStory{}).
@@ -1763,7 +1763,7 @@ func (r *PMStoryRepository) CountByWorkflowState(ctx context.Context, stateID st
 }
 
 // UpdateStartedCompleted computes and updates started/completed fields from state type.
-func (r *PMStoryRepository) UpdateStartedCompleted(ctx context.Context, storyID string) error {
+func (r *PMTaskRepository) UpdateStartedCompleted(ctx context.Context, storyID string) error {
 	var row struct {
 		StateType string
 	}
@@ -1809,7 +1809,7 @@ func (r *PMStoryRepository) UpdateStartedCompleted(ctx context.Context, storyID 
 }
 
 // UpdateSprintID updates only the sprint_id field of a story.
-func (r *PMStoryRepository) UpdateSprintID(ctx context.Context, storyID string, sprintID *string) error {
+func (r *PMTaskRepository) UpdateSprintID(ctx context.Context, storyID string, sprintID *string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMStory{}).
 		Where("id = ?", storyID).
@@ -1819,7 +1819,7 @@ func (r *PMStoryRepository) UpdateSprintID(ctx context.Context, storyID string, 
 	return nil
 }
 
-func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PMStory) (*model.StoryDetail, error) {
+func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, story model.PMStory) (*model.StoryDetail, error) {
 	story = r.applyDependencySummaries(ctx, []model.PMStory{story})[0]
 
 	var owners []model.User
@@ -1927,7 +1927,7 @@ type dependencySummary struct {
 	isBlockingOther  bool
 }
 
-func (r *PMStoryRepository) applyDependencySummaries(ctx context.Context, stories []model.PMStory) []model.PMStory {
+func (r *PMTaskRepository) applyDependencySummaries(ctx context.Context, stories []model.PMStory) []model.PMStory {
 	if len(stories) == 0 {
 		return stories
 	}
@@ -1941,13 +1941,13 @@ func (r *PMStoryRepository) applyDependencySummaries(ctx context.Context, storie
 		story.BlockingCount = summary.blockingCount
 		story.IsBlockedByStory = summary.isBlockedByStory
 		story.IsBlockingOther = summary.isBlockingOther
-		story.Blocked = isStoryBlocked(story, summary)
+		story.Blocked = isTaskBlocked(story, summary)
 		result = append(result, story)
 	}
 	return result
 }
 
-func (r *PMStoryRepository) loadDependencySummaries(ctx context.Context, workspaceID string, stories []model.PMStory) map[string]dependencySummary {
+func (r *PMTaskRepository) loadDependencySummaries(ctx context.Context, workspaceID string, stories []model.PMStory) map[string]dependencySummary {
 	result := make(map[string]dependencySummary, len(stories))
 	if workspaceID == "" || len(stories) == 0 {
 		return result
@@ -2045,7 +2045,7 @@ func (r *PMStoryRepository) loadDependencySummaries(ctx context.Context, workspa
 	return result
 }
 
-func isStoryBlocked(story model.PMStory, summary dependencySummary) bool {
+func isTaskBlocked(story model.PMStory, summary dependencySummary) bool {
 	if strings.TrimSpace(stringPtrValue(story.Blocker)) != "" {
 		return true
 	}
@@ -2062,7 +2062,7 @@ func stringPtrValue(value *string) string {
 	return *value
 }
 
-func (r *PMStoryRepository) applyDerivedBlockedFilter(q *gorm.DB, blocked bool) *gorm.DB {
+func (r *PMTaskRepository) applyDerivedBlockedFilter(q *gorm.DB, blocked bool) *gorm.DB {
 	expr := `
 (
 	COALESCE(NULLIF(TRIM(pm_tasks.blocker), ''), '') <> ''
@@ -2092,7 +2092,7 @@ func (r *PMStoryRepository) applyDerivedBlockedFilter(q *gorm.DB, blocked bool) 
 	return q.Where("NOT "+expr, model.PMStoryLinkTypeBlocks, model.PMStoryLinkTypeBlocks)
 }
 
-func (r *PMStoryRepository) applyBlockingFilter(q *gorm.DB, blocking bool) *gorm.DB {
+func (r *PMTaskRepository) applyBlockingFilter(q *gorm.DB, blocking bool) *gorm.DB {
 	expr := `
 EXISTS (
 	SELECT 1
@@ -2107,7 +2107,7 @@ EXISTS (
 	return q.Where("NOT "+expr, model.PMStoryLinkTypeBlocks)
 }
 
-func (r *PMStoryRepository) loadAssignableMember(ctx context.Context, workspaceID string, memberID *string) (*model.AssignableMember, error) {
+func (r *PMTaskRepository) loadAssignableMember(ctx context.Context, workspaceID string, memberID *string) (*model.AssignableMember, error) {
 	if memberID == nil || *memberID == "" {
 		return nil, nil
 	}
@@ -2141,7 +2141,7 @@ func (r *PMStoryRepository) loadAssignableMember(ctx context.Context, workspaceI
 // MigrateStoriesToWorkflow remaps stories belonging to a team (or with NULL
 // team_id) from old workflow states to new workflow states using the provided
 // state mapping. It also sets team_id on migrated stories.
-func (r *PMStoryRepository) MigrateStoriesToWorkflow(ctx context.Context, teamID, oldWorkflowID, newWorkflowID string, stateMap map[string]string) (int64, error) {
+func (r *PMTaskRepository) MigrateStoriesToWorkflow(ctx context.Context, teamID, oldWorkflowID, newWorkflowID string, stateMap map[string]string) (int64, error) {
 	var total int64
 	for oldStateID, newStateID := range stateMap {
 		result := r.db.WithContext(ctx).

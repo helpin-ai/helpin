@@ -59,7 +59,7 @@ const makeStateColumn = (overrides: Record<string, unknown>) => ({
   ...overrides,
 })
 
-describe('usePMBoardStore.moveMemberStory', () => {
+describe('usePMBoardStore.moveMemberTask', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockedTaskService.reorder.mockResolvedValue({
@@ -117,7 +117,7 @@ describe('usePMBoardStore.moveMemberStory', () => {
   it('does nothing for same-member drag attempts', async () => {
     const before = structuredClone(usePMBoardStore.getState().memberColumns)
 
-    await usePMBoardStore.getState().moveMemberStory({
+    await usePMBoardStore.getState().moveMemberTask({
       workspaceId: 'ws-1',
       storyId: 'story-1',
       fromMemberId: 'member-1',
@@ -125,19 +125,19 @@ describe('usePMBoardStore.moveMemberStory', () => {
       toIndex: 1,
     })
 
-    expect(mockedStoryService.update).not.toHaveBeenCalled()
-    expect(mockedStoryService.reorder).not.toHaveBeenCalled()
+    expect(mockedTaskService.update).not.toHaveBeenCalled()
+    expect(mockedTaskService.reorder).not.toHaveBeenCalled()
     expect(usePMBoardStore.getState().memberColumns).toEqual(before)
   })
 
   it('persists cross-member moves as reassignment only', async () => {
-    mockedStoryService.update.mockResolvedValue({
+    mockedTaskService.update.mockResolvedValue({
       data: { story: { id: 'story-1', owner_member_id: 'member-2' } },
       error: null,
       status: 200,
     } as never)
 
-    await usePMBoardStore.getState().moveMemberStory({
+    await usePMBoardStore.getState().moveMemberTask({
       workspaceId: 'ws-1',
       storyId: 'story-1',
       fromMemberId: 'member-1',
@@ -145,24 +145,24 @@ describe('usePMBoardStore.moveMemberStory', () => {
       toIndex: 0,
     })
 
-    expect(mockedStoryService.update).toHaveBeenCalledWith('ws-1', 'story-1', {
+    expect(mockedTaskService.update).toHaveBeenCalledWith('ws-1', 'story-1', {
       owner_member_id: 'member-2',
     })
-    expect(mockedStoryService.reorder).not.toHaveBeenCalled()
+    expect(mockedTaskService.reorder).not.toHaveBeenCalled()
     expect(usePMBoardStore.getState().memberColumns[0]?.stories.map((story) => story.id)).toEqual(['story-2'])
     expect(usePMBoardStore.getState().memberColumns[1]?.stories.map((story) => story.id)).toEqual(['story-1'])
   })
 })
 
-describe('usePMBoardStore.moveStory', () => {
+describe('usePMBoardStore.moveTask', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedStoryService.reorder.mockResolvedValue({
+    mockedTaskService.reorder.mockResolvedValue({
       data: null,
       error: null,
       status: 200,
     } as never)
-    mockedStoryService.move.mockResolvedValue({
+    mockedTaskService.move.mockResolvedValue({
       data: {
         story: makeStory({
           id: 'story-1',
@@ -206,7 +206,7 @@ describe('usePMBoardStore.moveStory', () => {
       ] as never,
     })
 
-    await usePMBoardStore.getState().moveStory({
+    await usePMBoardStore.getState().moveTask({
       workspaceId: 'ws-1',
       storyId: 'story-1',
       fromStateId: 'state-todo',
@@ -214,7 +214,7 @@ describe('usePMBoardStore.moveStory', () => {
       toIndex: 2,
     })
 
-    expect(mockedStoryService.reorder).toHaveBeenCalledWith(
+    expect(mockedTaskService.reorder).toHaveBeenCalledWith(
       'ws-1',
       'story-1',
       expect.objectContaining({
@@ -258,7 +258,7 @@ describe('usePMBoardStore.moveStory', () => {
       ] as never,
     })
 
-    await usePMBoardStore.getState().moveStory({
+    await usePMBoardStore.getState().moveTask({
       workspaceId: 'ws-1',
       storyId: 'story-1',
       fromStateId: 'state-todo',
@@ -266,7 +266,7 @@ describe('usePMBoardStore.moveStory', () => {
       toIndex: 1,
     })
 
-    expect(mockedStoryService.move).toHaveBeenCalledWith(
+    expect(mockedTaskService.move).toHaveBeenCalledWith(
       'ws-1',
       'story-1',
       expect.objectContaining({

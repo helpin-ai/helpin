@@ -28,6 +28,16 @@ func queryStringPtr(r *http.Request, key string) *string {
 	return &value
 }
 
+// queryStringPtrWithFallback returns the first non-empty query param from the given keys.
+func queryStringPtrWithFallback(r *http.Request, keys ...string) *string {
+	for _, key := range keys {
+		if value := r.URL.Query().Get(key); value != "" {
+			return &value
+		}
+	}
+	return nil
+}
+
 func queryBoolPtr(r *http.Request, key string) (*bool, error) {
 	raw := r.URL.Query().Get(key)
 	if raw == "" {

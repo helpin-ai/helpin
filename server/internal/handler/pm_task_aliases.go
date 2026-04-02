@@ -2,13 +2,14 @@ package handler
 
 import "github.com/helpin-ai/helpin/server/internal/service"
 
-type PMTaskHandler = PMStoryHandler
-type PMTaskTemplateHandler = PMStoryTemplateHandler
+// Backward-compat aliases: Story-era names → Task-era canonical types.
+type PMStoryHandler = PMTaskHandler
+type PMStoryTemplateHandler = PMTaskTemplateHandler
 
-func NewPMTaskHandler(taskService *service.PMTaskService) *PMTaskHandler {
-	return NewPMStoryHandler(taskService)
+func NewPMStoryHandler(taskService *service.PMTaskService) *PMStoryHandler {
+	return NewPMTaskHandler(taskService)
 }
 
-func NewPMTaskTemplateHandler(templateService *service.PMTaskTemplateService) *PMTaskTemplateHandler {
-	return NewPMStoryTemplateHandler(templateService)
+func NewPMStoryTemplateHandler(templateService *service.PMTaskTemplateService) *PMStoryTemplateHandler {
+	return NewPMTaskTemplateHandler(templateService)
 }

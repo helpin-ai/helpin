@@ -138,7 +138,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 			}
 			card.Stats = statsBySprintID[sprintID]
 			card.PreviewStories = previewStoriesBySprintID[sprintID]
-			if overflow := card.Stats.StoryCount - len(card.PreviewStories); overflow > 0 {
+			if overflow := card.Stats.TaskCount - len(card.PreviewStories); overflow > 0 {
 				card.StoryPreviewOverflow = overflow
 			}
 		}
@@ -256,10 +256,10 @@ func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) 
 	}
 
 	for _, row := range rows {
-		stats.StoryCount += row.Count
+		stats.TaskCount += row.Count
 		stats.TotalPoints += row.Points
 		if row.StateType == model.PMStateTypeDone {
-			stats.DoneStoryCount += row.Count
+			stats.DoneTaskCount += row.Count
 			stats.DonePoints += row.Points
 		}
 	}
@@ -386,10 +386,10 @@ func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs
 	}
 	for _, row := range rows {
 		stats := statsBySprintID[row.SprintID]
-		stats.StoryCount += row.Count
+		stats.TaskCount += row.Count
 		stats.TotalPoints += row.Points
 		if row.StateType == model.PMStateTypeDone {
-			stats.DoneStoryCount += row.Count
+			stats.DoneTaskCount += row.Count
 			stats.DonePoints += row.Points
 		}
 		statsBySprintID[row.SprintID] = stats

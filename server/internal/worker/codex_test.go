@@ -57,7 +57,7 @@ func TestBuildCodexPromptIncludesRuntimeSpecificEngineerInstructions(t *testing.
 			PresetKey:    model.AgentPresetCodeBuilder,
 			AllowedTools: []byte(`["write_file","run_command","commit_and_push"]`),
 		},
-		Story: &model.PMStory{Name: "Implement metrics"},
+		Task: &model.PMStory{Name: "Implement metrics"},
 	}, "You are a coding agent.", "Please implement the story.")
 
 	for _, snippet := range []string{

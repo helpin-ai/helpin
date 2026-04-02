@@ -330,17 +330,17 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if err != nil {
 			return err
 		}
-		if conversation == nil || conversation.LinkedStoryID == nil || *conversation.LinkedStoryID == "" {
+		if conversation == nil || conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
 			return nil
 		}
 		existing := make(map[string]struct{}, len(response.Stories))
 		for _, item := range response.Stories {
 			existing[item.ObjectID] = struct{}{}
 		}
-		if _, ok := existing[*conversation.LinkedStoryID]; ok {
+		if _, ok := existing[*conversation.LinkedTaskID]; ok {
 			return nil
 		}
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedStoryID})
+		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedTaskID})
 		if err != nil {
 			return err
 		}
@@ -401,7 +401,7 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 			RelationshipID: link.ID,
 			LinkType:       link.LinkType,
 			IsActive:       !otherStory.Completed,
-			Story:          storyAssociationSummary("", otherStory),
+			Task:           storyAssociationSummary("", otherStory),
 		}
 		switch link.LinkType {
 		case model.PMStoryLinkTypeBlocks:
@@ -578,7 +578,7 @@ func sortStoryRelationshipGroup(items []model.StoryRelationshipSummary) {
 		if items[i].IsActive != items[j].IsActive {
 			return items[i].IsActive
 		}
-		return items[i].Story.Title < items[j].Story.Title
+		return items[i].Task.Title < items[j].Task.Title
 	})
 }
 

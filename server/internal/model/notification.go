@@ -247,8 +247,8 @@ func (EntityFollower) TableName() string { return "entity_followers" }
 type NotificationEventInput struct {
 	WorkspaceID          string
 	ActorID              string
-	EventType            string // e.g. "story.assigned"
-	EntityType           string // e.g. "story"
+	EventType            string // e.g. "task.assigned"
+	EntityType           string // e.g. "task"
 	EntityID             string
 	Title                string
 	Body                 string

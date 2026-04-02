@@ -46,7 +46,7 @@ func TestApproveEpicSpecToolReturnsApprovedSummary(t *testing.T) {
 	}
 }
 
-func TestEnsureStoryPlanDocToolReturnsDocumentMetadata(t *testing.T) {
+func TestEnsureTaskPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context:     context.Background(),
@@ -58,7 +58,7 @@ func TestEnsureStoryPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 			"ensure_story_plan_doc": true,
 		},
 		Services: &ServiceBridge{
-			EnsureStoryPlanDoc: func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
+			EnsureTaskPlanDoc: func(ctx context.Context, workspaceID, storyID, actorID string) (*model.DocsDocument, error) {
 				if workspaceID != "ws-1" || storyID != "story-1" || actorID != "agent-1" {
 					t.Fatalf("unexpected tool context: workspace=%q story=%q actor=%q", workspaceID, storyID, actorID)
 				}
@@ -105,15 +105,15 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 			"create_story_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateStoryBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error) {
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateTaskBatchResult, error) {
 				if workspaceID != "ws-1" || epicID != "epic-1" || actorID != "agent-1" {
 					t.Fatalf("unexpected tool context: workspace=%q epic=%q actor=%q", workspaceID, epicID, actorID)
 				}
 				if len(stories) != 1 || stories[0].Name != "Story A" {
 					t.Fatalf("unexpected stories payload %#v", stories)
 				}
-				return CreateStoryBatchResult{
-					Stories: []CreateStoryBatchStoryResult{{Ref: "story_1", StoryID: "story-db-1", Name: "Story A"}},
+				return CreateTaskBatchResult{
+					Tasks: []CreateTaskBatchTaskResult{{Ref: "story_1", TaskID: "story-db-1", Name: "Story A"}},
 				}, nil
 			},
 		},
@@ -149,8 +149,8 @@ func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 			"create_story_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateStoryBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error) {
-				return CreateStoryBatchResult{}, nil
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateTaskBatchResult, error) {
+				return CreateTaskBatchResult{}, nil
 			},
 		},
 	}
@@ -181,8 +181,8 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 			"create_story_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateStoryBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error) {
-				return CreateStoryBatchResult{}, nil
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateTaskBatchResult, error) {
+				return CreateTaskBatchResult{}, nil
 			},
 		},
 	}

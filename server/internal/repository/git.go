@@ -166,18 +166,18 @@ func (r *GitRepositoryRepository) UpsertMany(ctx context.Context, workspaceID, i
 	})
 }
 
-// StoryDeliveryTargetRepository handles current delivery target state for tasks.
-type StoryDeliveryTargetRepository struct {
+// TaskDeliveryTargetRepository handles current delivery target state for tasks.
+type TaskDeliveryTargetRepository struct {
 	db *gorm.DB
 }
 
-// NewStoryDeliveryTargetRepository creates a new StoryDeliveryTargetRepository.
-func NewStoryDeliveryTargetRepository(db *gorm.DB) *StoryDeliveryTargetRepository {
-	return &StoryDeliveryTargetRepository{db: db}
+// NewTaskDeliveryTargetRepository creates a new TaskDeliveryTargetRepository.
+func NewTaskDeliveryTargetRepository(db *gorm.DB) *TaskDeliveryTargetRepository {
+	return &TaskDeliveryTargetRepository{db: db}
 }
 
 // GetByStory returns the delivery target for a task.
-func (r *StoryDeliveryTargetRepository) GetByStory(ctx context.Context, workspaceID, storyID string) (*model.StoryDeliveryTarget, error) {
+func (r *TaskDeliveryTargetRepository) GetByStory(ctx context.Context, workspaceID, storyID string) (*model.StoryDeliveryTarget, error) {
 	var target model.StoryDeliveryTarget
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).
@@ -191,7 +191,7 @@ func (r *StoryDeliveryTargetRepository) GetByStory(ctx context.Context, workspac
 }
 
 // GetByID returns a delivery target by ID.
-func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.StoryDeliveryTarget, error) {
+func (r *TaskDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.StoryDeliveryTarget, error) {
 	var target model.StoryDeliveryTarget
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND id = ?", workspaceID, id).
@@ -205,7 +205,7 @@ func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID
 }
 
 // Save persists a delivery target, upserting on the task_id unique index.
-func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
+func (r *TaskDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "task_id"}},
@@ -222,18 +222,18 @@ func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.
 	return nil
 }
 
-// StoryGitLinkRepository handles DB operations for task git links.
-type StoryGitLinkRepository struct {
+// TaskGitLinkRepository handles DB operations for task git links.
+type TaskGitLinkRepository struct {
 	db *gorm.DB
 }
 
-// NewStoryGitLinkRepository creates a new StoryGitLinkRepository.
-func NewStoryGitLinkRepository(db *gorm.DB) *StoryGitLinkRepository {
-	return &StoryGitLinkRepository{db: db}
+// NewTaskGitLinkRepository creates a new TaskGitLinkRepository.
+func NewTaskGitLinkRepository(db *gorm.DB) *TaskGitLinkRepository {
+	return &TaskGitLinkRepository{db: db}
 }
 
 // ListByStory returns git links for a task.
-func (r *StoryGitLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.StoryGitLink, error) {
+func (r *TaskGitLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.StoryGitLink, error) {
 	var links []model.StoryGitLink
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list story git links: %w", err)
@@ -242,7 +242,7 @@ func (r *StoryGitLinkRepository) ListByStory(ctx context.Context, workspaceID, s
 }
 
 // GetByBranch returns a link by repo+branch.
-func (r *StoryGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, repo, branch string) (*model.StoryGitLink, error) {
+func (r *TaskGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, repo, branch string) (*model.StoryGitLink, error) {
 	var link model.StoryGitLink
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND repo = ? AND branch = ?", workspaceID, repo, branch).First(&link).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -254,7 +254,7 @@ func (r *StoryGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, r
 }
 
 // GetByPR returns a link by repo+PR number.
-func (r *StoryGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo string, prNumber int) (*model.StoryGitLink, error) {
+func (r *TaskGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo string, prNumber int) (*model.StoryGitLink, error) {
 	var link model.StoryGitLink
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND repo = ? AND pr_number = ?", workspaceID, repo, prNumber).First(&link).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -266,7 +266,7 @@ func (r *StoryGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo 
 }
 
 // Create creates a new link.
-func (r *StoryGitLinkRepository) Create(ctx context.Context, link *model.StoryGitLink) error {
+func (r *TaskGitLinkRepository) Create(ctx context.Context, link *model.StoryGitLink) error {
 	if err := r.db.WithContext(ctx).Create(link).Error; err != nil {
 		return fmt.Errorf("create story git link: %w", err)
 	}
@@ -274,7 +274,7 @@ func (r *StoryGitLinkRepository) Create(ctx context.Context, link *model.StoryGi
 }
 
 // Update saves a link.
-func (r *StoryGitLinkRepository) Update(ctx context.Context, link *model.StoryGitLink) error {
+func (r *TaskGitLinkRepository) Update(ctx context.Context, link *model.StoryGitLink) error {
 	if err := r.db.WithContext(ctx).Save(link).Error; err != nil {
 		return fmt.Errorf("update story git link: %w", err)
 	}
@@ -282,7 +282,7 @@ func (r *StoryGitLinkRepository) Update(ctx context.Context, link *model.StoryGi
 }
 
 // UpsertByRunAndBranch ensures a historical git link exists for a run/branch tuple.
-func (r *StoryGitLinkRepository) UpsertByRunAndBranch(ctx context.Context, link *model.StoryGitLink) error {
+func (r *TaskGitLinkRepository) UpsertByRunAndBranch(ctx context.Context, link *model.StoryGitLink) error {
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "task_id"}, {Name: "repo"}, {Name: "branch"}},
 		DoUpdates: clause.AssignmentColumns([]string{

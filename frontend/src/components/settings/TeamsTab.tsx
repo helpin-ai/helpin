@@ -238,7 +238,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
     setTeamType(normalizeTeamType(team.team_type));
-    setDefaultStoryType(team.default_story_type ?? 'feature');
+    setDefaultStoryType(team.default_task_type ?? 'feature');
     setStoryTypeTouched(false);
     setDialogOpen(true);
   };
@@ -257,7 +257,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       handle: handle.trim() ? slugifyTeamHandle(handle) : undefined,
       description: description || undefined,
       team_type: teamType,
-      default_story_type: defaultStoryType,
+      default_task_type: defaultStoryType,
     };
     if (editTeam) {
       const { error } = await settingsService.updateTeam(workspaceId, editTeam.id, payload);

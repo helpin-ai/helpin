@@ -152,7 +152,7 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"task", "story"},
 		Tool:                 mustCommandToolMetadata("docs.ensure_task_plan_doc"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			doc, err := s.agentService.EnsureStoryPlanDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
+			doc, err := s.agentService.EnsureTaskPlanDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
 			if err != nil {
 				return nil, err
 			}
@@ -231,7 +231,7 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				tasks, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
 			} else {
-				tasks, err = s.agentService.CreateEpicStoryBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Stories)
+				tasks, err = s.agentService.CreateEpicTaskBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Stories)
 			}
 			if err != nil {
 				return nil, err

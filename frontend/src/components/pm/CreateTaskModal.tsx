@@ -111,7 +111,7 @@ interface ExternalLinkItem {
 
 const defaultState = {
   name: "",
-  story_type: "feature" as StoryType,
+  task_type: "feature" as StoryType,
   description: "",
   priority: "medium" as Priority,
   severity: "none" as Severity,
@@ -290,7 +290,7 @@ export function CreateTaskModal({
   const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
   const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
   const selectedTeamDefaultStoryType = useMemo(
-    () => (selectedTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+    () => (selectedTeam?.default_task_type as StoryType | undefined) ?? 'feature',
     [selectedTeam],
   );
   const mentionTeams = useMemo(
@@ -312,7 +312,7 @@ export function CreateTaskModal({
       setForm({
         name: editingTemplate.name,
         description: editingTemplate.description || '',
-        story_type: (editingTemplate.story_type as StoryType) || 'feature',
+        task_type: (editingTemplate.task_type as StoryType) || 'feature',
         priority: (editingTemplate.priority as Priority) || 'none',
         severity: (editingTemplate.severity as Severity) || 'none',
         estimate: editingTemplate.estimate !== undefined && editingTemplate.estimate !== null ? String(editingTemplate.estimate) : '',
@@ -336,7 +336,7 @@ export function CreateTaskModal({
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
       setForm({
         ...defaultState,
-        story_type: (initialTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+        task_type: (initialTeam?.default_task_type as StoryType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         owner_member_id: initialOwnerMemberId ?? '',
@@ -361,8 +361,8 @@ export function CreateTaskModal({
   useEffect(() => {
     if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
     setForm((current) => {
-      if (current.story_type === selectedTeamDefaultStoryType) return current;
-      return { ...current, story_type: selectedTeamDefaultStoryType };
+      if (current.task_type === selectedTeamDefaultStoryType) return current;
+      return { ...current, task_type: selectedTeamDefaultStoryType };
     });
   }, [selectedTeamDefaultStoryType, storyTypeDirty, isTemplateMode, editingTemplate]);
 
@@ -560,7 +560,7 @@ export function CreateTaskModal({
         const templatePayload = {
           name: form.name.trim(),
           description: descriptionForSubmit.trim() || undefined,
-          story_type: form.story_type !== 'feature' ? form.story_type : undefined,
+          task_type: form.task_type !== 'feature' ? form.task_type : undefined,
           priority: form.priority !== 'none' ? form.priority : undefined,
           severity: form.severity !== 'none' ? form.severity : undefined,
           estimate: form.estimate ? Number(form.estimate) : undefined,
@@ -591,7 +591,7 @@ export function CreateTaskModal({
           workspace_id: workspaceId,
           name: form.name.trim(),
           description: descriptionForSubmit.trim() || undefined,
-          story_type: form.story_type,
+          task_type: form.task_type,
           workflow_id: workflowId,
           workflow_state_id: workflowStateId,
           priority: form.priority,
@@ -634,7 +634,7 @@ export function CreateTaskModal({
         if (result?.id && recurringDraft) {
           const { error: recurringError } = await pmRecurringTemplateService.create({
             workspace_id: workspaceId,
-            story_id: result.id,
+            task_id: result.id,
             title: recurringDraft.title.trim() || form.name.trim(),
             description: recurringDraft.description.trim() || undefined,
             config: recurringDraft.config,
@@ -657,7 +657,7 @@ export function CreateTaskModal({
           setSourceMarkdown('');
           setForm({
             ...defaultState,
-            story_type: (resetTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+            task_type: (resetTeam?.default_task_type as StoryType | undefined) ?? 'feature',
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
@@ -1113,7 +1113,7 @@ export function CreateTaskModal({
                         ...prev,
                         team_id: tmpl.team_id || prev.team_id,
                         description: tmpl.description || prev.description,
-                        story_type: (tmpl.story_type as StoryType) || prev.story_type,
+                        task_type: (tmpl.task_type as StoryType) || prev.task_type,
                         priority: (tmpl.priority as Priority) || prev.priority,
                         severity: (tmpl.severity as Severity) || prev.severity,
                         estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
@@ -1258,7 +1258,7 @@ export function CreateTaskModal({
                 )}
 
                 {/* ── Classification ── */}
-                {(fieldVis.priority || fieldVis.severity || fieldVis.story_type || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.priority || fieldVis.severity || fieldVis.task_type || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Priority */}
                 {fieldVis.priority && (
@@ -1301,19 +1301,19 @@ export function CreateTaskModal({
                 )}
 
                 {/* Type */}
-                {fieldVis.story_type && (
+                {fieldVis.task_type && (
                 <MetadataRow icon={Hash} label="Type">
                   <SidebarPopoverSelect
-                    value={form.story_type}
+                    value={form.task_type}
                     options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
                     onChange={(value) => {
                       setStoryTypeDirty(true);
-                      setForm((prev) => ({ ...prev, story_type: value as StoryType }));
+                      setForm((prev) => ({ ...prev, task_type: value as StoryType }));
                     }}
                     renderTrigger={() => (
                       <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{STORY_TYPE_CONFIG[form.story_type].label}</span>
+                        <StoryTypeIcon storyType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{STORY_TYPE_CONFIG[form.task_type].label}</span>
                       </span>
                     )}
                     renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}

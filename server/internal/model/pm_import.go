@@ -35,21 +35,21 @@ type PMImportJob struct {
 func (PMImportJob) TableName() string { return "pm_import_jobs" }
 
 type ShortcutWorkflowPreview struct {
-	ID         string                         `json:"id,omitempty"`
-	Name       string                         `json:"name"`
-	StoryCount int                            `json:"story_count"`
-	States     []ShortcutWorkflowStatePreview `json:"states"`
+	ID        string                         `json:"id,omitempty"`
+	Name      string                         `json:"name"`
+	TaskCount int                            `json:"task_count"`
+	States    []ShortcutWorkflowStatePreview `json:"states"`
 }
 
 type ShortcutWorkflowStatePreview struct {
 	Name          string `json:"name"`
 	SuggestedType string `json:"suggested_type"`
-	StoryCount    int    `json:"story_count"`
+	TaskCount     int    `json:"task_count"`
 }
 
 type ShortcutTeamPreview struct {
-	Name       string `json:"name"`
-	StoryCount int    `json:"story_count"`
+	Name      string `json:"name"`
+	TaskCount int    `json:"task_count"`
 }
 
 type ShortcutUserMatch struct {

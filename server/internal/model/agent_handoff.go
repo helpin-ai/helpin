@@ -12,7 +12,7 @@ type AgentHandoff struct {
 	FromAgentID *string         `json:"from_agent_id" gorm:"type:uuid"`
 	ToAgentID   *string         `json:"to_agent_id" gorm:"type:uuid"`
 	ToUserID    *string         `json:"to_user_id" gorm:"type:uuid"`
-	StoryID     *string         `json:"story_id" gorm:"type:uuid;index"`
+	StoryID     *string         `json:"task_id" gorm:"type:uuid;index"`
 	ConversationID *string      `json:"conversation_id" gorm:"type:uuid;index"`
 	EpicID      *string         `json:"epic_id" gorm:"type:uuid;index"`
 	RunID       *string         `json:"run_id" gorm:"type:uuid"`

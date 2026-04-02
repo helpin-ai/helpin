@@ -67,7 +67,7 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
     return [{
       ref: asString(story.ref).trim() || undefined,
       title,
-      type: asString(story.story_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
+      type: asString(story.task_type).trim() || asString(story.type).trim() || asString(story.slice_type).trim() || undefined,
       description: asString(story.description).trim() || undefined,
       acceptanceCriteria: asStringArray(story.acceptance_criteria),
       dependencyRefs: asStringArray(story.dependency_refs),

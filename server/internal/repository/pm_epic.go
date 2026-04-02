@@ -178,11 +178,11 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 	}
 
 	for _, row := range rows {
-		stats.StoryCount += row.Count
+		stats.TaskCount += row.Count
 		stats.TotalPoints += row.Points
 		switch row.StateType {
 		case model.PMStateTypeDone:
-			stats.DoneStoryCount += row.Count
+			stats.DoneTaskCount += row.Count
 			stats.DonePoints += row.Points
 		case model.PMStateTypeStarted:
 			stats.InProgressCount += row.Count

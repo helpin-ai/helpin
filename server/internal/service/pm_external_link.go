@@ -46,7 +46,7 @@ func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req 
 	}
 
 	link := &model.PMExternalLink{
-		StoryID:     storyID,
+		TaskID:      storyID,
 		Title:       title,
 		URL:         rawURL,
 		CreatedByID: userID,
@@ -86,7 +86,7 @@ func (s *PMExternalLinkService) Update(ctx context.Context, id string, req model
 	if err := s.repo.Update(ctx, link); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.TaskID})
 	return link, nil
 }
 
@@ -102,7 +102,7 @@ func (s *PMExternalLinkService) Delete(ctx context.Context, id string, workspace
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.TaskID})
 	return nil
 }
 

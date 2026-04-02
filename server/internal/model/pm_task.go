@@ -6,30 +6,30 @@ import (
 )
 
 const (
-	PMStoryTypeFeature = "feature"
-	PMStoryTypeBug     = "bug"
-	PMStoryTypeChore   = "chore"
+	PMTaskTypeFeature = "feature"
+	PMTaskTypeBug     = "bug"
+	PMTaskTypeChore   = "chore"
 
-	PMStoryPriorityNone   = "none"
-	PMStoryPriorityLow    = "low"
-	PMStoryPriorityMedium = "medium"
-	PMStoryPriorityHigh   = "high"
-	PMStoryPriorityUrgent = "urgent"
+	PMTaskPriorityNone   = "none"
+	PMTaskPriorityLow    = "low"
+	PMTaskPriorityMedium = "medium"
+	PMTaskPriorityHigh   = "high"
+	PMTaskPriorityUrgent = "urgent"
 
-	PMStorySeverityNone     = "none"
-	PMStorySeverityMinor    = "minor"
-	PMStorySeverityMajor    = "major"
-	PMStorySeverityCritical = "critical"
+	PMTaskSeverityNone     = "none"
+	PMTaskSeverityMinor    = "minor"
+	PMTaskSeverityMajor    = "major"
+	PMTaskSeverityCritical = "critical"
 )
 
-// PMStory represents a single work item.
-type PMStory struct {
+// PMTask represents a single work item.
+type PMTask struct {
 	ID                        string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID               string                 `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	DisplayID                 int                    `json:"display_id" gorm:"not null;index"`
 	Name                      string                 `json:"name" gorm:"not null"`
 	Description               *string                `json:"description"`
-	StoryType                 string                 `json:"story_type" gorm:"column:task_type;not null;default:'feature'"`
+	StoryType                 string                 `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
 	WorkflowID                string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID           string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
 	EpicID                    *string                `json:"epic_id" gorm:"type:uuid;index"`
@@ -65,43 +65,43 @@ type PMStory struct {
 	BlockedByCount            int                    `json:"blocked_by_count" gorm:"-"`
 	IsBlockingOther           bool                   `json:"is_blocking_other_story" gorm:"-"`
 	BlockingCount             int                    `json:"blocking_count" gorm:"-"`
-	BlockedByStories          []StoryDependencyStory `json:"blocked_by_stories,omitempty" gorm:"-"`
-	BlockingStories           []StoryDependencyStory `json:"blocking_stories,omitempty" gorm:"-"`
+	BlockedByStories          []TaskDependencyTask   `json:"blocked_by_stories,omitempty" gorm:"-"`
+	BlockingStories           []TaskDependencyTask   `json:"blocking_stories,omitempty" gorm:"-"`
 	CreatedAt                 time.Time              `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (PMStory) TableName() string { return "pm_tasks" }
+func (PMTask) TableName() string { return "pm_tasks" }
 
-// PMStoryOwner is the join table for many owners per story.
-type PMStoryOwner struct {
-	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
+// PMTaskOwner is the join table for many owners per task.
+type PMTaskOwner struct {
+	TaskID    string    `json:"task_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryOwner) TableName() string { return "pm_task_owners" }
+func (PMTaskOwner) TableName() string { return "pm_task_owners" }
 
-// PMStoryFollower is the join table for story followers.
-type PMStoryFollower struct {
-	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
+// PMTaskFollower is the join table for task followers.
+type PMTaskFollower struct {
+	TaskID    string    `json:"task_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryFollower) TableName() string { return "pm_task_followers" }
+func (PMTaskFollower) TableName() string { return "pm_task_followers" }
 
-// PMStoryLabel is the join table for story labels.
-type PMStoryLabel struct {
-	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
+// PMTaskLabel is the join table for task labels.
+type PMTaskLabel struct {
+	TaskID    string    `json:"task_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	LabelID   string    `json:"label_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryLabel) TableName() string { return "pm_task_labels" }
+func (PMTaskLabel) TableName() string { return "pm_task_labels" }
 
-// PMStoryFilters applies filter options when listing stories.
-type PMStoryFilters struct {
+// PMTaskFilters applies filter options when listing tasks.
+type PMTaskFilters struct {
 	TeamID                *string
 	EpicID                *string
 	SprintID              *string
@@ -138,12 +138,12 @@ type PMPagination struct {
 	PerPage int
 }
 
-// CreateStoryRequest is the payload for creating a story.
-type CreateStoryRequest struct {
+// CreateTaskRequest is the payload for creating a task.
+type CreateTaskRequest struct {
 	WorkspaceID       string                       `json:"workspace_id"`
 	Name              string                       `json:"name"`
 	Description       *string                      `json:"description"`
-	StoryType         string                       `json:"story_type"`
+	StoryType         string                       `json:"task_type"`
 	WorkflowID        string                       `json:"workflow_id"`
 	WorkflowStateID   string                       `json:"workflow_state_id"`
 	EpicID            *string                      `json:"epic_id"`
@@ -170,11 +170,11 @@ type CreateStoryRequest struct {
 	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 
-// UpdateStoryRequest is the payload for updating a story.
-type UpdateStoryRequest struct {
+// UpdateTaskRequest is the payload for updating a task.
+type UpdateTaskRequest struct {
 	Name              *string    `json:"name"`
 	Description       *string    `json:"description"`
-	StoryType         *string    `json:"story_type"`
+	StoryType         *string    `json:"task_type"`
 	WorkflowID        *string    `json:"workflow_id"`
 	WorkflowStateID   *string    `json:"workflow_state_id"`
 	EpicID            *string    `json:"epic_id"`
@@ -199,32 +199,32 @@ type UpdateStoryRequest struct {
 	LabelIDs          []string   `json:"label_ids"`
 }
 
-// MoveStoryRequest moves a story to a new state and optionally position.
-type MoveStoryRequest struct {
+// MoveTaskRequest moves a task to a new state and optionally position.
+type MoveTaskRequest struct {
 	StateID      string `json:"state_id"`
 	Position     *int   `json:"position"`
 	DebugTraceID string `json:"debug_trace_id"`
 }
 
-// ReorderStoryRequest reorders a story in its current state.
-type ReorderStoryRequest struct {
+// ReorderTaskRequest reorders a task in its current state.
+type ReorderTaskRequest struct {
 	Position     int    `json:"position"`
 	DebugTraceID string `json:"debug_trace_id"`
 }
 
-// StoryUserLinkRequest links a user to a story as owner/follower.
-type StoryUserLinkRequest struct {
+// TaskUserLinkRequest links a user to a task as owner/follower.
+type TaskUserLinkRequest struct {
 	UserID string `json:"user_id"`
 }
 
-// StoryLabelLinkRequest links a label to a story.
-type StoryLabelLinkRequest struct {
+// TaskLabelLinkRequest links a label to a task.
+type TaskLabelLinkRequest struct {
 	LabelID string `json:"label_id"`
 }
 
-// StoryDetail is a story enriched with relation data.
-type StoryDetail struct {
-	Story           PMStory           `json:"story"`
+// TaskDetail is a task enriched with relation data.
+type TaskDetail struct {
+	Story           PMTask            `json:"task"`
 	Owners          []User            `json:"owners"`
 	Followers       []User            `json:"followers"`
 	OwnerMember     *AssignableMember `json:"owner_member,omitempty"`
@@ -237,8 +237,8 @@ type StoryDetail struct {
 	State           *PMWorkflowState  `json:"state"`
 }
 
-// StoryDependencyStory is the lightweight story payload used in dependency read models.
-type StoryDependencyStory struct {
+// TaskDependencyTask is the lightweight task payload used in dependency read models.
+type TaskDependencyTask struct {
 	ID              string `json:"id"`
 	DisplayID       int    `json:"display_id"`
 	Name            string `json:"name"`
@@ -246,8 +246,10 @@ type StoryDependencyStory struct {
 	Completed       bool   `json:"completed"`
 }
 
-// BoardStory is a story enriched with relation names for board display.
-type BoardStory struct {
+// BoardTask is a task enriched with relation names for board display.
+// NOTE: embeds PMStory (alias for PMTask) to preserve the ".PMStory" field accessor
+// used by repository code until the repo layer is migrated to Task-era names.
+type BoardTask struct {
 	PMStory
 	EpicName             *string                    `json:"epic_name,omitempty"`
 	SprintName           *string                    `json:"sprint_name,omitempty"`
@@ -262,43 +264,43 @@ type BoardStory struct {
 	SupportConversations []AssociationObjectSummary `json:"support_conversations,omitempty"`
 }
 
-// StoryGroup is a labeled bucket of stories inside a board column.
-type StoryGroup struct {
-	Key     string       `json:"key"`
-	Label   string       `json:"label"`
-	Stories []BoardStory `json:"stories"`
+// TaskGroup is a labeled bucket of tasks inside a board column.
+type TaskGroup struct {
+	Key     string      `json:"key"`
+	Label   string      `json:"label"`
+	Stories []BoardTask `json:"stories"`
 }
 
-// StoryStateColumn is the data shape used for board columns.
-type StoryStateColumn struct {
+// TaskStateColumn is the data shape used for board columns.
+type TaskStateColumn struct {
 	State       PMWorkflowState `json:"state"`
-	Stories     []BoardStory    `json:"stories"`
-	StoryGroups []StoryGroup    `json:"story_groups,omitempty"`
-	StoryCount  int             `json:"story_count"`
+	Stories     []BoardTask     `json:"stories"`
+	StoryGroups []TaskGroup     `json:"story_groups,omitempty"`
+	TaskCount   int             `json:"task_count"`
 	PointTotal  int             `json:"point_total"`
 	HasMore     bool            `json:"has_more"`
 }
 
-// StoryMemberColumn is the data shape for member-grouped board columns.
-type StoryMemberColumn struct {
+// TaskMemberColumn is the data shape for member-grouped board columns.
+type TaskMemberColumn struct {
 	Member     *AssignableMember `json:"member"`
-	Stories    []BoardStory      `json:"stories"`
-	StoryCount int               `json:"story_count"`
+	Stories    []BoardTask       `json:"stories"`
+	TaskCount  int               `json:"task_count"`
 	PointTotal int               `json:"point_total"`
 	HasMore    bool              `json:"has_more"`
 }
 
-// ColumnStoriesResponse is the paginated payload for a single board column.
-type ColumnStoriesResponse struct {
-	Stories     []BoardStory `json:"stories"`
-	StoryGroups []StoryGroup `json:"story_groups,omitempty"`
-	Total       int          `json:"total"`
+// ColumnTasksResponse is the paginated payload for a single board column.
+type ColumnTasksResponse struct {
+	Stories     []BoardTask `json:"stories"`
+	StoryGroups []TaskGroup `json:"story_groups,omitempty"`
+	Total       int         `json:"total"`
 }
 
-// StoryStateCount stores aggregate count per state.
-type StoryStateCount struct {
-	StateID    string `json:"state_id"`
-	StateName  string `json:"state_name"`
-	StateType  string `json:"state_type"`
-	StoryCount int    `json:"story_count"`
+// TaskStateCount stores aggregate count per state.
+type TaskStateCount struct {
+	StateID   string `json:"state_id"`
+	StateName string `json:"state_name"`
+	StateType string `json:"state_type"`
+	TaskCount int    `json:"task_count"`
 }

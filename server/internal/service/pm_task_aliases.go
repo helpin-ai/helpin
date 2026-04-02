@@ -5,13 +5,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-type PMTaskService = PMStoryService
-type PMTaskTemplateService = PMStoryTemplateService
+// Backward-compat aliases: Story-era names → Task-era canonical types.
+type PMStoryService = PMTaskService
+type PMStoryTemplateService = PMTaskTemplateService
 
-func NewPMTaskService(taskRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
-	return NewPMStoryService(taskRepo, workspaceRepo, workflowRepo, epicRepo, sprintRepo, labelRepo, checklistRepo, externalLinkRepo, attachmentRepo, activityService, wsPublisher, automationService, notificationService, followerService)
+func NewPMStoryService(taskRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
+	return NewPMTaskService(taskRepo, workspaceRepo, workflowRepo, epicRepo, sprintRepo, labelRepo, checklistRepo, externalLinkRepo, attachmentRepo, activityService, wsPublisher, automationService, notificationService, followerService)
 }
 
-func NewPMTaskTemplateService(templateRepo *repository.PMTaskTemplateRepository, wsPublisher *websocket.Publisher) *PMTaskTemplateService {
-	return NewPMStoryTemplateService(templateRepo, wsPublisher)
+func NewPMStoryTemplateService(templateRepo *repository.PMTaskTemplateRepository, wsPublisher *websocket.Publisher) *PMStoryTemplateService {
+	return NewPMTaskTemplateService(templateRepo, wsPublisher)
 }

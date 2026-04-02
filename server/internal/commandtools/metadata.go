@@ -289,7 +289,6 @@ func createStoryBatchSchema() map[string]any {
 			"ref":         map[string]any{"type": "string"},
 			"name":        map[string]any{"type": "string"},
 			"description": map[string]any{"type": "string"},
-			"story_type":  map[string]any{"type": "string"},
 			"task_type":   map[string]any{"type": "string"},
 			"estimate":    map[string]any{"type": "integer"},
 			"priority":    map[string]any{"type": "string"},

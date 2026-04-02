@@ -132,7 +132,7 @@ func TestPresetDefinitionForAgentDefaultsFromSystemFlag(t *testing.T) {
 
 func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
 	agent := &model.Agent{
-		PresetKey:        model.AgentPresetStoryPlanner,
+		PresetKey:        model.AgentPresetTaskPlanner,
 		PresetVersionKey: "missing_version",
 	}
 
@@ -140,11 +140,11 @@ func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
 	if !ok {
 		t.Fatal("expected preset resolution for invalid version")
 	}
-	if preset.Key != model.AgentPresetStoryPlanner {
+	if preset.Key != model.AgentPresetTaskPlanner {
 		t.Fatalf("expected story planner preset, got %q", preset.Key)
 	}
-	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner) {
-		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetStoryPlanner), preset.VersionKey)
+	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner) {
+		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner), preset.VersionKey)
 	}
 }
 
@@ -457,7 +457,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:       true,
-		PresetKey:      model.AgentPresetStoryPlanner,
+		PresetKey:      model.AgentPresetTaskPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
 		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","write_document_content","search_documents"]`),

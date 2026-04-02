@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { Agent, CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { Agent, CreateTaskRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -168,7 +168,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             </p>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'story' : 'stories'}`}>
+            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
                 <StickyNote className="h-3 w-3" />
                 {column.story_count}
@@ -349,7 +349,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             {displayName}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'story' : 'stories'}`}>
+            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
                 <StickyNote className="h-3 w-3" />
                 {column.story_count}
@@ -457,9 +457,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const loadBoard = usePMBoardStore((state) => state.loadBoard);
   const setTeamFilter = usePMBoardStore((state) => state.setTeamFilter);
   const setFilters = usePMBoardStore((state) => state.setFilters);
-  const createStory = usePMBoardStore((state) => state.createStory);
-  const moveStory = usePMBoardStore((state) => state.moveStory);
-  const patchStory = usePMBoardStore((state) => state.patchStory);
+  const createTask = usePMBoardStore((state) => state.createTask);
+  const moveTask = usePMBoardStore((state) => state.moveTask);
+  const patchTask = usePMBoardStore((state) => state.patchTask);
   const refreshBoard = usePMBoardStore((state) => state.refreshBoard);
   const loadMoreColumn = usePMBoardStore((state) => state.loadMoreColumn);
   const loadViews = usePMBoardStore((state) => state.loadViews);
@@ -467,7 +467,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const memberColumnLoading = usePMBoardStore((state) => state.memberColumnLoading);
   const loadMemberBoard = usePMBoardStore((state) => state.loadMemberBoard);
   const loadMoreMemberColumn = usePMBoardStore((state) => state.loadMoreMemberColumn);
-  const moveMemberStory = usePMBoardStore((state) => state.moveMemberStory);
+  const moveMemberTask = usePMBoardStore((state) => state.moveMemberTask);
 
   const currentUser = useAuthStore((s) => s.user);
   const { data: sessionMembership } = useSession(workspaceId);
@@ -573,20 +573,20 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const listGroupOptions = useMemo(
     () =>
       getVisibleTaskListGroupOptions({
-        story_type: listFieldVis.story_type,
+        task_type: listFieldVis.task_type,
         priority: listFieldVis.priority,
         severity: listFieldVis.severity,
         epic: listFieldVis.epic,
         sprint: listFieldVis.sprint,
       }),
-    [listFieldVis.epic, listFieldVis.priority, listFieldVis.severity, listFieldVis.sprint, listFieldVis.story_type],
+    [listFieldVis.epic, listFieldVis.priority, listFieldVis.severity, listFieldVis.sprint, listFieldVis.task_type],
   );
 
   const listDisabledKeys = useMemo(() => {
     const keys = new Set<DisplayPropertyKey>();
     if (!listFieldVis.priority) keys.add('priority');
     if (!listFieldVis.severity) keys.add('severity');
-    if (!listFieldVis.story_type) keys.add('story_type');
+    if (!listFieldVis.task_type) keys.add('task_type');
     if (!listFieldVis.estimate) keys.add('estimate');
     if (!listFieldVis.epic) keys.add('epic');
     if (!listFieldVis.sprint) keys.add('sprint');
@@ -693,7 +693,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         });
         usePMBoardStore.setState({ memberColumns: patched });
       } else {
-        if (!patchStory('updated', story.id, story)) refreshBoard();
+        if (!patchTask('updated', story.id, story)) refreshBoard();
       }
     };
     const onArchived = (e: Event) => {
@@ -708,7 +708,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         });
         usePMBoardStore.setState({ memberColumns: updated });
       } else {
-        if (!patchStory('deleted', storyId)) refreshBoard();
+        if (!patchTask('deleted', storyId)) refreshBoard();
       }
     };
     window.addEventListener('task-panel-updated', onUpdated);
@@ -717,7 +717,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       window.removeEventListener('task-panel-updated', onUpdated);
       window.removeEventListener('task-panel-archived', onArchived);
     };
-  }, [groupBy, columns, ownerNameMap, patchStory, refreshBoard]);
+  }, [groupBy, columns, ownerNameMap, patchTask, refreshBoard]);
 
   const findStateIdByItemId = useCallback(
     (id: string) => {
@@ -928,7 +928,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
           if (!fromColumn || !toColumn) { clearDragPreview(); return; }
           await commitDropBeforeClearingPreview({
-            commit: () => moveMemberStory({
+            commit: () => moveMemberTask({
               workspaceId,
               storyId: activeId,
               fromMemberId: fromColumn.member?.id ?? null,
@@ -1011,7 +1011,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           to_index: crossIdx,
         });
         await commitDropBeforeClearingPreview({
-          commit: () => moveStory({
+          commit: () => moveTask({
             workspaceId,
             storyId: activeId,
             fromStateId,
@@ -1041,20 +1041,20 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
         logPMDnD('drag_end_same_state', { trace_id: debugTraceID, story_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
         await commitDropBeforeClearingPreview({
-          commit: () => moveStory({ workspaceId, storyId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
+          commit: () => moveTask({ workspaceId, storyId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
           clearPreview: clearDragPreview,
         });
       }
     },
-    [columns, memberColumns, groupBy, findStateIdByItemId, moveStory, moveMemberStory, workspaceId, clearDragPreview, dragManager]
+    [columns, memberColumns, groupBy, findStateIdByItemId, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager]
   );
 
   const handleCreate = useCallback(
-    async (payload: CreateStoryRequest) => {
-      const story = await createStory(payload);
+    async (payload: CreateTaskRequest) => {
+      const story = await createTask(payload);
       return story ? { id: story.id } : undefined;
     },
-    [createStory]
+    [createTask]
   );
 
   const handleStoryPatched = useCallback((story: Story) => {
@@ -1082,12 +1082,12 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       });
       usePMBoardStore.setState({ memberColumns: updated });
     } else {
-      const patched = patchStory('updated', story.id, story);
+      const patched = patchTask('updated', story.id, story);
       if (!patched) {
         refreshBoard();
       }
     }
-  }, [patchStory, refreshBoard, ownerNameMap, groupBy]);
+  }, [patchTask, refreshBoard, ownerNameMap, groupBy]);
 
   // Memoize context values to avoid re-rendering all consumers
   const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({

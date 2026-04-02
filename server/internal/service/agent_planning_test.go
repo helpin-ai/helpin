@@ -91,8 +91,8 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 		},
 	}
 
-	if err := validatePlanningStories(stories); err != nil {
-		t.Fatalf("validatePlanningStories returned error: %v", err)
+	if err := validatePlanningTasks(stories); err != nil {
+		t.Fatalf("validatePlanningTasks returned error: %v", err)
 	}
 	if stories[0].StoryType != model.PMStoryTypeChore {
 		t.Fatalf("expected story type to normalize to chore, got %q", stories[0].StoryType)
@@ -123,8 +123,8 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 		},
 	}
 
-	if err := validatePlanningStories(stories); err != nil {
-		t.Fatalf("validatePlanningStories returned error: %v", err)
+	if err := validatePlanningTasks(stories); err != nil {
+		t.Fatalf("validatePlanningTasks returned error: %v", err)
 	}
 
 	brief := stories[0].ImplementationBrief
@@ -163,7 +163,7 @@ func TestValidatePlanningStoriesReturnsRepairOrientedErrorForMissingName(t *test
 		},
 	}
 
-	err := validatePlanningStories(stories)
+	err := validatePlanningTasks(stories)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -259,7 +259,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 }
 
 func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
-	_, err := plannerStoryTeamID(&model.PMEpic{Name: "Teamless epic"})
+	_, err := plannerTaskTeamID(&model.PMEpic{Name: "Teamless epic"})
 	if err == nil {
 		t.Fatal("expected missing epic team to be rejected")
 	}
@@ -269,7 +269,7 @@ func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
 }
 
 func TestRenderPlannedStoryDescriptionRendersHTML(t *testing.T) {
-	html := renderPlannedStoryDescription(model.ProposedStory{
+	html := renderPlannedTaskDescription(model.ProposedStory{
 		Description: "Document all new metrics and validation checks.",
 		AcceptanceCriteria: []string{
 			"GIVEN metrics docs WHEN opened THEN names and labels are documented",

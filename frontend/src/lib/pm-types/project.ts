@@ -203,13 +203,13 @@ export interface SprintPlanningWorkspace {
   backlog_total: number;
 }
 
-export interface Story {
+export interface Task {
   id: string;
   workspace_id: string;
   display_id: number;
   name: string;
   description?: string;
-  story_type: StoryType;
+  task_type: TaskType;
   workflow_id: string;
   workflow_state_id: string;
   epic_id?: string;
@@ -229,12 +229,12 @@ export interface Story {
   moved_at?: string;
   blocked: boolean;
   blocker?: string;
-  is_blocked_by_story?: boolean;
+  is_blocked_by_task?: boolean;
   blocked_by_count?: number;
-  is_blocking_other_story?: boolean;
+  is_blocking_other_task?: boolean;
   blocking_count?: number;
-  blocked_by_stories?: StoryDependencyStory[];
-  blocking_stories?: StoryDependencyStory[];
+  blocked_by_tasks?: TaskDependencyTask[];
+  blocking_tasks?: TaskDependencyTask[];
   archived: boolean;
   assigned_agent_id?: string;
   template_id?: string;
@@ -258,9 +258,22 @@ export interface Story {
   companies?: AssociationObjectSummary[];
   deals?: AssociationObjectSummary[];
   support_conversations?: AssociationObjectSummary[];
+  /** @deprecated Use task_type */
+  story_type?: TaskType;
+  /** @deprecated Use is_blocked_by_task */
+  is_blocked_by_story?: boolean;
+  /** @deprecated Use is_blocking_other_task */
+  is_blocking_other_story?: boolean;
+  /** @deprecated Use blocked_by_tasks */
+  blocked_by_stories?: TaskDependencyTask[];
+  /** @deprecated Use blocking_tasks */
+  blocking_stories?: TaskDependencyTask[];
 }
 
-export interface StoryDependencyStory {
+/** @deprecated Use Task */
+export type Story = Task;
+
+export interface TaskDependencyTask {
   id: string;
   display_id: number;
   name: string;
@@ -268,7 +281,8 @@ export interface StoryDependencyStory {
   completed: boolean;
 }
 
-export type TaskDependencyTask = StoryDependencyStory;
+/** @deprecated Use TaskDependencyTask */
+export type StoryDependencyStory = TaskDependencyTask;
 
 export type AssociationEntityType =
   | 'task'
@@ -298,6 +312,8 @@ export interface AssociationObjectSummary {
   status?: string;
   workflow_state_id?: string;
   completed?: boolean;
+  task_type?: TaskType;
+  /** @deprecated Use task_type */
   story_type?: StoryType;
 }
 
@@ -322,31 +338,29 @@ export interface StoryRelationshipGroups {
 export type TaskRelationshipGroups = StoryRelationshipGroups;
 
 export interface GroupedAssociations {
-  story_relationships: StoryRelationshipGroups;
+  task_relationships: TaskRelationshipGroups;
+  /** @deprecated Use task_relationships */
+  story_relationships?: StoryRelationshipGroups;
   stories: AssociationObjectSummary[];
   support_conversations: AssociationObjectSummary[];
   crm_records: AssociationObjectSummary[];
   docs: AssociationObjectSummary[];
 }
 
-export interface GroupedTaskAssociations extends Omit<GroupedAssociations, 'story_relationships'> {
-  task_relationships: TaskRelationshipGroups;
-}
-
-export interface CreateStoryRelationshipRequest {
-  relationship_type: StoryRelationshipAction;
-  other_story_id: string;
-}
+export type GroupedTaskAssociations = GroupedAssociations;
 
 export interface CreateTaskRelationshipRequest {
   relationship_type: TaskRelationshipAction;
   other_task_id: string;
 }
 
+/** @deprecated Use CreateTaskRelationshipRequest */
+export type CreateStoryRelationshipRequest = CreateTaskRelationshipRequest;
+
 export type CreateTaskRelationshipPayload = CreateTaskRelationshipRequest;
 
 export interface TaskDetail {
-  story: Story;
+  story: Task;
   owners: Array<{
     id: string;
     email: string;
@@ -561,13 +575,13 @@ export interface TemplateChecklistItem {
   position?: number;
 }
 
-export interface StoryTemplate {
+export interface TaskTemplate {
   id: string;
   workspace_id: string;
   team_id?: string;
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -583,7 +597,8 @@ export interface StoryTemplate {
   updated_at: string;
 }
 
-export type TaskTemplate = StoryTemplate;
+/** @deprecated Use TaskTemplate */
+export type StoryTemplate = TaskTemplate;
 
 export interface RecurringTemplateConfig {
   schedule_type: RecurringScheduleType;
@@ -604,7 +619,7 @@ export interface RecurringTemplateConfig {
 export interface RecurringStorySeed {
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id: string;
   workflow_state_id: string;
   epic_id?: string;
@@ -711,31 +726,31 @@ export interface CreateRecurringTemplateRequest {
   workspace_id: string;
   title: string;
   description?: string;
-  story_id: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   config: RecurringTemplateConfig;
 }
 
-export interface CreateRecurringTaskTemplateRequest extends Omit<CreateRecurringTemplateRequest, 'story_id'> {
-  task_id: string;
-}
+export interface CreateRecurringTaskTemplateRequest extends Omit<CreateRecurringTemplateRequest, 'story_id'> {}
 
 export interface UpdateRecurringTemplateRequest {
   title?: string;
   description?: string;
+  task_id?: string;
+  /** @deprecated Use task_id */
   story_id?: string;
   config?: RecurringTemplateConfig;
 }
 
-export interface UpdateRecurringTaskTemplateRequest extends Omit<UpdateRecurringTemplateRequest, 'story_id'> {
-  task_id?: string;
-}
+export interface UpdateRecurringTaskTemplateRequest extends Omit<UpdateRecurringTemplateRequest, 'story_id'> {}
 
 export interface CreateTaskTemplateRequest {
   workspace_id: string;
   team_id?: string;
   name: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -754,7 +769,7 @@ export interface UpdateTaskTemplateRequest {
   team_id?: string;
   name?: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   priority?: Priority;
   severity?: Severity;
   estimate?: number;
@@ -841,7 +856,7 @@ export interface CreateTaskRequest {
   name: string;
   description?: string;
   attachment_ids?: string[];
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
@@ -870,7 +885,7 @@ export type CreateStoryRequest = CreateTaskRequest;
 export interface UpdateTaskRequest {
   name?: string;
   description?: string;
-  story_type?: StoryType;
+  task_type?: TaskType;
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
@@ -927,8 +942,9 @@ export type StoryLabelLinkRequest = TaskLabelLinkRequest;
 
 export interface ChecklistItem {
   id: string;
-  story_id: string;
-  task_id?: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   text: string;
   completed: boolean;
   position: number;
@@ -954,8 +970,9 @@ export interface UpdateChecklistItemRequest {
 
 export interface ExternalLink {
   id: string;
-  story_id: string;
-  task_id?: string;
+  task_id: string;
+  /** @deprecated Use task_id */
+  story_id?: string;
   title: string;
   url: string;
   created_by_id: string;
@@ -1014,4 +1031,4 @@ export interface UpdateCommentRequest {
   body: string;
 }
 
-export type Task = Story;
+// Task is now the canonical type, Story is an alias (defined above)

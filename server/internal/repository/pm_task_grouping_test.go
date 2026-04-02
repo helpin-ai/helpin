@@ -43,7 +43,7 @@ func TestBuildDoneStoryGroupsBucketsByCompletionWeek(t *testing.T) {
 		},
 	}
 
-	groups := buildDoneStoryGroups(stories, now)
+	groups := buildDoneTaskGroups(stories, now)
 	if len(groups) != 2 {
 		t.Fatalf("len(groups) = %d, want 2", len(groups))
 	}

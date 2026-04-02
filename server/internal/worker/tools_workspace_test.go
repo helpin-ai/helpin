@@ -34,8 +34,8 @@ func TestListWorkspaceTeamsToolReturnsWorkspaceTeams(t *testing.T) {
 				}
 				handle := "platform"
 				return []WorkspaceTeamSummary{
-					{ID: "team-1", Name: "Platform", Handle: &handle, TeamType: "engineering", DefaultStoryType: "feature"},
-					{ID: "team-2", Name: "Growth", TeamType: "growth", DefaultStoryType: "task"},
+					{ID: "team-1", Name: "Platform", Handle: &handle, TeamType: "engineering", DefaultTaskType: "feature"},
+					{ID: "team-2", Name: "Growth", TeamType: "growth", DefaultTaskType: "task"},
 				}, nil
 			},
 		},

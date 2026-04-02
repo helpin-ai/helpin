@@ -156,7 +156,7 @@ function TaskCardComponent({
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', story.team_id);
   const displayProps = useBoardDisplayStore((s) => s.properties);
   const vis = useMemo(() => ({
-    story_type: fieldVis.story_type && displayProps.story_type,
+    story_type: fieldVis.task_type && displayProps.task_type,
     priority: fieldVis.priority && displayProps.priority,
     severity: fieldVis.severity && displayProps.severity,
     agent: displayProps.agent,
@@ -201,7 +201,7 @@ function TaskCardComponent({
   }, [story.blocked, story.blocked_by_count, story.blocked_by_stories, story.blocker]);
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
-  const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
+  const storyTypeCfg = STORY_TYPE_CONFIG[story.task_type];
   const currentOwnerName = useMemo(() => {
     const ownerKey = story.owner_member_id;
     if (!ownerKey) return null;
@@ -312,7 +312,7 @@ function TaskCardComponent({
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="shrink-0">
-              <StoryTypeIcon storyType={story.story_type} className="h-3.5 w-3.5" />
+              <StoryTypeIcon storyType={story.task_type} className="h-3.5 w-3.5" />
             </span>
           </TooltipTrigger>
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>

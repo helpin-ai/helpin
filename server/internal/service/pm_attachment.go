@@ -33,7 +33,7 @@ var allowedMIMETypes = map[string]bool{
 }
 
 var allowedEntityTypes = map[string]bool{
-	"story": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
+	"task": true, "story": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
 }
 
 // PMAttachmentService contains attachment business logic.

@@ -48,7 +48,7 @@ const (
 // Linked object type values.
 const (
 	LinkedObjectEpic                = "epic"
-	LinkedObjectStory               = "story"
+	LinkedObjectStory               = "story" // Deprecated: use LinkedObjectTask
 	LinkedObjectTask                = "task"
 	LinkedObjectProject             = "project"
 	LinkedObjectObjective           = "objective"

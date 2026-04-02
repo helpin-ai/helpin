@@ -599,7 +599,7 @@ func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		Agent: &appmodel.Agent{
-			PresetKey: appmodel.AgentPresetStoryPlanner,
+			PresetKey: appmodel.AgentPresetTaskPlanner,
 		},
 		PlanningStage: appmodel.PlanningStageStoryPlanDoc,
 		TargetType:    "story",

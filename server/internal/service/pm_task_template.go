@@ -10,23 +10,23 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// PMStoryTemplateService contains story template business logic.
-type PMStoryTemplateService struct {
-	templateRepo *repository.PMStoryTemplateRepository
+// PMTaskTemplateService contains story template business logic.
+type PMTaskTemplateService struct {
+	templateRepo *repository.PMTaskTemplateRepository
 	wsPublisher  *websocket.Publisher
 }
 
-// NewPMStoryTemplateService creates a new PMStoryTemplateService.
-func NewPMStoryTemplateService(templateRepo *repository.PMStoryTemplateRepository, wsPublisher *websocket.Publisher) *PMStoryTemplateService {
-	return &PMStoryTemplateService{templateRepo: templateRepo, wsPublisher: wsPublisher}
+// NewPMTaskTemplateService creates a new PMTaskTemplateService.
+func NewPMTaskTemplateService(templateRepo *repository.PMTaskTemplateRepository, wsPublisher *websocket.Publisher) *PMTaskTemplateService {
+	return &PMTaskTemplateService{templateRepo: templateRepo, wsPublisher: wsPublisher}
 }
 
 // ListByWorkspace lists story templates by workspace.
-func (s *PMStoryTemplateService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.PMStoryTemplate, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.templateRepo.ListByWorkspace(ctx, workspaceID, repository.PMStoryTemplateListOptions{
+	return s.templateRepo.ListByWorkspace(ctx, workspaceID, repository.PMTaskTemplateListOptions{
 		TeamID:        teamID,
 		IncludeShared: includeShared,
 		Archived:      archived,
@@ -34,7 +34,7 @@ func (s *PMStoryTemplateService) ListByWorkspace(ctx context.Context, workspaceI
 }
 
 // GetByID returns a story template by ID.
-func (s *PMStoryTemplateService) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.PMStoryTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (s *PMStoryTemplateService) GetByID(ctx context.Context, id string) (*model
 }
 
 // Create creates a story template after uniqueness validation.
-func (s *PMStoryTemplateService) Create(ctx context.Context, req model.CreateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -85,7 +85,7 @@ func (s *PMStoryTemplateService) Create(ctx context.Context, req model.CreateSto
 }
 
 // Update updates a story template.
-func (s *PMStoryTemplateService) Update(ctx context.Context, id string, req model.UpdateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
+func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model.UpdateStoryTemplateRequest) (*model.PMStoryTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (s *PMStoryTemplateService) Update(ctx context.Context, id string, req mode
 }
 
 // Delete deletes a story template.
-func (s *PMStoryTemplateService) Delete(ctx context.Context, id string) error {
+func (s *PMTaskTemplateService) Delete(ctx context.Context, id string) error {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return err

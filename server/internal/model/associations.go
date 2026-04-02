@@ -1,16 +1,23 @@
 package model
 
-// StoryRelationshipAction values drive user-facing relationship creation.
+// TaskRelationshipAction values drive user-facing relationship creation.
 const (
-	StoryRelationshipActionRelatesTo      = "relates_to"
-	StoryRelationshipActionBlocks         = "blocks"
-	StoryRelationshipActionIsBlockedBy    = "is_blocked_by"
-	StoryRelationshipActionDuplicates     = "duplicates"
-	StoryRelationshipActionIsDuplicatedBy = "is_duplicated_by"
+	TaskRelationshipActionRelatesTo      = "relates_to"
+	TaskRelationshipActionBlocks         = "blocks"
+	TaskRelationshipActionIsBlockedBy    = "is_blocked_by"
+	TaskRelationshipActionDuplicates     = "duplicates"
+	TaskRelationshipActionIsDuplicatedBy = "is_duplicated_by"
+
+	// Backward-compat aliases.
+	StoryRelationshipActionRelatesTo      = TaskRelationshipActionRelatesTo
+	StoryRelationshipActionBlocks         = TaskRelationshipActionBlocks
+	StoryRelationshipActionIsBlockedBy    = TaskRelationshipActionIsBlockedBy
+	StoryRelationshipActionDuplicates     = TaskRelationshipActionDuplicates
+	StoryRelationshipActionIsDuplicatedBy = TaskRelationshipActionIsDuplicatedBy
 )
 
-// CreateStoryRelationshipRequest creates a directional story relationship from a story detail surface.
-type CreateStoryRelationshipRequest struct {
+// CreateTaskRelationshipRequest creates a directional task relationship from a task detail surface.
+type CreateTaskRelationshipRequest struct {
 	RelationshipType string `json:"relationship_type"`
 	OtherStoryID     string `json:"other_task_id"`
 }
@@ -25,32 +32,32 @@ type AssociationObjectSummary struct {
 	Status          *string `json:"status,omitempty"`
 	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
 	Completed       bool    `json:"completed,omitempty"`
-	StoryType       *string `json:"story_type,omitempty"`
+	StoryType       *string `json:"task_type,omitempty"`
 }
 
-// StoryRelationshipSummary represents one relationship edge rendered from the point of view of the current story.
-type StoryRelationshipSummary struct {
+// TaskRelationshipSummary represents one relationship edge rendered from the point of view of the current task.
+type TaskRelationshipSummary struct {
 	RelationshipID string                   `json:"relationship_id"`
 	LinkType       string                   `json:"link_type"`
 	IsActive       bool                     `json:"is_active"`
-	Story          AssociationObjectSummary `json:"story"`
+	Task           AssociationObjectSummary `json:"task"`
 }
 
-// StoryRelationshipGroups contains story-to-story relationships grouped for Shortcut-style presentation.
-type StoryRelationshipGroups struct {
-	BlockedBy    []StoryRelationshipSummary `json:"blocked_by"`
-	Blocking     []StoryRelationshipSummary `json:"blocking"`
-	RelatesTo    []StoryRelationshipSummary `json:"relates_to"`
-	RelatedBy    []StoryRelationshipSummary `json:"related_by"`
-	Duplicates   []StoryRelationshipSummary `json:"duplicates"`
-	DuplicatedBy []StoryRelationshipSummary `json:"duplicated_by"`
+// TaskRelationshipGroups contains task-to-task relationships grouped for presentation.
+type TaskRelationshipGroups struct {
+	BlockedBy    []TaskRelationshipSummary `json:"blocked_by"`
+	Blocking     []TaskRelationshipSummary `json:"blocking"`
+	RelatesTo    []TaskRelationshipSummary `json:"relates_to"`
+	RelatedBy    []TaskRelationshipSummary `json:"related_by"`
+	Duplicates   []TaskRelationshipSummary `json:"duplicates"`
+	DuplicatedBy []TaskRelationshipSummary `json:"duplicated_by"`
 }
 
 // GroupedAssociationsResponse is the umbrella associations payload for PM and support surfaces.
 type GroupedAssociationsResponse struct {
-	StoryRelationships StoryRelationshipGroups    `json:"story_relationships"`
-	Stories            []AssociationObjectSummary `json:"stories"`
+	StoryRelationships   TaskRelationshipGroups     `json:"story_relationships"`
+	Stories              []AssociationObjectSummary `json:"stories"`
 	SupportConversations []AssociationObjectSummary `json:"support_conversations"`
-	CRMRecords         []AssociationObjectSummary `json:"crm_records"`
-	Docs               []AssociationObjectSummary `json:"docs"`
+	CRMRecords           []AssociationObjectSummary `json:"crm_records"`
+	Docs                 []AssociationObjectSummary `json:"docs"`
 }

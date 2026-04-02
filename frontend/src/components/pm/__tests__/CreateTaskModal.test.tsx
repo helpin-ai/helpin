@@ -112,7 +112,7 @@ vi.mock('@/components/pm/RecurringTemplateBadge', () => ({
 
 vi.mock('@/hooks/useAccessibleTeams', () => ({
   useAccessibleTeams: () => ({
-    teams: [{ id: 'team-1', name: 'Core', default_story_type: 'feature' }],
+    teams: [{ id: 'team-1', name: 'Core', default_task_type: 'feature' }],
   }),
 }))
 

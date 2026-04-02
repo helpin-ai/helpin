@@ -439,13 +439,13 @@ func (s *GitService) UpdateStoryDeliveryTarget(ctx context.Context, workspaceID,
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "story", storyID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "story_delivery_target",
+		Entity:      "task_delivery_target",
 		EntityID:    target.ID,
 		WorkspaceID: workspaceID,
-		ParentType:  "story",
+		ParentType:  "task",
 		ParentID:    storyID,
 		ActorID:     actorID,
 	})
@@ -571,10 +571,10 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "story_git_link",
+		Entity:      "task_git_link",
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
-		ParentType:  "story",
+		ParentType:  "task",
 		ParentID:    link.StoryID,
 	})
 
@@ -644,10 +644,10 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "story_git_link",
+		Entity:      "task_git_link",
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
-		ParentType:  "story",
+		ParentType:  "task",
 		ParentID:    link.StoryID,
 	})
 	return nil

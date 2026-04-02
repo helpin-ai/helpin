@@ -129,7 +129,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 			}
 		}
 		workflow.StateCounts[row.State]++
-		workflow.StoryCount++
+		workflow.TaskCount++
 		if row.Requester != "" {
 			emails[normalizeShortcutName(row.Requester)] = struct{}{}
 		}
@@ -161,7 +161,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 
 	teams := make([]model.ShortcutTeamPreview, 0, len(teamCounts))
 	for _, name := range sortKeysByCount(teamCounts) {
-		teams = append(teams, model.ShortcutTeamPreview{Name: name, StoryCount: teamCounts[name]})
+		teams = append(teams, model.ShortcutTeamPreview{Name: name, TaskCount: teamCounts[name]})
 	}
 
 	workflows := make([]model.ShortcutWorkflowPreview, 0, len(workflowStateCounts))
@@ -189,7 +189,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 			states = append(states, model.ShortcutWorkflowStatePreview{
 				Name:          stateName,
 				SuggestedType: suggestedStateType(stateName),
-				StoryCount:    workflow.StateCounts[stateName],
+				TaskCount:     workflow.StateCounts[stateName],
 			})
 		}
 		// Sort states by logical workflow order (backlog → unstarted → started → done)
@@ -199,7 +199,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		workflows = append(workflows, model.ShortcutWorkflowPreview{
 			ID:         workflow.ID,
 			Name:       workflow.Name,
-			StoryCount: workflow.StoryCount,
+			TaskCount:  workflow.TaskCount,
 			States:     states,
 		})
 	}
@@ -1131,8 +1131,8 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 
 		for _, owner := range ownerIDs {
 			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMStoryOwner{
-				StoryID: story.ID,
-				UserID:  owner,
+				TaskID: story.ID,
+				UserID: owner,
 			}).Error; err != nil {
 				return nil, fmt.Errorf("link story owner: %w", err)
 			}
@@ -1142,7 +1142,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		for _, label := range shortcutLabelNames(row.Labels) {
 			if labelID, ok := labelMap[normalizeShortcutName(label)]; ok {
 				if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMStoryLabel{
-					StoryID: story.ID,
+					TaskID:  story.ID,
 					LabelID: labelID,
 				}).Error; err != nil {
 					return nil, fmt.Errorf("link story label: %w", err)
@@ -1153,7 +1153,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 
 		for idx, item := range parseShortcutChecklist(row.Tasks) {
 			checklist := model.PMChecklistItem{
-				StoryID:   story.ID,
+				TaskID:    story.ID,
 				Text:      item.Text,
 				Completed: item.Completed,
 				Position:  idx,
@@ -1282,7 +1282,7 @@ func (s *PMImportService) importShortcutComments(ctx context.Context, client *Sh
 				}
 			}
 			comment := model.PMComment{
-				EntityType: "story",
+				EntityType: "task",
 				EntityID:   storyID,
 				AuthorID:   authorID,
 				Body:       body,
@@ -1322,7 +1322,7 @@ func (s *PMImportService) importShortcutComments(ctx context.Context, client *Sh
 				}
 			}
 			comment := model.PMComment{
-				EntityType: "story",
+				EntityType: "task",
 				EntityID:   storyID,
 				AuthorID:   authorID,
 				Body:       body,
@@ -1643,7 +1643,7 @@ func mappedEntityID(externalID string, entityMap map[string]string) *string {
 type shortcutWorkflowAggregate struct {
 	ID          string
 	Name        string
-	StoryCount  int
+	TaskCount   int
 	StateCounts map[string]int
 }
 

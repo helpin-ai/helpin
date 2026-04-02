@@ -9,18 +9,18 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// PMStoryTemplateHandler handles PM story template HTTP endpoints.
-type PMStoryTemplateHandler struct {
-	templateService *service.PMStoryTemplateService
+// PMTaskTemplateHandler handles PM story template HTTP endpoints.
+type PMTaskTemplateHandler struct {
+	templateService *service.PMTaskTemplateService
 }
 
-// NewPMStoryTemplateHandler creates a new PMStoryTemplateHandler.
-func NewPMStoryTemplateHandler(templateService *service.PMStoryTemplateService) *PMStoryTemplateHandler {
-	return &PMStoryTemplateHandler{templateService: templateService}
+// NewPMTaskTemplateHandler creates a new PMTaskTemplateHandler.
+func NewPMTaskTemplateHandler(templateService *service.PMTaskTemplateService) *PMTaskTemplateHandler {
+	return &PMTaskTemplateHandler{templateService: templateService}
 }
 
 // List handles GET /api/pm/story-templates.
-func (h *PMStoryTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
+func (h *PMTaskTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -48,7 +48,7 @@ func (h *PMStoryTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/pm/story-templates/{id}.
-func (h *PMStoryTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
+func (h *PMTaskTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tmpl, err := h.templateService.GetByID(r.Context(), id)
 	if err != nil {
@@ -59,7 +59,7 @@ func (h *PMStoryTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/pm/story-templates.
-func (h *PMStoryTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
+func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateStoryTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -77,7 +77,7 @@ func (h *PMStoryTemplateHandler) Create(w http.ResponseWriter, r *http.Request) 
 }
 
 // Update handles PUT /api/pm/story-templates/{id}.
-func (h *PMStoryTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
+func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req model.UpdateStoryTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -93,7 +93,7 @@ func (h *PMStoryTemplateHandler) Update(w http.ResponseWriter, r *http.Request) 
 }
 
 // Delete handles DELETE /api/pm/story-templates/{id}.
-func (h *PMStoryTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
+func (h *PMTaskTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.templateService.Delete(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

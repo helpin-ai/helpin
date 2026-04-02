@@ -15,9 +15,9 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// PMStoryService contains story business logic.
-type PMStoryService struct {
-	storyRepo           *repository.PMStoryRepository
+// PMTaskService contains story business logic.
+type PMTaskService struct {
+	storyRepo           *repository.PMTaskRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -37,9 +37,9 @@ type PMStoryService struct {
 	logger              *slog.Logger
 }
 
-// NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
-	return &PMStoryService{
+// NewPMTaskService creates a new PMTaskService.
+func NewPMTaskService(storyRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
+	return &PMTaskService{
 		storyRepo:           storyRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
@@ -59,18 +59,18 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *r
 }
 
 // SetRuleEngine sets the automation rule engine (breaks circular dependency).
-func (s *PMStoryService) SetRuleEngine(engine *AutomationRuleEngine) *PMStoryService {
+func (s *PMTaskService) SetRuleEngine(engine *AutomationRuleEngine) *PMTaskService {
 	s.ruleEngine = engine
 	return s
 }
 
 // SetAgentService sets the agent service (breaks circular dependency).
-func (s *PMStoryService) SetAgentService(svc *AgentService) {
+func (s *PMTaskService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
 }
 
 // SetRecurringService sets the recurring template service (breaks circular dependency).
-func (s *PMStoryService) SetRecurringService(svc *PMRecurringTemplateService) {
+func (s *PMTaskService) SetRecurringService(svc *PMRecurringTemplateService) {
 	s.recurringService = svc
 }
 
@@ -88,7 +88,7 @@ func pmDnDWebsocketData(traceID string) json.RawMessage {
 }
 
 // requireCanEdit checks that the actor has at least member role (owner, admin, or member).
-func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
+func (s *PMTaskService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" || actorID == "" {
 		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
 	}
@@ -103,7 +103,7 @@ func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorI
 }
 
 // requireAdmin checks that the actor has owner or admin role.
-func (s *PMStoryService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
+func (s *PMTaskService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" || actorID == "" {
 		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
 	}
@@ -118,7 +118,7 @@ func (s *PMStoryService) requireAdmin(ctx context.Context, workspaceID, actorID 
 }
 
 // List returns stories with filters/pagination.
-func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
+func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
@@ -127,7 +127,7 @@ func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters m
 }
 
 // GetByID returns story detail.
-func (s *PMStoryService) GetByID(ctx context.Context, id string) (*model.StoryDetail, error) {
+func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.StoryDetail, error) {
 	story, err := s.storyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (s *PMStoryService) GetByID(ctx context.Context, id string) (*model.StoryDe
 }
 
 // GetByDisplayID returns story detail by display ID.
-func (s *PMStoryService) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.StoryDetail, error) {
+func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, displayID int) (*model.StoryDetail, error) {
 	story, err := s.storyRepo.GetByDisplayID(ctx, workspaceID, displayID)
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func (s *PMStoryService) GetByDisplayID(ctx context.Context, workspaceID string,
 }
 
 // Create creates a story.
-func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest, actorID string) (*model.StoryDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -207,15 +207,15 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	if storyType == "" {
 		storyType = model.PMStoryTypeFeature
 	}
-	if !isValidStoryType(storyType) {
-		return nil, fmt.Errorf("invalid story_type")
+	if !isValidTaskType(storyType) {
+		return nil, fmt.Errorf("invalid task_type")
 	}
 
 	priority := model.PMStoryPriorityNone
 	if req.Priority != nil && *req.Priority != "" {
 		priority = *req.Priority
 	}
-	if !isValidStoryPriority(priority) {
+	if !isValidTaskPriority(priority) {
 		return nil, fmt.Errorf("invalid priority")
 	}
 
@@ -223,7 +223,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	if req.Severity != nil && *req.Severity != "" {
 		severity = *req.Severity
 	}
-	if !isValidStorySeverity(severity) {
+	if !isValidTaskSeverity(severity) {
 		return nil, fmt.Errorf("invalid severity")
 	}
 
@@ -294,8 +294,8 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, err
 	}
 	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "story", story.ID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to reassign attachments to story", "error", err, "story_id", story.ID, "attachment_ids", req.AttachmentIDs)
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "task", story.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to task", "error", err, "task_id", story.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
 
@@ -338,7 +338,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	if s.checklistRepo != nil && len(req.ChecklistItems) > 0 {
 		for i, ci := range req.ChecklistItems {
 			item := &model.PMChecklistItem{
-				StoryID:    story.ID,
+				TaskID:     story.ID,
 				Text:       strings.TrimSpace(ci.Text),
 				Position:   i,
 				AssigneeID: ci.AssigneeID,
@@ -348,7 +348,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 			}
 			if item.Text != "" {
 				if err := s.checklistRepo.Create(ctx, item); err != nil {
-					s.logger.ErrorContext(ctx, "failed to create checklist item from template", "error", err, "story_id", story.ID)
+					s.logger.ErrorContext(ctx, "failed to create checklist item from template", "error", err, "task_id", story.ID)
 				}
 			}
 		}
@@ -368,13 +368,13 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 				}
 			}
 			link := &model.PMExternalLink{
-				StoryID:     story.ID,
+				TaskID:      story.ID,
 				URL:         linkURL,
 				Title:       title,
 				CreatedByID: actorID,
 			}
 			if err := s.externalLinkRepo.Create(ctx, link); err != nil {
-				s.logger.ErrorContext(ctx, "failed to create external link", "error", err, "story_id", story.ID)
+				s.logger.ErrorContext(ctx, "failed to create external link", "error", err, "task_id", story.ID)
 			}
 		}
 	}
@@ -405,29 +405,29 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		createdAction = "created this task in " + st.Name
 	}
 	if err := s.activityService.Log(ctx, story.WorkspaceID, "task", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story create", "error", err, "story_id", story.ID, "workspace_id", story.WorkspaceID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task create", "error", err, "task_id", story.ID, "workspace_id", story.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: story.ID, WorkspaceID: story.WorkspaceID, ActorID: actorID})
 
 	// Auto-follow the creator and emit notification.
 	if s.followerService != nil && actorID != "" {
 		if err := s.followerService.Follow(ctx, actorID, "task", story.ID, story.WorkspaceID, "creator"); err != nil {
-			s.logger.ErrorContext(ctx, "failed to auto-follow story for creator", "error", err, "story_id", story.ID, "actor_id", actorID)
+			s.logger.ErrorContext(ctx, "failed to auto-follow task for creator", "error", err, "task_id", story.ID, "actor_id", actorID)
 		}
 	}
 	if s.notificationService != nil {
 		var mentionedUserIDs []string
 		if story.Description != nil {
 			mentions := extractMentions(*story.Description)
-			slog.InfoContext(ctx, "story created with mentions",
-				"story_id", story.ID,
+			slog.InfoContext(ctx, "task created with mentions",
+				"task_id", story.ID,
 				"workspace_id", story.WorkspaceID,
 				"mentions", mentions,
 			)
 			var err error
 			mentionedUserIDs, err = resolveMentionRecipients(ctx, s.workspaceRepo, story.WorkspaceID, *story.Description, actorID, mentionScopeForTeamID(story.TeamID))
 			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to resolve story mention recipients", "error", err, "story_id", story.ID)
+				s.logger.ErrorContext(ctx, "failed to resolve task mention recipients", "error", err, "task_id", story.ID)
 				mentionedUserIDs = nil
 			}
 		}
@@ -459,16 +459,16 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 				"type":       story.StoryType,
 			},
 		}); err != nil {
-			slog.ErrorContext(ctx, "failed to emit story created notification", "error", err, "story_id", story.ID)
+			slog.ErrorContext(ctx, "failed to emit task created notification", "error", err, "task_id", story.ID)
 		}
 	}
 
-	s.logger.InfoContext(ctx, "story created", "story_id", story.ID, "workspace_id", story.WorkspaceID, "actor_id", actorID)
+	s.logger.InfoContext(ctx, "task created", "task_id", story.ID, "workspace_id", story.WorkspaceID, "actor_id", actorID)
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
 // Update updates story fields.
-func (s *PMStoryService) Update(ctx context.Context, id string, req model.UpdateStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateStoryRequest, actorID string) (*model.StoryDetail, error) {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -511,8 +511,8 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		current.Description = req.Description
 	}
 	if req.StoryType != nil {
-		if !isValidStoryType(*req.StoryType) {
-			return nil, fmt.Errorf("invalid story_type")
+		if !isValidTaskType(*req.StoryType) {
+			return nil, fmt.Errorf("invalid task_type")
 		}
 		current.StoryType = *req.StoryType
 	}
@@ -568,13 +568,13 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 	if req.Priority != nil {
-		if !isValidStoryPriority(*req.Priority) {
+		if !isValidTaskPriority(*req.Priority) {
 			return nil, fmt.Errorf("invalid priority")
 		}
 		current.Priority = *req.Priority
 	}
 	if req.Severity != nil {
-		if !isValidStorySeverity(*req.Severity) {
+		if !isValidTaskSeverity(*req.Severity) {
 			return nil, fmt.Errorf("invalid severity")
 		}
 		current.Severity = *req.Severity
@@ -679,7 +679,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 		if s.recurringService != nil {
 			if err := s.recurringService.HandleStoryProgress(ctx, current.ID); err != nil {
-				s.logger.ErrorContext(ctx, "failed to process recurring template story progress", "error", err, "story_id", current.ID)
+				s.logger.ErrorContext(ctx, "failed to process recurring template task progress", "error", err, "task_id", current.ID)
 			}
 		}
 		// Evaluate automation rules for the state change (epic auto-start/complete, etc.)
@@ -708,91 +708,91 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		if st, _ := s.workflowRepo.GetStateByID(ctx, current.WorkflowStateID); st != nil {
 			newName = st.Name
 		}
-		action := "moved this story to " + newName
+		action := "moved this task to " + newName
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story state change", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task state change", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 		}
 	}
 	if req.Priority != nil && *req.Priority != oldPriority {
 		action := "changed priority from " + oldPriority + " to " + *req.Priority
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story priority change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task priority change", "error", err, "task_id", current.ID)
 		}
 	}
 	if req.Severity != nil && *req.Severity != oldSeverity {
 		action := "changed severity from " + oldSeverity + " to " + *req.Severity
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story severity change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task severity change", "error", err, "task_id", current.ID)
 		}
 	}
 	if req.StoryType != nil && *req.StoryType != oldStoryType {
 		action := "changed type from " + oldStoryType + " to " + *req.StoryType
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story type change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task type change", "error", err, "task_id", current.ID)
 		}
 	}
 	if req.Blocked != nil && *req.Blocked != oldBlocked {
 		if *req.Blocked {
 			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "marked this task as blocked", nil, nil, nil, nil); err != nil {
-				s.logger.ErrorContext(ctx, "failed to log activity for story blocked", "error", err, "story_id", current.ID)
+				s.logger.ErrorContext(ctx, "failed to log activity for task blocked", "error", err, "task_id", current.ID)
 			}
 		} else {
 			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "unblocked this task", nil, nil, nil, nil); err != nil {
-				s.logger.ErrorContext(ctx, "failed to log activity for story unblocked", "error", err, "story_id", current.ID)
+				s.logger.ErrorContext(ctx, "failed to log activity for task unblocked", "error", err, "task_id", current.ID)
 			}
 		}
 	}
 	if req.Archived != nil && *req.Archived {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "archived this task", nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story archived", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task archived", "error", err, "task_id", current.ID)
 		}
 	}
-	oldTeamName, err := resolveStoryTeamName(ctx, s.workspaceRepo, current.WorkspaceID, previousDetail.Story.TeamID)
+	oldTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, previousDetail.Story.TeamID)
 	if err != nil {
 		return nil, err
 	}
-	newTeamName, err := resolveStoryTeamName(ctx, s.workspaceRepo, current.WorkspaceID, updatedDetail.Story.TeamID)
+	newTeamName, err := resolveTaskTeamName(ctx, s.workspaceRepo, current.WorkspaceID, updatedDetail.Story.TeamID)
 	if err != nil {
 		return nil, err
 	}
 	if action := teamActivityAction(oldTeamName, newTeamName); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story team change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task team change", "error", err, "task_id", current.ID)
 		}
 	}
-	if action := memberActivityAction("owner", storyMemberName(previousDetail.OwnerMember), storyMemberName(updatedDetail.OwnerMember)); action != "" {
+	if action := memberActivityAction("owner", taskMemberName(previousDetail.OwnerMember), taskMemberName(updatedDetail.OwnerMember)); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story owner change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task owner change", "error", err, "task_id", current.ID)
 		}
 	}
-	if action := memberActivityAction("requester", storyMemberName(previousDetail.RequesterMember), storyMemberName(updatedDetail.RequesterMember)); action != "" {
+	if action := memberActivityAction("requester", taskMemberName(previousDetail.RequesterMember), taskMemberName(updatedDetail.RequesterMember)); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story requester change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task requester change", "error", err, "task_id", current.ID)
 		}
 	}
 	if action := planningLinkActivityAction("epic", derefString(previousDetail.EpicName), derefString(updatedDetail.EpicName)); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story epic change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task epic change", "error", err, "task_id", current.ID)
 		}
 	}
 	if action := planningLinkActivityAction("sprint", derefString(previousDetail.SprintName), derefString(updatedDetail.SprintName)); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story sprint change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task sprint change", "error", err, "task_id", current.ID)
 		}
 	}
 	if action := estimateActivityAction(oldEstimate, current.Estimate); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story estimate change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task estimate change", "error", err, "task_id", current.ID)
 		}
 	}
 	if action := deadlineActivityAction(oldDeadline, current.Deadline); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story due date change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task due date change", "error", err, "task_id", current.ID)
 		}
 	}
 	if action := blockerReasonActivityAction(oldBlocker, current.Blocker, oldBlocked, current.Blocked); action != "" {
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-			s.logger.ErrorContext(ctx, "failed to log activity for story blocker change", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to log activity for task blocker change", "error", err, "task_id", current.ID)
 		}
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
@@ -833,15 +833,15 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 				"type":       current.StoryType,
 			},
 		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit notification for story update", "error", err, "story_id", current.ID, "event_type", eventType)
+			s.logger.ErrorContext(ctx, "failed to emit notification for task update", "error", err, "task_id", current.ID, "event_type", eventType)
 		}
 	}
 
 	// Emit mention notification when description is updated with @mentions.
 	if s.notificationService != nil && req.Description != nil {
 		mentions := extractMentions(*req.Description)
-		slog.InfoContext(ctx, "story updated with mentions",
-			"story_id", current.ID,
+		slog.InfoContext(ctx, "task updated with mentions",
+			"task_id", current.ID,
 			"workspace_id", current.WorkspaceID,
 			"mentions", mentions,
 		)
@@ -862,12 +862,12 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 					"type":       current.StoryType,
 				},
 			}); err != nil {
-				slog.ErrorContext(ctx, "failed to emit story mention notification", "error", err, "story_id", current.ID)
+				slog.ErrorContext(ctx, "failed to emit task mention notification", "error", err, "task_id", current.ID)
 			}
 		}
 	}
 
-	s.logger.InfoContext(ctx, "story updated", "story_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
+	s.logger.InfoContext(ctx, "task updated", "task_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return updatedDetail, nil
 }
 
@@ -883,7 +883,7 @@ func nullableString(value *string) *string {
 }
 
 // Delete archives a story.
-func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
+func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return err
@@ -898,15 +898,15 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "archived this task", nil, nil, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story delete", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task delete", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "task", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
-	s.logger.InfoContext(ctx, "story deleted", "story_id", id, "workspace_id", current.WorkspaceID, "actor_id", actorID)
+	s.logger.InfoContext(ctx, "task deleted", "task_id", id, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return nil
 }
 
 // MoveToState moves story to another state.
-func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.MoveStoryRequest, actorID string) (*model.StoryDetail, error) {
+func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.MoveStoryRequest, actorID string) (*model.StoryDetail, error) {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -916,7 +916,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	s.logger.InfoContext(ctx, "[pm-dnd] service move start",
 		"trace_id", req.DebugTraceID,
-		"story_id", current.ID,
+		"task_id", current.ID,
 		"workspace_id", current.WorkspaceID,
 		"actor_id", actorID,
 		"from_state_id", current.WorkflowStateID,
@@ -954,9 +954,9 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {
 		newStateName = st.Name
 	}
-	action := "moved this story to " + newStateName
+	action := "moved this task to " + newStateName
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story move", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task move", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "moved",
@@ -984,7 +984,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 				"type":       current.StoryType,
 			},
 		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit notification for story move", "error", err, "story_id", current.ID)
+			s.logger.ErrorContext(ctx, "failed to emit notification for task move", "error", err, "task_id", current.ID)
 		}
 	}
 
@@ -1007,12 +1007,12 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 		if _, err := s.agentService.RunAgent(ctx, current.WorkspaceID, current.ID, "system"); err != nil {
 			if !errors.Is(err, ErrStoryDeliveryTargetRequired) {
 				s.logger.WarnContext(ctx, "auto-start agent on state change failed",
-					"error", err, "story_id", current.ID, "agent_id", *current.AssignedAgentID)
+					"error", err, "task_id", current.ID, "agent_id", *current.AssignedAgentID)
 			}
 		}
 	}
 
-	s.logger.InfoContext(ctx, "story moved", "story_id", current.ID, "workspace_id", current.WorkspaceID, "new_state", newStateName, "actor_id", actorID)
+	s.logger.InfoContext(ctx, "task moved", "task_id", current.ID, "workspace_id", current.WorkspaceID, "new_state", newStateName, "actor_id", actorID)
 	detail, err := s.storyRepo.GetByID(ctx, current.ID)
 	if err != nil {
 		return nil, err
@@ -1020,7 +1020,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if detail != nil {
 		s.logger.InfoContext(ctx, "[pm-dnd] service move result",
 			"trace_id", req.DebugTraceID,
-			"story_id", detail.Story.ID,
+			"task_id", detail.Story.ID,
 			"final_state_id", detail.Story.WorkflowStateID,
 			"final_position", detail.Story.Position,
 			"completed", detail.Story.Completed,
@@ -1033,7 +1033,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 }
 
 // Reorder changes story position in its state.
-func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.ReorderStoryRequest, actorID string) error {
+func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.ReorderStoryRequest, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, id)
 	if err != nil {
 		return err
@@ -1043,7 +1043,7 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	}
 	s.logger.InfoContext(ctx, "[pm-dnd] service reorder start",
 		"trace_id", req.DebugTraceID,
-		"story_id", current.ID,
+		"task_id", current.ID,
 		"workspace_id", current.WorkspaceID,
 		"actor_id", actorID,
 		"state_id", current.WorkflowStateID,
@@ -1060,11 +1060,11 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position}); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story reorder", "error", err, "story_id", current.ID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task reorder", "error", err, "task_id", current.ID)
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "reordered",
-		Entity:      "story",
+		Entity:      "task",
 		EntityID:    id,
 		WorkspaceID: current.WorkspaceID,
 		ActorID:     actorID,
@@ -1073,7 +1073,7 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	if raw, err := s.storyRepo.GetRawByID(ctx, id); err == nil && raw != nil {
 		s.logger.InfoContext(ctx, "[pm-dnd] service reorder result",
 			"trace_id", req.DebugTraceID,
-			"story_id", raw.ID,
+			"task_id", raw.ID,
 			"state_id", raw.WorkflowStateID,
 			"final_position", raw.Position,
 		)
@@ -1082,7 +1082,7 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 }
 
 // AddOwner adds an owner and auto-follows them.
-func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID string) error {
+func (s *PMTaskService) AddOwner(ctx context.Context, storyID, userID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1103,14 +1103,14 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story owner add", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task owner add", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 
 	// Auto-follow and notify the assigned user.
 	if s.followerService != nil {
 		if err := s.followerService.Follow(ctx, userID, "task", storyID, current.WorkspaceID, "assigned"); err != nil {
-			s.logger.ErrorContext(ctx, "failed to auto-follow story for assigned owner", "error", err, "story_id", storyID, "user_id", userID)
+			s.logger.ErrorContext(ctx, "failed to auto-follow task for assigned owner", "error", err, "task_id", storyID, "user_id", userID)
 		}
 	}
 	if s.notificationService != nil {
@@ -1131,7 +1131,7 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 				"type":       current.StoryType,
 			},
 		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit notification for story assignment", "error", err, "story_id", storyID, "user_id", userID)
+			s.logger.ErrorContext(ctx, "failed to emit notification for task assignment", "error", err, "task_id", storyID, "user_id", userID)
 		}
 	}
 
@@ -1139,7 +1139,7 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 }
 
 // RemoveOwner removes an owner.
-func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actorID string) error {
+func (s *PMTaskService) RemoveOwner(ctx context.Context, storyID, userID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1154,14 +1154,14 @@ func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actor
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story owner remove", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task owner remove", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
 // AddFollower adds a follower.
-func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actorID string) error {
+func (s *PMTaskService) AddFollower(ctx context.Context, storyID, userID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1179,14 +1179,14 @@ func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actor
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story follower add", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task follower add", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
 // RemoveFollower removes a follower.
-func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, actorID string) error {
+func (s *PMTaskService) RemoveFollower(ctx context.Context, storyID, userID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1201,14 +1201,14 @@ func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, ac
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story follower remove", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task follower remove", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
 // AddLabel adds a label to a story.
-func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID string) error {
+func (s *PMTaskService) AddLabel(ctx context.Context, storyID, labelID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1226,14 +1226,14 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story label add", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task label add", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
 // RemoveLabel removes a label from a story.
-func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, actorID string) error {
+func (s *PMTaskService) RemoveLabel(ctx context.Context, storyID, labelID, actorID string) error {
 	current, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return err
@@ -1248,7 +1248,7 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log activity for story label remove", "error", err, "story_id", storyID)
+		s.logger.ErrorContext(ctx, "failed to log activity for task label remove", "error", err, "task_id", storyID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
@@ -1256,7 +1256,7 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 
 // ListByWorkflowState returns board columns for a workflow with optional filters.
 // perStateLimit controls how many stories per column (0 = unlimited).
-func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
+func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
@@ -1265,7 +1265,7 @@ func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID str
 }
 
 // ListColumnStories returns a page of stories for a single board column.
-func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
+func (s *PMTaskService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
 	if stateID == "" {
 		return nil, nil, 0, fmt.Errorf("state_id is required")
 	}
@@ -1277,7 +1277,7 @@ func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, 
 }
 
 // ListByMember returns board columns grouped by owner member.
-func (s *PMStoryService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
+func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
 	if workspaceID == "" || workflowID == "" {
 		return nil, fmt.Errorf("workspace_id and workflow_id are required")
 	}
@@ -1286,7 +1286,7 @@ func (s *PMStoryService) ListByMember(ctx context.Context, workspaceID, workflow
 }
 
 // ListMemberColumnStories returns a page of stories for a single member board column.
-func (s *PMStoryService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+func (s *PMTaskService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
 	if workspaceID == "" || workflowID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
 	}
@@ -1298,7 +1298,7 @@ func (s *PMStoryService) ListMemberColumnStories(ctx context.Context, workspaceI
 }
 
 // CountByState returns state-level story counts for a workflow.
-func (s *PMStoryService) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
+func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
@@ -1306,11 +1306,11 @@ func (s *PMStoryService) CountByState(ctx context.Context, workflowID string) ([
 }
 
 // ListActivity returns story activity entries.
-func (s *PMStoryService) ListActivity(ctx context.Context, storyID string, pagination model.PMPagination) ([]model.ActivityLogEntry, int64, error) {
-	return s.activityService.ListEntity(ctx, "story", storyID, pagination)
+func (s *PMTaskService) ListActivity(ctx context.Context, storyID string, pagination model.PMPagination) ([]model.ActivityLogEntry, int64, error) {
+	return s.activityService.ListEntity(ctx, "task", storyID, pagination)
 }
 
-func isValidStoryType(value string) bool {
+func isValidTaskType(value string) bool {
 	switch value {
 	case model.PMStoryTypeFeature, model.PMStoryTypeBug, model.PMStoryTypeChore:
 		return true
@@ -1319,7 +1319,7 @@ func isValidStoryType(value string) bool {
 	}
 }
 
-func isValidStoryPriority(value string) bool {
+func isValidTaskPriority(value string) bool {
 	switch value {
 	case model.PMStoryPriorityNone, model.PMStoryPriorityLow, model.PMStoryPriorityMedium, model.PMStoryPriorityHigh, model.PMStoryPriorityUrgent:
 		return true
@@ -1328,7 +1328,7 @@ func isValidStoryPriority(value string) bool {
 	}
 }
 
-func isValidStorySeverity(value string) bool {
+func isValidTaskSeverity(value string) bool {
 	switch value {
 	case model.PMStorySeverityNone, model.PMStorySeverityMinor, model.PMStorySeverityMajor, model.PMStorySeverityCritical:
 		return true

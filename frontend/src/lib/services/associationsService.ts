@@ -3,7 +3,6 @@ import { docsService } from './docsService';
 import type { CreateCRMAssociationRequest, CRMAssociation } from '../crmTypes';
 import type { CreateDocsLinkRequest } from '../docsTypes';
 import type {
-  CreateStoryRelationshipRequest,
   CreateTaskRelationshipRequest,
   GroupedAssociations,
 } from '../pmTypes';
@@ -18,10 +17,7 @@ export const associationsService = {
   listByConversation: (workspaceId: string, conversationId: string) =>
     api.get<GroupedAssociations>(`/support/conversations/${conversationId}/associations${qs(workspaceId)}`),
   createTaskRelationship: (workspaceId: string, taskId: string, payload: CreateTaskRelationshipRequest) =>
-    api.post(`/pm/tasks/${taskId}/relationships${qs(workspaceId)}`, {
-      relationship_type: payload.relationship_type,
-      other_story_id: payload.other_task_id,
-    } satisfies CreateStoryRelationshipRequest),
+    api.post(`/pm/tasks/${taskId}/relationships${qs(workspaceId)}`, payload),
   deleteTaskRelationship: (workspaceId: string, relationshipId: string) =>
     api.del(`/pm/task-relationships/${relationshipId}${qs(workspaceId)}`),
   createAssociation: (payload: CreateCRMAssociationRequest) =>

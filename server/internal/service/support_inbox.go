@@ -980,7 +980,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		return fmt.Errorf("ticket not found")
 	}
 
-	ticket.LinkedStoryID = &storyID
+	ticket.LinkedTaskID = &storyID
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}

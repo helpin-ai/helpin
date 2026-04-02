@@ -555,12 +555,12 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 		},
 		"required": []string{"content"},
-	}, toolAddStoryComment)
+	}, toolAddTaskComment)
 
 	r.register("list_task_checklist", "List the checklist items for the current task.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
-	}, toolListStoryChecklist)
+	}, toolListTaskChecklist)
 
 	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
 		"type":       "object",
@@ -677,20 +677,20 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	r.register("list_epic_tasks", "List all non-archived tasks linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
-	}, toolListEpicStories)
+	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
-		"update_task_state":       toolUpdateStoryState,
+		"update_task_state":       toolUpdateTaskState,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
-		"ensure_task_plan_doc":    toolEnsureStoryPlanDoc,
+		"ensure_task_plan_doc":    toolEnsureTaskPlanDoc,
 		"approve_epic_spec":       toolApproveEpicSpec,
-		"create_task_batch":       toolCreateStoryBatch,
-		"assign_task_agent":       toolAssignStoryAgent,
-		"set_task_dependencies":   toolSetStoryDependencies,
+		"create_task_batch":       toolCreateTaskBatch,
+		"assign_task_agent":       toolAssignTaskAgent,
+		"set_task_dependencies":   toolSetTaskDependencies,
 	})
 
 	return r

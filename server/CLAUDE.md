@@ -200,9 +200,9 @@ r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Upda
 r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 
 // Sub-router: r.Route() — shared path prefix
-r.Route("/stories", func(r chi.Router) {
-    r.Get("/", h.Story.List)
-    r.Post("/", h.Story.Create)
+r.Route("/tasks", func(r chi.Router) {
+    r.Get("/", h.Task.List)
+    r.Post("/", h.Task.Create)
 })
 ```
 
@@ -236,8 +236,8 @@ WebSocket handlers bypass Chi's `Recoverer` (it strips `http.Hijacker` interface
 
 ```go
 // Basic structured logging
-slog.Info("story created", "story_id", story.ID, "workspace_id", story.WorkspaceID)
-slog.Error("failed to save", "error", err, "story_id", id)
+slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
+slog.Error("failed to save", "error", err, "task_id", id)
 
 // Context-aware (carries request_id, user_id from middleware)
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
