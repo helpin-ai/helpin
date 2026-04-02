@@ -53,7 +53,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
   const [agents, setAgents] = useState<Agent[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [target, setTarget] = useState<TaskDeliveryTarget | null>(null);
-  const assignedAgentId = taskDetail.story.assigned_agent_id ?? '';
+  const assignedAgentId = taskDetail.task.assigned_agent_id ?? '';
   const [selectedAgentId, setSelectedAgentId] = useState(assignedAgentId);
   const [repositoryId, setRepositoryId] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
@@ -75,7 +75,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
       const [agentsRes, reposRes, targetRes] = await Promise.all([
         agentService.list(workspaceId),
         gitService.listRepositories(workspaceId),
-        gitService.getTaskDeliveryTarget(workspaceId, taskDetail.story.id),
+        gitService.getTaskDeliveryTarget(workspaceId, taskDetail.task.id),
       ]);
       if (!mounted) {
         return;
@@ -109,7 +109,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     return () => {
       mounted = false;
     };
-  }, [taskDetail.story.id, workspaceId]);
+  }, [taskDetail.task.id, workspaceId]);
 
   const hidden = !loading && repositories.length === 0 && !target;
 
@@ -126,7 +126,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
   const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
-  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.story.display_id, taskDetail.story.name);
+  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.display_id, taskDetail.task.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
   const agentSelectionSaved = selectedAgentId === assignedAgentId;
   const deliveryTargetSaved =
@@ -134,7 +134,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
 
   const refreshStory = async () => {
-    const { data, error } = await pmTaskService.get(workspaceId, taskDetail.story.id);
+    const { data, error } = await pmTaskService.get(workspaceId, taskDetail.task.id);
     if (error) {
       toast.error(error);
       return;
@@ -145,7 +145,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
   };
 
   const refreshDeliveryTarget = async (syncInputs = false) => {
-    const targetRes = await gitService.getTaskDeliveryTarget(workspaceId, taskDetail.story.id);
+    const targetRes = await gitService.getTaskDeliveryTarget(workspaceId, taskDetail.task.id);
     if (targetRes.error) {
       toast.error(targetRes.error);
       return false;
@@ -165,7 +165,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
       return false;
     }
     setSavingTarget(true);
-    const { data, error } = await gitService.updateTaskDeliveryTarget(workspaceId, taskDetail.story.id, {
+    const { data, error } = await gitService.updateTaskDeliveryTarget(workspaceId, taskDetail.task.id, {
       repository_id: repositoryId,
       base_branch: resolvedBaseBranch,
     });
@@ -212,7 +212,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
 
     const assignmentPromise = (async () => {
       setSavingAssignment(true);
-      const { error } = await agentService.assignToTask(workspaceId, taskDetail.story.id, selectedAgentId);
+      const { error } = await agentService.assignToTask(workspaceId, taskDetail.task.id, selectedAgentId);
       setSavingAssignment(false);
       if (error) {
         toast.error(error);
@@ -248,7 +248,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     if (assignmentPromiseRef.current) return;
     const assignmentPromise = (async () => {
       setSavingAssignment(true);
-      const { error } = await agentService.assignToTask(workspaceId, taskDetail.story.id, agentId);
+      const { error } = await agentService.assignToTask(workspaceId, taskDetail.task.id, agentId);
       setSavingAssignment(false);
       if (error) {
         toast.error(error);
@@ -273,7 +273,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     // Auto-save delivery target when repo changes
     setSavingTarget(true);
     const resolved = baseBranch.trim() || repositories.find((r) => r.id === repoId)?.default_branch || 'main';
-    const { data, error } = await gitService.updateTaskDeliveryTarget(workspaceId, taskDetail.story.id, {
+    const { data, error } = await gitService.updateTaskDeliveryTarget(workspaceId, taskDetail.task.id, {
       repository_id: repoId,
       base_branch: resolved,
     });
@@ -302,7 +302,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     }
 
     setTriggeringRun(true);
-    const { error } = await agentService.runTask(workspaceId, taskDetail.story.id);
+    const { error } = await agentService.runTask(workspaceId, taskDetail.task.id);
     setTriggeringRun(false);
     if (error) {
       toast.error(error);

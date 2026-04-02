@@ -360,7 +360,9 @@ export type CreateStoryRelationshipRequest = CreateTaskRelationshipRequest;
 export type CreateTaskRelationshipPayload = CreateTaskRelationshipRequest;
 
 export interface TaskDetail {
-  story: Task;
+  task: Task;
+  /** @deprecated Use task */
+  story?: Task;
   owners: Array<{
     id: string;
     email: string;

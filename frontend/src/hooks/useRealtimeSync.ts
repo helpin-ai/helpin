@@ -73,7 +73,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // For created/updated, fetch the updated task and patch it in
         pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            const task = { ...res.data.story }
+            const task = { ...res.data.task }
             // Enrich with owner_name from task detail owners for board display.
             if (task.owner_member_id && !task.owner_name && res.data.owner_member) {
               task.owner_name = res.data.owner_member.display_name || res.data.owner_member.email

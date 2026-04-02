@@ -99,9 +99,9 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
         window.dispatchEvent(new CustomEvent('task-created', {
-          detail: { ownerMemberId: data?.story?.owner_member_id, teamId: data?.story?.team_id },
+          detail: { ownerMemberId: data?.task?.owner_member_id, teamId: data?.task?.team_id },
         }));
-        return data?.story ? { id: data.story.id } : undefined;
+        return data?.task ? { id: data.task.id } : undefined;
       }}
     />
   );

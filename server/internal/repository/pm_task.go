@@ -1935,12 +1935,12 @@ func (r *PMTaskRepository) applyDependencySummaries(ctx context.Context, stories
 	result := make([]model.PMStory, 0, len(stories))
 	for _, story := range stories {
 		summary := summaries[story.ID]
-		story.BlockedByStories = summary.blockedByStories
-		story.BlockingStories = summary.blockingStories
+		story.BlockedByTasks = summary.blockedByStories
+		story.BlockingTasks = summary.blockingStories
 		story.BlockedByCount = summary.blockedByCount
 		story.BlockingCount = summary.blockingCount
-		story.IsBlockedByStory = summary.isBlockedByStory
-		story.IsBlockingOther = summary.isBlockingOther
+		story.IsBlockedByTask = summary.isBlockedByStory
+		story.IsBlockingOtherTask = summary.isBlockingOther
 		story.Blocked = isTaskBlocked(story, summary)
 		result = append(result, story)
 	}

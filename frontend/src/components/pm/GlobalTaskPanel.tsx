@@ -76,14 +76,14 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         }
 
         let recurring: StoryRecurringSummary | null = null;
-        if (storyRes.data.story.recurring_template_id) {
+        if (storyRes.data.task.recurring_template_id) {
           const { data } = await pmRecurringTemplateService.getByStory(workspaceId, activeStoryId);
           if (!cancelled) recurring = data ?? null;
         }
         if (cancelled) return;
 
         const workflow = wfRes.data?.find(
-          (item) => item.workflow.id === storyRes.data!.story.workflow_id,
+          (item) => item.workflow.id === storyRes.data!.task.workflow_id,
         );
 
         setLoadedStory({
@@ -111,11 +111,11 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
       current
         ? {
             ...current,
-            storyId: updated.story.id,
+            storyId: updated.task.id,
             storyDetail: updated,
           }
         : {
-            storyId: updated.story.id,
+            storyId: updated.task.id,
             storyDetail: updated,
             states: [],
             recurringSummary: null,
@@ -126,7 +126,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     );
     window.dispatchEvent(
       new CustomEvent('task-updated', {
-        detail: { entity: 'story', action: 'updated', entity_id: updated.story.id, local: true },
+        detail: { entity: 'story', action: 'updated', entity_id: updated.task.id, local: true },
       }),
     );
   }, []);

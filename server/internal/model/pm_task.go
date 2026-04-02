@@ -61,12 +61,12 @@ type PMTask struct {
 	ExternalID                *string                `json:"external_id"`
 	SliceType                 *string                `json:"slice_type,omitempty" gorm:"type:text"`
 	ImplementationBrief       json.RawMessage        `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
-	IsBlockedByStory          bool                   `json:"is_blocked_by_story" gorm:"-"`
+	IsBlockedByTask           bool                   `json:"is_blocked_by_task" gorm:"-"`
 	BlockedByCount            int                    `json:"blocked_by_count" gorm:"-"`
-	IsBlockingOther           bool                   `json:"is_blocking_other_story" gorm:"-"`
+	IsBlockingOtherTask       bool                   `json:"is_blocking_other_task" gorm:"-"`
 	BlockingCount             int                    `json:"blocking_count" gorm:"-"`
-	BlockedByStories          []TaskDependencyTask   `json:"blocked_by_stories,omitempty" gorm:"-"`
-	BlockingStories           []TaskDependencyTask   `json:"blocking_stories,omitempty" gorm:"-"`
+	BlockedByTasks            []TaskDependencyTask   `json:"blocked_by_tasks,omitempty" gorm:"-"`
+	BlockingTasks             []TaskDependencyTask   `json:"blocking_tasks,omitempty" gorm:"-"`
 	CreatedAt                 time.Time              `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }

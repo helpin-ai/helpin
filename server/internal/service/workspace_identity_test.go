@@ -291,22 +291,22 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get active blocked story: %v", err)
 	}
-	if !active.Story.Blocked || !active.Story.IsBlockedByStory || active.Story.BlockedByCount != 1 {
+	if !active.Story.Blocked || !active.Story.IsBlockedByTask || active.Story.BlockedByCount != 1 {
 		t.Fatalf("active dependency state mismatch: %#v", active.Story)
 	}
-	if len(active.Story.BlockedByStories) != 1 || active.Story.BlockedByStories[0].ID != "source-active" {
-		t.Fatalf("expected active blocker to be visible in detail: %#v", active.Story.BlockedByStories)
+	if len(active.Story.BlockedByTasks) != 1 || active.Story.BlockedByTasks[0].ID != "source-active" {
+		t.Fatalf("expected active blocker to be visible in detail: %#v", active.Story.BlockedByTasks)
 	}
 
 	cleared, err := repo.GetByID(ctx, "target-cleared")
 	if err != nil {
 		t.Fatalf("get cleared blocked story: %v", err)
 	}
-	if cleared.Story.Blocked || cleared.Story.IsBlockedByStory || cleared.Story.BlockedByCount != 0 {
-		t.Fatalf("completed blocker should not keep story blocked: %#v", cleared.Story)
+	if cleared.Story.Blocked || cleared.Story.IsBlockedByTask || cleared.Story.BlockedByCount != 0 {
+		t.Fatalf("completed blocker should not keep task blocked: %#v", cleared.Story)
 	}
-	if len(cleared.Story.BlockedByStories) != 1 || !cleared.Story.BlockedByStories[0].Completed {
-		t.Fatalf("completed blocker should remain visible in detail: %#v", cleared.Story.BlockedByStories)
+	if len(cleared.Story.BlockedByTasks) != 1 || !cleared.Story.BlockedByTasks[0].Completed {
+		t.Fatalf("completed blocker should remain visible in detail: %#v", cleared.Story.BlockedByTasks)
 	}
 
 	legacy, err := repo.GetByID(ctx, "legacy-external")
@@ -334,7 +334,7 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 	}
 	foundActiveBlocker := false
 	for _, story := range blockingStories {
-		if story.ID == "source-active" && story.IsBlockingOther {
+		if story.ID == "source-active" && story.IsBlockingOtherTask {
 			foundActiveBlocker = true
 			break
 		}

@@ -677,7 +677,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       return null;
     }
 
-    const story = data.story;
+    const story = data.task;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const targetIndex = columns.findIndex((column) => column.state.id === story.workflow_state_id);
@@ -838,7 +838,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     // Skip patching if user switched board context mid-flight
     if (contextChanged()) return;
 
-    const updatedStory = moveRes.data?.story;
+    const updatedStory = moveRes.data?.task;
     if (updatedStory) {
       logPMDnD('store.move.move_success', {
         trace_id: traceID,

@@ -417,16 +417,16 @@ export function TaskListView({
       if (!shouldPatch) return;
 
       const res = await pmTaskService.get(workspaceId, storyId);
-      if (!res.data?.story) return;
+      if (!res.data?.task) return;
       const storyDetail = res.data!;
       const merged: Story = {
-        ...storyDetail.story,
+        ...storyDetail.task,
         labels: storyDetail.labels,
-        epic_name: storyDetail.epic_name ?? storyDetail.story.epic_name,
-        sprint_name: storyDetail.sprint_name ?? storyDetail.story.sprint_name,
+        epic_name: storyDetail.epic_name ?? storyDetail.task.epic_name,
+        sprint_name: storyDetail.sprint_name ?? storyDetail.task.sprint_name,
         owner_name: storyDetail.owner_member
           ? (storyDetail.owner_member.display_name ?? storyDetail.owner_member.email)
-          : storyDetail.story.owner_name,
+          : storyDetail.task.owner_name,
       };
       setStories((current) =>
         current.map((story) => (

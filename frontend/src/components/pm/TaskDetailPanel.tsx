@@ -170,23 +170,23 @@ const severityOptions: Severity[] = ['none', 'minor', 'major', 'critical'];
 const storyTypeOptions: StoryType[] = ['feature', 'bug', 'chore'];
 
 const buildFormState = (story: StoryDetail): FormState => ({
-  name: story.story.name,
-  description: story.story.description ?? '',
-  task_type: story.story.task_type,
-  workflow_state_id: story.story.workflow_state_id,
-  priority: story.story.priority,
-  severity: story.story.severity,
+  name: story.task.name,
+  description: story.task.description ?? '',
+  task_type: story.task.task_type,
+  workflow_state_id: story.task.workflow_state_id,
+  priority: story.task.priority,
+  severity: story.task.severity,
   estimate:
-    story.story.estimate === undefined || story.story.estimate === null
+    story.task.estimate === undefined || story.task.estimate === null
       ? ''
-      : String(story.story.estimate),
-  deadline: story.story.deadline ? story.story.deadline.slice(0, 10) : '',
-  epic_id: story.story.epic_id ?? '',
-  sprint_id: story.story.sprint_id ?? '',
-  team_id: story.story.team_id ?? '',
-  owner_member_id: story.story.owner_member_id ?? '',
-  requester_member_id: story.story.requester_member_id ?? '',
-  blocker: story.story.blocker ?? '',
+      : String(story.task.estimate),
+  deadline: story.task.deadline ? story.task.deadline.slice(0, 10) : '',
+  epic_id: story.task.epic_id ?? '',
+  sprint_id: story.task.sprint_id ?? '',
+  team_id: story.task.team_id ?? '',
+  owner_member_id: story.task.owner_member_id ?? '',
+  requester_member_id: story.task.requester_member_id ?? '',
+  blocker: story.task.blocker ?? '',
 });
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ function TaskDetailPanelBody({
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
-  const storyId = storyDetail.story.id;
+  const storyId = storyDetail.task.id;
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -349,12 +349,12 @@ function TaskDetailPanelBody({
       ? await pmRecurringTemplateService.update(workspaceId, recurringSummary.template_id, {
           title: value.title,
           description: value.description || undefined,
-          task_id: storyDetail.story.id,
+          task_id: storyDetail.task.id,
           config: value.config,
         })
       : await pmRecurringTemplateService.create({
           workspace_id: workspaceId,
-          task_id: storyDetail.story.id,
+          task_id: storyDetail.task.id,
           title: value.title,
           description: value.description || undefined,
           config: value.config,
@@ -365,10 +365,10 @@ function TaskDetailPanelBody({
       return;
     }
     setRecurringDetail(response.data);
-    await loadRecurringSummary(storyDetail.story.id);
+    await loadRecurringSummary(storyDetail.task.id);
     setRecurringDialogOpen(false);
     toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Story is now recurring');
-  }, [workspaceId, storyDetail.story.id, recurringSummary?.template_id, loadRecurringSummary]);
+  }, [workspaceId, storyDetail.task.id, recurringSummary?.template_id, loadRecurringSummary]);
 
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
@@ -376,8 +376,8 @@ function TaskDetailPanelBody({
   const { checkRef: checkDeliveryTruncation, isTruncated: isDeliveryTruncated } = useTruncationDetection();
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
-  const lastSyncedAt = useRef(storyDetail.story.updated_at);
-  const savedDescriptionRef = useRef(storyDetail.story.description ?? '');
+  const lastSyncedAt = useRef(storyDetail.task.updated_at);
+  const savedDescriptionRef = useRef(storyDetail.task.description ?? '');
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
 
@@ -406,23 +406,23 @@ function TaskDetailPanelBody({
   );
   // ── URL sync (imperative, no effect loop) ──────────────────────
   const lastSyncedStoryRef = useRef<string | null>(null);
-  if (storyDetail.story.id !== lastSyncedStoryRef.current) {
-    lastSyncedStoryRef.current = storyDetail.story.id;
+  if (storyDetail.task.id !== lastSyncedStoryRef.current) {
+    lastSyncedStoryRef.current = storyDetail.task.id;
     const url = new URL(window.location.href);
-    url.searchParams.set('task', `${storyDetail.story.display_id}`);
+    url.searchParams.set('task', `${storyDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
   }
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {
-    const res = await pmCommentService.list(workspaceId, 'task', storyDetail.story.id);
+    const res = await pmCommentService.list(workspaceId, 'task', storyDetail.task.id);
     setComments(res.data ?? []);
-  }, [workspaceId, storyDetail.story.id]);
+  }, [workspaceId, storyDetail.task.id]);
 
   const reloadActivity = useCallback(async () => {
-    const res = await pmTaskService.listActivity(workspaceId, storyDetail.story.id, 1, 30);
+    const res = await pmTaskService.listActivity(workspaceId, storyDetail.task.id, 1, 30);
     setActivity(res.data?.data ?? []);
-  }, [workspaceId, storyDetail.story.id]);
+  }, [workspaceId, storyDetail.task.id]);
 
   useEffect(() => {
     reloadComments();
@@ -430,9 +430,9 @@ function TaskDetailPanelBody({
   }, [reloadComments, reloadActivity]);
 
   useEffect(() => {
-    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
-      lastSyncedAt.current = storyDetail.story.updated_at;
-      savedDescriptionRef.current = storyDetail.story.description ?? '';
+    if (storyDetail.task.updated_at !== lastSyncedAt.current) {
+      lastSyncedAt.current = storyDetail.task.updated_at;
+      savedDescriptionRef.current = storyDetail.task.description ?? '';
       void reloadActivity();
       // Only reset form if no unsaved edits
       if (Object.keys(pendingPatchRef.current).length === 0) {
@@ -444,7 +444,7 @@ function TaskDetailPanelBody({
 
   // Re-fetch comments when comment events arrive; activity on any story change
   useEffect(() => {
-    const storyId = storyDetail.story.id;
+    const storyId = storyDetail.task.id;
     const onChildEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
       if (d?.parent_id === storyId && d?.entity === 'comment') {
@@ -462,7 +462,7 @@ function TaskDetailPanelBody({
       window.removeEventListener('story-child-updated', onChildEvent);
       window.removeEventListener('task-updated', onStoryEvent);
     };
-  }, [storyDetail.story.id, reloadComments, reloadActivity]);
+  }, [storyDetail.task.id, reloadComments, reloadActivity]);
 
   // ── Load epics, sprints, labels ─────────────────────────────
   useEffect(() => {
@@ -527,8 +527,8 @@ function TaskDetailPanelBody({
   useEffect(() => {
     (async () => {
       const [clRes, elRes] = await Promise.all([
-        pmChecklistService.list(workspaceId, storyDetail.story.id),
-        pmExternalLinkService.list(workspaceId, storyDetail.story.id),
+        pmChecklistService.list(workspaceId, storyDetail.task.id),
+        pmExternalLinkService.list(workspaceId, storyDetail.task.id),
       ]);
       if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
       if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
@@ -558,7 +558,7 @@ function TaskDetailPanelBody({
         if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
         }
-        const nextDescription = data.story.description ?? '';
+        const nextDescription = data.task.description ?? '';
         savedDescriptionRef.current = nextDescription;
         if (patch.description !== undefined) {
           const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
@@ -648,7 +648,7 @@ function TaskDetailPanelBody({
 
       setSaveError(null);
       onStoryUpdated(data);
-      savedDescriptionRef.current = data.story.description ?? '';
+      savedDescriptionRef.current = data.task.description ?? '';
       await pmAttachmentService.remove(workspaceId, entry.attachment.id);
       setSaving(false);
       return 'handled' as const;
@@ -672,10 +672,10 @@ function TaskDetailPanelBody({
     copyText(
       buildTaskCopyUrl({
         currentHref: window.location.href,
-        displayId: storyDetail.story.display_id,
+        displayId: storyDetail.task.display_id,
         origin: window.location.origin,
         slug: workspace?.slug,
-        taskId: storyDetail.story.id,
+        taskId: storyDetail.task.id,
       }),
     );
 
@@ -741,7 +741,7 @@ function TaskDetailPanelBody({
     if (validLabelIds.length === storyLabels.length) return;
     void syncTaskLabelsWithFeedback({
       workspaceId,
-      storyId: storyDetail.story.id,
+      storyId: storyDetail.task.id,
       currentLabelIds: storyLabels.map((label) => label.id),
       nextLabelIds: validLabelIds,
       syncLabels: pmTaskService.syncLabels,
@@ -751,7 +751,7 @@ function TaskDetailPanelBody({
       setSaving: setLabelSaving,
       setSaveError,
     });
-  }, [form?.team_id, onStoryUpdated, storyDetail.story.id, storyLabels, workspaceId]);
+  }, [form?.team_id, onStoryUpdated, storyDetail.task.id, storyLabels, workspaceId]);
 
   return (
     <div className="flex h-full flex-col">
@@ -775,7 +775,7 @@ function TaskDetailPanelBody({
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {storyDetail.epic_name && storyDetail.story.epic_id && workspace && (
+          {storyDetail.epic_name && storyDetail.task.epic_id && workspace && (
             <>
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
@@ -784,7 +784,7 @@ function TaskDetailPanelBody({
                 title={storyDetail.epic_name}
                 onClick={() => {
                   onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.story.epic_id! } });
+                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.task.epic_id! } });
                 }}
               >
                 {storyDetail.epic_name}
@@ -810,11 +810,11 @@ function TaskDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{storyDetail.story.display_id}</span>
-          {storyDetail.story.recurring_template_id ? (
+          <span className="shrink-0 font-medium text-foreground">{storyDetail.task.display_id}</span>
+          {storyDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
-              occurrenceNumber={storyDetail.story.recurring_occurrence_number}
+              occurrenceNumber={storyDetail.task.recurring_occurrence_number}
             />
           ) : null}
         </div>
@@ -858,7 +858,7 @@ function TaskDetailPanelBody({
                 className="h-7 w-7 shrink-0"
                 onClick={() => {
                   window.open(
-                    buildTaskPath(workspace.slug, storyDetail.story.id),
+                    buildTaskPath(workspace.slug, storyDetail.task.id),
                     '_blank',
                     'noopener,noreferrer',
                   );
@@ -1020,7 +1020,7 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Recurring info card */}
-          {storyDetail.story.recurring_template_id && recurringSummary ? (
+          {storyDetail.task.recurring_template_id && recurringSummary ? (
             <button
               type="button"
               className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
@@ -1044,17 +1044,17 @@ function TaskDetailPanelBody({
 
           <TaskRelationshipsSection
             workspaceId={workspaceId}
-            storyId={storyDetail.story.id}
-            storyName={storyDetail.story.name}
-            storyDisplayId={storyDetail.story.display_id}
-            workflowId={storyDetail.story.workflow_id}
-            workflowStateId={storyDetail.story.workflow_state_id}
-            epicId={storyDetail.story.epic_id}
-            sprintId={storyDetail.story.sprint_id}
-            teamId={storyDetail.story.team_id}
-            storyType={storyDetail.story.task_type}
-            priority={storyDetail.story.priority}
-            severity={storyDetail.story.severity}
+            storyId={storyDetail.task.id}
+            storyName={storyDetail.task.name}
+            storyDisplayId={storyDetail.task.display_id}
+            workflowId={storyDetail.task.workflow_id}
+            workflowStateId={storyDetail.task.workflow_state_id}
+            epicId={storyDetail.task.epic_id}
+            sprintId={storyDetail.task.sprint_id}
+            teamId={storyDetail.task.team_id}
+            storyType={storyDetail.task.task_type}
+            priority={storyDetail.task.priority}
+            severity={storyDetail.task.severity}
             externalBlocker={form.blocker}
             onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
             composerOpen={relationshipComposerOpen}
@@ -1067,7 +1067,7 @@ function TaskDetailPanelBody({
             <div className="mt-6">
               <ChecklistItems
                 workspaceId={workspaceId}
-                storyId={storyDetail.story.id}
+                storyId={storyDetail.task.id}
                 members={assignableMembers}
                 teams={mentionTeams}
               />
@@ -1077,7 +1077,7 @@ function TaskDetailPanelBody({
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} storyId={storyDetail.story.id} />
+              <ExternalLinks workspaceId={workspaceId} storyId={storyDetail.task.id} />
             </div>
           )}
 
@@ -1086,7 +1086,7 @@ function TaskDetailPanelBody({
             <Attachments
               workspaceId={workspaceId}
               entityType="task"
-              entityId={storyDetail.story.id}
+              entityId={storyDetail.task.id}
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
             />
@@ -1095,11 +1095,11 @@ function TaskDetailPanelBody({
           {/* Git Links & Agent Runs */}
           {hasGitIntegration && fieldVis.dev_history && (
             <>
-              <TaskGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
+              <TaskGitPanel storyId={storyDetail.task.id} workspaceId={workspaceId} />
               <AgentRunPanel
-                storyId={storyDetail.story.id}
+                storyId={storyDetail.task.id}
                 workspaceId={workspaceId}
-                assignedAgentId={storyDetail.story.assigned_agent_id}
+                assignedAgentId={storyDetail.task.assigned_agent_id}
               />
             </>
           )}
@@ -1113,7 +1113,7 @@ function TaskDetailPanelBody({
             <CommentThread
               workspaceId={workspaceId}
               entityType="task"
-              entityId={storyDetail.story.id}
+              entityId={storyDetail.task.id}
               comments={comments}
               currentUserId={currentUser?.id}
               teams={mentionTeams}
@@ -1147,7 +1147,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={storyDetail.story.display_id} />
+          <TaskSidebarIdRow displayId={storyDetail.task.display_id} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1326,7 +1326,7 @@ function TaskDetailPanelBody({
                 onChange={async (labelIds) => {
                   await syncTaskLabelsWithFeedback({
                     workspaceId,
-                    storyId: storyDetail.story.id,
+                    storyId: storyDetail.task.id,
                     currentLabelIds: storyLabels.map((label) => label.id),
                     nextLabelIds: labelIds,
                     syncLabels: pmTaskService.syncLabels,
@@ -1407,7 +1407,7 @@ function TaskDetailPanelBody({
                 disablePast
                 hideIcon
                 urgencyColor
-                completed={storyDetail.story.completed}
+                completed={storyDetail.task.completed}
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -1534,7 +1534,7 @@ function TaskDetailPanelBody({
 
           <AssociationsPanel
             objectType="task"
-            objectId={storyDetail.story.id}
+            objectId={storyDetail.task.id}
             workspaceId={workspaceId}
             includeTaskRelationships={false}
             className="-mx-4 mt-4 border-t border-border/60"
@@ -1629,7 +1629,7 @@ export function TaskDetailPanel({
         <SheetTitle className="sr-only">Task Detail</SheetTitle>
         {taskDetail ? (
           <TaskDetailPanelBody
-            key={taskDetail.story.id}
+            key={taskDetail.task.id}
             workspaceId={workspaceId}
             storyDetail={taskDetail}
             states={states}

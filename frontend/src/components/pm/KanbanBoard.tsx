@@ -634,7 +634,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     (async () => {
       const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
       if (res.data && workspaceSlug) {
-        openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.story.id);
+        openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -669,7 +669,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     const onUpdated = (e: Event) => {
       const updated = (e as CustomEvent)?.detail?.story;
       if (!updated) return;
-      const story = { ...updated.story };
+      const story = { ...updated.task };
       const ownerKey = story.owner_member_id;
       if (ownerKey && !story.owner_name) {
         story.owner_name = updated.owner_member

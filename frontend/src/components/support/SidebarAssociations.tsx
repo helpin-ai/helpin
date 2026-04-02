@@ -118,7 +118,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const handleCreateAndLinkStory = async (payload: CreateTaskRequest) => {
     const { data, error } = await pmTaskService.create(payload);
     if (error) throw new Error(error);
-    const taskId = data?.story?.id;
+    const taskId = data?.task?.id;
     if (taskId) {
       await createAssociation.mutateAsync({
         workspace_id: workspaceId,

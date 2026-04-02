@@ -346,7 +346,7 @@ export function TaskRelationshipsSection({
     const created = await createStory.mutateAsync(payload);
     await createRelationship.mutateAsync({
       relationship_type: relationshipType,
-      other_task_id: created.story.id,
+      other_task_id: created.task.id,
     });
     onComposerOpenChange(false);
   };

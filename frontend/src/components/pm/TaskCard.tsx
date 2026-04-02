@@ -213,8 +213,8 @@ function TaskCardComponent({
       const newOwnerId = value === '__none__' ? '' : value;
       try {
         const result = await pmTaskService.update(workspaceId, story.id, { owner_member_id: newOwnerId });
-        if (result.data?.story) {
-          (onStoryPatched ?? onOwnerChanged)?.(result.data.story);
+        if (result.data?.task) {
+          (onStoryPatched ?? onOwnerChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
@@ -231,8 +231,8 @@ function TaskCardComponent({
       }
       try {
         const result = await pmTaskService.update(workspaceId, story.id, { priority });
-        if (result.data?.story) {
-          (onStoryPatched ?? onPriorityChanged)?.(result.data.story);
+        if (result.data?.task) {
+          (onStoryPatched ?? onPriorityChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
@@ -250,8 +250,8 @@ function TaskCardComponent({
       }
       try {
         const result = await pmTaskService.update(workspaceId, story.id, { severity });
-        if (result.data?.story) {
-          (onStoryPatched ?? onSeverityChanged)?.(result.data.story);
+        if (result.data?.task) {
+          (onStoryPatched ?? onSeverityChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
@@ -266,8 +266,8 @@ function TaskCardComponent({
       if (!workspaceId || apiValue === story.estimate) return;
       try {
         const result = await pmTaskService.update(workspaceId, story.id, { estimate: apiValue ?? 0 });
-        if (result.data?.story) {
-          (onStoryPatched ?? onEstimateChanged)?.(result.data.story);
+        if (result.data?.task) {
+          (onStoryPatched ?? onEstimateChanged)?.(result.data.task);
         }
       } catch {
         // Board will show stale data until next refresh
