@@ -59,8 +59,8 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	go func() {
 		defer wg.Done()
 		if err := r.db.WithContext(ctx).
-			Raw(`SELECT id, name, 'story' AS type, display_id, team_id
-				FROM pm_stories
+			Raw(`SELECT id, name, 'task' AS type, display_id, team_id
+				FROM pm_tasks
 				WHERE workspace_id = ? AND archived = false
 				  AND (name ILIKE ? OR CAST(display_id AS TEXT) ILIKE ?)
 				ORDER BY updated_at DESC

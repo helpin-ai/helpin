@@ -309,9 +309,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	switch approvedPreviewAction {
-	case "create_stories":
+	case "create_tasks":
 		return ExecuteRunResult{}, nil
-	case "persist_story_doc":
+	case "persist_task_doc":
 		return ExecuteRunResult{}, nil
 	case "persist_prd":
 		now := time.Now()
@@ -1097,7 +1097,7 @@ func buildOtherArtifactContextEntry(artifact model.AgentRunArtifact) *workerpkg.
 		}
 	case "story_plan_proposal":
 		return &workerpkg.ArtifactContextEntry{
-			Label:        "Structured story plan proposal artifact",
+			Label:        "Structured task plan proposal artifact",
 			Source:       artifact.ArtifactType,
 			Status:       "draft",
 			Format:       artifact.Format,
@@ -2455,22 +2455,22 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 			return "", err
 		}
 		appliedAction = "persist_prd"
-	case "story_doc":
+	case "task_doc", "story_doc":
 		if state.story == nil {
-			return "", fmt.Errorf("approved story planning doc preview requires a story target")
+			return "", fmt.Errorf("approved task planning doc preview requires a task target")
 		}
 		if err := a.applyApprovedStoryDocPreview(ctx, state, input, approvedPreview); err != nil {
 			return "", err
 		}
-		appliedAction = "persist_story_doc"
-	case "stories":
+		appliedAction = "persist_task_doc"
+	case "tasks", "stories":
 		if state.epic == nil || state.run.TargetType != "epic" {
-			return "", fmt.Errorf("approved story plan preview requires an epic target")
+			return "", fmt.Errorf("approved task plan preview requires an epic target")
 		}
 		if err := a.applyApprovedStoryPlanPreview(ctx, state, input, approvedPreview); err != nil {
 			return "", err
 		}
-		appliedAction = "create_stories"
+		appliedAction = "create_tasks"
 	default:
 		return "", fmt.Errorf("unsupported approved preview phase %q", approvedPreview.Phase)
 	}
@@ -2535,23 +2535,23 @@ func decodeApprovedStoryPlanPreviewContent(raw json.RawMessage) (model.Orchestra
 	normalized, err := workerpkg.NormalizeStoryPlanPreviewContent(raw)
 	if err != nil {
 		if approvedPreviewDebugEnabled() {
-			slog.Error("approved story plan preview normalization failed during apply",
+			slog.Error("approved task plan preview normalization failed during apply",
 				"raw_preview", previewDebugSnippet(raw, 1600),
 				"error", err,
 			)
 		}
-		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 	}
 
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(normalized, &payload); err != nil {
 		if approvedPreviewDebugEnabled() {
-			slog.Error("approved story plan preview payload unmarshal failed during apply",
+			slog.Error("approved task plan preview payload unmarshal failed during apply",
 				"normalized_preview", previewDebugSnippet(normalized, 1600),
 				"error", err,
 			)
 		}
-		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 	}
 
 	proposal.EpicID = decodeLooseJSONString(payload["epic_id"])
@@ -2565,32 +2565,34 @@ func decodeApprovedStoryPlanPreviewContent(raw json.RawMessage) (model.Orchestra
 
 	var storyItems []json.RawMessage
 	if err := json.Unmarshal(payload["proposed_stories"], &storyItems); err != nil {
-		if approvedPreviewDebugEnabled() {
-			slog.Error("approved story plan preview proposed_stories decode failed during apply",
-				"normalized_preview", previewDebugSnippet(normalized, 1600),
-				"error", err,
-			)
+		if err := json.Unmarshal(payload["proposed_tasks"], &storyItems); err != nil {
+			if approvedPreviewDebugEnabled() {
+				slog.Error("approved task plan preview proposed_tasks decode failed during apply",
+					"normalized_preview", previewDebugSnippet(normalized, 1600),
+					"error", err,
+				)
+			}
+			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
-		return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
 	}
 	proposal.ProposedStories = make([]model.ProposedStory, 0, len(storyItems))
 	for index, item := range storyItems {
 		story, ok := decodeLooseApprovedProposedStory(item)
 		if !ok {
 			if approvedPreviewDebugEnabled() {
-				slog.Error("approved story plan preview story decode failed during apply",
-					"story_index", index,
-					"story_preview", previewDebugSnippet(item, 1200),
+				slog.Error("approved task plan preview item decode failed during apply",
+					"task_index", index,
+					"task_preview", previewDebugSnippet(item, 1200),
 				)
 			}
-			return proposal, fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
 		proposal.ProposedStories = append(proposal.ProposedStories, story)
 	}
 	if approvedPreviewDebugEnabled() {
-		slog.Info("decoded approved story plan preview",
+		slog.Info("decoded approved task plan preview",
 			"summary_preview", truncateString(strings.TrimSpace(proposal.Summary), 240),
-			"story_count", len(proposal.ProposedStories),
+			"task_count", len(proposal.ProposedStories),
 		)
 	}
 	return proposal, nil
@@ -2606,7 +2608,7 @@ func decodeLooseApprovedProposedStory(raw json.RawMessage) (model.ProposedStory,
 		Ref:                decodeLooseJSONString(payload["ref"]),
 		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
 		Description:        decodeLooseJSONString(payload["description"]),
-		StoryType:          firstNonEmptyString(decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
+		StoryType:          firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
 		SliceType:          decodeLooseJSONString(payload["slice_type"]),
 		AcceptanceCriteria: decodeLooseJSONStringArray(payload["acceptance_criteria"]),
 		DependencyRefs:     decodeLooseJSONStringArray(payload["dependency_refs"]),
@@ -2910,10 +2912,10 @@ func (a *AgentRunActivities) applyApprovedPRDPreview(ctx context.Context, state 
 
 func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, state *resolvedRunState, input *planningRunInput, preview *model.ApprovedRunPreview) error {
 	if preview == nil {
-		return fmt.Errorf("approved story plan preview is required")
+		return fmt.Errorf("approved task plan preview is required")
 	}
 	if strings.TrimSpace(preview.Format) != workerpkg.PreviewFormatJSON {
-		return fmt.Errorf("approved story plan preview must use format %q", workerpkg.PreviewFormatJSON)
+		return fmt.Errorf("approved task plan preview must use format %q", workerpkg.PreviewFormatJSON)
 	}
 	if a.commandExecutor == nil {
 		return fmt.Errorf("planner commands are not available")
@@ -2938,8 +2940,8 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 		ActorID:     runActorID(state.run),
 		TargetType:  "epic",
 		TargetID:    state.epic.ID,
-	}, "pm.create_story_batch", mustJSON(map[string]any{
-		"stories": proposal.ProposedStories,
+	}, "pm.create_task_batch", mustJSON(map[string]any{
+		"tasks": proposal.ProposedStories,
 	}))
 	if err != nil {
 		return err
@@ -2947,7 +2949,7 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 
 	var result workerpkg.CreateStoryBatchResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		return fmt.Errorf("parse created story batch: %w", err)
+		return fmt.Errorf("parse created task batch: %w", err)
 	}
 
 	stories, err := a.epicRepo.ListStories(ctx, state.epic.ID)
@@ -2961,7 +2963,7 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 		return err
 	}
 	if epicWithStats == nil {
-		return fmt.Errorf("epic not found after applying approved story plan")
+		return fmt.Errorf("epic not found after applying approved task plan")
 	}
 	state.epic = &epicWithStats.Epic
 	state.epic.LastPlanningRunID = &state.run.ID
@@ -2981,7 +2983,7 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 	})
 
 	createdCount := len(result.Stories)
-	summaryText := fmt.Sprintf("Applied the approved story plan and created %d stories.", createdCount)
+	summaryText := fmt.Sprintf("Applied the approved task plan and created %d tasks.", createdCount)
 	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil, nil); err != nil {
 		return err
 	}
@@ -3001,16 +3003,16 @@ func (a *AgentRunActivities) applyApprovedStoryPlanPreview(ctx context.Context, 
 
 func (a *AgentRunActivities) applyApprovedStoryDocPreview(ctx context.Context, state *resolvedRunState, input *planningRunInput, preview *model.ApprovedRunPreview) error {
 	if preview == nil {
-		return fmt.Errorf("approved story planning document preview is required")
+		return fmt.Errorf("approved task planning document preview is required")
 	}
 	if strings.TrimSpace(preview.Format) != workerpkg.PreviewFormatMarkdown {
-		return fmt.Errorf("approved story planning document preview must use format %q", workerpkg.PreviewFormatMarkdown)
+		return fmt.Errorf("approved task planning document preview must use format %q", workerpkg.PreviewFormatMarkdown)
 	}
 	if state.story == nil {
-		return fmt.Errorf("approved story planning document preview requires a story target")
+		return fmt.Errorf("approved task planning document preview requires a task target")
 	}
 
-	markdown, err := decodeApprovedMarkdownPreviewContent(preview.Content, "approved story planning document preview")
+	markdown, err := decodeApprovedMarkdownPreviewContent(preview.Content, "approved task planning document preview")
 	if err != nil {
 		return err
 	}
@@ -3033,11 +3035,11 @@ func (a *AgentRunActivities) applyApprovedStoryDocPreview(ctx context.Context, s
 		if _, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 			WorkspaceID: state.run.WorkspaceID,
 			ActorID:     runActorID(state.run),
-			TargetType:  "story",
+			TargetType:  "task",
 			TargetID:    state.story.ID,
 		}, "docs.link_document_to_object", mustJSON(map[string]any{
 			"document_id":        doc.ID,
-			"linked_object_type": model.LinkedObjectStory,
+			"linked_object_type": model.LinkedObjectTask,
 			"linked_object_id":   state.story.ID,
 			"link_context":       model.LinkContextCreatedFrom,
 		})); err != nil {
@@ -3053,7 +3055,7 @@ func (a *AgentRunActivities) applyApprovedStoryDocPreview(ctx context.Context, s
 	}
 
 	if content, err := a.docsContentRepo.GetByDocumentID(ctx, doc.ID); err == nil && content != nil {
-		label := "Approved Story Plan"
+		label := "Approved Task Plan"
 		_, _ = a.docsVersionRepo.Create(ctx, doc.ID, runActorID(state.run), content.Content, content.ContentText, &label, "manual", len(strings.Fields(content.ContentText)))
 	}
 
@@ -3069,7 +3071,7 @@ func (a *AgentRunActivities) applyApprovedStoryDocPreview(ctx context.Context, s
 		Summary:        strings.TrimSpace(preview.ApprovalSummary),
 	})
 
-	summaryText := "Persisted the approved story plan to Docs and linked it to the story."
+	summaryText := "Persisted the approved task plan to Docs and linked it to the task."
 	if _, err := a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", summaryText, nil, nil, nil, nil); err != nil {
 		return err
 	}
@@ -3115,7 +3117,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	if run.TargetType == "" {
 		switch {
 		case run.StoryID != nil:
-			run.TargetType = "story"
+			run.TargetType = "task"
 			run.TargetID = *run.StoryID
 		case run.ConversationID != nil:
 			run.TargetType = "support_conversation"
@@ -3129,7 +3131,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			return nil, err
 		}
 		if story == nil {
-			return nil, fmt.Errorf("story not found")
+			return nil, fmt.Errorf("task not found")
 		}
 		state.story = story
 
@@ -3579,13 +3581,13 @@ func (a *AgentRunActivities) buildFlowOutputInstructions(ctx context.Context, st
 
 func (a *AgentRunActivities) buildStoryCompletionInstructions(state *resolvedRunState, input planningRunInput) string {
 	var sections []string
-	sections = append(sections, "Review this completed story and return JSON only with the shape {\"summary\":\"...\",\"followups\":[{\"title\":\"...\",\"description\":\"...\",\"story_type\":\"chore\",\"priority\":\"medium\"}]}.")
+	sections = append(sections, "Review this completed task and return JSON only with the shape {\"summary\":\"...\",\"followups\":[{\"title\":\"...\",\"description\":\"...\",\"task_type\":\"chore\",\"priority\":\"medium\"}]}. Legacy story_type is still accepted.")
 	sections = append(sections, "Only propose internal PM/docs/support follow-up work. Do not publish customer-facing docs or website changes directly.")
 	if state.story != nil {
-		sections = append(sections, fmt.Sprintf("Story: %s", state.story.Name))
+		sections = append(sections, fmt.Sprintf("Task: %s", state.story.Name))
 		if state.story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*state.story.Description); description != "" {
-				sections = append(sections, "Story description:\n"+truncatePlanningText(description, 8000))
+				sections = append(sections, "Task description:\n"+truncatePlanningText(description, 8000))
 			}
 		}
 		if state.story.EpicID != nil && *state.story.EpicID != "" {
@@ -3642,7 +3644,7 @@ func (a *AgentRunActivities) buildCRMDealReviewInstructions(ctx context.Context,
 
 func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
 	if state.story == nil {
-		return "", fmt.Errorf("story planner requires a story target")
+		return "", fmt.Errorf("task planner requires a task target")
 	}
 
 	var sections []string
@@ -3652,40 +3654,40 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 		sections = append(sections, "Treat this as one transcript-driven planning run. Humans approve and request changes with normal chat replies in this same transcript.")
 		sections = append(sections, "Only a clear explicit approval counts as approval. Requested changes, critique, concerns, or ambiguous replies mean the draft is not approved yet.")
 	}
-	sections = append(sections, "Choose the next step from the transcript, story details, parent epic context, linked docs, comments, code context, and tool results.")
-	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the story planning doc, publish it with publish_story_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical story planning doc automatically.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"story_doc\" and stop after the request.")
+	sections = append(sections, "Choose the next step from the transcript, task details, parent epic context, linked docs, comments, code context, and tool results.")
+	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc, publish it with publish_task_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical task planning doc automatically.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"task_doc\" and stop after the request.")
 	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting the checkpoint.")
-	sections = append(sections, "Use publish_story_plan_doc for reviewable right-pane story planning documents.")
-	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the story planning document unless they directly affect this story's implementation.")
-	sections = append(sections, "Ground the planning document primarily in the story description, story comments, story-linked docs, and the current codebase context. Keep the output focused on this story's implementation plan.")
+	sections = append(sections, "Use publish_task_plan_doc for reviewable right-pane task planning documents.")
+	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.")
+	sections = append(sections, "Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.")
 
 	if strings.TrimSpace(input.PlanDocumentID) != "" {
-		sections = append(sections, fmt.Sprintf("Canonical story planning document ID: %s", input.PlanDocumentID))
+		sections = append(sections, fmt.Sprintf("Canonical task planning document ID: %s", input.PlanDocumentID))
 		content, err := a.docsContentRepo.GetByDocumentID(ctx, input.PlanDocumentID)
 		if err != nil {
 			return "", err
 		}
 		if content != nil && strings.TrimSpace(content.ContentText) != "" {
-			sections = append(sections, "Current story planning draft already in Docs:\n"+truncatePlanningText(content.ContentText, 12000))
+			sections = append(sections, "Current task planning draft already in Docs:\n"+truncatePlanningText(content.ContentText, 12000))
 			sections = append(sections, "Resume from the existing planning doc draft instead of starting over unless the human explicitly wants a reset.")
 		}
 	} else {
-		sections = append(sections, "No canonical story planning doc exists yet. Keep the draft in chat-backed preview artifacts until approval; the platform will create, persist, and link the approved artifact.")
+		sections = append(sections, "No canonical task planning doc exists yet. Keep the draft in chat-backed preview artifacts until approval; the platform will create, persist, and link the approved artifact.")
 	}
 
 	if input.AdditionalContext != "" {
 		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
 	}
 
-	sections = append(sections, fmt.Sprintf("Story: %s", state.story.Name))
+	sections = append(sections, fmt.Sprintf("Task: %s", state.story.Name))
 	if state.story.Description != nil {
 		if description := tiptap.RichTextToMarkdown(*state.story.Description); description != "" {
-			sections = append(sections, "Story description:\n"+truncatePlanningText(description, 8000))
+			sections = append(sections, "Task description:\n"+truncatePlanningText(description, 8000))
 		}
 	}
 	if state.story.TeamID != nil && strings.TrimSpace(*state.story.TeamID) != "" {
-		sections = append(sections, fmt.Sprintf("Story team ID: %s", strings.TrimSpace(*state.story.TeamID)))
+		sections = append(sections, fmt.Sprintf("Task team ID: %s", strings.TrimSpace(*state.story.TeamID)))
 	}
 
 	if state.epic != nil {
@@ -3722,7 +3724,7 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 		return "", err
 	}
 	if storyLinkedDocs != "" {
-		sections = append(sections, "Other docs linked directly to this story:\n"+storyLinkedDocs)
+		sections = append(sections, "Other docs linked directly to this task:\n"+storyLinkedDocs)
 	}
 
 	if state.epic != nil {
@@ -3740,7 +3742,7 @@ func (a *AgentRunActivities) buildStoryPlannerInstructions(ctx context.Context, 
 		return "", err
 	}
 	if commentsContext != "" {
-		sections = append(sections, "Story comments:\n"+commentsContext)
+		sections = append(sections, "Task comments:\n"+commentsContext)
 	}
 
 	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
@@ -3768,13 +3770,13 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		sections = append(sections, "Humans approve and request changes with normal chat replies in this same transcript. Do not tell them to use a separate approval workflow, button, or UI gate.")
 		sections = append(sections, "Only a clear explicit approval counts as approval. Any requested change, concern, critique, follow-up question, or ambiguous reply means the current phase is not approved yet.")
 	}
-	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing stories, and tool results.")
-	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation story plan, publish it with publish_story_plan, wait for inline story approval, then let the platform apply the approved story plan artifact and create stories.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"stories\" and stop after the request.")
+	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing tasks, and tool results.")
+	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation task plan, publish it with publish_task_plan, wait for inline task approval, then let the platform apply the approved task plan artifact and create tasks.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
 	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting the checkpoint.")
-	sections = append(sections, "After explicit PRD approval, continue automatically to story planning in the same run. Do not ask whether to proceed to stories unless the human explicitly redirects scope.")
-	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_story_plan for story plan JSON previews.")
-	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or story plans through mutation tools.")
+	sections = append(sections, "After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.")
+	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.")
+	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
 
 	var hasSpecContent bool
 	if input.SpecDocumentID != "" {
@@ -3784,20 +3786,20 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		if input.SpecVersionID == "" {
 			if content, err := a.docsContentRepo.GetByDocumentID(ctx, input.SpecDocumentID); err == nil && content != nil && strings.TrimSpace(content.ContentText) != "" {
 				hasSpecContent = true
-				sections = append(sections, "IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the current draft instead of starting over. Present the draft, revise it if needed, and request PRD approval before any story planning.")
+				sections = append(sections, "IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the current draft instead of starting over. Present the draft, revise it if needed, and request PRD approval before any task planning.")
 				sections = append(sections, "Current spec draft:\n"+truncatePlanningText(content.ContentText, 12000))
 			}
 		}
 	}
 	if input.SpecVersionID != "" {
 		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
-		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for story planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
+		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for task planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
 		sections = append(sections, "If the current facts show the PRD is already approved, treat persistence as complete and continue from that state. Do not replay the PRD through mutation tools.")
 	}
 	if state.epic != nil && state.epic.TeamID != nil && strings.TrimSpace(*state.epic.TeamID) != "" {
 		sections = append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*state.epic.TeamID)))
 	} else {
-		sections = append(sections, "This epic does not currently have a team. Before creating stories, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
+		sections = append(sections, "This epic does not currently have a team. Before creating tasks, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
 	}
 	if input.AdditionalContext != "" {
 		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
@@ -3838,8 +3840,8 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		for _, story := range state.epicStories {
 			lines = append(lines, fmt.Sprintf("- %s [%s]", story.Name, story.ID))
 		}
-		sections = append(sections, fmt.Sprintf("IMPORTANT: %d stories already exist under this epic. Do NOT recreate them. Only create new stories if the human explicitly requests additions.", len(state.epicStories)))
-		sections = append(sections, "Stories already linked to this epic:\n"+strings.Join(lines, "\n"))
+		sections = append(sections, fmt.Sprintf("IMPORTANT: %d tasks already exist under this epic. Do NOT recreate them. Only create new tasks if the human explicitly requests additions.", len(state.epicStories)))
+		sections = append(sections, "Tasks already linked to this epic:\n"+strings.Join(lines, "\n"))
 	}
 
 	hasApprovedSpec := input.SpecVersionID != ""
@@ -3848,11 +3850,11 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicStories)))
 	switch {
 	case hasApprovedSpec && hasStories:
-		sections = append(sections, "Next-step guidance: the PRD is approved and stories already exist. Do not redraft the PRD or recreate existing stories. Enter clarification or extension mode, inspect current stories if needed, and only add new stories if the human explicitly asks for them.")
+		sections = append(sections, "Next-step guidance: the PRD is approved and tasks already exist. Do not redraft the PRD or recreate existing tasks. Enter clarification or extension mode, inspect current tasks if needed, and only add new tasks if the human explicitly asks for them.")
 	case hasApprovedSpec && !hasStories:
-		sections = append(sections, "Next-step guidance: the PRD is approved and no stories exist yet. Skip PRD drafting entirely and proceed directly to story planning from the approved spec and current codebase context.")
+		sections = append(sections, "Next-step guidance: the PRD is approved and no tasks exist yet. Skip PRD drafting entirely and proceed directly to task planning from the approved spec and current codebase context.")
 	case hasSpecDoc && hasSpecContent:
-		sections = append(sections, "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any story planning.")
+		sections = append(sections, "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any task planning.")
 	default:
 		sections = append(sections, "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval.")
 	}
@@ -4031,7 +4033,7 @@ func (a *AgentRunActivities) ensureEpicSpecDocument(ctx context.Context, state *
 
 func (a *AgentRunActivities) ensureStoryPlanDocument(ctx context.Context, state *resolvedRunState, actorID string) (*model.DocsDocument, error) {
 	if state.story == nil {
-		return nil, fmt.Errorf("story not found")
+		return nil, fmt.Errorf("task not found")
 	}
 	if state.story.PlanDocumentID != nil && strings.TrimSpace(*state.story.PlanDocumentID) != "" {
 		doc, err := a.docsDocRepo.GetByID(ctx, *state.story.PlanDocumentID)
@@ -4082,8 +4084,8 @@ func (a *AgentRunActivities) ensureStoryPlanDocument(ctx context.Context, state 
 		Visibility:  model.SpaceVisibilityWorkspaceWide,
 		OwnerID:     strPtr(actorID),
 		TeamID:      teamID,
-		TemplateKey: strPtr("story_plan"),
-		Tags:        model.DocsStringArray{"story-plan", "story"},
+		TemplateKey: strPtr("task_plan"),
+		Tags:        model.DocsStringArray{"task-plan", "task"},
 		CreatedBy:   actorID,
 	})
 	if err != nil {
@@ -4193,7 +4195,7 @@ func (a *AgentRunActivities) renderStoryCommentsContext(ctx context.Context, sto
 	if strings.TrimSpace(storyID) == "" || a.commentRepo == nil {
 		return "", nil
 	}
-	comments, err := a.commentRepo.List(ctx, "story", storyID)
+	comments, err := a.commentRepo.List(ctx, "task", storyID)
 	if err != nil {
 		return "", err
 	}
@@ -4850,7 +4852,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		},
 		AddComment: func(ctx context.Context, workspaceID, storyID, agentID, content string) error {
 			comment := &model.PMComment{
-				EntityType: "story",
+				EntityType: "task",
 				EntityID:   storyID,
 				AuthorID:   agentID,
 				Body:       content,
@@ -4861,10 +4863,10 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			if a.commandExecutor != nil {
 				_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 					WorkspaceID: workspaceID,
-					TargetType:  "story",
+					TargetType:  "task",
 					TargetID:    storyID,
-				}, "pm.update_story_state", mustJSON(map[string]any{
-					"story_id": storyID,
+				}, "pm.update_task_state", mustJSON(map[string]any{
+					"task_id":  storyID,
 					"state_id": stateID,
 				}))
 				return err
@@ -4875,7 +4877,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return err
 			}
 			if story == nil {
-				return fmt.Errorf("story not found")
+				return fmt.Errorf("task not found")
 			}
 			story.WorkflowStateID = stateID
 			return a.storyRepo.Update(ctx, story)
@@ -4890,8 +4892,8 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 					ActorID:     actorID,
 					TargetType:  "epic",
 					TargetID:    epicID,
-				}, "pm.create_story_batch", mustJSON(map[string]any{
-					"stories": stories,
+				}, "pm.create_task_batch", mustJSON(map[string]any{
+					"tasks": stories,
 				}))
 				if err != nil {
 					return workerpkg.CreateStoryBatchResult{}, err
@@ -4911,10 +4913,10 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 				WorkspaceID: workspaceID,
 				ActorID:     actorID,
-				TargetType:  "story",
+				TargetType:  "task",
 				TargetID:    storyID,
-			}, "pm.assign_story_agent", mustJSON(map[string]any{
-				"story_id": storyID,
+			}, "pm.assign_task_agent", mustJSON(map[string]any{
+				"task_id":  storyID,
 				"agent_id": agentID,
 			}))
 			return err
@@ -4927,7 +4929,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				WorkspaceID: workspaceID,
 				ActorID:     actorID,
 				TargetType:  "epic",
-			}, "pm.set_story_dependencies", mustJSON(map[string]any{
+			}, "pm.set_task_dependencies", mustJSON(map[string]any{
 				"dependencies": dependencies,
 			}))
 			return err
@@ -5146,9 +5148,9 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			output, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
 				WorkspaceID: workspaceID,
 				ActorID:     actorID,
-				TargetType:  "story",
+				TargetType:  "task",
 				TargetID:    storyID,
-			}, "docs.ensure_story_plan_doc", json.RawMessage(`{}`))
+			}, "docs.ensure_task_plan_doc", json.RawMessage(`{}`))
 			if err != nil {
 				return nil, err
 			}
@@ -5159,7 +5161,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return nil, err
 			}
 			if strings.TrimSpace(response.DocumentID) == "" {
-				return nil, fmt.Errorf("ensure story plan doc returned no document_id")
+				return nil, fmt.Errorf("ensure task plan doc returned no document_id")
 			}
 			return a.docsDocRepo.GetByID(ctx, response.DocumentID)
 		},
@@ -5396,7 +5398,7 @@ func slugifyBranchToken(value string) string {
 	value = branchTokenSanitizer.ReplaceAllString(value, "-")
 	value = strings.Trim(value, "-")
 	if value == "" {
-		return "story"
+		return "task"
 	}
 	return value
 }
@@ -5427,6 +5429,7 @@ func buildDurableRunFacts(state *resolvedRunState, input planningRunInput) map[s
 
 	collectStructIDFacts(facts, "run", state.run)
 	collectStructIDFacts(facts, "agent", state.agent)
+	collectStructIDFacts(facts, "task", state.story)
 	collectStructIDFacts(facts, "story", state.story)
 	collectStructIDFacts(facts, "epic", state.epic)
 	collectStructIDFacts(facts, "conversation", state.conversation)
@@ -5442,6 +5445,7 @@ func buildDurableRunFacts(state *resolvedRunState, input planningRunInput) map[s
 	setFact(facts, "agent_id", state.run.AgentID)
 	setFact(facts, "target_type", state.run.TargetType)
 	setFact(facts, "target_id", state.run.TargetID)
+	setFact(facts, "task_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.story)))
 	setFact(facts, "story_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.story)))
 	setFact(facts, "conversation_id", firstNonEmptyString(derefString(state.run.ConversationID), structID(state.conversation)))
 	setFact(facts, "epic_id", firstNonEmptyString(structID(state.epic), derefString(epicIDOfStory(state.story))))

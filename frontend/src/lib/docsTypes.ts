@@ -7,7 +7,7 @@ export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
 export type VersionType = 'manual' | 'auto' | 'publish' | 'revert';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
-export type LinkedObjectType = 'epic' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation';
+export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation';
 
 // ─── Core models ────────────────────────────────────────────────────────────
 

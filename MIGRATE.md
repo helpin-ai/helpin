@@ -9,6 +9,27 @@ This repo now has two schema-change paths:
 
 Use this file as the operational runbook for the migration runner and ArgoCD hook flow.
 
+## Latest Finding
+
+During live Story -> Task verification, the first hard-cut migration exposed a real dual-schema edge case:
+
+- empty task-era tables had already been created in the environment
+- `202604010002_story_to_task_hard_cut.sql` intentionally guarded its renames with `... AND pm_tasks IS NULL`
+- because `pm_tasks` already existed, the rename step skipped the live `pm_stories` data
+- result: both task-era and story-era tables coexisted until reconciled
+
+The fix is now captured in:
+
+- `server/internal/dbmigrate/sql/202604010003_story_task_reconcile_dual_schema.sql`
+
+That reconciliation migration:
+
+- backfills rows from legacy story-era tables into the task-era tables when both exist
+- re-syncs the `pm_task_display_id_seq` sequence
+- removes the leftover story-era tables afterward
+
+This means the hard-cut is now resilient to environments where `AutoMigrate` or earlier code paths created task-era tables before the rename migration ran.
+
 ## Current Architecture
 
 ### Runtime migration runner
@@ -184,6 +205,24 @@ DATABASE_URL=... go run ./cmd/migrate status
 
 Check that the expected version appears as `applied` and is recorded in `schema_migrations`.
 
+### 7. Verify hard-cut schema outcome
+
+For a rename cutover, do not stop at `migrations applied`. Also verify:
+
+```bash
+cd server
+set -a && . .env
+psql "$DATABASE_URL" -P pager=off -c "select version, name, applied_at from schema_migrations order by version;"
+psql "$DATABASE_URL" -P pager=off -c "select count(*) as tasks from pm_tasks;"
+psql "$DATABASE_URL" -P pager=off -c \"select count(*) as legacy_story_tables from pg_tables where schemaname = 'public' and tablename in ('pm_stories','pm_story_owners','pm_story_followers','pm_story_labels','pm_story_links','pm_story_templates','story_delivery_targets','story_git_links');\"
+```
+
+Expected after the reconciliation migration:
+
+- `202604010001`, `202604010002`, and `202604010003` are all `applied`
+- `pm_tasks` contains the migrated work-item rows
+- `legacy_story_tables = 0`
+
 ## Findings Confirmed In Production
 
 These were verified during rollout validation:
@@ -203,6 +242,7 @@ These items must be done before the actual rename rollout:
 3. Rehearse the full flow on staging
 4. Verify `./migrate status` shows the applied Story -> Task migration version
 5. Keep the paired rollback script ready under `server/internal/dbmigrate/rollback/` and validate the forward+reverse round trip before release
+6. Verify whether task-era tables already exist before rollout; if they do, ensure the reconciliation migration is included in the release image
 
 ## Caveats
 

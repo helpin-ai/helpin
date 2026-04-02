@@ -16,7 +16,7 @@ import {
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
-import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, StoryType } from './pmTypes';
+import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, StoryType, TaskType } from './pmTypes';
 
 // ── Priority icons & colors ────────────────────────────────────────
 
@@ -176,4 +176,16 @@ export function StoryTypeIcon({
   const config = STORY_TYPE_CONFIG[storyType];
   const Icon = config.icon;
   return <Icon className={`${className} ${config.color}`} />;
+}
+
+export const TASK_TYPE_CONFIG = STORY_TYPE_CONFIG;
+
+export function TaskTypeIcon({
+  taskType,
+  className = 'h-4 w-4',
+}: {
+  taskType: TaskType;
+  className?: string;
+}) {
+  return <StoryTypeIcon storyType={taskType} className={className} />;
 }

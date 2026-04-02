@@ -47,13 +47,13 @@ export function deriveActiveRail(pathname: string): RailId {
 }
 
 export const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string }[] = [
-  { key: 'stories', label: 'Stories', icon: LayoutList, path: 'stories' },
+  { key: 'tasks', label: 'Tasks', icon: LayoutList, path: 'tasks' },
   { key: 'epics', label: 'Epics', icon: Layers, path: 'epics' },
   { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
 ];
 
 export const projectCreateOptions = [
-  { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
+  { key: 'task' as const, label: 'Task', icon: SquareKanban, pages: ['tasks'] },
   { key: 'epic' as const, label: 'Epic', icon: Layers, pages: ['epics'] },
   { key: 'sprint' as const, label: 'Sprint', icon: RefreshCw, pages: ['sprints'] },
   { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },

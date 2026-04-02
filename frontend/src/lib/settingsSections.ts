@@ -25,7 +25,7 @@ export type SettingsSection =
   | 'knowledge'
   | 'workflows'
   | 'labels'
-  | 'story-templates'
+  | 'task-templates'
   | 'recurring-tasks'
   | 'automations'
   | 'delivery'
@@ -112,21 +112,21 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'labels',
     label: 'Labels',
-    description: 'Categorize and filter stories with color-coded labels.',
+    description: 'Categorize and filter tasks with color-coded labels.',
     icon: Tag,
     group: 'Project Settings',
   },
   {
-    id: 'story-templates',
-    label: 'Story Templates',
-    description: 'Define reusable templates for quick story creation.',
+    id: 'task-templates',
+    label: 'Task Templates',
+    description: 'Define reusable templates for quick task creation.',
     icon: FileText,
     group: 'Project Settings',
   },
   {
     id: 'recurring-tasks',
     label: 'Recurring Tasks',
-    description: 'Manage recurring work templates, schedules, failures, and generated stories.',
+    description: 'Manage recurring work templates, schedules, failures, and generated tasks.',
     icon: RefreshCw,
     group: 'Project Settings',
   },

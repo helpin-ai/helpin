@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { Agent, CreateStoryRequest, Story, StoryMemberColumn, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -31,10 +31,10 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAuthStore } from '@/stores/authStore';
 import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
-import { StoryCard } from './StoryCard';
-import { CreateStoryModal } from './CreateStoryModal';
+import { TaskCard } from './TaskCard';
+import { CreateTaskModal } from './CreateTaskModal';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar, StoryOwnerAvatarFilterRow } from './StoryFilters';
-import { StoryListView } from './StoryListView';
+import { TaskListView } from './TaskListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
 import { ListDisplayMenu } from './ListDisplayMenu';
@@ -44,8 +44,8 @@ import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
 import { DragPreviewManager, useActiveStory, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
-import { getVisibleStoryListGroupOptions, type StoryListGroupByOption } from '@/components/pm/story-detail/storyListGrouping';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -218,7 +218,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                   {group.label}
                 </div>
                 {group.stories.map((story) => (
-                  <StoryCard
+                  <TaskCard
                     key={story.id}
                     story={story}
                     teamName={findTeamName(story.team_id)}
@@ -228,7 +228,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             ))
           ) : (
             stories.map((story) => (
-              <StoryCard
+              <TaskCard
                 key={story.id}
                 story={story}
                 teamName={findTeamName(story.team_id)}
@@ -386,7 +386,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           className={`min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
         >
           {stories.map((story) => (
-            <StoryCard
+            <TaskCard
               key={story.id}
               story={story}
               teamName={findTeamName(story.team_id)}
@@ -433,7 +433,7 @@ const DragOverlayCard = memo(function DragOverlayCard({
   const activeStory = useActiveStory(manager);
   if (!activeStory) return null;
   return (
-    <StoryCard
+    <TaskCard
       story={activeStory}
       isOverlay
       teamName={resolveTeamName(activeStory.team_id)}
@@ -551,7 +551,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     setViewModeState(mode);
     try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   }, [VIEW_MODE_KEY]);
-  const [listGroupBy, setListGroupBy] = useState<StoryListGroupByOption>('workflow_state');
+  const [listGroupBy, setListGroupBy] = useState<TaskListGroupByOption>('workflow_state');
 
   const COLLAPSED_KEY = `pm_kanban_collapsed_${workspaceId}`;
   const [collapsedColumns, setCollapsedColumnsState] = useState<Set<string>>(() => {
@@ -572,7 +572,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const listGroupOptions = useMemo(
     () =>
-      getVisibleStoryListGroupOptions({
+      getVisibleTaskListGroupOptions({
         story_type: listFieldVis.story_type,
         priority: listFieldVis.priority,
         severity: listFieldVis.severity,
@@ -620,21 +620,21 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         refreshBoard();
       }
     };
-    window.addEventListener('story-created', handler);
-    return () => window.removeEventListener('story-created', handler);
+    window.addEventListener('task-created', handler);
+    return () => window.removeEventListener('task-created', handler);
   }, [refreshBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
-  // Open ?story= URL param in global panel on mount
+  // Open ?task= URL param in global panel on mount
   useEffect(() => {
     if (!workflow) return;
-    const maybeStory = new URLSearchParams(window.location.search).get('story');
-    if (!maybeStory) return;
-    const match = maybeStory.match(/^(\d+)$/);
+    const maybeTask = new URLSearchParams(window.location.search).get('task');
+    if (!maybeTask) return;
+    const match = maybeTask.match(/^(\d+)$/);
     if (!match) return;
     (async () => {
-      const res = await pmStoryService.getByDisplayId(workspaceId, Number(match[1]));
+      const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
       if (res.data && workspaceSlug) {
-        openStoryRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.story.id);
+        openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.story.id);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -642,7 +642,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const openStory = useCallback(
     (story: Story) => {
       if (!workspaceSlug) return;
-      openStoryRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, story.id);
+      openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, story.id);
     },
     [navigate, workspaceSlug],
   );
@@ -711,11 +711,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         if (!patchStory('deleted', storyId)) refreshBoard();
       }
     };
-    window.addEventListener('story-panel-updated', onUpdated);
-    window.addEventListener('story-panel-archived', onArchived);
+    window.addEventListener('task-panel-updated', onUpdated);
+    window.addEventListener('task-panel-archived', onArchived);
     return () => {
-      window.removeEventListener('story-panel-updated', onUpdated);
-      window.removeEventListener('story-panel-archived', onArchived);
+      window.removeEventListener('task-panel-updated', onUpdated);
+      window.removeEventListener('task-panel-archived', onArchived);
     };
   }, [groupBy, columns, ownerNameMap, patchStory, refreshBoard]);
 
@@ -1171,7 +1171,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 </button>
               </div>
             ) : (
-              <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as StoryListGroupByOption)}>
+              <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as TaskListGroupByOption)}>
                 <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
                   <span className="shrink-0 text-muted-foreground">Group by:</span>
                   <SelectValue />
@@ -1279,7 +1279,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       ) : null}
 
       {!loading && viewMode === 'list' && workflow ? (
-        <StoryListView
+        <TaskListView
           workspaceId={workspaceId}
           workflow={workflow}
           teams={teams}
@@ -1288,7 +1288,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           sprints={refSprints}
           filters={filters}
           teamId={storeTeamId}
-          onOpenStory={openStory}
+          onOpenTask={openStory}
           groupBy={listGroupBy}
           onGroupByChange={setListGroupBy}
           showToolbar={false}
@@ -1296,7 +1296,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       ) : null}
 
       {workflow ? (
-        <CreateStoryModal
+        <CreateTaskModal
           open={createOpen}
           onOpenChange={setCreateOpen}
           workspaceId={workspaceId}

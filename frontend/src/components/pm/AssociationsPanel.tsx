@@ -14,7 +14,7 @@ import {
   useDeleteDocAssociation,
   useDeletePMAssociation,
   useEpicAssociations,
-  useStoryAssociations,
+  useTaskAssociations,
 } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
@@ -38,7 +38,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-type AssociationsObjectType = 'story' | 'epic';
+type AssociationsObjectType = 'task' | 'epic';
 type SectionKey = 'support' | 'crm' | 'docs';
 
 interface AssociationsPanelProps {
@@ -46,7 +46,7 @@ interface AssociationsPanelProps {
   objectType: AssociationsObjectType;
   objectId: string;
   className?: string;
-  includeStoryRelationships?: boolean;
+  includeTaskRelationships?: boolean;
 }
 
 export function AssociationsPanel({
@@ -82,8 +82,8 @@ export function AssociationsPanel({
   const [conversationResults, setConversationResults] = useState<SupportConversation[]>([]);
 
   const associationsQuery =
-    objectType === 'story'
-      ? useStoryAssociations(workspaceId, objectId)
+    objectType === 'task'
+      ? useTaskAssociations(workspaceId, objectId)
       : useEpicAssociations(workspaceId, objectId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
 

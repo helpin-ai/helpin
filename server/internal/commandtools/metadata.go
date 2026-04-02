@@ -43,17 +43,17 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.ensure_spec_doc",
 		Alias:       "ensure_epic_spec_doc",
 		Category:    "Docs",
-		Description: "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current story count, and a planning_hint for branching.",
+		Description: "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current task count, and a planning_hint for branching.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
 		},
 	},
 	{
-		CommandName: "docs.ensure_story_plan_doc",
-		Alias:       "ensure_story_plan_doc",
+		CommandName: "docs.ensure_task_plan_doc",
+		Alias:       "ensure_task_plan_doc",
 		Category:    "Docs",
-		Description: "Create or load the canonical planning document for the current story. Returns document metadata and whether a draft already exists.",
+		Description: "Create or load the canonical planning document for the current task. Returns document metadata and whether a draft already exists.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -62,7 +62,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 	{
 		CommandName: "pm.approve_epic_spec",
 		Alias:       "approve_epic_spec",
-		Category:    "PM / Stories",
+		Category:    "PM / Tasks",
 		Description: "Mark the current epic spec document as approved and record the approved spec version on the epic.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -75,37 +75,41 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
-		CommandName: "pm.create_story_batch",
-		Alias:       "create_story_batch",
-		Category:    "PM / Stories",
-		Description: "Create implementation-ready stories for the current epic. Supports stable refs, direct assignment, and dependency refs.",
+		CommandName: "pm.create_task_batch",
+		Alias:       "create_task_batch",
+		Category:    "PM / Tasks",
+		Description: "Create implementation-ready tasks for the current epic. Supports stable refs, direct assignment, and dependency refs.",
 		InputSchema: createStoryBatchSchema(),
 	},
 	{
-		CommandName: "pm.assign_story_agent",
-		Alias:       "assign_story_agent",
-		Category:    "PM / Stories",
-		Description: "Assign or reassign an agent to an existing story.",
+		CommandName: "pm.assign_task_agent",
+		Alias:       "assign_task_agent",
+		Category:    "PM / Tasks",
+		Description: "Assign or reassign an agent to an existing task.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"story_id": map[string]any{
 					"type":        "string",
-					"description": "The story ID to assign",
+					"description": "Legacy alias for the task ID to assign",
+				},
+				"task_id": map[string]any{
+					"type":        "string",
+					"description": "The task ID to assign",
 				},
 				"agent_id": map[string]any{
 					"type":        "string",
 					"description": "The target agent ID",
 				},
 			},
-			"required": []string{"story_id", "agent_id"},
+			"required": []string{"agent_id"},
 		},
 	},
 	{
-		CommandName: "pm.set_story_dependencies",
-		Alias:       "set_story_dependencies",
-		Category:    "PM / Stories",
-		Description: "Create explicit story dependency links between existing stories.",
+		CommandName: "pm.set_task_dependencies",
+		Alias:       "set_task_dependencies",
+		Category:    "PM / Tasks",
+		Description: "Create explicit task dependency links between existing tasks.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -116,8 +120,9 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 						"properties": map[string]any{
 							"source_story_id": map[string]any{"type": "string"},
 							"target_story_id": map[string]any{"type": "string"},
+							"source_task_id":  map[string]any{"type": "string"},
+							"target_task_id":  map[string]any{"type": "string"},
 						},
-						"required": []string{"source_story_id", "target_story_id"},
 					},
 				},
 			},
@@ -125,16 +130,20 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
-		CommandName: "pm.update_story_state",
-		Alias:       "update_story_state",
-		Category:    "PM / Stories",
-		Description: "Transition the current story to a different workflow state.",
+		CommandName: "pm.update_task_state",
+		Alias:       "update_task_state",
+		Category:    "PM / Tasks",
+		Description: "Transition the current task to a different workflow state.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"state_id": map[string]any{
 					"type":        "string",
 					"description": "The target workflow state ID",
+				},
+				"task_id": map[string]any{
+					"type":        "string",
+					"description": "Optional task ID override. Defaults to the current task target.",
 				},
 			},
 			"required": []string{"state_id"},
@@ -177,7 +186,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"linked_object_type": map[string]any{
 					"type":        "string",
-					"description": "The linked object type such as epic or story",
+					"description": "The linked object type such as epic or task",
 				},
 				"linked_object_id": map[string]any{
 					"type":        "string",
@@ -274,13 +283,14 @@ func createStoryBatchSchema() map[string]any {
 		"additionalProperties": false,
 	}
 
-	storySchema := map[string]any{
+	taskSchema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"ref":         map[string]any{"type": "string"},
 			"name":        map[string]any{"type": "string"},
 			"description": map[string]any{"type": "string"},
 			"story_type":  map[string]any{"type": "string"},
+			"task_type":   map[string]any{"type": "string"},
 			"estimate":    map[string]any{"type": "integer"},
 			"priority":    map[string]any{"type": "string"},
 			"acceptance_criteria": map[string]any{
@@ -299,21 +309,31 @@ func createStoryBatchSchema() map[string]any {
 			"slice_type":           map[string]any{"type": "string"},
 			"implementation_brief": implementationBriefSchema,
 		},
-		"required": []string{"name", "description", "story_type"},
+		"required": []string{"name", "description"},
 	}
 
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"stories": map[string]any{
-				"description": "Preferred field. The list of stories to create.",
+				"description": "Legacy compatibility field. The list of tasks to create.",
 				"type":        "array",
-				"items":       storySchema,
+				"items":       taskSchema,
 			},
 			"proposed_stories": map[string]any{
-				"description": "Compatibility alias for story-plan payloads. If present, it is treated the same as stories.",
+				"description": "Legacy compatibility alias for older task-plan payloads. If present, it is treated the same as tasks.",
 				"type":        "array",
-				"items":       storySchema,
+				"items":       taskSchema,
+			},
+			"tasks": map[string]any{
+				"description": "Preferred field. The list of tasks to create.",
+				"type":        "array",
+				"items":       taskSchema,
+			},
+			"proposed_tasks": map[string]any{
+				"description": "Preferred alias for task-plan payloads. If present, it is treated the same as tasks.",
+				"type":        "array",
+				"items":       taskSchema,
 			},
 		},
 	}

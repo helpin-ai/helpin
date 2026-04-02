@@ -62,11 +62,11 @@ type PMTeamRepoDefault struct {
 
 func (PMTeamRepoDefault) TableName() string { return "pm_team_repo_defaults" }
 
-// StoryDeliveryTarget stores the current delivery lane for a story.
+// StoryDeliveryTarget stores the current delivery lane for a task.
 type StoryDeliveryTarget struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID        string     `json:"story_id" gorm:"type:uuid;not null;uniqueIndex"`
+	StoryID        string     `json:"story_id" gorm:"column:task_id;type:uuid;not null;uniqueIndex"`
 	RepositoryID   *string    `json:"repository_id" gorm:"type:uuid;index"`
 	RepoFullName   *string    `json:"repo_full_name"`
 	IntegrationID  *string    `json:"integration_id" gorm:"type:uuid;index"`
@@ -84,13 +84,13 @@ type StoryDeliveryTarget struct {
 	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (StoryDeliveryTarget) TableName() string { return "story_delivery_targets" }
+func (StoryDeliveryTarget) TableName() string { return "task_delivery_targets" }
 
-// StoryGitLink links a story to a repo/branch/PR.
+// StoryGitLink links a task to a repo/branch/PR.
 type StoryGitLink struct {
 	ID            string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	StoryID       string    `json:"story_id" gorm:"type:uuid;not null;index"`
+	StoryID       string    `json:"story_id" gorm:"column:task_id;type:uuid;not null;index"`
 	IntegrationID string    `json:"integration_id" gorm:"type:uuid;not null"`
 	RepositoryID  *string   `json:"repository_id" gorm:"type:uuid;index"`
 	RunID         *string   `json:"run_id" gorm:"type:uuid;index"`
@@ -106,7 +106,7 @@ type StoryGitLink struct {
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (StoryGitLink) TableName() string { return "story_git_links" }
+func (StoryGitLink) TableName() string { return "task_git_links" }
 
 // CreateGitIntegrationRequest is the payload for creating a git integration.
 type CreateGitIntegrationRequest struct {

@@ -29,7 +29,7 @@ type PMStory struct {
 	DisplayID                 int                    `json:"display_id" gorm:"not null;index"`
 	Name                      string                 `json:"name" gorm:"not null"`
 	Description               *string                `json:"description"`
-	StoryType                 string                 `json:"story_type" gorm:"not null;default:'feature'"`
+	StoryType                 string                 `json:"story_type" gorm:"column:task_type;not null;default:'feature'"`
 	WorkflowID                string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID           string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
 	EpicID                    *string                `json:"epic_id" gorm:"type:uuid;index"`
@@ -71,34 +71,34 @@ type PMStory struct {
 	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (PMStory) TableName() string { return "pm_stories" }
+func (PMStory) TableName() string { return "pm_tasks" }
 
 // PMStoryOwner is the join table for many owners per story.
 type PMStoryOwner struct {
-	StoryID   string    `json:"story_id" gorm:"type:uuid;primaryKey"`
+	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryOwner) TableName() string { return "pm_story_owners" }
+func (PMStoryOwner) TableName() string { return "pm_task_owners" }
 
 // PMStoryFollower is the join table for story followers.
 type PMStoryFollower struct {
-	StoryID   string    `json:"story_id" gorm:"type:uuid;primaryKey"`
+	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryFollower) TableName() string { return "pm_story_followers" }
+func (PMStoryFollower) TableName() string { return "pm_task_followers" }
 
 // PMStoryLabel is the join table for story labels.
 type PMStoryLabel struct {
-	StoryID   string    `json:"story_id" gorm:"type:uuid;primaryKey"`
+	StoryID   string    `json:"story_id" gorm:"column:task_id;type:uuid;primaryKey"`
 	LabelID   string    `json:"label_id" gorm:"type:uuid;primaryKey"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (PMStoryLabel) TableName() string { return "pm_story_labels" }
+func (PMStoryLabel) TableName() string { return "pm_task_labels" }
 
 // PMStoryFilters applies filter options when listing stories.
 type PMStoryFilters struct {

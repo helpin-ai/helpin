@@ -101,8 +101,8 @@ func (r *CRMAssociationRepository) ListByObjectEnriched(ctx context.Context, wor
 			r.db.WithContext(ctx).Raw("SELECT id, name, display_id FROM crm_deals WHERE id IN (?)", ids).Scan(&rows)
 		case model.CRMObjectEpic:
 			r.db.WithContext(ctx).Raw("SELECT id, name, '' AS display_id FROM pm_epics WHERE id IN (?)", ids).Scan(&rows)
-		case model.CRMObjectStory:
-			r.db.WithContext(ctx).Raw("SELECT id, name, CAST(display_id AS TEXT) AS display_id FROM pm_stories WHERE id IN (?)", ids).Scan(&rows)
+		case model.CRMObjectTask, model.CRMObjectStory:
+			r.db.WithContext(ctx).Raw("SELECT id, name, CAST(display_id AS TEXT) AS display_id FROM pm_tasks WHERE id IN (?)", ids).Scan(&rows)
 		case model.CRMObjectSupportConversation:
 			r.db.WithContext(ctx).Raw("SELECT id, subject AS name, CAST(display_id AS TEXT) AS display_id FROM support_conversations WHERE id IN (?)", ids).Scan(&rows)
 		}

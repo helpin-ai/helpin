@@ -166,7 +166,7 @@ func (r *GitRepositoryRepository) UpsertMany(ctx context.Context, workspaceID, i
 	})
 }
 
-// StoryDeliveryTargetRepository handles current delivery target state for stories.
+// StoryDeliveryTargetRepository handles current delivery target state for tasks.
 type StoryDeliveryTargetRepository struct {
 	db *gorm.DB
 }
@@ -176,11 +176,11 @@ func NewStoryDeliveryTargetRepository(db *gorm.DB) *StoryDeliveryTargetRepositor
 	return &StoryDeliveryTargetRepository{db: db}
 }
 
-// GetByStory returns the delivery target for a story.
+// GetByStory returns the delivery target for a task.
 func (r *StoryDeliveryTargetRepository) GetByStory(ctx context.Context, workspaceID, storyID string) (*model.StoryDeliveryTarget, error) {
 	var target model.StoryDeliveryTarget
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND story_id = ?", workspaceID, storyID).
+		Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).
 		First(&target).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -204,11 +204,11 @@ func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID
 	return &target, nil
 }
 
-// Save persists a delivery target, upserting on the story_id unique index.
+// Save persists a delivery target, upserting on the task_id unique index.
 func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "story_id"}},
+			Columns: []clause.Column{{Name: "task_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"repository_id", "repo_full_name", "integration_id",
 				"base_branch", "working_branch", "delivery_state",
@@ -222,7 +222,7 @@ func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.
 	return nil
 }
 
-// StoryGitLinkRepository handles DB operations for story git links.
+// StoryGitLinkRepository handles DB operations for task git links.
 type StoryGitLinkRepository struct {
 	db *gorm.DB
 }
@@ -232,10 +232,10 @@ func NewStoryGitLinkRepository(db *gorm.DB) *StoryGitLinkRepository {
 	return &StoryGitLinkRepository{db: db}
 }
 
-// ListByStory returns git links for a story.
+// ListByStory returns git links for a task.
 func (r *StoryGitLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.StoryGitLink, error) {
 	var links []model.StoryGitLink
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND story_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&links).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list story git links: %w", err)
 	}
 	return links, nil
@@ -284,7 +284,7 @@ func (r *StoryGitLinkRepository) Update(ctx context.Context, link *model.StoryGi
 // UpsertByRunAndBranch ensures a historical git link exists for a run/branch tuple.
 func (r *StoryGitLinkRepository) UpsertByRunAndBranch(ctx context.Context, link *model.StoryGitLink) error {
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "story_id"}, {Name: "repo"}, {Name: "branch"}},
+		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "task_id"}, {Name: "repo"}, {Name: "branch"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"integration_id",
 			"repository_id",

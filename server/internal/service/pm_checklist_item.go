@@ -66,7 +66,7 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	if err := s.repo.Create(ctx, item); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "checklist_item", EntityID: item.ID, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "story", ParentID: storyID})
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "checklist_item", EntityID: item.ID, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: storyID})
 
 	// Emit notifications for @mentions in checklist item text.
 	s.emitMentionNotifications(ctx, item, workspaceID, actorID)
@@ -107,7 +107,7 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 	if err := s.repo.Update(ctx, item); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "story", ParentID: item.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.StoryID})
 
 	// Emit notifications for new @mentions when text changes.
 	if textChanged {
@@ -129,7 +129,7 @@ func (s *PMChecklistItemService) Delete(ctx context.Context, id string, workspac
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "story", ParentID: item.StoryID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "checklist_item", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: item.StoryID})
 	return nil
 }
 
@@ -160,7 +160,7 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		ActorID:          actorID,
 		Body:             item.Text,
 		EventType:        "checklist.mention",
-		EntityType:       "story",
+		EntityType:       "task",
 		EntityID:         item.StoryID,
 		Title:            "mentioned you in a checklist item on " + entityTitle,
 		TeamID:           entityTeamID,

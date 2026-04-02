@@ -9,10 +9,10 @@ const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspace
 
 export const pmExternalLinkService = {
   list: (workspaceId: string, storyId: string) =>
-    api.get<ExternalLink[]>(`/pm/stories/${storyId}/links?${qs(workspaceId)}`),
+    api.get<ExternalLink[]>(`/pm/tasks/${storyId}/links?${qs(workspaceId)}`),
 
   create: (workspaceId: string, storyId: string, payload: CreateExternalLinkRequest) =>
-    api.post<ExternalLink>(`/pm/stories/${storyId}/links?${qs(workspaceId)}`, payload),
+    api.post<ExternalLink>(`/pm/tasks/${storyId}/links?${qs(workspaceId)}`, payload),
 
   update: (workspaceId: string, id: string, payload: UpdateExternalLinkRequest) =>
     api.put<ExternalLink>(`/pm/links/${id}?${qs(workspaceId)}`, payload),

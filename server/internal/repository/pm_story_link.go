@@ -24,7 +24,7 @@ func NewPMStoryLinkRepository(db *gorm.DB) *PMStoryLinkRepository {
 func (r *PMStoryLinkRepository) Create(ctx context.Context, link *model.PMStoryLink) error {
 	var existing model.PMStoryLink
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND source_story_id = ? AND target_story_id = ? AND link_type = ?",
+		Where("workspace_id = ? AND source_task_id = ? AND target_task_id = ? AND link_type = ?",
 			link.WorkspaceID, link.SourceStoryID, link.TargetStoryID, link.LinkType).
 		First(&existing).Error
 	switch {
@@ -43,11 +43,11 @@ func (r *PMStoryLinkRepository) Create(ctx context.Context, link *model.PMStoryL
 	return nil
 }
 
-// ListByStory returns links where the story is either the source or target.
+// ListByStory returns links where the task is either the source or target.
 func (r *PMStoryLinkRepository) ListByStory(ctx context.Context, workspaceID, storyID string) ([]model.PMStoryLink, error) {
 	var links []model.PMStoryLink
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND (source_story_id = ? OR target_story_id = ?)", workspaceID, storyID, storyID).
+		Where("workspace_id = ? AND (source_task_id = ? OR target_task_id = ?)", workspaceID, storyID, storyID).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list story links: %w", err)
@@ -55,7 +55,7 @@ func (r *PMStoryLinkRepository) ListByStory(ctx context.Context, workspaceID, st
 	return links, nil
 }
 
-// ListByStories returns links where either endpoint belongs to the provided story set.
+// ListByStories returns links where either endpoint belongs to the provided task set.
 func (r *PMStoryLinkRepository) ListByStories(ctx context.Context, workspaceID string, storyIDs []string) ([]model.PMStoryLink, error) {
 	if len(storyIDs) == 0 {
 		return []model.PMStoryLink{}, nil
@@ -63,7 +63,7 @@ func (r *PMStoryLinkRepository) ListByStories(ctx context.Context, workspaceID s
 
 	var links []model.PMStoryLink
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND (source_story_id IN ? OR target_story_id IN ?)", workspaceID, storyIDs, storyIDs).
+		Where("workspace_id = ? AND (source_task_id IN ? OR target_task_id IN ?)", workspaceID, storyIDs, storyIDs).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
 		return nil, fmt.Errorf("list story links by stories: %w", err)

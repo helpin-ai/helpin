@@ -41,7 +41,7 @@ type Agent struct {
 	PlanningNotes          *string         `json:"planning_notes"`
 	MonthlyTokenBudget     *int            `json:"monthly_token_budget"`
 	TokensUsedThisMonth    int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
-	ActiveStoryID          *string         `json:"active_story_id" gorm:"type:uuid"`
+	ActiveStoryID          *string         `json:"active_story_id" gorm:"column:active_task_id;type:uuid"`
 	TeamID                 *string         `json:"team_id" gorm:"type:uuid;index"`
 	AllowedTools           json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands        json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
@@ -99,7 +99,7 @@ type AgentRun struct {
 	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
-	StoryID           *string         `json:"story_id" gorm:"type:uuid"`
+	StoryID           *string         `json:"story_id" gorm:"column:task_id;type:uuid"`
 	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
 	TargetType        string          `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`

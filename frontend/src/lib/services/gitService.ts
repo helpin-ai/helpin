@@ -3,12 +3,12 @@ import type {
   GitIntegration,
   GitHubInstallURLResponse,
   GitRepository,
-  StoryDeliveryTarget,
-  StoryGitLink,
+  TaskDeliveryTarget,
+  TaskGitLink,
   CreateGitIntegrationRequest,
   CreateBranchRequest,
   UpdateGitRepositoryRequest,
-  UpdateStoryDeliveryTargetRequest,
+  UpdateTaskDeliveryTargetRequest,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -26,12 +26,18 @@ export const gitService = {
     api.get<GitRepository[]>(`/git/repositories${qs(workspaceId)}${options?.all ? '&all=true' : ''}`),
   updateRepository: (workspaceId: string, repoId: string, payload: UpdateGitRepositoryRequest) =>
     api.put<GitRepository>(`/git/repositories/${repoId}${qs(workspaceId)}`, payload),
+  getTaskGitLinks: (workspaceId: string, taskId: string) =>
+    api.get<TaskGitLink[]>(`/pm/tasks/${taskId}/git-links${qs(workspaceId)}`),
+  getTaskDeliveryTarget: (workspaceId: string, taskId: string) =>
+    api.get<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`),
+  updateTaskDeliveryTarget: (workspaceId: string, taskId: string, payload: UpdateTaskDeliveryTargetRequest) =>
+    api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
+  createBranch: (workspaceId: string, taskId: string, payload: CreateBranchRequest) =>
+    api.post<TaskGitLink>(`/pm/tasks/${taskId}/create-branch${qs(workspaceId)}`, payload),
   getStoryGitLinks: (workspaceId: string, storyId: string) =>
-    api.get<StoryGitLink[]>(`/pm/stories/${storyId}/git-links${qs(workspaceId)}`),
+    api.get<TaskGitLink[]>(`/pm/tasks/${storyId}/git-links${qs(workspaceId)}`),
   getStoryDeliveryTarget: (workspaceId: string, storyId: string) =>
-    api.get<StoryDeliveryTarget>(`/pm/stories/${storyId}/delivery-target${qs(workspaceId)}`),
-  updateStoryDeliveryTarget: (workspaceId: string, storyId: string, payload: UpdateStoryDeliveryTargetRequest) =>
-    api.put<StoryDeliveryTarget>(`/pm/stories/${storyId}/delivery-target${qs(workspaceId)}`, payload),
-  createBranch: (workspaceId: string, storyId: string, payload: CreateBranchRequest) =>
-    api.post<StoryGitLink>(`/pm/stories/${storyId}/create-branch${qs(workspaceId)}`, payload),
+    api.get<TaskDeliveryTarget>(`/pm/tasks/${storyId}/delivery-target${qs(workspaceId)}`),
+  updateStoryDeliveryTarget: (workspaceId: string, storyId: string, payload: UpdateTaskDeliveryTargetRequest) =>
+    api.put<TaskDeliveryTarget>(`/pm/tasks/${storyId}/delivery-target${qs(workspaceId)}`, payload),
 };

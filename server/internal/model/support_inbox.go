@@ -23,7 +23,7 @@ type SupportConversation struct {
 	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
-	LinkedStoryID     *string    `json:"linked_story_id" gorm:"type:uuid"`
+	LinkedStoryID     *string    `json:"linked_story_id" gorm:"column:linked_task_id;type:uuid"`
 	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID       *string    `json:"anonymous_id" gorm:"index"`
 	CRMContactID      *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
@@ -474,9 +474,10 @@ type CreateMessageRequest struct {
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
-// LinkStoryRequest links a conversation to a story.
+// LinkStoryRequest links a conversation to a task.
 type LinkStoryRequest struct {
 	StoryID string `json:"story_id"`
+	TaskID  string `json:"task_id"`
 }
 
 // AssignConversationAgentRequest assigns an agent to a conversation.

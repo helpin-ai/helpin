@@ -246,7 +246,7 @@ func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) 
 		Points    int
 	}
 	if err := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Select("ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 		Where("s.sprint_id = ? AND s.archived = false", sprintID).
@@ -372,7 +372,7 @@ func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs
 		Points    int
 	}
 	if err := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Select("s.sprint_id AS sprint_id, ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 		Where("s.sprint_id IN ? AND s.archived = false", sprintIDs).
@@ -405,7 +405,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 
 	var rows []model.SprintPlanningStoryPreview
 	if err := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Select(`
 			s.id,
 			s.display_id,
@@ -441,7 +441,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 
 func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters, limit int) ([]model.SprintPlanningStoryPreview, int, error) {
 	base := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 		Where("s.workspace_id = ? AND s.archived = false AND s.sprint_id IS NULL", workspaceID).
 		Where("ws.state_type <> ?", model.PMStateTypeDone)

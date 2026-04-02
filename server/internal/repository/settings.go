@@ -329,7 +329,7 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 			updates["team_type"] = *req.TeamType
 		}
 		if req.DefaultStoryType != nil {
-			updates["default_story_type"] = *req.DefaultStoryType
+			updates["default_task_type"] = *req.DefaultStoryType
 		}
 		if req.SprintsEnabled != nil {
 			updates["sprints_enabled"] = *req.SprintsEnabled
@@ -1219,7 +1219,7 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 		row := map[string]interface{}{
 			"team_id":     teamID,
 			"priority":    boolVal(req.Priority, true),
-			"story_type":  boolVal(req.StoryType, true),
+			"task_type":   boolVal(req.StoryType, true),
 			"severity":    boolVal(req.Severity, true),
 			"labels":      boolVal(req.Labels, true),
 			"epic":        boolVal(req.Epic, true),
@@ -1246,7 +1246,7 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 		updates["priority"] = *req.Priority
 	}
 	if req.StoryType != nil {
-		updates["story_type"] = *req.StoryType
+		updates["task_type"] = *req.StoryType
 	}
 	if req.Severity != nil {
 		updates["severity"] = *req.Severity

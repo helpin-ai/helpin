@@ -19,7 +19,7 @@ import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { filterAssignableMembersForTeam } from '@/components/pm/story-detail/storyFilterMembers';
+import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
 
 // ── Types ──────────────────────────────────────────────────────────
 

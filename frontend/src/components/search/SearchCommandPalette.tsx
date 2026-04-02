@@ -25,6 +25,7 @@ import {
 } from '@/lib/services/searchService';
 
 const EMPTY: SearchResponse = {
+  tasks: [],
   stories: [],
   epics: [],
   sprints: [],
@@ -89,7 +90,7 @@ export function SearchCommandPalette({
   }, [query, workspace?.id]);
 
   const totalResults =
-    results.stories.length +
+    (results.tasks?.length ?? results.stories.length) +
     results.epics.length +
     results.sprints.length +
     results.objectives.length +
@@ -97,15 +98,16 @@ export function SearchCommandPalette({
     (results.documents?.length ?? 0);
 
   const slug = workspace?.slug ?? '';
+  const taskResults = results.tasks ?? results.stories;
 
-  type EntityType = 'story' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
+  type EntityType = 'task' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
 
   const handleSelect = useCallback(
     (type: EntityType, item: SearchResult) => {
       onOpenChange(false);
       switch (type) {
-        case 'story':
-          window.location.assign(`/w/${slug}/pm/stories?story=${item.display_id}`);
+        case 'task':
+          window.location.assign(`/w/${slug}/pm/tasks?task=${item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });
@@ -161,13 +163,13 @@ export function SearchCommandPalette({
           </div>
         )}
 
-        {results.stories.length > 0 && (
-          <CommandGroup heading="Work Items">
-            {results.stories.map((item) => (
+        {taskResults.length > 0 && (
+          <CommandGroup heading="Tasks">
+            {taskResults.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`story-${item.id}-${item.name}`}
-                onSelect={() => handleSelect('story', item)}
+                value={`task-${item.id}-${item.name}`}
+                onSelect={() => handleSelect('task', item)}
                 className="cursor-pointer"
               >
                 <CircleDot className="h-4 w-4 text-blue-500" />

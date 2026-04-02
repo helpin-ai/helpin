@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AssignableMember } from '@/lib/types';
 import type { Priority, SprintPlanningStoryPreview, StateType } from '@/lib/pmTypes';
-import { SprintPlanningStoryCard } from './SprintPlanningStoryCard';
+import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { cn } from '@/lib/utils';
 
 interface SprintPlanningBacklogPanelProps {
@@ -190,7 +190,7 @@ export function SprintPlanningBacklogPanel({
             <div className="space-y-2">
               {filteredStories.length > 0 ? (
                 filteredStories.map((story) => (
-                  <SprintPlanningStoryCard
+                  <SprintPlanningTaskCard
                     key={story.id}
                     story={story}
                     owner={story.owner_member_id ? ownerByMemberId.get(story.owner_member_id) : undefined}

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/services/pmStoryService', () => ({
-  pmStoryService: {
+vi.mock('@/lib/services/pmTaskService', () => ({
+  pmTaskService: {
     listBoard: vi.fn(),
     listBoardColumn: vi.fn(),
     listBoardByMember: vi.fn(),
@@ -29,10 +29,10 @@ vi.mock('@/lib/services/pmViewService', () => ({
   },
 }))
 
-import { pmStoryService } from '@/lib/services/pmStoryService'
+import { pmTaskService } from '@/lib/services/pmTaskService'
 import { usePMBoardStore } from '../pmBoardStore'
 
-const mockedStoryService = vi.mocked(pmStoryService)
+const mockedTaskService = vi.mocked(pmTaskService)
 
 const makeStory = (overrides: Record<string, unknown>) => ({
   id: 'story-default',
@@ -62,7 +62,7 @@ const makeStateColumn = (overrides: Record<string, unknown>) => ({
 describe('usePMBoardStore.moveMemberStory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedStoryService.reorder.mockResolvedValue({
+    mockedTaskService.reorder.mockResolvedValue({
       data: null,
       error: null,
       status: 200,

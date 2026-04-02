@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import type { AssignableMember } from '@/lib/types';
 import type { SprintPlanningCard } from '@/lib/pmTypes';
-import { SprintPlanningStoryCard } from './SprintPlanningStoryCard';
+import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { cn } from '@/lib/utils';
 
 interface SprintPlanningColumnProps {
@@ -87,7 +87,7 @@ export function SprintPlanningColumn({
           {stories.length > 0 ? (
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
               {stories.map((story) => (
-                <SprintPlanningStoryCard
+                <SprintPlanningTaskCard
                   key={story.id}
                   story={story}
                   owner={story.owner_member_id ? ownerByMemberId.get(story.owner_member_id) : undefined}

@@ -5,11 +5,11 @@ import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
-import { pmStoryService } from '@/lib/services/pmStoryService'
+import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { logPMDnD } from '@/lib/pmDnDDebug'
 
-const BOARD_ENTITIES = new Set(['story'])
+const BOARD_ENTITIES = new Set(['task'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
 
 let notificationAudio: HTMLAudioElement | null = null
@@ -44,15 +44,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   }, [])
 
   const onEvent = useCallback((event: WSEvent) => {
-    // Story-level events → incremental patch when possible, debounced full refresh as fallback
+    // Task-level events → incremental patch when possible, debounced full refresh as fallback
     if (BOARD_ENTITIES.has(event.entity)) {
       const store = usePMBoardStore.getState()
       const traceID = typeof event.data?.debug_trace_id === 'string' ? event.data.debug_trace_id : null
-      logPMDnD('ws.story_event', {
+      logPMDnD('ws.task_event', {
         trace_id: traceID,
         action: event.action,
         entity: event.entity,
-        story_id: event.entity_id,
+        task_id: event.entity_id,
         workspace_id: event.workspace_id,
         actor_id: event.actor_id,
       })
@@ -63,25 +63,25 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         if (!patched) scheduleRefresh()
       } else if (event.action === 'moved' || event.action === 'reordered') {
         // Position changes renumber siblings; patching only the moved story leaves stale ordering.
-        logPMDnD('ws.story_event_refresh', {
+        logPMDnD('ws.task_event_refresh', {
           trace_id: traceID,
           action: event.action,
-          story_id: event.entity_id,
+          task_id: event.entity_id,
         })
         scheduleRefresh()
       } else {
-        // For created/updated, fetch the updated story and patch it in
-        pmStoryService.get(workspaceId, event.entity_id).then((res) => {
+        // For created/updated, fetch the updated task and patch it in
+        pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            const story = { ...res.data.story }
-            // Enrich with owner_name from StoryDetail owners for board display
-            if (story.owner_member_id && !story.owner_name && res.data.owner_member) {
-              story.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
+            const task = { ...res.data.story }
+            // Enrich with owner_name from task detail owners for board display.
+            if (task.owner_member_id && !task.owner_name && res.data.owner_member) {
+              task.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
-            const patched = store.patchStory(event.action as 'created' | 'updated', event.entity_id, story)
+            const patched = store.patchStory(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {
-            // Story might have been archived/deleted by the time we fetch.
+            // Task might have been archived/deleted by the time we fetch.
             scheduleRefresh()
           }
         })
@@ -89,9 +89,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
 
     // Invalidate TanStack Query cache for the affected entity
-    if (event.entity === 'story') {
-      queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.entity_id) })
-      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] })
+    if (event.entity === 'task') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.entity_id) })
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] })
     } else if (event.entity === 'workflow') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.workflows(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.epicStates(workspaceId) })
@@ -100,7 +100,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.labelsWithStats(workspaceId) })
     } else if (event.entity === 'view') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.views(workspaceId) })
-    } else if (event.entity === 'story_template') {
+    } else if (event.entity === 'task_template' || event.entity === 'story_template') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) })
     } else if (event.entity === 'recurring_template') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.recurringTemplates(workspaceId) })
@@ -187,8 +187,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'agent_run') {
       queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) })
-      if (event.parent_type === 'story' && event.parent_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
+      if (event.parent_type === 'task' && event.parent_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.parent_id) })
       }
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
@@ -325,7 +325,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
 
     // Dispatch custom DOM events for any component that listens
-    // e.g. "story-updated", "comment-created", "epic-deleted"
+    // e.g. "task-updated", "comment-created", "epic-deleted"
     window.dispatchEvent(
       new CustomEvent(`${event.entity}-${event.action}`, {
         detail: event,
@@ -333,7 +333,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     )
 
     // Child entity events → also dispatch a parent update event
-    // so that open story detail panels can refetch
+    // so that open task detail panels can refetch
     if (CHILD_ENTITIES.has(event.entity) && event.parent_type && event.parent_id) {
       window.dispatchEvent(
         new CustomEvent(`${event.parent_type}-child-updated`, {

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export const DISPLAY_PROPERTY_LABELS = {
-  story_type: 'Story Type',
+  story_type: 'Task Type',
   priority: 'Priority',
   severity: 'Severity',
   agent: 'Agent',

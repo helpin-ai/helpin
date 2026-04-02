@@ -48,7 +48,7 @@ func loadWorkflowStateType(tx *gorm.DB, stateID string) (string, error) {
 }
 
 func memberBoardStoryOrderClause() string {
-	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_stories.position ASC, pm_stories.updated_at DESC"
+	return "CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC, pm_tasks.position ASC, pm_tasks.updated_at DESC"
 }
 
 func stringValue(value *string) string {
@@ -96,15 +96,15 @@ func applyStoryAssociationFilter(q *gorm.DB, objectType string, value *string) *
 		`EXISTS (
 			SELECT 1
 			FROM crm_associations ca
-			WHERE ca.workspace_id = pm_stories.workspace_id
+			WHERE ca.workspace_id = pm_tasks.workspace_id
 			  AND (
-			    (ca.from_object_type = ? AND ca.from_object_id = pm_stories.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
+			    (ca.from_object_type = ? AND ca.from_object_id = pm_tasks.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
 			    OR
-			    (ca.to_object_type = ? AND ca.to_object_id = pm_stories.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
+			    (ca.to_object_type = ? AND ca.to_object_id = pm_tasks.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
 			  )
 		)`,
-		model.CRMObjectStory, objectType, values,
-		model.CRMObjectStory, objectType, values,
+		model.CRMObjectTask, objectType, values,
+		model.CRMObjectTask, objectType, values,
 	)
 }
 
@@ -119,24 +119,24 @@ func applyStorySupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
 			EXISTS (
 				SELECT 1
 				FROM crm_associations ca
-				WHERE ca.workspace_id = pm_stories.workspace_id
+				WHERE ca.workspace_id = pm_tasks.workspace_id
 				  AND (
-				    (ca.from_object_type = ? AND ca.from_object_id = pm_stories.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
+				    (ca.from_object_type = ? AND ca.from_object_id = pm_tasks.id AND ca.to_object_type = ? AND ca.to_object_id IN ?)
 				    OR
-				    (ca.to_object_type = ? AND ca.to_object_id = pm_stories.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
+				    (ca.to_object_type = ? AND ca.to_object_id = pm_tasks.id AND ca.from_object_type = ? AND ca.from_object_id IN ?)
 				  )
 			)
 			OR
 			EXISTS (
 				SELECT 1
 				FROM support_conversations sc
-				WHERE sc.workspace_id = pm_stories.workspace_id
+				WHERE sc.workspace_id = pm_tasks.workspace_id
 				  AND sc.id IN ?
-				  AND sc.linked_story_id = pm_stories.id
+				  AND sc.linked_task_id = pm_tasks.id
 			)
 		)`,
-		model.CRMObjectStory, model.CRMObjectSupportConversation, values,
-		model.CRMObjectStory, model.CRMObjectSupportConversation, values,
+		model.CRMObjectTask, model.CRMObjectSupportConversation, values,
+		model.CRMObjectTask, model.CRMObjectSupportConversation, values,
 		values,
 	)
 }
@@ -296,22 +296,22 @@ func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.Sto
 func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("workspace_id = ?", workspaceID)
 
-	query = applyStoryStringFilter(query, "pm_stories.team_id", filters.TeamID)
-	query = applyStoryStringFilter(query, "pm_stories.epic_id", filters.EpicID)
-	query = applyStoryStringFilter(query, "pm_stories.sprint_id", filters.SprintID)
+	query = applyStoryStringFilter(query, "pm_tasks.team_id", filters.TeamID)
+	query = applyStoryStringFilter(query, "pm_tasks.epic_id", filters.EpicID)
+	query = applyStoryStringFilter(query, "pm_tasks.sprint_id", filters.SprintID)
 	query = applyStoryAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
 	query = applyStoryAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
 	query = applyStoryAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
 	query = applyStorySupportConversationFilter(query, filters.SupportConversationID)
-	query = applyStoryStringFilter(query, "pm_stories.workflow_id", filters.WorkflowID)
-	query = applyStoryStringFilter(query, "pm_stories.workflow_state_id", filters.WorkflowStateID)
-	query = applyStoryStringFilter(query, "pm_stories.story_type", filters.StoryType)
-	query = applyStoryStringFilter(query, "pm_stories.owner_id", filters.OwnerID)
-	query = applyStoryStringFilter(query, "pm_stories.owner_member_id", filters.OwnerMemberID)
-	query = applyStoryStringFilter(query, "pm_stories.priority", filters.Priority)
-	query = applyStoryStringFilter(query, "pm_stories.requester_id", filters.RequesterID)
-	query = applyStoryStringFilter(query, "pm_stories.requester_member_id", filters.RequesterMemberID)
-	query = applyStoryStringFilter(query, "pm_stories.severity", filters.Severity)
+	query = applyStoryStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
+	query = applyStoryStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
+	query = applyStoryStringFilter(query, "pm_tasks.task_type", filters.StoryType)
+	query = applyStoryStringFilter(query, "pm_tasks.owner_id", filters.OwnerID)
+	query = applyStoryStringFilter(query, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	query = applyStoryStringFilter(query, "pm_tasks.priority", filters.Priority)
+	query = applyStoryStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
+	query = applyStoryStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
+	query = applyStoryStringFilter(query, "pm_tasks.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}
@@ -325,8 +325,8 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 		query = query.Where(
 			`EXISTS (
 				SELECT 1
-				FROM pm_story_labels psl
-				WHERE psl.story_id = pm_stories.id
+				FROM pm_task_labels psl
+				WHERE psl.task_id = pm_tasks.id
 				  AND psl.label_id IN ?
 			)`,
 			labelValues,
@@ -674,7 +674,7 @@ func (r *PMStoryRepository) AddOwner(ctx context.Context, storyID, userID string
 // RemoveOwner unlinks an owner from a story.
 func (r *PMStoryRepository) RemoveOwner(ctx context.Context, storyID, userID string) error {
 	if err := r.db.WithContext(ctx).
-		Delete(&model.PMStoryOwner{}, "story_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
+		Delete(&model.PMStoryOwner{}, "task_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
 		return fmt.Errorf("remove story owner: %w", err)
 	}
 	return nil
@@ -694,7 +694,7 @@ func (r *PMStoryRepository) AddFollower(ctx context.Context, storyID, userID str
 // RemoveFollower unlinks a follower from a story.
 func (r *PMStoryRepository) RemoveFollower(ctx context.Context, storyID, userID string) error {
 	if err := r.db.WithContext(ctx).
-		Delete(&model.PMStoryFollower{}, "story_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
+		Delete(&model.PMStoryFollower{}, "task_id = ? AND user_id = ?", storyID, userID).Error; err != nil {
 		return fmt.Errorf("remove story follower: %w", err)
 	}
 	return nil
@@ -714,7 +714,7 @@ func (r *PMStoryRepository) AddLabel(ctx context.Context, storyID, labelID strin
 // RemoveLabel unlinks a label from a story.
 func (r *PMStoryRepository) RemoveLabel(ctx context.Context, storyID, labelID string) error {
 	if err := r.db.WithContext(ctx).
-		Delete(&model.PMStoryLabel{}, "story_id = ? AND label_id = ?", storyID, labelID).Error; err != nil {
+		Delete(&model.PMStoryLabel{}, "task_id = ? AND label_id = ?", storyID, labelID).Error; err != nil {
 		return fmt.Errorf("remove story label: %w", err)
 	}
 	return nil
@@ -723,7 +723,7 @@ func (r *PMStoryRepository) RemoveLabel(ctx context.Context, storyID, labelID st
 // ReplaceOwners replaces all story owners.
 func (r *PMStoryRepository) ReplaceOwners(ctx context.Context, storyID string, userIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMStoryOwner{}, "story_id = ?", storyID).Error; err != nil {
+		if err := tx.Delete(&model.PMStoryOwner{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story owners: %w", err)
 		}
 		for _, userID := range userIDs {
@@ -738,7 +738,7 @@ func (r *PMStoryRepository) ReplaceOwners(ctx context.Context, storyID string, u
 // ReplaceFollowers replaces all story followers.
 func (r *PMStoryRepository) ReplaceFollowers(ctx context.Context, storyID string, userIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMStoryFollower{}, "story_id = ?", storyID).Error; err != nil {
+		if err := tx.Delete(&model.PMStoryFollower{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story followers: %w", err)
 		}
 		for _, userID := range userIDs {
@@ -753,7 +753,7 @@ func (r *PMStoryRepository) ReplaceFollowers(ctx context.Context, storyID string
 // ReplaceLabels replaces all story labels.
 func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMStoryLabel{}, "story_id = ?", storyID).Error; err != nil {
+		if err := tx.Delete(&model.PMStoryLabel{}, "task_id = ?", storyID).Error; err != nil {
 			return fmt.Errorf("clear story labels: %w", err)
 		}
 		for _, labelID := range labelIDs {
@@ -792,8 +792,8 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		PointTotal int    `gorm:"column:point_total"`
 	}
 	if err := baseQuery.
-		Select("pm_stories.workflow_state_id AS state_id, COUNT(pm_stories.id) AS story_count, COALESCE(SUM(pm_stories.estimate), 0) AS point_total").
-		Group("pm_stories.workflow_state_id").
+		Select("pm_tasks.workflow_state_id AS state_id, COUNT(pm_tasks.id) AS story_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Group("pm_tasks.workflow_state_id").
 		Scan(&aggregateRows).Error; err != nil {
 		return nil, fmt.Errorf("list board aggregates: %w", err)
 	}
@@ -1061,12 +1061,12 @@ func (r *PMStoryRepository) batchCRMObjectAssociations(ctx context.Context, stor
 				WHEN ca.from_object_type = ? THEN ca.to_object_id
 				ELSE ca.from_object_id
 			END AS object_id
-		`, model.CRMObjectStory, model.CRMObjectStory).
+		`, model.CRMObjectTask, model.CRMObjectTask).
 		Where(`
 			(ca.from_object_type = ? AND ca.from_object_id IN ? AND ca.to_object_type = ?)
 			OR
 			(ca.to_object_type = ? AND ca.to_object_id IN ? AND ca.from_object_type = ?)
-		`, model.CRMObjectStory, storyIDs, objectType, model.CRMObjectStory, storyIDs, objectType).
+		`, model.CRMObjectTask, storyIDs, objectType, model.CRMObjectTask, storyIDs, objectType).
 		Scan(&links).Error; err != nil {
 		return result
 	}
@@ -1100,15 +1100,15 @@ func (r *PMStoryRepository) batchSupportConversationAssociations(ctx context.Con
 
 	var rows []struct {
 		ID            string `gorm:"column:id"`
-		LinkedStoryID string `gorm:"column:linked_story_id"`
+		LinkedStoryID string `gorm:"column:linked_task_id"`
 		DisplayID     int    `gorm:"column:display_id"`
 		Subject       string `gorm:"column:subject"`
 		Status        string `gorm:"column:status"`
 	}
 	if err := r.db.WithContext(ctx).
 		Table("support_conversations").
-		Select("id, linked_story_id, display_id, subject, status").
-		Where("linked_story_id IN ?", storyIDs).
+		Select("id, linked_task_id, display_id, subject, status").
+		Where("linked_task_id IN ?", storyIDs).
 		Order("display_id ASC").
 		Scan(&rows).Error; err != nil {
 		return result
@@ -1255,20 +1255,20 @@ func (r *PMStoryRepository) loadAssociationObjectSummaries(ctx context.Context, 
 
 // applyBoardFilters adds board-specific WHERE clauses to a query (shared between ListByWorkflowState and ListColumnStories).
 func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
-	q = applyStoryStringFilter(q, "pm_stories.team_id", filters.TeamID)
-	q = applyStoryStringFilter(q, "pm_stories.priority", filters.Priority)
-	q = applyStoryStringFilter(q, "pm_stories.story_type", filters.StoryType)
-	q = applyStoryStringFilter(q, "pm_stories.epic_id", filters.EpicID)
-	q = applyStoryStringFilter(q, "pm_stories.sprint_id", filters.SprintID)
+	q = applyStoryStringFilter(q, "pm_tasks.team_id", filters.TeamID)
+	q = applyStoryStringFilter(q, "pm_tasks.priority", filters.Priority)
+	q = applyStoryStringFilter(q, "pm_tasks.task_type", filters.StoryType)
+	q = applyStoryStringFilter(q, "pm_tasks.epic_id", filters.EpicID)
+	q = applyStoryStringFilter(q, "pm_tasks.sprint_id", filters.SprintID)
 	q = applyStoryAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
 	q = applyStoryAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
 	q = applyStoryAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
 	q = applyStorySupportConversationFilter(q, filters.SupportConversationID)
-	q = applyStoryStringFilter(q, "pm_stories.owner_id", filters.OwnerID)
-	q = applyStoryStringFilter(q, "pm_stories.owner_member_id", filters.OwnerMemberID)
-	q = applyStoryStringFilter(q, "pm_stories.requester_id", filters.RequesterID)
-	q = applyStoryStringFilter(q, "pm_stories.requester_member_id", filters.RequesterMemberID)
-	q = applyStoryStringFilter(q, "pm_stories.severity", filters.Severity)
+	q = applyStoryStringFilter(q, "pm_tasks.owner_id", filters.OwnerID)
+	q = applyStoryStringFilter(q, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	q = applyStoryStringFilter(q, "pm_tasks.requester_id", filters.RequesterID)
+	q = applyStoryStringFilter(q, "pm_tasks.requester_member_id", filters.RequesterMemberID)
+	q = applyStoryStringFilter(q, "pm_tasks.severity", filters.Severity)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
 	}
@@ -1278,15 +1278,15 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 	if filters.UpdatedAfter != nil && *filters.UpdatedAfter != "" {
 		t, err := time.Parse(time.RFC3339, *filters.UpdatedAfter)
 		if err == nil {
-			q = q.Where("pm_stories.updated_at >= ?", t)
+			q = q.Where("pm_tasks.updated_at >= ?", t)
 		}
 	}
 	if labelValues := splitFilterValues(filters.LabelID); len(labelValues) > 0 {
 		q = q.Where(
 			`EXISTS (
 				SELECT 1
-				FROM pm_story_labels psl
-				WHERE psl.story_id = pm_stories.id
+				FROM pm_task_labels psl
+				WHERE psl.task_id = pm_tasks.id
 				  AND psl.label_id IN ?
 			)`,
 			labelValues,
@@ -1296,7 +1296,7 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 		if len(filters.AccessibleTeamIDs) == 0 {
 			q = q.Where("1 = 0")
 		} else {
-			q = q.Where("pm_stories.team_id IN ?", filters.AccessibleTeamIDs)
+			q = q.Where("pm_tasks.team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
 	return q
@@ -1406,13 +1406,13 @@ func (r *PMStoryRepository) batchStoryLabels(ctx context.Context, storyIDs []str
 	}
 	var rows []struct {
 		model.PMLabel
-		StoryID string `gorm:"column:story_id"`
+		StoryID string `gorm:"column:task_id"`
 	}
 	if err := r.db.WithContext(ctx).
 		Table("pm_labels").
-		Select("pm_labels.*, pm_story_labels.story_id").
-		Joins("JOIN pm_story_labels ON pm_story_labels.label_id = pm_labels.id").
-		Where("pm_story_labels.story_id IN ?", storyIDs).
+		Select("pm_labels.*, pm_task_labels.task_id").
+		Joins("JOIN pm_task_labels ON pm_task_labels.label_id = pm_labels.id").
+		Where("pm_task_labels.task_id IN ?", storyIDs).
 		Order("pm_labels.name ASC").
 		Scan(&rows).Error; err != nil {
 		return result
@@ -1480,8 +1480,8 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 	}
 	var aggregateRows []memberAggregate
 	if err := baseQuery.
-		Select("pm_stories.owner_member_id, COUNT(pm_stories.id) AS story_count, COALESCE(SUM(pm_stories.estimate), 0) AS point_total").
-		Group("pm_stories.owner_member_id").
+		Select("pm_tasks.owner_member_id, COUNT(pm_tasks.id) AS story_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Group("pm_tasks.owner_member_id").
 		Scan(&aggregateRows).Error; err != nil {
 		return nil, fmt.Errorf("list member board aggregates: %w", err)
 	}
@@ -1522,7 +1522,7 @@ func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workf
 		} else {
 			query = query.Where("owner_member_id = ?", key)
 		}
-		query = query.Joins("JOIN pm_workflow_states ws ON ws.id = pm_stories.workflow_state_id").
+		query = query.Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 			Order(memberBoardStoryOrderClause())
 		if perMemberLimit > 0 {
 			query = query.Limit(perMemberLimit)
@@ -1718,7 +1718,7 @@ func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspa
 
 	var stories []model.PMStory
 	if err := storyQuery.
-		Joins("JOIN pm_workflow_states ws ON ws.id = pm_stories.workflow_state_id").
+		Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 		Order(memberBoardStoryOrderClause()).
 		Offset(offset).Limit(limit).
 		Find(&stories).Error; err != nil {
@@ -1740,7 +1740,7 @@ func (r *PMStoryRepository) CountByState(ctx context.Context, workflowID string)
 	if err := r.db.WithContext(ctx).
 		Table("pm_workflow_states ws").
 		Select("ws.id AS state_id, ws.name AS state_name, ws.state_type AS state_type, COUNT(s.id) AS story_count").
-		Joins("LEFT JOIN pm_stories s ON s.workflow_state_id = ws.id AND s.archived = false").
+		Joins("LEFT JOIN pm_tasks s ON s.workflow_state_id = ws.id AND s.archived = false").
 		Where("ws.workflow_id = ?", workflowID).
 		Group("ws.id, ws.name, ws.state_type, ws.position").
 		Order("CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC").
@@ -1768,7 +1768,7 @@ func (r *PMStoryRepository) UpdateStartedCompleted(ctx context.Context, storyID 
 		StateType string
 	}
 	if err := r.db.WithContext(ctx).
-		Table("pm_stories s").
+		Table("pm_tasks s").
 		Select("ws.state_type").
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 		Where("s.id = ?", storyID).
@@ -1826,8 +1826,8 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 	if err := r.db.WithContext(ctx).
 		Table("users u").
 		Select("u.*").
-		Joins("JOIN pm_story_owners so ON so.user_id = u.id").
-		Where("so.story_id = ?", story.ID).
+		Joins("JOIN pm_task_owners so ON so.user_id = u.id").
+		Where("so.task_id = ?", story.ID).
 		Order("u.full_name ASC").
 		Find(&owners).Error; err != nil {
 		return nil, fmt.Errorf("list story owners: %w", err)
@@ -1837,8 +1837,8 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 	if err := r.db.WithContext(ctx).
 		Table("users u").
 		Select("u.*").
-		Joins("JOIN pm_story_followers sf ON sf.user_id = u.id").
-		Where("sf.story_id = ?", story.ID).
+		Joins("JOIN pm_task_followers sf ON sf.user_id = u.id").
+		Where("sf.task_id = ?", story.ID).
 		Order("u.full_name ASC").
 		Find(&followers).Error; err != nil {
 		return nil, fmt.Errorf("list story followers: %w", err)
@@ -1857,8 +1857,8 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 	if err := r.db.WithContext(ctx).
 		Table("pm_labels l").
 		Select("l.*").
-		Joins("JOIN pm_story_labels sl ON sl.label_id = l.id").
-		Where("sl.story_id = ?", story.ID).
+		Joins("JOIN pm_task_labels sl ON sl.label_id = l.id").
+		Where("sl.task_id = ?", story.ID).
 		Order("l.name ASC").
 		Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list story labels: %w", err)
@@ -1961,7 +1961,7 @@ func (r *PMStoryRepository) loadDependencySummaries(ctx context.Context, workspa
 
 	var links []model.PMStoryLink
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND link_type = ? AND (source_story_id IN ? OR target_story_id IN ?)",
+		Where("workspace_id = ? AND link_type = ? AND (source_task_id IN ? OR target_task_id IN ?)",
 			workspaceID, model.PMStoryLinkTypeBlocks, storyIDs, storyIDs).
 		Order("created_at ASC").
 		Find(&links).Error; err != nil {
@@ -2065,23 +2065,23 @@ func stringPtrValue(value *string) string {
 func (r *PMStoryRepository) applyDerivedBlockedFilter(q *gorm.DB, blocked bool) *gorm.DB {
 	expr := `
 (
-	COALESCE(NULLIF(TRIM(pm_stories.blocker), ''), '') <> ''
+	COALESCE(NULLIF(TRIM(pm_tasks.blocker), ''), '') <> ''
 	OR EXISTS (
 		SELECT 1
-		FROM pm_story_links sl
-		JOIN pm_stories blockers ON blockers.id = sl.source_story_id
-		WHERE sl.workspace_id = pm_stories.workspace_id
-		  AND sl.target_story_id = pm_stories.id
+		FROM pm_task_links sl
+		JOIN pm_tasks blockers ON blockers.id = sl.source_task_id
+		WHERE sl.workspace_id = pm_tasks.workspace_id
+		  AND sl.target_task_id = pm_tasks.id
 		  AND sl.link_type = ?
 		  AND blockers.completed = FALSE
 	)
 	OR (
-		pm_stories.blocked = TRUE
+		pm_tasks.blocked = TRUE
 		AND NOT EXISTS (
 			SELECT 1
-			FROM pm_story_links legacy_sl
-			WHERE legacy_sl.workspace_id = pm_stories.workspace_id
-			  AND legacy_sl.target_story_id = pm_stories.id
+			FROM pm_task_links legacy_sl
+			WHERE legacy_sl.workspace_id = pm_tasks.workspace_id
+			  AND legacy_sl.target_task_id = pm_tasks.id
 			  AND legacy_sl.link_type = ?
 		)
 	)
@@ -2096,9 +2096,9 @@ func (r *PMStoryRepository) applyBlockingFilter(q *gorm.DB, blocking bool) *gorm
 	expr := `
 EXISTS (
 	SELECT 1
-	FROM pm_story_links sl
-	WHERE sl.workspace_id = pm_stories.workspace_id
-	  AND sl.source_story_id = pm_stories.id
+	FROM pm_task_links sl
+	WHERE sl.workspace_id = pm_tasks.workspace_id
+	  AND sl.source_task_id = pm_tasks.id
 	  AND sl.link_type = ?
 )`
 	if blocking {

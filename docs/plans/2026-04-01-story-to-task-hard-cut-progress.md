@@ -6,14 +6,14 @@
 
 | Workstream | Status | Notes |
 | --- | --- | --- |
-| Schema and migrations | In Progress | Forward SQL hard-cut migration exists and dry-run validates in a rollback transaction; do not merge until task-era code is ready |
+| Schema and migrations | In Progress | Forward hard-cut migrations `202604010002` and `202604010003` now exist; live verification exposed and fixed a dual-schema drift case where empty task tables already existed before the rename |
 | Data backfill rewrites | In Progress | Core entity/preset rewrites are in the migration; automation/prompt payload sweep still pending |
-| Backend contracts | Pending | Models, handlers, services, repositories, routes |
-| Agent and automation surfaces | In Progress | `task_planner` preset family and default target-type slice landed; planner payload/task-context renames still pending |
-| Frontend routes and PM UI | Pending | `/pm/tasks`, task detail, services, stores, copy |
-| Cross-product integrations | Pending | Support, CRM, docs, notifications, search |
+| Backend contracts | In Progress | `/pm/tasks` and `/pm/task-templates` route slice landed; task-era model/repository/service/handler aliases and DI/router field wiring are now in place, but deeper internal renames are still pending |
+| Agent and automation surfaces | In Progress | `task_planner` preset family and default target-type slice landed; canonical internal command names are now task-first (`pm.create_task_batch`, `pm.update_task_state`, `pm.assign_task_agent`, `pm.set_task_dependencies`, `docs.ensure_task_plan_doc`), task-era planner prompts/approval phases are partially landed, and runtime migration verification is clean; deeper worker/model/service internals still remain |
+| Frontend routes and PM UI | In Progress | Canonical `/pm/tasks` routes now include the renamed `$taskId` detail route, `task-templates`, `pmTaskService`, `pmTaskLinks`, task-era query keys, `useTasks`, task association service methods, task PM comment/attachment entity types, task aliases in shared PM types, task-era board/store type usage, `taskRouteNavigation`, `taskPanelStore`, `?task=` URL state, task DOM events, `CreateTaskModal`, `GlobalTaskPanel`, `TaskDetailPanel`, `TaskListView`, `TaskCard`, `TaskDeliveryPanel`, `TaskGitPanel`, `TaskRelationshipsSection`, `TaskSidebarIdRow`, the full `task-detail/` utility directory, recurring-task summary/settings task copy, and `SprintPlanningTaskCard`; broader Story->Task component/store/type rename still pending |
+| Cross-product integrations | In Progress | Notification links, docs/support/search visible route/copy slice landed; CRM/docs/support task object-type compatibility and task-aware link/create flows are partially landed, with deeper backend object-type rewrites still pending |
 | Documentation | Pending | CLAUDE.md, AGENTS.md, internal docs |
-| Validation and rollout | In Progress | Forward and rollback SQL exist and validate in rollback transactions; staging rehearsal and app cutover remain |
+| Validation and rollout | In Progress | Forward and rollback SQL exist, live environment verification completed, reconciliation migration fixed the dual-schema case, `frontend` and `server` builds are green, and `migrate status`/`migrate up` are clean in the configured environment; staging rehearsal and deployment cutover rules still remain |
 
 ## Checklist
 
@@ -35,6 +35,7 @@
 - [x] Rename `story_type` to `task_type`
 - [x] Rename `workspace_teams.default_story_type` to `default_task_type`
 - [x] Rename sequence `pm_story_display_id_seq` -> `pm_task_display_id_seq` and re-point column default
+- [x] Add reconciliation migration for environments where task-era tables were auto-created before the rename and the guarded table renames therefore skipped live story data
 - [ ] Rename or recreate indexes, constraints, and FK names for task-era clarity
 - [x] Update `pm_comments.entity_type` CHECK constraint from `('story', 'epic', 'doc')` to `('task', 'epic', 'doc')`
 - [ ] Rehearse migration on staging data with existing story records
@@ -53,10 +54,12 @@
 ### 2. Backend contracts
 
 - [ ] Rename backend PM work-item models and request/response DTOs from Story to Task
+  Current state: task-era alias types now exist in `server/internal/model/pm_task_aliases.go`; underlying canonical structs are still story-era.
 - [ ] Rename handlers, services, repositories, and DI wiring in `cmd/api/main.go` to task-era names
-- [ ] Move PM routes from `/pm/stories/...` to `/pm/tasks/...`
-- [ ] Move template routes from `/pm/story-templates` to `/pm/task-templates`
-- [ ] Move relationship routes from `/pm/story-relationships/{id}` to `/pm/task-relationships/{id}`
+  Current state: task-era repository/service/handler aliases landed and API/router wiring now uses `PMTask*` fields and constructors, but the underlying implementation files are still `pm_story*`.
+- [x] Move PM routes from `/pm/stories/...` to `/pm/tasks/...`
+- [x] Move template routes from `/pm/story-templates` to `/pm/task-templates`
+- [x] Move relationship routes from `/pm/story-relationships/{id}` to `/pm/task-relationships/{id}`
 - [ ] Rename sprint/epic statistics fields (`story_count` -> `task_count`, `done_story_count` -> `done_task_count`)
 - [ ] Rename filter parameter `story_type` -> `task_type` in query params and filter structs
 - [ ] Rename notification event names and entity types to `task.*` / `task`
@@ -76,70 +79,84 @@
 - [ ] Update `BuildSystemPrompt()` to receive Task object instead of Story
 - [ ] Update `repository/agent_schema.go` inline SQL enum value `'story'` -> `'task'`
 - [ ] Update planner schemas and payload keys (`proposed_tasks`, `task_refs`, etc.)
+  Current state: live planner preview validation now accepts canonical `proposed_tasks` while preserving legacy `proposed_stories`.
 - [ ] Update system prompts, tool descriptions, inventory text, and internal command registry wording
+  Current state: task-first command names, prompt text, approval phases (`tasks`, `task_doc`), and Temporal planner summaries landed for the active runtime path; deeper compatibility names remain in worker/model internals and tests.
 - [ ] Migrate existing system/workspace agent rows to task-era preset keys and target types
 
 ### 4. Frontend PM surfaces
 
 #### 4a. Types and query infrastructure
 - [ ] Rename all Story types in `pmTypes.ts` (Story, StoryDetail, StoryRecurringSummary, StoryType, StoryStateColumn, StoryMemberColumn, StoryGroup, StoryTemplate, CreateStoryRequest, UpdateStoryRequest, CreateStoryTemplateRequest, UpdateStoryTemplateRequest, CreateStoryRelationshipRequest, StoryUserLinkRequest, StoryLabelLinkRequest)
+  Current state: task-era aliases now exist for the main task DTOs and board shapes, and consuming services/stores have started switching to them.
 - [ ] Rename `crmTypes.ts` CRMObjectType `'story'` literal -> `'task'`
 - [ ] Rename `types.ts` fields: `story_type` feature flag boolean, `default_story_type`
-- [ ] Rename all 11 story-prefixed query keys in `queryKeys.ts` and their `'stories'` path segments
-- [ ] Rename `useStories.ts` -> `useTasks.ts` (14 hooks)
+- [x] Rename all 11 story-prefixed query keys in `queryKeys.ts` and their `'stories'` path segments
+- [x] Rename `useStories.ts` -> `useTasks.ts` (14 hooks)
 - [ ] Rename story hooks in `useAssociations.ts` (useStoryAssociations, useCreateStoryRelationship, useDeleteStoryRelationship, `'story'` object type checks)
-- [ ] Rename `useComments.ts` entity type literal `'story'` -> `'task'`
+  Current state: query hook names and service method names are task-era; object-type literals still need follow-through.
+- [x] Rename `useComments.ts` entity type literal `'story'` -> `'task'`
 
 #### 4b. Services
-- [ ] Rename `pmStoryService.ts` -> `pmTaskService.ts` (CRUD, owners, labels, followers)
-- [ ] Rename `pmStoryTemplateService.ts` -> `pmTaskTemplateService.ts` (endpoint paths `/pm/story-templates`)
-- [ ] Rename `associationsService.ts` methods (`.listByStory()`, `.createStoryRelationship()`, `.deleteStoryRelationship()`) and endpoint path `/pm/story-relationships/`
+- [x] Rename `pmStoryService.ts` -> `pmTaskService.ts` (CRUD, owners, labels, followers)
+- [x] Rename `pmStoryTemplateService.ts` -> `pmTaskTemplateService.ts` (endpoint paths `/pm/story-templates`)
+- [x] Rename `associationsService.ts` methods (`.listByStory()`, `.createStoryRelationship()`, `.deleteStoryRelationship()`) and endpoint path `/pm/story-relationships/`
 
 #### 4c. Stores
-- [ ] Rename `storyPanelStore.ts` -> `taskPanelStore.ts` (storyId, lastClosedStoryId, openStory, closeStory, etc.)
+- [x] Rename `storyPanelStore.ts` -> `taskPanelStore.ts` (storyId, lastClosedStoryId, openStory, closeStory, etc.)
 - [ ] Rename story functions in `pmBoardStore.ts` (createStory, moveStory, patchStory, moveMemberStory, filter/sort)
+  Current state: board/store type imports and board column/task shapes are task-era; method/function names remain story-era.
 - [ ] Rename story references in `boardDisplayStore.ts` and `globalCreateStore.ts`
 
 #### 4d. Routes and navigation
-- [ ] Rename canonical PM routes to `/pm/tasks` and `/pm/tasks/:id`
-- [ ] Rename settings route `story-templates` -> `task-templates` and `StoryTemplatesSettingsPage.tsx`
-- [ ] Rename `pmStoryLinks.ts` -> `pmTaskLinks.ts` (buildStoryPath, buildStoryUrl, buildStoryCopyUrl)
-- [ ] Rename `storyRouteNavigation.ts` -> `taskRouteNavigation.ts`
-- [ ] Rename URL query parameter `?story=<id>` -> `?task=<id>` (panel state + window.history)
-- [ ] Rename `url.searchParams.delete('story')` -> `'task'`
+- [x] Rename canonical PM routes to `/pm/tasks` and `/pm/tasks/:id`
+- [x] Rename task detail route parameter `$storyId` -> `$taskId` and sync `routeTree.gen.ts`
+- [x] Rename settings route `story-templates` -> `task-templates` and `StoryTemplatesSettingsPage.tsx`
+- [x] Rename `pmStoryLinks.ts` -> `pmTaskLinks.ts` (buildTaskPath, buildTaskUrl, buildTaskCopyUrl)
+- [x] Rename `storyRouteNavigation.ts` -> `taskRouteNavigation.ts`
+- [x] Rename URL query parameter `?story=<id>` -> `?task=<id>` (panel state + window.history)
+- [x] Rename `url.searchParams.delete('story')` -> `'task'`
 
 #### 4e. Components (44+ files)
 - [ ] Rename core panels: `StoryDetailPanel.tsx`, `GlobalStoryPanel.tsx` (entity: `'story'`), `StoryCard.tsx`
+  Current state: `TaskDetailPanel.tsx`, `GlobalTaskPanel.tsx`, and `TaskCard.tsx` landed.
 - [ ] Rename feature panels: `StoryDeliveryPanel.tsx`, `StoryGitPanel.tsx`, `StoryRelationshipsSection.tsx`, `StoryListView.tsx`
-- [ ] Rename modals: `CreateStoryModal.tsx` (mode: `'story'` -> `'task'`)
+  Current state: `TaskListView.tsx`, `TaskDeliveryPanel.tsx`, `TaskGitPanel.tsx`, and `TaskRelationshipsSection.tsx` landed.
+- [x] Rename modals: `CreateStoryModal.tsx` (mode: `'story'` -> `'task'`)
 - [ ] Rename filters: `StoryFilters.tsx` (story_type filter field), `StoryCard.sortable.ts`
+  Current state: `TaskCard.sortable.ts` landed; `StoryFilters.tsx` remains.
 - [ ] Rename sprint: `SprintPlanningStoryCard.tsx`
-- [ ] Rename settings: `StoryTemplatesSettings.tsx`, `RecurringTemplateList.tsx` (lastGeneratedStory)
-- [ ] Rename `StorySidebarIdRow.tsx`
+  Current state: `SprintPlanningTaskCard.tsx` landed.
+- [x] Rename settings: `StoryTemplatesSettings.tsx`, `RecurringTemplateList.tsx` (lastGeneratedStory)
+- [x] Rename `StorySidebarIdRow.tsx`
 - [ ] Rename sidebar config in `layout/sidebar/config.ts`: `{ key: 'story', label: 'Story', pages: ['stories'] }` -> task equivalents
-- [ ] Rename `story-detail/` directory and all 13 utility files (storyFilterMembers, storyOverlayDismiss, storyLabelSync, storyPendingPatch, storyListGrouping, storyOverlayState, storyPlanningScope, storyListPinnedOffsets, storyDetailEventPayload, StoryStateSelectContent, StoryRouteFallbackBackground, etc.)
-- [ ] Rename `RecurringTemplatesSettings.tsx` openStoryRoute reference
+- [x] Rename `story-detail/` directory and all 13 utility files (storyFilterMembers, storyOverlayDismiss, storyLabelSync, storyPendingPatch, storyListGrouping, storyOverlayState, storyPlanningScope, storyListPinnedOffsets, storyDetailEventPayload, StoryStateSelectContent, StoryRouteFallbackBackground, etc.)
+- [x] Rename `RecurringTemplatesSettings.tsx` openStoryRoute reference
 
 #### 4f. DOM events
-- [ ] Rename DOM custom events: `story-created`, `story-panel-updated`, `story-panel-archived` -> task equivalents
+- [x] Rename DOM custom events: `story-created`, `story-panel-updated`, `story-panel-archived` -> task equivalents
 
 #### 4g. Tests (24+ files)
-- [ ] Rename `__tests__/CreateStoryModal.test.tsx`, `StoryCard.sortable.test.tsx`
-- [ ] Rename `story-detail/__tests__/` (13 test files matching utility modules)
-- [ ] Rename `lib/__tests__/pmStoryLinks.test.ts`
+- [x] Rename `__tests__/CreateStoryModal.test.tsx`, `StoryCard.sortable.test.tsx`
+- [x] Rename `story-detail/__tests__/` (13 test files matching utility modules)
+- [x] Rename `lib/__tests__/pmStoryLinks.test.ts`
 - [ ] Rename `stores/__tests__/pmBoardStore.test.ts`
 
 #### 4h. Cross-module UI
 - [ ] Update PM pages: board, list, epic, sprint, my-work flows to Task naming
-- [ ] Update task template and recurring task surfaces
+- [x] Update PM list/detail route callers and recurring-task summary/settings call sites to task-era prop names where those routes/components are now task-first
+- [x] Update task template and recurring task surfaces
 
 ### 5. Cross-product integrations
 
 - [ ] Rename support linked-story contracts and UI to task equivalents
+  Current state: task-aware support link/create flows landed in the sidebar and service layer, but canonical API/contracts remain story-era.
 - [ ] Rename CRM association object type `story` to `task` (CRM `AssociationsList.tsx`, `EmailAccountConnect.tsx`)
+  Current state: CRM UI now accepts task/story object types and labels task-facing UI accordingly.
 - [ ] Rename docs linked-object type `story` to `task`
-- [ ] Update notifications UI and routing to open task detail routes
-- [ ] Update search and shared-link helpers from story paths to task paths
+  Current state: docs frontend types and link panel now accept/create `task`, with backend docs-link object-type storage still pending.
+- [x] Update notifications UI and routing to open task detail routes
+- [x] Update search and shared-link helpers from story paths to task paths
 
 ### 6. Documentation
 
@@ -157,9 +174,13 @@
 - [x] Dry-run the forward SQL against the configured database inside a transaction and fix current-schema mismatches before merge
 - [x] Dry-run the forward + reverse SQL together inside a single transaction to validate rollback shape
 - [ ] Run `./migrate status` in staging after applying the Story -> Task SQL and confirm the version is recorded in `schema_migrations`
+- [x] Run `./migrate status` and `./migrate up` against the configured environment and verify all three runtime migrations are recorded in `schema_migrations`
+- [x] Verify live database ended with task-era tables populated and legacy story-era tables removed after reconciliation
+- [x] Re-run `./migrate status` and `./migrate up` after the latest task-era runtime rename pass to confirm the environment stays clean and migrations remain idempotent
 - [ ] Verify end-to-end task CRUD and board flows against migrated data
 - [ ] Verify agent assignment/run and automation triggers against `task`
 - [ ] Verify no primary-contract `/pm/stories`, `story_id`, `story_type`, `story_planner`, or `story.*` identifiers remain
+- [x] Keep `frontend` and `server` build-green while the manual rename lands (`npm run build`, `GOCACHE=/tmp/go-build go build ./cmd/...`)
 - [ ] Prepare release notes for the hard cutover and bookmark/API breakage
 - [ ] Add temporary 301 redirect from `/pm/stories/*` -> `/pm/tasks/*` (remove after one release cycle)
 - [ ] Take database snapshot/backup immediately before production migration
@@ -177,7 +198,7 @@
 - No rollback path without a pre-tested reverse migration script and database snapshot.
 - The rollback SQL now exists, but it is manual-only and still needs a real staged rollback rehearsal against a task-era deployment before production use.
 - Worker execution context (`eino_executor.go`) passes Story object to LLM prompt builder — a missed rename here breaks all agent runs silently.
-- Frontend has 80+ files and 3,000+ story references — recommend automated find-and-replace with manual verification rather than hand-editing.
+- Frontend still has a large Story-era surface in type names, stores, modal/component names, and DOM events even though the canonical task routes are now working.
 - `repository/agent_schema.go` contains inline SQL with `'story'` enum — easy to miss as it's not in the migrations directory.
 
 ## File Impact Summary

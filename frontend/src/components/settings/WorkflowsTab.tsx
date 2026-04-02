@@ -250,7 +250,7 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
               <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
                 <div>
                   <Label>Auto assign owner when moved to started state</Label>
-                  <p className="text-xs text-muted-foreground">Assign current user when story enters a started state and has no owner.</p>
+                  <p className="text-xs text-muted-foreground">Assign current user when a task enters a started state and has no owner.</p>
                 </div>
                 <Switch checked={autoAssignOwner} onCheckedChange={setAutoAssignOwner} />
               </div>
@@ -267,7 +267,7 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
         open={deleteWorkflowConfirm !== null}
         onOpenChange={(open) => { if (!open) setDeleteWorkflowConfirm(null); }}
         title="Delete workflow"
-        description="This will permanently delete the workflow and all its states. Stories using this workflow will need to be reassigned. This action cannot be undone."
+        description="This will permanently delete the workflow and all its states. Tasks using this workflow will need to be reassigned. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => { if (deleteWorkflowConfirm) handleDelete(deleteWorkflowConfirm); setDeleteWorkflowConfirm(null); }}

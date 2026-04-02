@@ -10,6 +10,7 @@ export interface SearchResult {
 }
 
 export interface SearchResponse {
+  tasks?: SearchResult[];
   stories: SearchResult[];
   epics: SearchResult[];
   sprints: SearchResult[];

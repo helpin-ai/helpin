@@ -30,7 +30,7 @@ import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 interface AssociationsListProps {
   workspaceId: string;
@@ -48,7 +48,8 @@ const sectionConfig: Record<string, { title: string; icon: React.ElementType }> 
   company: { title: 'Companies', icon: Building2 },
   deal: { title: 'Deals', icon: DollarSign },
   epic: { title: 'Epics', icon: Hexagon },
-  story: { title: 'Stories', icon: GitBranch },
+  task: { title: 'Tasks', icon: GitBranch },
+  story: { title: 'Tasks', icon: GitBranch },
   support_conversation: { title: 'Support', icon: MessageSquareText },
 };
 
@@ -91,8 +92,8 @@ export function AssociationsList({
       epic: { to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: id } },
       support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } },
     };
-    if (type === 'story') {
-      openStoryRoute(navigate as never, location as never, slug, id);
+    if (type === 'task') {
+      openTaskRoute(navigate as never, location as never, slug, id);
       return;
     }
     const route = routes[type];
@@ -148,7 +149,7 @@ export function AssociationsList({
       if (pickerSection === 'contact' || pickerSection === 'company' || pickerSection === 'deal') {
         const response = await crmSearchService.search(workspaceId, query.trim());
         setCRMResults((response.data ?? []).filter((r) => r.type === pickerSection));
-      } else if (pickerSection === 'epic' || pickerSection === 'story') {
+      } else if (pickerSection === 'epic' || pickerSection === 'task') {
         const response = await searchService.search(workspaceId, query.trim());
         const items = pickerSection === 'epic' ? (response.data?.epics ?? []) : (response.data?.stories ?? []);
         setPMResults(items);
@@ -171,13 +172,13 @@ export function AssociationsList({
     onAssociationRemoved?.(); // triggers refetch
   };
 
-  const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'epic', 'story', 'support_conversation'];
+  const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'epic', 'task', 'support_conversation'];
   const visibleSections = sectionOrder.filter((type) => (grouped[type]?.length ?? 0) > 0);
 
   const pickerConfig = pickerSection ? sectionConfig[pickerSection] : null;
   const pickerPlaceholder =
     pickerSection === 'support_conversation' ? 'Filter conversations by subject or ID' :
-    pickerSection === 'epic' || pickerSection === 'story' ? `Search ${pickerSection}s by title or ID` :
+    pickerSection === 'epic' || pickerSection === 'task' ? `Search ${pickerSection}s by title or ID` :
     `Search ${pickerSection ? pickerSection + 's' : ''}`;
 
   const pickerIcon = pickerConfig?.icon ?? FileText;
@@ -281,7 +282,7 @@ export function AssociationsList({
                 </button>
               ))}
 
-              {!searching && (pickerSection === 'epic' || pickerSection === 'story') && pmResults.map((r) => (
+              {!searching && (pickerSection === 'epic' || pickerSection === 'task') && pmResults.map((r) => (
                 <button
                   key={r.id}
                   type="button"
@@ -305,7 +306,7 @@ export function AssociationsList({
               )}
               {!searching && pickerSection !== 'support_conversation' && query.trim().length >= 2 &&
                 ((pickerSection === 'contact' || pickerSection === 'company' || pickerSection === 'deal') && crmResults.length === 0 ||
-                 (pickerSection === 'epic' || pickerSection === 'story') && pmResults.length === 0) && (
+                 (pickerSection === 'epic' || pickerSection === 'task') && pmResults.length === 0) && (
                 <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
               )}
               {!searching && pickerSection !== 'support_conversation' && query.trim().length < 2 && (

@@ -354,11 +354,11 @@ export function useLegacyEpicAssociations(wsId: string, epicId: string) {
   })
 }
 
-export function useLegacyStoryAssociations(wsId: string, storyId: string) {
+export function useLegacyTaskAssociations(wsId: string, taskId: string) {
   return useQuery({
-    queryKey: queryKeys.pm.storyAssociations(wsId, storyId),
-    queryFn: async () => unwrap(await crmAssociationService.listByStory(wsId, storyId)),
-    enabled: !!wsId && !!storyId,
+    queryKey: queryKeys.pm.taskAssociations(wsId, taskId),
+    queryFn: async () => unwrap(await crmAssociationService.listByTask(wsId, taskId)),
+    enabled: !!wsId && !!taskId,
   })
 }
 
@@ -369,7 +369,7 @@ export function useCreateAssociation(wsId: string) {
     onSuccess: (_, data) => {
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
       if (data.from_object_type === 'epic' || data.to_object_type === 'epic' ||
-          data.from_object_type === 'story' || data.to_object_type === 'story') {
+          data.from_object_type === 'task' || data.to_object_type === 'task') {
         qc.invalidateQueries({ queryKey: ['pm', wsId] })
       }
     },

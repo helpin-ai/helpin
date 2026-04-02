@@ -26,7 +26,7 @@ import {
   extractInlineAttachmentIds,
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
-import { StoryListView } from '@/components/pm/StoryListView';
+import { TaskListView } from '@/components/pm/TaskListView';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
@@ -41,7 +41,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import type { AttachmentResponse, SprintWithStats, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
@@ -291,7 +291,7 @@ export function SprintDetailPage() {
 
   const openStory = useCallback(
     (story: Story) => {
-      openStoryRoute(navigate as never, location as never, slug, story.id);
+      openTaskRoute(navigate as never, location as never, slug, story.id);
     },
     [location, navigate, slug],
   );
@@ -304,11 +304,11 @@ export function SprintDetailPage() {
         if (res.data) setStories(res.data);
       });
     };
-    window.addEventListener('story-panel-updated', refresh);
-    window.addEventListener('story-panel-archived', refresh);
+    window.addEventListener('task-panel-updated', refresh);
+    window.addEventListener('task-panel-archived', refresh);
     return () => {
-      window.removeEventListener('story-panel-updated', refresh);
-      window.removeEventListener('story-panel-archived', refresh);
+      window.removeEventListener('task-panel-updated', refresh);
+      window.removeEventListener('task-panel-archived', refresh);
     };
   }, [workspaceId, sprintId]);
 
@@ -488,16 +488,16 @@ export function SprintDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* Stories */}
+          {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Stories ({stories.length})
+              Tasks ({stories.length})
             </h3>
             {stories.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No stories linked yet.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
-                <StoryListView
+                <TaskListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
                   workflows={workflows}
@@ -506,7 +506,7 @@ export function SprintDetailPage() {
                   epics={allEpics}
                   sprints={allSprints}
                   externalStories={stories}
-                  onOpenStory={openStory}
+                  onOpenTask={openStory}
                 />
               </div>
             ) : (

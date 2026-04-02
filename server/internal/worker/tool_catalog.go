@@ -31,7 +31,7 @@ var toolCategory = map[string]string{
 	"commit_and_push": "Git",
 	"open_pr":         "Git",
 
-	// PM / Stories
+	// PM / Tasks
 	"request_user_input":        "Interaction",
 	"request_review_checkpoint": "Interaction",
 	"request_human_input":       "Interaction",
@@ -40,12 +40,12 @@ var toolCategory = map[string]string{
 	"preview_md":                "Interaction",
 	"preview_json":              "Interaction",
 	"publish_prd_draft":         "Interaction",
-	"publish_story_plan":        "Interaction",
-	"publish_story_plan_doc":    "Interaction",
+	"publish_task_plan":         "Interaction",
+	"publish_task_plan_doc":     "Interaction",
 	"publish_preview":           "Interaction",
-	"add_story_comment":         "PM / Stories",
-	"list_story_checklist":      "PM / Stories",
-	"list_epic_stories":         "PM / Stories",
+	"add_task_comment":          "PM / Tasks",
+	"list_task_checklist":       "PM / Tasks",
+	"list_epic_tasks":           "PM / Tasks",
 	"list_workspace_teams":      "Workspace",
 
 	// Support
@@ -71,7 +71,7 @@ var categoryOrder = []string{
 	"Web Search",
 	"Git",
 	"Interaction",
-	"PM / Stories",
+	"PM / Tasks",
 	"Workspace",
 	"Support",
 	"CRM",

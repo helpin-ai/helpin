@@ -135,7 +135,7 @@ func structuredPlanningStageGuidance(planningStage string) []string {
 			"\n## Internal Stance",
 			"- Think like an architect first: respect module boundaries, existing patterns, and integration points from the live codebase.",
 			"- Think like a scrum master second: produce independently understandable stories with clear sequencing.",
-			"\n## Story Planning Checklist",
+			"\n## Task Planning Checklist",
 			"- Break work into stories that can be executed and reviewed independently.",
 			"- Prefer user-visible vertical slices over backend-only or frontend-only layering.",
 			"- Keep story titles flat and outcome-oriented; do not use phase prefixes or sequence labels in story names.",

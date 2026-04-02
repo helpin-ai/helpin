@@ -11,11 +11,11 @@ import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningStoryPreview } from '@/lib/pmTypes';
 import { pmSprintService } from '@/lib/services/pmSprintService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { unwrap } from '@/lib/queryUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 const STORY_PREVIEW_LIMIT = 5;
 const BACKLOG_LIMIT = 50;
@@ -153,7 +153,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
   const handleOpenStory = (storyId: string) => {
     if (!workspaceSlug) return;
-    openStoryRoute(navigate as never, location as never, workspaceSlug, storyId);
+    openTaskRoute(navigate as never, location as never, workspaceSlug, storyId);
   };
 
   // Separate query for archived sprints — only enabled when filter is "archived"
@@ -183,7 +183,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
     queryClient.setQueryData(planningQueryKey, optimistic);
     try {
-      const { error } = await pmStoryService.update(workspaceId, story.id, { sprint_id: sprintId ?? '' });
+      const { error } = await pmTaskService.update(workspaceId, story.id, { sprint_id: sprintId ?? '' });
       if (error) throw new Error(error);
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
@@ -192,7 +192,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   };
 
   const handleCreateStory = (sprintId?: string) => {
-    openCreate('story', {
+    openCreate('task', {
       teamId: teamId || undefined,
       ownerMemberId: undefined,
       sprintId,

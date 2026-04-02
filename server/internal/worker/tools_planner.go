@@ -72,18 +72,18 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 
 func toolEnsureStoryPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "story" || ctx.TargetID == "" {
-		return "", fmt.Errorf("ensure_story_plan_doc is only available for story runs")
+		return "", fmt.Errorf("ensure_task_plan_doc is only available for task runs")
 	}
 	if ctx.Services == nil || ctx.Services.EnsureStoryPlanDoc == nil {
-		return "", fmt.Errorf("story plan document service is not available")
+		return "", fmt.Errorf("task plan document service is not available")
 	}
 
 	doc, err := ctx.Services.EnsureStoryPlanDoc(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID)
 	if err != nil {
-		return "", fmt.Errorf("ensure story plan doc: %w", err)
+		return "", fmt.Errorf("ensure task plan doc: %w", err)
 	}
 	if doc == nil {
-		return "", fmt.Errorf("story plan document was not created")
+		return "", fmt.Errorf("task plan document was not created")
 	}
 
 	hasDraftContent := false
@@ -134,7 +134,7 @@ func toolApproveEpicSpec(ctx *ExecutionContext, input json.RawMessage) (string, 
 
 func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
-		return "", fmt.Errorf("create_story_batch is only available for epic runs")
+		return "", fmt.Errorf("create_task_batch is only available for epic runs")
 	}
 
 	var params struct {
@@ -142,38 +142,38 @@ func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string,
 		ProposedStories []model.ProposedStory `json:"proposed_stories"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
-		return "", plannerToolInputError("create_story_batch", err)
+		return "", plannerToolInputError("create_task_batch", err)
 	}
 	if len(params.Stories) == 0 && len(params.ProposedStories) > 0 {
 		params.Stories = params.ProposedStories
 	}
 	if len(params.Stories) == 0 {
-		return "", fmt.Errorf("create_story_batch requires \"stories\" (legacy alias: \"proposed_stories\")")
+		return "", fmt.Errorf("create_task_batch requires \"stories\" (legacy alias: \"proposed_stories\")")
 	}
 	if err := model.NormalizeProposedStories(params.Stories); err != nil {
-		return "", fmt.Errorf("create_story_batch stories are invalid: %w", err)
+		return "", fmt.Errorf("create_task_batch stories are invalid: %w", err)
 	}
 
 	// Hard guard: stories require an approved spec.
 	if ctx.Epic == nil || ctx.Epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) == "" {
-		return "", fmt.Errorf("create_story_batch requires an approved PRD first; call approve_epic_spec before creating stories")
+		return "", fmt.Errorf("create_task_batch requires an approved PRD first; call approve_epic_spec before creating tasks")
 	}
 	commandInput, _ := json.Marshal(map[string]any{
 		"stories": params.Stories,
 	})
-	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.create_story_batch", commandInput); ok {
+	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.create_task_batch", commandInput); ok {
 		if err != nil {
-			return "", fmt.Errorf("create story batch: %w", err)
+			return "", fmt.Errorf("create task batch: %w", err)
 		}
 		return string(output), nil
 	}
 	if ctx.Services == nil || ctx.Services.CreateStoryBatch == nil {
-		return "", fmt.Errorf("story batch creation is not available")
+		return "", fmt.Errorf("task batch creation is not available")
 	}
 
 	result, err := ctx.Services.CreateStoryBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
 	if err != nil {
-		return "", fmt.Errorf("create story batch: %w", err)
+		return "", fmt.Errorf("create task batch: %w", err)
 	}
 	return toCompactJSONString(result), nil
 }
@@ -184,24 +184,24 @@ func toolAssignStoryAgent(ctx *ExecutionContext, input json.RawMessage) (string,
 		AgentID string `json:"agent_id"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
-		return "", plannerToolInputError("assign_story_agent", err)
+		return "", plannerToolInputError("assign_task_agent", err)
 	}
 	if strings.TrimSpace(params.StoryID) == "" || strings.TrimSpace(params.AgentID) == "" {
-		return "", fmt.Errorf("assign_story_agent requires \"story_id\" and \"agent_id\"")
+		return "", fmt.Errorf("assign_task_agent requires \"story_id\" or \"task_id\" and \"agent_id\"")
 	}
-	if output, ok, err := executeInternalCommand(ctx, "story", params.StoryID, "pm.assign_story_agent", input); ok {
+	if output, ok, err := executeInternalCommand(ctx, "task", params.StoryID, "pm.assign_task_agent", input); ok {
 		if err != nil {
-			return "", fmt.Errorf("assign story agent: %w", err)
+			return "", fmt.Errorf("assign task agent: %w", err)
 		}
 		return string(output), nil
 	}
 	if ctx.Services == nil || ctx.Services.AssignStoryAgent == nil {
-		return "", fmt.Errorf("story assignment is not available")
+		return "", fmt.Errorf("task assignment is not available")
 	}
 	if err := ctx.Services.AssignStoryAgent(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.StoryID, params.AgentID); err != nil {
-		return "", fmt.Errorf("assign story agent: %w", err)
+		return "", fmt.Errorf("assign task agent: %w", err)
 	}
-	return fmt.Sprintf("Assigned story %s to agent %s.", params.StoryID, params.AgentID), nil
+	return fmt.Sprintf("Assigned task %s to agent %s.", params.StoryID, params.AgentID), nil
 }
 
 func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -209,34 +209,34 @@ func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (str
 		Dependencies []StoryDependencyLink `json:"dependencies"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
-		return "", plannerToolInputError("set_story_dependencies", err)
+		return "", plannerToolInputError("set_task_dependencies", err)
 	}
 	if len(params.Dependencies) == 0 {
-		return "", fmt.Errorf("set_story_dependencies requires \"dependencies\"")
+		return "", fmt.Errorf("set_task_dependencies requires \"dependencies\"")
 	}
 	for idx, link := range params.Dependencies {
 		if strings.TrimSpace(link.SourceStoryID) == "" || strings.TrimSpace(link.TargetStoryID) == "" {
-			return "", fmt.Errorf("set_story_dependencies dependencies[%d] must include \"source_story_id\" and \"target_story_id\"", idx)
+			return "", fmt.Errorf("set_task_dependencies dependencies[%d] must include \"source_task_id\"/\"source_story_id\" and \"target_task_id\"/\"target_story_id\"", idx)
 		}
 	}
-	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.set_story_dependencies", input); ok {
+	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.set_task_dependencies", input); ok {
 		if err != nil {
-			return "", fmt.Errorf("set story dependencies: %w", err)
+			return "", fmt.Errorf("set task dependencies: %w", err)
 		}
 		return string(output), nil
 	}
 	if ctx.Services == nil || ctx.Services.SetStoryDependencies == nil {
-		return "", fmt.Errorf("story dependency updates are not available")
+		return "", fmt.Errorf("task dependency updates are not available")
 	}
 	if err := ctx.Services.SetStoryDependencies(ctx.Context, ctx.WorkspaceID, ctx.AgentID, params.Dependencies); err != nil {
-		return "", fmt.Errorf("set story dependencies: %w", err)
+		return "", fmt.Errorf("set task dependencies: %w", err)
 	}
 	return fmt.Sprintf("Created %d dependency links.", len(params.Dependencies)), nil
 }
 
 func toolListEpicStories(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.TargetType != "epic" || ctx.TargetID == "" {
-		return "", fmt.Errorf("list_epic_stories is only available for epic runs")
+		return "", fmt.Errorf("list_epic_tasks is only available for epic runs")
 	}
 	if ctx.Services == nil || ctx.Services.ListEpicStories == nil {
 		return "", fmt.Errorf("epic story listing is not available")

@@ -1912,7 +1912,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		normalizedContent, err := worker.NormalizeStoryPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
-				slog.ErrorContext(ctx, "approved story plan preview normalization failed during approval persistence",
+				slog.ErrorContext(ctx, "approved task plan preview normalization failed during approval persistence",
 					"run_id", run.ID,
 					"workspace_id", run.WorkspaceID,
 					"phase", strings.TrimSpace(approval.Phase),
@@ -1922,7 +1922,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 					"error", err,
 				)
 			}
-			return fmt.Errorf("approved story plan preview content must be valid JSON matching the canonical story-plan shape {summary, proposed_stories}; use story fields like name, description, story_type, acceptance_criteria, and dependency_refs")
+			return fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_stories}; use task fields like name, description, story_type, acceptance_criteria, and dependency_refs")
 		}
 		content = normalizedContent
 	}
@@ -2001,9 +2001,9 @@ func previewPanelKeyForApprovalPhase(phase string) string {
 	case "prd":
 		return "prd_draft"
 	case "story_doc":
-		return "story_plan_doc"
+		return "task_plan_doc"
 	case "stories":
-		return "story_plan"
+		return "task_plan"
 	default:
 		return ""
 	}

@@ -156,7 +156,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		stage = model.PlanningStagePlanStories
 	}
 	if stage != model.PlanningStagePlanStories {
-		return nil, fmt.Errorf("run is not a story planning run")
+		return nil, fmt.Errorf("run is not a task planning run")
 	}
 
 	existingSummary, _ := decodePlanningRunSummary(run.OutputSummary)
@@ -164,10 +164,10 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return s.loadCreatedStories(ctx, existingSummary.CreatedStoryIDs)
 	}
 	if run.ApprovalState != "pending" {
-		return nil, fmt.Errorf("run does not have a pending story plan")
+		return nil, fmt.Errorf("run does not have a pending task plan")
 	}
 	if s.storyService == nil {
-		return nil, fmt.Errorf("story service is not configured")
+		return nil, fmt.Errorf("task service is not configured")
 	}
 
 	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
@@ -191,7 +191,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if existingSummary.Proposal != nil {
 		proposal = *existingSummary.Proposal
 	} else if err := json.Unmarshal(run.OutputSummary, &proposal); err != nil {
-		return nil, fmt.Errorf("story plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_tasks\" or the legacy \"proposed_stories\"")
 	}
 
 	proposedStories := req.ProposedStories
@@ -199,7 +199,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		proposedStories = proposal.ProposedStories
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("story plan must include at least one item in \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\" or the legacy \"proposed_stories\"")
 	}
 	if err := validatePlanningStories(proposedStories); err != nil {
 		return nil, err
@@ -212,13 +212,13 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		}
 	}
 	if enablerCount > 2 {
-		slog.Warn("high enabler count in story plan",
+		slog.Warn("high enabler count in task plan",
 			"enabler_count", enablerCount,
 			"total_count", len(proposedStories),
 			"epic_id", epicID)
 	}
 
-	// Warn on overlapping file modifications across non-dependent stories.
+	// Warn on overlapping file modifications across non-dependent tasks.
 	fileOwners := map[string]string{} // path -> story ref
 	for _, ps := range proposedStories {
 		if ps.ImplementationBrief == nil {
@@ -245,7 +245,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	}
 	existingStories, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
 	if err != nil {
-		return nil, fmt.Errorf("lookup existing planned stories: %w", err)
+		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
 	existingByExternalID := make(map[string]model.PMStory, len(existingStories))
 	for _, story := range existingStories {
@@ -378,7 +378,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		EpicID:      &epicID,
 		RunID:       &run.ID,
 		HandoffType: "agent_to_human",
-		Reason:      fmt.Sprintf("Confirmed story plan and created %d stories", len(created)),
+		Reason:      fmt.Sprintf("Confirmed task plan and created %d tasks", len(created)),
 		Context:     handoffContext,
 	}
 	_ = s.handoffRepo.Create(ctx, handoff)
@@ -419,7 +419,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, err
 	}
 
-	summary := fmt.Sprintf("Created %d stories from the approved plan.", len(created))
+	summary := fmt.Sprintf("Created %d tasks from the approved plan.", len(created))
 	_ = s.saveArtifact(ctx, run, "handoff_note", "markdown", summary, 999998)
 	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 	s.publishRunEvent(run, actorID)
@@ -427,14 +427,14 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	return created, nil
 }
 
-// createStoriesFromProposal creates stories from proposed stories without requiring an agent run.
-// Used by the interactive story planning path.
+// createStoriesFromProposal creates tasks from proposed items without requiring an agent run.
+// Used by the interactive task planning path.
 func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
 	if s.storyService == nil {
-		return nil, fmt.Errorf("story service is not configured")
+		return nil, fmt.Errorf("task service is not configured")
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("story plan must include at least one item in \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\" or the legacy \"proposed_stories\"")
 	}
 	if err := validatePlanningStories(proposedStories); err != nil {
 		return nil, err
@@ -466,7 +466,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	}
 	existingStories, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
 	if err != nil {
-		return nil, fmt.Errorf("lookup existing planned stories: %w", err)
+		return nil, fmt.Errorf("lookup existing planned tasks: %w", err)
 	}
 	existingByExternalID := make(map[string]model.PMStory, len(existingStories))
 	for _, story := range existingStories {
@@ -577,7 +577,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	return created, nil
 }
 
-// CreateEpicStoryBatch creates stories directly from planner tool input.
+// CreateEpicStoryBatch creates tasks directly from planner tool input.
 func (s *AgentService) CreateEpicStoryBatch(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
 	return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, proposedStories)
 }

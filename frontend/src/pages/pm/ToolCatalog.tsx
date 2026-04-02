@@ -49,8 +49,12 @@ const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: string }
     label: 'Epic Planner',
     className: 'bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/20',
   },
+  task_planner: {
+    label: 'Task Planner',
+    className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
+  },
   story_planner: {
-    label: 'Story Planner',
+    label: 'Task Planner',
     className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
   },
   review_agent: {

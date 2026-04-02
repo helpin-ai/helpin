@@ -49,6 +49,7 @@ const (
 const (
 	LinkedObjectEpic                = "epic"
 	LinkedObjectStory               = "story"
+	LinkedObjectTask                = "task"
 	LinkedObjectProject             = "project"
 	LinkedObjectObjective           = "objective"
 	LinkedObjectSprint              = "sprint"

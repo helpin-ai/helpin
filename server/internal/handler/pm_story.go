@@ -23,7 +23,7 @@ func NewPMStoryHandler(storyService *service.PMStoryService) *PMStoryHandler {
 	return &PMStoryHandler{storyService: storyService}
 }
 
-// List handles GET /api/pm/stories.
+// List handles GET /api/pm/tasks.
 func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -85,7 +85,7 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListBoard handles GET /api/pm/stories/board?workflow_id=...&team_id=...&per_state_limit=...
+// ListBoard handles GET /api/pm/tasks/board?workflow_id=...&team_id=...&per_state_limit=...
 func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
@@ -105,7 +105,7 @@ func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, columns)
 }
 
-// ListBoardColumn handles GET /api/pm/stories/board/column?state_id=...&offset=...&limit=...
+// ListBoardColumn handles GET /api/pm/tasks/board/column?state_id=...&offset=...&limit=...
 func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) {
 	stateID := r.URL.Query().Get("state_id")
 	if stateID == "" {
@@ -309,7 +309,7 @@ func (h *PMStoryHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, story)
 }
 
-// Delete handles DELETE /api/pm/stories/{id}.
+// Delete handles DELETE /api/pm/tasks/{id}.
 func (h *PMStoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -317,10 +317,10 @@ func (h *PMStoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "story archived"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "task archived"})
 }
 
-// Move handles PUT /api/pm/stories/{id}/move.
+// Move handles PUT /api/pm/tasks/{id}/move.
 func (h *PMStoryHandler) Move(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -344,7 +344,7 @@ func (h *PMStoryHandler) Move(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, story)
 }
 
-// Reorder handles PUT /api/pm/stories/{id}/reorder.
+// Reorder handles PUT /api/pm/tasks/{id}/reorder.
 func (h *PMStoryHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -363,7 +363,7 @@ func (h *PMStoryHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "story reordered"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "task reordered"})
 }
 
 // AddOwner handles POST /api/pm/stories/{id}/owners.

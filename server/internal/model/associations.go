@@ -12,7 +12,7 @@ const (
 // CreateStoryRelationshipRequest creates a directional story relationship from a story detail surface.
 type CreateStoryRelationshipRequest struct {
 	RelationshipType string `json:"relationship_type"`
-	OtherStoryID     string `json:"other_story_id"`
+	OtherStoryID     string `json:"other_task_id"`
 }
 
 // AssociationObjectSummary is the lightweight cross-object shape returned by grouped association APIs.

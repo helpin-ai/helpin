@@ -61,14 +61,14 @@ func TestCommandToolMetadataUsesExplicitAliasInsteadOfBoolean(t *testing.T) {
 	}
 }
 
-func TestCreateFollowupStoriesCommandIsBackendOnlyUntilToolExists(t *testing.T) {
+func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 
-	def, ok := svc.Definition("pm.create_followup_stories")
+	def, ok := svc.Definition("pm.create_followup_tasks")
 	if !ok {
-		t.Fatal("expected pm.create_followup_stories definition")
+		t.Fatal("expected pm.create_followup_tasks definition")
 	}
 	if def.ExposesTool() {
-		t.Fatalf("expected pm.create_followup_stories to remain backend-only, got %#v", def.Tool)
+		t.Fatalf("expected pm.create_followup_tasks to remain backend-only, got %#v", def.Tool)
 	}
 }

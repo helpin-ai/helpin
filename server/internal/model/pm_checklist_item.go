@@ -2,10 +2,10 @@ package model
 
 import "time"
 
-// PMChecklistItem represents a checklist (todo) item on a story.
+// PMChecklistItem represents a checklist (todo) item on a task.
 type PMChecklistItem struct {
 	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	StoryID    string    `json:"story_id" gorm:"type:uuid;not null;index"`
+	StoryID    string    `json:"story_id" gorm:"column:task_id;type:uuid;not null;index"`
 	Text       string    `json:"text" gorm:"not null"`
 	Completed  bool      `json:"completed" gorm:"default:false"`
 	Position   int       `json:"position" gorm:"default:0"`

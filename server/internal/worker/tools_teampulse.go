@@ -15,14 +15,14 @@ func toolAddStoryComment(ctx *ExecutionContext, input json.RawMessage) (string, 
 	}
 
 	if ctx.StoryID == "" {
-		return "", fmt.Errorf("no story associated with this run")
+		return "", fmt.Errorf("no task associated with this run")
 	}
 
 	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, ctx.StoryID, ctx.AgentID, params.Content); err != nil {
 		return "", fmt.Errorf("add comment: %w", err)
 	}
 
-	return "Comment added to story.", nil
+	return "Comment added to task.", nil
 }
 
 func toolUpdateStoryState(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -34,30 +34,30 @@ func toolUpdateStoryState(ctx *ExecutionContext, input json.RawMessage) (string,
 	}
 
 	if ctx.StoryID == "" {
-		return "", fmt.Errorf("no story associated with this run")
+		return "", fmt.Errorf("no task associated with this run")
 	}
 
 	commandInput, _ := json.Marshal(map[string]any{
-		"story_id": ctx.StoryID,
+		"task_id":  ctx.StoryID,
 		"state_id": params.StateID,
 	})
-	if output, ok, err := executeInternalCommand(ctx, "story", ctx.StoryID, "pm.update_story_state", commandInput); ok {
+	if output, ok, err := executeInternalCommand(ctx, "task", ctx.StoryID, "pm.update_task_state", commandInput); ok {
 		if err != nil {
-			return "", fmt.Errorf("update story state: %w", err)
+			return "", fmt.Errorf("update task state: %w", err)
 		}
 		return string(output), nil
 	}
 
 	if err := ctx.Services.UpdateStoryState(ctx.Context, ctx.WorkspaceID, ctx.StoryID, params.StateID); err != nil {
-		return "", fmt.Errorf("update story state: %w", err)
+		return "", fmt.Errorf("update task state: %w", err)
 	}
 
-	return fmt.Sprintf("Story state updated to %s.", params.StateID), nil
+	return fmt.Sprintf("Task state updated to %s.", params.StateID), nil
 }
 
 func toolListStoryChecklist(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.StoryID == "" {
-		return "", fmt.Errorf("no story associated with this run")
+		return "", fmt.Errorf("no task associated with this run")
 	}
 
 	items, err := ctx.Services.ListChecklist(ctx.Context, ctx.WorkspaceID, ctx.StoryID)

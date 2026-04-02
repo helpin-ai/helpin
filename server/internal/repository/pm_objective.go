@@ -332,7 +332,7 @@ func (r *PMObjectiveRepository) ComputeStats(ctx context.Context, objectiveID st
 			Done  int
 		}
 		if err := r.db.WithContext(ctx).
-			Table("pm_stories s").
+			Table("pm_tasks s").
 			Select("COUNT(*) AS total, COUNT(CASE WHEN ws.state_type = 'done' THEN 1 END) AS done").
 			Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 			Where("s.epic_id IN ? AND s.archived = false", epicIDs).
@@ -454,7 +454,7 @@ func (r *PMObjectiveRepository) listEpics(ctx context.Context, objectiveID strin
 			Points    int
 		}
 		if err := r.db.WithContext(ctx).
-			Table("pm_stories s").
+			Table("pm_tasks s").
 			Select("ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
 			Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 			Where("s.epic_id = ? AND s.archived = false", epic.ID).

@@ -31,7 +31,7 @@ import {
   extractInlineAttachmentIds,
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
-import { StoryListView } from '@/components/pm/StoryListView';
+import { TaskListView } from '@/components/pm/TaskListView';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -53,7 +53,7 @@ import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
-import { openStoryRoute } from '@/components/pm/story-detail/storyRouteNavigation';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -383,7 +383,7 @@ export function EpicDetailPage() {
 
   const openStory = useCallback(
     (story: Story) => {
-      openStoryRoute(navigate as never, location as never, slug, story.id);
+      openTaskRoute(navigate as never, location as never, slug, story.id);
     },
     [location, navigate, slug],
   );
@@ -440,11 +440,11 @@ export function EpicDetailPage() {
         if (res.data) setStories(res.data);
       });
     };
-    window.addEventListener('story-panel-updated', refresh);
-    window.addEventListener('story-panel-archived', refresh);
+    window.addEventListener('task-panel-updated', refresh);
+    window.addEventListener('task-panel-archived', refresh);
     return () => {
-      window.removeEventListener('story-panel-updated', refresh);
-      window.removeEventListener('story-panel-archived', refresh);
+      window.removeEventListener('task-panel-updated', refresh);
+      window.removeEventListener('task-panel-archived', refresh);
     };
   }, [workspaceId, epicId]);
 
@@ -625,16 +625,16 @@ export function EpicDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* Stories */}
+          {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Stories ({stories.length})
+              Tasks ({stories.length})
             </h3>
             {stories.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No stories linked yet.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
-                <StoryListView
+                <TaskListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
                   workflows={workflows}
@@ -643,7 +643,7 @@ export function EpicDetailPage() {
                   epics={allEpics}
                   sprints={allSprints}
                   externalStories={stories}
-                  onOpenStory={openStory}
+                  onOpenTask={openStory}
                 />
               </div>
             ) : (

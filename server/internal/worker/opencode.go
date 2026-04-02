@@ -614,9 +614,9 @@ func buildEngineerCommitMessage(story *model.PMStory) string {
 		return "tp: apply engineer run changes"
 	}
 	if story.DisplayID > 0 {
-		return fmt.Sprintf("tp: story #%d %s", story.DisplayID, story.Name)
+		return fmt.Sprintf("tp: task #%d %s", story.DisplayID, story.Name)
 	}
-	return fmt.Sprintf("tp: story %s", story.Name)
+	return fmt.Sprintf("tp: task %s", story.Name)
 }
 
 type engineerCommittedChange struct {

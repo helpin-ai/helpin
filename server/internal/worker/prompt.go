@@ -75,7 +75,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
 		parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
 		parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
-		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_story_plan, or publish_story_plan_doc.")
+		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
@@ -83,8 +83,8 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 	}
 	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
-		parts = append(parts, "- Draft or refine the canonical story planning document in chat first, then request approval.")
-		parts = append(parts, "- After approval, stop. The platform will persist and link the approved story planning document.")
+		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
+		parts = append(parts, "- After approval, stop. The platform will persist and link the approved task planning document.")
 	}
 	if ticket != nil {
 		parts = append(parts, "- Customer-visible replies must be drafted for human approval before they are sent.")
@@ -116,7 +116,7 @@ func BuildUserPrompt(
 
 	if story != nil {
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
-			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical story planning document for story: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical task planning document for task: **%s**", story.Name))
 		} else {
 			contextParts = append(contextParts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
 		}

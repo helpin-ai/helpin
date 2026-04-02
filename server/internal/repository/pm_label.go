@@ -112,13 +112,13 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	}
 	var storyRows []storyStatRow
 	if err := r.db.WithContext(ctx).
-		Table("pm_story_labels sl").
+		Table("pm_task_labels sl").
 		Select(`sl.label_id,
 			COUNT(*) AS total,
 			SUM(CASE WHEN s.completed = true THEN 1 ELSE 0 END) AS done,
 			COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points,
 			COALESCE(SUM(CASE WHEN s.completed = true THEN COALESCE(s.estimate, 0) ELSE 0 END), 0) AS done_pts`).
-		Joins("JOIN pm_stories s ON s.id = sl.story_id").
+		Joins("JOIN pm_tasks s ON s.id = sl.task_id").
 		Where("sl.label_id IN ? AND s.archived = false", labelIDs).
 		Group("sl.label_id").
 		Scan(&storyRows).Error; err != nil {

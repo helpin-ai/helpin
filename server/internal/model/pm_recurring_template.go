@@ -40,7 +40,7 @@ const (
 	PMRecurringRunTriggerManualNow  = "generate_now"
 )
 
-// PMRecurringTemplate stores a recurring work template that generates normal stories.
+// PMRecurringTemplate stores a recurring work template that generates normal tasks.
 type PMRecurringTemplate struct {
 	ID                   string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID          string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -49,7 +49,7 @@ type PMRecurringTemplate struct {
 	Description          *string         `json:"description"`
 	Status               string          `json:"status" gorm:"not null;default:'active';index"`
 	OwnerMemberID        *string         `json:"owner_member_id" gorm:"type:uuid;index"`
-	CreatedFromStoryID   *string         `json:"created_from_story_id" gorm:"type:uuid;index"`
+	CreatedFromStoryID   *string         `json:"created_from_story_id" gorm:"column:created_from_task_id;type:uuid;index"`
 	SeedPayload          json.RawMessage `json:"seed_payload" gorm:"type:jsonb;not null;default:'{}'"`
 	Config               json.RawMessage `json:"config" gorm:"type:jsonb;not null;default:'{}'"`
 	StartDate            *time.Time      `json:"start_date" gorm:"type:date"`
@@ -57,7 +57,7 @@ type PMRecurringTemplate struct {
 	EndsAfterOccurrences *int            `json:"ends_after_occurrences"`
 	NextRunAt            *time.Time      `json:"next_run_at" gorm:"index"`
 	LastRunAt            *time.Time      `json:"last_run_at"`
-	LastGeneratedStoryID *string         `json:"last_generated_story_id" gorm:"type:uuid;index"`
+	LastGeneratedStoryID *string         `json:"last_generated_story_id" gorm:"column:last_generated_task_id;type:uuid;index"`
 	LastError            *string         `json:"last_error"`
 	FailureCount         int             `json:"failure_count" gorm:"not null;default:0"`
 	GeneratedCount       int             `json:"generated_count" gorm:"not null;default:0"`
@@ -81,7 +81,7 @@ type PMRecurringRun struct {
 	StartedAt        *time.Time `json:"started_at"`
 	FinishedAt       *time.Time `json:"finished_at"`
 	Status           string     `json:"status" gorm:"not null;index"`
-	GeneratedStoryID *string    `json:"generated_story_id" gorm:"type:uuid;index"`
+	GeneratedStoryID *string    `json:"generated_story_id" gorm:"column:generated_task_id;type:uuid;index"`
 	DedupeKey        string     `json:"dedupe_key" gorm:"not null;uniqueIndex"`
 	ErrorMessage     *string    `json:"error_message"`
 	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -107,11 +107,11 @@ type PMRecurringTemplateConfig struct {
 	SprintAssignmentMode string     `json:"sprint_assignment_mode,omitempty"`
 }
 
-// PMRecurringStorySeed stores the story defaults used for generation.
+// PMRecurringStorySeed stores the task defaults used for generation.
 type PMRecurringStorySeed struct {
 	Name              string                      `json:"name"`
 	Description       *string                     `json:"description,omitempty"`
-	StoryType         string                      `json:"story_type,omitempty"`
+	StoryType         string                      `json:"task_type,omitempty"`
 	WorkflowID        string                      `json:"workflow_id"`
 	WorkflowStateID   string                      `json:"workflow_state_id"`
 	EpicID            *string                     `json:"epic_id,omitempty"`
@@ -132,14 +132,14 @@ type CreateRecurringTemplateRequest struct {
 	WorkspaceID string                   `json:"workspace_id"`
 	Title       string                   `json:"title"`
 	Description *string                  `json:"description,omitempty"`
-	StoryID     string                   `json:"story_id"`
+	StoryID     string                   `json:"task_id"`
 	Config      PMRecurringTemplateConfig `json:"config"`
 }
 
 type UpdateRecurringTemplateRequest struct {
 	Title       *string                    `json:"title,omitempty"`
 	Description *string                    `json:"description,omitempty"`
-	StoryID     *string                    `json:"story_id,omitempty"`
+	StoryID     *string                    `json:"task_id,omitempty"`
 	Config      *PMRecurringTemplateConfig `json:"config,omitempty"`
 }
 

@@ -667,8 +667,8 @@ export default function Workspaces() {
                       <div className="space-y-2">
                         {([
                           { value: 'admin', label: 'Admin', description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
-                          { value: 'member', label: 'Member', description: 'Can create and edit stories in their teams. Can be promoted to team manager.' },
-                          { value: 'viewer', label: 'Viewer', description: 'Read-only access to stories, epics, and sprints in their assigned teams only.' },
+                          { value: 'member', label: 'Member', description: 'Can create and edit tasks in their teams. Can be promoted to team manager.' },
+                          { value: 'viewer', label: 'Viewer', description: 'Read-only access to tasks, epics, and sprints in their assigned teams only.' },
                         ] as const).map((role) => (
                           <button
                             key={role.value}

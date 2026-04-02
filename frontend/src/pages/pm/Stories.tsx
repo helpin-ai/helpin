@@ -7,7 +7,7 @@ interface StoriesPageProps {
 }
 
 export function StoriesPage({ teamId }: StoriesPageProps) {
-  useTitle('Stories');
+  useTitle('Tasks');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
 
   if (!workspace) {

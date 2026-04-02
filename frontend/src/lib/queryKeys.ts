@@ -24,11 +24,11 @@ export const queryKeys = {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
     epicStates: (wsId: string) => ['pm', wsId, 'epicStates'] as const,
 
-    stories: (wsId: string, filters?: Record<string, unknown>) =>
-      filters ? (['pm', wsId, 'stories', filters] as const) : (['pm', wsId, 'stories'] as const),
-    story: (wsId: string, id: string) => ['pm', wsId, 'stories', id] as const,
-    storyByDisplayId: (wsId: string, displayId: string) => ['pm', wsId, 'stories', 'displayId', displayId] as const,
-    storyActivity: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'activity'] as const,
+    tasks: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'tasks', filters] as const) : (['pm', wsId, 'tasks'] as const),
+    task: (wsId: string, id: string) => ['pm', wsId, 'tasks', id] as const,
+    taskByDisplayId: (wsId: string, displayId: string) => ['pm', wsId, 'tasks', 'displayId', displayId] as const,
+    taskActivity: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'activity'] as const,
 
     board: (wsId: string, workflowId?: string, filters?: Record<string, unknown>) =>
       ['pm', wsId, 'board', workflowId, filters] as const,
@@ -40,17 +40,17 @@ export const queryKeys = {
 
     epics: (wsId: string) => ['pm', wsId, 'epics'] as const,
     epic: (wsId: string, id: string) => ['pm', wsId, 'epics', id] as const,
-    epicStories: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'stories'] as const,
+    epicTasks: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'tasks'] as const,
     epicAssociations: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'associations'] as const,
 
     sprints: (wsId: string) => ['pm', wsId, 'sprints'] as const,
     sprintPlanning: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['pm', wsId, 'sprints', 'planning', filters] as const) : (['pm', wsId, 'sprints', 'planning'] as const),
     sprint: (wsId: string, id: string) => ['pm', wsId, 'sprints', id] as const,
-    sprintStories: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'stories'] as const,
+    sprintTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'tasks'] as const,
 
-    storyAssociations: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'associations'] as const,
-    storyRelationships: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'relationships'] as const,
+    taskAssociations: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'associations'] as const,
+    taskRelationships: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'relationships'] as const,
 
     labels: (wsId: string) => ['pm', wsId, 'labels'] as const,
     labelsWithStats: (wsId: string) => ['pm', wsId, 'labels', 'withStats'] as const,
@@ -62,7 +62,7 @@ export const queryKeys = {
     recurringTemplates: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['pm', wsId, 'recurringTemplates', filters] as const) : (['pm', wsId, 'recurringTemplates'] as const),
     recurringTemplate: (wsId: string, id: string) => ['pm', wsId, 'recurringTemplates', id] as const,
-    storyRecurringTemplate: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'recurringTemplate'] as const,
+    taskRecurringTemplate: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'recurringTemplate'] as const,
 
     automations: (wsId: string) => ['pm', wsId, 'automations'] as const,
 
@@ -79,10 +79,10 @@ export const queryKeys = {
     flowDBTemplates: (wsId: string) => ['pm', wsId, 'flowDBTemplates'] as const,
     flowDBTemplate: (wsId: string, templateId: string) => ['pm', wsId, 'flowDBTemplate', templateId] as const,
 
-    comments: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'comments'] as const,
-    checklists: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'checklists'] as const,
-    attachments: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'attachments'] as const,
-    externalLinks: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'externalLinks'] as const,
+    comments: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'comments'] as const,
+    checklists: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'checklists'] as const,
+    attachments: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'attachments'] as const,
+    externalLinks: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'externalLinks'] as const,
 
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
   },

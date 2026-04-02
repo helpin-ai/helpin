@@ -197,7 +197,7 @@ function CommentAttachments({
 
 interface CommentThreadProps {
   workspaceId: string;
-  entityType: 'story' | 'epic' | 'doc';
+  entityType: 'task' | 'epic' | 'doc';
   entityId: string;
   comments: CommentWithAuthor[];
   currentUserId?: string;
