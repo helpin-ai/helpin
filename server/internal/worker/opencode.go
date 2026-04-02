@@ -609,7 +609,7 @@ func resolveWorkingBranch(execCtx *ExecutionContext) (string, error) {
 	return branch, nil
 }
 
-func buildEngineerCommitMessage(story *model.PMStory) string {
+func buildEngineerCommitMessage(story *model.PMTask) string {
 	if story == nil {
 		return "tp: apply engineer run changes"
 	}

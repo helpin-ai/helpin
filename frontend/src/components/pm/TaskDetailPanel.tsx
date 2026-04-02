@@ -39,7 +39,7 @@ import {
   SprintIcon,
   StateTypeIcon,
   STORY_TYPE_CONFIG,
-  StoryTypeIcon,
+  TaskTypeIcon,
 } from '@/lib/pmConstants';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
@@ -123,10 +123,10 @@ import type {
   Priority,
   RecurringTemplateDetail,
   Severity,
-  StoryDetail,
-  StoryRecurringSummary,
-  StoryType,
-  UpdateStoryRequest,
+  TaskDetail,
+  TaskRecurringSummary,
+  TaskType,
+  UpdateTaskRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
 import { toast } from 'sonner';
@@ -139,17 +139,17 @@ interface TaskDetailPanelProps {
   open: boolean;
   loading?: boolean;
   onOpenChange: (open: boolean) => void;
-  taskDetail: StoryDetail | null;
+  taskDetail: TaskDetail | null;
   states: WorkflowState[];
-  initialRecurringSummary?: StoryRecurringSummary | null;
-  onTaskUpdated: (story: StoryDetail) => void;
+  initialRecurringSummary?: TaskRecurringSummary | null;
+  onTaskUpdated: (story: TaskDetail) => void;
   onTaskArchived: (storyId: string) => void;
 }
 
 interface FormState {
   name: string;
   description: string;
-  task_type: StoryType;
+  task_type: TaskType;
   workflow_state_id: string;
   priority: Priority;
   severity: Severity;
@@ -167,9 +167,9 @@ interface FormState {
 
 const priorityOptions: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 const severityOptions: Severity[] = ['none', 'minor', 'major', 'critical'];
-const storyTypeOptions: StoryType[] = ['feature', 'bug', 'chore'];
+const storyTypeOptions: TaskType[] = ['feature', 'bug', 'chore'];
 
-const buildFormState = (story: StoryDetail): FormState => ({
+const buildFormState = (story: TaskDetail): FormState => ({
   name: story.task.name,
   description: story.task.description ?? '',
   task_type: story.task.task_type,
@@ -279,11 +279,11 @@ function TaskDetailPanelBody({
   onStoryArchived,
 }: {
   workspaceId: string;
-  storyDetail: StoryDetail;
+  storyDetail: TaskDetail;
   states: WorkflowState[];
-  initialRecurringSummary: StoryRecurringSummary | null;
+  initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
-  onStoryUpdated: (story: StoryDetail) => void;
+  onStoryUpdated: (story: TaskDetail) => void;
   onStoryArchived: (storyId: string) => void;
 }) {
   const confirm = useConfirm();
@@ -291,18 +291,18 @@ function TaskDetailPanelBody({
   const queryClient = useQueryClient();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
-  const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
+  const [pendingPatch, setPendingPatch] = useState<UpdateTaskRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [labelSaving, setLabelSaving] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
-  const pendingPatchRef = useRef<UpdateStoryRequest>({});
+  const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
-  const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(initialRecurringSummary);
+  const [recurringSummary, setRecurringSummary] = useState<TaskRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
@@ -478,11 +478,11 @@ function TaskDetailPanelBody({
     })();
   }, [workspaceId]);
 
-  const queuePatch = (patch: UpdateStoryRequest) => {
+  const queuePatch = (patch: UpdateTaskRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
   };
 
-  const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateStoryRequest) => {
+  const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
     queuePatch(patch);
   };
@@ -1302,14 +1302,14 @@ function TaskDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.task_type}
                 options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
-                onChange={(v) => updateField('task_type', v as StoryType, { task_type: v as StoryType })}
+                onChange={(v) => updateField('task_type', v as TaskType, { task_type: v as TaskType })}
                 renderTrigger={() => (
                   <>
-                    <StoryTypeIcon storyType={form.task_type} className="h-3.5 w-3.5" />
+                    <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5" />
                     <span>{STORY_TYPE_CONFIG[form.task_type].label}</span>
                   </>
                 )}
-                renderOption={(v) => <><StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as StoryType].label}</span></>}
+                renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{STORY_TYPE_CONFIG[v as TaskType].label}</span></>}
               />
             </MetadataRow>
             )}

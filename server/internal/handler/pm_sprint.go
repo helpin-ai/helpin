@@ -143,7 +143,7 @@ func (h *PMSprintHandler) ListStories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stories == nil {
-		stories = []model.PMStory{}
+		stories = []model.PMTask{}
 	}
 	writeJSON(w, http.StatusOK, stories)
 }

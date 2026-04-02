@@ -247,10 +247,9 @@ type TaskDependencyTask struct {
 }
 
 // BoardTask is a task enriched with relation names for board display.
-// NOTE: embeds PMStory (alias for PMTask) to preserve the ".PMStory" field accessor
-// used by repository code until the repo layer is migrated to Task-era names.
+// NOTE: embeds PMTask for board display.
 type BoardTask struct {
-	PMStory
+	PMTask
 	EpicName             *string                    `json:"epic_name,omitempty"`
 	SprintName           *string                    `json:"sprint_name,omitempty"`
 	OwnerName            *string                    `json:"owner_name,omitempty"`

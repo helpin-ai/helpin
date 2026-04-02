@@ -15,7 +15,7 @@ import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDeta
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
-import type { StoryDetail, StoryRecurringSummary } from '@/lib/pmTypes';
+import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -75,7 +75,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
           return;
         }
 
-        let recurring: StoryRecurringSummary | null = null;
+        let recurring: TaskRecurringSummary | null = null;
         if (storyRes.data.task.recurring_template_id) {
           const { data } = await pmRecurringTemplateService.getByStory(workspaceId, activeStoryId);
           if (!cancelled) recurring = data ?? null;
@@ -105,7 +105,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     };
   }, [activeStoryId, handleClose, requestKey, workspaceId]);
 
-  const handleStoryUpdated = useCallback((updated: StoryDetail) => {
+  const handleStoryUpdated = useCallback((updated: TaskDetail) => {
     const patchedStory = buildPatchedTaskFromDetail(updated);
     setLoadedStory((current) =>
       current

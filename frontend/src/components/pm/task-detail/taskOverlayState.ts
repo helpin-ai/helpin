@@ -1,18 +1,18 @@
-import type { StoryDetail, StoryRecurringSummary, WorkflowState } from '@/lib/pmTypes';
+import type { TaskDetail, TaskRecurringSummary, WorkflowState } from '@/lib/pmTypes';
 
 export interface LoadedTaskState {
   storyId: string;
-  storyDetail: StoryDetail;
+  storyDetail: TaskDetail;
   states: WorkflowState[];
-  recurringSummary: StoryRecurringSummary | null;
+  recurringSummary: TaskRecurringSummary | null;
 }
 
 export interface TaskOverlayPresentationState {
   open: boolean;
   loading: boolean;
-  storyDetail: StoryDetail | null;
+  storyDetail: TaskDetail | null;
   states: WorkflowState[];
-  recurringSummary: StoryRecurringSummary | null;
+  recurringSummary: TaskRecurringSummary | null;
 }
 
 export function getTaskOverlayPresentationState(

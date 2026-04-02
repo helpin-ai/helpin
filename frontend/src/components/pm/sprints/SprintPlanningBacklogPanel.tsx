@@ -7,19 +7,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AssignableMember } from '@/lib/types';
-import type { Priority, SprintPlanningStoryPreview, StateType } from '@/lib/pmTypes';
+import type { Priority, SprintPlanningTaskPreview, StateType } from '@/lib/pmTypes';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { cn } from '@/lib/utils';
 
 interface SprintPlanningBacklogPanelProps {
   open: boolean;
   onToggle: () => void;
-  stories: SprintPlanningStoryPreview[];
+  stories: SprintPlanningTaskPreview[];
   total: number;
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
   onOpenStory: (storyId: string) => void;
-  onAddToActiveSprint: (story: SprintPlanningStoryPreview) => void;
+  onAddToActiveSprint: (story: SprintPlanningTaskPreview) => void;
   onCreateStory: () => void;
 }
 

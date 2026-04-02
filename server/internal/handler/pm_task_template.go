@@ -42,7 +42,7 @@ func (h *PMTaskTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if templates == nil {
-		templates = []model.PMStoryTemplate{}
+		templates = []model.PMTaskTemplate{}
 	}
 	writeJSON(w, http.StatusOK, templates)
 }
@@ -60,7 +60,7 @@ func (h *PMTaskTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/pm/story-templates.
 func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateStoryTemplateRequest
+	var req model.CreateTaskTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -79,7 +79,7 @@ func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Update handles PUT /api/pm/story-templates/{id}.
 func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var req model.UpdateStoryTemplateRequest
+	var req model.UpdateTaskTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

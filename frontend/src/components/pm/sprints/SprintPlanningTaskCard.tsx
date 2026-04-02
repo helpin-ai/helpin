@@ -6,13 +6,13 @@ import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { PRIORITY_BORDER_COLOR, PriorityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import type { AssignableMember } from '@/lib/types';
-import type { SprintPlanningStoryPreview } from '@/lib/pmTypes';
+import type { SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
 const pillBase = 'flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium';
 
 interface SprintPlanningTaskCardProps {
-  story: SprintPlanningStoryPreview;
+  story: SprintPlanningTaskPreview;
   owner?: AssignableMember;
   compact?: boolean;
   showBacklogAction?: boolean;

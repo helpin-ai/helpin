@@ -8,12 +8,6 @@ const (
 	TaskRelationshipActionDuplicates     = "duplicates"
 	TaskRelationshipActionIsDuplicatedBy = "is_duplicated_by"
 
-	// Backward-compat aliases.
-	StoryRelationshipActionRelatesTo      = TaskRelationshipActionRelatesTo
-	StoryRelationshipActionBlocks         = TaskRelationshipActionBlocks
-	StoryRelationshipActionIsBlockedBy    = TaskRelationshipActionIsBlockedBy
-	StoryRelationshipActionDuplicates     = TaskRelationshipActionDuplicates
-	StoryRelationshipActionIsDuplicatedBy = TaskRelationshipActionIsDuplicatedBy
 )
 
 // CreateTaskRelationshipRequest creates a directional task relationship from a task detail surface.

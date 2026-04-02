@@ -15,7 +15,7 @@ import (
 type PMAutomationService struct {
 	automationRepo  *repository.PMAutomationRepository
 	epicRepo        *repository.PMEpicRepository
-	storyRepo       *repository.PMStoryRepository
+	storyRepo       *repository.PMTaskRepository
 	sprintRepo      *repository.PMSprintRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
@@ -28,7 +28,7 @@ type PMAutomationService struct {
 func NewPMAutomationService(
 	automationRepo *repository.PMAutomationRepository,
 	epicRepo *repository.PMEpicRepository,
-	storyRepo *repository.PMStoryRepository,
+	storyRepo *repository.PMTaskRepository,
 	sprintRepo *repository.PMSprintRepository,
 	workflowRepo *repository.PMWorkflowRepository,
 	activityService *PMActivityService,
@@ -157,7 +157,7 @@ func (s *PMAutomationService) Delete(ctx context.Context, req model.DeleteAutoma
 
 // OnStoryStateChange is called after a story's workflow state changes.
 // It evaluates epic automations (auto-start, auto-complete).
-func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *model.PMStory, newStateID string) {
+func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *model.PMTask, newStateID string) {
 	if story.EpicID == nil || *story.EpicID == "" {
 		return
 	}

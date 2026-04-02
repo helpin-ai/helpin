@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { getTaskOverlayPresentationState } from '../taskOverlayState';
-import type { StoryDetail, StoryRecurringSummary, WorkflowState } from '@/lib/pmTypes';
+import type { TaskDetail, TaskRecurringSummary, WorkflowState } from '@/lib/pmTypes';
 
-function makeStoryDetail(id: string): StoryDetail {
+function makeTaskDetail(id: string): TaskDetail {
   return {
     story: {
       id,
     },
-  } as StoryDetail;
+  } as TaskDetail;
 }
 
 function makeWorkflowState(id: string): WorkflowState {
@@ -17,10 +17,10 @@ function makeWorkflowState(id: string): WorkflowState {
   } as WorkflowState;
 }
 
-function makeRecurringSummary(templateId: string): StoryRecurringSummary {
+function makeRecurringSummary(templateId: string): TaskRecurringSummary {
   return {
     template_id: templateId,
-  } as StoryRecurringSummary;
+  } as TaskRecurringSummary;
 }
 
 describe('getTaskOverlayPresentationState', () => {
@@ -40,7 +40,7 @@ describe('getTaskOverlayPresentationState', () => {
     expect(
       getTaskOverlayPresentationState('story-123', {
         storyId: 'story-999',
-        storyDetail: makeStoryDetail('story-999'),
+        storyDetail: makeTaskDetail('story-999'),
         states: [makeWorkflowState('done')],
         recurringSummary: makeRecurringSummary('template-999'),
       }),
@@ -56,7 +56,7 @@ describe('getTaskOverlayPresentationState', () => {
   it('shows the loaded story once the active story payload matches', () => {
     const loaded = {
       storyId: 'story-123',
-      storyDetail: makeStoryDetail('story-123'),
+      storyDetail: makeTaskDetail('story-123'),
       states: [makeWorkflowState('doing')],
       recurringSummary: makeRecurringSummary('template-123'),
     };
@@ -76,7 +76,7 @@ describe('getTaskOverlayPresentationState', () => {
     expect(
       getTaskOverlayPresentationState(null, {
         storyId: 'story-123',
-        storyDetail: makeStoryDetail('story-123'),
+        storyDetail: makeTaskDetail('story-123'),
         states: [makeWorkflowState('doing')],
         recurringSummary: makeRecurringSummary('template-123'),
       }),

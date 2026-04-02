@@ -15,14 +15,14 @@ import (
 // PMWorkflowService contains workflow business logic.
 type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
-	storyRepo    *repository.PMStoryRepository
+	storyRepo    *repository.PMTaskRepository
 	labelRepo    *repository.PMLabelRepository
 	wsPublisher  *websocket.Publisher
 	logger       *slog.Logger
 }
 
 // NewPMWorkflowService creates a new PMWorkflowService.
-func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
+func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
 	return &PMWorkflowService{
 		workflowRepo: workflowRepo,
 		storyRepo:    storyRepo,

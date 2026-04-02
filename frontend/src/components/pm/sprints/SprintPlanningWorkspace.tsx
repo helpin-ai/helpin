@@ -10,7 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { useMemo, useRef, useState } from 'react';
 import type { AssignableMember } from '@/lib/types';
-import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningStoryPreview } from '@/lib/pmTypes';
+import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { SprintPlanningBacklogPanel } from './SprintPlanningBacklogPanel';
 import { SprintPlanningColumn } from './SprintPlanningColumn';
 import { SprintPlanningEmptyState } from './SprintPlanningEmptyState';
@@ -26,7 +26,7 @@ interface SprintPlanningWorkspaceProps {
   onOpenStory: (storyId: string) => void;
   onCreateSprint: () => void;
   onCreateStory: (sprintId?: string) => void;
-  onAssignStory: (story: SprintPlanningStoryPreview, sprintId: string | null) => void;
+  onAssignStory: (story: SprintPlanningTaskPreview, sprintId: string | null) => void;
 }
 
 export function SprintPlanningWorkspace({
@@ -57,7 +57,7 @@ export function SprintPlanningWorkspace({
     null;
   const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
 
-  const [activeStory, setActiveStory] = useState<SprintPlanningStoryPreview | null>(null);
+  const [activeStory, setActiveStory] = useState<SprintPlanningTaskPreview | null>(null);
   // Ref persists the dropped story ID across the render gap where activeStory
   // is cleared but workspace data hasn't propagated yet
   const droppedStoryIdRef = useRef<string | null>(null);
@@ -70,13 +70,13 @@ export function SprintPlanningWorkspace({
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    const story = event.active.data.current?.story as SprintPlanningStoryPreview | undefined;
+    const story = event.active.data.current?.story as SprintPlanningTaskPreview | undefined;
     droppedStoryIdRef.current = null;
     setActiveStory(story ?? null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const story = (event.active.data.current?.story as SprintPlanningStoryPreview | undefined) ?? activeStory;
+    const story = (event.active.data.current?.story as SprintPlanningTaskPreview | undefined) ?? activeStory;
     const overId = event.over?.id ? String(event.over.id) : null;
     if (!story || !overId) {
       setActiveStory(null);

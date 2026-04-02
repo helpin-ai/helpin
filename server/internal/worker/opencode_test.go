@@ -33,7 +33,7 @@ func TestBuildOpenCodeConfigContentUsesTeampulseAgentAndPermissions(t *testing.T
 			PresetKey:    model.AgentPresetCodeBuilder,
 			AllowedTools: []byte(`["write_file","run_command"]`),
 		},
-		Task:   &model.PMStory{Name: "Implement notification preferences"},
+		Task:   &model.PMTask{Name: "Implement notification preferences"},
 		Config: DefaultWorkflowConfig(),
 	}
 
@@ -198,7 +198,7 @@ func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
 func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testing.T) {
 	result := buildOpenCodeUserPrompt(&ExecutionContext{
 		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
-		Task: &model.PMStory{Name: "Story"},
+		Task: &model.PMTask{Name: "Story"},
 	}, "Please implement the story.")
 
 	if result == "Please implement the story." {
@@ -454,7 +454,7 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 		BaseBranch:    "main",
 		WorkingBranch: "tp-123-implement",
 		Agent:         &model.Agent{AllowedTools: []byte(`["write_file","commit_and_push","open_pr"]`)},
-		Task:          &model.PMStory{DisplayID: 123, Name: "Implement notification preferences"},
+		Task:          &model.PMTask{DisplayID: 123, Name: "Implement notification preferences"},
 		OnGitPush: func(branch, sha string) error {
 			pushedBranch = branch
 			pushedSHA = sha
@@ -517,7 +517,7 @@ func TestPersistEngineerWorkspacePushesExistingLocalCommit(t *testing.T) {
 		BaseBranch:    "main",
 		WorkingBranch: "tp-123-implement",
 		Agent:         &model.Agent{AllowedTools: []byte(`["write_file","commit_and_push","open_pr"]`)},
-		Task:          &model.PMStory{DisplayID: 123, Name: "Implement notification preferences"},
+		Task:          &model.PMTask{DisplayID: 123, Name: "Implement notification preferences"},
 		OnGitPush: func(branch, sha string) error {
 			pushedBranch = branch
 			pushedSHA = sha

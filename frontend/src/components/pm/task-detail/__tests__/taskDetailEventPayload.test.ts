@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload';
-import type { StoryDetail } from '@/lib/pmTypes';
+import type { TaskDetail } from '@/lib/pmTypes';
 
 describe('buildPatchedTaskFromDetail', () => {
   it('merges board-enriched fields from story detail onto the story payload', () => {
@@ -46,7 +46,7 @@ describe('buildPatchedTaskFromDetail', () => {
         updated_at: '',
         color: '#123456',
       },
-    } satisfies StoryDetail;
+    } satisfies TaskDetail;
 
     expect(buildPatchedTaskFromDetail(detail)).toMatchObject({
       id: 'story-1',

@@ -82,7 +82,7 @@ func TestUpsertSpecClarificationsSectionReplacesExistingSection(t *testing.T) {
 
 func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	priority := "critical"
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{
 			Name:               "Stabilize ingest",
 			TaskType:          "task",
@@ -94,23 +94,23 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	if err := validatePlanningTasks(stories); err != nil {
 		t.Fatalf("validatePlanningTasks returned error: %v", err)
 	}
-	if stories[0].TaskType != model.PMStoryTypeChore {
+	if stories[0].TaskType != model.PMTaskTypeChore {
 		t.Fatalf("expected story type to normalize to chore, got %q", stories[0].TaskType)
 	}
-	if stories[0].Priority == nil || *stories[0].Priority != model.PMStoryPriorityUrgent {
+	if stories[0].Priority == nil || *stories[0].Priority != model.PMTaskPriorityUrgent {
 		t.Fatalf("expected priority to normalize to urgent, got %#v", stories[0].Priority)
 	}
 }
 
 func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 	priority := "normal"
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{
 			Name:               "Render structured planner questions",
 			TaskType:          "feature",
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Question blocks render inline"},
-			ImplementationBrief: &model.StoryImplementationBrief{
+			ImplementationBrief: &model.TaskImplementationBrief{
 				Approach:       " follow the existing transcript renderer ",
 				TestStrategy:   " add parser coverage ",
 				VerticalLayers: []string{" frontend_component ", "", "frontend_hook"},
@@ -155,7 +155,7 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 }
 
 func TestValidatePlanningStoriesReturnsRepairOrientedErrorForMissingName(t *testing.T) {
-	stories := []model.ProposedStory{
+	stories := []model.ProposedTask{
 		{
 			Description:        "Missing title field",
 			TaskType:          "feature",
@@ -209,8 +209,8 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		t.Fatalf("create epic: %v", err)
 	}
 
-	storyRepo := repository.NewPMStoryRepository(db)
-	storyService := NewPMStoryService(
+	storyRepo := repository.NewPMTaskRepository(db)
+	storyService := NewPMTaskService(
 		storyRepo,
 		repository.NewWorkspaceRepository(db),
 		repository.NewPMWorkflowRepository(db),
@@ -232,12 +232,12 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		storyService: storyService,
 	}
 
-	stories, err := svc.createStoriesFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedStory{
+	stories, err := svc.createStoriesFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedTask{
 		{
 			Ref:                "NATS-1",
 			Name:               "Add NATS configuration module",
 			Description:        "Create the initial configuration slice for NATS support.",
-			TaskType:          model.PMStoryTypeFeature,
+			TaskType:          model.PMTaskTypeFeature,
 			AcceptanceCriteria: []string{"NATS configuration can be loaded for the service"},
 		},
 	})
@@ -269,7 +269,7 @@ func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
 }
 
 func TestRenderPlannedStoryDescriptionRendersHTML(t *testing.T) {
-	html := renderPlannedTaskDescription(model.ProposedStory{
+	html := renderPlannedTaskDescription(model.ProposedTask{
 		Description: "Document all new metrics and validation checks.",
 		AcceptanceCriteria: []string{
 			"GIVEN metrics docs WHEN opened THEN names and labels are documented",

@@ -157,58 +157,28 @@ func (h *GitHandler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, repo)
 }
 
-// GetStoryGitLinks handles GET /api/pm/tasks/{id}/git-links.
-func (h *GitHandler) GetStoryGitLinks(w http.ResponseWriter, r *http.Request) {
+// GetTaskGitLinks handles GET /api/pm/tasks/{id}/git-links.
+func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
 
-	links, err := h.gitService.GetStoryGitLinks(r.Context(), workspaceID, storyID)
+	links, err := h.gitService.GetTaskGitLinks(r.Context(), workspaceID, storyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if links == nil {
-		links = []model.StoryGitLink{}
+		links = []model.TaskGitLink{}
 	}
 	writeJSON(w, http.StatusOK, links)
 }
 
-// GetTaskGitLinks handles GET /api/pm/tasks/{id}/git-links.
-func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
-	h.GetStoryGitLinks(w, r)
-}
-
-// GetStoryDeliveryTarget handles GET /api/pm/tasks/{id}/delivery-target.
-func (h *GitHandler) GetStoryDeliveryTarget(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
-
-	target, err := h.gitService.GetStoryDeliveryTarget(r.Context(), workspaceID, storyID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, target)
-}
-
 // GetTaskDeliveryTarget handles GET /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) GetTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
-	h.GetStoryDeliveryTarget(w, r)
-}
-
-// UpdateStoryDeliveryTarget handles PUT /api/pm/tasks/{id}/delivery-target.
-func (h *GitHandler) UpdateStoryDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	storyID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
 
-	var req model.UpdateStoryDeliveryTargetRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	target, err := h.gitService.UpdateStoryDeliveryTarget(r.Context(), workspaceID, storyID, req, actorID)
+	target, err := h.gitService.GetTaskDeliveryTarget(r.Context(), workspaceID, storyID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -218,7 +188,22 @@ func (h *GitHandler) UpdateStoryDeliveryTarget(w http.ResponseWriter, r *http.Re
 
 // UpdateTaskDeliveryTarget handles PUT /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
-	h.UpdateStoryDeliveryTarget(w, r)
+	workspaceID := getWorkspaceID(r)
+	storyID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateTaskDeliveryTargetRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	target, err := h.gitService.UpdateTaskDeliveryTarget(r.Context(), workspaceID, storyID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, target)
 }
 
 // CreateBranch handles POST /api/pm/tasks/{id}/create-branch.

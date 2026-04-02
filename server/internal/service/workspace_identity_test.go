@@ -157,13 +157,13 @@ func TestInviteServiceCreateAndAcceptInvitationUsesWorkspaceMemberIdentity(t *te
 	}
 }
 
-func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
+func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	db := newWorkspaceIdentityTestDB(t)
 	ctx := context.Background()
 
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 
 	actor := seedWorkspaceIdentityUser(t, db, "user-actor", "actor@example.com", "Actor User")
@@ -180,7 +180,7 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 
 	seedWorkflowForStoryTest(t, db, "ws-1", "wf-1", "state-1")
 
-	svc := NewPMStoryService(
+	svc := NewPMTaskService(
 		storyRepo,
 		workspaceRepo,
 		workflowRepo,
@@ -197,7 +197,7 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 		nil,
 	)
 
-	story, err := svc.Create(ctx, model.CreateStoryRequest{
+	story, err := svc.Create(ctx, model.CreateTaskRequest{
 		WorkspaceID:     "ws-1",
 		Name:            "Pending assignee story",
 		WorkflowID:      "wf-1",
@@ -241,7 +241,7 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	}
 }
 
-func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
+func TestPMTaskRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 	db := newWorkspaceIdentityTestDB(t)
 	ctx := context.Background()
 
@@ -261,13 +261,13 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 		t.Fatalf("seed done state: %v", err)
 	}
 
-	stories := []model.PMStory{
-		{ID: "source-active", WorkspaceID: "ws-1", DisplayID: 1, Name: "Source active", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "target-active", WorkspaceID: "ws-1", DisplayID: 2, Name: "Target active", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "source-done", WorkspaceID: "ws-1", DisplayID: 3, Name: "Source done", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-done", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Completed: true, CompletedAt: timePtr(time.Now().UTC()), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "target-cleared", WorkspaceID: "ws-1", DisplayID: 4, Name: "Target cleared", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "legacy-external", WorkspaceID: "ws-1", DisplayID: 5, Name: "Legacy external", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Blocked: true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "external-note", WorkspaceID: "ws-1", DisplayID: 6, Name: "External note", TaskType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Blocker: strPtr("Waiting on vendor"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+	stories := []model.PMTask{
+		{ID: "source-active", WorkspaceID: "ws-1", DisplayID: 1, Name: "Source active", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "target-active", WorkspaceID: "ws-1", DisplayID: 2, Name: "Target active", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "source-done", WorkspaceID: "ws-1", DisplayID: 3, Name: "Source done", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-done", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, Completed: true, CompletedAt: timePtr(time.Now().UTC()), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "target-cleared", WorkspaceID: "ws-1", DisplayID: 4, Name: "Target cleared", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "legacy-external", WorkspaceID: "ws-1", DisplayID: 5, Name: "Legacy external", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, Blocked: true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "external-note", WorkspaceID: "ws-1", DisplayID: 6, Name: "External note", TaskType: model.PMTaskTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMTaskPriorityNone, Severity: model.PMTaskSeverityNone, Blocker: strPtr("Waiting on vendor"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 	}
 	for _, story := range stories {
 		if err := db.Create(&story).Error; err != nil {
@@ -275,9 +275,9 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 		}
 	}
 
-	links := []model.PMStoryLink{
-		{ID: "link-1", WorkspaceID: "ws-1", SourceStoryID: "source-active", TargetStoryID: "target-active", LinkType: model.PMStoryLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: "link-2", WorkspaceID: "ws-1", SourceStoryID: "source-done", TargetStoryID: "target-cleared", LinkType: model.PMStoryLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+	links := []model.PMTaskLink{
+		{ID: "link-1", WorkspaceID: "ws-1", SourceStoryID: "source-active", TargetStoryID: "target-active", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "link-2", WorkspaceID: "ws-1", SourceStoryID: "source-done", TargetStoryID: "target-cleared", LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 	}
 	for _, link := range links {
 		if err := db.Create(&link).Error; err != nil {
@@ -285,7 +285,7 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 		}
 	}
 
-	repo := repository.NewPMStoryRepository(db)
+	repo := repository.NewPMTaskRepository(db)
 
 	active, err := repo.GetByID(ctx, "target-active")
 	if err != nil {
@@ -317,7 +317,7 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 		t.Fatalf("legacy blocked fallback mismatch: %#v", legacy.Story)
 	}
 
-	_, total, err := repo.List(ctx, "ws-1", model.PMStoryFilters{Blocked: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
+	_, total, err := repo.List(ctx, "ws-1", model.PMTaskFilters{Blocked: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
 	if err != nil {
 		t.Fatalf("list blocked stories: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
 		t.Fatalf("blocked story total = %d, want 3", total)
 	}
 
-	blockingStories, total, err := repo.List(ctx, "ws-1", model.PMStoryFilters{Blocking: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
+	blockingStories, total, err := repo.List(ctx, "ws-1", model.PMTaskFilters{Blocking: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
 	if err != nil {
 		t.Fatalf("list blocking stories: %v", err)
 	}

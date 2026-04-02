@@ -42,11 +42,11 @@ func nilIfEmpty(value string) *string {
 // AutomationRuleEngine evaluates automation rules against events and executes actions.
 type AutomationRuleEngine struct {
 	ruleRepo        *repository.AutomationRuleRepository
-	storyRepo       *repository.PMStoryRepository
+	storyRepo       *repository.PMTaskRepository
 	workflowRepo    *repository.PMWorkflowRepository
-	deliveryRepo    *repository.StoryDeliveryTargetRepository
+	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	agentService    *AgentService
-	storyService    *PMStoryService
+	storyService    *PMTaskService
 	gitService      *GitService
 	commandService  *InternalCommandService
 	notificationSvc *NotificationService
@@ -59,9 +59,9 @@ type AutomationRuleEngine struct {
 // NewAutomationRuleEngine creates a new AutomationRuleEngine.
 func NewAutomationRuleEngine(
 	ruleRepo *repository.AutomationRuleRepository,
-	storyRepo *repository.PMStoryRepository,
+	storyRepo *repository.PMTaskRepository,
 	workflowRepo *repository.PMWorkflowRepository,
-	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	gitService *GitService,
 	notificationSvc *NotificationService,
 	activitySvc *PMActivityService,
@@ -87,7 +87,7 @@ func (e *AutomationRuleEngine) SetAgentService(svc *AgentService) *AutomationRul
 }
 
 // SetStoryService sets the story service (breaks circular dependency).
-func (e *AutomationRuleEngine) SetStoryService(svc *PMStoryService) *AutomationRuleEngine {
+func (e *AutomationRuleEngine) SetStoryService(svc *PMTaskService) *AutomationRuleEngine {
 	e.storyService = svc
 	return e
 }
@@ -189,7 +189,7 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 }
 
 // resolveStoryIfNeeded loads the story for story-based triggers, returns nil for cron triggers.
-func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event model.AutomationEvent) (*model.PMStory, error) {
+func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event model.AutomationEvent) (*model.PMTask, error) {
 	switch event.TriggerType {
 	case model.TriggerCron:
 		return nil, nil
@@ -249,7 +249,7 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 	}
 }
 
-func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMStory, event model.AutomationEvent) bool {
+func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMTask, event model.AutomationEvent) bool {
 	if story != nil {
 		if rule.WorkflowID != nil && *rule.WorkflowID != "" && *rule.WorkflowID != story.WorkflowID {
 			return false
@@ -268,7 +268,7 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *mo
 	return true
 }
 
-func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, execCtx *model.RuleExecutionContext) error {
+func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, execCtx *model.RuleExecutionContext) error {
 	switch rule.ActionType {
 	case model.ActionRunAgent:
 		return fmt.Errorf("run_agent is no longer supported")
@@ -309,7 +309,7 @@ func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.Au
 	}
 }
 
-func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
+func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigRunAgent) error {
 	if e.agentService == nil {
 		return fmt.Errorf("agent service not configured")
 	}
@@ -377,7 +377,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
+func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
 	if e.storyService == nil {
 		return fmt.Errorf("task service not configured")
 	}
@@ -408,7 +408,7 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 
 	// Move the story. MoveToState triggers EvaluateEvent (with chain context
 	// from chainCtx) — no separate call needed here.
-	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveStoryRequest{
+	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveTaskRequest{
 		StateID: cfg.TargetStateID,
 	}, "system")
 	if err != nil {
@@ -422,7 +422,7 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMergeBranch) error {
+func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigMergeBranch) error {
 	if e.gitService == nil {
 		return fmt.Errorf("git service not configured")
 	}
@@ -483,7 +483,7 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 	return nil
 }
 
-func (e *AutomationRuleEngine) executeRunCommand(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunCommand) error {
+func (e *AutomationRuleEngine) executeRunCommand(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigRunCommand) error {
 	if e.commandService == nil {
 		return fmt.Errorf("command service not configured")
 	}

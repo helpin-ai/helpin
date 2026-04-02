@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestStoryImplementationBriefUnmarshalAllowsStringFilesToModify(t *testing.T) {
-	var brief StoryImplementationBrief
+func TestTaskImplementationBriefUnmarshalAllowsStringFilesToModify(t *testing.T) {
+	var brief TaskImplementationBrief
 	err := json.Unmarshal([]byte(`{
 		"approach": "Follow the existing planner flow",
 		"files_to_modify": [
@@ -54,8 +54,8 @@ func TestFileChangeUnmarshalDefaultsInvalidActionToModify(t *testing.T) {
 	}
 }
 
-func TestStoryImplementationBriefUnmarshalAllowsArrayTestStrategy(t *testing.T) {
-	var brief StoryImplementationBrief
+func TestTaskImplementationBriefUnmarshalAllowsArrayTestStrategy(t *testing.T) {
+	var brief TaskImplementationBrief
 	err := json.Unmarshal([]byte(`{
 		"approach": "Follow the approved proposal",
 		"files_to_modify": [
@@ -73,8 +73,8 @@ func TestStoryImplementationBriefUnmarshalAllowsArrayTestStrategy(t *testing.T) 
 	}
 }
 
-func TestProposedStoryUnmarshalAllowsTitleAndTypeAliases(t *testing.T) {
-	var story ProposedStory
+func TestProposedTaskUnmarshalAllowsTitleAndTypeAliases(t *testing.T) {
+	var story ProposedTask
 	err := json.Unmarshal([]byte(`{
 		"ref": "story_1",
 		"title": "Add 4xx error metrics tracking infrastructure",
@@ -94,8 +94,8 @@ func TestProposedStoryUnmarshalAllowsTitleAndTypeAliases(t *testing.T) {
 	}
 }
 
-func TestStoryImplementationBriefUnmarshalReturnsRepairOrientedTestStrategyError(t *testing.T) {
-	var brief StoryImplementationBrief
+func TestTaskImplementationBriefUnmarshalReturnsRepairOrientedTestStrategyError(t *testing.T) {
+	var brief TaskImplementationBrief
 	err := json.Unmarshal([]byte(`{
 		"approach": "Follow the approved proposal",
 		"files_to_modify": [],

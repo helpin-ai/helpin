@@ -32,7 +32,7 @@ func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, 
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "epicadmin@test.com", "Epic Admin", model.RoleAdmin)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -239,7 +239,7 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "viewer@test.com", "Viewer", model.RoleMember)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -497,7 +497,7 @@ func TestPMEpicService_Delete_Forbidden(t *testing.T) {
 	seedWorkspaceMember(t, db, "member-del-manager", wsID, managerUserID, "delmanager@test.com", "Manager", model.RoleMember)
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)

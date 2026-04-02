@@ -66,7 +66,7 @@ func (h *AssociationsHandler) CreateStoryRelationship(w http.ResponseWriter, r *
 	storyID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	var req model.CreateStoryRelationshipRequest
+	var req model.CreateTaskRelationshipRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -96,7 +96,7 @@ func (h *AssociationsHandler) CreateTaskRelationship(w http.ResponseWriter, r *h
 		return
 	}
 
-	link, err := h.associationsService.CreateStoryRelationship(r.Context(), workspaceID, taskID, actorID, model.CreateStoryRelationshipRequest{
+	link, err := h.associationsService.CreateStoryRelationship(r.Context(), workspaceID, taskID, actorID, model.CreateTaskRelationshipRequest{
 		RelationshipType: req.RelationshipType,
 		OtherTaskID:      req.OtherTaskID,
 	})

@@ -66,7 +66,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 		Title               string                   `json:"title"`
 		Description         string                   `json:"description"`
 		TaskType            string                   `json:"task_type"`
-		StoryType           string                   `json:"story_type"`
+		LegacyTaskType      string                   `json:"story_type"`
 		Type                string                   `json:"type"`
 		Estimate            *int                     `json:"estimate"`
 		Priority            *string                  `json:"priority,omitempty"`
@@ -86,7 +86,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 	p.Ref = strings.TrimSpace(raw.Ref)
 	p.Name = strings.TrimSpace(firstNonEmpty(raw.Name, raw.Title))
 	p.Description = strings.TrimSpace(raw.Description)
-	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.StoryType, raw.Type))
+	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.LegacyTaskType, raw.Type))
 	p.Estimate = raw.Estimate
 	p.Priority = raw.Priority
 	p.AcceptanceCriteria = raw.AcceptanceCriteria

@@ -14,7 +14,7 @@ import (
 // PMChecklistItemService contains checklist item business logic.
 type PMChecklistItemService struct {
 	repo                *repository.PMChecklistItemRepository
-	storyRepo           *repository.PMStoryRepository
+	storyRepo           *repository.PMTaskRepository
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
@@ -23,7 +23,7 @@ type PMChecklistItemService struct {
 // NewPMChecklistItemService creates a new PMChecklistItemService.
 func NewPMChecklistItemService(
 	repo *repository.PMChecklistItemRepository,
-	storyRepo *repository.PMStoryRepository,
+	storyRepo *repository.PMTaskRepository,
 	wsPublisher *websocket.Publisher,
 	notificationService *NotificationService,
 	workspaceRepo *repository.WorkspaceRepository,

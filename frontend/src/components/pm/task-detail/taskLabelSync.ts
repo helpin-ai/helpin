@@ -1,11 +1,11 @@
-import type { StoryDetail } from '@/lib/pmTypes';
+import type { TaskDetail } from '@/lib/pmTypes';
 
 interface LabelSyncResult {
   error?: string | null;
 }
 
 interface ReloadTaskResult {
-  data?: StoryDetail | null;
+  data?: TaskDetail | null;
   error?: string | null;
 }
 
@@ -16,7 +16,7 @@ interface SyncTaskLabelsWithFeedbackOptions {
   nextLabelIds: string[];
   syncLabels: (workspaceId: string, storyId: string, currentIds: string[], nextIds: string[]) => Promise<LabelSyncResult[]>;
   reloadTask: (workspaceId: string, storyId: string) => Promise<ReloadTaskResult>;
-  onTaskUpdated: (story: StoryDetail) => void;
+  onTaskUpdated: (story: TaskDetail) => void;
   onSaved?: () => void | Promise<void>;
   setSaving: (saving: boolean) => void;
   setSaveError: (error: string | null) => void;

@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService';
-import type { StoryTemplate } from '@/lib/pmTypes';
+import type { TaskTemplate } from '@/lib/pmTypes';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 
 interface TaskTemplatesSettingsProps {
@@ -20,7 +20,7 @@ function TemplateCard({
   onDuplicate,
   onDelete,
 }: {
-  template: StoryTemplate;
+  template: TaskTemplate;
   teamName?: string;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -76,9 +76,9 @@ function TemplateCard({
 
 export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTemplatesSettingsProps) {
   const { teams } = useAccessibleTeams(workspaceId);
-  const [templates, setTemplates] = useState<StoryTemplate[]>([]);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingTemplate, setEditingTemplate] = useState<StoryTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<string>(initialTeamId || '__all__');
@@ -104,7 +104,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
     if (error) reload();
   };
 
-  const handleDuplicate = async (tmpl: StoryTemplate) => {
+  const handleDuplicate = async (tmpl: TaskTemplate) => {
     const { error } = await pmTaskTemplateService.create({
       workspace_id: workspaceId,
       team_id: tmpl.team_id,

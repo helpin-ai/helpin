@@ -19,7 +19,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import { getSortableTaskCardStyle } from './TaskCard.sortable';
-import type { Agent, Priority, Severity, Story } from '@/lib/pmTypes';
+import type { Agent, Priority, Severity, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
@@ -39,9 +39,9 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 // ── Component ───────────────────────────────────────────────────────
 
 interface TaskCardProps {
-  story: Story;
+  story: Task;
   /** @deprecated Use BoardCallbacksContext instead. Kept for backward compat outside KanbanBoard. */
-  onOpen?: (story: Story) => void;
+  onOpen?: (story: Task) => void;
   isOverlay?: boolean;
   teamName?: string;
   /** @deprecated Use BoardDataContext instead */
@@ -51,13 +51,13 @@ interface TaskCardProps {
   /** @deprecated Use BoardDataContext instead */
   ownerNameMap?: Map<string, string>;
   /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onOwnerChanged?: (story: Story) => void;
+  onOwnerChanged?: (story: Task) => void;
   /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onPriorityChanged?: (story: Story) => void;
+  onPriorityChanged?: (story: Task) => void;
   /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onSeverityChanged?: (story: Story) => void;
+  onSeverityChanged?: (story: Task) => void;
   /** @deprecated Use BoardCallbacksContext.onStoryPatched instead */
-  onEstimateChanged?: (story: Story) => void;
+  onEstimateChanged?: (story: Task) => void;
   showStateBadge?: boolean;
   assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
 }
@@ -189,16 +189,16 @@ function TaskCardComponent({
   const blockedLabel = useMemo(() => {
     if (!story.blocked) return null;
     if (story.blocked_by_count && story.blocked_by_count > 0) {
-      if (story.blocked_by_count === 1 && story.blocked_by_stories?.[0]) {
-        return `Blocked by ${story.blocked_by_stories[0].display_id}`;
+      if (story.blocked_by_count === 1 && story.blocked_by_tasks?.[0]) {
+        return `Blocked by ${story.blocked_by_tasks[0].display_id}`;
       }
-      return `Blocked by ${story.blocked_by_count} stories`;
+      return `Blocked by ${story.blocked_by_count} tasks`;
     }
     if (story.blocker?.trim()) {
       return 'External blocker';
     }
     return 'Blocked';
-  }, [story.blocked, story.blocked_by_count, story.blocked_by_stories, story.blocker]);
+  }, [story.blocked, story.blocked_by_count, story.blocked_by_tasks, story.blocker]);
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
   const storyTypeCfg = STORY_TYPE_CONFIG[story.task_type];

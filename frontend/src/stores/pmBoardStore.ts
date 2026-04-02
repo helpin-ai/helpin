@@ -106,7 +106,7 @@ const cloneColumns = (columns: TaskStateColumn[]) =>
   columns.map((column) => ({
     ...column,
     stories: [...column.stories],
-    task_groups: (column.task_groups ?? column.story_groups)?.map((group) => ({
+    task_groups: column.task_groups?.map((group: TaskGroup) => ({
       ...group,
       stories: [...group.stories],
     })) ?? [],
@@ -153,7 +153,7 @@ const storyMatchesFilters = (story: Task, teamId: string | null, filters: BoardF
   if (!matchesCsv(story.owner_member_id, filters.owner_member_id)) return false;
   if (!matchesCsv(story.requester_member_id, filters.requester_member_id)) return false;
   if (filters.blocked && String(story.blocked) !== filters.blocked) return false;
-  if (filters.blocking && String(story.is_blocking_other_story ?? false) !== filters.blocking) return false;
+  if (filters.blocking && String(story.is_blocking_other_task ?? false) !== filters.blocking) return false;
   if (filters.updated_after && story.updated_at < filters.updated_after) return false;
   return true;
 };
@@ -529,7 +529,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
       target.stories = sortStories([...target.stories, ...newStories], target.state.state_type);
       if (isGroupedColumn(target)) {
-        target.task_groups = mergeStoryGroups(target.task_groups, res.data!.task_groups ?? res.data!.story_groups);
+        target.task_groups = mergeStoryGroups(target.task_groups, res.data!.task_groups);
       }
       target.has_more = target.stories.length < res.data!.total;
 

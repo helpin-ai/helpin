@@ -1092,7 +1092,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		completed := parseShortcutBool(row.IsCompleted)
 		started := startedAt != nil || completedAt != nil || completed
 		externalID := row.ID
-		story := model.PMStory{
+		story := model.PMTask{
 			WorkspaceID:       workspaceID,
 			DisplayID:         maxDisplayID,
 			Name:              fallbackName(row.Name, fmt.Sprintf("Untitled Story (SC-%s)", row.ID)),
@@ -1130,7 +1130,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		result.StoriesCreated++
 
 		for _, owner := range ownerIDs {
-			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMStoryOwner{
+			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMTaskOwner{
 				TaskID: story.ID,
 				UserID: owner,
 			}).Error; err != nil {
@@ -1141,7 +1141,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 
 		for _, label := range shortcutLabelNames(row.Labels) {
 			if labelID, ok := labelMap[normalizeShortcutName(label)]; ok {
-				if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMStoryLabel{
+				if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMTaskLabel{
 					TaskID:  story.ID,
 					LabelID: labelID,
 				}).Error; err != nil {
@@ -1228,7 +1228,7 @@ func (s *PMImportService) importShortcutComments(ctx context.Context, client *Sh
 		return 0, 0, nil
 	}
 	if err := s.db.WithContext(ctx).
-		Model(&model.PMStory{}).
+		Model(&model.PMTask{}).
 		Select("id, external_id").
 		Where("workspace_id = ? AND external_id IN ?", workspaceID, externalIDs).
 		Scan(&storyRows).Error; err != nil {
@@ -1381,7 +1381,7 @@ func (s *PMImportService) countStoryDuplicates(ctx context.Context, workspaceID 
 	}
 	var count int64
 	if err := s.db.WithContext(ctx).
-		Model(&model.PMStory{}).
+		Model(&model.PMTask{}).
 		Where("workspace_id = ? AND external_id IN ?", workspaceID, externalIDs).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count duplicate stories: %w", err)
@@ -1395,7 +1395,7 @@ func (s *PMImportService) lookupStoriesByExternalID(ctx context.Context, tx *gor
 	if len(externalIDs) == 0 {
 		return map[string]string{}, nil
 	}
-	if err := tx.WithContext(ctx).Model(&model.PMStory{}).
+	if err := tx.WithContext(ctx).Model(&model.PMTask{}).
 		Select("id, external_id").
 		Where("workspace_id = ? AND external_id IN ?", workspaceID, externalIDs).
 		Scan(&rows).Error; err != nil {
@@ -1467,7 +1467,7 @@ func (s *PMImportService) lookupSprintsByExternalID(ctx context.Context, tx *gor
 
 func (s *PMImportService) maxStoryDisplayID(ctx context.Context, tx *gorm.DB, workspaceID string) (int, error) {
 	var maxID int
-	if err := tx.WithContext(ctx).Model(&model.PMStory{}).
+	if err := tx.WithContext(ctx).Model(&model.PMTask{}).
 		Where("workspace_id = ?", workspaceID).
 		Select("COALESCE(MAX(display_id), 0)").
 		Scan(&maxID).Error; err != nil {
@@ -1710,39 +1710,39 @@ func fallbackStateWarningKey(workflowID, workflowName, stateName string) string 
 func mapShortcutPriority(raw string) string {
 	switch normalizeShortcutName(raw) {
 	case "highest":
-		return model.PMStoryPriorityUrgent
+		return model.PMTaskPriorityUrgent
 	case "high":
-		return model.PMStoryPriorityHigh
+		return model.PMTaskPriorityHigh
 	case "medium":
-		return model.PMStoryPriorityMedium
+		return model.PMTaskPriorityMedium
 	case "low", "lowest":
-		return model.PMStoryPriorityLow
+		return model.PMTaskPriorityLow
 	default:
-		return model.PMStoryPriorityNone
+		return model.PMTaskPriorityNone
 	}
 }
 
 func mapShortcutSeverity(raw string) string {
 	switch normalizeShortcutName(raw) {
 	case "severity 0":
-		return model.PMStorySeverityCritical
+		return model.PMTaskSeverityCritical
 	case "severity 1":
-		return model.PMStorySeverityMajor
+		return model.PMTaskSeverityMajor
 	case "severity 2":
-		return model.PMStorySeverityMinor
+		return model.PMTaskSeverityMinor
 	default:
-		return model.PMStorySeverityNone
+		return model.PMTaskSeverityNone
 	}
 }
 
 func mapShortcutStoryType(raw string) string {
 	switch normalizeShortcutName(raw) {
-	case model.PMStoryTypeBug:
-		return model.PMStoryTypeBug
-	case model.PMStoryTypeChore:
-		return model.PMStoryTypeChore
+	case model.PMTaskTypeBug:
+		return model.PMTaskTypeBug
+	case model.PMTaskTypeChore:
+		return model.PMTaskTypeChore
 	default:
-		return model.PMStoryTypeFeature
+		return model.PMTaskTypeFeature
 	}
 }
 

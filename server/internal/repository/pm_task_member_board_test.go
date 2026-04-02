@@ -11,11 +11,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
+func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 	t.Parallel()
 
-	db := newPMStoryMemberBoardTestDB(t)
-	repo := NewPMStoryRepository(db)
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
 	ctx := context.Background()
 
 	const (
@@ -28,18 +28,18 @@ func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
 		memberID     = "member-member-board"
 	)
 
-	seedPMStoryMemberBoardUser(t, db, userID, "member-board@test.com", "Member Board User")
-	seedPMStoryMemberBoardWorkspace(t, db, workspaceID, userID)
-	seedPMStoryMemberBoardMember(t, db, memberID, workspaceID, userID, "Member Board User")
-	seedPMStoryMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
+	seedPMTaskMemberBoardUser(t, db, userID, "member-board@test.com", "Member Board User")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, userID)
+	seedPMTaskMemberBoardMember(t, db, memberID, workspaceID, userID, "Member Board User")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, doingStateID, doneStateID)
 
 	now := time.Date(2026, 3, 22, 12, 0, 0, 0, time.UTC)
-	insertPMStoryMemberBoardStory(t, db, "story-started", workspaceID, workflowID, doingStateID, memberID, 1, 0, now.Add(3*time.Minute))
-	insertPMStoryMemberBoardStory(t, db, "story-todo-1", workspaceID, workflowID, todoStateID, memberID, 2, 1, now.Add(1*time.Minute))
-	insertPMStoryMemberBoardStory(t, db, "story-todo-2", workspaceID, workflowID, todoStateID, memberID, 3, 5, now.Add(2*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-started", workspaceID, workflowID, doingStateID, memberID, 1, 0, now.Add(3*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-todo-1", workspaceID, workflowID, todoStateID, memberID, 2, 1, now.Add(1*time.Minute))
+	insertPMTaskMemberBoardTask(t, db, "story-todo-2", workspaceID, workflowID, todoStateID, memberID, 3, 5, now.Add(2*time.Minute))
 
 	t.Run("ListByMember orders by workflow state then story position", func(t *testing.T) {
-		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMStoryFilters{}, 10, false, nil)
+		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMTaskFilters{}, 10, false, nil)
 		if err != nil {
 			t.Fatalf("ListByMember: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
 	})
 
 	t.Run("ListMemberColumnStories uses the same deterministic ordering", func(t *testing.T) {
-		stories, total, err := repo.ListMemberColumnStories(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMStoryFilters{}, 0, 10)
+		stories, total, err := repo.ListMemberColumnStories(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMTaskFilters{}, 0, 10)
 		if err != nil {
 			t.Fatalf("ListMemberColumnStories: %v", err)
 		}
@@ -79,7 +79,7 @@ func TestPMStoryRepository_MemberBoardOrdering(t *testing.T) {
 	})
 }
 
-func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
+func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	dbName := fmt.Sprintf("file:pm-story-member-board-%d?mode=memory&cache=shared", time.Now().UnixNano())
@@ -227,7 +227,7 @@ func newPMStoryMemberBoardTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func seedPMStoryMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName string) {
+func seedPMTaskMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -238,7 +238,7 @@ func seedPMStoryMemberBoardUser(t *testing.T, db *gorm.DB, id, email, fullName s
 	}
 }
 
-func seedPMStoryMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, ownerID string) {
+func seedPMTaskMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, ownerID string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -249,7 +249,7 @@ func seedPMStoryMemberBoardWorkspace(t *testing.T, db *gorm.DB, workspaceID, own
 	}
 }
 
-func seedPMStoryMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspaceID, userID, displayName string) {
+func seedPMTaskMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspaceID, userID, displayName string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -260,7 +260,7 @@ func seedPMStoryMemberBoardMember(t *testing.T, db *gorm.DB, memberID, workspace
 	}
 }
 
-func seedPMStoryMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, workspaceID, todoStateID, doingStateID, doneStateID string) {
+func seedPMTaskMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, workspaceID, todoStateID, doingStateID, doneStateID string) {
 	t.Helper()
 	now := time.Now().UTC()
 	if err := db.Exec(
@@ -291,7 +291,7 @@ func seedPMStoryMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, works
 	}
 }
 
-func insertPMStoryMemberBoardStory(t *testing.T, db *gorm.DB, storyID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
+func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, storyID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
 	t.Helper()
 	if err := db.Exec(
 		`INSERT INTO pm_stories (

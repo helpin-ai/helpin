@@ -102,8 +102,8 @@ func main() {
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
-	storyRepo := repository.NewPMStoryRepository(db)
-	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
+	storyRepo := repository.NewPMTaskRepository(db)
+	storyLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
@@ -124,8 +124,8 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
-	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
-	deliveryRepo := repository.NewStoryDeliveryTargetRepository(db)
+	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
+	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
@@ -312,7 +312,7 @@ func main() {
 		wsPublisher,
 	)
 	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
-	pmStoryService := service.NewPMStoryService(
+	pmStoryService := service.NewPMTaskService(
 		storyRepo,
 		workspaceRepo,
 		workflowRepo,

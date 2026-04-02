@@ -44,7 +44,7 @@ func TestPMSprintHandler_PlanningWorkspace(t *testing.T) {
 	}
 	if err := db.Exec(
 		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		"story-handler-backlog", workspaceID, 3001, "Backlog handler story", workflowID, todoStateID, nil, teamID, 3, 1, model.PMStoryPriorityMedium, now, now,
+		"story-handler-backlog", workspaceID, 3001, "Backlog handler story", workflowID, todoStateID, nil, teamID, 3, 1, model.PMTaskPriorityMedium, now, now,
 	).Error; err != nil {
 		t.Fatalf("seed story: %v", err)
 	}

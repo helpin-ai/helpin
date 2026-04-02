@@ -15,7 +15,7 @@ import (
 // PMEpicService contains epic business logic.
 type PMEpicService struct {
 	epicRepo            *repository.PMEpicRepository
-	storyRepo           *repository.PMStoryRepository
+	storyRepo           *repository.PMTaskRepository
 	labelRepo           *repository.PMLabelRepository
 	gitRepo             *repository.GitRepositoryRepository
 	attachmentRepo      *repository.PMAttachmentRepository
@@ -27,7 +27,7 @@ type PMEpicService struct {
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:            epicRepo,
 		storyRepo:           storyRepo,
@@ -483,7 +483,7 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 }
 
 // ListStories returns stories that belong to an epic.
-func (s *PMEpicService) ListStories(ctx context.Context, epicID string) ([]model.PMStory, error) {
+func (s *PMEpicService) ListStories(ctx context.Context, epicID string) ([]model.PMTask, error) {
 	return s.epicRepo.ListStories(ctx, epicID)
 }
 

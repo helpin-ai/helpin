@@ -27,7 +27,7 @@ import { pmLabelService } from '@/lib/services/pmLabelService';
 import {
   PriorityIcon,
   SeverityIcon,
-  StoryTypeIcon,
+  TaskTypeIcon,
   StateTypeIcon,
   PRIORITY_CONFIG,
   SEVERITY_CONFIG,
@@ -40,7 +40,7 @@ import type {
   Priority,
   Severity,
   StateType,
-  Story,
+  Task,
   WorkflowWithStates,
   EpicWithStats,
   SprintWithStats,
@@ -97,8 +97,8 @@ interface TaskListViewProps {
   filters?: BoardFilters;
   teamId?: string | null;
   /** When provided, use these stories instead of fetching internally. */
-  externalStories?: Story[];
-  onOpenTask: (story: Story) => void;
+  externalStories?: Task[];
+  onOpenTask: (story: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
@@ -119,7 +119,7 @@ const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 const LIST_PAGE_SIZE = 50;
 
-const columnHelper = createColumnHelper<Story>();
+const columnHelper = createColumnHelper<Task>();
 
 export function TaskListView({
   workspaceId,
@@ -154,7 +154,7 @@ export function TaskListView({
   useEffect(() => { displayInit(workspaceId); }, [workspaceId, displayInit]);
 
   const isExternal = externalStories !== undefined;
-  const [stories, setStories] = useState<Story[]>(externalStories ?? []);
+  const [stories, setStories] = useState<Task[]>(externalStories ?? []);
   const [loading, setLoading] = useState(!isExternal);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -279,7 +279,7 @@ export function TaskListView({
 
     const res = await pmTaskService.listBoard(workspaceId, workflow.workflow.id, boardFilters, LIST_PAGE_SIZE, includeAssociationData);
     if (res.data) {
-      const allStories: Story[] = [];
+      const allStories: Task[] = [];
       const perGroup = new Map<string, { hasMore: boolean; total: number; loaded: number }>();
       for (const col of res.data) {
         allStories.push(...col.stories);
@@ -369,15 +369,15 @@ export function TaskListView({
   }, [isExternal, externalStories]);
 
   // Optimistic inline update with rollback on failure
-  const updateStoryField = useCallback(
-    async (storyId: string, patch: Partial<Story>) => {
-      const optimisticPatch: Partial<Story> = { ...patch };
+  const updateTaskField = useCallback(
+    async (storyId: string, patch: Partial<Task>) => {
+      const optimisticPatch: Partial<Task> = { ...patch };
       if (Object.prototype.hasOwnProperty.call(patch, 'owner_member_id')) {
         const ownerMemberId = patch.owner_member_id;
         optimisticPatch.owner_name = ownerMemberId ? ownerNameMap.get(ownerMemberId) : undefined;
       }
 
-      let snapshot: Story[] = [];
+      let snapshot: Task[] = [];
       setStories((current) => {
         snapshot = current;
         return current.map((s) => (s.id === storyId ? { ...s, ...optimisticPatch } : s));
@@ -419,7 +419,7 @@ export function TaskListView({
       const res = await pmTaskService.get(workspaceId, storyId);
       if (!res.data?.task) return;
       const storyDetail = res.data!;
-      const merged: Story = {
+      const merged: Task = {
         ...storyDetail.task,
         labels: storyDetail.labels,
         epic_name: storyDetail.epic_name ?? storyDetail.task.epic_name,
@@ -477,7 +477,7 @@ export function TaskListView({
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <StoryTypeIcon storyType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
@@ -504,7 +504,7 @@ export function TaskListView({
               story={info.row.original}
               states={statesByWorkflowId.get(info.row.original.workflow_id) ?? workflow.states}
               stateMap={stateMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -517,7 +517,7 @@ export function TaskListView({
         cell: (info) => (
           <InlinePriorityCell
             story={info.row.original}
-            onUpdate={updateStoryField}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -529,7 +529,7 @@ export function TaskListView({
         cell: (info) => (
           <InlineSeverityCell
             story={info.row.original}
-            onUpdate={updateStoryField}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -541,7 +541,7 @@ export function TaskListView({
         cell: (info) => (
           <InlineEstimateCell
             story={info.row.original}
-            onUpdate={updateStoryField}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -559,7 +559,7 @@ export function TaskListView({
               story={info.row.original}
               assignableMembers={assignableMembers}
               ownerNameMap={ownerNameMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -575,7 +575,7 @@ export function TaskListView({
               story={info.row.original}
               teams={teams}
               teamMap={teamMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -591,7 +591,7 @@ export function TaskListView({
               story={info.row.original}
               epics={epics}
               epicMap={epicMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -607,7 +607,7 @@ export function TaskListView({
               story={info.row.original}
               sprints={sprints}
               sprintMap={sprintMap}
-              onUpdate={updateStoryField}
+              onUpdate={updateTaskField}
             />
           ),
         }
@@ -682,7 +682,7 @@ export function TaskListView({
         cell: (info) => (
           <InlineDeadlineCell
             story={info.row.original}
-            onUpdate={updateStoryField}
+            onUpdate={updateTaskField}
           />
         ),
       }),
@@ -735,7 +735,7 @@ export function TaskListView({
         ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -843,7 +843,7 @@ export function TaskListView({
       }),
     [columnSizing, columnVisibility, table, typeIconColumn],
   );
-  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
+  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Task> | undefined) : undefined;
 
   const estimateSize = useCallback(
     (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
@@ -858,11 +858,11 @@ export function TaskListView({
   });
 
   // Compute total story count (including unloaded) for per-group mode
-  const displayStoryCount = isPerGroupMode && groupHasMore.size > 0
+  const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : stories.length;
 
-  const getGroupTotalCount = (groupRow: Row<Story>) => {
+  const getGroupTotalCount = (groupRow: Row<Task>) => {
     if (!isPerGroupMode || !groupRow.subRows[0]) return undefined;
     return groupHasMore.get(groupRow.subRows[0].original.workflow_state_id)?.total;
   };
@@ -894,7 +894,7 @@ export function TaskListView({
             </SelectContent>
           </Select>
           <span className="text-xs text-muted-foreground">
-            {displayStoryCount} {displayStoryCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+            {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
           </span>
           <div className="ml-auto">
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
@@ -1002,19 +1002,19 @@ export function TaskListView({
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
                 <div className="ui-divider-bottom-fade bg-background">
-                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(pinnedGroupRow)} />
+                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(pinnedGroupRow)} />
                 </div>
               </div>
             )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index] as Row<Story>;
+              const row = rows[virtualRow.index] as Row<Task>;
               const isGrouped = row.getIsGrouped();
 
               // Determine if this is the last data row before the next group (for per-group "Load more")
               let showGroupLoadMore = false;
               let groupStateId = '';
               if (isPerGroupMode && !isGrouped) {
-                const nextRow = rows[virtualRow.index + 1] as Row<Story> | undefined;
+                const nextRow = rows[virtualRow.index + 1] as Row<Task> | undefined;
                 const isLastInGroup = !nextRow || nextRow.getIsGrouped();
                 if (isLastInGroup) {
                   groupStateId = row.original.workflow_state_id;
@@ -1039,7 +1039,7 @@ export function TaskListView({
                   }}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(row)} />
+                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(row)} />
                   ) : (
                     <>
                       <MemoDataRow
@@ -1077,15 +1077,15 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   groupBy,
   stateMap,
-  totalStoryCount,
+  totalTaskCount,
 }: {
-  row: Row<Story>;
+  row: Row<Task>;
   groupBy: TaskListGroupByOption;
   stateMap: Map<string, { name: string; stateType: string }>;
-  totalStoryCount?: number;
+  totalTaskCount?: number;
 }) {
   const subRows = row.subRows;
-  const storyCount = totalStoryCount ?? subRows.length;
+  const storyCount = totalTaskCount ?? subRows.length;
   const totalPoints = subRows.reduce((sum, r) => sum + (r.original.estimate ?? 0), 0);
   const completedPoints = subRows.reduce((sum, r) => {
     const stateInfo = stateMap.get(r.original.workflow_state_id);
@@ -1131,8 +1131,8 @@ const MemoDataRow = memo(function DataRow({
   columnSizingVersion,
   pinnedOffsets,
 }: {
-  row: Row<Story>;
-  onOpenTask: (story: Story) => void;
+  row: Row<Task>;
+  onOpenTask: (story: Task) => void;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
 }) {
@@ -1208,8 +1208,8 @@ function InlinePriorityCell({
   story,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  story: Task;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const p = story.priority;
@@ -1272,10 +1272,10 @@ function InlineStateCell({
   stateMap,
   onUpdate,
 }: {
-  story: Story;
+  story: Task;
   states: WorkflowWithStates['states'];
   stateMap: Map<string, { name: string; stateType: string }>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const current = stateMap.get(story.workflow_state_id);
@@ -1338,10 +1338,10 @@ function InlineOwnerCell({
   ownerNameMap,
   onUpdate,
 }: {
-  story: Story;
+  story: Task;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const ownerKey = story.owner_member_id;
   const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
@@ -1381,8 +1381,8 @@ function InlineSeverityCell({
   story,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  story: Task;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const s = story.severity;
@@ -1449,8 +1449,8 @@ function InlineEstimateCell({
   story,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  story: Task;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   return (
     <div onClick={(e) => e.stopPropagation()}>
@@ -1474,10 +1474,10 @@ function InlineTeamCell({
   teamMap,
   onUpdate,
 }: {
-  story: Story;
+  story: Task;
   teams: WorkspaceTeam[];
   teamMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const teamName = story.team_id ? teamMap.get(story.team_id) ?? 'Unknown' : null;
@@ -1540,10 +1540,10 @@ function InlineEpicCell({
   epicMap,
   onUpdate,
 }: {
-  story: Story;
+  story: Task;
   epics: EpicWithStats[];
   epicMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const epicName = story.epic_id ? epicMap.get(story.epic_id) ?? 'Unknown' : null;
@@ -1606,10 +1606,10 @@ function InlineSprintCell({
   sprintMap,
   onUpdate,
 }: {
-  story: Story;
+  story: Task;
   sprints: SprintWithStats[];
   sprintMap: Map<string, string>;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const sprintName = story.sprint_id ? sprintMap.get(story.sprint_id) ?? 'Unknown' : null;
@@ -1696,8 +1696,8 @@ function InlineDeadlineCell({
   story,
   onUpdate,
 }: {
-  story: Story;
-  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+  story: Task;
+  onUpdate: (storyId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const v = story.deadline;
@@ -1757,11 +1757,11 @@ function InlineLabelsCell({
   onLabelsChange,
   setStories,
 }: {
-  story: Story;
+  story: Task;
   workspaceId: string;
   allLabels: Label[];
   onLabelsChange: (labels: Label[]) => void;
-  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+  setStories: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const storyLabels = story.labels ?? [];
   return (
@@ -1795,11 +1795,11 @@ function InlineActionsCell({
   onOpenTask,
   setStories,
 }: {
-  story: Story;
+  story: Task;
   workspaceId: string;
   workspaceSlug: string | null;
-  onOpenTask: (story: Story) => void;
-  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+  onOpenTask: (story: Task) => void;
+  setStories: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const { copy } = useCopyToClipboard();
@@ -1816,7 +1816,7 @@ function InlineActionsCell({
     copy(url);
   };
 
-  const archiveStory = async () => {
+  const archiveTask = async () => {
     const { error } = await pmTaskService.remove(workspaceId, story.id);
     if (!error) {
       setStories((current) => current.filter((s) => s.id !== story.id));
@@ -1858,7 +1858,7 @@ function InlineActionsCell({
         title="Archive Task"
         description="This task will be hidden from the board and lists. You can restore it later from archived items."
         confirmLabel="Archive"
-        onConfirm={archiveStory}
+        onConfirm={archiveTask}
       />
     </div>
   );
