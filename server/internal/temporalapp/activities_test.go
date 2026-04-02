@@ -482,8 +482,8 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Ref != "story_1" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "story_1" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
 	}
 }
 
@@ -497,8 +497,8 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Name != "Story A" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
+		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
 	}
 }
 
@@ -523,9 +523,9 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testin
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	brief := proposal.ProposedStories[0].ImplementationBrief
+	brief := proposal.ProposedTasks[0].ImplementationBrief
 	if brief == nil {
-		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedStories[0])
+		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedTasks[0])
 	}
 	expected := "Add parser coverage\nAdd integration coverage"
 	if brief.TestStrategy != expected {
@@ -549,14 +549,14 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	if len(proposal.ProposedStories) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 {
+		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
 	}
-	if proposal.ProposedStories[0].Name != "Add 4xx error metrics tracking infrastructure" {
-		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedStories[0])
+	if proposal.ProposedTasks[0].Name != "Add 4xx error metrics tracking infrastructure" {
+		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedTasks[0])
 	}
-	if proposal.ProposedStories[0].StoryType != "feature" {
-		t.Fatalf("expected type alias to populate StoryType, got %#v", proposal.ProposedStories[0])
+	if proposal.ProposedTasks[0].TaskType != "feature" {
+		t.Fatalf("expected type alias to populate TaskType, got %#v", proposal.ProposedTasks[0])
 	}
 }
 
@@ -636,15 +636,15 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 	if err != nil {
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
-	if len(proposal.ProposedStories) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedStories)
+	if len(proposal.ProposedTasks) != 1 {
+		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
 	}
-	if proposal.ProposedStories[0].Estimate == nil || *proposal.ProposedStories[0].Estimate != 3 {
-		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedStories[0].Estimate)
+	if proposal.ProposedTasks[0].Estimate == nil || *proposal.ProposedTasks[0].Estimate != 3 {
+		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedTasks[0].Estimate)
 	}
-	brief := proposal.ProposedStories[0].ImplementationBrief
+	brief := proposal.ProposedTasks[0].ImplementationBrief
 	if brief == nil {
-		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedStories[0])
+		t.Fatalf("expected implementation brief, got %#v", proposal.ProposedTasks[0])
 	}
 	if brief.TestStrategy != `{"kind":"regression","owner":"qa"}` {
 		t.Fatalf("expected compact JSON test strategy, got %q", brief.TestStrategy)
@@ -2181,7 +2181,7 @@ func TestBuildDurableRunFactsCollectsGenericIDsFromStateAndRunInput(t *testing.T
 			AgentID:          "agent-1",
 			TargetType:       "crm_deal",
 			TargetID:         "deal-1",
-			StoryID:          strPtr("story-1"),
+			TaskID:           strPtr("story-1"),
 			ConversationID:   strPtr("conv-1"),
 			RepositoryID:     strPtr("repo-run"),
 			DeliveryTargetID: strPtr("delivery-run"),
@@ -2743,7 +2743,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
-					StoryType:       planned.StoryType,
+					TaskType:       planned.TaskType,
 					WorkflowID:      "wf-1",
 					WorkflowStateID: "state-1",
 					EpicID:          &epic.ID,
@@ -3053,7 +3053,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
 		DisplayID:       1,
-		StoryType:       model.PMStoryTypeFeature,
+		TaskType:       model.PMStoryTypeFeature,
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
 		Priority:        model.PMStoryPriorityNone,
@@ -3068,7 +3068,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		ID:             "run-story-doc",
 		WorkspaceID:    "ws-1",
 		AgentID:        agent.ID,
-		StoryID:        &story.ID,
+		TaskID:         &story.ID,
 		TargetType:     "story",
 		TargetID:       story.ID,
 		InvocationMode: model.InvocationModeInteractive,

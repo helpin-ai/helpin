@@ -80,7 +80,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const groupedStories = column.state.state_type === 'done' ? column.story_groups ?? [] : [];
+  const groupedStories = column.state.state_type === 'done' ? column.task_groups ?? column.story_groups ?? [] : [];
 
   // Memoize sortable items from preview stories
   const sortableItems = useMemo(() => stories.map((s) => s.id), [stories]);
@@ -123,7 +123,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         {automatedStateIds?.has(column.state.id) && (
           <Bot className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
         )}
-        <span className="text-xs font-medium text-muted-foreground">{column.story_count}</span>
+        <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
         <div className="mt-3 flex flex-1 items-start">
           <span
             className="text-xs font-semibold whitespace-nowrap"
@@ -168,10 +168,10 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             </p>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-            <QuickTooltip label={`${column.story_count} ${column.story_count === 1 ? 'task' : 'tasks'}`}>
+            <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
                 <StickyNote className="h-3 w-3" />
-                {column.story_count}
+                {column.task_count}
               </span>
             </QuickTooltip>
             <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
@@ -247,7 +247,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                   Loading more...
                 </>
               ) : (
-                <span>{column.story_count - column.stories.length} remaining</span>
+                <span>{column.task_count - column.stories.length} remaining</span>
               )}
             </div>
           ) : null}
@@ -1257,7 +1257,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   );
                 })
               ) : (
-                columns.filter((column) => showEmptyColumns || isDragging || column.story_count > 0).map((column) => (
+                columns.filter((column) => showEmptyColumns || isDragging || column.task_count > 0).map((column) => (
                   <Column
                     key={column.state.id}
                     column={column}

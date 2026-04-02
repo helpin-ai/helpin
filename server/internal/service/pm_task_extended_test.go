@@ -202,8 +202,8 @@ func TestPMStoryService_Create(t *testing.T) {
 		if story.Story.WorkflowStateID != env.stTodo {
 			t.Errorf("workflow_state_id = %q, want %q", story.Story.WorkflowStateID, env.stTodo)
 		}
-		if story.Story.StoryType != model.PMStoryTypeFeature {
-			t.Errorf("story_type = %q, want %q", story.Story.StoryType, model.PMStoryTypeFeature)
+		if story.Story.TaskType != model.PMStoryTypeFeature {
+			t.Errorf("story_type = %q, want %q", story.Story.TaskType, model.PMStoryTypeFeature)
 		}
 		if story.Story.Priority != model.PMStoryPriorityNone {
 			t.Errorf("priority = %q, want %q", story.Story.Priority, model.PMStoryPriorityNone)
@@ -237,13 +237,13 @@ func TestPMStoryService_Create(t *testing.T) {
 			Name:            "Bug Report",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			StoryType:       model.PMStoryTypeBug,
+			TaskType:       model.PMStoryTypeBug,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Create bug: %v", err)
 		}
-		if story.Story.StoryType != model.PMStoryTypeBug {
-			t.Errorf("story_type = %q, want %q", story.Story.StoryType, model.PMStoryTypeBug)
+		if story.Story.TaskType != model.PMStoryTypeBug {
+			t.Errorf("story_type = %q, want %q", story.Story.TaskType, model.PMStoryTypeBug)
 		}
 	})
 
@@ -446,7 +446,7 @@ func TestPMStoryService_CreateValidation(t *testing.T) {
 			Name:            "Bad Type",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			StoryType:       "invalid_type",
+			TaskType:       "invalid_type",
 		}, env.userID)
 		if err == nil {
 			t.Fatal("expected error for invalid story_type")
@@ -740,13 +740,13 @@ func TestPMStoryService_Update(t *testing.T) {
 	t.Run("update story_type", func(t *testing.T) {
 		st := model.PMStoryTypeChore
 		updated, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
-			StoryType: &st,
+			TaskType: &st,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update story_type: %v", err)
 		}
-		if updated.Story.StoryType != model.PMStoryTypeChore {
-			t.Errorf("story_type = %q, want %q", updated.Story.StoryType, model.PMStoryTypeChore)
+		if updated.Story.TaskType != model.PMStoryTypeChore {
+			t.Errorf("story_type = %q, want %q", updated.Story.TaskType, model.PMStoryTypeChore)
 		}
 	})
 
@@ -896,7 +896,7 @@ func TestPMStoryService_Update(t *testing.T) {
 	t.Run("invalid story_type rejected", func(t *testing.T) {
 		badType := "epic_story"
 		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
-			StoryType: &badType,
+			TaskType: &badType,
 		}, env.userID)
 		if err == nil {
 			t.Fatal("expected error for invalid story_type")

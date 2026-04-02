@@ -89,8 +89,8 @@ func TestProposedStoryUnmarshalAllowsTitleAndTypeAliases(t *testing.T) {
 	if story.Name != "Add 4xx error metrics tracking infrastructure" {
 		t.Fatalf("expected title alias to populate Name, got %#v", story)
 	}
-	if story.StoryType != "feature" {
-		t.Fatalf("expected type alias to populate StoryType, got %#v", story)
+	if story.TaskType != "feature" {
+		t.Fatalf("expected type alias to populate TaskType, got %#v", story)
 	}
 }
 

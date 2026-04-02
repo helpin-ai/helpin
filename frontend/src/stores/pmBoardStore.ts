@@ -106,7 +106,7 @@ const cloneColumns = (columns: TaskStateColumn[]) =>
   columns.map((column) => ({
     ...column,
     stories: [...column.stories],
-    story_groups: column.story_groups?.map((group) => ({
+    task_groups: (column.task_groups ?? column.story_groups)?.map((group) => ({
       ...group,
       stories: [...group.stories],
     })) ?? [],
@@ -167,9 +167,9 @@ const hasAmbiguousPatchFilters = (filters: BoardFilters) => Boolean(
 );
 
 const updateColumnTotals = (column: TaskStateColumn, countDelta: number, pointDelta: number) => {
-  column.story_count = Math.max(0, column.story_count + countDelta);
+  column.task_count = Math.max(0, column.task_count + countDelta);
   column.point_total = Math.max(0, column.point_total + pointDelta);
-  column.has_more = column.stories.length < column.story_count;
+  column.has_more = column.stories.length < column.task_count;
 };
 
 const removeLoadedStory = (column: TaskStateColumn, storyId: string) => {
@@ -180,9 +180,9 @@ const removeLoadedStory = (column: TaskStateColumn, storyId: string) => {
 };
 
 const replaceGroupedStory = (column: TaskStateColumn, story: Task) => {
-  if (!column.story_groups?.length) return false;
+  if (!column.task_groups?.length) return false;
   let replaced = false;
-  column.story_groups = column.story_groups.map((group) => {
+  column.task_groups = column.task_groups.map((group) => {
     const storyIndex = group.stories.findIndex((candidate) => candidate.id === story.id);
     if (storyIndex === -1) return group;
     const stories = [...group.stories];
@@ -529,7 +529,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
       target.stories = sortStories([...target.stories, ...newStories], target.state.state_type);
       if (isGroupedColumn(target)) {
-        target.story_groups = mergeStoryGroups(target.story_groups, res.data!.story_groups);
+        target.task_groups = mergeStoryGroups(target.task_groups, res.data!.task_groups ?? res.data!.story_groups);
       }
       target.has_more = target.stories.length < res.data!.total;
 

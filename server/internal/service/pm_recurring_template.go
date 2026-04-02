@@ -128,8 +128,8 @@ func (s *PMRecurringTemplateService) GetByStoryID(ctx context.Context, storyID s
 		return nil, err
 	}
 	var lastGenerated *model.PMStory
-	if tmpl.LastGeneratedStoryID != nil {
-		lastGenerated, err = s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedStoryID)
+	if tmpl.LastGeneratedTaskID != nil {
+		lastGenerated, err = s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedTaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +143,7 @@ func (s *PMRecurringTemplateService) GetByStoryID(ctx context.Context, storyID s
 		NextRunAt:          tmpl.NextRunAt,
 		LastError:          tmpl.LastError,
 		Config:             cfg,
-		LastGeneratedStory: lastGenerated,
+		LastGeneratedTask: lastGenerated,
 	}
 	if story.RecurringOccurrenceNumber != nil {
 		summary.OccurrenceNumber = *story.RecurringOccurrenceNumber
@@ -152,7 +152,7 @@ func (s *PMRecurringTemplateService) GetByStoryID(ctx context.Context, storyID s
 }
 
 func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.CreateRecurringTemplateRequest, actorID string) (*model.RecurringTemplateDetail, error) {
-	if req.WorkspaceID == "" || req.StoryID == "" || strings.TrimSpace(req.Title) == "" {
+	if req.WorkspaceID == "" || req.TaskID == "" || strings.TrimSpace(req.Title) == "" {
 		return nil, fmt.Errorf("workspace_id, story_id, and title are required")
 	}
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
@@ -163,7 +163,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 		return nil, err
 	}
 
-	rawStory, err := s.storyRepo.GetRawByID(ctx, req.StoryID)
+	rawStory, err := s.storyRepo.GetRawByID(ctx, req.TaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 		return nil, fmt.Errorf("story not found")
 	}
 
-	story, err := s.storyRepo.GetByID(ctx, req.StoryID)
+	story, err := s.storyRepo.GetByID(ctx, req.TaskID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 		Description:          req.Description,
 		Status:               model.PMRecurringTemplateStatusActive,
 		OwnerMemberID:        rawStory.OwnerMemberID,
-		CreatedFromStoryID:   &rawStory.ID,
+		CreatedFromTaskID:    &rawStory.ID,
 		SeedPayload:          seedJSON,
 		Config:               cfgJSON,
 		StartDate:            cfg.StartsOn,
@@ -213,7 +213,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 		CreatedByID:          optionalString(actorID),
 		UpdatedByID:          optionalString(actorID),
 		GeneratedCount:       1,
-		LastGeneratedStoryID: &rawStory.ID,
+		LastGeneratedTaskID:  &rawStory.ID,
 	}
 	now := time.Now().UTC()
 	tmpl.LastRunAt = &now
@@ -236,7 +236,7 @@ func (s *PMRecurringTemplateService) Create(ctx context.Context, req model.Creat
 		OccurrenceNumber: 1,
 		TriggerType:      model.PMRecurringRunTriggerManualSeed,
 		Status:           model.PMRecurringRunStatusSucceeded,
-		GeneratedStoryID: &rawStory.ID,
+		GeneratedTaskID:  &rawStory.ID,
 		DedupeKey:        recurringRunDedupeKey(tmpl.ID, model.PMRecurringRunTriggerManualSeed, 1),
 	}
 	run.StartedAt = &now
@@ -285,8 +285,8 @@ func (s *PMRecurringTemplateService) Update(ctx context.Context, id string, req 
 	if req.Description != nil {
 		tmpl.Description = req.Description
 	}
-	if req.StoryID != nil && strings.TrimSpace(*req.StoryID) != "" {
-		rawStory, err := s.storyRepo.GetRawByID(ctx, strings.TrimSpace(*req.StoryID))
+	if req.TaskID != nil && strings.TrimSpace(*req.TaskID) != "" {
+		rawStory, err := s.storyRepo.GetRawByID(ctx, strings.TrimSpace(*req.TaskID))
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +311,7 @@ func (s *PMRecurringTemplateService) Update(ctx context.Context, id string, req 
 		tmpl.SeedPayload = seedJSON
 		tmpl.TeamID = rawStory.TeamID
 		tmpl.OwnerMemberID = rawStory.OwnerMemberID
-		tmpl.CreatedFromStoryID = &rawStory.ID
+		tmpl.CreatedFromTaskID = &rawStory.ID
 	}
 	if req.Config != nil {
 		cfg, err := normalizeRecurringConfig(*req.Config)
@@ -402,8 +402,8 @@ func (s *PMRecurringTemplateService) GenerateNow(ctx context.Context, id, actorI
 	if err != nil {
 		return nil, err
 	}
-	if cfg.ScheduleType == model.PMRecurringScheduleTypeCompletion && tmpl.LastGeneratedStoryID != nil {
-		lastStory, err := s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedStoryID)
+	if cfg.ScheduleType == model.PMRecurringScheduleTypeCompletion && tmpl.LastGeneratedTaskID != nil {
+		lastStory, err := s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedTaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -439,7 +439,7 @@ func (s *PMRecurringTemplateService) Duplicate(ctx context.Context, id, actorID 
 	clone.Title = tmpl.Title + " (copy)"
 	clone.Status = model.PMRecurringTemplateStatusPaused
 	clone.GeneratedCount = 0
-	clone.LastGeneratedStoryID = nil
+	clone.LastGeneratedTaskID = nil
 	clone.LastRunAt = nil
 	clone.NextRunAt = nil
 	clone.LastError = nil
@@ -512,7 +512,7 @@ func (s *PMRecurringTemplateService) HandleStoryProgress(ctx context.Context, st
 	if tmpl.Status != model.PMRecurringTemplateStatusActive {
 		return nil
 	}
-	if tmpl.LastGeneratedStoryID == nil || *tmpl.LastGeneratedStoryID != story.ID {
+	if tmpl.LastGeneratedTaskID == nil || *tmpl.LastGeneratedTaskID != story.ID {
 		return nil
 	}
 	cfg, err := parseRecurringConfig(tmpl.Config)
@@ -556,12 +556,12 @@ func (s *PMRecurringTemplateService) buildDetail(ctx context.Context, tmpl *mode
 		Seed:        seed,
 		RuleSummary: recurringRuleSummary(cfg),
 	}
-	if tmpl.LastGeneratedStoryID != nil && *tmpl.LastGeneratedStoryID != "" {
-		lastStory, err := s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedStoryID)
+	if tmpl.LastGeneratedTaskID != nil && *tmpl.LastGeneratedTaskID != "" {
+		lastStory, err := s.storyRepo.GetRawByID(ctx, *tmpl.LastGeneratedTaskID)
 		if err != nil {
 			return model.RecurringTemplateDetail{}, err
 		}
-		detail.LastGeneratedStory = lastStory
+		detail.LastGeneratedTask = lastStory
 	}
 	if includeRuns {
 		runs, err := s.recurringRepo.ListRuns(ctx, tmpl.ID, 20)
@@ -620,7 +620,7 @@ func (s *PMRecurringTemplateService) buildSeedFromStory(ctx context.Context, sto
 	return model.PMRecurringStorySeed{
 		Name:              story.Story.Name,
 		Description:       story.Story.Description,
-		StoryType:         story.Story.StoryType,
+		TaskType:         story.Story.TaskType,
 		WorkflowID:        story.Story.WorkflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            story.Story.EpicID,
@@ -656,8 +656,8 @@ func (s *PMRecurringTemplateService) generateStoryFromTemplate(ctx context.Conte
 	dedupeKey := recurringRunDedupeKey(tmpl.ID, triggerType, occurrenceNumber)
 	if existing, err := s.recurringRepo.GetRunByDedupeKey(ctx, dedupeKey); err != nil {
 		return nil, err
-	} else if existing != nil && existing.GeneratedStoryID != nil {
-		story, err := s.storyRepo.GetByID(ctx, *existing.GeneratedStoryID)
+	} else if existing != nil && existing.GeneratedTaskID != nil {
+		story, err := s.storyRepo.GetByID(ctx, *existing.GeneratedTaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -708,14 +708,14 @@ func (s *PMRecurringTemplateService) generateStoryFromTemplate(ctx context.Conte
 	}
 
 	run.Status = model.PMRecurringRunStatusSucceeded
-	run.GeneratedStoryID = &story.Story.ID
+	run.GeneratedTaskID = &story.Story.ID
 	run.ErrorMessage = nil
 	if err := s.recurringRepo.UpdateRun(ctx, run); err != nil {
 		return nil, err
 	}
 
 	tmpl.GeneratedCount = occurrenceNumber
-	tmpl.LastGeneratedStoryID = &story.Story.ID
+	tmpl.LastGeneratedTaskID = &story.Story.ID
 	tmpl.LastRunAt = &finishedAt
 	tmpl.LastError = nil
 	tmpl.FailureCount = 0
@@ -747,7 +747,7 @@ func (s *PMRecurringTemplateService) seedToCreateRequest(ctx context.Context, se
 		WorkspaceID:       tmpl.WorkspaceID,
 		Name:              seed.Name,
 		Description:       seed.Description,
-		StoryType:         seed.StoryType,
+		TaskType:         seed.TaskType,
 		WorkflowID:        seed.WorkflowID,
 		WorkflowStateID:   seed.WorkflowStateID,
 		EpicID:            seed.EpicID,

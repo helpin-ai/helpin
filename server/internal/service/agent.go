@@ -806,8 +806,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.MonthlyTokenBudget != nil {
 		agent.MonthlyTokenBudget = normalizeTokenBudget(req.MonthlyTokenBudget)
 	}
-	if req.ActiveStoryID != nil {
-		agent.ActiveStoryID = req.ActiveStoryID
+	if req.ActiveTaskID != nil {
+		agent.ActiveTaskID = req.ActiveTaskID
 	}
 	if req.TeamID != nil {
 		agent.TeamID = trimPtr(req.TeamID)
@@ -1362,8 +1362,8 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.StoryID != nil {
-		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.TaskID != nil {
+		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.TaskID)
 		if storyErr == nil && story != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 				WorkspaceID: run.WorkspaceID,
@@ -1545,7 +1545,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, nil, err
 	}
-	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
+	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
 		return nil, nil, err
 	}
 	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
@@ -1799,7 +1799,7 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		if err := s.runRepo.Update(ctx, run); err != nil {
 			return err
 		}
-		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.StoryID); err != nil {
+		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
 			return err
 		}
 		if autoResume && s.runEngine != nil {
@@ -2172,7 +2172,7 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 		FromAgentID:    &run.AgentID,
 		ToAgentID:      req.ToAgentID,
 		ToUserID:       req.ToUserID,
-		StoryID:        run.StoryID,
+		TaskID:         run.TaskID,
 		ConversationID: run.ConversationID,
 		RunID:          &run.ID,
 		HandoffType:    handoffType,
@@ -2244,7 +2244,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	run := &model.AgentRun{
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
-		StoryID:           params.storyID,
+		TaskID:            params.storyID,
 		ConversationID:    params.conversationID,
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
@@ -2272,9 +2272,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 
 	params.agent.Status = "working"
 	if params.storyID != nil {
-		params.agent.ActiveStoryID = params.storyID
+		params.agent.ActiveTaskID = params.storyID
 	} else {
-		params.agent.ActiveStoryID = nil
+		params.agent.ActiveTaskID = nil
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
 
@@ -2318,7 +2318,7 @@ func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID s
 		return err
 	}
 	agent.Status = "idle"
-	agent.ActiveStoryID = nil
+	agent.ActiveTaskID = nil
 	return s.agentRepo.Update(ctx, agent)
 }
 
@@ -2328,7 +2328,7 @@ func (s *AgentService) markAgentWorking(ctx context.Context, workspaceID, agentI
 		return err
 	}
 	agent.Status = "working"
-	agent.ActiveStoryID = storyID
+	agent.ActiveTaskID = storyID
 	return s.agentRepo.Update(ctx, agent)
 }
 

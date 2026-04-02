@@ -9,7 +9,7 @@ type PMTaskTemplate struct {
 	TeamID        *string   `json:"team_id" gorm:"type:uuid;index"`
 	Name          string    `json:"name" gorm:"not null"`
 	Description   *string   `json:"description"`
-	StoryType     *string   `json:"task_type" gorm:"column:task_type"`
+	TaskType      *string   `json:"task_type" gorm:"column:task_type"`
 	Priority      *string   `json:"priority"`
 	Severity      *string   `json:"severity"`
 	Estimate      *int      `json:"estimate"`
@@ -33,7 +33,7 @@ type CreateTaskTemplateRequest struct {
 	TeamID         *string `json:"team_id"`
 	Name           string  `json:"name"`
 	Description    *string `json:"description"`
-	StoryType      *string `json:"task_type"`
+	TaskType       *string `json:"task_type"`
 	Priority       *string `json:"priority"`
 	Severity       *string `json:"severity"`
 	Estimate       *int    `json:"estimate"`
@@ -51,7 +51,7 @@ type UpdateTaskTemplateRequest struct {
 	TeamID         *string `json:"team_id"`
 	Name           *string `json:"name"`
 	Description    *string `json:"description"`
-	StoryType      *string `json:"task_type"`
+	TaskType       *string `json:"task_type"`
 	Priority       *string `json:"priority"`
 	Severity       *string `json:"severity"`
 	Estimate       *int    `json:"estimate"`

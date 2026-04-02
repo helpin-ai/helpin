@@ -46,7 +46,7 @@ function toTitleCase(value: string) {
 function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): StoryPlanPreviewModel | null {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
-  const proposedStories = Array.isArray(record?.proposed_stories) ? record.proposed_stories : [];
+  const proposedStories = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : Array.isArray(record?.proposed_stories) ? record.proposed_stories : [];
   if (!record || proposedStories.length === 0) return null;
 
   const normalizedStories: StoryPlanStoryPreview[] = proposedStories.flatMap((entry) => {

@@ -305,7 +305,7 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskSupportConversationFilter(query, filters.SupportConversationID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
-	query = applyTaskStringFilter(query, "pm_tasks.task_type", filters.StoryType)
+	query = applyTaskStringFilter(query, "pm_tasks.task_type", filters.TaskType)
 	query = applyTaskStringFilter(query, "pm_tasks.owner_id", filters.OwnerID)
 	query = applyTaskStringFilter(query, "pm_tasks.owner_member_id", filters.OwnerMemberID)
 	query = applyTaskStringFilter(query, "pm_tasks.priority", filters.Priority)
@@ -866,7 +866,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 		columns = append(columns, model.StoryStateColumn{
 			State:       state,
 			Stories:     colStories,
-			StoryGroups: storyGroups,
+			TaskGroups:  storyGroups,
 			TaskCount:   m.totalCount,
 			PointTotal:  m.pointTotal,
 			HasMore:     m.hasMore,
@@ -1257,7 +1257,7 @@ func (r *PMTaskRepository) loadAssociationObjectSummaries(ctx context.Context, o
 func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
 	q = applyTaskStringFilter(q, "pm_tasks.team_id", filters.TeamID)
 	q = applyTaskStringFilter(q, "pm_tasks.priority", filters.Priority)
-	q = applyTaskStringFilter(q, "pm_tasks.task_type", filters.StoryType)
+	q = applyTaskStringFilter(q, "pm_tasks.task_type", filters.TaskType)
 	q = applyTaskStringFilter(q, "pm_tasks.epic_id", filters.EpicID)
 	q = applyTaskStringFilter(q, "pm_tasks.sprint_id", filters.SprintID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectContact, filters.ContactID)

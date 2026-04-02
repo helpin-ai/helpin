@@ -55,7 +55,7 @@ func TestPMRecurringTemplateService_CreateFromStory(t *testing.T) {
 
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.storyEnv.wsID,
-		StoryID:     story.Story.ID,
+		TaskID:     story.Story.ID,
 		Title:       "Weekly Ops Check",
 		Config:      cfg,
 	}, env.storyEnv.userID)
@@ -65,8 +65,8 @@ func TestPMRecurringTemplateService_CreateFromStory(t *testing.T) {
 	if tmpl.Template.GeneratedCount != 1 {
 		t.Fatalf("generated_count = %d, want 1", tmpl.Template.GeneratedCount)
 	}
-	if tmpl.Template.LastGeneratedStoryID == nil || *tmpl.Template.LastGeneratedStoryID != story.Story.ID {
-		t.Fatalf("last_generated_story_id = %v, want %q", tmpl.Template.LastGeneratedStoryID, story.Story.ID)
+	if tmpl.Template.LastGeneratedTaskID == nil || *tmpl.Template.LastGeneratedTaskID != story.Story.ID {
+		t.Fatalf("last_generated_story_id = %v, want %q", tmpl.Template.LastGeneratedTaskID, story.Story.ID)
 	}
 	if tmpl.Template.NextRunAt == nil {
 		t.Fatal("expected next_run_at to be populated for time-based template")
@@ -92,7 +92,7 @@ func TestPMRecurringTemplateService_ProcessDueTemplates(t *testing.T) {
 	story := createTestStory(t, env.storyEnv, "Daily Standup")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.storyEnv.wsID,
-		StoryID:     story.Story.ID,
+		TaskID:     story.Story.ID,
 		Title:       "Daily Standup",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType: model.PMRecurringScheduleTypeTime,
@@ -130,11 +130,11 @@ func TestPMRecurringTemplateService_ProcessDueTemplates(t *testing.T) {
 	if updatedTemplate.GeneratedCount != 2 {
 		t.Fatalf("generated_count = %d, want 2", updatedTemplate.GeneratedCount)
 	}
-	if updatedTemplate.LastGeneratedStoryID == nil || *updatedTemplate.LastGeneratedStoryID == story.Story.ID {
-		t.Fatalf("expected a new generated story, got %v", updatedTemplate.LastGeneratedStoryID)
+	if updatedTemplate.LastGeneratedTaskID == nil || *updatedTemplate.LastGeneratedTaskID == story.Story.ID {
+		t.Fatalf("expected a new generated story, got %v", updatedTemplate.LastGeneratedTaskID)
 	}
 
-	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedStoryID)
+	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedTaskID)
 	if err != nil {
 		t.Fatalf("GetRawByID: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestPMRecurringTemplateService_CompletionBasedGeneration(t *testing.T) {
 	story := createTestStory(t, env.storyEnv, "Post-deploy Checklist")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.storyEnv.wsID,
-		StoryID:     story.Story.ID,
+		TaskID:     story.Story.ID,
 		Title:       "Post-deploy Checklist",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType:    model.PMRecurringScheduleTypeCompletion,
@@ -177,10 +177,10 @@ func TestPMRecurringTemplateService_CompletionBasedGeneration(t *testing.T) {
 	if updatedTemplate.GeneratedCount != 2 {
 		t.Fatalf("generated_count = %d, want 2", updatedTemplate.GeneratedCount)
 	}
-	if updatedTemplate.LastGeneratedStoryID == nil || *updatedTemplate.LastGeneratedStoryID == story.Story.ID {
-		t.Fatalf("expected a new generated story, got %v", updatedTemplate.LastGeneratedStoryID)
+	if updatedTemplate.LastGeneratedTaskID == nil || *updatedTemplate.LastGeneratedTaskID == story.Story.ID {
+		t.Fatalf("expected a new generated story, got %v", updatedTemplate.LastGeneratedTaskID)
 	}
-	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedStoryID)
+	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedTaskID)
 	if err != nil {
 		t.Fatalf("GetRawByID: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestPMRecurringTemplateService_UpdateRefreshesSeedFromStory(t *testing.T) {
 	story := createTestStory(t, env.storyEnv, "Monthly Audit")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.storyEnv.wsID,
-		StoryID:     story.Story.ID,
+		TaskID:     story.Story.ID,
 		Title:       "Monthly Audit",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType: model.PMRecurringScheduleTypeTime,
@@ -223,7 +223,7 @@ func TestPMRecurringTemplateService_UpdateRefreshesSeedFromStory(t *testing.T) {
 	}
 
 	if _, err := env.svc.Update(ctx, tmpl.Template.ID, model.UpdateRecurringTemplateRequest{
-		StoryID: &story.Story.ID,
+		TaskID: &story.Story.ID,
 	}, env.storyEnv.userID); err != nil {
 		t.Fatalf("Update recurring template: %v", err)
 	}
@@ -250,11 +250,11 @@ func TestPMRecurringTemplateService_UpdateRefreshesSeedFromStory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if updatedTemplate.LastGeneratedStoryID == nil {
+	if updatedTemplate.LastGeneratedTaskID == nil {
 		t.Fatal("expected a generated story after refresh")
 	}
 
-	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedStoryID)
+	generatedStory, err := env.storyEnv.svc.storyRepo.GetRawByID(ctx, *updatedTemplate.LastGeneratedTaskID)
 	if err != nil {
 		t.Fatalf("GetRawByID: %v", err)
 	}

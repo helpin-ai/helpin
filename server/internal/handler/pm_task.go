@@ -49,7 +49,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
 		WorkflowID:            queryStringPtr(r, "workflow_id"),
 		WorkflowStateID:       queryStringPtr(r, "state_id"),
-		StoryType:             queryStringPtrWithFallback(r, "task_type", "story_type"),
+		TaskType:             queryStringPtrWithFallback(r, "task_type", "story_type"),
 		OwnerID:               queryStringPtr(r, "owner_id"),
 		OwnerMemberID:         queryStringPtr(r, "owner_member_id"),
 		RequesterID:           queryStringPtr(r, "requester_id"),
@@ -128,7 +128,7 @@ func (h *PMTaskHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, model.ColumnStoriesResponse{
 		Stories:     stories,
-		StoryGroups: storyGroups,
+		TaskGroups:  storyGroups,
 		Total:       total,
 	})
 }
@@ -201,7 +201,7 @@ func boardFilters(r *http.Request) model.PMStoryFilters {
 		TeamID:                queryStringPtr(r, "team_id"),
 		Priority:              queryStringPtr(r, "priority"),
 		Severity:              queryStringPtr(r, "severity"),
-		StoryType:             queryStringPtrWithFallback(r, "task_type", "story_type"),
+		TaskType:             queryStringPtrWithFallback(r, "task_type", "story_type"),
 		EpicID:                queryStringPtr(r, "epic_id"),
 		SprintID:              queryStringPtr(r, "sprint_id"),
 		ContactID:             queryStringPtr(r, "contact_id"),

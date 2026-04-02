@@ -48,7 +48,7 @@ type ProposedTask struct {
 	Ref                 string                   `json:"ref,omitempty"`
 	Name                string                   `json:"name"`
 	Description         string                   `json:"description"`
-	StoryType           string                   `json:"story_type"`
+	TaskType            string                   `json:"task_type"`
 	Estimate            *int                     `json:"estimate"`
 	Priority            *string                  `json:"priority,omitempty"`
 	AcceptanceCriteria  []string                 `json:"acceptance_criteria,omitempty"`
@@ -65,6 +65,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 		Name                string                   `json:"name"`
 		Title               string                   `json:"title"`
 		Description         string                   `json:"description"`
+		TaskType            string                   `json:"task_type"`
 		StoryType           string                   `json:"story_type"`
 		Type                string                   `json:"type"`
 		Estimate            *int                     `json:"estimate"`
@@ -85,7 +86,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 	p.Ref = strings.TrimSpace(raw.Ref)
 	p.Name = strings.TrimSpace(firstNonEmpty(raw.Name, raw.Title))
 	p.Description = strings.TrimSpace(raw.Description)
-	p.StoryType = strings.TrimSpace(firstNonEmpty(raw.StoryType, raw.Type))
+	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.StoryType, raw.Type))
 	p.Estimate = raw.Estimate
 	p.Priority = raw.Priority
 	p.AcceptanceCriteria = raw.AcceptanceCriteria
@@ -190,7 +191,7 @@ type OrchestrationProposal struct {
 	EpicID           string                  `json:"epic_id"`
 	Summary          string                  `json:"summary"`
 	SpecVersionID    string                  `json:"spec_version_id,omitempty"`
-	ProposedStories  []ProposedTask          `json:"proposed_stories"`
+	ProposedTasks    []ProposedTask          `json:"proposed_tasks"`
 	OpenQuestions    []string                `json:"open_questions,omitempty"`
 	Risks            []string                `json:"risks,omitempty"`
 	VerticalCoverage []VerticalCoverageEntry `json:"vertical_coverage,omitempty"`
@@ -203,7 +204,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 		tasks[idx].Ref = strings.TrimSpace(tasks[idx].Ref)
 		tasks[idx].Name = strings.TrimSpace(tasks[idx].Name)
 		tasks[idx].Description = strings.TrimSpace(tasks[idx].Description)
-		tasks[idx].StoryType = strings.TrimSpace(tasks[idx].StoryType)
+		tasks[idx].TaskType = strings.TrimSpace(tasks[idx].TaskType)
 		tasks[idx].SliceType = strings.TrimSpace(tasks[idx].SliceType)
 
 		if tasks[idx].Name == "" {
@@ -288,7 +289,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 // VerticalCoverageEntry maps a user-facing behavior to the tasks that deliver it.
 type VerticalCoverageEntry struct {
 	Behavior  string   `json:"behavior"`
-	StoryRefs []string `json:"story_refs"`
+	TaskRefs []string `json:"task_refs"`
 	FullSlice bool     `json:"full_slice"`
 }
 
@@ -312,7 +313,7 @@ type PlanningResearchSource struct {
 // ConfirmPlanningRequest confirms a task plan and optionally edits proposed tasks first.
 type ConfirmPlanningRequest struct {
 	RunID          string         `json:"run_id"`
-	ProposedStories []ProposedTask `json:"proposed_stories"`
+	ProposedTasks []ProposedTask `json:"proposed_tasks"`
 }
 
 type ApprovedSpecSummary struct {

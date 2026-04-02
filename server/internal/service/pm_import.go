@@ -1097,7 +1097,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 			DisplayID:         maxDisplayID,
 			Name:              fallbackName(row.Name, fmt.Sprintf("Untitled Story (SC-%s)", row.ID)),
 			Description:       descriptionPtr,
-			StoryType:         mapShortcutStoryType(row.Type),
+			TaskType:         mapShortcutStoryType(row.Type),
 			WorkflowID:        workflowID,
 			WorkflowStateID:   stateID,
 			EpicID:            epicID,

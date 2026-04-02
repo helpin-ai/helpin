@@ -50,8 +50,8 @@ func TestExtractPlanningProposalParsesJSONAndFencedJSON(t *testing.T) {
 			if proposal.TokensUsed != 123 {
 				t.Fatalf("expected tokens 123, got %d", proposal.TokensUsed)
 			}
-			if len(proposal.ProposedStories) != 1 || proposal.ProposedStories[0].Name != "Story A" {
-				t.Fatalf("unexpected proposal stories: %+v", proposal.ProposedStories)
+			if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
+				t.Fatalf("unexpected proposal stories: %+v", proposal.ProposedTasks)
 			}
 		})
 	}

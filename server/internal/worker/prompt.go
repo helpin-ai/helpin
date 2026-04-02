@@ -136,7 +136,7 @@ func BuildUserPrompt(
 		if len(epicStories) > 0 {
 			contextParts = append(contextParts, "\nExisting stories already linked to this epic:")
 			for _, story := range epicStories {
-				storyType := story.StoryType
+				storyType := story.TaskType
 				if storyType == "" {
 					storyType = "feature"
 				}

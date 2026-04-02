@@ -802,14 +802,14 @@ func TestComputeStats_EmptySprint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeStats: %v", err)
 	}
-	if stats.StoryCount != 0 {
-		t.Fatalf("StoryCount = %d, want 0", stats.StoryCount)
+	if stats.TaskCount != 0 {
+		t.Fatalf("TaskCount = %d, want 0", stats.TaskCount)
 	}
 	if stats.TotalPoints != 0 {
 		t.Fatalf("TotalPoints = %d, want 0", stats.TotalPoints)
 	}
-	if stats.DoneStoryCount != 0 {
-		t.Fatalf("DoneStoryCount = %d, want 0", stats.DoneStoryCount)
+	if stats.DoneTaskCount != 0 {
+		t.Fatalf("DoneTaskCount = %d, want 0", stats.DoneTaskCount)
 	}
 	if stats.DonePoints != 0 {
 		t.Fatalf("DonePoints = %d, want 0", stats.DonePoints)

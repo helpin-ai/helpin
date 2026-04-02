@@ -65,7 +65,7 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateStor
 		TeamID:         teamID,
 		Name:           name,
 		Description:    req.Description,
-		StoryType:      req.StoryType,
+		TaskType:      req.TaskType,
 		Priority:       req.Priority,
 		Severity:       req.Severity,
 		Estimate:       req.Estimate,
@@ -116,8 +116,8 @@ func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model
 	if req.Description != nil {
 		tmpl.Description = req.Description
 	}
-	if req.StoryType != nil {
-		tmpl.StoryType = req.StoryType
+	if req.TaskType != nil {
+		tmpl.TaskType = req.TaskType
 	}
 	if req.Priority != nil {
 		tmpl.Priority = req.Priority

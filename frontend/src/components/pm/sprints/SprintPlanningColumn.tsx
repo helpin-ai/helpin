@@ -106,8 +106,8 @@ export function SprintPlanningColumn({
             </div>
           )}
 
-          {card.story_preview_overflow > 0 && (
-            <p className="text-center text-xs text-muted-foreground">+{card.story_preview_overflow} more stories</p>
+          {card.task_preview_overflow > 0 && (
+            <p className="text-center text-xs text-muted-foreground">+{card.task_preview_overflow} more stories</p>
           )}
 
           {canEdit && (

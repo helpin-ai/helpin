@@ -65,7 +65,7 @@ function removeStoryFromCards(workspace: SprintPlanningWorkspaceData, storyId: s
           card.stats.done_points = Math.max(0, card.stats.done_points - (found.estimate ?? 0));
         }
         const hiddenCount = Math.max(card.stats.story_count - card.preview_stories.length, 0);
-        card.story_preview_overflow = hiddenCount;
+        card.task_preview_overflow = hiddenCount;
       }
     }
   }
@@ -82,7 +82,7 @@ function addStoryToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['
     card.stats.done_story_count += 1;
     card.stats.done_points += story.estimate ?? 0;
   }
-  card.story_preview_overflow = Math.max(card.stats.story_count - card.preview_stories.length, 0);
+  card.task_preview_overflow = Math.max(card.stats.story_count - card.preview_stories.length, 0);
 }
 
 function addStoryToBacklog(workspace: SprintPlanningWorkspaceData, story: SprintPlanningStoryPreview) {

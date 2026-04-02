@@ -98,7 +98,7 @@ func (h *AssociationsHandler) CreateTaskRelationship(w http.ResponseWriter, r *h
 
 	link, err := h.associationsService.CreateStoryRelationship(r.Context(), workspaceID, taskID, actorID, model.CreateStoryRelationshipRequest{
 		RelationshipType: req.RelationshipType,
-		OtherStoryID:     req.OtherStoryID,
+		OtherTaskID:      req.OtherTaskID,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

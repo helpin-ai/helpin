@@ -139,7 +139,7 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 			card.Stats = statsBySprintID[sprintID]
 			card.PreviewStories = previewStoriesBySprintID[sprintID]
 			if overflow := card.Stats.TaskCount - len(card.PreviewStories); overflow > 0 {
-				card.StoryPreviewOverflow = overflow
+				card.TaskPreviewOverflow = overflow
 			}
 		}
 	}
