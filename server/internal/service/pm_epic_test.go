@@ -658,15 +658,15 @@ func TestComputeEpicSuggestedHealth(t *testing.T) {
 				Deadline:         &end,
 			},
 			Stats: model.PMEpicStats{
-				StoryCount:     storyCount,
-				DoneStoryCount: doneCount,
+				TaskCount:     storyCount,
+				DoneTaskCount: doneCount,
 			},
 		}
 	}
 
 	t.Run("no dates returns no_health", func(t *testing.T) {
 		epic := &model.EpicWithStats{
-			Stats: model.PMEpicStats{StoryCount: 5, DoneStoryCount: 0},
+			Stats: model.PMEpicStats{TaskCount: 5, DoneTaskCount: 0},
 		}
 		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthNone {
@@ -676,7 +676,7 @@ func TestComputeEpicSuggestedHealth(t *testing.T) {
 
 	t.Run("no stories returns no_health", func(t *testing.T) {
 		epic := &model.EpicWithStats{
-			Stats: model.PMEpicStats{StoryCount: 0},
+			Stats: model.PMEpicStats{TaskCount: 0},
 		}
 		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthNone {

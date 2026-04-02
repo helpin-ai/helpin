@@ -476,8 +476,7 @@ type CreateMessageRequest struct {
 
 // LinkStoryRequest links a conversation to a task.
 type LinkStoryRequest struct {
-	StoryID string `json:"story_id"`
-	TaskID  string `json:"task_id"`
+	TaskID string `json:"task_id"`
 }
 
 // AssignConversationAgentRequest assigns an agent to a conversation.

@@ -203,7 +203,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 		return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
 	}
 
-	storyType := req.StoryType
+	storyType := req.TaskType
 	if storyType == "" {
 		storyType = model.PMStoryTypeFeature
 	}
@@ -255,7 +255,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 		WorkspaceID:       req.WorkspaceID,
 		Name:              strings.TrimSpace(req.Name),
 		Description:       req.Description,
-		StoryType:         storyType,
+		TaskType:         storyType,
 		WorkflowID:        workflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            req.EpicID,
@@ -456,7 +456,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateStoryRequest
 			EntitySnapshot: model.JSONB{
 				"title":      story.Name,
 				"display_id": story.DisplayID,
-				"type":       story.StoryType,
+				"type":       story.TaskType,
 			},
 		}); err != nil {
 			slog.ErrorContext(ctx, "failed to emit task created notification", "error", err, "task_id", story.ID)
@@ -494,7 +494,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateS
 	stateChanged := false
 	oldPriority := current.Priority
 	oldSeverity := current.Severity
-	oldStoryType := current.StoryType
+	oldStoryType := current.TaskType
 	oldBlocked := current.Blocked
 	oldEstimate := current.Estimate
 	oldDeadline := current.Deadline
@@ -510,11 +510,11 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateS
 	if req.Description != nil {
 		current.Description = req.Description
 	}
-	if req.StoryType != nil {
-		if !isValidTaskType(*req.StoryType) {
+	if req.TaskType != nil {
+		if !isValidTaskType(*req.TaskType) {
 			return nil, fmt.Errorf("invalid task_type")
 		}
-		current.StoryType = *req.StoryType
+		current.TaskType = *req.TaskType
 	}
 
 	workflowID := current.WorkflowID
@@ -725,8 +725,8 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateS
 			s.logger.ErrorContext(ctx, "failed to log activity for task severity change", "error", err, "task_id", current.ID)
 		}
 	}
-	if req.StoryType != nil && *req.StoryType != oldStoryType {
-		action := "changed type from " + oldStoryType + " to " + *req.StoryType
+	if req.TaskType != nil && *req.TaskType != oldStoryType {
+		action := "changed type from " + oldStoryType + " to " + *req.TaskType
 		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
 			s.logger.ErrorContext(ctx, "failed to log activity for task type change", "error", err, "task_id", current.ID)
 		}
@@ -830,7 +830,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateS
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
 				"display_id": current.DisplayID,
-				"type":       current.StoryType,
+				"type":       current.TaskType,
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for task update", "error", err, "task_id", current.ID, "event_type", eventType)
@@ -859,7 +859,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateS
 				EntitySnapshot: model.JSONB{
 					"title":      current.Name,
 					"display_id": current.DisplayID,
-					"type":       current.StoryType,
+					"type":       current.TaskType,
 				},
 			}); err != nil {
 				slog.ErrorContext(ctx, "failed to emit task mention notification", "error", err, "task_id", current.ID)
@@ -981,7 +981,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
 				"display_id": current.DisplayID,
-				"type":       current.StoryType,
+				"type":       current.TaskType,
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for task move", "error", err, "task_id", current.ID)
@@ -1128,7 +1128,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, storyID, userID, actorID s
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
 				"display_id": current.DisplayID,
-				"type":       current.StoryType,
+				"type":       current.TaskType,
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for task assignment", "error", err, "task_id", storyID, "user_id", userID)

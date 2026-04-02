@@ -85,7 +85,7 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	stories := []model.ProposedStory{
 		{
 			Name:               "Stabilize ingest",
-			StoryType:          "task",
+			TaskType:          "task",
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Ingest completes successfully"},
 		},
@@ -94,8 +94,8 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	if err := validatePlanningTasks(stories); err != nil {
 		t.Fatalf("validatePlanningTasks returned error: %v", err)
 	}
-	if stories[0].StoryType != model.PMStoryTypeChore {
-		t.Fatalf("expected story type to normalize to chore, got %q", stories[0].StoryType)
+	if stories[0].TaskType != model.PMStoryTypeChore {
+		t.Fatalf("expected story type to normalize to chore, got %q", stories[0].TaskType)
 	}
 	if stories[0].Priority == nil || *stories[0].Priority != model.PMStoryPriorityUrgent {
 		t.Fatalf("expected priority to normalize to urgent, got %#v", stories[0].Priority)
@@ -107,7 +107,7 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 	stories := []model.ProposedStory{
 		{
 			Name:               "Render structured planner questions",
-			StoryType:          "feature",
+			TaskType:          "feature",
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Question blocks render inline"},
 			ImplementationBrief: &model.StoryImplementationBrief{
@@ -158,7 +158,7 @@ func TestValidatePlanningStoriesReturnsRepairOrientedErrorForMissingName(t *test
 	stories := []model.ProposedStory{
 		{
 			Description:        "Missing title field",
-			StoryType:          "feature",
+			TaskType:          "feature",
 			AcceptanceCriteria: []string{"works"},
 		},
 	}
@@ -237,7 +237,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 			Ref:                "NATS-1",
 			Name:               "Add NATS configuration module",
 			Description:        "Create the initial configuration slice for NATS support.",
-			StoryType:          model.PMStoryTypeFeature,
+			TaskType:          model.PMStoryTypeFeature,
 			AcceptanceCriteria: []string{"NATS configuration can be loaded for the service"},
 		},
 	})

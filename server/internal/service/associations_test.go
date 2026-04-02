@@ -23,7 +23,7 @@ func TestCreateStoryRelationshipMapsReciprocalActions(t *testing.T) {
 
 	link, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateStoryRelationshipRequest{
 		RelationshipType: model.StoryRelationshipActionIsBlockedBy,
-		OtherStoryID:     "story-b",
+		OtherTaskID:     "story-b",
 	})
 	if err != nil {
 		t.Fatalf("CreateStoryRelationship returned error: %v", err)
@@ -47,7 +47,7 @@ func TestCreateStoryRelationshipRejectsCycles(t *testing.T) {
 
 	_, err := svc.CreateStoryRelationship(context.Background(), "ws-1", "story-a", "user-1", model.CreateStoryRelationshipRequest{
 		RelationshipType: model.StoryRelationshipActionBlocks,
-		OtherStoryID:     "story-b",
+		OtherTaskID:     "story-b",
 	})
 	if err == nil {
 		t.Fatalf("expected cycle error, got nil")
@@ -70,10 +70,10 @@ func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t
 		t.Fatalf("ListGrouped returned error: %v", err)
 	}
 
-	if len(grouped.StoryRelationships.BlockedBy) != 1 {
-		t.Fatalf("expected one blocked_by relationship, got %d", len(grouped.StoryRelationships.BlockedBy))
+	if len(grouped.TaskRelationships.BlockedBy) != 1 {
+		t.Fatalf("expected one blocked_by relationship, got %d", len(grouped.TaskRelationships.BlockedBy))
 	}
-	if grouped.StoryRelationships.BlockedBy[0].IsActive {
+	if grouped.TaskRelationships.BlockedBy[0].IsActive {
 		t.Fatalf("expected completed blocker to be inactive in grouped response")
 	}
 	if len(grouped.SupportConversations) != 1 {

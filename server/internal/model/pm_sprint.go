@@ -115,7 +115,7 @@ type SprintPlanningCard struct {
 	Sprint               PMSprint                     `json:"sprint"`
 	Stats                PMSprintStats                `json:"stats"`
 	PreviewStories       []SprintPlanningTaskPreview `json:"preview_stories"`
-	StoryPreviewOverflow int                         `json:"story_preview_overflow"`
+	TaskPreviewOverflow  int                         `json:"task_preview_overflow"`
 }
 
 // SprintPlanningBucket groups planning cards by temporal bucket.

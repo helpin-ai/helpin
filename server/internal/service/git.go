@@ -366,7 +366,7 @@ func (s *GitService) GetStoryDeliveryTarget(ctx context.Context, workspaceID, st
 
 	target = &model.StoryDeliveryTarget{
 		WorkspaceID:   workspaceID,
-		StoryID:       storyID,
+		TaskID:        storyID,
 		DeliveryState: "unconfigured",
 	}
 
@@ -495,7 +495,7 @@ func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID stri
 	}
 	link := &model.StoryGitLink{
 		WorkspaceID:   workspaceID,
-		StoryID:       storyID,
+		TaskID:        storyID,
 		IntegrationID: deref(target.IntegrationID),
 		RepositoryID:  target.RepositoryID,
 		Provider:      "github",
@@ -558,7 +558,7 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.StoryID)
+	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.LastCommitSHA = &commitSHA
 		now := time.Now()
@@ -575,7 +575,7 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
 		ParentType:  "task",
-		ParentID:    link.StoryID,
+		ParentID:    link.TaskID,
 	})
 
 	return nil
@@ -605,7 +605,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		return err
 	}
 
-	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.StoryID)
+	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, link.TaskID)
 	if err == nil && target != nil {
 		target.ActivePRNumber = &prNumber
 		target.ActivePRTitle = &prTitle
@@ -623,7 +623,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		}
 		_ = s.deliveryRepo.Save(ctx, target)
 
-		story, storyErr := s.storyRepo.GetRawByID(ctx, link.StoryID)
+		story, storyErr := s.storyRepo.GetRawByID(ctx, link.TaskID)
 		if storyErr == nil && story != nil && story.TeamID != nil && *story.TeamID != "" {
 			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates {
 				switch prStatus {
@@ -648,7 +648,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		EntityID:    link.ID,
 		WorkspaceID: workspaceID,
 		ParentType:  "task",
-		ParentID:    link.StoryID,
+		ParentID:    link.TaskID,
 	})
 	return nil
 }

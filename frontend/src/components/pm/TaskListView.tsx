@@ -285,7 +285,7 @@ export function TaskListView({
         allStories.push(...col.stories);
         perGroup.set(col.state.id, {
           hasMore: col.has_more,
-          total: col.story_count,
+          total: col.task_count,
           loaded: col.stories.length,
         });
       }

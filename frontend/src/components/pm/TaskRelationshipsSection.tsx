@@ -298,8 +298,9 @@ export function TaskRelationshipsSection({
   }, [composerOpen, query, storyId, workspaceId, popoverTab]);
 
   const allRelationships = useMemo(() => {
-    if (!data?.story_relationships) return [];
-    const rels = data.story_relationships;
+    const taskRels = data?.task_relationships ?? data?.story_relationships;
+    if (!taskRels) return [];
+    const rels = taskRels;
     return [
       ...rels.blocked_by.map((r) => ({ ...r, link_type: 'is_blocked_by' as const })),
       ...rels.blocking.map((r) => ({ ...r, link_type: 'blocks' as const })),

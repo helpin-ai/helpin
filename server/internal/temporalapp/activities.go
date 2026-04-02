@@ -2575,7 +2575,7 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
 	}
-	proposal.ProposedStories = make([]model.ProposedStory, 0, len(storyItems))
+	proposal.ProposedTasks = make([]model.ProposedStory, 0, len(storyItems))
 	for index, item := range storyItems {
 		task, ok := decodeLooseApprovedProposedTask(item)
 		if !ok {
@@ -2587,12 +2587,12 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 			}
 			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
-		proposal.ProposedStories = append(proposal.ProposedStories, task)
+		proposal.ProposedTasks = append(proposal.ProposedTasks, task)
 	}
 	if approvedPreviewDebugEnabled() {
 		slog.Info("decoded approved task plan preview",
 			"summary_preview", truncateString(strings.TrimSpace(proposal.Summary), 240),
-			"task_count", len(proposal.ProposedStories),
+			"task_count", len(proposal.ProposedTasks),
 		)
 	}
 	return proposal, nil
@@ -2608,7 +2608,7 @@ func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedStory, 
 		Ref:                decodeLooseJSONString(payload["ref"]),
 		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
 		Description:        decodeLooseJSONString(payload["description"]),
-		StoryType:          firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
+		TaskType:           firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
 		SliceType:          decodeLooseJSONString(payload["slice_type"]),
 		AcceptanceCriteria: decodeLooseJSONStringArray(payload["acceptance_criteria"]),
 		DependencyRefs:     decodeLooseJSONStringArray(payload["dependency_refs"]),
@@ -2931,7 +2931,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 	if proposal.SpecVersionID == "" {
 		proposal.SpecVersionID = strings.TrimSpace(firstNonEmptyString(input.SpecVersionID, derefString(state.epic.ApprovedSpecVersionID)))
 	}
-	if err := validatePlanningProposalTasks(proposal.ProposedStories); err != nil {
+	if err := validatePlanningProposalTasks(proposal.ProposedTasks); err != nil {
 		return err
 	}
 
@@ -2941,7 +2941,7 @@ func (a *AgentRunActivities) applyApprovedTaskPlanPreview(ctx context.Context, s
 		TargetType:  "epic",
 		TargetID:    state.epic.ID,
 	}, "pm.create_task_batch", mustJSON(map[string]any{
-		"tasks": proposal.ProposedStories,
+		"tasks": proposal.ProposedTasks,
 	}))
 	if err != nil {
 		return err
@@ -3116,17 +3116,17 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 
 	if run.TargetType == "" {
 		switch {
-		case run.StoryID != nil:
+		case run.TaskID != nil:
 			run.TargetType = "task"
-			run.TargetID = *run.StoryID
+			run.TargetID = *run.TaskID
 		case run.ConversationID != nil:
 			run.TargetType = "support_conversation"
 			run.TargetID = *run.ConversationID
 		}
 	}
 
-	if run.StoryID != nil {
-		task, err := a.storyRepo.GetRawByID(ctx, *run.StoryID)
+	if run.TaskID != nil {
+		task, err := a.storyRepo.GetRawByID(ctx, *run.TaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -3222,7 +3222,7 @@ func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspac
 
 	target = &model.StoryDeliveryTarget{
 		WorkspaceID:   workspaceID,
-		StoryID:       story.ID,
+		TaskID:        story.ID,
 		DeliveryState: "unconfigured",
 	}
 
@@ -3434,7 +3434,7 @@ func (a *AgentRunActivities) upsertGitLink(ctx context.Context, state *resolvedR
 	if link == nil {
 		link = &model.StoryGitLink{
 			WorkspaceID:   state.run.WorkspaceID,
-			StoryID:       state.task.ID,
+			TaskID:        state.task.ID,
 			IntegrationID: state.integration.ID,
 			RepositoryID:  state.deliveryTarget.RepositoryID,
 			RunID:         &state.run.ID,
@@ -4953,7 +4953,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				summaries = append(summaries, workerpkg.EpicTaskSummary{
 					ID:              s.ID,
 					Name:            s.Name,
-					TaskType:        s.StoryType,
+					TaskType:        s.TaskType,
 					Status:          status,
 					Estimate:        s.Estimate,
 					Priority:        s.Priority,
@@ -5253,7 +5253,7 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 	}
 	if agent, err := a.agentRepo.GetByID(ctx, state.run.WorkspaceID, state.run.AgentID); err == nil && agent != nil {
 		agent.Status = "error"
-		agent.ActiveStoryID = nil
+		agent.ActiveTaskID = nil
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
@@ -5302,7 +5302,7 @@ func (a *AgentRunActivities) MarkRunFailedActivity(ctx context.Context, runID, e
 	if a.agentRepo != nil {
 		if agent, err := a.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil {
 			agent.Status = "error"
-			agent.ActiveStoryID = nil
+			agent.ActiveTaskID = nil
 			_ = a.agentRepo.Update(ctx, agent)
 		}
 	}
@@ -5338,7 +5338,7 @@ func (a *AgentRunActivities) markAgentIdle(ctx context.Context, workspaceID, age
 		return err
 	}
 	agent.Status = "idle"
-	agent.ActiveStoryID = nil
+	agent.ActiveTaskID = nil
 	agent.TokensUsedThisMonth += tokens
 	return a.agentRepo.Update(ctx, agent)
 }
@@ -5445,8 +5445,8 @@ func buildDurableRunFacts(state *resolvedRunState, input planningRunInput) map[s
 	setFact(facts, "agent_id", state.run.AgentID)
 	setFact(facts, "target_type", state.run.TargetType)
 	setFact(facts, "target_id", state.run.TargetID)
-	setFact(facts, "task_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.task)))
-	setFact(facts, "story_id", firstNonEmptyString(derefString(state.run.StoryID), structID(state.task)))
+	setFact(facts, "task_id", firstNonEmptyString(derefString(state.run.TaskID), structID(state.task)))
+	setFact(facts, "story_id", firstNonEmptyString(derefString(state.run.TaskID), structID(state.task)))
 	setFact(facts, "conversation_id", firstNonEmptyString(derefString(state.run.ConversationID), structID(state.conversation)))
 	setFact(facts, "epic_id", firstNonEmptyString(structID(state.epic), derefString(epicIDOfTask(state.task))))
 	setFact(facts, "plan_document_id", firstNonEmptyString(input.PlanDocumentID, derefString(planDocumentIDOfTask(state.task))))

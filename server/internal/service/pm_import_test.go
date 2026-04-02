@@ -27,7 +27,7 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 		WorkspaceID:     workspaceID,
 		DisplayID:       1,
 		Name:            "Existing Story",
-		StoryType:       model.PMStoryTypeFeature,
+		TaskType:       model.PMStoryTypeFeature,
 		WorkflowID:      "wf-existing",
 		WorkflowStateID: "state-existing",
 		ExternalID:      &existingExternalID,
@@ -77,8 +77,8 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 	if len(resp.Workflows) != 1 {
 		t.Fatalf("expected 1 workflow, got %d", len(resp.Workflows))
 	}
-	if resp.Workflows[0].StoryCount != 4 {
-		t.Fatalf("expected workflow story count 4, got %d", resp.Workflows[0].StoryCount)
+	if resp.Workflows[0].TaskCount != 4 {
+		t.Fatalf("expected workflow story count 4, got %d", resp.Workflows[0].TaskCount)
 	}
 }
 

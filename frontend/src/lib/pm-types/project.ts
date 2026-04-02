@@ -188,7 +188,9 @@ export interface SprintPlanningCard {
   sprint: PMSprint;
   stats: PMSprintStats;
   preview_stories: SprintPlanningStoryPreview[];
-  story_preview_overflow: number;
+  task_preview_overflow: number;
+  /** @deprecated Use task_preview_overflow */
+  story_preview_overflow?: number;
 }
 
 export interface SprintPlanningBucket {
@@ -394,8 +396,12 @@ export type StoryDetail = TaskDetail;
 export interface TaskStateColumn {
   state: WorkflowState;
   stories: Task[];
+  task_groups?: TaskGroup[];
+  /** @deprecated Use task_groups */
   story_groups?: TaskGroup[];
-  story_count: number;
+  task_count: number;
+  /** @deprecated Use task_count */
+  story_count?: number;
   point_total: number;
   has_more: boolean;
 }
@@ -412,6 +418,8 @@ export type StoryGroup = TaskGroup;
 
 export interface ColumnTasksResponse {
   stories: Task[];
+  task_groups?: TaskGroup[];
+  /** @deprecated Use task_groups */
   story_groups?: TaskGroup[];
   total: number;
 }
@@ -698,11 +706,13 @@ export interface RecurringTemplateDetail {
   config: RecurringTemplateConfig;
   seed: RecurringStorySeed;
   rule_summary: string;
+  last_generated_task?: Task;
+  /** @deprecated Use last_generated_task */
   last_generated_story?: Story;
   runs?: RecurringRun[];
 }
 
-export interface RecurringTaskTemplateDetail extends Omit<RecurringTemplateDetail, 'seed' | 'last_generated_story'> {
+export interface RecurringTaskTemplateDetail extends Omit<RecurringTemplateDetail, 'seed' | 'last_generated_story' | 'last_generated_task'> {
   seed: RecurringTaskSeed;
   last_generated_task?: Task;
 }
@@ -716,11 +726,13 @@ export interface StoryRecurringSummary {
   rule_summary: string;
   next_run_at?: string;
   last_error?: string;
+  last_generated_task?: Task;
+  /** @deprecated Use last_generated_task */
   last_generated_story?: Story;
   config: RecurringTemplateConfig;
 }
 
-export interface TaskRecurringSummary extends Omit<StoryRecurringSummary, 'last_generated_story'> {
+export interface TaskRecurringSummary extends Omit<StoryRecurringSummary, 'last_generated_story' | 'last_generated_task'> {
   last_generated_task?: Task;
 }
 

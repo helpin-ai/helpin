@@ -53,7 +53,7 @@ export function RecurringTemplateList({
               nextRunAt={item.template.next_run_at}
               generatedCount={item.template.generated_count}
               lastError={item.template.last_error}
-              lastGeneratedTask={item.last_generated_story ?? null}
+              lastGeneratedTask={item.last_generated_task ?? item.last_generated_story ?? null}
               compact
               actions={
                 <>

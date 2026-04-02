@@ -88,14 +88,14 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	}
 
 	activeCard := workspace.Buckets[0].Sprints[0]
-	if activeCard.Stats.StoryCount != 3 {
-		t.Fatalf("active story_count = %d, want 3", activeCard.Stats.StoryCount)
+	if activeCard.Stats.TaskCount != 3 {
+		t.Fatalf("active story_count = %d, want 3", activeCard.Stats.TaskCount)
 	}
 	if len(activeCard.PreviewStories) != 2 {
 		t.Fatalf("active preview stories = %d, want 2", len(activeCard.PreviewStories))
 	}
-	if activeCard.StoryPreviewOverflow != 1 {
-		t.Fatalf("active preview overflow = %d, want 1", activeCard.StoryPreviewOverflow)
+	if activeCard.TaskPreviewOverflow != 1 {
+		t.Fatalf("active preview overflow = %d, want 1", activeCard.TaskPreviewOverflow)
 	}
 	if activeCard.PreviewStories[0].ID != "story-active-1" || activeCard.PreviewStories[1].ID != "story-active-2" {
 		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewStories)

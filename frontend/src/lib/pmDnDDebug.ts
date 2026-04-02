@@ -18,13 +18,13 @@ export function summarizePMDnDStories(stories: Pick<Story, 'id' | 'position'>[])
   return entries
 }
 
-export function summarizePMDnDColumn(column?: Pick<StoryStateColumn, 'state' | 'stories' | 'story_count' | 'has_more'> | null) {
+export function summarizePMDnDColumn(column?: Pick<StoryStateColumn, 'state' | 'stories' | 'task_count' | 'has_more'> | null) {
   if (!column) return null
   return {
     state_id: column.state.id,
     state_type: column.state.state_type,
     loaded_count: column.stories.length,
-    story_count: column.story_count,
+    task_count: column.task_count,
     has_more: column.has_more,
     loaded_order: summarizePMDnDStories(column.stories),
   }

@@ -139,8 +139,8 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 // ConfirmEpicRun confirms a task plan, creates tasks, and writes dependency links.
 func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmPlanningRequest) ([]model.PMStory, error) {
 	// Interactive path: stories provided directly, no agent run to validate.
-	if runID == "" && len(req.ProposedStories) > 0 {
-		return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedStories)
+	if runID == "" && len(req.ProposedTasks) > 0 {
+		return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedTasks)
 	}
 
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
@@ -194,9 +194,9 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("task plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_tasks\" or the legacy \"proposed_stories\"")
 	}
 
-	proposedStories := req.ProposedStories
+	proposedStories := req.ProposedTasks
 	if len(proposedStories) == 0 {
-		proposedStories = proposal.ProposedStories
+		proposedStories = proposal.ProposedTasks
 	}
 	if len(proposedStories) == 0 {
 		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\" or the legacy \"proposed_stories\"")
@@ -261,7 +261,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	refToTask := make(map[string]model.PMStory, len(proposedStories))
 
 	for idx, ps := range proposedStories {
-		taskType := strings.ToLower(strings.TrimSpace(ps.StoryType))
+		taskType := strings.ToLower(strings.TrimSpace(ps.TaskType))
 		if !isValidTaskType(taskType) {
 			taskType = model.PMStoryTypeFeature
 		}
@@ -279,7 +279,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
-				StoryType:       taskType,
+				TaskType:       taskType,
 				WorkflowID:      workflowID,
 				WorkflowStateID: workflowStateID,
 				EpicID:          &epicID,
@@ -331,7 +331,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			TaskID:              detail.Story.ID,
 			Ref:                 ps.Ref,
 			Name:                detail.Story.Name,
-			TaskType:            detail.Story.StoryType,
+			TaskType:            detail.Story.TaskType,
 			Estimate:            detail.Story.Estimate,
 			Priority:            ps.Priority,
 			AcceptanceCriteria:  slices.Clone(ps.AcceptanceCriteria),
@@ -387,7 +387,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if proposal.SpecVersionID == "" && epic.ApprovedSpecVersionID != nil {
 		proposal.SpecVersionID = *epic.ApprovedSpecVersionID
 	}
-	proposal.ProposedStories = proposedStories
+	proposal.ProposedTasks = proposedStories
 	runSummary := epicPlanningRunSummary{
 		Stage:               model.PlanningStagePlanStories,
 		SpecDocumentID:      derefString(epic.SpecDocumentID),
@@ -480,7 +480,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	refToTask := make(map[string]model.PMStory, len(proposedStories))
 
 	for idx, ps := range proposedStories {
-		taskType := strings.ToLower(strings.TrimSpace(ps.StoryType))
+		taskType := strings.ToLower(strings.TrimSpace(ps.TaskType))
 		if !isValidTaskType(taskType) {
 			taskType = model.PMStoryTypeFeature
 		}
@@ -498,7 +498,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
-				StoryType:       taskType,
+				TaskType:       taskType,
 				WorkflowID:      workflowID,
 				WorkflowStateID: workflowStateID,
 				EpicID:          &epicID,
@@ -853,7 +853,7 @@ func validatePlanningTasks(stories []model.ProposedStory) error {
 		return err
 	}
 	for idx := range stories {
-		stories[idx].StoryType = normalizePlannedTaskType(stories[idx].StoryType)
+		stories[idx].TaskType = normalizePlannedTaskType(stories[idx].TaskType)
 		if stories[idx].Priority != nil {
 			normalizedPriority := normalizePlannedTaskPriority(*stories[idx].Priority)
 			stories[idx].Priority = &normalizedPriority

@@ -51,7 +51,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 	}
 
 	response := &model.GroupedAssociationsResponse{
-		StoryRelationships: model.StoryRelationshipGroups{
+		TaskRelationships: model.StoryRelationshipGroups{
 			BlockedBy:    []model.StoryRelationshipSummary{},
 			Blocking:     []model.StoryRelationshipSummary{},
 			RelatesTo:    []model.StoryRelationshipSummary{},
@@ -70,7 +70,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 		if err != nil {
 			return nil, err
 		}
-		response.StoryRelationships = relationships
+		response.TaskRelationships = relationships
 	}
 
 	if err := s.populateCrossObjectAssociations(ctx, workspaceID, objectType, objectID, response); err != nil {
@@ -97,11 +97,11 @@ func (s *AssociationsService) CreateStoryRelationship(ctx context.Context, works
 	if actorID == "" {
 		return nil, fmt.Errorf("actor_id is required")
 	}
-	if req.OtherStoryID == "" {
+	if req.OtherTaskID == "" {
 		return nil, fmt.Errorf("other_task_id is required")
 	}
 
-	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherStoryID})
+	stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{currentStoryID, req.OtherTaskID})
 	if err != nil {
 		return nil, err
 	}
@@ -438,15 +438,15 @@ func (s *AssociationsService) loadStoryRelationships(ctx context.Context, worksp
 func resolveRelationshipInput(currentStoryID string, req model.CreateStoryRelationshipRequest) (string, string, string, error) {
 	switch req.RelationshipType {
 	case model.StoryRelationshipActionRelatesTo:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeRelatesTo, nil
+		return currentStoryID, req.OtherTaskID, model.PMStoryLinkTypeRelatesTo, nil
 	case model.StoryRelationshipActionBlocks:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeBlocks, nil
+		return currentStoryID, req.OtherTaskID, model.PMStoryLinkTypeBlocks, nil
 	case model.StoryRelationshipActionIsBlockedBy:
-		return req.OtherStoryID, currentStoryID, model.PMStoryLinkTypeBlocks, nil
+		return req.OtherTaskID, currentStoryID, model.PMStoryLinkTypeBlocks, nil
 	case model.StoryRelationshipActionDuplicates:
-		return currentStoryID, req.OtherStoryID, model.PMStoryLinkTypeDuplicates, nil
+		return currentStoryID, req.OtherTaskID, model.PMStoryLinkTypeDuplicates, nil
 	case model.StoryRelationshipActionIsDuplicatedBy:
-		return req.OtherStoryID, currentStoryID, model.PMStoryLinkTypeDuplicates, nil
+		return req.OtherTaskID, currentStoryID, model.PMStoryLinkTypeDuplicates, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported relationship type %q", req.RelationshipType)
 	}
@@ -523,7 +523,7 @@ func uniqueStrings(values []string) []string {
 func storyAssociationSummary(associationID string, story model.PMStory) model.AssociationObjectSummary {
 	displayID := fmt.Sprintf("%d", story.DisplayID)
 	workflowStateID := story.WorkflowStateID
-	storyType := story.StoryType
+	storyType := story.TaskType
 	return model.AssociationObjectSummary{
 		AssociationID:   associationID,
 		ObjectType:      model.CRMObjectTask,
@@ -532,7 +532,7 @@ func storyAssociationSummary(associationID string, story model.PMStory) model.As
 		Title:           story.Name,
 		WorkflowStateID: &workflowStateID,
 		Completed:       story.Completed,
-		StoryType:       &storyType,
+		TaskType:        &storyType,
 	}
 }
 

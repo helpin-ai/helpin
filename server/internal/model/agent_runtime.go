@@ -18,7 +18,7 @@ type ToolInvocation struct {
 type TaskCompletionFollowupProposal struct {
 	Title       string  `json:"title"`
 	Description string  `json:"description,omitempty"`
-	StoryType   string  `json:"story_type,omitempty"`
+	TaskType    string  `json:"task_type,omitempty"`
 	Priority    *string `json:"priority,omitempty"`
 }
 

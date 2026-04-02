@@ -52,7 +52,7 @@ const makeStateColumn = (overrides: Record<string, unknown>) => ({
     ...((overrides.state as Record<string, unknown> | undefined) ?? {}),
   },
   stories: [],
-  story_groups: [],
+  task_groups: [],
   story_count: 0,
   point_total: 0,
   has_more: false,

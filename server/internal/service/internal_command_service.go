@@ -215,7 +215,7 @@ func (s *InternalCommandService) registerDefaults() {
 				if err := json.Unmarshal(input, &legacy); err != nil {
 					return nil, fmt.Errorf("tasks is required")
 				}
-				req.Stories = legacy.ProposedStories
+				req.Stories = legacy.ProposedTasks
 				req.RunID = legacy.RunID
 			}
 			if len(req.Stories) == 0 {
@@ -226,8 +226,8 @@ func (s *InternalCommandService) registerDefaults() {
 			var err error
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
-					RunID:           strings.TrimSpace(req.RunID),
-					ProposedStories: req.Stories,
+					RunID:          strings.TrimSpace(req.RunID),
+					ProposedTasks:  req.Stories,
 				}
 				tasks, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
 			} else {
@@ -374,7 +374,7 @@ func (s *InternalCommandService) registerDefaults() {
 				if title == "" {
 					return nil, fmt.Errorf("followup %d is missing a title", idx+1)
 				}
-				taskType := strings.TrimSpace(followup.StoryType)
+				taskType := strings.TrimSpace(followup.TaskType)
 				if taskType == "" {
 					taskType = model.PMStoryTypeChore
 				}
@@ -383,7 +383,7 @@ func (s *InternalCommandService) registerDefaults() {
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
 					Description: stringPtrOrNil(description),
-					StoryType:   taskType,
+					TaskType:   taskType,
 					EpicID:      task.EpicID,
 					TeamID:      task.TeamID,
 					Priority:    followup.Priority,
