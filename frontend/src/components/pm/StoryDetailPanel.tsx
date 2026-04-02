@@ -942,7 +942,7 @@ function StoryDetailPanelBody({
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
-                  className="border-transparent shadow-none [&_.ProseMirror]:text-[13px]"
+                  className="border-transparent shadow-none [&_.ProseMirror]:text-sm"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
@@ -961,7 +961,7 @@ function StoryDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-[13px] [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>

@@ -97,7 +97,7 @@ function WorkspaceLayout() {
           style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
         >
           <Sidebar />
-          <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)] dark:shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.2)]">
+          <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
             {!isSupportPage && <Header />}
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />

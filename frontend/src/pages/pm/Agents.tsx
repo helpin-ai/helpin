@@ -34,6 +34,7 @@ import type {
   AgentModelProviderOption,
   AgentRun,
   AgentRuntimeKind,
+  AgentTargetType,
   CreateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
   ToolCatalogResponse,
@@ -43,13 +44,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Sheet,
   SheetContent,
@@ -197,12 +191,21 @@ interface AgentFormData {
   system_prompt: string;
   monthly_token_budget: string;
   team_id: string;
+  allowed_targets: AgentTargetType[];
   allowed_tools: string[];
   schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
   default_invocation_mode: AgentInvocationMode;
 }
+
+const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
+  { value: 'story', label: 'Story', description: 'Run on stories and story planning tasks.' },
+  { value: 'epic', label: 'Epic', description: 'Run on epics and planning loops.' },
+  { value: 'crm_deal', label: 'CRM Deal', description: 'Run on CRM deal records.' },
+  { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
+  { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
+];
 
 const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   { value: 'anthropic', label: 'Anthropic', model_placeholder: 'claude-sonnet-4-20250514' },
@@ -314,6 +317,18 @@ function normalizeToolList(tools: string[]): string[] {
   }, []);
 }
 
+function normalizeTargetList(targets: AgentTargetType[]): AgentTargetType[] {
+  const seen = new Set<AgentTargetType>();
+  return targets.reduce<AgentTargetType[]>((result, target) => {
+    if (seen.has(target)) {
+      return result;
+    }
+    seen.add(target);
+    result.push(target);
+    return result;
+  }, []);
+}
+
 function createEmptyCustomForm(): AgentFormData {
   return {
     name: '',
@@ -326,6 +341,7 @@ function createEmptyCustomForm(): AgentFormData {
     system_prompt: '',
     monthly_token_budget: '',
     team_id: '',
+    allowed_targets: ['story'],
     allowed_tools: [],
     schedule: '',
     approval_mode: 'never',
@@ -359,7 +375,7 @@ function normalizeDefaultInvocationMode(
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
   if (!agent.is_system) {
-    return agent.runtime_kind !== 'opencode' || Boolean(agent.monthly_token_budget);
+    return Boolean(agent.monthly_token_budget);
   }
   const presetKey = fallbackPresetKey(agent);
   const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
@@ -381,7 +397,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     trigger_mode: 'manual',
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
-    allowed_targets: ['story'],
+    allowed_targets: normalizeTargetList(form.allowed_targets),
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -439,6 +455,8 @@ function buildUpdatePayload(
     payload.monthly_token_budget = form.monthly_token_budget.trim()
       ? Number.parseInt(form.monthly_token_budget, 10)
       : 0;
+  } else {
+    payload.allowed_targets = normalizeTargetList(form.allowed_targets);
   }
   return payload;
 }
@@ -464,6 +482,11 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     system_prompt: agent.system_prompt ?? preset?.system_prompt ?? '',
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
+    allowed_targets: normalizeTargetList(
+      agent.allowed_targets?.length
+        ? (agent.allowed_targets as AgentTargetType[])
+        : (preset?.allowed_target_types ?? []),
+    ),
     allowed_tools: normalizeToolList(agent.allowed_tools?.length ? agent.allowed_tools : (preset?.allowed_tools ?? [])),
     schedule: '',
     approval_mode: 'never',
@@ -907,6 +930,7 @@ export function AgentsPage() {
       system_prompt: agent.system_prompt ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
+      allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
       allowed_tools: normalizeToolList(agent.allowed_tools),
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'preset_default',
@@ -1044,9 +1068,9 @@ export function AgentsPage() {
     && selectedSystemVersionKey !== currentSystemVersionKey;
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen;
   const effectiveTargets =
-    editingAgent && editingAgent.allowed_targets.length > 0
-      ? editingAgent.allowed_targets
-      : (editingSystemAgent ? (selectedPreset?.allowed_target_types ?? []) : ['story']);
+    editingSystemAgent
+      ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
+      : form.allowed_targets;
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
@@ -1065,6 +1089,21 @@ export function AgentsPage() {
       ...current,
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
     }));
+  };
+  const toggleTarget = (target: AgentTargetType) => {
+    setForm((current) => {
+      const hasTarget = current.allowed_targets.includes(target);
+      if (hasTarget && current.allowed_targets.length === 1) {
+        toast.error('Custom agents need at least one target');
+        return current;
+      }
+      return {
+        ...current,
+        allowed_targets: hasTarget
+          ? current.allowed_targets.filter((value) => value !== target)
+          : normalizeTargetList([...current.allowed_targets, target]),
+      };
+    });
   };
   const selectSystemPresetVersion = (versionKey: string) => {
     if (!editingAgent?.is_system) return;
@@ -1147,7 +1186,7 @@ export function AgentsPage() {
               <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                 <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium mb-1">{card.title}</p>
-                <p className="text-[13px] text-muted-foreground leading-relaxed">{card.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
               </div>
             ))}
           </div>
@@ -1695,8 +1734,8 @@ export function AgentsPage() {
         </SheetContent>
       </Sheet>
 
-      {/* ---- Create / Edit dialog ---- */}
-      <Dialog
+      {/* ---- Create / Edit drawer ---- */}
+      <Sheet
         open={dialogOpen}
         onOpenChange={(open) => {
           setDialogOpen(open);
@@ -1705,20 +1744,22 @@ export function AgentsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editingAgent ? 'Edit Custom Agent' : 'New Custom Agent'}
-            </DialogTitle>
-          </DialogHeader>
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[92vw] sm:!max-w-[92vw] xl:w-[1100px] xl:!max-w-[1100px]">
+          <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
+            <SheetTitle>{editingAgent ? 'Edit Custom Agent' : 'New Custom Agent'}</SheetTitle>
+            <SheetDescription className="max-w-3xl">
+              Custom agents own their prompt, runtime, tools, targets, and automation settings directly. They do not inherit from or stay pinned to any preset family.
+            </SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-4">
-            <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-              <p className="text-sm font-medium">Custom agent</p>
-              <p className="text-xs text-muted-foreground">
-                This is a fully custom agent. It does not inherit or track any preset family or preset version.
-              </p>
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+            <div className="space-y-4">
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+                <p className="text-sm font-medium">Custom agent</p>
+                <p className="text-xs text-muted-foreground">
+                  This is a fully custom agent. It does not inherit or track any preset family or preset version.
+                </p>
+              </div>
 
             {/* ---- Basics ---- */}
             <div className="space-y-2">
@@ -1772,7 +1813,80 @@ export function AgentsPage() {
               </div>
             )}
 
+            <div className="space-y-2">
+              <FieldLabel tooltip="Choose which target types this custom agent is allowed to run against.">
+                Allowed targets
+              </FieldLabel>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {CUSTOM_AGENT_TARGET_OPTIONS.map((target) => {
+                  const active = form.allowed_targets.includes(target.value);
+                  return (
+                    <button
+                      key={target.value}
+                      type="button"
+                      onClick={() => toggleTarget(target.value)}
+                      className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                        active
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border bg-background hover:bg-muted/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{target.label}</span>
+                        {active ? <Badge variant="secondary" className="text-[10px]">Enabled</Badge> : null}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{target.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Story and epic are the normal choices for planning agents. Add other targets only if the prompt and toolset are designed for them.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <FieldLabel tooltip="The execution engine that runs this agent.">
+                  Execution engine
+                </FieldLabel>
+                <Select
+                  value={form.runtime_kind}
+                  onValueChange={(value) =>
+                    setForm((current) => {
+                      const runtimeKind = value as AgentRuntimeKind;
+                      if (!availableRuntimeKinds.includes(runtimeKind)) {
+                        return current;
+                      }
+                      return {
+                        ...current,
+                        runtime_kind: runtimeKind,
+                        supported_modes: supportedModesForForm(runtimeKind),
+                        provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                        default_invocation_mode: normalizeDefaultInvocationMode(
+                          current.default_invocation_mode,
+                          runtimeKind,
+                          'autonomous',
+                        ),
+                      };
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RUNTIME_KIND_OPTIONS
+                      .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
+                      .map((runtimeKind) => (
+                        <SelectItem key={runtimeKind} value={runtimeKind}>
+                          {AGENT_RUNTIME_LABELS[runtimeKind]}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <FieldLabel tooltip="This agent owns its default run mode. Launchers should not decide whether it is interactive or autonomous.">
                   Default run mode
@@ -1932,21 +2046,21 @@ export function AgentsPage() {
                     : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
                 </p>
                 <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/70 p-2">
-                        {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
-                          <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                            <span>{tool}</span>
-                            <button
-                              type="button"
-                              className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                              onClick={() => removeTool(tool)}
-                              disabled={codexUsesPresetCapabilities}
-                              aria-label={`Remove ${tool}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        )) : (
-                          <span className="text-sm text-muted-foreground">No tools configured</span>
+                  {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
+                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                      <span>{tool}</span>
+                      <button
+                        type="button"
+                        className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                        onClick={() => removeTool(tool)}
+                        disabled={codexUsesPresetCapabilities}
+                        aria-label={`Remove ${tool}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )) : (
+                    <span className="text-sm text-muted-foreground">No tools configured</span>
                   )}
                 </div>
               </div>
@@ -2044,47 +2158,6 @@ export function AgentsPage() {
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="The execution engine that runs this agent. Only change this if you know what you're doing.">
-                    Execution engine
-                  </FieldLabel>
-                  <Select
-                    value={form.runtime_kind}
-                    onValueChange={(value) =>
-                      setForm((current) => {
-                        const runtimeKind = value as AgentRuntimeKind;
-                        if (!availableRuntimeKinds.includes(runtimeKind)) {
-                          return current;
-                        }
-                        return {
-                          ...current,
-                          runtime_kind: runtimeKind,
-                          supported_modes: supportedModesForForm(runtimeKind),
-                          provider: normalizeProviderForRuntime(runtimeKind, current.provider),
-                          default_invocation_mode: normalizeDefaultInvocationMode(
-                            current.default_invocation_mode,
-                            runtimeKind,
-                            'autonomous',
-                          ),
-                        };
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RUNTIME_KIND_OPTIONS
-                        .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
-                        .map((runtimeKind) => (
-                        <SelectItem key={runtimeKind} value={runtimeKind}>
-                          {AGENT_RUNTIME_LABELS[runtimeKind]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-budget"
                     tooltip="Set a monthly limit on how much this agent can process. Measured in AI tokens. Leave empty for unlimited."
@@ -2101,10 +2174,11 @@ export function AgentsPage() {
                 </div>
               </Collapsible.Content>
             </Collapsible.Root>
+            </div>
           </div>
 
           {/* ---- Footer ---- */}
-          <DialogFooter className="flex-row justify-between sm:justify-between pt-2">
+          <SheetFooter className="border-t border-border/60 bg-background px-6 py-4 sm:flex-row sm:justify-between">
             <div>
               {editingAgent && (
                 <Button
@@ -2129,9 +2203,9 @@ export function AgentsPage() {
                 {saving ? 'Saving...' : editingAgent ? 'Save Changes' : 'Create Custom Agent'}
               </Button>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={deleteConfirmOpen}

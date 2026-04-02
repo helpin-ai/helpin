@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 export function MarkdownContent({ content, className }: { content: string; className?: string }) {
   return (
-    <div className={cn('text-[13px] leading-6 text-foreground', className)}>
+    <div className={cn('text-sm leading-6 text-foreground', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -26,7 +26,7 @@ export function MarkdownContent({ content, className }: { content: string; class
           tbody: ({ children }) => <tbody>{children}</tbody>,
           tr: ({ children }) => <tr className="border-b border-border/60 last:border-b-0">{children}</tr>,
           th: ({ children }) => <th className="px-3 py-2 text-left text-[12px] font-semibold text-foreground">{children}</th>,
-          td: ({ children }) => <td className="px-3 py-2 align-top text-[13px] leading-5 text-foreground">{children}</td>,
+          td: ({ children }) => <td className="px-3 py-2 align-top text-sm leading-5 text-foreground">{children}</td>,
           blockquote: ({ children }) => (
             <blockquote className="mb-3 border-l-2 border-border pl-3 text-muted-foreground last:mb-0">
               {children}

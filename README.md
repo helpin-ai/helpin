@@ -155,3 +155,34 @@ The shared dataset was also cleaned up:
 - Change the standalone widget under `widget/`: run `bash widget/build.sh`
 - Change only shared emoji data: rebuild anything that consumes it
 - Debug a broken embed-widget emoji picker first by checking `/chunks/emoji-catalog.*.js` delivery and MIME type
+
+## Agents and Automation
+
+The canonical doc for the current backend model and near-term proposal is [docs/AGENTS_AND_AUTOMATION.md](docs/AGENTS_AND_AUTOMATION.md).
+
+Current truth:
+
+- `agent_run` is the durable execution primitive
+- automation rules are the user-authored trigger-to-action layer
+- built-in automations remain product-owned backend behavior
+- run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
+- generic target launching now exists for direct runs and automation-rule `start_agent_run`
+- the backend already behaves as two agent categories:
+  - system agents as product-owned preset/default wrappers
+  - custom agents as user-defined wrappers
+- for `native_sdk`, both categories share the same core run machinery
+
+Current trigger surfaces:
+
+- manual run actions
+- agent `trigger_mode`
+- agent `schedule`
+- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+
+Proposed custom-agent direction:
+
+- keep system agents product-owned defaults
+- make custom agents generic `native_sdk` executors
+- trigger custom agents via `manual`, automation-rule `event`, and automation-rule `cron`
+- pass a minimal trigger payload into `agent_run.input`
+- let custom agents gather additional context with tools

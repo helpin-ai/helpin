@@ -180,7 +180,7 @@ export function MyWorkPage() {
       <header className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-semibold">My Work</h2>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {mode === 'assigned'
               ? `Stories assigned to you across ${isAdmin ? 'all' : 'your'} teams.`
               : `Stories you requested across ${isAdmin ? 'all' : 'your'} teams.`}
@@ -284,7 +284,7 @@ function MyWorkEmptyState({ mode }: { mode: Mode }) {
             <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
               <Icon className="h-5 w-5 text-muted-foreground mb-3" />
               <p className="text-sm font-medium mb-1">{title}</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
             </div>
           ))}
         </div>
@@ -387,7 +387,7 @@ function StoryRow({ story, onClick, teamName }: {
         {story.display_id}
       </span>
 
-      <span className={`text-[13px] truncate flex-1 min-w-0 ${story.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>
+      <span className={`text-sm truncate flex-1 min-w-0 ${story.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>
         {story.name}
       </span>
 

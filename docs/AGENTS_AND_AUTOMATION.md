@@ -1,116 +1,130 @@
-# Agents, Automation, and Taxonomy
+# Agents and Automation
 
-This is the single source of truth for the current agent and automation model in the codebase.
-
-It describes the runtime that exists today, not older PRD language or abandoned branches.
-
-## Why this doc exists
-
-The codebase has three related ideas that used to blur together:
+This is the single source of truth for the current backend model for:
 
 - agents
+- agent runs
 - built-in automations
 - automation rules
+- manual, event, cron, and schedule-based triggering
 
-They are connected, but they are not the same thing.
+It also records the proposed direction for custom agents so future work does not drift back into older flow-runtime or agent-class ideas.
 
-The current platform model is intentionally small:
+## Current truth
 
-- an `agent` is a configured executor
+The active platform model is intentionally small:
+
+- an `agent` is a configurable executor record
 - an `agent_run` is the durable execution primitive
-- built-in automations are product-owned system behavior
+- built-in automations are product-owned backend behavior
 - automation rules are user-authored trigger-to-action rules
-- the top-level automation taxonomy has two product kinds:
-  - `built_in_automation`
-  - `automation_rule`
 
-Agents are not a third automation kind. They are reusable executors that humans, schedules, and rules can launch.
+Agents are not a top-level automation kind. If something actually executes, it becomes an `agent_run`.
 
-## The top-level taxonomy
+## Current flow
 
-### 1. Agents
+```text
+                       +----------------------+
+                       |   built-in trigger   |
+                       |  service/workflow    |
+                       +----------+-----------+
+                                  |
+                                  | product-owned behavior
+                                  v
+                            +-----------+
+                            | service / |
+                            | workflow  |
+                            +-----------+
 
-Agents are workspace-scoped configuration records stored in `agents`.
+  +----------------+        +----------------------+        +------------------+
+  | manual UI/API  +------->+  StartTargetRun      +------->+    agent_run     |
+  | POST /agent-runs|       |  generic direct path |        | durable record   |
+  +----------------+        +----------+-----------+        +--------+---------+
+                                       ^                             |
+                                       |                             |
+  +----------------------+             |                             v
+  | story / epic         |-------------+                      +-------------+
+  | convenience endpoints|   wrapper behavior                 | Temporal +  |
+  | run-agent            |   assignment / planner defaults    | runtime     |
+  +----------------------+                                    +------+------+ 
+                                                                      |
+                                                                      v
+                                                              +---------------+
+                                                              | messages /    |
+                                                              | interactions /|
+                                                              | artifacts     |
+                                                              +---------------+
 
-An agent defines:
+  +----------------------+        +----------------------+ 
+  | automation rule      +------->+ start_agent_run      |
+  | trigger              |        | target-aware action  |
+  | state_entered /      |        | use config target or |
+  | approved / cron      |        | fall back to event   |
+  +----------------------+        +----------+-----------+
+                                              |
+                                              v
+                                        +-----------+
+                                        | agent_run |
+                                        +-----------+
 
-- which preset it starts from
-- which runtime it uses
-- which targets it can run against
-- which tools and commands it may use
-- whether approval is required
-- whether it defaults to `interactive` or `autonomous`
-- whether it is system-seeded or user-managed
+  +----------------------+        +----------------------+
+  | agent schedule       +------->+ scheduled run path   |
+  | cron on agent record |        | trigger.source=schedule
+  +----------------------+        +----------------------+
 
-Agents do not define a separate orchestration engine. They are policy plus defaults.
+Targets:
+  story, epic, support_conversation, scheduled, and any other allowed target
 
-### 2. Agent runs
+Special case:
+  support_conversation still has its own launch path and post-run behavior
+```
 
-`agent_runs` are the real execution unit.
+## Top-level taxonomy
 
-Every actual execution becomes one durable run with:
+### Built-in automations
 
-- a target type and target ID
-- a runtime kind
-- an invocation mode
-- status, approval state, and pause reason
-- input/output payloads
-- transcript messages in `agent_run_messages`
-- artifacts in `agent_run_artifacts`
+Built-in automations are product-owned behaviors implemented directly in services, repositories, and Temporal workflows.
 
-If something "uses an agent", what actually happens is that the system creates and executes an `agent_run`.
+Examples:
 
-### 3. Built-in automations
+- CRM signal detection
+- CRM summary refresh
+- deterministic PM automations
 
-Built-in automations are system-owned behaviors implemented directly in backend services, repositories, and Temporal workflows.
+These are not generic agents and are not user-authored automation rules.
 
-They are not user-authored agents and they are not configurable as generic flows.
-
-Current cataloged built-ins are:
-
-- `crm.buyer_signal_ingestion`
-- `crm.contact_summary_refresh`
-- `crm.deal_summary_refresh`
-- `pm.epic_auto_start`
-- `pm.epic_auto_complete`
-- `pm.sprint_auto_create`
-- `pm.sprint_move_unfinished`
-
-### 4. Automation rules
+### Automation rules
 
 Automation rules are user-authored records in `automation_rules`.
 
-They map a trigger to an action, for example:
+They map a trigger to a controlled action.
 
-- when a story enters a state
-- when an agent run is approved
-- when a cron category fires
+Current trigger types:
 
-Rules are event-driven glue. They do not introduce a separate runtime model.
+- `story.state_entered`
+- `agent_run.approved`
+- `cron`
 
-## What the system is not
+Current active action types:
 
-The current model should not be understood as:
+- `start_agent_run`
+- `move_to_state`
+- `merge_branch`
+- `run_command`
 
-- agent classes like planner / engineer / reviewer / support controlling execution
-- a planning-session product runtime
-- a flow-template runtime for normal PM or CRM work
-- a hidden epic-planner phase machine
-- a generic taxonomy where agents, rules, and flows are equal first-class automation kinds
+Historical constants still exist in code, but are not active:
 
-The migration history explicitly removed older `agent_class`, `capability_profile`, flow, and planning-session structures. Some historical names still appear in SQL comments, old docs, or compatibility constants, but they are not the active model.
+- `run_agent`
+- `start_flow`
 
-## Core concepts
+### Agents
 
-### Agent
+Agents are reusable executors stored in `agents`.
 
-An agent is a configured executor record in `agents`.
-
-Important fields:
+Important agent fields today:
 
 - `is_system`
 - `preset_key`
-- `role`
 - `runtime_kind`
 - `trigger_mode`
 - `provider`
@@ -121,46 +135,39 @@ Important fields:
 - `allowed_targets`
 - `schedule`
 - `approval_mode`
-- `max_concurrent_runs`
 - `default_invocation_mode`
 
-Important implications:
-
-- agents are workspace-scoped, not global
-- agents are not runtime classes
-- presets seed defaults, but per-agent policy can override them
-- system agents are seeded by the product, especially the workspace Epic Planner
-
-### Agent run
-
-An `agent_run` is one durable execution against one target.
-
-Normal entry points converge here:
-
-- running an agent on a story
-- interactive epic planning
-- support conversation execution
-- scheduled agent execution
-- automation rules that start an agent run
-
-Important fields:
+Important run fields today:
 
 - `target_type`
 - `target_id`
 - `runtime_kind`
 - `invocation_mode`
+- `status`
 - `approval_state`
 - `pause_reason`
-- `status`
 - `execution_stage`
 - `task_queue`
 - `runner_pool`
+- `input`
+- `output_summary`
 
-### Preset
+Current run input contract:
 
-A preset is a bundle of defaults, not a special engine.
+- run input now supports explicit `trigger`, `target`, and `event` objects
+- legacy top-level fields like `story_id`, `epic_id`, `conversation_id`, and planning fields are still preserved for compatibility
+- current populated trigger sources include `manual`, `automation_rule`, and `schedule`
+- some product-owned internal launches may still use system-specific trigger values
 
-Current presets:
+## Agent categories
+
+The code already has an operational split between product-owned system agents and user-managed agents. That split should be treated as the real model going forward.
+
+### System agents
+
+System agents are product-owned agents seeded or managed by backend code.
+
+Current examples:
 
 - `epic_planner`
 - `story_planner`
@@ -169,99 +176,42 @@ Current presets:
 - `code_builder`
 - `review_agent`
 
-Presets define defaults for:
+System-agent characteristics:
 
-- label and role
-- runtime kind
-- trigger modes allowed
-- tool and command policy
-- target types
-- approval mode
-- default invocation mode
-- default system prompt
+- represented by `is_system = true`
+- preset-bound
+- for `native_sdk`, share the same run, transcript, interaction, and artifact machinery as custom agents
+- currently still differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+- genuine special-case backend behavior should be limited to product-specific exceptions such as support conversation handling
+- backend owns their lifecycle, defaults, and guardrails
 
-Presets do not create hidden orchestration behavior.
+In practice, system agents are product-owned defaults. They should not imply a separate native execution engine.
 
-### Runtime kind
+### Custom agents
 
-Runtime kind selects the underlying execution environment.
+Custom agents are workspace-defined agents created by users.
 
-Current runtime kinds:
+Current code truth:
 
-- `native_sdk`
-- `opencode`
+- represented by `is_system = false`
+- cannot set `preset_key` or `preset_version_key`
+- may currently use `native_sdk` or `opencode`
+- cannot use `codex`, because codex requires a supported preset policy
 
-Current behavior:
+Proposed product direction:
 
-- `native_sdk` supports both `interactive` and `autonomous`
-- `opencode` supports `autonomous` only
+- custom agents should be `native_sdk` only
+- custom agents should use one generic execution model
+- custom agents should not depend on bespoke backend orchestration
+- custom agents should gather most context through tools after receiving a minimal trigger payload
 
-### Invocation mode
+In practice, custom agents are where generic execution belongs.
 
-Invocation mode describes how the run behaves from a human interaction perspective.
+## Presets
 
-Current modes:
+Presets are bundles of defaults, not separate runtimes or classes.
 
-- `interactive`
-  - transcript-driven
-  - can ask questions inline
-  - can pause for human input or human approval
-- `autonomous`
-  - background-oriented
-  - may still pause for approval if policy demands it
-  - does not depend on a chat-first planning loop
-
-### Trigger mode
-
-Trigger mode belongs to the agent configuration, not the run.
-
-Current values:
-
-- `manual`
-- `auto_on_assignment`
-- `auto_on_event`
-
-This is separate from `schedule`. A scheduled agent is still an agent that ultimately creates normal `agent_runs`.
-
-### Approval mode and pause state
-
-Approval mode is agent policy:
-
-- `never`
-- `always`
-- `preset_default`
-
-Run-time approval and pause state are stored on the run:
-
-- `approval_state`: `not_required`, `pending`, `approved`, `rejected`
-- `pause_reason`: `none`, `human_input`, `human_approval`
-
-The important distinction is:
-
-- approval mode is static policy on the agent
-- approval state is dynamic state on one run
-
-### Tools are the safety boundary
-
-Tools are the primary capability boundary.
-
-The platform does not treat the prompt as the safety layer. The safety layer is:
-
-- allowed tools
-- allowed commands
-- allowed targets
-- backend validation inside tool handlers and services
-
-Examples of backend-enforced invariants:
-
-- story planning cannot create stories for a teamless epic
-- document tools validate document and workspace ownership
-- support tools keep support-specific reply behavior in service code
-- CRM mutation tools validate entity existence and permissions
-
-## Current preset model
-
-The current presets are:
+Current preset catalog:
 
 | Preset | Purpose | Runtime | Default mode | Typical targets |
 | --- | --- | --- | --- | --- |
@@ -272,479 +222,348 @@ The current presets are:
 | `code_builder` | Repo-writing implementation agent | `opencode` | `autonomous` | `story` |
 | `review_agent` | Validation and review without repo mutation | `opencode` | `autonomous` | `story` |
 
-Important details:
+Important implications:
 
-- `story_planner` and `crm_operator` are not separate runtimes; they are preset variants on the same core model
-- `support_agent` defaults to approval-required behavior
-- `code_builder` and `review_agent` are autonomous `opencode` agents
-- the Epic Planner is the default system agent seeded for a workspace
+- presets define defaults for tools, commands, targets, approval mode, runtime, and prompt
+- presets do not define a hidden orchestration engine
+- custom agents are not preset-backed today
+- native planning/scaffolding behavior is now selected by effective tools plus target, not by preset name alone
 
-## Execution model
+## Runtime kinds and invocation modes
 
-### Queue topology
+Current runtime kinds in code:
 
-Queues are chosen by runtime kind and invocation mode:
+- `native_sdk`
+- `opencode`
+- `codex`
 
-- `agent-native-interactive`
-- `agent-native-autonomous`
-- `agent-opencode-autonomous`
-- `automation-default`
+Current mode support:
+
+- `native_sdk` supports `interactive` and `autonomous`
+- `opencode` supports `autonomous`
+- `codex` supports `interactive` and `autonomous`, but only for preset-constrained coding agents
 
 Current queue mapping:
 
 - `native_sdk + interactive` -> `agent-native-interactive`
 - `native_sdk + autonomous` -> `agent-native-autonomous`
 - `opencode` -> `agent-opencode-autonomous`
+- `codex + interactive` -> `agent-codex-interactive`
+- `codex + autonomous` -> `agent-codex-autonomous`
 - non-agent background automations -> `automation-default`
 
-### Durable run workflow
+## Execution model
 
-Agent execution uses one Temporal workflow per run:
+Every real execution becomes one `agent_run`.
+
+The durable run workflow is:
 
 1. create `agent_run`
-2. prepare the run
-3. execute
-4. pause when waiting for approval or input
-5. resume from Temporal signals
+2. prepare run state and target context
+3. execute on the selected runtime
+4. pause when waiting for approval, user input, or authentication
+5. resume through Temporal signals
 6. complete, fail, or cancel
 
-The workflow exposes run-stage queries such as:
+Run transcript and state live in:
 
-- current step
-- approval wait state
-- input wait state
+- `agent_runs`
+- `agent_run_messages`
+- `agent_run_artifacts`
+- `agent_run_interactions`
 
-This is the active durable runtime. There is no separate planning-session table or flow-node engine behind normal work.
+## Current run entrypoints
 
-### Interactive run semantics
+The backend is still target-aware.
 
-Interactive runs are still just `agent_runs`.
+Current first-class launch paths are:
 
-The epic planning experience is one interactive run against an epic. The active model is:
+- story-targeted runs
+- epic-targeted runs
+- support-conversation runs
+- scheduled agent runs
+- automation-rule-launched runs
 
-1. ask clarifying questions inline when needed
-2. draft the PRD inline
-3. publish preview and request approval inline
-4. persist the approved spec through tools
-5. draft the story plan inline
-6. publish preview and request approval inline
-7. create stories through tools
+Important current limitation:
 
-Important constraints:
+- generic agent execution exists
+- generic target launching exists for:
+  - direct runs via `POST /api/pm/agent-runs`
+  - automation-rule `start_agent_run`
 
-- there is no separate planning-session product
-- there is no hidden planner phase machine in backend orchestration
-- approvals are soft gates inside the same transcript
+`StartTargetRun` now provides the generic run contract with explicit `target_type`, `target_id`, and `agent_id`. Story and epic endpoints remain convenience wrappers with product-specific fallback behavior. Automation-rule `start_agent_run` now uses the same target contract. Support conversations still use a separate launch path.
 
-### Scheduled agents
+For `native_sdk` runs, the remaining non-generic behavior is mostly:
+
+- target-aware launch paths
+- target/context hydration for story, epic, and support conversation runs
+- support-specific post-run handling
+
+Interactive planning instructions for native runs are now gated by effective toolset plus target rather than by preset name.
+
+## Triggering model
+
+There are four related trigger concepts in the code today.
+
+### Manual trigger
+
+Manual trigger means a human explicitly starts a run through an API or UI action.
+
+Current manual paths include:
+
+- run agent on story
+- run agent on epic
+- direct `POST /api/pm/agent-runs`
+- resume paused run
+- resolve coding-session interaction
+
+This is the cleanest trigger and should remain part of both system-agent and custom-agent UX.
+
+### Agent `trigger_mode`
+
+`trigger_mode` is agent configuration.
+
+Current values:
+
+- `manual`
+- `auto_on_assignment`
+- `auto_on_event`
+
+Current truth:
+
+- this field exists and is validated
+- it is not yet a complete generic trigger engine by itself
+- the actual event-driven behavior still comes from explicit service hooks and automation rules
+
+### Agent `schedule`
 
 Agents may also have a cron `schedule`.
 
-When scheduled:
+Current truth:
 
-- a Temporal cron workflow fires on the schedule
-- each tick creates a normal `agent_run`
-- the run target is internal scheduled context
-- overlapping scheduled runs for the same agent are prevented
+- a schedule creates normal `agent_runs`
+- scheduling is a trigger mechanism, not a distinct execution kind
+- the schedule lives on the agent record
+- scheduled runs currently use `target_type = scheduled`
 
-This means scheduling is a triggering mechanism for agent runs, not a new automation category.
+This exists today, but it is not the best long-term model for custom agents if automation rules become the canonical event and cron trigger layer.
 
-## Built-in automation taxonomy
+### Automation-rule triggers
 
-Built-in automations are product-owned behavior. They exist outside the generic agent UI even when they use LLMs or Temporal.
+Automation rules are the main user-authored event layer.
 
-The current built-in catalog breaks down into two functional families.
-
-### CRM system intelligence
-
-#### Buyer signal ingestion
-
-Catalog ID: `crm.buyer_signal_ingestion`
-
-Purpose:
-
-- inspect stored CRM email after it has been persisted
-- determine eligibility for detection
-- run LLM-based signal extraction
-- store durable buyer signals with provenance and duplicate suppression
-
-Important properties:
-
-- source of truth is normalized CRM email in Postgres, not raw provider payloads
-- one Temporal workflow is started per eligible message
-- task queue is `automation-default`
-- duplicate suppression exists at both source and thread-window levels
-- output is stored in `crm_buyer_signals`
-
-This is built-in automation, not a user-visible agent.
-
-#### Contact summary refresh
-
-Catalog ID: `crm.contact_summary_refresh`
-
-Purpose:
-
-- maintain durable summaries for contacts
-- refresh them from recent CRM email activity and buyer signals
-
-Important properties:
-
-- one durable summary row per workspace + entity
-- debounced Temporal workflow per entity
-- daily reconciliation re-queues recently touched contacts
-- summary status can be `pending_refresh`, `ready`, `stale`, or `error`
-
-#### Deal summary refresh
-
-Catalog ID: `crm.deal_summary_refresh`
-
-Purpose:
-
-- maintain durable summaries for deals
-- refresh them from recent CRM email activity and buyer signals
-
-Important properties are the same shape as contact summaries, but the target entity is `deal`.
-
-### PM built-in rules
-
-These are deterministic PM automations stored in `pm_automations`.
-
-#### Epic auto-start
-
-Catalog ID: `pm.epic_auto_start`
-
-Purpose:
-
-- automatically start an epic when one of its stories enters a started workflow state
-
-Characteristics:
-
-- workspace-scoped
-- deterministic
-- runs inline from story state change hooks
-
-#### Epic auto-complete
-
-Catalog ID: `pm.epic_auto_complete`
-
-Purpose:
-
-- automatically complete an epic when all of its stories are done
-
-Characteristics:
-
-- workspace-scoped
-- deterministic
-- runs inline from story state change hooks
-
-#### Sprint auto-create
-
-Catalog ID: `pm.sprint_auto_create`
-
-Purpose:
-
-- keep a configured future sprint buffer for each team
-
-Characteristics:
-
-- team-scoped
-- cron-driven
-- part of the PM automation sweep
-
-#### Move unfinished stories
-
-Catalog ID: `pm.sprint_move_unfinished`
-
-Purpose:
-
-- move unfinished work into the next sprint for configured teams
-
-Characteristics:
-
-- team-scoped
-- cron-driven
-- deterministic
-
-## Automation rules
-
-Automation rules are the only current user-authored automation type.
-
-They are stored in `automation_rules` and consist of:
-
-- scope
-- trigger
-- action
-- ordering
-- optional stop-on-match behavior
-
-Important fields:
-
-- `team_id`
-- `workflow_id`
-- `trigger_type`
-- `trigger_config`
-- `action_type`
-- `action_config`
-- `position`
-- `stop_on_match`
-
-### Current triggers
+Current rule triggers:
 
 - `story.state_entered`
 - `agent_run.approved`
 - `cron`
 
-Trigger config shapes currently support:
+Current rule behavior:
 
-- exact state match
-- state-type match such as `started` or `done`
-- cron category match
-- approved run state match
+- `start_agent_run` now accepts the same generic target contract as direct runs
+- event-driven rules may omit `target_type` and `target_id` to use the triggering target
+- cron rules must provide explicit `target_type` and `target_id`
+- rules pass `agent_id` through to generic run start and do not mutate story assignment
+- support conversations still use a separate launch path
 
-### Current actions
+## Proposal for custom agents
 
-The active action surface is:
+The proposed product model should be:
 
-- `start_agent_run`
-- `move_to_state`
-- `merge_branch`
-- `run_command`
+- system agents remain product-owned defaults
+- custom agents become generic `native_sdk` executors
 
-Historical constants still present in code:
+### Proposed custom-agent contract
 
-- `run_agent`
-- `start_flow`
+Custom agents should be:
 
-Current behavior for those historical actions:
+- `is_system = false`
+- `runtime_kind = native_sdk`
+- generic over trigger source
+- generic over target type
+- generic over context gathering
 
-- `run_agent` returns an error and is no longer supported
-- `start_flow` returns an error and is no longer supported
+Custom agents should support three user-visible trigger families:
 
-### Current limitations
-
-Important runtime limitations today:
-
-- `start_agent_run` currently requires a story target
-- rules are evaluated by the in-process rule engine, not by a generic flow runtime
-- loop prevention is handled by rule execution context and chain-depth limits
-
-## Agents and automation rules are connected, but different
-
-The relationship is:
-
-- rules decide when something should happen
-- agents define who can execute a kind of work
-- runs are the actual durable execution object
-
-So a rule may launch an agent run, but that does not make the agent a top-level automation kind.
-
-## The settings and inventory model
-
-The Settings UI has a read-only inventory model for AI and automations.
-
-The inventory is assembled from:
-
-- the code-defined automation catalog
-- PM automation settings
-- CRM email-account state
-- automation health snapshots
-- automation rules
-
-Current inventory kinds exposed to the UI are only:
-
-- `built_in_automation`
-- `automation_rule`
-
-Current inventory groups returned by the service are:
-
-- `Built-in Automations`
-- `Automation Rules`
-
-Even though there are some unused grouping constants in code, the active settings response only exposes those two sections.
-
-### Health model
-
-Built-in automations record health snapshots with:
-
-- `healthy`
-- `warning`
-- `error`
-- `inactive`
-- `unknown`
-
-Health is currently used for:
-
-- CRM intelligence built-ins
-- PM built-in rules
-- rule inventory display
-
-It is diagnostic metadata, not a separate automation taxonomy.
-
-## CRM taxonomy inside the automation model
-
-The CRM subsystem has its own domain terms, but they fit into the same platform model.
-
-### Buyer signals
-
-Buyer signals are durable CRM intelligence records, not agent transcripts.
-
-Current signal types:
-
-- `buying_intent`
-- `objection`
-- `competitor_mention`
-- `budget_signal`
-- `timeline_signal`
-- `champion_signal`
-- `risk_signal`
-
-Current signal sources:
-
-- `email`
-- `meeting`
-- `note`
 - `manual`
-- `support`
+- `event`
+- `cron`
 
-Signals are outputs of built-in CRM automation and manual CRM operations. They are not "agent state".
+### Proposed trigger source mapping
 
-### Entity summaries
+For custom agents:
 
-Entity summaries are durable CRM artifacts, not chat outputs.
+- `manual` -> explicit run-now action
+- `event` -> automation rules launching the agent
+- `cron` -> automation rules with `trigger_type = cron`
 
-Current supported entity types:
+This keeps one triggering model for user-authored automation instead of splitting behavior across bespoke entrypoints and agent-owned schedules.
 
-- `contact`
-- `deal`
+### Proposed trigger payload
 
-Current summary statuses:
+Custom agents should not start blind. They should receive a minimal structured trigger payload in `agent_run.input`, then gather the rest of the context with tools.
 
-- `pending_refresh`
-- `ready`
-- `stale`
-- `error`
+Recommended minimum payload:
 
-Summaries are owned by the CRM intelligence pipeline, not the agent UI layer.
+```json
+{
+  "trigger": {
+    "source": "manual|automation_rule|schedule",
+    "trigger_type": "manual|story.state_entered|agent_run.approved|cron",
+    "rule_id": "optional",
+    "fired_at": "timestamp"
+  },
+  "target": {
+    "target_type": "story|epic|support_conversation|crm_deal|document|workspace",
+    "target_id": "uuid-or-logical-id"
+  },
+  "event": {
+    "state_id": "optional",
+    "team_id": "optional",
+    "run_id": "optional",
+    "reason": "optional"
+  }
+}
+```
 
-## PM taxonomy inside the automation model
+The point is:
 
-The PM subsystem uses two separate automation shapes.
+- backend passes the reason the run exists
+- agent uses tools to expand context safely
+- target-aware context loading can exist, but target-specific orchestration should not be baked into the custom-agent contract
 
-### PM built-ins
+### Proposed execution rules
 
-These are the deterministic `pm_automations` records:
+Custom agents should not have:
 
-- epic auto-start
-- epic auto-complete
-- sprint auto-create
-- sprint move unfinished
+- hidden phase machines
+- custom finalizers
+- target-specific orchestration logic per agent
+- runtime-specific exception paths beyond generic native interactive execution
 
-### PM rules
+Custom agents should rely on:
 
-These are the user-authored `automation_rules` records.
+- system prompt
+- allowed tools
+- allowed targets
+- generic runtime
+- durable run transcript and artifacts
+- explicit trigger payload
 
-They are broader than the deterministic PM built-ins because they can:
+## Proposal for automation rules
 
-- react to state changes
-- react to run approvals
-- invoke agent runs
-- move work
-- trigger controlled commands
+Automation rules should remain the user-authored trigger layer.
 
-## Support taxonomy inside the automation model
+Recommended changes:
 
-Support currently appears in two different ways:
+### 1. Keep automation rules as the event and cron surface
 
-- as a target for the `support_agent` preset
-- as a source for CRM signals via `support`
+Do not introduce a separate top-level custom-agent trigger engine.
 
-Important distinction:
+### 2. Keep `start_agent_run` aligned with the generic run contract
 
-- support-agent runs are normal agent runs
-- support-derived CRM signals are built-in CRM automation outputs
+`start_agent_run` should use the same target contract as direct runs.
 
-They are related by data flow, not by sharing a top-level taxonomy kind.
+Current contract:
 
-## Design rules for new work
+- `agent_id`
+- optional `target_type`
+- optional `target_id`
+- optional `additional_context`
 
-When adding new work in this area:
+Resolution rules:
 
-- do not add a new top-level automation kind unless the platform model truly changes
-- do not introduce new hidden agent classes
-- do not build a parallel flow runtime for normal PM or CRM work
-- prefer extending presets over adding new execution concepts
-- keep safety and business invariants in tools and services
-- use `agent_run` as the durable execution primitive
-- put product-owned background behavior into built-in automation
-- use automation rules only for user-authored trigger-to-action behavior
+- if `target_type` and `target_id` are present, use them
+- otherwise, derive them from the triggering event
+- cron rules must set them explicitly because cron events do not carry a target
 
-## Practical classification guide
+### 3. Use automation rules for cron-driven custom agents
 
-Use this decision rule:
+Prefer cron rules over agent-owned schedules for user-authored custom-agent automation.
 
-### It is an agent when
+Current agent `schedule` can remain for compatibility and system use, but it should not be the preferred long-term trigger model for custom agents.
 
-- a configurable executor should work against a target
-- humans may run it directly
-- policy is mostly about tools, commands, targets, runtime, and approval
-- the result should be represented as an `agent_run`
+### 4. Keep rule actions controlled
 
-### It is built-in automation when
+Automation rules should remain a small action surface. They should launch runs and system actions, not become a full flow runtime.
 
-- the product owns the behavior
-- users do not author the execution logic directly
-- it should run in the background or inline as system behavior
-- the output is a system artifact such as a signal, summary, or deterministic PM state mutation
+## Built-in automation catalog
 
-### It is an automation rule when
+Built-in automations remain product-owned backend behavior.
 
-- a user is defining trigger-to-action behavior
-- the action surface is small and controlled
-- the rule should react to product events rather than own a complex execution transcript
+Current examples include:
 
-## Historical residue to ignore for new work
+- `crm.buyer_signal_ingestion`
+- `crm.contact_summary_refresh`
+- `crm.deal_summary_refresh`
+- `pm.epic_auto_start`
+- `pm.epic_auto_complete`
+- `pm.sprint_auto_create`
+- `pm.sprint_move_unfinished`
 
-Some residue still exists in the repository:
+These do not become custom agents and should not be forced into the generic custom-agent contract.
 
-- reference SQL mentioning older class-era fields
-- older docs describing flows or planning sessions
-- compatibility constants such as `run_agent` and `start_flow`
-- helper code that still maps older names onto the current preset model
+## Design rules
 
-These are not the platform model to build on.
+When adding new work:
+
+- keep `agent_run` as the durable execution primitive
+- keep automation rules as the user-authored trigger layer
+- keep built-in automations product-owned
+- keep special orchestration limited to genuine product exceptions such as support flow
+- keep custom agents generic
+- keep safety in tools and services, not in prompt wording
+- avoid reintroducing flow-runtime or agent-class taxonomy
+
+## What to ignore from older language
+
+Do not build on:
+
+- historical `agent_class`
+- historical `capability_profile`
+- planning-session runtime language
+- generic flow-template runtime language for normal PM or CRM work
+- old docs that treat agents, rules, and flows as equal top-level automation kinds
 
 ## File map
 
-Useful code entry points for this model:
+Useful code entry points:
 
 - agent models: `server/internal/model/agent.go`
 - invocation modes: `server/internal/model/agent_runtime.go`
+- run interactions: `server/internal/model/agent_run_interaction.go`
 - agent presets: `server/internal/service/agent_presets.go`
-- agent policy normalization: `server/internal/service/agent_policy.go`
-- agent service and run lifecycle: `server/internal/service/agent.go`
+- agent policy: `server/internal/service/agent_policy.go`
+- agent service and lifecycle: `server/internal/service/agent.go`
+- coding-session interaction resolution: `server/internal/service/coding_session.go`
 - runtime profiles: `server/internal/worker/runtime_profiles.go`
-- queue mapping: `server/internal/temporalapp/queues.go`
+- resolved runtime policy: `server/internal/worker/resolve.go`
 - run workflow: `server/internal/temporalapp/workflow.go`
-- automation catalog: `server/internal/automationcatalog/registry.go`
-- automation inventory: `server/internal/service/automation_inventory.go`
+- run activities: `server/internal/temporalapp/activities.go`
 - automation model types: `server/internal/model/automation.go`
 - automation rule model: `server/internal/model/automation_rule.go`
 - automation rule engine: `server/internal/service/automation_rule_engine.go`
-- PM automations: `server/internal/model/pm_automation.go`
-- PM automation service: `server/internal/service/pm_automation.go`
-- CRM signal model: `server/internal/model/crm_signal.go`
-- CRM signal workflow: `server/internal/temporalapp/signal_detection_workflow.go`
-- CRM summary model: `server/internal/model/crm_summary.go`
-- CRM summary workflow: `server/internal/temporalapp/crm_summary_workflow.go`
+- automation inventory: `server/internal/service/automation_inventory.go`
 
 ## Bottom line
 
-The platform model is:
+The current truth is:
 
-- agents are configurable executors
-- agent runs are the durable unit of execution
-- built-in automations are product-owned system behavior
-- automation rules are user-authored trigger-to-action logic
-- the top-level automation taxonomy has two kinds, not three
+- built-in automations are product-owned backend behaviors
+- automation rules are user-authored trigger-to-action records
+- agents are reusable executors
+- agent runs are the durable execution primitive
+- the backend behaves as if there are two agent categories:
+  - system agents as product-owned preset/default wrappers
+  - custom agents as user-defined wrappers
+- for `native_sdk`, both categories share the same core run machinery
+- remaining differences are mostly preset ownership, target-aware startup/context loading, and the support-agent exception path
 
-That is the intended shape of the platform and the model new work should follow.
+The proposed direction is:
+
+- formalize that split
+- keep special orchestration only for real product exceptions, not as a general system-agent property
+- make custom agents `native_sdk` only
+- make custom agents triggerable by manual actions, automation-rule events, and automation-rule cron
+- pass a minimal trigger payload into the run
+- let custom agents gather most additional context with tools

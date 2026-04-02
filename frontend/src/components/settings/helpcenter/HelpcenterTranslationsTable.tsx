@@ -211,7 +211,7 @@ export function HelpcenterTranslationsTable({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/60">
-        <table className="w-full text-[13px]">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/30">
               <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[200px]">Text</th>

@@ -65,7 +65,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                     {question.header ? (
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
                     ) : null}
-                    <div className={cn('mt-1 font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{question.question}</div>
+                    <div className={cn('mt-1 font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.question}</div>
                   </div>
                   {question.options.length > 0 ? (
                     <div className="space-y-2">
@@ -87,7 +87,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                             )}
                             disabled={isBusy}
                           >
-                            <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{option.label}</div>
+                            <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{option.label}</div>
                             {option.description ? (
                               <div className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</div>
                             ) : null}
@@ -109,7 +109,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                           )}
                           disabled={isBusy}
                         >
-                          <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>Other</div>
+                          <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>Other</div>
                           <div className="mt-1 text-xs leading-5 text-muted-foreground">Provide a custom reply.</div>
                         </button>
                       ) : null}
@@ -125,7 +125,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                         [question.id]: { ...current[question.id], freetext: event.target.value },
                       }))}
                       placeholder="Type your answer"
-                      className={compact ? 'text-[13px]' : undefined}
+                      className={compact ? 'text-sm' : undefined}
                       disabled={isBusy}
                     />
                   ) : null}
@@ -193,7 +193,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               const selectedOption = question.options.find((option) => option.value === answer?.value);
               return (
                 <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
-                  <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{question.text}</div>
+                  <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.text}</div>
                   <div className="space-y-2">
                     {question.options.map((option) => {
                       const selected = answer?.value === option.value;
@@ -213,7 +213,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                           )}
                           disabled={isBusy}
                         >
-                          <div className={cn('font-medium text-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{option.label}</div>
+                          <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{option.label}</div>
                         </button>
                       );
                     })}
@@ -226,7 +226,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                         [question.id]: { ...current[question.id], freetext: event.target.value },
                       }))}
                       placeholder="Please specify"
-                      className={compact ? 'text-[13px]' : undefined}
+                      className={compact ? 'text-sm' : undefined}
                       disabled={isBusy}
                     />
                   ) : null}
@@ -450,7 +450,7 @@ function InteractionShell({
       </div>
       <div className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
       {summary ? (
-        <p className={cn('mt-1 text-muted-foreground', compact ? 'text-[13px] leading-5' : 'text-sm')}>{summary}</p>
+        <p className={cn('mt-1 text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{summary}</p>
       ) : null}
       <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </div>

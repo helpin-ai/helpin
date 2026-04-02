@@ -81,7 +81,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
               </span>
             )}
             <div className="min-w-0">
-              <p className="font-medium text-[13px] leading-snug">{e.name}</p>
+              <p className="font-medium text-sm leading-snug">{e.name}</p>
               {ownerName && (
                 <p className="text-[11px] text-muted-foreground mt-0.5">{ownerName}</p>
               )}

@@ -474,7 +474,7 @@ export function StoryRelationshipsSection({
                 onClick={() => handleCreateRelationship(story.id)}
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{story.name}</span>
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{story.name}</span>
                 {story.display_id ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
                     {story.display_id}
@@ -493,7 +493,7 @@ export function StoryRelationshipsSection({
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.name}</span>
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.name}</span>
               </button>
             ))}
 
@@ -564,7 +564,7 @@ export function StoryRelationshipsSection({
                 <button
                   type="button"
                   onClick={() => handleOpenStory(item.story.object_id)}
-                  className="min-w-0 truncate text-sm font-medium text-left transition-colors hover:text-primary"
+                  className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
                 >
                   {item.story.title}
                 </button>
@@ -627,7 +627,7 @@ export function StoryRelationshipsSection({
           >
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.title}</span>
+            <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
                 <DropdownMenu>

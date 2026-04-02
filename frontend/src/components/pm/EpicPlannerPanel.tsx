@@ -125,7 +125,7 @@ export function EpicPlannerPanel({
   }, [loadRuns, runs]);
 
   const plannerAgents = useMemo(() => {
-    return agents.filter((agent) => agent.preset_key === 'epic_planner');
+    return agents.filter((agent) => agent.allowed_targets.includes('epic'));
   }, [agents]);
 
   const selectedPlanner = useMemo(
@@ -134,7 +134,10 @@ export function EpicPlannerPanel({
   );
 
   const preferredPlanner = useMemo(
-    () => plannerAgents.find((agent) => agent.is_system) ?? plannerAgents[0] ?? null,
+    () => plannerAgents.find((agent) => agent.preset_key === 'epic_planner' && agent.is_system)
+      ?? plannerAgents.find((agent) => agent.preset_key === 'epic_planner')
+      ?? plannerAgents[0]
+      ?? null,
     [plannerAgents],
   );
 

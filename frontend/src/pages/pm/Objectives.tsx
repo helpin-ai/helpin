@@ -197,7 +197,7 @@ export function ObjectivesPage() {
             <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
               <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
               <p className="text-sm font-medium mb-1">{item.title}</p>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>

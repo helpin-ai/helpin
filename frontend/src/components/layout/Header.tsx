@@ -141,7 +141,7 @@ export function Header() {
   }, [location.pathname, currentWorkspace?.name]);
 
   return (
-    <header className="relative h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
+    <header className="relative flex h-14 items-center gap-3 bg-background/95 px-3 after:absolute after:right-3 after:bottom-0 after:left-3 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)]">
       <div className="flex min-w-0 max-w-[45%] items-center gap-2 z-10">
         <SidebarTrigger className="-ml-1" />
         {breadcrumbs.length > 0 && (

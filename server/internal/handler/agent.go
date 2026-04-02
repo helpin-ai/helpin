@@ -194,7 +194,7 @@ func (h *AgentHandler) RunStoryAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, "story", storyID, req, actorID)
+	run, err := h.agentService.RunStoryAgent(r.Context(), workspaceID, storyID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -215,6 +215,28 @@ func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
+// StartTargetRun handles POST /api/pm/agent-runs.
+func (h *AgentHandler) StartTargetRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.StartTargetAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, req.TargetType, req.TargetID, model.StartAgentRunRequest{
+		AgentID:           req.AgentID,
+		AdditionalContext: req.AdditionalContext,
+	}, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

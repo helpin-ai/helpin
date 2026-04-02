@@ -69,6 +69,54 @@ Every feature follows strict three-layer separation:
 
 ---
 
+## Agents And Automation Model
+
+Canonical reference: `../docs/AGENTS_AND_AUTOMATION.md`
+
+Use this taxonomy when changing backend agent or automation behavior:
+
+- built-in automations are product-owned backend behavior
+- automation rules are user-authored trigger-to-action records
+- agents are reusable executors
+- `agent_run` is the durable execution primitive
+- run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
+
+The backend already behaves as two practical agent categories:
+
+- `system agents`
+  - product-owned
+  - preset-bound
+  - for `native_sdk`, share the same core run machinery as custom agents
+  - differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+- `custom agents`
+  - generic executors
+  - current product direction is `native_sdk` only
+  - should gather most context through tools after receiving a minimal trigger payload
+
+Current trigger surfaces in code:
+
+- manual run actions
+- agent `trigger_mode`
+- agent `schedule`
+- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+
+Current limitation:
+
+- execution is generic, but launch paths are still partially target-specific
+- native planning instructions are selected from effective tools plus target
+- generic target launching exists for direct runs and automation-rule `start_agent_run`
+- automation-rule `start_agent_run` now uses the generic target contract, with event-target defaulting and explicit targets required for cron
+
+Proposed direction for custom agents:
+
+- keep genuine special-case orchestration only for real product exceptions like support flow
+- keep automation rules as the event and cron trigger layer
+- make custom agents triggerable by `manual`, automation-rule `event`, and automation-rule `cron`
+- pass a minimal structured trigger payload into `agent_run.input`
+- let custom agents gather additional context with tools instead of depending on bespoke backend entrypoints
+
+---
+
 ## Core Rules
 
 ### Style & Structure

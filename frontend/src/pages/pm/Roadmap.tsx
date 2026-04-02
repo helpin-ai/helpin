@@ -166,7 +166,7 @@ export function RoadmapPage() {
                 <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                   <Icon className="h-5 w-5 text-muted-foreground mb-3" />
                   <p className="text-sm font-medium mb-1">{title}</p>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
                 </div>
               ))}
             </div>
@@ -186,7 +186,7 @@ export function RoadmapPage() {
       <header className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold">Roadmap</h2>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Epics across objectives on a timeline.
           </p>
         </div>
@@ -328,7 +328,7 @@ export function RoadmapPage() {
             <GanttChart className="h-5 w-5 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium mb-1">No epics match your filters</p>
-          <p className="text-[13px] text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>
+          <p className="text-sm text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>
           <Button
             variant="outline"
             size="sm"
@@ -408,7 +408,7 @@ function UnscheduledEpicRow({
       <span className="flex items-center gap-1.5 shrink-0">
         <span className={`h-2 w-2 rounded-full ${hc?.dot}`} />
       </span>
-      <span className="text-[13px] truncate flex-1 min-w-0">{e.name}</span>
+      <span className="text-sm truncate flex-1 min-w-0">{e.name}</span>
       {epic.objectives.length > 0 && (
         <span className="text-[11px] text-muted-foreground truncate max-w-[120px] shrink-0 hidden sm:block">
           {epic.objectives[0].name}

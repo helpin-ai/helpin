@@ -77,9 +77,12 @@ type TriggerConfigRunApproved struct {
 
 // Action config shapes (deserialized from JSONB).
 
-// ActionConfigRunAgent holds config for run_agent actions.
+// ActionConfigRunAgent holds config for start_agent_run actions.
 type ActionConfigRunAgent struct {
-	AgentID string `json:"agent_id"`
+	TargetType        string  `json:"target_type,omitempty"`
+	TargetID          string  `json:"target_id,omitempty"`
+	AgentID           string  `json:"agent_id"`
+	AdditionalContext *string `json:"additional_context,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.
