@@ -89,7 +89,7 @@ func addSettingsExtraTables(t *testing.T, db *gorm.DB) {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			team_id TEXT NOT NULL UNIQUE,
 			priority BOOLEAN NOT NULL DEFAULT 1,
-			story_type BOOLEAN NOT NULL DEFAULT 1,
+			task_type BOOLEAN NOT NULL DEFAULT 1,
 			severity BOOLEAN NOT NULL DEFAULT 1,
 			labels BOOLEAN NOT NULL DEFAULT 1,
 			epic BOOLEAN NOT NULL DEFAULT 1,

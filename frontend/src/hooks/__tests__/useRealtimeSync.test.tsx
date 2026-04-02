@@ -39,7 +39,7 @@ function Harness({ workspaceId }: { workspaceId: string }) {
   return null
 }
 
-describe('useRealtimeSync story ordering events', () => {
+describe('useRealtimeSync task ordering events', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
@@ -65,11 +65,11 @@ describe('useRealtimeSync story ordering events', () => {
     captured.onEvent = null
   })
 
-  it('refreshes the board for moved story events instead of hydrating a single story', async () => {
+  it('refreshes the board for moved task events instead of hydrating a single task', async () => {
     vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
-        story: {
-          id: 'story-1',
+        task: {
+          id: 'task-1',
           workflow_state_id: 'state-done',
           updated_at: '2026-03-24T10:00:00Z',
         },
@@ -97,8 +97,8 @@ describe('useRealtimeSync story ordering events', () => {
     await act(async () => {
       captured.onEvent?.({
         action: 'moved',
-        entity: 'story',
-        entity_id: 'story-1',
+        entity: 'task',
+        entity_id: 'task-1',
         workspace_id: 'ws-1',
         actor_id: 'user-2',
       })
@@ -114,11 +114,11 @@ describe('useRealtimeSync story ordering events', () => {
     container.remove()
   })
 
-  it('refreshes the board for reordered story events instead of hydrating a single story', async () => {
+  it('refreshes the board for reordered task events instead of hydrating a single task', async () => {
     vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
-        story: {
-          id: 'story-1',
+        task: {
+          id: 'task-1',
           workflow_state_id: 'state-todo',
           updated_at: '2026-03-24T10:00:00Z',
         },
@@ -146,8 +146,8 @@ describe('useRealtimeSync story ordering events', () => {
     await act(async () => {
       captured.onEvent?.({
         action: 'reordered',
-        entity: 'story',
-        entity_id: 'story-1',
+        entity: 'task',
+        entity_id: 'task-1',
         workspace_id: 'ws-1',
         actor_id: 'user-2',
       } as never)
@@ -163,11 +163,11 @@ describe('useRealtimeSync story ordering events', () => {
     container.remove()
   })
 
-  it('still hydrates and patches plain story updates', async () => {
+  it('still hydrates and patches plain task updates', async () => {
     vi.mocked(pmTaskService.get).mockResolvedValue({
       data: {
-        story: {
-          id: 'story-1',
+        task: {
+          id: 'task-1',
           workflow_state_id: 'state-todo',
           updated_at: '2026-03-24T10:00:00Z',
         },
@@ -199,20 +199,20 @@ describe('useRealtimeSync story ordering events', () => {
     await act(async () => {
       captured.onEvent?.({
         action: 'updated',
-        entity: 'story',
-        entity_id: 'story-1',
+        entity: 'task',
+        entity_id: 'task-1',
         workspace_id: 'ws-1',
         actor_id: 'user-2',
       })
       await Promise.resolve()
     })
 
-    expect(pmTaskService.get).toHaveBeenCalledWith('ws-1', 'story-1')
+    expect(pmTaskService.get).toHaveBeenCalledWith('ws-1', 'task-1')
     expect(patchStory).toHaveBeenCalledWith(
       'updated',
-      'story-1',
+      'task-1',
       expect.objectContaining({
-        id: 'story-1',
+        id: 'task-1',
         workflow_state_id: 'state-todo',
       }),
     )

@@ -34,7 +34,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench> = {
   Commands: SquareTerminal,
   'Web Search': Globe,
   Git: GitBranch,
-  'PM / Stories': FileSearch,
+  'PM / Tasks': FileSearch,
   Support: Headphones,
   CRM: TrendingUp,
   Docs: FileText,
@@ -53,6 +53,7 @@ const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: string }
     label: 'Task Planner',
     className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
   },
+  /** @deprecated Use task_planner */
   story_planner: {
     label: 'Task Planner',
     className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',

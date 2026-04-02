@@ -8,6 +8,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -138,7 +139,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		entitySnapshot := model.JSONB{
 			"title": entityTitle,
 		}
-		commentBody := truncate(comment.Body, 200)
+		commentBody := truncate(tiptap.StripHTML(comment.Body), 200)
 
 		if len(mentionedUserIDs) == 0 {
 			if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
@@ -290,7 +291,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 			TeamID:           entityTeamID,
 			ReadableTeamIDs:  readableTeamIDs,
 			EntitySnapshot:   model.JSONB{"title": entityTitle},
-			NotificationBody: truncate(comment.Body, 200),
+			NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
 		}

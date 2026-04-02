@@ -16,7 +16,7 @@ import {
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
-import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, StoryType, TaskType } from './pmTypes';
+import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, TaskType } from './pmTypes';
 
 // ── Priority icons & colors ────────────────────────────────────────
 
@@ -155,10 +155,10 @@ export const OBJECTIVE_STATE_CONFIG: Record<
   },
 };
 
-// ── Story type icons & colors ──────────────────────────────────────
+// ── Task type icons & colors ──────────────────────────────────────
 
-export const STORY_TYPE_CONFIG: Record<
-  StoryType,
+export const TASK_TYPE_CONFIG: Record<
+  TaskType,
   { icon: React.ElementType; color: string; label: string }
 > = {
   feature: { icon: Sparkles, color: 'text-amber-500', label: 'Feature' },
@@ -166,19 +166,8 @@ export const STORY_TYPE_CONFIG: Record<
   chore: { icon: Wrench, color: 'text-indigo-500', label: 'Chore' },
 };
 
-export function StoryTypeIcon({
-  storyType,
-  className = 'h-4 w-4',
-}: {
-  storyType: StoryType;
-  className?: string;
-}) {
-  const config = STORY_TYPE_CONFIG[storyType];
-  const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} />;
-}
-
-export const TASK_TYPE_CONFIG = STORY_TYPE_CONFIG;
+/** @deprecated Use TASK_TYPE_CONFIG */
+export const STORY_TYPE_CONFIG = TASK_TYPE_CONFIG;
 
 export function TaskTypeIcon({
   taskType,
@@ -187,5 +176,18 @@ export function TaskTypeIcon({
   taskType: TaskType;
   className?: string;
 }) {
-  return <StoryTypeIcon storyType={taskType} className={className} />;
+  const config = TASK_TYPE_CONFIG[taskType];
+  const Icon = config.icon;
+  return <Icon className={`${className} ${config.color}`} />;
+}
+
+/** @deprecated Use TaskTypeIcon */
+export function StoryTypeIcon({
+  storyType,
+  className = 'h-4 w-4',
+}: {
+  storyType: TaskType;
+  className?: string;
+}) {
+  return <TaskTypeIcon taskType={storyType} className={className} />;
 }

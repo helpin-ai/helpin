@@ -42,7 +42,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
@@ -51,7 +51,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			epic_id TEXT,
 			name TEXT NOT NULL DEFAULT '',
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			priority TEXT NOT NULL DEFAULT 'none',
 			position INTEGER NOT NULL DEFAULT 0,
 			started BOOLEAN NOT NULL DEFAULT 0,

@@ -143,14 +143,14 @@ func TestPreviewMarkdownToolPublishesSlot(t *testing.T) {
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPreviewMarkdown, json.RawMessage(`{
-		"slot": "story_plan_doc",
+		"slot": "task_plan_doc",
 		"title": "Story Planning Document",
 		"content": "# Outcome\nBody"
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected markdown preview payload to contain %q, got %s", snippet, output)
 		}
@@ -174,7 +174,7 @@ func TestPreviewJSONToolPublishesSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected json preview payload to contain %q, got %s", snippet, output)
 		}
@@ -208,17 +208,17 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"content": {"summary":"Slice plan","proposed_stories":[]}
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"title":"Task Plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -230,11 +230,11 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"preview": {
 			"title": "Story Plan",
 			"content": {"summary":"Slice plan","proposed_stories":[]}
@@ -243,7 +243,7 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected nested story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -255,11 +255,11 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Story Plan",
 		"summary":"Slice plan",
 		"proposed_stories":[]
@@ -267,7 +267,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected raw story plan object preview payload to contain %q, got %s", snippet, output)
 		}
@@ -279,18 +279,18 @@ func TestPublishStoryPlanToolRejectsJSONStringContent(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage("{\n"+
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage("{\n"+
 		"  \"title\": \"Story Plan\",\n"+
 		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"\n"+
 		"}"))
 	if err == nil {
 		t.Fatal("expected publish_story_plan to reject stringified JSON content")
 	}
-	if !strings.Contains(err.Error(), "publish_story_plan content must be a JSON object with summary and proposed_stories") {
+	if !strings.Contains(err.Error(), "publish_task_plan content must be a JSON object with summary and proposed_tasks") {
 		t.Fatalf("expected structured story plan error, got %v", err)
 	}
 }
@@ -300,18 +300,18 @@ func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Story Plan",
 		"content": "STORY PLAN: do the work"
 	}`))
 	if err == nil {
 		t.Fatal("expected publish_story_plan to reject non-object string content")
 	}
-	if !strings.Contains(err.Error(), "publish_story_plan content must be a JSON object with summary and proposed_stories") {
+	if !strings.Contains(err.Error(), "publish_task_plan content must be a JSON object with summary and proposed_tasks") {
 		t.Fatalf("expected repair-oriented story plan error, got %v", err)
 	}
 }
@@ -321,24 +321,24 @@ func TestPublishStoryPlanToolReusesLastPublishedContentOnMalformedRetry(t *testi
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlan: true,
+			ToolPublishTaskPlan: true,
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"content": {"summary":"Slice plan","proposed_stories":[]}
 	}`))
 	if err != nil {
 		t.Fatalf("initial publish returned error: %v", err)
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlan, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Story Plan"
 	}`))
 	if err != nil {
 		t.Fatalf("malformed retry should have reused cached content, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected cached story plan preview payload to contain %q, got %s", snippet, output)
 		}
@@ -350,13 +350,13 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlanDoc: true,
+			ToolPublishTaskPlanDoc: true,
 			ToolPreviewMarkdown:     true,
 		},
 	}
 
 	_, err := registry.ExecuteAllowed(ctx, ToolPreviewMarkdown, json.RawMessage(`{
-		"slot": "story_plan_doc",
+		"slot": "task_plan_doc",
 		"title": "Story Planning Document",
 		"content": "# Outcome\nImplementation-ready plan"
 	}`))
@@ -364,13 +364,13 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 		t.Fatalf("preview_md returned error: %v", err)
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlanDoc, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlanDoc, json.RawMessage(`{
 		"title": "Story Planning Document"
 	}`))
 	if err != nil {
 		t.Fatalf("malformed publish_story_plan_doc retry should have reused cached markdown, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected cached story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -383,17 +383,17 @@ func TestPublishStoryPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t 
 		Context:              context.Background(),
 		CurrentAssistantText: "# Outcome\nImplementation-ready plan",
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlanDoc: true,
+			ToolPublishTaskPlanDoc: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlanDoc, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlanDoc, json.RawMessage(`{
 		"title": "Story Planning Document"
 	}`))
 	if err != nil {
 		t.Fatalf("first malformed publish_story_plan_doc call should have used assistant draft, got error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"format":"markdown"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan_doc"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected assistant-draft story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -405,17 +405,17 @@ func TestPublishStoryPlanDocToolPublishesCanonicalPreview(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlanDoc: true,
+			ToolPublishTaskPlanDoc: true,
 		},
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlanDoc, json.RawMessage(`{
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlanDoc, json.RawMessage(`{
 		"content": "# Outcome\nImplementation-ready plan"
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"title":"Story Planning Document"`, `"format":"markdown"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan_doc"`, `"title":"Task Planning Document"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story planning doc preview payload to contain %q, got %s", snippet, output)
 		}
@@ -427,15 +427,15 @@ func TestPublishStoryPlanDocToolReturnsRepairOrientedMissingContentError(t *test
 	ctx := &ExecutionContext{
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
-			ToolPublishStoryPlanDoc: true,
+			ToolPublishTaskPlanDoc: true,
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, ToolPublishStoryPlanDoc, json.RawMessage(`{}`))
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlanDoc, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected missing content error")
 	}
-	if !strings.Contains(err.Error(), `publish_story_plan_doc is missing content; include markdown in "content"`) {
+	if !strings.Contains(err.Error(), `publish_task_plan_doc is missing content; include markdown in "content"`) {
 		t.Fatalf("expected repair-oriented missing content error, got %v", err)
 	}
 }
@@ -483,7 +483,7 @@ func TestPublishPreviewToolAcceptsPanelKeyAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"panel_key":"story_plan"`) {
+	if !strings.Contains(output, `"panel_key":"task_plan"`) {
 		t.Fatalf("expected alias payload to normalize panel_key, got %s", output)
 	}
 }
@@ -533,7 +533,7 @@ func TestPublishPreviewToolInfersStoryPlanPanelKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"panel_key":"story_plan"`) {
+	if !strings.Contains(output, `"panel_key":"task_plan"`) {
 		t.Fatalf("expected inferred story_plan panel key, got %s", output)
 	}
 }
@@ -556,7 +556,7 @@ func TestPublishPreviewToolInfersStoryPlanFormatAndTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"title":"Task Plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected inferred preview payload to contain %q, got %s", snippet, output)
 		}
@@ -587,7 +587,7 @@ func TestPublishPreviewToolUsesEpicPlannerContextForStoryPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan"`, `"title":"Story Plan: Kafka Streams Performance Enhancement"`, `"format":"json"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"title":"Story Plan: Kafka Streams Performance Enhancement"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected epic planner preview payload to contain %q, got %s", snippet, output)
 		}
@@ -615,7 +615,7 @@ func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	for _, snippet := range []string{`"panel_key":"story_plan_doc"`, `"title":"Story Plan"`, `"format":"markdown"`} {
+	for _, snippet := range []string{`"panel_key":"task_plan_doc"`, `"title":"Story Plan"`, `"format":"markdown"`} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected story planner preview payload to contain %q, got %s", snippet, output)
 		}
@@ -625,7 +625,7 @@ func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
 func TestExtractLatestPublishedPreviewPrefersToolInvocation(t *testing.T) {
 	preview := ExtractLatestPublishedPreview([]appmodel.ToolInvocation{
 		{
-			ToolName: ToolPublishStoryPlan,
+			ToolName: ToolPublishTaskPlan,
 			Input: json.RawMessage(`{
 				"content": {
 					"summary": "Slice plan",
@@ -637,7 +637,7 @@ func TestExtractLatestPublishedPreviewPrefersToolInvocation(t *testing.T) {
 	if preview == nil {
 		t.Fatal("expected published preview")
 	}
-	if preview.PanelKey != "story_plan" || preview.Title != "Story Plan" || preview.Format != PreviewFormatJSON {
+	if preview.PanelKey != "task_plan" || preview.Title != "Task Plan" || preview.Format != PreviewFormatJSON {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
 	if !json.Valid(preview.Content) {

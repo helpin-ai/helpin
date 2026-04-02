@@ -16,7 +16,7 @@ describe('RichTextMentionContent', () => {
     act(() => {
       root.render(
         <RichTextMentionContent
-          html={'<p>Hello <strong>@engineering</strong> and <a href="/story/1">@alice</a>.</p>'}
+          html={'<p>Hello <strong>@engineering</strong> and <a href="/task/1">@alice</a>.</p>'}
           members={[
             {
               id: 'member-1',
@@ -46,7 +46,7 @@ describe('RichTextMentionContent', () => {
     container.remove()
   })
 
-  it('shows an image loader until inline story images finish loading', () => {
+  it('shows an image loader until inline task images finish loading', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -54,7 +54,7 @@ describe('RichTextMentionContent', () => {
     act(() => {
       root.render(
         <RichTextMentionContent
-          html={'<p><img src="https://cdn.example.com/story.png" alt="Story image" /></p>'}
+          html={'<p><img src="https://cdn.example.com/task.png" alt="Task image" /></p>'}
         />,
       )
     })

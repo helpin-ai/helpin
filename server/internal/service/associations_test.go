@@ -106,7 +106,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 	registerAssociationsTestUUIDCallback(t, db)
 
 	statements := []string{
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
@@ -125,11 +125,11 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_links (
+		`CREATE TABLE pm_task_links (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			source_story_id TEXT NOT NULL,
-			target_story_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
 			link_type TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
@@ -152,7 +152,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			subject TEXT NOT NULL,
 			status TEXT NOT NULL,
 			priority TEXT NOT NULL,
-			linked_story_id TEXT,
+			linked_task_id TEXT,
 			source TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -221,7 +221,7 @@ func registerAssociationsTestUUIDCallback(t *testing.T, db *gorm.DB) {
 func seedAssociationStory(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, name string, completed bool) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_state_id, completed, archived, blocked, created_at, updated_at)
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_state_id, completed, archived, blocked, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'state-1', ?, false, false, ?, ?)`,
 		id, workspaceID, displayID, name, completed, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
@@ -232,7 +232,7 @@ func seedAssociationStory(t *testing.T, db *gorm.DB, id, workspaceID string, dis
 func seedStoryLink(t *testing.T, db *gorm.DB, id, workspaceID, sourceStoryID, targetStoryID, linkType string) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO pm_story_links (id, workspace_id, source_story_id, target_story_id, link_type, created_by, created_at, updated_at)
+		`INSERT INTO pm_task_links (id, workspace_id, source_task_id, target_task_id, link_type, created_by, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, 'user-1', ?, ?)`,
 		id, workspaceID, sourceStoryID, targetStoryID, linkType, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
@@ -243,7 +243,7 @@ func seedStoryLink(t *testing.T, db *gorm.DB, id, workspaceID, sourceStoryID, ta
 func seedSupportConversation(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, subject, linkedStoryID string) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, priority, linked_story_id, source, created_at, updated_at)
+		`INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, priority, linked_task_id, source, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'open', 'medium', ?, 'internal', ?, ?)`,
 		id, workspaceID, displayID, subject, linkedStoryID, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {

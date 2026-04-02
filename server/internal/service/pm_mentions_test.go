@@ -93,9 +93,9 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	mustExec(t, db, `INSERT INTO workspace_members (id, workspace_id, user_id, email, display_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"member-eng", env.workspaceID, env.collisionUID, "eng@example.com", "Eng", model.RoleMember, "active", now, now)
 
-	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_story_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		env.engTeamID, env.workspaceID, "Engineering", "eng", "engineering", model.PMTaskTypeFeature, now, now)
-	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_story_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		env.designTeamID, env.workspaceID, "Design", "design", "design", model.PMTaskTypeFeature, now, now)
 
 	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,

@@ -14,11 +14,11 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 	}
 
 	requiredSnippets := []string{
-		"You run the full PRD-to-stories loop inside a single interactive agent run.",
+		"You run the full PRD-to-tasks loop inside a single interactive agent run.",
 		"There is no hidden planner phase machine deciding the next step for you.",
 		"Approval checkpoints happen inline in the same chat:",
 		"## Current Facts And Next-Step Rules",
-		"If an approved spec exists and stories already exist:",
+		"If an approved spec exists and tasks already exist:",
 		"If an approved spec exists and no stories exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
@@ -34,10 +34,10 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"\"test_strategy\": [\"...\"]",
 		"The value of `content` must be a JSON object.",
 		"Do not use `title` or `type` in story-plan JSON.",
-		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_stories` array.",
+		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
 		"`list_workspace_teams`",
 		"platform will persist the approved PRD artifact",
-		"platform will apply the approved story plan artifact and create the stories",
+		"platform will apply the approved task plan artifact and create the tasks",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
 		"### Vertical Slicing (Critical)",
 		"### Blocker & Enabler Consolidation",
@@ -85,11 +85,11 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	}
 
 	for _, snippet := range []string{
-		"Run a single interactive planning conversation for one story.",
+		"Run a single interactive planning conversation for one task.",
 		"`publish_task_plan_doc`",
 		"`request_user_input`",
 		"`request_review_checkpoint`",
-		"`phase=\"story_doc\"`",
+		"`phase=\"task_doc\"`",
 		"platform will persist and link the approved preview",
 		"Produce a planning document, not code.",
 	} {

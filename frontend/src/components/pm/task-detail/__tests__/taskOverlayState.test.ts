@@ -5,7 +5,7 @@ import type { TaskDetail, TaskRecurringSummary, WorkflowState } from '@/lib/pmTy
 
 function makeTaskDetail(id: string): TaskDetail {
   return {
-    story: {
+    task: {
       id,
     },
   } as TaskDetail;
@@ -24,66 +24,66 @@ function makeRecurringSummary(templateId: string): TaskRecurringSummary {
 }
 
 describe('getTaskOverlayPresentationState', () => {
-  it('opens immediately and shows loading while the active story is still fetching', () => {
+  it('opens immediately and shows loading while the active task is still fetching', () => {
     expect(
-      getTaskOverlayPresentationState('story-123', null),
+      getTaskOverlayPresentationState('task-123', null),
     ).toEqual({
       open: true,
       loading: true,
-      storyDetail: null,
+      taskDetail: null,
       states: [],
       recurringSummary: null,
     });
   });
 
-  it('keeps the overlay open and loading when cached data belongs to a different story', () => {
+  it('keeps the overlay open and loading when cached data belongs to a different task', () => {
     expect(
-      getTaskOverlayPresentationState('story-123', {
-        storyId: 'story-999',
-        storyDetail: makeTaskDetail('story-999'),
+      getTaskOverlayPresentationState('task-123', {
+        taskId: 'task-999',
+        taskDetail: makeTaskDetail('task-999'),
         states: [makeWorkflowState('done')],
         recurringSummary: makeRecurringSummary('template-999'),
       }),
     ).toEqual({
       open: true,
       loading: true,
-      storyDetail: null,
+      taskDetail: null,
       states: [],
       recurringSummary: null,
     });
   });
 
-  it('shows the loaded story once the active story payload matches', () => {
+  it('shows the loaded task once the active task payload matches', () => {
     const loaded = {
-      storyId: 'story-123',
-      storyDetail: makeTaskDetail('story-123'),
+      taskId: 'task-123',
+      taskDetail: makeTaskDetail('task-123'),
       states: [makeWorkflowState('doing')],
       recurringSummary: makeRecurringSummary('template-123'),
     };
 
     expect(
-      getTaskOverlayPresentationState('story-123', loaded),
+      getTaskOverlayPresentationState('task-123', loaded),
     ).toEqual({
       open: true,
       loading: false,
-      storyDetail: loaded.storyDetail,
+      taskDetail: loaded.taskDetail,
       states: loaded.states,
       recurringSummary: loaded.recurringSummary,
     });
   });
 
-  it('closes cleanly when there is no active story route', () => {
+  it('closes cleanly when there is no active task route', () => {
     expect(
       getTaskOverlayPresentationState(null, {
-        storyId: 'story-123',
-        storyDetail: makeTaskDetail('story-123'),
+        taskId: 'task-123',
+        taskDetail: makeTaskDetail('task-123'),
         states: [makeWorkflowState('doing')],
         recurringSummary: makeRecurringSummary('template-123'),
       }),
     ).toEqual({
       open: false,
       loading: false,
-      storyDetail: null,
+      taskDetail: null,
       states: [],
       recurringSummary: null,
     });

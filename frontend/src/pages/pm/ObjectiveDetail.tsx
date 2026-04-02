@@ -748,8 +748,8 @@ export function ObjectiveDetailPage() {
     ? Math.round(data.key_results.reduce((sum, kr) => sum + kr.progress, 0) / data.key_results.length)
     : 0;
 
-  const epicProgress = data.stats.epic_story_count > 0
-    ? Math.round((data.stats.epic_done_stories / data.stats.epic_story_count) * 100)
+  const epicProgress = data.stats.epic_task_count > 0
+    ? Math.round((data.stats.epic_done_tasks / data.stats.epic_task_count) * 100)
     : 0;
   const ownerIds = data.owner_member_ids ?? data.owners;
 
@@ -884,7 +884,7 @@ export function ObjectiveDetailPage() {
                         <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[240px] text-xs">
-                        Percentage of done stories across all linked epics: done stories ÷ total stories.
+                        Percentage of done tasks across all linked epics: done tasks ÷ total tasks.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

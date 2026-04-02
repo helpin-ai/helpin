@@ -14,7 +14,7 @@ export interface PreviewDropTarget {
 }
 
 export class DragPreviewManager {
-  private activeStory: Task | null = null;
+  private activeTask: Task | null = null;
   private columnOverrides = new Map<string, Task[]>();
   private dropTarget: PreviewDropTarget | null = null;
   private columnListeners = new Map<string, Set<Listener>>();
@@ -22,17 +22,17 @@ export class DragPreviewManager {
 
   // ── Mutations ──
 
-  setActiveStory(story: Task | null) {
-    this.activeStory = story;
-    if (story === null) {
+  setActiveTask(task: Task | null) {
+    this.activeTask = task;
+    if (task === null) {
       this.dropTarget = null;
     }
     this.notifyGlobal();
   }
 
-  updatePreview(fromId: string, toId: string, newFromStories: Task[], newToStories: Task[], toIndex: number) {
-    this.columnOverrides.set(fromId, newFromStories);
-    this.columnOverrides.set(toId, newToStories);
+  updatePreview(fromId: string, toId: string, newFromTasks: Task[], newToTasks: Task[], toIndex: number) {
+    this.columnOverrides.set(fromId, newFromTasks);
+    this.columnOverrides.set(toId, newToTasks);
     this.dropTarget = {
       fromColumnId: fromId,
       toColumnId: toId,
@@ -52,18 +52,18 @@ export class DragPreviewManager {
   }
 
   clear() {
-    this.activeStory = null;
+    this.activeTask = null;
     this.clearColumnOverrides();
     this.notifyGlobal();
   }
 
   // ── Reads ──
 
-  getActiveStory(): Task | null {
-    return this.activeStory;
+  getActiveTask(): Task | null {
+    return this.activeTask;
   }
 
-  getColumnStories(columnId: string): Task[] | null {
+  getColumnTasks(columnId: string): Task[] | null {
     return this.columnOverrides.get(columnId) ?? null;
   }
 
@@ -109,37 +109,37 @@ export class DragPreviewManager {
 
 /**
  * Subscribe to drag preview for a specific column.
- * Returns override stories during drag, or baseStories otherwise.
+ * Returns override tasks during drag, or baseTasks otherwise.
  */
 const NOOP_UNSUB = () => {};
 
 export function useColumnDragPreview(
   manager: DragPreviewManager | null | undefined,
   columnId: string,
-  baseStories: Task[],
+  baseTasks: Task[],
 ): Task[] {
   const subscribe = useCallback(
     (cb: () => void) => manager ? manager.subscribeColumn(columnId, cb) : NOOP_UNSUB,
     [manager, columnId],
   );
   const getSnapshot = useCallback(
-    () => manager ? manager.getColumnStories(columnId) : null,
+    () => manager ? manager.getColumnTasks(columnId) : null,
     [manager, columnId],
   );
   const override = useSyncExternalStore(subscribe, getSnapshot, () => null);
-  return override ?? baseStories;
+  return override ?? baseTasks;
 }
 
 /**
- * Subscribe to the active dragged story (for DragOverlay).
+ * Subscribe to the active dragged task (for DragOverlay).
  */
-export function useActiveStory(manager: DragPreviewManager | null | undefined): Task | null {
+export function useActiveTask(manager: DragPreviewManager | null | undefined): Task | null {
   const subscribe = useCallback(
     (cb: () => void) => manager ? manager.subscribeGlobal(cb) : NOOP_UNSUB,
     [manager],
   );
   const getSnapshot = useCallback(
-    () => manager ? manager.getActiveStory() : null,
+    () => manager ? manager.getActiveTask() : null,
     [manager],
   );
   return useSyncExternalStore(subscribe, getSnapshot, () => null);

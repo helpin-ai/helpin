@@ -94,8 +94,8 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	if err := validatePlanningTasks(stories); err != nil {
 		t.Fatalf("validatePlanningTasks returned error: %v", err)
 	}
-	if stories[0].TaskType != model.PMTaskTypeChore {
-		t.Fatalf("expected story type to normalize to chore, got %q", stories[0].TaskType)
+	if stories[0].TaskType != model.PMTaskTypeFeature {
+		t.Fatalf("expected task type to normalize to feature, got %q", stories[0].TaskType)
 	}
 	if stories[0].Priority == nil || *stories[0].Priority != model.PMTaskPriorityUrgent {
 		t.Fatalf("expected priority to normalize to urgent, got %#v", stories[0].Priority)

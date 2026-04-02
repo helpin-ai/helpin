@@ -12,19 +12,19 @@ func TestExtractPlanningProposalParsesJSONAndFencedJSON(t *testing.T) {
 	}{
 		{
 			name:    "plain json",
-			content: `{"summary":"Breakdown","proposed_stories":[{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","estimate":3,"acceptance_criteria":["works"],"dependency_refs":[]}]}`,
+			content: `{"summary":"Breakdown","proposed_tasks":[{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","estimate":3,"acceptance_criteria":["works"],"dependency_refs":[]}]}`,
 		},
 		{
 			name:    "fenced json",
-			content: "```json\n{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
+			content: "```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
 		},
 		{
 			name:    "prefixed prose",
-			content: "I drafted the story plan below.\n\n{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3,\"acceptance_criteria\":[\"works\"]}]}",
+			content: "I drafted the story plan below.\n\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3,\"acceptance_criteria\":[\"works\"]}]}",
 		},
 		{
 			name:    "prose with fenced json",
-			content: "Here is the plan in the required format:\n```json\n{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
+			content: "Here is the plan in the required format:\n```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
 		},
 	}
 

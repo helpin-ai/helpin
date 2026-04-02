@@ -152,8 +152,8 @@ export function RecurringTemplateForm({
         </div>
         <p className="text-[11px] text-muted-foreground">
           {scheduleType === 'time'
-            ? 'Creates a new story on a fixed schedule (daily, weekly, etc.)'
-            : 'Creates a new story when the current one is marked done'}
+            ? 'Creates a new task on a fixed schedule (daily, weekly, etc.)'
+            : 'Creates a new task when the current one is marked done'}
         </p>
       </div>
 
@@ -244,7 +244,7 @@ export function RecurringTemplateForm({
           )}
           <p className="text-[11px] text-muted-foreground">
             {completionStateIDs.length === 0
-              ? 'Select one or more states. A new story is created when the current one enters any selected state.'
+              ? 'Select one or more states. A new task is created when the current one enters any selected state.'
               : `Triggers on: ${completionStateIDs.length} state${completionStateIDs.length === 1 ? '' : 's'} selected`}
           </p>
         </div>

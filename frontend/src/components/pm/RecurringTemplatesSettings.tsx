@@ -256,7 +256,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
               {viewTemplate.runs && viewTemplate.runs.length > 0 ? (
                 <RunHistory runs={viewTemplate.runs} onOpenTask={(taskId) => handleOpenTask(taskId)} />
               ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Stories will appear here after the first scheduled run.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Tasks will appear here after the first scheduled run.</p>
               )}
             </>
           ) : null}
@@ -291,7 +291,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
         open={deleteConfirm !== null}
         onOpenChange={(open) => { if (!open) setTimeout(() => setDeleteConfirm(null), 150); }}
         title="Delete recurring template"
-        description={`This will permanently stop "${deleteConfirm?.template.title ?? ''}" from creating new stories. Existing stories will not be affected.`}
+        description={`This will permanently stop "${deleteConfirm?.template.title ?? ''}" from creating new tasks. Existing tasks will not be affected.`}
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => {

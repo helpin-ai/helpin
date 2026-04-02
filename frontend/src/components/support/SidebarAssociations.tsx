@@ -38,7 +38,7 @@ interface SidebarAssociationsProps {
   conversationId: string;
 }
 
-type SectionKey = 'stories' | 'docs';
+type SectionKey = 'tasks' | 'docs';
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
@@ -86,8 +86,8 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     const handle = window.setTimeout(async () => {
       setSearching(true);
       const response = await searchService.search(workspaceId, query.trim());
-      if (pickerSection === 'stories') {
-        setResults(response.data?.stories ?? []);
+      if (pickerSection === 'tasks') {
+        setResults(response.data?.tasks ?? []);
       } else if (pickerSection === 'docs') {
         setResults(response.data?.documents ?? []);
       }
@@ -140,7 +140,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     );
   }
 
-  const stories = data?.stories ?? [];
+  const tasks = data?.tasks ?? [];
   const docs = data?.docs ?? [];
 
   return (
@@ -148,14 +148,14 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
       <CollapsibleSection
         title="Tasks"
         icon={GitBranch}
-        count={stories.length}
-        defaultOpen={stories.length > 0}
-        onAdd={() => setPickerSection('stories')}
+        count={tasks.length}
+        defaultOpen={tasks.length > 0}
+        onAdd={() => setPickerSection('tasks')}
       >
-        {stories.length === 0 ? (
+        {tasks.length === 0 ? (
           <p className="text-[11px] text-muted-foreground italic py-1">No linked tasks</p>
         ) : (
-          stories.map((item) => (
+          tasks.map((item) => (
             <CompactChip
               key={`${item.object_type}-${item.object_id}`}
               title={item.title}
@@ -194,11 +194,11 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              Link {pickerSection === 'stories' ? 'Task' : 'Document'}
+              Link {pickerSection === 'tasks' ? 'Task' : 'Document'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {pickerSection === 'stories' && (
+            {pickerSection === 'tasks' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -217,7 +217,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={pickerSection === 'stories' ? 'Search existing tasks...' : 'Search documents...'}
+                placeholder={pickerSection === 'tasks' ? 'Search existing tasks...' : 'Search documents...'}
                 className="pl-9"
                 autoFocus
               />
@@ -236,7 +236,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   onClick={() => handleAdd(pickerSection!, r.id)}
                 >
                   <div className="flex items-center gap-2">
-                    {pickerSection === 'stories' ? <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    {pickerSection === 'tasks' ? <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                     <span className="font-medium truncate">{r.name}</span>
                     {r.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">

@@ -33,7 +33,7 @@ import {
   normalizeTeamType,
   slugifyTeamHandle,
   TEAM_TYPE_PRESETS,
-  type DefaultStoryType,
+  type DefaultTaskType,
   type TeamType,
 } from '@/lib/teamPresets';
 import { EstimateSettingsForm } from './teams/EstimateSettingsForm';
@@ -70,8 +70,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
   const [teamType, setTeamType] = useState<TeamType>('engineering');
-  const [defaultStoryType, setDefaultStoryType] = useState<DefaultStoryType>('feature');
-  const [storyTypeTouched, setStoryTypeTouched] = useState(false);
+  const [defaultTaskType, setDefaultTaskType] = useState<DefaultTaskType>('feature');
+  const [storyTypeTouched, setTaskTypeTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId ?? null);
   const isSelectedTeamManager = selectedTeamId
@@ -217,7 +217,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
   useEffect(() => {
     if (!storyTypeTouched) {
-      setDefaultStoryType(TEAM_TYPE_PRESETS[teamType].defaultStoryType);
+      setDefaultTaskType(TEAM_TYPE_PRESETS[teamType].defaultTaskType);
     }
   }, [teamType, storyTypeTouched]);
 
@@ -227,8 +227,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setHandle('');
     setDescription('');
     setTeamType('engineering');
-    setDefaultStoryType(TEAM_TYPE_PRESETS.engineering.defaultStoryType);
-    setStoryTypeTouched(false);
+    setDefaultTaskType(TEAM_TYPE_PRESETS.engineering.defaultTaskType);
+    setTaskTypeTouched(false);
     setDialogOpen(true);
   };
 
@@ -238,8 +238,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
     setTeamType(normalizeTeamType(team.team_type));
-    setDefaultStoryType(team.default_task_type ?? 'feature');
-    setStoryTypeTouched(false);
+    setDefaultTaskType(team.default_task_type ?? 'feature');
+    setTaskTypeTouched(false);
     setDialogOpen(true);
   };
 
@@ -257,7 +257,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       handle: handle.trim() ? slugifyTeamHandle(handle) : undefined,
       description: description || undefined,
       team_type: teamType,
-      default_task_type: defaultStoryType,
+      default_task_type: defaultTaskType,
     };
     if (editTeam) {
       const { error } = await settingsService.updateTeam(workspaceId, editTeam.id, payload);
@@ -476,7 +476,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             key: 'field-visibility',
             icon: Eye,
             title: 'Story fields',
-            description: 'Configure which fields and panels appear on stories',
+            description: 'Configure which fields and panels appear on tasks',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
             disabled: !teamEditable,
@@ -485,7 +485,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             key: 'labels',
             icon: Tag,
             title: 'Story labels',
-            description: "Labels available to this team's stories",
+            description: "Labels available to this team's tasks",
             meta: '',
             action: () => openSettingsSection('labels'),
             disabled: false,

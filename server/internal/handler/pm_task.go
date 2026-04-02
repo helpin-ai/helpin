@@ -127,7 +127,7 @@ func (h *PMTaskHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) 
 		storyGroups = []model.TaskGroup{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Stories:     stories,
+		Tasks:       stories,
 		TaskGroups:  storyGroups,
 		Total:       total,
 	})
@@ -191,8 +191,8 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 		stories = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Stories: stories,
-		Total:   total,
+		Tasks:  stories,
+		Total:  total,
 	})
 }
 

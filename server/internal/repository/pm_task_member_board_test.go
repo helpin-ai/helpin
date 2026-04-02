@@ -48,9 +48,9 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 		}
 
 		got := []string{
-			columns[0].Stories[0].ID,
-			columns[0].Stories[1].ID,
-			columns[0].Stories[2].ID,
+			columns[0].Tasks[0].ID,
+			columns[0].Tasks[1].ID,
+			columns[0].Tasks[2].ID,
 		}
 		want := []string{"story-todo-1", "story-todo-2", "story-started"}
 		for i := range want {
@@ -137,13 +137,13 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -178,11 +178,11 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_links (
+		`CREATE TABLE pm_task_links (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			source_story_id TEXT NOT NULL,
-			target_story_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
 			link_type TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -196,11 +196,11 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_labels (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_labels (
+			task_id TEXT NOT NULL,
 			label_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, label_id)
+			PRIMARY KEY (task_id, label_id)
 		)`,
 		`CREATE TABLE pm_epics (
 			id TEXT PRIMARY KEY,
@@ -294,9 +294,9 @@ func seedPMTaskMemberBoardWorkflow(t *testing.T, db *gorm.DB, workflowID, worksp
 func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, storyID, workspaceID, workflowID, stateID, ownerMemberID string, displayID, position int, updatedAt time.Time) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO pm_stories (
+		`INSERT INTO pm_tasks (
 			id, workspace_id, display_id, name, workflow_id, workflow_state_id, owner_member_id,
-			position, priority, severity, story_type, started, completed, blocked, archived, created_at, updated_at
+			position, priority, severity, task_type, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		storyID, workspaceID, displayID, storyID, workflowID, stateID, ownerMemberID,
 		position, "none", "none", "feature", false, false, false, false, updatedAt, updatedAt,

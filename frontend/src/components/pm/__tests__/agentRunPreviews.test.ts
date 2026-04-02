@@ -34,11 +34,11 @@ describe('runPreviews', () => {
       artifact_type: 'run_preview',
       inline_content: JSON.stringify({
         panel_key: 'story_plan',
-        title: 'Story Plan',
+        title: 'Task Plan',
         format: 'json',
         content: {
           summary: 'Slice plan',
-          proposed_stories: [],
+          proposed_tasks: [],
         },
       }),
     } as never);
@@ -47,55 +47,55 @@ describe('runPreviews', () => {
     expect(parsed?.format).toBe('json');
     expect(parsed?.content).toEqual({
       summary: 'Slice plan',
-      proposed_stories: [],
+      proposed_tasks: [],
     });
   });
 
   it('parses live publish_preview tool input payloads', () => {
     const parsed = parsePublishedPreviewRawInput(JSON.stringify({
       panel_key: 'story_plan',
-      title: 'Story Plan',
+      title: 'Task Plan',
       format: 'json',
       content: {
         summary: 'Plan',
-        proposed_stories: [{ ref: 'story_1' }],
+        proposed_tasks: [{ ref: 'story_1' }],
       },
     }));
 
     expect(parsed?.panelKey).toBe('story_plan');
-    expect(parsed?.title).toBe('Story Plan');
+    expect(parsed?.title).toBe('Task Plan');
   });
 
   it('parses json preview content when the payload content is itself a json string', () => {
     const parsed = parsePublishedPreviewRawInput(JSON.stringify({
       panel_key: 'story_plan',
-      title: 'Story Plan',
+      title: 'Task Plan',
       format: 'json',
       content: JSON.stringify({
         summary: 'Plan',
-        proposed_stories: [{ title: 'Story A', type: 'feature' }],
+        proposed_tasks: [{ title: 'Task A', type: 'feature' }],
       }),
     }));
 
     expect(parsed?.content).toEqual({
       summary: 'Plan',
-      proposed_stories: [{ title: 'Story A', type: 'feature' }],
+      proposed_tasks: [{ title: 'Task A', type: 'feature' }],
     });
   });
 
   it('parses dedicated planner preview tool payloads from tool invocations', () => {
     const parsed = parseMessagePublishedPreview({
-      content: 'Review the proposed stories.',
+      content: 'Review the proposed tasks.',
       tool_invocations: [
         {
           tool_name: 'publish_story_plan',
           input: {
             panel_key: 'story_plan',
-            title: 'Story Plan',
+            title: 'Task Plan',
             format: 'json',
             content: {
               summary: 'Slice plan',
-              proposed_stories: [{ title: 'Story A' }],
+              proposed_tasks: [{ title: 'Task A' }],
             },
           },
         },

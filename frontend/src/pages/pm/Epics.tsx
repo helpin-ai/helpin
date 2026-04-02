@@ -63,7 +63,7 @@ const ALL_PROPERTIES = [
   { key: 'state', label: 'State' },
   { key: 'health', label: 'Health' },
   { key: 'progress', label: 'Progress' },
-  { key: 'stories', label: 'Stories' },
+  { key: 'tasks', label: 'Tasks' },
   { key: 'points', label: 'Points' },
   { key: 'owner', label: 'Owner' },
   { key: 'objective', label: 'Objective' },
@@ -79,7 +79,7 @@ const DEFAULT_VISIBLE = [
   'state',
   'health',
   'progress',
-  'stories',
+  'tasks',
   'points',
   'owner',
   'objective',
@@ -130,11 +130,11 @@ interface EpicGroup {
 }
 
 function epicTaskCount(entry: EpicWithStats) {
-  return entry.stats.task_count ?? entry.stats.story_count ?? 0;
+  return entry.stats.task_count ?? entry.stats.task_count ?? 0;
 }
 
 function epicDoneTaskCount(entry: EpicWithStats) {
-  return entry.stats.done_task_count ?? entry.stats.done_story_count ?? 0;
+  return entry.stats.done_task_count ?? entry.stats.done_task_count ?? 0;
 }
 
 function applyEpicPatch(entry: EpicWithStats, patch: UpdateEpicRequest, allLabels: Label[]): EpicWithStats {
@@ -499,7 +499,7 @@ function EpicGroupSection({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const totalStories = group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0);
+  const totalTasks = group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0);
   const totalPoints = group.entries.reduce((sum, entry) => sum + entry.stats.total_points, 0);
   const completedPoints = group.entries.reduce((sum, entry) => sum + entry.stats.done_points, 0);
 
@@ -518,7 +518,7 @@ function EpicGroupSection({
         <span className="min-w-0 truncate font-medium">{group.label}</span>
         <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
           <span>{group.entries.length} {group.entries.length === 1 ? 'epic' : 'epics'}</span>
-          <span>{totalStories} stories</span>
+          <span>{totalTasks} tasks</span>
           <span>{completedPoints}/{totalPoints} points</span>
         </span>
       </button>
@@ -1183,8 +1183,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         ),
       }),
       columnHelper.accessor((row) => epicTaskCount(row), {
-        id: 'stories',
-        header: 'Stories',
+        id: 'tasks',
+        header: 'Tasks',
         size: 90,
         cell: (info) => (
           <span className="text-xs text-muted-foreground">
@@ -1405,7 +1405,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       state: visible.has('state'),
       health: visible.has('health'),
       progress: visible.has('progress'),
-      stories: visible.has('stories'),
+      tasks: visible.has('tasks'),
       points: visible.has('points'),
       owner: visible.has('owner'),
       objective: visible.has('objective'),
@@ -1647,7 +1647,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
           <h3 className="text-lg font-semibold mb-1.5">Create your first epic</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            Epics group related stories into long-running initiatives, giving you a high-level view of progress across your team's work.
+            Epics group related tasks into long-running initiatives, giving you a high-level view of progress across your team's work.
           </p>
           <Button
             className="gap-2 mb-8"
@@ -1658,7 +1658,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </Button>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {[
-              { icon: Layers, title: 'Group stories', desc: 'Organize related work items under a single initiative' },
+              { icon: Layers, title: 'Group tasks', desc: 'Organize related work items under a single initiative' },
               { icon: TrendingUp, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
               { icon: Target, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
             ].map((item) => (

@@ -151,7 +151,7 @@ export function AssociationsList({
         setCRMResults((response.data ?? []).filter((r) => r.type === pickerSection));
       } else if (pickerSection === 'epic' || pickerSection === 'task') {
         const response = await searchService.search(workspaceId, query.trim());
-        const items = pickerSection === 'epic' ? (response.data?.epics ?? []) : (response.data?.stories ?? []);
+        const items = pickerSection === 'epic' ? (response.data?.epics ?? []) : (response.data?.tasks ?? []);
         setPMResults(items);
       }
       setSearching(false);

@@ -16,7 +16,7 @@ interface StoryPlanStoryPreview {
 
 interface StoryPlanPreviewModel {
   summary?: string;
-  proposedStories: StoryPlanStoryPreview[];
+  proposedTasks: StoryPlanStoryPreview[];
   risks: string[];
   openQuestions: string[];
 }
@@ -46,10 +46,10 @@ function toTitleCase(value: string) {
 function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): StoryPlanPreviewModel | null {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
-  const proposedStories = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : Array.isArray(record?.proposed_stories) ? record.proposed_stories : [];
-  if (!record || proposedStories.length === 0) return null;
+  const proposedTasks = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : [];
+  if (!record || proposedTasks.length === 0) return null;
 
-  const normalizedStories: StoryPlanStoryPreview[] = proposedStories.flatMap((entry) => {
+  const normalizedTasks: StoryPlanStoryPreview[] = proposedTasks.flatMap((entry) => {
     const story = asRecord(entry);
     if (!story) return [];
 
@@ -75,11 +75,11 @@ function parseStoryPlanPreviewModel(preview: PublishedPreview | undefined): Stor
     } satisfies StoryPlanStoryPreview];
   });
 
-  if (normalizedStories.length === 0) return null;
+  if (normalizedTasks.length === 0) return null;
 
   return {
     summary: asString(record.summary).trim() || undefined,
-    proposedStories: normalizedStories,
+    proposedTasks: normalizedTasks,
     risks: asStringArray(record.risks),
     openQuestions: asStringArray(record.open_questions),
   };
@@ -122,13 +122,13 @@ function StoryPlanPanel({
         {preview.summary ? <MarkdownContent content={preview.summary} /> : null}
 
         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-          <span>{preview.proposedStories.length} stories</span>
+          <span>{preview.proposedTasks.length} tasks</span>
           {preview.risks.length ? <span>{preview.risks.length} risks</span> : null}
           {preview.openQuestions.length ? <span>{preview.openQuestions.length} open questions</span> : null}
         </div>
 
         <div className="space-y-1">
-          {preview.proposedStories.map((story, index) => (
+          {preview.proposedTasks.map((story, index) => (
             <div
               key={`${story.ref ?? story.title}-${index}`}
               className="rounded-md px-1.5 py-1.5 transition-colors hover:bg-accent/30"

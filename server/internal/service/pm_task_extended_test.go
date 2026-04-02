@@ -37,11 +37,11 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	stDone := "state-done-001"
 
 	// Seed additional tables needed by dependency queries (gracefully ignored if missing).
-	db.Exec(`CREATE TABLE IF NOT EXISTS pm_story_links (
+	db.Exec(`CREATE TABLE IF NOT EXISTS pm_task_links (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL,
-		source_story_id TEXT NOT NULL,
-		target_story_id TEXT NOT NULL,
+		source_task_id TEXT NOT NULL,
+		target_task_id TEXT NOT NULL,
 		link_type TEXT NOT NULL,
 		created_by TEXT,
 		created_at DATETIME,
@@ -351,13 +351,13 @@ func TestPMTaskService_Create(t *testing.T) {
 
 	t.Run("create without explicit position appends to end of state column", func(t *testing.T) {
 		now := time.Now().UTC()
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"create-position-a", env.wsID, 2001, "Create Position A", env.wfID, env.stTodo, 0, "feature", "none", "none", false, false, false, false, now, now,
 		)
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"create-position-b", env.wsID, 2002, "Create Position B", env.wfID, env.stTodo, 1, "feature", "none", "none", false, false, false, false, now, now,
 		)
@@ -567,7 +567,7 @@ func TestPMTaskService_ListAssociationFilters(t *testing.T) {
 	)
 
 	mustExec(t, env.db, `INSERT INTO support_conversations (
-		id, workspace_id, display_id, subject, status, priority, channel, source, linked_story_id, created_at, updated_at
+		id, workspace_id, display_id, subject, status, priority, channel, source, linked_task_id, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"support-conv-123", env.wsID, 9001, "Customer cannot log in", "open", "medium", "widget", "internal", supportStory.Story.ID, now, now,
 	)
@@ -1222,8 +1222,8 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 		env := newStoryTestEnv(t)
 		story := createTestStory(t, env, "Move With Position")
 		now := time.Now().UTC()
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"position-target-a", env.wsID, 1000, "Position Target A", env.wfID, env.stInProgress, 0, "feature", "none", "none", true, false, false, false, now, now,
 		)
@@ -1252,13 +1252,13 @@ func TestPMTaskService_MoveToState(t *testing.T) {
 		env := newStoryTestEnv(t)
 		story := createTestStory(t, env, "Move Without Position")
 		now := time.Now().UTC()
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"state-target-a", env.wsID, 1001, "Target A", env.wfID, env.stInProgress, 0, "feature", "none", "none", true, false, false, false, now, now,
 		)
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"state-target-b", env.wsID, 1002, "Target B", env.wfID, env.stInProgress, 1, "feature", "none", "none", true, false, false, false, now, now,
 		)
@@ -1398,13 +1398,13 @@ func TestPMTaskService_Reorder(t *testing.T) {
 		env := newStoryTestEnv(t)
 		story := createTestStory(t, env, "Reorder Me")
 		now := time.Now().UTC()
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"reorder-peer-a", env.wsID, 1003, "Reorder Peer A", env.wfID, env.stTodo, 1, "feature", "none", "none", false, false, false, false, now, now,
 		)
-		mustExec(t, env.db, `INSERT INTO pm_stories (
-			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, story_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
+		mustExec(t, env.db, `INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id, position, task_type, priority, severity, started, completed, blocked, archived, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"reorder-peer-b", env.wsID, 1004, "Reorder Peer B", env.wfID, env.stTodo, 2, "feature", "none", "none", false, false, false, false, now, now,
 		)
@@ -1466,14 +1466,14 @@ func TestPMTaskService_Owners(t *testing.T) {
 
 		// Verify owner exists in pivot table.
 		var count int64
-		env.db.Table("pm_story_owners").Where("story_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
 		if count != 1 {
 			t.Errorf("owner count = %d, want 1", count)
 		}
 
 		// Also verify auto-follow.
 		var followerCount int64
-		env.db.Table("pm_story_followers").Where("story_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&followerCount)
+		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&followerCount)
 		if followerCount < 1 {
 			t.Error("expected user to be auto-followed when added as owner")
 		}
@@ -1484,7 +1484,7 @@ func TestPMTaskService_Owners(t *testing.T) {
 			t.Fatalf("RemoveOwner: %v", err)
 		}
 
-		env.db.Table("pm_story_owners").Where("story_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
 		if count != 0 {
 			t.Errorf("owner count after remove = %d, want 0", count)
 		}
@@ -1518,7 +1518,7 @@ func TestPMTaskService_Followers(t *testing.T) {
 		}
 
 		var count int64
-		env.db.Table("pm_story_followers").Where("story_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
+		env.db.Table("pm_task_followers").Where("task_id = ? AND user_id = ?", story.Story.ID, env.userID).Count(&count)
 		if count < 1 {
 			t.Error("expected follower to be added")
 		}
@@ -1562,7 +1562,7 @@ func TestPMTaskService_Labels(t *testing.T) {
 		}
 
 		var count int64
-		env.db.Table("pm_story_labels").Where("story_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
+		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
 		if count != 1 {
 			t.Errorf("label count = %d, want 1", count)
 		}
@@ -1572,7 +1572,7 @@ func TestPMTaskService_Labels(t *testing.T) {
 			t.Fatalf("RemoveLabel: %v", err)
 		}
 
-		env.db.Table("pm_story_labels").Where("story_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
+		env.db.Table("pm_task_labels").Where("task_id = ? AND label_id = ?", story.Story.ID, "label-001").Count(&count)
 		if count != 0 {
 			t.Errorf("label count after remove = %d, want 0", count)
 		}

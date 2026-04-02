@@ -3,10 +3,10 @@ import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDeta
 import type { TaskDetail } from '@/lib/pmTypes';
 
 describe('buildPatchedTaskFromDetail', () => {
-  it('merges board-enriched fields from story detail onto the story payload', () => {
+  it('merges board-enriched fields from task detail onto the task payload', () => {
     const detail = {
-      story: {
-        id: 'story-1',
+      task: {
+        id: 'task-1',
         display_id: 12,
         workspace_id: 'ws-1',
         workflow_id: 'wf-1',
@@ -49,7 +49,7 @@ describe('buildPatchedTaskFromDetail', () => {
     } satisfies TaskDetail;
 
     expect(buildPatchedTaskFromDetail(detail)).toMatchObject({
-      id: 'story-1',
+      id: 'task-1',
       owner_name: 'Owner Person',
       epic_name: 'Q2 Reliability',
       sprint_name: 'Sprint 18',

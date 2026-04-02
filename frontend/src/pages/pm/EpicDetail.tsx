@@ -154,7 +154,7 @@ export function EpicDetailPage() {
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
-  const [stories, setStories] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
@@ -191,9 +191,9 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     if (showLoading) setLoading(true);
     setError(null);
-    const [epicRes, storiesRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
+    const [epicRes, tasksRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
-      pmEpicService.listStories(workspaceId, epicId),
+      pmEpicService.listTasks(workspaceId, epicId),
       pmEpicService.list(workspaceId, { archived: false }),
       pmSprintService.list(workspaceId, { archived: false }),
       pmObjectiveService.list(workspaceId, { archived: false }),
@@ -207,7 +207,7 @@ export function EpicDetailPage() {
     setEpic(epicRes.data);
     savedDescriptionRef.current = epicRes.data.epic.description ?? '';
     setForm((current) => current ? current : buildForm(epicRes.data!));
-    setStories(storiesRes.data ?? []);
+    setTasks(tasksRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
     setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
@@ -355,12 +355,12 @@ export function EpicDetailPage() {
 
   const workflow = workflows[0] ?? null;
 
-  // Resources: unique people from story owners + epic team members
+  // Resources: unique people from task owners + epic team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
-    for (const story of stories) {
-      const ownerKey = story.owner_member_id;
+    for (const task of tasks) {
+      const ownerKey = task.owner_member_id;
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -382,11 +382,11 @@ export function EpicDetailPage() {
     }
 
     return Array.from(personMap.values());
-  }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
+  }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    (story: Task) => {
-      openTaskRoute(navigate as never, location as never, slug, story.id);
+    ( task: Task) => {
+      openTaskRoute(navigate as never, location as never, slug, task.id);
     },
     [location, navigate, slug],
   );
@@ -435,12 +435,12 @@ export function EpicDetailPage() {
     setSaving(false);
   }, [allObjectives, epic, fetchData, workspaceId]);
 
-  // Refresh stories when global panel updates/archives a story
+  // Refresh tasks when global panel updates/archives a task
   useEffect(() => {
     const refresh = () => {
       if (!workspaceId) return;
-      pmEpicService.listStories(workspaceId, epicId).then((res) => {
-        if (res.data) setStories(res.data);
+      pmEpicService.listTasks(workspaceId, epicId).then((res) => {
+        if (res.data) setTasks(res.data);
       });
     };
     window.addEventListener('task-panel-updated', refresh);
@@ -631,9 +631,9 @@ export function EpicDetailPage() {
           {/* Tasks */}
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Tasks ({stories.length})
+              Tasks ({tasks.length})
             </h3>
-            {stories.length === 0 ? (
+            {tasks.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
@@ -645,7 +645,7 @@ export function EpicDetailPage() {
                   assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
-                  externalStories={stories}
+                  externalTasks={tasks}
                   onOpenTask={openStory}
                 />
               </div>

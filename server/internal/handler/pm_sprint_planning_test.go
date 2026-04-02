@@ -43,7 +43,7 @@ func TestPMSprintHandler_PlanningWorkspace(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 	if err := db.Exec(
-		`INSERT INTO pm_stories (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, workflow_id, workflow_state_id, sprint_id, team_id, estimate, position, priority, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		"story-handler-backlog", workspaceID, 3001, "Backlog handler story", workflowID, todoStateID, nil, teamID, 3, 1, model.PMTaskPriorityMedium, now, now,
 	).Error; err != nil {
 		t.Fatalf("seed story: %v", err)
@@ -104,13 +104,13 @@ func newPMSprintPlanningHandlerTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL DEFAULT 'feature',
+			task_type TEXT NOT NULL DEFAULT 'feature',
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,

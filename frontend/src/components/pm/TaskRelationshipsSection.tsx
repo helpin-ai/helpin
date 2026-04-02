@@ -40,7 +40,7 @@ import type {
   GroupedAssociations,
   TaskRelationshipAction,
 } from '@/lib/pmTypes';
-import { StoryTypeIcon } from '@/lib/pmConstants';
+import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
@@ -241,11 +241,11 @@ export function TaskRelationshipsSection({
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
-  const [popoverTab, setPopoverTab] = useState<'stories' | 'docs'>('stories');
+  const [popoverTab, setPopoverTab] = useState<'tasks' | 'docs'>('tasks');
   const [query, setQuery] = useState('');
   const [relationshipType, setRelationshipType] = useState<TaskRelationshipAction>('relates_to');
   const [searching, setSearching] = useState(false);
-  const [storyResults, setStoryResults] = useState<SearchResult[]>([]);
+  const [taskResults, setStoryResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
 
   const associationsQuery = useTaskAssociations(workspaceId, storyId);
@@ -286,8 +286,8 @@ export function TaskRelationshipsSection({
 
       setSearching(true);
       const response = await searchService.search(workspaceId, query.trim());
-      if (popoverTab === 'stories') {
-        setStoryResults((response.data?.stories ?? []).filter((story) => story.id !== storyId));
+      if (popoverTab === 'tasks') {
+        setStoryResults((response.data?.tasks ?? []).filter(( s) => s.id !== storyId));
       } else {
         setDocResults(response.data?.documents ?? []);
       }
@@ -356,7 +356,7 @@ export function TaskRelationshipsSection({
     await createDocAssociation.mutateAsync({
       documentId,
       payload: {
-        linked_object_type: 'story',
+        linked_object_type: 'task',
         linked_object_id: storyId,
         link_context: 'attached',
       },
@@ -395,7 +395,7 @@ export function TaskRelationshipsSection({
         <Tabs
           value={popoverTab}
           onValueChange={(v) => {
-            setPopoverTab(v as 'stories' | 'docs');
+            setPopoverTab(v as 'tasks' | 'docs');
             setQuery('');
             setStoryResults([]);
             setDocResults([]);
@@ -403,10 +403,10 @@ export function TaskRelationshipsSection({
         >
           <TabsList className="h-8 w-fit gap-0.5 rounded-lg bg-muted/60 p-0.5">
             <TabsTrigger
-              value="stories"
+              value="tasks"
               className="h-7 rounded-md px-3.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
-              Stories
+              Tasks
             </TabsTrigger>
             <TabsTrigger
               value="docs"
@@ -419,7 +419,7 @@ export function TaskRelationshipsSection({
       </div>
 
       <div className="space-y-2.5 px-3 py-2.5">
-        {popoverTab === 'stories' ? (
+        {popoverTab === 'tasks' ? (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Story...</p>
             <div className="flex flex-wrap gap-1.5">
@@ -453,7 +453,7 @@ export function TaskRelationshipsSection({
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={popoverTab === 'stories' ? 'Search Story Title or ID' : 'Search documents'}
+            placeholder={popoverTab === 'tasks' ? 'Search Story Title or ID' : 'Search documents'}
             className="pl-8"
           />
         </div>
@@ -467,18 +467,18 @@ export function TaskRelationshipsSection({
           ) : null}
 
           {!searching &&
-            popoverTab === 'stories' &&
-            storyResults.map((story) => (
+            popoverTab === 'tasks' &&
+            taskResults.map((task) => (
               <button
-                key={story.id}
+                key={task.id}
                 type="button"
-                onClick={() => handleCreateRelationship(story.id)}
+                onClick={() => handleCreateRelationship(task.id)}
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
-                <span className="min-w-0 flex-1 truncate text-ui font-medium">{story.name}</span>
-                {story.display_id ? (
+                <span className="min-w-0 flex-1 truncate text-ui font-medium">{task.name}</span>
+                {task.display_id ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
-                    {story.display_id}
+                    {task.display_id}
                   </Badge>
                 ) : null}
               </button>
@@ -500,7 +500,7 @@ export function TaskRelationshipsSection({
 
           {!searching &&
             query.trim().length >= 2 &&
-            ((popoverTab === 'stories' && storyResults.length === 0) ||
+            ((popoverTab === 'tasks' && taskResults.length === 0) ||
               (popoverTab === 'docs' && docResults.length === 0)) ? (
             <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
               No results found.
@@ -508,7 +508,7 @@ export function TaskRelationshipsSection({
           ) : null}
         </div>
 
-        {popoverTab === 'stories' ? (
+        {popoverTab === 'tasks' ? (
           <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
             <span className="text-xs text-muted-foreground/70">Search for an existing story or</span>
             <Button
@@ -578,7 +578,7 @@ export function TaskRelationshipsSection({
                 {relatedTask.display_id ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
                     {relatedTask.task_type ? (
-                      <StoryTypeIcon storyType={relatedTask.task_type} className="h-3 w-3" />
+                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
                     {relatedTask.display_id}
                     {(relatedTask.completed || resolved) ? (

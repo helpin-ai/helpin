@@ -206,8 +206,8 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 
 	return &model.ShortcutImportPreviewResponse{
 		Summary: model.ShortcutImportPreviewSummary{
-			TotalStories:        len(data.Rows),
-			StoriesByType:       storyTypeCounts,
+			TotalTasks:          len(data.Rows),
+			TasksByType:         storyTypeCounts,
 			EpicsCount:          len(epicIDs),
 			ObjectivesCount:     len(objectiveIDs),
 			SprintsCount:        len(sprintIDs),
@@ -216,7 +216,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 			WorkflowsCount:      len(workflowStateCounts),
 			WorkflowStatesCount: countWorkflowStates(workflowStateCounts),
 			ChecklistItemsCount: checklistCount,
-			DuplicateStories:    duplicateStories,
+			DuplicateTasks:      duplicateStories,
 		},
 		Users:     users,
 		Teams:     teams,
@@ -1012,7 +1012,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 
 	for _, row := range rows {
 		if _, ok := existingStories[row.ID]; ok {
-			result.StoriesSkipped++
+			result.TasksSkipped++
 			processed++
 			if processed%100 == 0 {
 				_ = s.markStep(ctx, jobID, "stories", 7+stepOffset, processed, totalSteps)
@@ -1127,7 +1127,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		}
 		existingStories[row.ID] = story.ID
 		createdStoryIDs = append(createdStoryIDs, story.ID)
-		result.StoriesCreated++
+		result.TasksCreated++
 
 		for _, owner := range ownerIDs {
 			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.PMTaskOwner{

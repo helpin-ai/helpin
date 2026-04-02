@@ -337,7 +337,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
               <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
                 <div>
                   <Label>Default state</Label>
-                  <p className="text-xs text-muted-foreground">Stories are created in this state by default.</p>
+                  <p className="text-xs text-muted-foreground">Tasks are created in this state by default.</p>
                 </div>
                 <Switch checked={stateDefault} onCheckedChange={setStateDefault} />
               </div>
@@ -363,7 +363,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
         open={deleteStateConfirm}
         onOpenChange={setDeleteStateConfirm}
         title="Delete workflow state"
-        description="This will permanently delete this state. Stories in this state will need to be moved to another state. This action cannot be undone."
+        description="This will permanently delete this state. Tasks in this state will need to be moved to another state. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => { handleDeleteState(); setDeleteStateConfirm(false); }}

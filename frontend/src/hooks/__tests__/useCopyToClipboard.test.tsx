@@ -94,7 +94,7 @@ describe('useCopyToClipboard', () => {
     const root = createRoot(container)
 
     act(() => {
-      root.render(<CopyHarness text="https://example.com/story/ST-321" />)
+      root.render(<CopyHarness text="https://example.com/task/ST-321" />)
     })
 
     const button = container.querySelector('button')
@@ -103,7 +103,7 @@ describe('useCopyToClipboard', () => {
       button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(writeText).toHaveBeenCalledWith('https://example.com/story/ST-321')
+    expect(writeText).toHaveBeenCalledWith('https://example.com/task/ST-321')
     expect(execCommand).toHaveBeenCalledWith('copy')
     expect(container.textContent).toContain('idle')
 

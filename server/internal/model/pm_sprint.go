@@ -114,7 +114,7 @@ type SprintPlanningTaskPreview struct {
 type SprintPlanningCard struct {
 	Sprint               PMSprint                     `json:"sprint"`
 	Stats                PMSprintStats                `json:"stats"`
-	PreviewStories       []SprintPlanningTaskPreview `json:"preview_stories"`
+	PreviewTasks         []SprintPlanningTaskPreview `json:"preview_tasks"`
 	TaskPreviewOverflow  int                         `json:"task_preview_overflow"`
 }
 
@@ -128,6 +128,6 @@ type SprintPlanningBucket struct {
 // SprintPlanningWorkspace is the top-level response for the sprint planning page.
 type SprintPlanningWorkspace struct {
 	Buckets        []SprintPlanningBucket       `json:"buckets"`
-	BacklogStories []SprintPlanningTaskPreview  `json:"backlog_stories"`
+	BacklogTasks   []SprintPlanningTaskPreview  `json:"backlog_tasks"`
 	BacklogTotal   int                          `json:"backlog_total"`
 }

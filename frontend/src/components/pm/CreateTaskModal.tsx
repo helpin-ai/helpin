@@ -90,7 +90,7 @@ interface CreateTaskModalProps {
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<{ id: string } | void>;
-  mode?: 'story' | 'template';
+  mode?: 'task' | 'template';
   editingTemplate?: TaskTemplate | null;
   onSaveTemplate?: (template: TaskTemplate) => void;
 }
@@ -248,7 +248,7 @@ export function CreateTaskModal({
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
-  mode = 'story',
+  mode = 'task',
   editingTemplate,
   onSaveTemplate,
 }: CreateTaskModalProps) {
@@ -672,7 +672,7 @@ export function CreateTaskModal({
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create story");
+      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create task");
     } finally {
       setSubmitting(false);
     }
@@ -799,7 +799,7 @@ export function CreateTaskModal({
                       value={sourceMarkdown}
                       onChange={(event) => setSourceMarkdown(event.target.value)}
                       className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
-                      placeholder="## Write the story in Markdown"
+                      placeholder="## Write the task in Markdown"
                       spellCheck={false}
                     />
                   </div>
@@ -1462,7 +1462,7 @@ export function CreateTaskModal({
               <DialogHeader>
                 <DialogTitle>Configure recurrence</DialogTitle>
                 <DialogDescription>
-                  Automatically create copies of this story on a schedule.
+                  Automatically create copies of this task on a schedule.
                 </DialogDescription>
               </DialogHeader>
               <RecurringTemplateForm

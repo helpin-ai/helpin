@@ -271,7 +271,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
 
 function TaskDetailPanelBody({
   workspaceId,
-  storyDetail,
+  taskDetail,
   states,
   initialRecurringSummary,
   onOpenChange,
@@ -279,7 +279,7 @@ function TaskDetailPanelBody({
   onStoryArchived,
 }: {
   workspaceId: string;
-  storyDetail: TaskDetail;
+  taskDetail: TaskDetail;
   states: WorkflowState[];
   initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
@@ -290,7 +290,7 @@ function TaskDetailPanelBody({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
+  const [form, setForm] = useState<FormState>(() => buildFormState(taskDetail));
   const [pendingPatch, setPendingPatch] = useState<UpdateTaskRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -307,7 +307,7 @@ function TaskDetailPanelBody({
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
-  const storyId = storyDetail.task.id;
+  const storyId = taskDetail.task.id;
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -349,12 +349,12 @@ function TaskDetailPanelBody({
       ? await pmRecurringTemplateService.update(workspaceId, recurringSummary.template_id, {
           title: value.title,
           description: value.description || undefined,
-          task_id: storyDetail.task.id,
+          task_id: taskDetail.task.id,
           config: value.config,
         })
       : await pmRecurringTemplateService.create({
           workspace_id: workspaceId,
-          task_id: storyDetail.task.id,
+          task_id: taskDetail.task.id,
           title: value.title,
           description: value.description || undefined,
           config: value.config,
@@ -365,19 +365,19 @@ function TaskDetailPanelBody({
       return;
     }
     setRecurringDetail(response.data);
-    await loadRecurringSummary(storyDetail.task.id);
+    await loadRecurringSummary(taskDetail.task.id);
     setRecurringDialogOpen(false);
     toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Story is now recurring');
-  }, [workspaceId, storyDetail.task.id, recurringSummary?.template_id, loadRecurringSummary]);
+  }, [workspaceId, taskDetail.task.id, recurringSummary?.template_id, loadRecurringSummary]);
 
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
-  const delivery = useTaskDelivery(workspaceId, storyDetail, onStoryUpdated);
+  const delivery = useTaskDelivery(workspaceId, taskDetail, onStoryUpdated);
   const { checkRef: checkDeliveryTruncation, isTruncated: isDeliveryTruncated } = useTruncationDetection();
 
-  // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
-  const lastSyncedAt = useRef(storyDetail.task.updated_at);
-  const savedDescriptionRef = useRef(storyDetail.task.description ?? '');
+  // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
+  const lastSyncedAt = useRef(taskDetail.task.updated_at);
+  const savedDescriptionRef = useRef(taskDetail.task.description ?? '');
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
 
@@ -406,23 +406,23 @@ function TaskDetailPanelBody({
   );
   // ── URL sync (imperative, no effect loop) ──────────────────────
   const lastSyncedStoryRef = useRef<string | null>(null);
-  if (storyDetail.task.id !== lastSyncedStoryRef.current) {
-    lastSyncedStoryRef.current = storyDetail.task.id;
+  if (taskDetail.task.id !== lastSyncedStoryRef.current) {
+    lastSyncedStoryRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
-    url.searchParams.set('task', `${storyDetail.task.display_id}`);
+    url.searchParams.set('task', `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
   }
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {
-    const res = await pmCommentService.list(workspaceId, 'task', storyDetail.task.id);
+    const res = await pmCommentService.list(workspaceId, 'task', taskDetail.task.id);
     setComments(res.data ?? []);
-  }, [workspaceId, storyDetail.task.id]);
+  }, [workspaceId, taskDetail.task.id]);
 
   const reloadActivity = useCallback(async () => {
-    const res = await pmTaskService.listActivity(workspaceId, storyDetail.task.id, 1, 30);
+    const res = await pmTaskService.listActivity(workspaceId, taskDetail.task.id, 1, 30);
     setActivity(res.data?.data ?? []);
-  }, [workspaceId, storyDetail.task.id]);
+  }, [workspaceId, taskDetail.task.id]);
 
   useEffect(() => {
     reloadComments();
@@ -430,21 +430,21 @@ function TaskDetailPanelBody({
   }, [reloadComments, reloadActivity]);
 
   useEffect(() => {
-    if (storyDetail.task.updated_at !== lastSyncedAt.current) {
-      lastSyncedAt.current = storyDetail.task.updated_at;
-      savedDescriptionRef.current = storyDetail.task.description ?? '';
+    if (taskDetail.task.updated_at !== lastSyncedAt.current) {
+      lastSyncedAt.current = taskDetail.task.updated_at;
+      savedDescriptionRef.current = taskDetail.task.description ?? '';
       void reloadActivity();
       // Only reset form if no unsaved edits
       if (Object.keys(pendingPatchRef.current).length === 0) {
-        setForm(buildFormState(storyDetail));
+        setForm(buildFormState(taskDetail));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- use ref for pendingPatch to avoid resetting form mid-edit
-  }, [storyDetail, reloadActivity]);
+  }, [taskDetail, reloadActivity]);
 
   // Re-fetch comments when comment events arrive; activity on any story change
   useEffect(() => {
-    const storyId = storyDetail.task.id;
+    const storyId = taskDetail.task.id;
     const onChildEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
       if (d?.parent_id === storyId && d?.entity === 'comment') {
@@ -462,7 +462,7 @@ function TaskDetailPanelBody({
       window.removeEventListener('story-child-updated', onChildEvent);
       window.removeEventListener('task-updated', onStoryEvent);
     };
-  }, [storyDetail.task.id, reloadComments, reloadActivity]);
+  }, [taskDetail.task.id, reloadComments, reloadActivity]);
 
   // ── Load epics, sprints, labels ─────────────────────────────
   useEffect(() => {
@@ -527,13 +527,13 @@ function TaskDetailPanelBody({
   useEffect(() => {
     (async () => {
       const [clRes, elRes] = await Promise.all([
-        pmChecklistService.list(workspaceId, storyDetail.task.id),
-        pmExternalLinkService.list(workspaceId, storyDetail.task.id),
+        pmChecklistService.list(workspaceId, taskDetail.task.id),
+        pmExternalLinkService.list(workspaceId, taskDetail.task.id),
       ]);
       if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
       if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
     })();
-  }, [workspaceId, storyDetail]);
+  }, [workspaceId, taskDetail]);
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
@@ -672,10 +672,10 @@ function TaskDetailPanelBody({
     copyText(
       buildTaskCopyUrl({
         currentHref: window.location.href,
-        displayId: storyDetail.task.display_id,
+        displayId: taskDetail.task.display_id,
         origin: window.location.origin,
         slug: workspace?.slug,
-        taskId: storyDetail.task.id,
+        taskId: taskDetail.task.id,
       }),
     );
 
@@ -730,7 +730,7 @@ function TaskDetailPanelBody({
     return memberNameMap.get(form.requester_member_id) ?? 'No requester';
   }, [form.requester_member_id, memberNameMap]);
 
-  const storyLabels = storyDetail.labels ?? [];
+  const storyLabels = taskDetail.labels ?? [];
   const isSaving = saving || labelSaving || hasPendingTaskSave(pendingPatch, descriptionPendingUploads);
 
   useEffect(() => {
@@ -741,7 +741,7 @@ function TaskDetailPanelBody({
     if (validLabelIds.length === storyLabels.length) return;
     void syncTaskLabelsWithFeedback({
       workspaceId,
-      storyId: storyDetail.task.id,
+      storyId: taskDetail.task.id,
       currentLabelIds: storyLabels.map((label) => label.id),
       nextLabelIds: validLabelIds,
       syncLabels: pmTaskService.syncLabels,
@@ -751,43 +751,43 @@ function TaskDetailPanelBody({
       setSaving: setLabelSaving,
       setSaveError,
     });
-  }, [form?.team_id, onStoryUpdated, storyDetail.task.id, storyLabels, workspaceId]);
+  }, [form?.team_id, onStoryUpdated, taskDetail.task.id, storyLabels, workspaceId]);
 
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
-          {storyDetail.objective_name && storyDetail.objective_id && workspace && (
+          {taskDetail.objective_name && taskDetail.objective_id && workspace && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
-                title={storyDetail.objective_name}
+                title={taskDetail.objective_name}
                 onClick={() => {
                   onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: storyDetail.objective_id! } });
+                  navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: taskDetail.objective_id! } });
                 }}
               >
-                {storyDetail.objective_name}
+                {taskDetail.objective_name}
               </button>
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {storyDetail.epic_name && storyDetail.task.epic_id && workspace && (
+          {taskDetail.epic_name && taskDetail.task.epic_id && workspace && (
             <>
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
-                title={storyDetail.epic_name}
+                title={taskDetail.epic_name}
                 onClick={() => {
                   onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.task.epic_id! } });
+                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: taskDetail.task.epic_id! } });
                 }}
               >
-                {storyDetail.epic_name}
+                {taskDetail.epic_name}
               </button>
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
@@ -810,11 +810,11 @@ function TaskDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{storyDetail.task.display_id}</span>
-          {storyDetail.task.recurring_template_id ? (
+          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.display_id}</span>
+          {taskDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
-              occurrenceNumber={storyDetail.task.recurring_occurrence_number}
+              occurrenceNumber={taskDetail.task.recurring_occurrence_number}
             />
           ) : null}
         </div>
@@ -858,7 +858,7 @@ function TaskDetailPanelBody({
                 className="h-7 w-7 shrink-0"
                 onClick={() => {
                   window.open(
-                    buildTaskPath(workspace.slug, storyDetail.task.id),
+                    buildTaskPath(workspace.slug, taskDetail.task.id),
                     '_blank',
                     'noopener,noreferrer',
                   );
@@ -1020,7 +1020,7 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Recurring info card */}
-          {storyDetail.task.recurring_template_id && recurringSummary ? (
+          {taskDetail.task.recurring_template_id && recurringSummary ? (
             <button
               type="button"
               className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
@@ -1044,17 +1044,17 @@ function TaskDetailPanelBody({
 
           <TaskRelationshipsSection
             workspaceId={workspaceId}
-            storyId={storyDetail.task.id}
-            storyName={storyDetail.task.name}
-            storyDisplayId={storyDetail.task.display_id}
-            workflowId={storyDetail.task.workflow_id}
-            workflowStateId={storyDetail.task.workflow_state_id}
-            epicId={storyDetail.task.epic_id}
-            sprintId={storyDetail.task.sprint_id}
-            teamId={storyDetail.task.team_id}
-            storyType={storyDetail.task.task_type}
-            priority={storyDetail.task.priority}
-            severity={storyDetail.task.severity}
+            storyId={taskDetail.task.id}
+            storyName={taskDetail.task.name}
+            storyDisplayId={taskDetail.task.display_id}
+            workflowId={taskDetail.task.workflow_id}
+            workflowStateId={taskDetail.task.workflow_state_id}
+            epicId={taskDetail.task.epic_id}
+            sprintId={taskDetail.task.sprint_id}
+            teamId={taskDetail.task.team_id}
+            storyType={taskDetail.task.task_type}
+            priority={taskDetail.task.priority}
+            severity={taskDetail.task.severity}
             externalBlocker={form.blocker}
             onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
             composerOpen={relationshipComposerOpen}
@@ -1067,7 +1067,7 @@ function TaskDetailPanelBody({
             <div className="mt-6">
               <ChecklistItems
                 workspaceId={workspaceId}
-                storyId={storyDetail.task.id}
+                storyId={taskDetail.task.id}
                 members={assignableMembers}
                 teams={mentionTeams}
               />
@@ -1077,7 +1077,7 @@ function TaskDetailPanelBody({
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} storyId={storyDetail.task.id} />
+              <ExternalLinks workspaceId={workspaceId} storyId={taskDetail.task.id} />
             </div>
           )}
 
@@ -1086,7 +1086,7 @@ function TaskDetailPanelBody({
             <Attachments
               workspaceId={workspaceId}
               entityType="task"
-              entityId={storyDetail.task.id}
+              entityId={taskDetail.task.id}
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
             />
@@ -1095,11 +1095,11 @@ function TaskDetailPanelBody({
           {/* Git Links & Agent Runs */}
           {hasGitIntegration && fieldVis.dev_history && (
             <>
-              <TaskGitPanel storyId={storyDetail.task.id} workspaceId={workspaceId} />
+              <TaskGitPanel storyId={taskDetail.task.id} workspaceId={workspaceId} />
               <AgentRunPanel
-                taskId={storyDetail.task.id}
+                taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
-                assignedAgentId={storyDetail.task.assigned_agent_id}
+                assignedAgentId={taskDetail.task.assigned_agent_id}
               />
             </>
           )}
@@ -1113,7 +1113,7 @@ function TaskDetailPanelBody({
             <CommentThread
               workspaceId={workspaceId}
               entityType="task"
-              entityId={storyDetail.task.id}
+              entityId={taskDetail.task.id}
               comments={comments}
               currentUserId={currentUser?.id}
               teams={mentionTeams}
@@ -1147,7 +1147,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={storyDetail.task.display_id} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1326,7 +1326,7 @@ function TaskDetailPanelBody({
                 onChange={async (labelIds) => {
                   await syncTaskLabelsWithFeedback({
                     workspaceId,
-                    storyId: storyDetail.task.id,
+                    storyId: taskDetail.task.id,
                     currentLabelIds: storyLabels.map((label) => label.id),
                     nextLabelIds: labelIds,
                     syncLabels: pmTaskService.syncLabels,
@@ -1407,7 +1407,7 @@ function TaskDetailPanelBody({
                 disablePast
                 hideIcon
                 urgencyColor
-                completed={storyDetail.task.completed}
+                completed={taskDetail.task.completed}
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
@@ -1534,7 +1534,7 @@ function TaskDetailPanelBody({
 
           <AssociationsPanel
             objectType="task"
-            objectId={storyDetail.task.id}
+            objectId={taskDetail.task.id}
             workspaceId={workspaceId}
             includeTaskRelationships={false}
             className="-mx-4 mt-4 border-t border-border/60"
@@ -1549,7 +1549,7 @@ function TaskDetailPanelBody({
             <DialogDescription>
               {recurringSummary
                 ? 'Update the schedule and future generation behavior for this recurring story.'
-                : 'Create a recurring template from this story so future occurrences are generated automatically.'}
+                : 'Create a recurring template from this task so future occurrences are generated automatically.'}
             </DialogDescription>
           </DialogHeader>
           <RecurringTemplateForm
@@ -1631,7 +1631,7 @@ export function TaskDetailPanel({
           <TaskDetailPanelBody
             key={taskDetail.task.id}
             workspaceId={workspaceId}
-            storyDetail={taskDetail}
+            taskDetail={taskDetail}
             states={states}
             initialRecurringSummary={initialRecurringSummary ?? null}
             onOpenChange={onOpenChange}

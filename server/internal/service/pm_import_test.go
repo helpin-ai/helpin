@@ -42,11 +42,11 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 		t.Fatalf("preview shortcut: %v", err)
 	}
 
-	if resp.Summary.TotalStories != 4 {
-		t.Fatalf("expected 4 stories, got %d", resp.Summary.TotalStories)
+	if resp.Summary.TotalTasks != 4 {
+		t.Fatalf("expected 4 tasks, got %d", resp.Summary.TotalTasks)
 	}
-	if resp.Summary.DuplicateStories != 1 {
-		t.Fatalf("expected 1 duplicate story, got %d", resp.Summary.DuplicateStories)
+	if resp.Summary.DuplicateTasks != 1 {
+		t.Fatalf("expected 1 duplicate task, got %d", resp.Summary.DuplicateTasks)
 	}
 	if resp.Summary.EpicsCount != 1 {
 		t.Fatalf("expected 1 epic, got %d", resp.Summary.EpicsCount)
@@ -134,8 +134,8 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	if result.ObjectivesCreated != 1 || result.EpicsCreated != 1 || result.SprintsCreated != 3 {
 		t.Fatalf("unexpected entity counts: objectives=%d epics=%d sprints=%d", result.ObjectivesCreated, result.EpicsCreated, result.SprintsCreated)
 	}
-	if result.StoriesCreated != 4 || result.StoriesSkipped != 0 {
-		t.Fatalf("unexpected story counts: created=%d skipped=%d", result.StoriesCreated, result.StoriesSkipped)
+	if result.TasksCreated != 4 || result.TasksSkipped != 0 {
+		t.Fatalf("unexpected task counts: created=%d skipped=%d", result.TasksCreated, result.TasksSkipped)
 	}
 	if result.OwnerLinksCreated != 4 {
 		t.Fatalf("expected 4 owner links created, got %d", result.OwnerLinksCreated)
@@ -156,11 +156,11 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute shortcut import second run: %v", err)
 	}
-	if secondResult.StoriesCreated != 0 {
-		t.Fatalf("expected no new stories on second import, got %d", secondResult.StoriesCreated)
+	if secondResult.TasksCreated != 0 {
+		t.Fatalf("expected no new tasks on second import, got %d", secondResult.TasksCreated)
 	}
-	if secondResult.StoriesSkipped != 4 {
-		t.Fatalf("expected 4 skipped stories on second import, got %d", secondResult.StoriesSkipped)
+	if secondResult.TasksSkipped != 4 {
+		t.Fatalf("expected 4 skipped tasks on second import, got %d", secondResult.TasksSkipped)
 	}
 	if secondResult.EpicsCreated != 0 || secondResult.ObjectivesCreated != 0 || secondResult.SprintsCreated != 0 {
 		t.Fatalf("expected no new deduped entities on second import, got epics=%d objectives=%d sprints=%d", secondResult.EpicsCreated, secondResult.ObjectivesCreated, secondResult.SprintsCreated)
@@ -596,7 +596,7 @@ func TestPMImportServiceImportShortcutStoryMediaUpdatesChecklistItems(t *testing
 	}
 
 	var checklistItem model.PMChecklistItem
-	if err := db.Where("story_id = ?", story.ID).First(&checklistItem).Error; err != nil {
+	if err := db.Where("task_id = ?", story.ID).First(&checklistItem).Error; err != nil {
 		t.Fatalf("load imported checklist item: %v", err)
 	}
 	if !strings.Contains(checklistItem.Text, "media.app.shortcut.com") {
@@ -747,7 +747,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			description TEXT,
 			manager_id TEXT,
 			team_type TEXT NOT NULL DEFAULT 'engineering',
-			default_story_type TEXT NOT NULL DEFAULT 'feature',
+			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -887,13 +887,13 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_stories (
+		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			story_type TEXT NOT NULL,
+			task_type TEXT NOT NULL,
 			workflow_id TEXT NOT NULL,
 			workflow_state_id TEXT NOT NULL,
 			epic_id TEXT,
@@ -928,21 +928,21 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE pm_story_owners (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_owners (
+			task_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, user_id)
+			PRIMARY KEY (task_id, user_id)
 		)`,
-		`CREATE TABLE pm_story_labels (
-			story_id TEXT NOT NULL,
+		`CREATE TABLE pm_task_labels (
+			task_id TEXT NOT NULL,
 			label_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (story_id, label_id)
+			PRIMARY KEY (task_id, label_id)
 		)`,
 		`CREATE TABLE pm_checklist_items (
 			id TEXT PRIMARY KEY,
-			story_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
 			text TEXT NOT NULL,
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,

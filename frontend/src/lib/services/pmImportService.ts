@@ -1,8 +1,8 @@
 import { API_BASE } from '../api';
 
 export interface ShortcutImportPreviewSummary {
-  total_stories: number;
-  stories_by_type: Record<string, number>;
+  total_tasks: number;
+  tasks_by_type: Record<string, number>;
   epics_count: number;
   objectives_count: number;
   sprints_count: number;
@@ -11,19 +11,19 @@ export interface ShortcutImportPreviewSummary {
   workflows_count: number;
   workflow_states_count: number;
   checklist_items_count: number;
-  duplicate_stories: number;
+  duplicate_tasks: number;
 }
 
 export interface ShortcutWorkflowStatePreview {
   name: string;
   suggested_type: string;
-  story_count: number;
+  task_count: number;
 }
 
 export interface ShortcutWorkflowPreview {
   id?: string;
   name: string;
-  story_count: number;
+  task_count: number;
   states: ShortcutWorkflowStatePreview[];
 }
 

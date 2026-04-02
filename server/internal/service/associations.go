@@ -59,7 +59,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 			Duplicates:   []model.TaskRelationshipSummary{},
 			DuplicatedBy: []model.TaskRelationshipSummary{},
 		},
-		Stories:              []model.AssociationObjectSummary{},
+		Tasks:                []model.AssociationObjectSummary{},
 		SupportConversations: []model.AssociationObjectSummary{},
 		CRMRecords:           []model.AssociationObjectSummary{},
 		Docs:                 []model.AssociationObjectSummary{},
@@ -236,7 +236,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 				continue
 			}
 			seenStories[story.ID] = struct{}{}
-			response.Stories = append(response.Stories, storyAssociationSummary(assoc.ID, story))
+			response.Tasks = append(response.Tasks, storyAssociationSummary(assoc.ID, story))
 		case model.CRMObjectSupportConversation:
 			conversation, ok := conversationsByID[otherID]
 			if !ok {
@@ -260,7 +260,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 		}
 	}
 
-	sortAssociationObjects(response.Stories)
+	sortAssociationObjects(response.Tasks)
 	sortAssociationObjects(response.SupportConversations)
 	sortAssociationObjects(response.CRMRecords)
 
@@ -333,8 +333,8 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if conversation == nil || conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
 			return nil
 		}
-		existing := make(map[string]struct{}, len(response.Stories))
-		for _, item := range response.Stories {
+		existing := make(map[string]struct{}, len(response.Tasks))
+		for _, item := range response.Tasks {
 			existing[item.ObjectID] = struct{}{}
 		}
 		if _, ok := existing[*conversation.LinkedTaskID]; ok {
@@ -345,8 +345,8 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 			return err
 		}
 		if len(stories) == 1 {
-			response.Stories = append(response.Stories, storyAssociationSummary("", stories[0]))
-			sortAssociationObjects(response.Stories)
+			response.Tasks = append(response.Tasks, storyAssociationSummary("", stories[0]))
+			sortAssociationObjects(response.Tasks)
 		}
 	}
 	return nil
