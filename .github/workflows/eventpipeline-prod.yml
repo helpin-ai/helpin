@@ -91,8 +91,9 @@ jobs:
       - name: Verify KStreams runtime image
         run: |
           docker run --rm --entrypoint /usr/bin/java helpin-eventpipeline-kstreams:verify -version
-          docker run --rm --entrypoint sh helpin-eventpipeline-kstreams:verify -c 'test -f /app/app.jar'
-          docker run --rm -e PATH=/tmp helpin-eventpipeline-kstreams:verify -version
+          docker run --rm --entrypoint /bin/sh helpin-eventpipeline-kstreams:verify -c 'test -f /app/app.jar'
+          docker run --rm -e PATH=/tmp --entrypoint /usr/bin/java helpin-eventpipeline-kstreams:verify -version
+          docker run --rm -e PATH=/tmp --entrypoint /bin/sh helpin-eventpipeline-kstreams:verify -c 'test -x /usr/bin/java && test -f /app/app.jar'
       - name: Build and push KStreams image
         uses: docker/build-push-action@v5
         with:
