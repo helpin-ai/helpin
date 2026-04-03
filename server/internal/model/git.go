@@ -52,7 +52,7 @@ type PMTeamRepoDefault struct {
 	TeamID         string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
 	RepositoryID   string    `json:"repository_id" gorm:"type:uuid;not null"`
 	BaseBranch     string    `json:"base_branch" gorm:"not null;default:'main'"`
-	BranchTemplate string    `json:"branch_template" gorm:"not null;default:'tp-{display_id}-{slug}'"`
+	BranchTemplate string    `json:"branch_template" gorm:"not null;default:'{task_key}-{slug}'"`
 	AutoSyncStates bool      `json:"auto_sync_states" gorm:"not null;default:true"`
 	ReviewStateID  *string   `json:"review_state_id" gorm:"type:uuid"`
 	DoneStateID    *string   `json:"done_state_id" gorm:"type:uuid"`
