@@ -17,6 +17,7 @@ export const workspacesService = {
   updateMemberRole: (id: string, memberId: string, data: { role: WorkspaceMember['role'] }) =>
     api.put(`/workspaces/${id}/members/${memberId}`, data),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
+  getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');

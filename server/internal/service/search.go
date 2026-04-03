@@ -3,10 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+var searchTaskKeyPattern = regexp.MustCompile(`^([A-Z]{2,5})-(\d+)$`)
 
 type SearchService struct {
 	searchRepo    *repository.SearchRepository
@@ -21,7 +26,32 @@ func (s *SearchService) Search(ctx context.Context, workspaceID, query string) (
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	resp, err := s.searchRepo.Search(ctx, workspaceID, query)
+
+	resolvedWorkspaceID := workspaceID
+	resolvedDisplayID := 0
+
+	if m := searchTaskKeyPattern.FindStringSubmatch(strings.ToUpper(query)); m != nil {
+		keyPrefix := m[1]
+		displayID, _ := strconv.Atoi(m[2])
+
+		ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+		if err == nil && ws != nil {
+			if strings.EqualFold(keyPrefix, ws.WorkspaceKey) {
+				resolvedDisplayID = displayID
+			} else {
+				resolved, err := s.workspaceRepo.FindWorkspaceByKeyOrAlias(ctx, keyPrefix)
+				if err == nil && resolved != nil && resolved.ID == workspaceID {
+					resolvedDisplayID = displayID
+				}
+			}
+		}
+
+		if resolvedDisplayID > 0 {
+			resolvedWorkspaceID = workspaceID
+		}
+	}
+
+	resp, err := s.searchRepo.Search(ctx, resolvedWorkspaceID, query, resolvedDisplayID)
 	if err != nil {
 		return nil, err
 	}

@@ -31,9 +31,9 @@ function slugify(text: string): string {
     .slice(0, 48);
 }
 
-export function buildGitBranch(displayId: string | number, taskName?: string, taskType?: TaskType): string {
+export function buildGitBranch(taskKey: string, taskName?: string, taskType?: TaskType): string {
   const prefix = BRANCH_PREFIX[taskType ?? 'feature'];
-  const id = String(displayId).toLowerCase();
+  const id = taskKey.toLowerCase();
   if (!taskName?.trim()) return `${prefix}/${id}`;
   return `${prefix}/${id}-${slugify(taskName)}`;
 }
@@ -44,7 +44,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
   const { copied: cmdCopied, copy: copyCmd } = useCopyToClipboard();
   const [open, setOpen] = useState(false);
 
-  const branchName = buildGitBranch(displayId, taskName, taskType);
+  const branchName = buildGitBranch(taskKey ?? String(displayId), taskName, taskType);
   const checkoutCmd = `git checkout -b ${branchName}`;
 
   return (

@@ -618,8 +618,8 @@ function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: str
   );
 }
 
-function buildBranchPreview(displayId: number | string, taskName: string) {
-  return `${displayId}-${slugify(taskName)}`;
+function buildBranchPreview(taskKey: string, taskName: string) {
+  return `${taskKey}-${slugify(taskName)}`;
 }
 
 function slugify(value: string) {

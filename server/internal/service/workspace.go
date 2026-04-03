@@ -187,6 +187,11 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 	return ws, nil
 }
 
+// GetKeyHistory returns all key changes for a workspace, newest first.
+func (s *WorkspaceService) GetKeyHistory(ctx context.Context, workspaceID string) ([]model.WorkspaceKeyHistory, error) {
+	return s.workspaceRepo.GetKeyHistory(ctx, workspaceID)
+}
+
 func normalizeWorkspaceWebsiteURL(raw *string) (*string, error) {
 	if raw == nil {
 		return nil, nil

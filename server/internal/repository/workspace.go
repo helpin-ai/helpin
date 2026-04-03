@@ -100,6 +100,19 @@ func (r *WorkspaceRepository) IsWorkspaceKeyAvailable(ctx context.Context, key s
 	return histCount == 0, nil
 }
 
+// GetKeyHistory returns all key changes for a workspace, newest first.
+func (r *WorkspaceRepository) GetKeyHistory(ctx context.Context, workspaceID string) ([]model.WorkspaceKeyHistory, error) {
+	var records []model.WorkspaceKeyHistory
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("changed_at DESC").
+		Find(&records).Error
+	if err != nil {
+		return nil, fmt.Errorf("get workspace key history: %w", err)
+	}
+	return records, nil
+}
+
 // InsertKeyHistory records a workspace key change for alias resolution.
 func (r *WorkspaceRepository) InsertKeyHistory(ctx context.Context, workspaceID, oldKey, newKey, changedBy string) error {
 	record := &model.WorkspaceKeyHistory{

@@ -561,7 +561,7 @@ function TaskDetailPanelBody({
   if (taskDetail.task.id !== lastSyncedTaskRef.current) {
     lastSyncedTaskRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
-    url.searchParams.set('task', `${taskDetail.task.display_id}`);
+    url.searchParams.set('task', taskDetail.task.task_key ?? `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
   }
 

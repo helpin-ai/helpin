@@ -30,11 +30,12 @@ export function buildTaskCopyUrl({
   taskId,
 }: BuildTaskCopyUrlOptions) {
   if (origin && slug && taskId) {
-    return buildTaskUrl({ origin, slug, taskId });
+    const url = new URL(buildTaskPath(slug, taskId), origin);
+    url.searchParams.set('task', taskKey || String(displayId));
+    return url.toString();
   }
 
   const url = new URL(currentHref);
-  // Prefer task_key format (e.g. "HLP-123") over bare display_id for shareable URLs.
   url.searchParams.set('task', taskKey || String(displayId));
   return url.toString();
 }

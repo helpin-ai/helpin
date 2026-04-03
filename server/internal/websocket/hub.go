@@ -23,7 +23,8 @@ type Event struct {
 	ActorID     string          `json:"actor_id"`
 	ParentType  string          `json:"parent_type,omitempty"`
 	ParentID    string          `json:"parent_id,omitempty"`
-	Data        json.RawMessage `json:"data,omitempty"` // hydrated payload for widget clients
+	TaskKey     string          `json:"task_key,omitempty"` // included for task create/update/delete events
+	Data        json.RawMessage `json:"data,omitempty"`     // hydrated payload for widget clients
 }
 
 // Client represents a single WebSocket connection.

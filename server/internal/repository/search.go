@@ -3,17 +3,12 @@ package repository
 import (
 	"context"
 	"fmt"
-	"regexp"
-	"strconv"
 	"sync"
 
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
-
-// taskKeyPattern matches task key queries like "HLP-123".
-var taskKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}-(\d+)$`)
 
 type SearchRepository struct {
 	db *gorm.DB
@@ -25,7 +20,7 @@ func NewSearchRepository(db *gorm.DB) *SearchRepository {
 
 const searchLimit = 20
 
-func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string) (*model.SearchResponse, error) {
+func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string, taskKeyDisplayID int) (*model.SearchResponse, error) {
 	if query == "" {
 		return &model.SearchResponse{
 			Tasks:      []model.SearchResult{},
@@ -38,12 +33,6 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	}
 
 	pattern := "%" + query + "%"
-
-	// Check if query matches the task key pattern (e.g. "HLP-123").
-	var taskKeyDisplayID int
-	if m := taskKeyPattern.FindStringSubmatch(query); m != nil {
-		taskKeyDisplayID, _ = strconv.Atoi(m[1])
-	}
 
 	var (
 		stories    []model.SearchResult
@@ -70,7 +59,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	go func() {
 		defer wg.Done()
 
-		// When query looks like a task key, do an exact display_id lookup
+		// When a task key display_id is provided, do an exact lookup
 		// plus the normal text search, then merge with the exact match first.
 		var exactMatch []model.SearchResult
 		if taskKeyDisplayID > 0 {

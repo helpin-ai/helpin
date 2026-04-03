@@ -351,6 +351,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/me", h.Workspace.GetMe)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
+				r.Get("/key-history", h.Workspace.GetKeyHistory)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Update)

@@ -206,14 +206,6 @@ export function DatePicker({
     }
   }, [activeKey, applyValue, focusInputField, linkedDate, visualFirstField, visualSecondField]);
 
-  const initializeDrafts = React.useCallback(() => {
-    setDrafts({
-      primary: externalValues.primary ? formatDateValue(externalValues.primary, '') : '',
-      linked: externalValues.linked ? formatDateValue(externalValues.linked, '') : '',
-    });
-    setParseError(null);
-  }, [externalValues]);
-
   React.useEffect(() => {
     if (!open) return;
     setActiveField(linkedDate && defaultActiveField === 'linked' ? 'linked' : 'primary');

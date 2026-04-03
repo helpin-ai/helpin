@@ -17,7 +17,7 @@ import (
 
 // PMTaskService contains task business logic.
 type PMTaskService struct {
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -40,7 +40,7 @@ type PMTaskService struct {
 // NewPMTaskService creates a new PMTaskService.
 func NewPMTaskService(taskRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
 	return &PMTaskService{
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
 		epicRepo:            epicRepo,
@@ -349,7 +349,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		WorkspaceID:       req.WorkspaceID,
 		Name:              strings.TrimSpace(req.Name),
 		Description:       req.Description,
-		TaskType:         taskType,
+		TaskType:          taskType,
 		WorkflowID:        workflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            req.EpicID,
@@ -501,7 +501,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := s.activityService.Log(ctx, newTask.WorkspaceID, "task", newTask.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task create", "error", err, "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: newTask.ID, WorkspaceID: newTask.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: newTask.ID, WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID)})
 
 	// Auto-follow the creator and emit notification.
 	if s.followerService != nil && actorID != "" {
@@ -894,7 +894,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			s.logger.ErrorContext(ctx, "failed to log activity for task blocker change", "error", err, "task_id", current.ID)
 		}
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 
 	// Emit notification for significant updates.
 	if s.notificationService != nil && (stateChanged || (req.Priority != nil && *req.Priority != oldPriority) || (req.Blocked != nil && *req.Blocked != oldBlocked)) {
@@ -1000,7 +1000,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "archived this task", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task delete", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "task", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "task", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	s.logger.InfoContext(ctx, "task deleted", "task_id", id, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return nil
 }
@@ -1206,7 +1206,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task owner add", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 
 	// Auto-follow and notify the assigned user.
 	if s.followerService != nil {
@@ -1257,7 +1257,7 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, userID, actorID
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task owner remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1282,7 +1282,7 @@ func (s *PMTaskService) AddFollower(ctx context.Context, taskID, userID, actorID
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task follower add", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1304,7 +1304,7 @@ func (s *PMTaskService) RemoveFollower(ctx context.Context, taskID, userID, acto
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task follower remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1351,7 +1351,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, taskID, labelID, actorI
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task label remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
