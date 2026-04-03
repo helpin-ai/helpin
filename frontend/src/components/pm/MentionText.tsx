@@ -31,23 +31,31 @@ function resolveMention(
 }
 
 function MentionChip({ mention }: { mention: MentionMatch }) {
-  const [showProfile, setShowProfile] = useState(false)
+  const [visible, setVisible] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLSpanElement>(null)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTeam = mention.type === 'team'
 
-  const handleEnter = useCallback(() => {
+  const show = useCallback(() => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null }
     if (ref.current) {
       const rect = ref.current.getBoundingClientRect()
-      setPos({ top: rect.top + window.scrollY - 6, left: rect.left + window.scrollX })
+      setPos({ top: rect.top - 6, left: rect.left })
     }
-    setShowProfile(true)
+    setVisible(true)
   }, [])
 
-  const profileCard = showProfile && pos && (mention.member || mention.team) ? createPortal(
+  const hide = useCallback(() => {
+    hideTimer.current = setTimeout(() => setVisible(false), 120)
+  }, [])
+
+  const profileCard = visible && pos && (mention.member || mention.team) ? createPortal(
     <span
-      className="fixed z-[9999] flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md animate-in fade-in-0 zoom-in-95 duration-100"
+      className="fixed z-[9999] flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md animate-in fade-in-0 zoom-in-95 duration-150"
       style={{ top: pos.top, left: pos.left, transform: 'translateY(-100%)' }}
+      onMouseEnter={show}
+      onMouseLeave={hide}
     >
       {mention.member && (
         <>
@@ -90,8 +98,8 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
       ref={ref}
       className="inline-flex"
       data-mention-type={mention.type}
-      onMouseEnter={handleEnter}
-      onMouseLeave={() => setShowProfile(false)}
+      onMouseEnter={show}
+      onMouseLeave={hide}
     >
       <span
         className={`cursor-pointer font-medium ${
