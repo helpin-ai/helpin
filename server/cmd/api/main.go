@@ -580,7 +580,7 @@ func main() {
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo, wsPublisher)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
-	searchService := service.NewSearchService(searchRepo)
+	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)

@@ -77,7 +77,8 @@ func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws, err := h.workspaceService.Update(r.Context(), id, req)
+	actorID := middleware.GetUserID(r.Context())
+	ws, err := h.workspaceService.Update(r.Context(), id, req, actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

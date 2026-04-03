@@ -23,10 +23,11 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, organizationID *string, description, websiteURL *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, websiteURL *string, timezone string) (*model.Workspace, error) {
 	ws := &model.Workspace{
 		Name:           name,
 		Slug:           slug,
+		WorkspaceKey:   workspaceKey,
 		OwnerID:        ownerID,
 		OrganizationID: organizationID,
 		Description:    description,
@@ -37,6 +38,98 @@ func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID st
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
 	return ws, nil
+}
+
+// GetByKey returns a workspace by its workspace_key.
+func (r *WorkspaceRepository) GetByKey(ctx context.Context, key string) (*model.Workspace, error) {
+	ws := &model.Workspace{}
+	err := r.db.WithContext(ctx).Where("workspace_key = ?", key).First(ws).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace by key: %w", err)
+	}
+	return ws, nil
+}
+
+// FindWorkspaceByKeyOrAlias resolves a workspace key, falling back to workspace_key_history for old aliases.
+func (r *WorkspaceRepository) FindWorkspaceByKeyOrAlias(ctx context.Context, key string) (*model.Workspace, error) {
+	// Try current key first.
+	ws, err := r.GetByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if ws != nil {
+		return ws, nil
+	}
+
+	// Fall back to alias lookup.
+	var history model.WorkspaceKeyHistory
+	err = r.db.WithContext(ctx).Where("old_key = ?", key).First(&history).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find workspace by key alias: %w", err)
+	}
+	return r.GetByID(ctx, history.WorkspaceID)
+}
+
+// IsWorkspaceKeyAvailable checks that a key is not used in workspaces.workspace_key or workspace_key_history.old_key.
+// excludeWorkspaceID allows the current workspace to be excluded from the check.
+func (r *WorkspaceRepository) IsWorkspaceKeyAvailable(ctx context.Context, key string, excludeWorkspaceID string) (bool, error) {
+	// Check current keys.
+	var wsCount int64
+	q := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("workspace_key = ?", key)
+	if excludeWorkspaceID != "" {
+		q = q.Where("id != ?", excludeWorkspaceID)
+	}
+	if err := q.Count(&wsCount).Error; err != nil {
+		return false, fmt.Errorf("check workspace key availability: %w", err)
+	}
+	if wsCount > 0 {
+		return false, nil
+	}
+
+	// Check retired keys.
+	var histCount int64
+	if err := r.db.WithContext(ctx).Model(&model.WorkspaceKeyHistory{}).Where("old_key = ?", key).Count(&histCount).Error; err != nil {
+		return false, fmt.Errorf("check workspace key history: %w", err)
+	}
+	return histCount == 0, nil
+}
+
+// InsertKeyHistory records a workspace key change for alias resolution.
+func (r *WorkspaceRepository) InsertKeyHistory(ctx context.Context, workspaceID, oldKey, newKey, changedBy string) error {
+	record := &model.WorkspaceKeyHistory{
+		WorkspaceID: workspaceID,
+		OldKey:      oldKey,
+		NewKey:      newKey,
+		ChangedBy:   changedBy,
+	}
+	if err := r.db.WithContext(ctx).Create(record).Error; err != nil {
+		return fmt.Errorf("insert workspace key history: %w", err)
+	}
+	return nil
+}
+
+// UpdateWorkspaceKey changes the workspace key and records the old key in history, all in one transaction.
+func (r *WorkspaceRepository) UpdateWorkspaceKey(ctx context.Context, workspaceID, oldKey, newKey, changedBy string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&model.WorkspaceKeyHistory{
+			WorkspaceID: workspaceID,
+			OldKey:      oldKey,
+			NewKey:      newKey,
+			ChangedBy:   changedBy,
+		}).Error; err != nil {
+			return fmt.Errorf("insert key history: %w", err)
+		}
+		if err := tx.Model(&model.Workspace{}).Where("id = ?", workspaceID).Update("workspace_key", newKey).Error; err != nil {
+			return fmt.Errorf("update workspace key: %w", err)
+		}
+		return nil
+	})
 }
 
 // List returns all workspaces a user is an active member of, along with their role.
@@ -244,6 +337,9 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 
 			// Clear user default workspace references
 			"UPDATE users SET default_workspace_id = NULL WHERE default_workspace_id = ?",
+
+			// Workspace key history
+			"DELETE FROM workspace_key_history WHERE workspace_id = ?",
 
 			// Finally, delete the workspace itself
 			"DELETE FROM workspaces WHERE id = ?",
