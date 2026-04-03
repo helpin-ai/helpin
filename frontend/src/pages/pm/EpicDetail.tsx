@@ -752,7 +752,6 @@ export function EpicDetailPage() {
                 selectedObjectives={selectedObjectives}
                 onChange={updateObjectives}
                 addLabel="Add objective"
-                emptyLabel="None"
                 className="min-h-6"
               />
             </MetadataRow>

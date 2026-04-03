@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import type { Objective } from '@/lib/pmTypes';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 
 export interface ObjectivePickerSelection {
   id: string;
@@ -26,7 +27,6 @@ interface ObjectivePickerProps {
   onChange: (objectiveIds: string[]) => void | Promise<void>;
   className?: string;
   addLabel?: string;
-  emptyLabel?: string;
 }
 
 function ObjectiveBadge({
@@ -63,7 +63,6 @@ export function ObjectivePicker({
   onChange,
   className,
   addLabel = 'Add objective',
-  emptyLabel = 'No objective',
 }: ObjectivePickerProps) {
   const [open, setOpen] = useState(false);
   const availableObjectives = objectives.filter((objective) => !objective.archived);
@@ -123,34 +122,49 @@ export function ObjectivePicker({
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <Command>
-              <CommandInput placeholder="Search objectives..." className="h-8 text-xs" />
-              <CommandList>
-                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                  No objectives found
-                </CommandEmpty>
-                <CommandGroup>
-                  {availableObjectives.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyLabel}</div>
-                  ) : null}
-                  {availableObjectives.map((objective) => {
-                    const isSelected = selectedObjectiveIds.includes(objective.id);
-                    return (
-                      <CommandItem
-                        key={objective.id}
-                        value={objective.name}
-                        className="flex items-center gap-2 text-xs"
-                        onSelect={() => toggleObjective(objective.id)}
-                      >
-                        <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate">{objective.name}</span>
-                        {isSelected ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+            {availableObjectives.length === 0 ? (
+              <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
+                <Target className="h-4 w-4 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">No objectives yet</p>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  onClick={() => {
+                    setOpen(false);
+                    useGlobalCreateStore.getState().openCreate('objective');
+                  }}
+                >
+                  <Plus className="h-3 w-3" />
+                  Create objective
+                </button>
+              </div>
+            ) : (
+              <Command>
+                <CommandInput placeholder="Search objectives..." className="h-8 text-xs" />
+                <CommandList>
+                  <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                    No objectives found
+                  </CommandEmpty>
+                  <CommandGroup>
+                    {availableObjectives.map((objective) => {
+                      const isSelected = selectedObjectiveIds.includes(objective.id);
+                      return (
+                        <CommandItem
+                          key={objective.id}
+                          value={objective.name}
+                          className="flex items-center gap-2 text-xs"
+                          onSelect={() => toggleObjective(objective.id)}
+                        >
+                          <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{objective.name}</span>
+                          {isSelected ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
           </PopoverContent>
         ) : null}
       </Popover>

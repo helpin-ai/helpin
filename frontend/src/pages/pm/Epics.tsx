@@ -1568,16 +1568,56 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
+        <div
+          className="ui-divider-bottom-fade relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={(el) => {
+            if (!el) return;
+            const update = () => {
+              const sl = el.scrollLeft;
+              const sr = el.scrollWidth - el.clientWidth - sl;
+              el.style.maskImage =
+                sl > 2 && sr > 2
+                  ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+                  : sl > 2
+                    ? 'linear-gradient(to right, transparent, black 24px)'
+                    : sr > 2
+                      ? 'linear-gradient(to left, transparent, black 24px)'
+                      : 'none';
+            };
+            el.addEventListener('scroll', update, { passive: true });
+            const ro = new ResizeObserver(update);
+            ro.observe(el);
+            update();
+          }}
+        >
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
-          <span className="text-xs text-muted-foreground">Group by:</span>
+          {activeFilterKeys.size > 0 ? (
+            <>
+              {filterDefinitions
+                .filter((definition) => activeFilterKeys.has(definition.key))
+                .map((definition) => (
+                  <EpicFilterPill
+                    key={definition.key}
+                    definition={definition}
+                    selected={filters[definition.key] ?? []}
+                    onToggle={(value) => handleToggleFilterValue(definition.key, value)}
+                    onRemove={() => handleRemoveFilter(definition.key)}
+                  />
+                ))}
+              <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={handleClearFilters}>
+                Clear all
+              </Button>
+              <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+            </>
+          ) : null}
+          <span className="shrink-0 text-xs text-muted-foreground">Group by:</span>
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-            <SelectTrigger className="h-7 w-[160px] text-xs">
+            <SelectTrigger className="h-7 w-[160px] shrink-0 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1592,16 +1632,16 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="h-7 shrink-0 px-2 text-xs"
               onClick={() => handleSetAllGroupsCollapsed(!areAllGroupsCollapsed)}
             >
               {areAllGroupsCollapsed ? 'Expand all' : 'Collapse all'}
             </Button>
           ) : null}
-          <span className="text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
           </span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -1618,25 +1658,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               iconOnly
             />
           </div>
-        </div>
-      ) : null}
-
-      {activeFilterKeys.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {filterDefinitions
-            .filter((definition) => activeFilterKeys.has(definition.key))
-            .map((definition) => (
-              <EpicFilterPill
-                key={definition.key}
-                definition={definition}
-                selected={filters[definition.key] ?? []}
-                onToggle={(value) => handleToggleFilterValue(definition.key, value)}
-                onRemove={() => handleRemoveFilter(definition.key)}
-              />
-            ))}
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={handleClearFilters}>
-            Clear all
-          </Button>
         </div>
       ) : null}
 
