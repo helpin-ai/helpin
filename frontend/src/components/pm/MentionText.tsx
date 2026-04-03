@@ -109,8 +109,9 @@ export function MentionText({ text, members = [], teams = [], className }: Menti
   }, [teams])
 
   const parts = useMemo(() => {
-    const result: (string | MentionMatch)[] = []
-    const regex = /@([a-z0-9._-]+)/gi
+    const result: (string | MentionMatch | { __url: string })[] = []
+    // Match @mentions or URLs (https/http)
+    const regex = /(?:@([a-z0-9._-]+))|(https?:\/\/[^\s<>()]+(?:\([^\s<>()]*\))*[^\s<>().,;:!?"'\]])/gi
     let lastIndex = 0
     let match: RegExpExecArray | null
 
@@ -118,7 +119,11 @@ export function MentionText({ text, members = [], teams = [], className }: Menti
       if (match.index > lastIndex) {
         result.push(text.slice(lastIndex, match.index))
       }
-      result.push(resolveMention(match[1], membersByHandle, teamsByHandle))
+      if (match[1]) {
+        result.push(resolveMention(match[1], membersByHandle, teamsByHandle))
+      } else {
+        result.push({ __url: match[0] })
+      }
       lastIndex = regex.lastIndex
     }
 
@@ -134,6 +139,16 @@ export function MentionText({ text, members = [], teams = [], className }: Menti
       {parts.map((part, i) =>
         typeof part === 'string' ? (
           part
+        ) : '__url' in part ? (
+          <a
+            key={i}
+            href={part.__url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline break-all hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            {part.__url}
+          </a>
         ) : (
           <MentionChip key={i} mention={part} />
         ),

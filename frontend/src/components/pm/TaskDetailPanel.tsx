@@ -1147,7 +1147,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={taskDetail.task.display_id} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1615,6 +1615,7 @@ export function TaskDetailPanel({
         side="right"
         className="w-[80vw] !max-w-[1200px] p-0"
         showCloseButton={false}
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
@@ -1648,7 +1649,8 @@ export function TaskDetailPanel({
   );
 }
 
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
+  if (agent.role) return agent.role;
   switch (agent.preset_key) {
     case 'code_builder':
       return 'Code Builder';
