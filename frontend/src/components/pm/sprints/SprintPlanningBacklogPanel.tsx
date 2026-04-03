@@ -197,7 +197,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                     compact
                     showBacklogAction={canEdit}
                     canDrag={canEdit}
-                    onOpen={() => onOpenTask(task.id)}
+                    onOpenTask={onOpenTask}
                     onAddToSprint={canEdit ? () => onAddToActiveSprint(task) : undefined}
                   />
                 ))

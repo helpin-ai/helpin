@@ -19,7 +19,7 @@ interface SprintPlanningTaskCardProps {
   showBacklogAction?: boolean;
   canDrag?: boolean;
   isDragging?: boolean;
-  onOpen?: () => void;
+  onOpenTask?: (taskId: string) => void;
   onAddToSprint?: () => void;
 }
 
@@ -30,7 +30,7 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
   showBacklogAction = false,
   canDrag = false,
   isDragging = false,
-  onOpen,
+  onOpenTask,
   onAddToSprint,
 }: SprintPlanningTaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging: dragActive } = useDraggable({
@@ -38,6 +38,8 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
     data: { task },
     disabled: !canDrag,
   });
+  const renderedDragging = isDragging || dragActive;
+  const appliedTransform = dragActive ? null : transform;
 
   const taskTypeCfg = TASK_TYPE_CONFIG[(task as { task_type?: string }).task_type as keyof typeof TASK_TYPE_CONFIG] ?? null;
 
@@ -48,19 +50,19 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
       {...(canDrag ? listeners : {})}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen?.()}
+      onClick={() => onOpenTask?.(task.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onOpen?.();
+          onOpenTask?.(task.id);
         }
       }}
-      style={{ transform: CSS.Translate.toString(transform) }}
+      style={{ transform: CSS.Translate.toString(appliedTransform) }}
       className={cn(
         'group/card relative shrink-0 rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
         'hover:border-border hover:shadow-md',
         canDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-        (isDragging || dragActive) && 'opacity-40',
+        renderedDragging && 'opacity-40',
       )}
     >
       <div className={cn('min-w-0 flex-1', compact ? 'p-2.5' : 'p-3')}>

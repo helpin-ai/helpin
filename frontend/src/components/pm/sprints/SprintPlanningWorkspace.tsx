@@ -69,23 +69,9 @@ export function SprintPlanningWorkspace({
     workspace?.buckets.flatMap((bucket) => bucket.sprints ?? [])?.[0]?.sprint.id ??
     null;
   const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
-  const dropTargetByTaskId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const task of workspace?.backlog_tasks ?? []) {
-      map.set(task.id, 'backlog-dropzone');
-    }
-    for (const bucket of workspace?.buckets ?? []) {
-      for (const card of bucket.sprints ?? []) {
-        const targetId = `sprint:${card.sprint.id}`;
-        for (const task of card.preview_tasks ?? []) {
-          map.set(task.id, targetId);
-        }
-      }
-    }
-    return map;
-  }, [workspace?.backlog_tasks, workspace?.buckets]);
 
   const [activeTask, setActiveTask] = useState<SprintPlanningTaskPreview | null>(null);
+  const [activeDropTargetId, setActiveDropTargetId] = useState<string | null>(null);
   // Refs persist across the render gap where activeTask is cleared but
   // workspace data hasn't propagated yet — also avoids stale closures in
   // memoized callbacks so columns don't re-render during drag
@@ -105,19 +91,22 @@ export function SprintPlanningWorkspace({
   const resolveDropTarget = useCallback((overId: string | null) => {
     if (!overId) return null;
     if (overId === 'backlog-dropzone' || overId.startsWith('sprint:')) return overId;
-    return dropTargetByTaskId.get(overId) ?? null;
-  }, [dropTargetByTaskId]);
+    return null;
+  }, []);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = event.active.data.current?.task as SprintPlanningTaskPreview | undefined;
     droppedTaskIdRef.current = null;
     overContainerRef.current = null;
+    setActiveDropTargetId(null);
     activeTaskRef.current = task ?? null;
     setActiveTask(task ?? null);
   }, []);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    overContainerRef.current = resolveDropTarget(event.over?.id ? String(event.over.id) : null);
+    const nextDropTargetId = resolveDropTarget(event.over?.id ? String(event.over.id) : null);
+    overContainerRef.current = nextDropTargetId;
+    setActiveDropTargetId((current) => current === nextDropTargetId ? current : nextDropTargetId);
   }, [resolveDropTarget]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -125,6 +114,7 @@ export function SprintPlanningWorkspace({
     // Use event.over when available; fall back to last container from onDragOver
     const overId = resolveDropTarget(event.over?.id ? String(event.over.id) : null) ?? overContainerRef.current;
     overContainerRef.current = null;
+    setActiveDropTargetId(null);
     if (!task || !overId) {
       activeTaskRef.current = null;
       setActiveTask(null);
@@ -146,6 +136,7 @@ export function SprintPlanningWorkspace({
   const handleDragCancel = useCallback(() => {
     activeTaskRef.current = null;
     overContainerRef.current = null;
+    setActiveDropTargetId(null);
     setActiveTask(null);
   }, []);
 
@@ -186,6 +177,7 @@ export function SprintPlanningWorkspace({
                 workspaceId={workspaceId}
                 ownerByMemberId={ownerByMemberId}
                 canEdit={canEdit}
+                isDropTargetActive={activeDropTargetId === `sprint:${card.sprint.id}`}
                 onOpenSprint={onOpenSprint}
                 onOpenTask={onOpenTask}
                 onCreateTask={onCreateTask}
@@ -213,6 +205,7 @@ export function SprintPlanningWorkspace({
               task={activeTask}
               owner={activeTask.owner_member_id ? ownerByMemberId.get(activeTask.owner_member_id) : undefined}
               compact
+              onOpenTask={onOpenTask}
             />
           </div>
         ) : null}

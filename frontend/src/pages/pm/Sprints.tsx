@@ -17,7 +17,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
-const TASK_PREVIEW_LIMIT = 5;
+const TASK_PREVIEW_LIMIT = 20;
 const BACKLOG_LIMIT = 50;
 
 interface SprintsPageProps {
@@ -185,8 +185,10 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     try {
       const { error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
       if (error) throw new Error(error);
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
       toast.error(error instanceof Error ? error.message : 'Failed to update task sprint');
     }
   };

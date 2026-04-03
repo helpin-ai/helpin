@@ -70,6 +70,7 @@ export function useCreateTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
     },
   })
 }
@@ -84,6 +85,7 @@ export function useUpdateTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
     },
   })
 }
@@ -96,6 +98,7 @@ export function useDeleteTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
     },
   })
 }

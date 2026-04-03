@@ -66,7 +66,7 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 // ListPlanningWorkspace returns grouped sprint cards plus an unassigned backlog preview for the planning page.
 func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters) (*model.SprintPlanningWorkspace, error) {
 	const (
-		defaultPreviewLimit = 5
+		defaultPreviewLimit = 20
 		defaultBacklogLimit = 50
 	)
 
@@ -397,11 +397,30 @@ func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs
 	return statsBySprintID, nil
 }
 
-// ListAllPreviewTasks returns all SprintPlanningTaskPreview rows for a single sprint (no limit).
-func (r *PMSprintRepository) ListAllPreviewTasks(ctx context.Context, sprintID string) ([]model.SprintPlanningTaskPreview, error) {
-	var rows []model.SprintPlanningTaskPreview
-	if err := r.db.WithContext(ctx).
+// ListPreviewTasksPage returns lightweight task previews for a sprint page.
+func (r *PMSprintRepository) ListPreviewTasksPage(ctx context.Context, sprintID string, pagination model.PMPagination) (*model.PaginatedResponse, error) {
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 20
+	}
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * perPage
+
+	base := r.db.WithContext(ctx).
 		Table("pm_tasks s").
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.sprint_id = ? AND s.archived = false", sprintID)
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("count preview tasks: %w", err)
+	}
+
+	rows := make([]model.SprintPlanningTaskPreview, 0, perPage)
+	if err := base.
 		Select(`
 			s.id,
 			s.display_id,
@@ -415,13 +434,25 @@ func (r *PMSprintRepository) ListAllPreviewTasks(ctx context.Context, sprintID s
 			s.sprint_id,
 			s.team_id
 		`).
-		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
-		Where("s.sprint_id = ? AND s.archived = false", sprintID).
 		Order("s.position ASC, s.created_at DESC").
+		Offset(offset).
+		Limit(perPage).
 		Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list all preview tasks: %w", err)
+		return nil, fmt.Errorf("list preview tasks page: %w", err)
 	}
-	return rows, nil
+
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = int((total + int64(perPage) - 1) / int64(perPage))
+	}
+
+	return &model.PaginatedResponse{
+		Data:       rows,
+		Total:      int(total),
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+	}, nil
 }
 
 func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
