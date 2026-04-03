@@ -1,10 +1,31 @@
 import * as React from 'react';
-import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
-import { CalendarDays } from 'lucide-react';
+import { differenceInDays, format, isBefore, isSameDay, startOfDay } from 'date-fns';
+import { CalendarDays, CornerDownLeft, X } from 'lucide-react';
+import type { DateRange, Matcher } from 'react-day-picker';
 import { cn } from '@/lib/utils';
+import {
+  type DatePickerKind,
+  formatDateValue,
+  formatShortDateValue,
+  getDatePickerLabel,
+  getDatePickerPresets,
+  parseNaturalLanguageDate,
+  parseStoredDate,
+} from '@/lib/datePicker';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+
+interface LinkedDatePickerField {
+  label?: string;
+  value?: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  kind?: DatePickerKind;
+  disablePast?: boolean;
+}
 
 interface DatePickerProps {
   /** ISO date string (yyyy-MM-dd) or empty */
@@ -20,19 +41,38 @@ interface DatePickerProps {
   urgencyColor?: boolean;
   /** If true, the item is completed and urgency colors should not apply */
   completed?: boolean;
+  /** Semantic context for presets and labels */
+  kind?: DatePickerKind;
+  /** Optional linked date shown as a second header field inside the popover */
+  linkedDate?: LinkedDatePickerField;
+  /** Which field is active when the linked popover opens */
+  defaultActiveField?: 'primary' | 'linked';
+  /** Optional label shown in the popover header */
+  label?: string;
 }
 
-export function DatePicker({ value, onChange, placeholder = 'Pick a date', className, disablePast, hideIcon, urgencyColor, completed }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  placeholder = 'Pick a date',
+  className,
+  disablePast,
+  hideIcon,
+  urgencyColor,
+  completed,
+  kind = 'generic',
+  linkedDate,
+  defaultActiveField = 'primary',
+  label,
+}: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const [activeField, setActiveField] = React.useState<'primary' | 'linked'>(defaultActiveField);
+  const [drafts, setDrafts] = React.useState<{ primary: string; linked: string }>({ primary: '', linked: '' });
+  const [parseError, setParseError] = React.useState<string | null>(null);
+  const [calendarMonth, setCalendarMonth] = React.useState<Date | undefined>(undefined);
 
-  const selected = React.useMemo(() => {
-    if (!value) return undefined;
-    try {
-      return parseISO(value);
-    } catch {
-      return undefined;
-    }
-  }, [value]);
+  const selected = React.useMemo(() => parseStoredDate(value), [value]);
+  const linkedSelected = React.useMemo(() => parseStoredDate(linkedDate?.value), [linkedDate?.value]);
 
   const today = React.useMemo(() => {
     const d = new Date();
@@ -47,6 +87,245 @@ export function DatePicker({ value, onChange, placeholder = 'Pick a date', class
     if (differenceInDays(selected, now) <= 3) return 'approaching';
     return null;
   }, [urgencyColor, selected, completed]);
+
+  const activeKey = activeField === 'linked' && linkedDate ? 'linked' : 'primary';
+  const activeKind = activeKey === 'linked' ? (linkedDate?.kind ?? 'generic') : kind;
+  const activeSelected = activeKey === 'linked' ? linkedSelected : selected;
+  const activeDisablePast = activeKey === 'linked' ? linkedDate?.disablePast : disablePast;
+
+  const minDate = React.useMemo(() => {
+    const candidates: Date[] = [];
+    if (activeDisablePast) candidates.push(today);
+    if ((activeKind === 'due' || activeKind === 'target' || activeKind === 'end') && selected && activeKey === 'linked') {
+      candidates.push(selected);
+    }
+    if ((activeKind === 'due' || activeKind === 'target' || activeKind === 'end') && linkedSelected && activeKey === 'primary') {
+      candidates.push(linkedSelected);
+    }
+    if (candidates.length === 0) return undefined;
+    return candidates.reduce((latest, current) => (current > latest ? current : latest));
+  }, [activeDisablePast, activeKey, activeKind, linkedSelected, selected, today]);
+
+  const maxDate = React.useMemo(() => {
+    if (activeKind !== 'start') return undefined;
+    if (activeKey === 'primary') return linkedSelected;
+    return selected;
+  }, [activeKey, activeKind, linkedSelected, selected]);
+
+  const presets = React.useMemo(() => getDatePickerPresets(activeKind), [activeKind]);
+
+  const applyValue = React.useCallback((field: 'primary' | 'linked', nextValue: string) => {
+    if (field === 'linked' && linkedDate) {
+      linkedDate.onChange(nextValue);
+      return;
+    }
+    onChange(nextValue);
+  }, [linkedDate, onChange]);
+
+  // Determine which field is visually "first" (start) and "second" (end)
+  const primaryIsStart = kind === 'start' || kind === 'generic';
+  const visualFirstField: 'primary' | 'linked' = primaryIsStart ? 'primary' : 'linked';
+  const visualSecondField: 'primary' | 'linked' = primaryIsStart ? 'linked' : 'primary';
+
+  const applyAndAdvance = React.useCallback((nextValue: string) => {
+    applyValue(activeKey, nextValue);
+    setDrafts((current) => ({ ...current, [activeKey]: formatDateValue(nextValue, '') }));
+    setParseError(null);
+
+    if (linkedDate && activeKey === visualFirstField) {
+      // Auto-advance from start → end
+      setActiveField(visualSecondField);
+    } else if (!linkedDate) {
+      setOpen(false);
+    }
+  }, [activeKey, applyValue, linkedDate, visualFirstField, visualSecondField]);
+
+  const initializeDrafts = React.useCallback(() => {
+    setDrafts({
+      primary: selected ? format(selected, 'MMM d, yyyy') : '',
+      linked: linkedSelected ? format(linkedSelected, 'MMM d, yyyy') : '',
+    });
+    setParseError(null);
+  }, [linkedSelected, selected]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setActiveField(linkedDate && defaultActiveField === 'linked' ? 'linked' : 'primary');
+    initializeDrafts();
+    setCalendarMonth(undefined);
+  }, [defaultActiveField, initializeDrafts, linkedDate, open]);
+
+  const handlePresetSelect = (nextValue: string) => {
+    applyAndAdvance(nextValue);
+  };
+
+  const handleClear = () => {
+    applyValue(activeKey, '');
+    setDrafts((current) => ({ ...current, [activeKey]: '' }));
+    setParseError(null);
+  };
+
+  const handleDraftApply = () => {
+    const result = parseNaturalLanguageDate(drafts[activeKey], {
+      min: minDate,
+      max: maxDate,
+    });
+
+    if (!result.value) {
+      setParseError(result.error ?? 'Could not understand that date.');
+      return;
+    }
+
+    applyAndAdvance(result.value);
+  };
+
+  const handleTodayClick = () => {
+    setCalendarMonth(today);
+  };
+
+  const disabledDays = React.useMemo(() => {
+    const matchers: Matcher[] = [];
+    if (minDate) matchers.push({ before: minDate });
+    if (maxDate) matchers.push({ after: maxDate });
+    return matchers.length > 0 ? matchers : undefined;
+  }, [maxDate, minDate]);
+
+  // Compute range for visual highlighting
+  const calendarRange = React.useMemo((): DateRange | undefined => {
+    if (!linkedDate) return selected ? { from: selected, to: selected } : undefined;
+    const isStartKind = kind === 'start' || kind === 'generic';
+    const startDate = isStartKind ? selected : linkedSelected;
+    const endDate = isStartKind ? linkedSelected : selected;
+    if (!startDate && !endDate) return undefined;
+    if (startDate && !endDate) return { from: startDate, to: undefined };
+    if (!startDate && endDate) return { from: endDate, to: undefined };
+    return { from: startDate, to: endDate };
+  }, [kind, linkedDate, linkedSelected, selected]);
+
+  // Check if a preset matches the active date
+  const activePresetId = React.useMemo(() => {
+    if (!activeSelected) return null;
+    for (const preset of presets) {
+      const presetDate = parseStoredDate(preset.value);
+      if (presetDate && isSameDay(presetDate, activeSelected)) return preset.id;
+    }
+    return null;
+  }, [activeSelected, presets]);
+
+  // Live NLP suggestion as user types
+  const nlpSuggestion = React.useMemo(() => {
+    const draft = drafts[activeKey].trim();
+    if (!draft) return null;
+    // Don't show suggestion if draft looks like a formatted date already (user selected via calendar/preset)
+    if (/^[A-Z][a-z]{2}\s\d{1,2},\s\d{4}$/.test(draft)) return null;
+    const result = parseNaturalLanguageDate(draft, { min: minDate, max: maxDate });
+    if (!result.value) return null;
+    const parsed = parseStoredDate(result.value);
+    if (!parsed) return null;
+    return { value: result.value, label: format(parsed, 'EEEE, MMM d') };
+  }, [activeKey, drafts, maxDate, minDate]);
+
+  const inputRefs = React.useRef<{ primary: HTMLInputElement | null; linked: HTMLInputElement | null }>({
+    primary: null,
+    linked: null,
+  });
+
+  React.useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => inputRefs.current[activeKey]?.focus());
+    }
+  }, [open, activeKey]);
+
+  const primaryLabel = label ?? getDatePickerLabel(kind);
+  const linkedLabel = linkedDate?.label ?? getDatePickerLabel(linkedDate?.kind ?? 'generic');
+
+  const handleTabKeyDown = (e: React.KeyboardEvent, field: 'primary' | 'linked') => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleDraftApply();
+      return;
+    }
+    if (!linkedDate) return;
+    const otherField = field === 'primary' ? 'linked' : 'primary';
+    if (e.key === 'Tab' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      setActiveField(otherField);
+      setParseError(null);
+      requestAnimationFrame(() => inputRefs.current[otherField]?.focus());
+    }
+  };
+
+  const renderTabField = (
+    field: 'primary' | 'linked',
+    fieldLabel: string,
+    fieldValue?: string,
+  ) => {
+    const isActive = activeKey === field;
+
+    return (
+      <div className="relative">
+        <div
+          className={cn(
+            'flex h-8 w-[13rem] cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-sm transition-all',
+            isActive
+              ? 'border border-ring bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          onClick={() => {
+            setActiveField(field);
+            setParseError(null);
+            requestAnimationFrame(() => inputRefs.current[field]?.focus());
+          }}
+        >
+          <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+          {isActive ? (
+            <input
+              ref={(el) => { inputRefs.current[field] = el; }}
+              type="text"
+              value={drafts[field]}
+              onChange={(event) => {
+                setDrafts((current) => ({ ...current, [field]: event.target.value }));
+                if (parseError) setParseError(null);
+              }}
+              onKeyDown={(e) => handleTabKeyDown(e, field)}
+              placeholder={fieldLabel}
+              className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate">
+              {fieldValue ? formatShortDateValue(fieldValue, '') : fieldLabel}
+            </span>
+          )}
+          {isActive && fieldValue && (
+            <button
+              type="button"
+              className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                applyValue(field, '');
+                setDrafts((current) => ({ ...current, [field]: '' }));
+                setParseError(null);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {/* NLP suggestion dropdown */}
+        {isActive && nlpSuggestion && (
+          <div
+            className="absolute left-0 top-full z-50 mt-1 flex w-max items-center gap-2 rounded-md border bg-popover px-2.5 py-1.5 shadow-md"
+            onClick={() => handleDraftApply()}
+          >
+            <span className="text-sm">{nlpSuggestion.label}</span>
+            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+              Return <CornerDownLeft className="h-3 w-3" />
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,17 +344,92 @@ export function DatePicker({ value, onChange, placeholder = 'Pick a date', class
           {selected ? format(selected, 'MMM d, yyyy') : placeholder}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={selected}
-          onSelect={(date) => {
-            onChange(date ? format(date, 'yyyy-MM-dd') : '');
-            setOpen(false);
-          }}
-          defaultMonth={selected}
-          {...(disablePast ? { disabled: { before: today } } : {})}
-        />
+      <PopoverContent className="w-auto gap-0 overflow-hidden p-0" align="start" side="bottom" collisionPadding={8}>
+        {/* Tab header */}
+        <div className="flex gap-1.5 p-2 pb-1.5">
+          {linkedDate ? (
+            kind === 'end' || kind === 'due' || kind === 'target' ? (
+              <>
+                {renderTabField('linked', linkedLabel, linkedDate.value)}
+                {renderTabField('primary', primaryLabel, value)}
+              </>
+            ) : (
+              <>
+                {renderTabField('primary', primaryLabel, value)}
+                {renderTabField('linked', linkedLabel, linkedDate.value)}
+              </>
+            )
+          ) : (
+            renderTabField('primary', primaryLabel, value)
+          )}
+        </div>
+        {parseError && (
+          <p className="px-3 pb-1 text-xs text-destructive">{parseError}</p>
+        )}
+        <Separator />
+        {/* Presets + Calendar */}
+        <div className="flex flex-col md:flex-row">
+          <ScrollArea className="max-h-64 md:max-h-none md:w-52">
+            <div className="flex flex-col gap-0.5 p-1.5">
+              {presets.map((preset) => {
+                const isActivePreset = activePresetId === preset.id;
+                return (
+                  <button
+                    key={`${activeKind}-${preset.id}`}
+                    type="button"
+                    className={cn(
+                      'flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors',
+                      isActivePreset
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'hover:bg-accent',
+                    )}
+                    onClick={() => handlePresetSelect(preset.value)}
+                  >
+                    <span className="text-sm">{preset.label}</span>
+                    <span className={cn('text-xs', isActivePreset ? 'text-primary/70' : 'text-muted-foreground')}>
+                      {preset.helper}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                onClick={handleClear}
+              >
+                <span>Clear</span>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </ScrollArea>
+          <Separator orientation="vertical" className="hidden md:block" />
+          <Separator className="md:hidden" />
+          <div className="flex flex-1 flex-col items-start">
+            {/* Today button */}
+            <div className="flex w-full justify-end px-3 pt-2">
+              <button
+                type="button"
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                onClick={handleTodayClick}
+              >
+                Today
+              </button>
+            </div>
+            <Calendar
+              mode="range"
+              selected={calendarRange}
+              onSelect={(_range, selectedDay) => {
+                if (selectedDay) {
+                  applyAndAdvance(format(selectedDay, 'yyyy-MM-dd'));
+                }
+              }}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              defaultMonth={activeSelected ?? calendarRange?.from ?? today}
+              {...(disabledDays ? { disabled: disabledDays } : {})}
+            />
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   );
