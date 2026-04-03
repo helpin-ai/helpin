@@ -6,30 +6,36 @@
 
 | Workstream | Status | Notes |
 | --- | --- | --- |
-| Schema and migrations | Pending | Add `workspace_key` column + `workspace_key_history` table, alpha-only backfill |
+| Schema and migrations | Pending | Add `workspace_key` column + `workspace_key_history` table, alpha-only backfill (batched) |
 | Backend workspace key | Pending | Model, DTOs, creation/validation, key change flow |
-| Key alias infrastructure | Pending | `workspace_key_history` model, alias resolution, cross-table uniqueness |
+| Key alias infrastructure | Pending | Merged into Phase 1 — `workspace_key_history` model, alias resolution, cross-table uniqueness |
 | Backend task key computation | Pending | `FormatTaskKey()` helper, `TaskKey` field on `PMTask` with `gorm:"-"`, central population |
+| Workspace key caching | Pending | Inject into request context or batch-fetch to avoid N+1 on large task lists |
 | Frontend workspace key | Pending | TypeScript types, creation form, settings with editable key + confirmation dialog |
 | Frontend PM UI rollout | Pending | Replace `display_id` with `task_key` across all task display surfaces |
 | Branch template standardization | Pending | New tokens, converge all three default codepaths, template form update |
-| Search and URL resolution | Pending | Task key format parsing in search, `?task=HLP-123` URL support, alias-aware resolution |
-| Cross-product integration | Pending | Emails, notifications, activity feeds, CRM/support associations |
+| Search and URL resolution | Pending | Task key format parsing, `?task=HLP-123` URL support, alias-aware resolution, false positive mitigation |
+| Cross-product integration | Pending | Emails, notifications, activity feeds, CRM/support associations, WebSocket payloads |
 | Backward compatibility | Pending | Numeric URL compat, alias URL compat, API filter compat, CRM verification |
+| Optional full-page task route | Pending | `/pm/tasks/HLP-123` for external sharing (Phase 7+ additive) |
 
 ## Checklist
 
-### Phase 1: Foundation — workspace key + backend plumbing
+### Phase 1: Foundation — workspace key + backend plumbing + alias infrastructure
 
 - [ ] Add migration `server/internal/dbmigrate/sql/YYYYMMDDNNNN_add_workspace_key.sql`
   - Add `workspace_key VARCHAR(5)` column to `workspaces` (nullable for backfill)
-  - Backfill existing workspaces using alpha-only strategy:
+  - Backfill existing workspaces using alpha-only strategy (batched with `LIMIT 1000` per iteration to avoid blocking startup):
     - Extract alpha chars from slug, uppercase
     - Try bare substrings: 3, 4, 5 chars (e.g. `HEL`, `HELP`, `HELPI`)
     - If all collide: try base (2-4 chars) + alpha suffix A-Z within 5-char limit
     - All candidates satisfy `^[A-Z]{2,5}$` — no numeric suffixes, no length overflow
   - Set `NOT NULL` constraint after backfill
   - Add unique index `idx_workspaces_workspace_key`
+  - Add `workspace_key_history` table (same migration file):
+    - Columns: `id` (UUID PK), `workspace_id` (FK → workspaces), `old_key` (VARCHAR(5)), `new_key` (VARCHAR(5)), `changed_at` (TIMESTAMPTZ), `changed_by` (UUID FK → users)
+    - Index: `idx_wkh_workspace_id` on `workspace_id`
+    - Unique index: `idx_wkh_old_key` on `old_key` (prevents any workspace from reusing a retired key)
 - [ ] Add `WorkspaceKey string` field to `Workspace` struct in `server/internal/model/workspace.go`
   - GORM tag: `gorm:"type:varchar(5);uniqueIndex;not null"`
   - JSON tag: `json:"workspace_key"`
@@ -37,11 +43,24 @@
   - Required field, validated server-side
 - [ ] Add `WorkspaceKey *string` to `UpdateWorkspaceRequest` in `server/internal/model/workspace.go`
   - Optional field — triggers alias flow when changed (admin/owner only)
+- [ ] Add `WorkspaceKeyHistory` model to `server/internal/model/workspace.go`
+  - GORM struct with `TableName() = "workspace_key_history"`
 - [ ] Add `workspace_key` format validation in `server/internal/service/workspace.go`
   - Regex: `^[A-Z]{2,5}$`
   - Uniqueness check across both `workspaces.workspace_key` and `workspace_key_history.old_key`
   - Reject empty or malformed keys on create
 - [ ] Pass `workspaceKey` through `Create()` in `server/internal/repository/workspace.go`
+- [ ] Add `InsertKeyHistory(ctx, workspaceID, oldKey, newKey, changedBy) error` to `server/internal/repository/workspace.go`
+- [ ] Add `FindWorkspaceByKeyOrAlias(ctx, key) (*Workspace, error)` to `server/internal/repository/workspace.go`
+  - Check `workspaces.workspace_key` first
+  - Fall back to `workspace_key_history.old_key` → join to `workspaces` by `workspace_id`
+  - Return the workspace with its current key
+- [ ] Add cross-table uniqueness check to repository
+  - On create/update: new key must not exist in `workspaces.workspace_key` (other than self) OR `workspace_key_history.old_key`
+- [ ] Update workspace key change flow in `server/internal/service/workspace.go`
+  - Validate new key format and cross-table uniqueness
+  - In a single transaction: insert old key into `workspace_key_history`, update `workspaces.workspace_key`
+  - Require admin/owner permission
 - [ ] Add `FormatTaskKey(workspaceKey string, displayID int) string` helper
   - Location: `server/internal/service/pm_task.go` or a shared `internal/format/` package
   - Returns `fmt.Sprintf("%s-%d", workspaceKey, displayID)`
@@ -54,29 +73,9 @@
   - Single population point: after loading tasks, before returning response
   - Cache workspace key per request/workspace (avoid N+1 queries)
   - Applies to: single task detail, task lists, board tasks, sprint task lists, epic task lists, dependency tasks, search results
-
-### Phase 1b: Key alias infrastructure
-
-- [ ] Add `workspace_key_history` table to migration (same file or separate)
-  - Columns: `id` (UUID PK), `workspace_id` (FK → workspaces), `old_key` (VARCHAR(5)), `new_key` (VARCHAR(5)), `changed_at` (TIMESTAMPTZ), `changed_by` (UUID FK → users)
-  - Index: `idx_wkh_workspace_id` on `workspace_id`
-  - Unique index: `idx_wkh_old_key` on `old_key` (prevents any workspace from reusing a retired key)
-- [ ] Add `WorkspaceKeyHistory` model to `server/internal/model/workspace.go`
-  - GORM struct with `TableName() = "workspace_key_history"`
-- [ ] Add `InsertKeyHistory(ctx, workspaceID, oldKey, newKey, changedBy) error` to `server/internal/repository/workspace.go`
-- [ ] Add `FindWorkspaceByKeyOrAlias(ctx, key) (*Workspace, error)` to `server/internal/repository/workspace.go`
-  - Check `workspaces.workspace_key` first
-  - Fall back to `workspace_key_history.old_key` → join to `workspaces` by `workspace_id`
-  - Return the workspace with its current key
-- [ ] Add cross-table uniqueness check to repository
-  - On create/update: new key must not exist in `workspaces.workspace_key` (other than self) OR `workspace_key_history.old_key`
-- [ ] Update workspace key change flow in `server/internal/service/workspace.go`
-  - Validate new key format and cross-table uniqueness
-  - In a single transaction: insert old key into `workspace_key_history`, update `workspaces.workspace_key`
-  - Require admin/owner permission
-- [ ] Wire `FindWorkspaceByKeyOrAlias()` into task key resolution paths
-  - Search handler: when parsing `HLP-123` format, use alias-aware lookup
-  - URL resolution: backend task-by-key endpoint (if added) uses alias-aware lookup
+- [ ] Workspace key caching strategy
+  - Inject `workspace_key` into request context from auth/workspace middleware, or batch-fetch once per request
+  - Verify no N+1 queries on large task lists (200+ tasks)
 
 ### Phase 2: Frontend workspace key setup
 
@@ -152,6 +151,7 @@
   - If matched: extract workspace key prefix and display_id suffix
   - Use `FindWorkspaceByKeyOrAlias()` to resolve workspace (handles old keys after key change)
   - Query by `workspace_id + display_id`
+  - False positive mitigation: when prefix matches current workspace key or known alias, treat as exact task key lookup; otherwise boost in text search
   - If not matched: existing text search behavior unchanged
 - [ ] Populate `task_key` on `SearchResult` in search service layer
 - [ ] Frontend URL parser for `?task=` param
@@ -175,16 +175,23 @@
   - Include `task_key` in notification event payloads
   - Update `immediateEmailFooterText()` to use `task_key`
 - [ ] Update websocket events to include `task_key` in task entity payloads
+  - Task create/update/delete events must carry `task_key` so `useRealtimeSync` can update TanStack Query cache without refetching
+- [ ] Audit related entity payloads (comments, attachments, time entries, subtasks) for parent task references
+  - Add `task_key` to any payload that serializes parent task info
 - [ ] Update CRM/support association displays to show `task_key` when linking to PM tasks
 - [ ] Update activity feed entries (if any render task references) to use `task_key`
 
-### Phase 7: Backward compatibility and polish
+### Phase 7: Backward compatibility, polish, and optional full-page route
 
 - [ ] Numeric URL compat: `?task=123` continues to resolve by `display_id` lookup indefinitely
 - [ ] Alias URL compat: `?task=OLD-123` resolves via `workspace_key_history` fallback after key change
 - [ ] API filter compat: continue accepting `display_id` in query params alongside `task_key`
 - [ ] Update `CLAUDE.md` to document the workspace key, task key, and key change alias patterns
 - [ ] Verify CRM display_id prefixes (`C-`, `CO-`, `D-`) are not affected by this change
+- [ ] Optional: dedicated full-page task detail route `/pm/tasks/HLP-123`
+  - For external sharing (Slack links, email, bookmarks)
+  - Renders same task detail content in a page layout with breadcrumbs back to board/list
+  - Additive — not blocking for v1
 - [ ] End-to-end test: full lifecycle including key change
   - Create workspace with key `HLP`, create tasks, verify `HLP-123` everywhere
   - Task detail header shows `HLP-123`
@@ -202,3 +209,4 @@
   - Search for `HLP-123` still finds the task
   - URL `?task=HLP-123` still opens correct task
   - Settings shows key history: "Previously: HLP"
+  - WebSocket task update events include `task_key` and cache updates correctly

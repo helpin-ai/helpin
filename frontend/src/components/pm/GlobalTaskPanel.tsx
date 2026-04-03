@@ -12,6 +12,7 @@ import {
   type LoadedTaskState,
 } from '@/components/pm/task-detail/taskOverlayState';
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
@@ -56,6 +57,21 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
       closeContextualTask();
     }
   }, [activeTaskRoute, closeContextualTask, contextualTaskId]);
+
+  // Open task panel from ?task= URL param on any page (e.g. sprints, epics)
+  useEffect(() => {
+    if (activeTaskId || !workspaceId || !workspaceSlug) return;
+    const maybeTask = new URLSearchParams(window.location.search).get('task');
+    if (!maybeTask) return;
+    const match = maybeTask.match(/^(\d+)$/);
+    if (!match) return;
+    (async () => {
+      const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
+      if (res.data && workspaceSlug) {
+        openTaskRoute(navigateRef.current as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
+      }
+    })();
+  }, [activeTaskId, workspaceId, workspaceSlug]);
 
   useEffect(() => {
     if (!activeTaskId || !workspaceId) return;

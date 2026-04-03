@@ -106,6 +106,8 @@ export function DatePicker({
     linked: null,
   });
 
+  const advanceToRef = React.useRef<'primary' | 'linked' | null>(null);
+
   const focusInputField = React.useCallback((field: 'primary' | 'linked', selectText = false) => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -193,6 +195,7 @@ export function DatePicker({
     setParseError(null);
 
     if (linkedDate && activeKey === visualFirstField) {
+      advanceToRef.current = visualSecondField;
       setActiveField(visualSecondField);
       if (!nextValues[visualSecondField]) {
         setDrafts((current) => ({ ...current, [visualSecondField]: '' }));
@@ -215,11 +218,15 @@ export function DatePicker({
     if (!open) return;
     setActiveField(linkedDate && defaultActiveField === 'linked' ? 'linked' : 'primary');
     setSessionValues(externalValues);
-    initializeDrafts();
+    setDrafts({
+      primary: externalValues.primary ? formatDateValue(externalValues.primary, '') : '',
+      linked: externalValues.linked ? formatDateValue(externalValues.linked, '') : '',
+    });
+    setParseError(null);
     setCalendarMonth(undefined);
-    // Preload chrono-node when popover opens
     preloadNaturalLanguageParser();
-  }, [defaultActiveField, externalValues, initializeDrafts, linkedDate, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handlePresetSelect = (nextValue: string) => {
     applyAndAdvance(nextValue);
@@ -296,6 +303,10 @@ export function DatePicker({
 
   React.useEffect(() => {
     if (open) {
+      if (advanceToRef.current === activeKey) {
+        advanceToRef.current = null;
+        return;
+      }
       focusInputField(activeKey);
     }
   }, [activeKey, focusInputField, open]);

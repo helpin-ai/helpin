@@ -102,6 +102,20 @@ All three must converge on `{task_key}-{slug}`.
 
 ### 4. Search and URL resolution for task keys
 
+**URL strategy: query params for v1, dedicated route as future option**
+
+Task detail uses a panel overlay pattern (`TaskDetailPanel` slides over list/board). Query params are the correct tool for transient UI state on top of an existing view — closing the panel preserves scroll position, filters, and page state. A route like `/pm/tasks/HLP-123` would create problems: it either lies about the page you're on (panel on board) or requires building a full-page task view (bigger UX change).
+
+For v1, keep `?task=HLP-123`. As a future enhancement (Phase 7+), add a dedicated full-page task detail route for external sharing:
+
+```
+/pm/tasks/HLP-123          # Full-page task detail (for external links, Slack, email)
+/pm/board?task=HLP-123     # Panel overlay on board view (primary in-app navigation)
+/pm/tasks/list?task=HLP-123 # Panel overlay on list view
+```
+
+The full-page route would render the same content in a page layout with breadcrumbs back to the board/list.
+
 Search must accept:
 
 - `123` (numeric, existing behavior)
@@ -126,13 +140,17 @@ Current state: task opening uses `?task={display_id}` (numeric) in the URL searc
 **Search backend** (`server/internal/model/search.go`, `server/internal/handler/search.go`):
 
 1. Parse search query: detect `^[A-Z]{2,5}-\d+$` pattern
-2. If matched: extract display_id, query directly by display_id (workspace already scoped)
-3. If not matched: existing text search behavior unchanged
-4. `SearchResult` struct gets `TaskKey string \`json:"task_key" gorm:"-"\`` populated by service layer
+2. If matched: extract workspace key prefix and display_id suffix
+3. Use `FindWorkspaceByKeyOrAlias()` to resolve workspace (handles old keys after key change)
+4. Query by `workspace_id + display_id`
+5. If not matched: existing text search behavior unchanged
+6. `SearchResult` struct gets `TaskKey string \`json:"task_key" gorm:"-"\`` populated by service layer
 
-### 5. Workspace key is changeable with alias preservation
+**Search false positive mitigation:** `^[A-Z]{2,5}-\d+$` could match free-text that looks like a task key (e.g. "ABC-123" as a product code). Mitigation: when the prefix matches the current workspace's key or a known alias, treat as exact task key lookup. When it doesn't match, still run text search but boost the task key match if found. This avoids false exact-match behavior while still surfacing relevant results.
 
-The workspace key **can be changed**, but old keys are preserved as aliases so that existing external references continue to resolve. This is built into v1 from day one.
+### 5. Workspace key is changeable with alias preservation (shipped with Phase 1)
+
+The workspace key **can be changed**, but old keys are preserved as aliases so that existing external references continue to resolve. This is built into v1 from day one. The alias table (`workspace_key_history`) ships in Phase 1 alongside the `workspace_key` column — it is not optional infrastructure. Shipping it separately would create a window where key changes silently break existing references.
 
 Why allow changes:
 
@@ -436,23 +454,20 @@ export interface TaskDependencyTask {
 
 ## Implementation Order
 
-### Phase 1: Foundation (workspace key + backend plumbing)
+### Phase 1: Foundation (workspace key + backend plumbing + alias infrastructure)
 
-1. **Schema migration**: Add `workspace_key` column to `workspaces` with alpha-only backfill
-2. **Workspace model**: Add `WorkspaceKey` field to Go struct and DTOs
-3. **Workspace creation flow**: Require `workspace_key` on create, validate format, reject on update
-4. **Task key helper**: Backend `FormatTaskKey()` function
-5. **PMTask model**: Add `TaskKey string \`gorm:"-"\`` to `PMTask`, `TaskDependencyTask`, `SearchResult`
-6. **Task service**: Populate `task_key` centrally on all task responses (detail, list, board, sprint, epic, search)
-
-### Phase 1b: Key alias infrastructure
-
-7. **Schema migration**: Add `workspace_key_history` table with unique index on `old_key`
-8. **History model**: Add `WorkspaceKeyHistory` struct to `server/internal/model/workspace.go`
-9. **Repository**: Add `InsertKeyHistory()`, `FindWorkspaceByKeyOrAlias()`, cross-table uniqueness check
-10. **Service update flow**: On workspace key change — validate new key (format + unique across both tables), insert old key into history, update workspace key, all in one transaction
-11. **Resolution helper**: `ResolveWorkspaceKey(key) → workspace_id` — check `workspaces.workspace_key` first, fall back to `workspace_key_history.old_key`
-12. **Wire into search/URL resolution**: Task key parsing uses `ResolveWorkspaceKey()` so old keys like `HLP-123` continue to resolve after the workspace changes to `NCO`
+1. **Schema migration**: Add `workspace_key` column to `workspaces` with alpha-only backfill (batched: `LIMIT 1000` per iteration to avoid blocking startup on large workspace counts)
+2. **Schema migration**: Add `workspace_key_history` table with unique index on `old_key` (same migration file)
+3. **Workspace model**: Add `WorkspaceKey` field to Go struct and DTOs
+4. **History model**: Add `WorkspaceKeyHistory` struct to `server/internal/model/workspace.go`
+5. **Workspace creation flow**: Require `workspace_key` on create, validate format
+6. **Repository**: Add `InsertKeyHistory()`, `FindWorkspaceByKeyOrAlias()`, cross-table uniqueness check
+7. **Service update flow**: On workspace key change — validate new key (format + unique across both tables), insert old key into history, update workspace key, all in one transaction
+8. **Resolution helper**: `ResolveWorkspaceKey(key) → workspace_id` — check `workspaces.workspace_key` first, fall back to `workspace_key_history.old_key`
+9. **Task key helper**: Backend `FormatTaskKey()` function
+10. **PMTask model**: Add `TaskKey string \`gorm:"-"\`` to `PMTask`, `TaskDependencyTask`, `SearchResult`
+11. **Task service**: Populate `task_key` centrally on all task responses (detail, list, board, sprint, epic, search)
+12. **Workspace key caching**: Inject `workspace_key` into request context (from auth/workspace middleware) or batch-fetch once per request to avoid N+1 queries on large task lists
 
 ### Phase 2: Frontend workspace key setup
 
@@ -492,28 +507,35 @@ export interface TaskDependencyTask {
 34. **Notification payloads**: Include `task_key` in websocket and push events
 35. **Activity feeds**: Show `task_key` in activity log entries
 36. **Support/CRM associations**: Show `task_key` when linking to PM tasks
+37. **WebSocket payloads**: Include `task_key` in task create/update/delete WebSocket events so `useRealtimeSync` can update TanStack Query cache without refetching
+38. **Related entity payloads**: Ensure `task_key` appears in comments, attachments, time entries, and subtask responses that reference parent tasks
 
-### Phase 7: Polish and backward compatibility
+### Phase 7: Backward compatibility, polish, and optional full-page route
 
-37. **Numeric URL compat**: `?task=123` continues to resolve by `display_id` lookup indefinitely
-38. **Alias URL compat**: `?task=OLD-123` resolves via `workspace_key_history` fallback
-39. **API filter compat**: Continue accepting `display_id` in query params
-40. **Documentation**: Update CLAUDE.md to document workspace key, task key, and key change patterns
-41. **CRM verification**: Confirm CRM display_id prefixes (`C-`, `CO-`, `D-`) are not affected
-42. **End-to-end test**: Full lifecycle — create workspace with key, create tasks, change key, verify old keys still resolve, verify new keys appear in UI
+39. **Numeric URL compat**: `?task=123` continues to resolve by `display_id` lookup indefinitely
+40. **Alias URL compat**: `?task=OLD-123` resolves via `workspace_key_history` fallback after key change
+41. **API filter compat**: Continue accepting `display_id` in query params alongside `task_key`
+42. **Documentation**: Update CLAUDE.md to document workspace key, task key, and key change patterns
+43. **CRM verification**: Confirm CRM display_id prefixes (`C-`, `CO-`, `D-`) are not affected by this change
+44. **Optional: dedicated task detail route** — `/pm/tasks/HLP-123` as a full-page view for external sharing (Slack links, email, bookmarks). Renders same content with breadcrumbs back to board/list. Deferred to Phase 7 since it's additive, not blocking.
+45. **End-to-end test**: Full lifecycle — create workspace with key, create tasks, change key, verify old keys still resolve, verify new keys appear in UI
 
 ## Risks and Mitigations
 
 | Risk | Mitigation |
 | --- | --- |
 | Workspace key collisions during backfill | Alpha-only collision strategy with 130+ candidates; manual review for production |
+| Backfill migration blocks startup on large workspace counts | Batch with `LIMIT 1000` per iteration, or run as background worker |
 | Users pick poor keys (too short, confusing) | Frontend auto-suggest from workspace name, format validation, preview of resulting task IDs |
-| Performance: loading workspace key for every task response | Cache workspace key in service layer (one query per workspace, not per task) |
+| Performance: N+1 queries loading workspace key for every task response | Inject `workspace_key` into request context from auth/workspace middleware, or batch-fetch once per request |
 | Breaking existing branch templates | `{display_id}` token continues to work; only default changes for new repos |
 | Existing bookmarks/links with numeric IDs | Numeric `?task=123` continues to work indefinitely |
 | Three branch-default codepaths diverge again | Single canonical default constant; all three codepaths reference it |
 | External references become stale after key change | Old keys preserved as aliases in `workspace_key_history`; resolution falls back to alias table |
 | Old key reuse by different workspace | Unique index on `workspace_key_history.old_key` prevents reuse; validation checks both tables |
+| Search false positives on task key pattern | Only treat as exact task key when prefix matches current workspace key or known alias; otherwise boost in text search |
+| WebSocket cache invalidation missing `task_key` | Include `task_key` in all task-related WebSocket event payloads |
+| Related entities (comments, attachments) missing `task_key` | Audit all task-reference payloads; add `task_key` where parent task info is serialized |
 
 ## Out of Scope (v2+)
 
