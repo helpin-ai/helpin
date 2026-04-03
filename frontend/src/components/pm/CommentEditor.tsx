@@ -224,7 +224,7 @@ export function CommentEditor({
           HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({ placeholder, showOnlyCurrent: false, emptyNodeClass: 'is-empty', emptyEditorClass: 'is-editor-empty' }),
       MentionHighlight,
     ]
     if (uploadConfig) {
@@ -238,7 +238,7 @@ export function CommentEditor({
     extensions,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-sm',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px]',
       },
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false

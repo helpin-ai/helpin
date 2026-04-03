@@ -644,7 +644,7 @@ export function CommentThread({
 
               {/* Nested replies */}
               {isExpanded && (
-                <div className="mt-2 ml-8 border-l-2 border-border/40 pl-4 space-y-3">
+                <div className="mt-3 ml-8 border-l-2 border-border/40 pl-4 space-y-3">
                   {entry.replies?.map((reply) => (
                     <div key={reply.comment.id}>
                       {renderComment(reply, true)}
