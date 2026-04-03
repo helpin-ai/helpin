@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 
 interface TaskSidebarIdRowProps {
   displayId: string | number;
+  taskKey?: string;
   taskName?: string;
   taskType?: TaskType;
   className?: string;
@@ -30,34 +31,34 @@ function slugify(text: string): string {
     .slice(0, 48);
 }
 
-export function buildGitBranch(displayId: string | number, taskName?: string, taskType?: TaskType): string {
+export function buildGitBranch(taskKey: string, taskName?: string, taskType?: TaskType): string {
   const prefix = BRANCH_PREFIX[taskType ?? 'feature'];
-  const id = String(displayId).toLowerCase();
+  const id = taskKey.toLowerCase();
   if (!taskName?.trim()) return `${prefix}/${id}`;
   return `${prefix}/${id}-${slugify(taskName)}`;
 }
 
-export function TaskSidebarIdRow({ displayId, taskName, taskType, className }: TaskSidebarIdRowProps) {
+export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, className }: TaskSidebarIdRowProps) {
   const { copied, copy } = useCopyToClipboard();
   const { copied: branchCopied, copy: copyBranch } = useCopyToClipboard();
   const { copied: cmdCopied, copy: copyCmd } = useCopyToClipboard();
   const [open, setOpen] = useState(false);
 
-  const branchName = buildGitBranch(displayId, taskName, taskType);
+  const branchName = buildGitBranch(taskKey ?? String(displayId), taskName, taskType);
   const checkoutCmd = `git checkout -b ${branchName}`;
 
   return (
     <div className={cn('mb-4 flex min-w-0 items-center gap-2', className)}>
       <span className="shrink-0 text-xs font-medium text-muted-foreground">Task ID:</span>
-      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{displayId}</span>
+      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{taskKey ?? displayId}</span>
       <QuickTooltip label="Copy task ID">
         <Button
           type="button"
           variant="ghost"
           size="icon"
           className="h-6 w-6 shrink-0"
-          aria-label={`Copy task ID ${displayId}`}
-          onClick={() => copy(String(displayId))}
+          aria-label={`Copy task ID ${taskKey ?? displayId}`}
+          onClick={() => copy(taskKey ?? String(displayId))}
         >
           {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>

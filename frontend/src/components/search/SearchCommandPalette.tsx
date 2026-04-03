@@ -106,7 +106,7 @@ export function SearchCommandPalette({
       onOpenChange(false);
       switch (type) {
         case 'task':
-          window.location.assign(`/w/${slug}/pm/tasks?task=${item.display_id}`);
+          window.location.assign(`/w/${slug}/pm/tasks?task=${item.task_key || item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });
@@ -173,7 +173,7 @@ export function SearchCommandPalette({
               >
                 <CircleDot className="h-4 w-4 text-blue-500" />
                 <span className="text-muted-foreground text-xs font-mono mr-1">
-                  #{item.display_id}
+                  {item.task_key || `#${item.display_id}`}
                 </span>
                 <span className="truncate">{item.name}</span>
               </CommandItem>

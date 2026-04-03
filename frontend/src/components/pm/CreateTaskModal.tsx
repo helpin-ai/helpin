@@ -1400,6 +1400,8 @@ export function CreateTaskModal({
                   <DatePicker
                     value={form.deadline}
                     onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
+                    kind="due"
+                    label="Due date"
                     placeholder="None"
                     disablePast
                     hideIcon

@@ -9,7 +9,7 @@ import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { Camera, ChevronRight, Globe, Loader2, Search, Trash2 } from 'lucide-react';
@@ -43,6 +43,7 @@ export function GeneralTab({ workspaceId, editable }: {
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
   const [websiteUrl, setWebsiteUrl] = useState(workspace?.website_url ?? '');
+  const [workspaceKeyInput, setWorkspaceKeyInput] = useState(workspace?.workspace_key ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
   const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -51,14 +52,27 @@ export function GeneralTab({ workspaceId, editable }: {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [keyChangeOpen, setKeyChangeOpen] = useState(false);
+  const [pendingKey, setPendingKey] = useState('');
+  const [keyHistory, setKeyHistory] = useState<{ old_key: string; new_key: string; changed_at: string }[]>([]);
 
   useEffect(() => {
     setName(workspace?.name ?? '');
     setDescription(workspace?.description ?? '');
     setWebsiteUrl(workspace?.website_url ?? '');
+    setWorkspaceKeyInput(workspace?.workspace_key ?? '');
     setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
   }, [workspace?.id, workspace?.updated_at]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    workspacesService.getKeyHistory(workspaceId).then((res) => {
+      if (res.data) {
+        setKeyHistory(res.data.map((h) => ({ old_key: h.old_key, new_key: h.new_key, changed_at: h.changed_at })));
+      }
+    });
+  }, [workspaceId, workspace?.updated_at]);
 
   const savedWebsiteUrl = workspace?.website_url;
   const websiteContentSource = useMemo(
@@ -132,13 +146,28 @@ export function GeneralTab({ workspaceId, editable }: {
       toast.error('Workspace name is required');
       return;
     }
+    const trimmedKey = workspaceKeyInput.trim().toUpperCase();
+    if (trimmedKey && trimmedKey !== workspace?.workspace_key) {
+      setPendingKey(trimmedKey);
+      setKeyChangeOpen(true);
+      return;
+    }
+    await performSave();
+  };
+
+  const performSave = async (keyOverride?: string) => {
     setSaving(true);
-    const { data, error } = await workspacesService.update(workspaceId, {
+    const updates: Record<string, unknown> = {
       name: name.trim(),
       description: description.trim() || undefined,
       website_url: websiteUrl.trim(),
       timezone,
-    });
+    };
+    const trimmedKey = (keyOverride || workspaceKeyInput.trim().toUpperCase());
+    if (trimmedKey && trimmedKey !== workspace?.workspace_key) {
+      updates.workspace_key = trimmedKey;
+    }
+    const { data, error } = await workspacesService.update(workspaceId, updates);
     setSaving(false);
     if (error) {
       toast.error(error);
@@ -148,6 +177,12 @@ export function GeneralTab({ workspaceId, editable }: {
         useWorkspaceStore.getState().setCurrentWorkspace(data);
       }
     }
+  };
+
+  const confirmKeyChange = async () => {
+    setKeyChangeOpen(false);
+    await performSave(pendingKey);
+    setPendingKey('');
   };
 
   const handleDelete = async () => {
@@ -261,6 +296,30 @@ export function GeneralTab({ workspaceId, editable }: {
               disabled={!editable}
               placeholder="My Workspace"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-key">Task Key Prefix</Label>
+            <Input
+              id="ws-key"
+              value={workspaceKeyInput}
+              onChange={(e) => setWorkspaceKeyInput(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
+              disabled={!editable}
+              placeholder="ACM"
+              maxLength={5}
+            />
+            <p className="text-xs text-muted-foreground">
+              2-5 uppercase letters used in task identifiers (e.g. {workspace?.workspace_key || '...'}-123).
+              {workspace?.workspace_key && ' Changing this will update new task keys. Old references will continue to work.'}
+            </p>
+            {keyHistory.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Previously:</span>
+                {keyHistory.map((h, i) => (
+                  <Badge key={i} variant="outline" className="text-[11px]">{h.old_key}</Badge>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -448,6 +507,29 @@ export function GeneralTab({ workspaceId, editable }: {
               onClick={handleDelete}
             >
               {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : 'Delete workspace'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={keyChangeOpen} onOpenChange={(open) => { setKeyChangeOpen(open); if (!open) setPendingKey(''); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change workspace key</DialogTitle>
+            <DialogDescription>
+              Changing from <span className="font-semibold text-foreground">{workspace?.workspace_key}</span> to <span className="font-semibold text-foreground">{pendingKey}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Existing references like <span className="font-mono">{workspace?.workspace_key}-123</span> in branches, bookmarks, and docs will continue to work.
+            New task keys will use <span className="font-mono">{pendingKey}-123</span>.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setKeyChangeOpen(false); setPendingKey(''); setWorkspaceKeyInput(workspace?.workspace_key ?? ''); }}>
+              Cancel
+            </Button>
+            <Button onClick={confirmKeyChange} disabled={saving}>
+              {saving ? 'Saving...' : 'Confirm change'}
             </Button>
           </DialogFooter>
         </DialogContent>

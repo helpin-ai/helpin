@@ -82,7 +82,7 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
           )}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" align="start" className="max-w-sm p-0 overflow-hidden bg-popover text-popover-foreground border border-border shadow-lg">
+      <TooltipContent side="top" align="start" className="flex flex-col w-max min-w-[260px] max-w-md items-stretch gap-0 rounded-lg bg-popover p-0 overflow-hidden text-popover-foreground border border-border shadow-lg **:data-[slot=arrow]:bg-popover **:data-[slot=arrow]:fill-popover">
         <div className="px-3 pt-3 pb-2">
           <div className="flex items-start gap-2">
             {ownerName && (
@@ -100,17 +100,15 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-3 px-3 py-2 border-t border-border/40 bg-muted/30">
-          <span className="flex items-center gap-1.5 text-[11px]">
+        <div className="flex items-center gap-4 px-3 py-2 border-t border-border/40 bg-muted/30">
+          <span className="flex items-center gap-1.5 text-xs">
             <span className={`h-2 w-2 rounded-full ${HEALTH_DOT_COLOR[health]}`} />
             <span className="font-medium">{HEALTH_LABEL[health]}</span>
           </span>
-          <span className="text-muted-foreground/30">|</span>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {roadmapEpicDoneTaskCount(epic)}/{roadmapEpicTaskCount(epic)} tasks
           </span>
-          <span className="text-muted-foreground/30">|</span>
-          <span className="text-[11px] text-muted-foreground font-medium tabular-nums">{progress}%</span>
+          <span className="text-xs text-muted-foreground font-medium tabular-nums">{progress}%</span>
         </div>
 
         {/* Progress bar */}
@@ -125,9 +123,9 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
         {(e.planned_start_date || e.deadline || epic.objectives.length > 0) && (
           <div className="px-3 py-2 space-y-1.5 border-t border-border/40">
             {(e.planned_start_date || e.deadline) && (
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span className="text-muted-foreground/60">Dates</span>
-                <span className="ml-auto tabular-nums">
+                <span className="tabular-nums whitespace-nowrap">
                   {e.planned_start_date ? format(parseISO(e.planned_start_date), 'MMM d') : '—'}
                   {' \u2192 '}
                   {e.deadline ? format(parseISO(e.deadline), 'MMM d, yyyy') : '—'}
@@ -135,9 +133,9 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
               </div>
             )}
             {epic.objectives.length > 0 && (
-              <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                <span className="text-muted-foreground/60 shrink-0">Obj</span>
-                <span className="ml-auto text-right">
+              <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+                <span className="text-muted-foreground/60 shrink-0">Objective</span>
+                <span className="text-right">
                   {epic.objectives.map((o) => o.name).join(', ')}
                 </span>
               </div>

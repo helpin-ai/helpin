@@ -1,7 +1,9 @@
 import { api } from '../api';
 import type {
   CreateSprintRequest,
+  PaginatedResponse,
   SprintPlanningFilters,
+  SprintPlanningTaskPreview,
   SprintPlanningWorkspace,
   SprintWithStats,
   Task,
@@ -14,7 +16,7 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 const toRFC3339 = (v: string | undefined): string | undefined =>
   v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T00:00:00Z` : v;
 
-const filterQuery = (filters: Record<string, string | boolean | undefined>) => {
+const filterQuery = (filters: Record<string, string | number | boolean | undefined>) => {
   const search = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value === undefined || value === '') return;
@@ -58,4 +60,11 @@ export const pmSprintService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
+  listPreviewTasks: (
+    workspaceId: string,
+    id: string,
+    pagination?: { page?: number; per_page?: number },
+  ) => api.get<PaginatedResponse<SprintPlanningTaskPreview[]>>(
+    `/pm/sprints/${id}/preview-tasks${qs(workspaceId)}${filterQuery(pagination ?? {})}`,
+  ),
 };

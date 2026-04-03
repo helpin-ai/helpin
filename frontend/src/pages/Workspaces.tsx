@@ -91,6 +91,7 @@ export default function Workspaces() {
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
+  const [workspaceKey, setWorkspaceKey] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
@@ -141,6 +142,9 @@ export default function Workspaces() {
   const handleNameChange = (val: string) => {
     setName(val);
     setSlug(generateWorkspaceSlug(val));
+    // Auto-suggest workspace key from name (first 3 alpha chars, uppercase)
+    const alpha = val.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    setWorkspaceKey(alpha.slice(0, 3));
   };
 
   const handleOrgNameChange = (val: string) => {
@@ -242,6 +246,7 @@ export default function Workspaces() {
     const { data: workspace, error } = await workspacesService.create({
       name,
       slug,
+      workspace_key: workspaceKey.toUpperCase(),
       organization_id: currentOrganization.id,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -518,6 +523,20 @@ export default function Workspaces() {
                       <Label htmlFor="ws-slug">Slug</Label>
                       <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
                       <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ws-key">Task Key Prefix</Label>
+                      <Input
+                        id="ws-key"
+                        placeholder="ACM"
+                        value={workspaceKey}
+                        onChange={e => setWorkspaceKey(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
+                        maxLength={5}
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        2-5 uppercase letters. Task IDs will look like: {workspaceKey || '...'}-1, {workspaceKey || '...'}-2, etc.
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ws-website">Website (optional)</Label>

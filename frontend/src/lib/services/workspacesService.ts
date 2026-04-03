@@ -4,7 +4,7 @@ import type { AssignableMember, Workspace, WorkspaceAccess, WorkspaceMember, Mem
 export const workspacesService = {
   list: (organizationId?: string) =>
     api.get<Workspace[]>(organizationId ? `/workspaces?organization_id=${organizationId}` : '/workspaces'),
-  create: (data: { name: string; slug: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
+  create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
     api.post<Workspace>('/workspaces', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>
@@ -17,6 +17,7 @@ export const workspacesService = {
   updateMemberRole: (id: string, memberId: string, data: { role: WorkspaceMember['role'] }) =>
     api.put(`/workspaces/${id}/members/${memberId}`, data),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
+  getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');

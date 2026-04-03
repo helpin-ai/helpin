@@ -546,6 +546,15 @@ export function SprintDetailPage() {
               <DatePicker
                 value={form.start_date}
                 onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'End date',
+                  kind: 'end',
+                  value: form.end_date,
+                  onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
+                  placeholder: 'None',
+                }}
                 placeholder="None"
                 hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
@@ -555,8 +564,19 @@ export function SprintDetailPage() {
             {/* End Date */}
             <MetadataRow icon={CalendarDays} label="End date">
               <DatePicker
-                value={form.end_date}
-                onChange={(v) => updateField('end_date', v, { end_date: v || undefined })}
+                value={form.start_date}
+                onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'End date',
+                  kind: 'end',
+                  value: form.end_date,
+                  onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
+                  placeholder: 'None',
+                }}
+                triggerField="linked"
+                defaultActiveField="linked"
                 placeholder="None"
                 hideIcon
                 urgencyColor

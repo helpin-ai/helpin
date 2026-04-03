@@ -384,7 +384,7 @@ function TaskRow({ task, onClick, teamName }: {
       className="flex items-center gap-2.5 px-2 py-2.5 w-full text-left rounded-md hover:bg-muted/40 transition-colors group"
     >
       <span className="text-xs text-muted-foreground/50 font-mono shrink-0 w-8 text-right tabular-nums">
-        {task.display_id}
+        {task.task_key}
       </span>
 
       <span className={`text-sm truncate flex-1 min-w-0 ${task.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>

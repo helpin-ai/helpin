@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -624,21 +623,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     return () => window.removeEventListener('task-created', handler);
   }, [refreshBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
-  // Open ?task= URL param in global panel on mount
-  useEffect(() => {
-    if (!workflow) return;
-    const maybeTask = new URLSearchParams(window.location.search).get('task');
-    if (!maybeTask) return;
-    const match = maybeTask.match(/^(\d+)$/);
-    if (!match) return;
-    (async () => {
-      const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
-      if (res.data && workspaceSlug) {
-        openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, workflow, workspaceSlug]);
   const openTask = useCallback(
     (task: Task) => {
       if (!workspaceSlug) return;

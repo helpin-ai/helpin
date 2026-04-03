@@ -77,7 +77,8 @@ func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws, err := h.workspaceService.Update(r.Context(), id, req)
+	actorID := middleware.GetUserID(r.Context())
+	ws, err := h.workspaceService.Update(r.Context(), id, req, actorID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -159,6 +160,20 @@ func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "workspace deleted"})
+}
+
+// GetKeyHistory handles GET /api/workspaces/{id}/key-history.
+func (h *WorkspaceHandler) GetKeyHistory(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	history, err := h.workspaceService.GetKeyHistory(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if history == nil {
+		history = []model.WorkspaceKeyHistory{}
+	}
+	writeJSON(w, http.StatusOK, history)
 }
 
 // GetMyRole handles GET /api/workspaces/{id}/my-role.

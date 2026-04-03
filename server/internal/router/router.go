@@ -351,6 +351,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/me", h.Workspace.GetMe)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
+				r.Get("/key-history", h.Workspace.GetKeyHistory)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Update)
@@ -590,6 +591,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListTasks)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/preview-tasks", h.PMSprint.ListPreviewTasks)
 
 				// Tasks — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)

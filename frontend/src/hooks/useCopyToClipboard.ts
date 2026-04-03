@@ -2,62 +2,67 @@ import { useCallback, useRef, useState } from 'react';
 
 /**
  * Hook for copying text to the clipboard with visual feedback state.
- * Uses navigator.clipboard with a textarea fallback for insecure contexts.
+ * Prefers navigator.clipboard API; falls back to execCommand for insecure contexts.
  */
 export function useCopyToClipboard(resetMs = 2000) {
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const copy = useCallback(
-    async (text: string) => {
-      const onSuccess = () => {
-        setCopied(true);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-        }
+  const handleResult = useCallback(
+    (success: boolean, err?: Error) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      setCopied(success);
+      setError(err ?? null);
+      if (success) {
         timeoutRef.current = setTimeout(() => setCopied(false), resetMs);
-      };
-
-      const onFailure = () => {
-        setCopied(false);
-      };
-
-      if (fallbackCopy(text)) {
-        onSuccess();
-        return true;
-      }
-
-      const canUseAsyncClipboard =
-        typeof window !== 'undefined' &&
-        window.isSecureContext === true &&
-        typeof navigator.clipboard?.writeText === 'function';
-
-      if (!canUseAsyncClipboard) {
-        onFailure();
-        return false;
-      }
-
-      try {
-        await navigator.clipboard.writeText(text);
-        onSuccess();
-        return true;
-      } catch {
-        onFailure();
-        return false;
       }
     },
     [resetMs],
   );
 
-  return { copied, copy };
+  const copy = useCallback(
+    (text: string) => {
+      // Prefer the modern async Clipboard API (works in secure contexts).
+      if (
+        typeof navigator !== 'undefined' &&
+        typeof navigator.clipboard?.writeText === 'function'
+      ) {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => handleResult(true))
+          .catch((err) => {
+            // Async API failed (permissions, etc.) — try fallback.
+            if (fallbackCopy(text)) {
+              handleResult(true);
+            } else {
+              handleResult(false, err instanceof Error ? err : new Error(String(err)));
+            }
+          });
+        return;
+      }
+
+      // No async API available — use execCommand fallback.
+      if (fallbackCopy(text)) {
+        handleResult(true);
+      } else {
+        handleResult(false, new Error('Clipboard API not available'));
+      }
+    },
+    [handleResult],
+  );
+
+  const reset = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setCopied(false);
+    setError(null);
+  }, []);
+
+  return { copied, copy, error, reset };
 }
 
-function fallbackCopy(text: string) {
-  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const selection = document.getSelection();
-  const ranges = selection
-    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
-    : [];
+/** Fallback for insecure contexts using the legacy execCommand API. */
+function fallbackCopy(text: string): boolean {
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.setAttribute('readonly', '');
@@ -77,12 +82,5 @@ function fallbackCopy(text: string) {
     return false;
   } finally {
     document.body.removeChild(ta);
-    if (selection) {
-      selection.removeAllRanges();
-      for (const range of ranges) {
-        selection.addRange(range);
-      }
-    }
-    activeElement?.focus();
   }
 }

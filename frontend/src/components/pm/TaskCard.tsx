@@ -190,7 +190,7 @@ function TaskCardComponent({
     if (!task.blocked) return null;
     if (task.blocked_by_count && task.blocked_by_count > 0) {
       if (task.blocked_by_count === 1 && task.blocked_by_tasks?.[0]) {
-        return `Blocked by ${task.blocked_by_tasks[0].display_id}`;
+        return `Blocked by ${task.blocked_by_tasks[0].task_key}`;
       }
       return `Blocked by ${task.blocked_by_count} tasks`;
     }

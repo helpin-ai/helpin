@@ -561,7 +561,7 @@ function TaskDetailPanelBody({
   if (taskDetail.task.id !== lastSyncedTaskRef.current) {
     lastSyncedTaskRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
-    url.searchParams.set('task', `${taskDetail.task.display_id}`);
+    url.searchParams.set('task', taskDetail.task.task_key ?? `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
   }
 
@@ -825,6 +825,7 @@ function TaskDetailPanelBody({
       buildTaskCopyUrl({
         currentHref: window.location.href,
         displayId: taskDetail.task.display_id,
+        taskKey: taskDetail.task.task_key,
         origin: window.location.origin,
         slug: workspace?.slug,
         taskId: taskDetail.task.id,
@@ -962,7 +963,7 @@ function TaskDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.task_key}</span>
           {taskDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
@@ -1334,7 +1335,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskKey={taskDetail.task.task_key} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1590,6 +1591,8 @@ function TaskDetailPanelBody({
               <DatePicker
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                kind="due"
+                label="Due date"
                 placeholder="None"
                 disablePast
                 hideIcon
@@ -1626,9 +1629,15 @@ function TaskDetailPanelBody({
                       </>
                     )}
                     renderOption={(v) => {
+                      if (v === '__none__') return <span className="truncate">No agent</span>;
                       const a = delivery.agents.find((ag) => ag.id === v);
                       if (!a) return null;
-                      return <AgentAvatar agent={a} className="h-5 w-5" />;
+                      return (
+                        <>
+                          <AgentAvatar agent={a} className="h-5 w-5" />
+                          <span className="truncate">{a.name}</span>
+                        </>
+                      );
                     }}
                   />
                 </MetadataRow>

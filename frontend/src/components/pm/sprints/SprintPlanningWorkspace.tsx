@@ -3,12 +3,15 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AssignableMember } from '@/lib/types';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { SprintPlanningBacklogPanel } from './SprintPlanningBacklogPanel';
@@ -16,8 +19,17 @@ import { SprintPlanningColumn } from './SprintPlanningColumn';
 import { SprintPlanningEmptyState } from './SprintPlanningEmptyState';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 
+// Pointer-first collision: detects which droppable the pointer is over.
+// Falls back to closestCenter when pointer is between containers (e.g. in the gap).
+const sprintCollision: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  if (within.length > 0) return within;
+  return closestCenter(args);
+};
+
 interface SprintPlanningWorkspaceProps {
   workspace: SprintPlanningWorkspaceData | null;
+  workspaceId: string;
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
@@ -31,6 +43,7 @@ interface SprintPlanningWorkspaceProps {
 
 export function SprintPlanningWorkspace({
   workspace,
+  workspaceId,
   backlogOpen,
   onBacklogToggle,
   canEdit,
@@ -58,9 +71,15 @@ export function SprintPlanningWorkspace({
   const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
 
   const [activeTask, setActiveTask] = useState<SprintPlanningTaskPreview | null>(null);
-  // Ref persists the dropped task ID across the render gap where activeTask
-  // is cleared but workspace data hasn't propagated yet
+  const [activeDropTargetId, setActiveDropTargetId] = useState<string | null>(null);
+  // Refs persist across the render gap where activeTask is cleared but
+  // workspace data hasn't propagated yet — also avoids stale closures in
+  // memoized callbacks so columns don't re-render during drag
   const droppedTaskIdRef = useRef<string | null>(null);
+  const activeTaskRef = useRef<SprintPlanningTaskPreview | null>(null);
+  // Track the last droppable the pointer was over — fallback for onDragEnd
+  // when event.over is null (pointer moved slightly during mouse release)
+  const overContainerRef = useRef<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -69,16 +88,35 @@ export function SprintPlanningWorkspace({
     }),
   );
 
-  const handleDragStart = (event: DragStartEvent) => {
+  const resolveDropTarget = useCallback((overId: string | null) => {
+    if (!overId) return null;
+    if (overId === 'backlog-dropzone' || overId.startsWith('sprint:')) return overId;
+    return null;
+  }, []);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = event.active.data.current?.task as SprintPlanningTaskPreview | undefined;
     droppedTaskIdRef.current = null;
+    overContainerRef.current = null;
+    setActiveDropTargetId(null);
+    activeTaskRef.current = task ?? null;
     setActiveTask(task ?? null);
-  };
+  }, []);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const task = (event.active.data.current?.task as SprintPlanningTaskPreview | undefined) ?? activeTask;
-    const overId = event.over?.id ? String(event.over.id) : null;
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const nextDropTargetId = resolveDropTarget(event.over?.id ? String(event.over.id) : null);
+    overContainerRef.current = nextDropTargetId;
+    setActiveDropTargetId((current) => current === nextDropTargetId ? current : nextDropTargetId);
+  }, [resolveDropTarget]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const task = (event.active.data.current?.task as SprintPlanningTaskPreview | undefined) ?? activeTaskRef.current;
+    // Use event.over when available; fall back to last container from onDragOver
+    const overId = resolveDropTarget(event.over?.id ? String(event.over.id) : null) ?? overContainerRef.current;
+    overContainerRef.current = null;
+    setActiveDropTargetId(null);
     if (!task || !overId) {
+      activeTaskRef.current = null;
       setActiveTask(null);
       return;
     }
@@ -91,8 +129,16 @@ export function SprintPlanningWorkspace({
     } else if (overId.startsWith('sprint:')) {
       onAssignTask(task, overId.replace('sprint:', ''));
     }
+    activeTaskRef.current = null;
     setActiveTask(null);
-  };
+  }, [onAssignTask, resolveDropTarget]);
+
+  const handleDragCancel = useCallback(() => {
+    activeTaskRef.current = null;
+    overContainerRef.current = null;
+    setActiveDropTargetId(null);
+    setActiveTask(null);
+  }, []);
 
   // Hide the task being dragged OR just dropped from the backlog list.
   // The ref bridges the gap: when activeTask clears but workspace data
@@ -105,24 +151,33 @@ export function SprintPlanningWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hideStoryId uses ref, recompute when backlog changes
   }, [workspace?.backlog_tasks, activeTask]);
 
+  // Stable ordered list of sprint cards — avoids recreating during drag
+  const sprintCards = useMemo(
+    () =>
+      ['upcoming', 'active', 'completed'].flatMap(
+        (key) => workspace?.buckets.find((b) => b.key === key)?.sprints ?? [],
+      ),
+    [workspace?.buckets],
+  );
+
   if (!workspace || !hasAnySprint) {
     return <SprintPlanningEmptyState canEdit={canEdit} onCreateSprint={onCreateSprint} />;
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={sprintCollision} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
       <div className="flex gap-4 xl:gap-5">
         <div className="min-w-0 flex-1 overflow-x-auto pb-4">
           <div className="flex min-w-max gap-5">
             {/* Order: upcoming → active → completed (left to right) */}
-            {['upcoming', 'active', 'completed'].flatMap(
-              (key) => workspace.buckets.find((b) => b.key === key)?.sprints ?? [],
-            ).map((card) => (
+            {sprintCards.map((card) => (
               <SprintPlanningColumn
                 key={card.sprint.id}
                 card={card}
+                workspaceId={workspaceId}
                 ownerByMemberId={ownerByMemberId}
                 canEdit={canEdit}
+                isDropTargetActive={activeDropTargetId === `sprint:${card.sprint.id}`}
                 onOpenSprint={onOpenSprint}
                 onOpenTask={onOpenTask}
                 onCreateTask={onCreateTask}
@@ -150,6 +205,7 @@ export function SprintPlanningWorkspace({
               task={activeTask}
               owner={activeTask.owner_member_id ? ownerByMemberId.get(activeTask.owner_member_id) : undefined}
               compact
+              onOpenTask={onOpenTask}
             />
           </div>
         ) : null}

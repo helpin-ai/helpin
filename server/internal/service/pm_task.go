@@ -17,7 +17,7 @@ import (
 
 // PMTaskService contains task business logic.
 type PMTaskService struct {
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -40,7 +40,7 @@ type PMTaskService struct {
 // NewPMTaskService creates a new PMTaskService.
 func NewPMTaskService(taskRepo *repository.PMTaskRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, epicRepo *repository.PMEpicRepository, sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMTaskService {
 	return &PMTaskService{
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
 		epicRepo:            epicRepo,
@@ -117,13 +117,105 @@ func (s *PMTaskService) requireAdmin(ctx context.Context, workspaceID, actorID s
 	return nil
 }
 
+// getWorkspaceKey returns the workspace key for a given workspace ID, using a
+// simple per-call cache to avoid N+1 queries when populating task keys.
+func (s *PMTaskService) getWorkspaceKey(ctx context.Context, workspaceID string) string {
+	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil || ws == nil {
+		return ""
+	}
+	return ws.WorkspaceKey
+}
+
+// populateTaskKey sets the computed TaskKey field on a single PMTask.
+func (s *PMTaskService) populateTaskKey(ctx context.Context, task *model.PMTask) {
+	if task.WorkspaceID == "" {
+		return
+	}
+	key := s.getWorkspaceKey(ctx, task.WorkspaceID)
+	task.TaskKey = model.FormatTaskKey(key, task.DisplayID)
+	for i := range task.BlockedByTasks {
+		task.BlockedByTasks[i].TaskKey = model.FormatTaskKey(key, task.BlockedByTasks[i].DisplayID)
+	}
+	for i := range task.BlockingTasks {
+		task.BlockingTasks[i].TaskKey = model.FormatTaskKey(key, task.BlockingTasks[i].DisplayID)
+	}
+}
+
+// populateTaskDetail sets TaskKey on a TaskDetail and its embedded task.
+func (s *PMTaskService) populateTaskDetail(ctx context.Context, detail *model.TaskDetail) {
+	if detail == nil {
+		return
+	}
+	s.populateTaskKey(ctx, &detail.Task)
+}
+
+// populateBoardTasks sets TaskKey on a slice of BoardTasks.
+func (s *PMTaskService) populateBoardTasks(ctx context.Context, workspaceID string, tasks []model.BoardTask) {
+	if len(tasks) == 0 {
+		return
+	}
+	key := s.getWorkspaceKey(ctx, workspaceID)
+	for i := range tasks {
+		tasks[i].TaskKey = model.FormatTaskKey(key, tasks[i].DisplayID)
+		for j := range tasks[i].BlockedByTasks {
+			tasks[i].BlockedByTasks[j].TaskKey = model.FormatTaskKey(key, tasks[i].BlockedByTasks[j].DisplayID)
+		}
+		for j := range tasks[i].BlockingTasks {
+			tasks[i].BlockingTasks[j].TaskKey = model.FormatTaskKey(key, tasks[i].BlockingTasks[j].DisplayID)
+		}
+	}
+}
+
+// populateStateColumns sets TaskKey on all tasks within TaskStateColumn slices.
+func (s *PMTaskService) populateStateColumns(ctx context.Context, columns []model.TaskStateColumn) {
+	if len(columns) == 0 {
+		return
+	}
+	// Find workspace ID from first task in any column.
+	var wsID string
+	for i := range columns {
+		if len(columns[i].Tasks) > 0 {
+			wsID = columns[i].Tasks[0].WorkspaceID
+			break
+		}
+	}
+	if wsID == "" {
+		return
+	}
+	key := s.getWorkspaceKey(ctx, wsID)
+	for i := range columns {
+		for j := range columns[i].Tasks {
+			columns[i].Tasks[j].TaskKey = model.FormatTaskKey(key, columns[i].Tasks[j].DisplayID)
+		}
+	}
+}
+
+// populateMemberColumns sets TaskKey on all tasks within TaskMemberColumn slices.
+func (s *PMTaskService) populateMemberColumns(ctx context.Context, workspaceID string, columns []model.TaskMemberColumn) {
+	if len(columns) == 0 {
+		return
+	}
+	key := s.getWorkspaceKey(ctx, workspaceID)
+	for i := range columns {
+		for j := range columns[i].Tasks {
+			columns[i].Tasks[j].TaskKey = model.FormatTaskKey(key, columns[i].Tasks[j].DisplayID)
+		}
+	}
+}
+
 // List returns tasks with filters/pagination.
 func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.taskRepo.List(ctx, workspaceID, filters, pagination)
+	tasks, total, err := s.taskRepo.List(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	s.populateBoardTasks(ctx, workspaceID, tasks)
+	return tasks, total, nil
 }
 
 // GetByID returns task detail.
@@ -138,6 +230,7 @@ func (s *PMTaskService) GetByID(ctx context.Context, id string) (*model.TaskDeta
 	if err := requireTeamAccess(ctx, detail.Task.TeamID); err != nil {
 		return nil, fmt.Errorf("task not found")
 	}
+	s.populateTaskDetail(ctx, detail)
 	return detail, nil
 }
 
@@ -153,6 +246,7 @@ func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, 
 	if err := requireTeamAccess(ctx, detail.Task.TeamID); err != nil {
 		return nil, fmt.Errorf("task not found")
 	}
+	s.populateTaskDetail(ctx, detail)
 	return detail, nil
 }
 
@@ -255,7 +349,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		WorkspaceID:       req.WorkspaceID,
 		Name:              strings.TrimSpace(req.Name),
 		Description:       req.Description,
-		TaskType:         taskType,
+		TaskType:          taskType,
 		WorkflowID:        workflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            req.EpicID,
@@ -407,7 +501,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := s.activityService.Log(ctx, newTask.WorkspaceID, "task", newTask.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task create", "error", err, "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: newTask.ID, WorkspaceID: newTask.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: newTask.ID, WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID)})
 
 	// Auto-follow the creator and emit notification.
 	if s.followerService != nil && actorID != "" {
@@ -455,7 +549,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 			SkipFollowers:      len(mentionedUserIDs) > 0,
 			EntitySnapshot: model.JSONB{
 				"title":      newTask.Name,
-				"display_id": newTask.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID),
 				"type":       newTask.TaskType,
 			},
 		}); err != nil {
@@ -464,7 +558,12 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 
 	s.logger.InfoContext(ctx, "task created", "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID, "actor_id", actorID)
-	return s.taskRepo.GetByID(ctx, newTask.ID)
+	detail, err := s.taskRepo.GetByID(ctx, newTask.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.populateTaskDetail(ctx, detail)
+	return detail, nil
 }
 
 // Update updates task fields.
@@ -795,7 +894,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			s.logger.ErrorContext(ctx, "failed to log activity for task blocker change", "error", err, "task_id", current.ID)
 		}
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 
 	// Emit notification for significant updates.
 	if s.notificationService != nil && (stateChanged || (req.Priority != nil && *req.Priority != oldPriority) || (req.Blocked != nil && *req.Blocked != oldBlocked)) {
@@ -829,7 +928,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {
@@ -858,7 +957,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 				ReadableTeamIDs: mentionScopeForTeamID(current.TeamID),
 				EntitySnapshot: model.JSONB{
 					"title":      current.Name,
-					"display_id": current.DisplayID,
+					"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 					"type":       current.TaskType,
 				},
 			}); err != nil {
@@ -868,6 +967,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	}
 
 	s.logger.InfoContext(ctx, "task updated", "task_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
+	s.populateTaskDetail(ctx, updatedDetail)
 	return updatedDetail, nil
 }
 
@@ -900,7 +1000,7 @@ func (s *PMTaskService) Delete(ctx context.Context, id, actorID string) error {
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "archived this task", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task delete", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "task", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "task", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	s.logger.InfoContext(ctx, "task deleted", "task_id", id, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return nil
 }
@@ -980,7 +1080,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {
@@ -1029,6 +1129,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 			"updated_at", detail.Task.UpdatedAt,
 		)
 	}
+	s.populateTaskDetail(ctx, detail)
 	return detail, nil
 }
 
@@ -1105,7 +1206,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task owner add", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 
 	// Auto-follow and notify the assigned user.
 	if s.followerService != nil {
@@ -1127,7 +1228,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 			ExplicitRecipients: []string{userID},
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {
@@ -1156,7 +1257,7 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, userID, actorID
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task owner remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1181,7 +1282,7 @@ func (s *PMTaskService) AddFollower(ctx context.Context, taskID, userID, actorID
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task follower add", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1203,7 +1304,7 @@ func (s *PMTaskService) RemoveFollower(ctx context.Context, taskID, userID, acto
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task follower remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1250,7 +1351,7 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, taskID, labelID, actorI
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task label remove", "error", err, "task_id", taskID)
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: taskID, WorkspaceID: current.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID)})
 	return nil
 }
 
@@ -1261,7 +1362,12 @@ func (s *PMTaskService) ListByWorkflowState(ctx context.Context, workflowID stri
 		return nil, fmt.Errorf("workflow_id is required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.taskRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
+	columns, err := s.taskRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
+	if err != nil {
+		return nil, err
+	}
+	s.populateStateColumns(ctx, columns)
+	return columns, nil
 }
 
 // ListColumnTasks returns a page of tasks for a single board column.
@@ -1273,7 +1379,14 @@ func (s *PMTaskService) ListColumnTasks(ctx context.Context, stateID string, fil
 	if limit <= 0 {
 		limit = 50
 	}
-	return s.taskRepo.ListColumnTasks(ctx, stateID, filters, offset, limit)
+	tasks, groups, total, err := s.taskRepo.ListColumnTasks(ctx, stateID, filters, offset, limit)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if len(tasks) > 0 {
+		s.populateBoardTasks(ctx, tasks[0].WorkspaceID, tasks)
+	}
+	return tasks, groups, total, nil
 }
 
 // ListByMember returns board columns grouped by owner member.
@@ -1282,7 +1395,12 @@ func (s *PMTaskService) ListByMember(ctx context.Context, workspaceID, workflowI
 		return nil, fmt.Errorf("workspace_id and workflow_id are required")
 	}
 	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
-	return s.taskRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+	columns, err := s.taskRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+	if err != nil {
+		return nil, err
+	}
+	s.populateMemberColumns(ctx, workspaceID, columns)
+	return columns, nil
 }
 
 // ListMemberColumnTasks returns a page of tasks for a single member board column.
@@ -1294,7 +1412,12 @@ func (s *PMTaskService) ListMemberColumnTasks(ctx context.Context, workspaceID, 
 	if limit <= 0 {
 		limit = 50
 	}
-	return s.taskRepo.ListMemberColumnTasks(ctx, workspaceID, workflowID, memberID, filters, offset, limit)
+	tasks, total, err := s.taskRepo.ListMemberColumnTasks(ctx, workspaceID, workflowID, memberID, filters, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	s.populateBoardTasks(ctx, workspaceID, tasks)
+	return tasks, total, nil
 }
 
 // CountByState returns state-level task counts for a workflow.

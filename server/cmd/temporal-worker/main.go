@@ -441,6 +441,7 @@ func main() {
 		gitLinkRepo,
 		deliveryRepo,
 		settingsRepo,
+		workspaceRepo,
 		docsSpaceRepo,
 		docsDocumentRepo,
 		docsContentRepo,
