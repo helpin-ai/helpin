@@ -1,4 +1,3 @@
-import { parseDate } from 'chrono-node';
 import {
   addDays,
   format,
@@ -18,6 +17,13 @@ export interface DatePickerPreset {
   helper: string;
 }
 
+export type LinkedDateField = 'primary' | 'linked';
+
+export interface LinkedDateValues {
+  primary: string;
+  linked: string;
+}
+
 interface ParseNaturalLanguageDateOptions {
   referenceDate?: Date;
   min?: Date;
@@ -25,6 +31,25 @@ interface ParseNaturalLanguageDateOptions {
 }
 
 const AMBIGUOUS_NUMERIC_DATE_RE = /^\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?$/;
+
+// Lazy-loaded chrono-node parser
+let chronoParseDate: typeof import('chrono-node').parseDate | null = null;
+let chronoLoadPromise: Promise<void> | null = null;
+
+function ensureChronoLoaded(): Promise<void> {
+  if (chronoParseDate) return Promise.resolve();
+  if (!chronoLoadPromise) {
+    chronoLoadPromise = import('chrono-node').then((mod) => {
+      chronoParseDate = mod.parseDate;
+    });
+  }
+  return chronoLoadPromise;
+}
+
+/** Eagerly kick off the lazy load so it's ready by first keystroke */
+export function preloadNaturalLanguageParser(): Promise<void> {
+  return ensureChronoLoaded();
+}
 
 function formatISODate(date: Date): string {
   return format(startOfDay(date), 'yyyy-MM-dd');
@@ -49,6 +74,36 @@ export function formatCompactDateValue(value?: string, fallback = 'None'): strin
 export function formatShortDateValue(value?: string, fallback = ''): string {
   const parsed = parseStoredDate(value);
   return parsed ? format(parsed, 'M/d/yy') : fallback;
+}
+
+export function applyLinkedDateValue(
+  values: LinkedDateValues,
+  field: LinkedDateField,
+  nextValue: string,
+  primaryIsStart: boolean,
+): LinkedDateValues {
+  const nextValues: LinkedDateValues = { ...values, [field]: nextValue };
+  const startField: LinkedDateField = primaryIsStart ? 'primary' : 'linked';
+  const endField: LinkedDateField = primaryIsStart ? 'linked' : 'primary';
+  const nextDate = parseStoredDate(nextValue);
+
+  if (!nextDate) return nextValues;
+
+  if (field === startField) {
+    const currentEnd = parseStoredDate(nextValues[endField]);
+    if (currentEnd && isBefore(currentEnd, nextDate)) {
+      nextValues[endField] = '';
+    }
+  }
+
+  if (field === endField) {
+    const currentStart = parseStoredDate(nextValues[startField]);
+    if (currentStart && isBefore(nextDate, currentStart)) {
+      nextValues[startField] = '';
+    }
+  }
+
+  return nextValues;
 }
 
 export function getDatePickerLabel(kind: DatePickerKind): string {
@@ -176,8 +231,14 @@ export function parseNaturalLanguageDate(
     return { error: 'Use words like tomorrow or a full date like Apr 12 2026.' };
   }
 
+  // If chrono hasn't loaded yet, return a pending state
+  if (!chronoParseDate) {
+    void ensureChronoLoaded();
+    return { error: undefined, value: undefined };
+  }
+
   const referenceDate = startOfDay(options.referenceDate ?? new Date());
-  const parsed = parseDate(normalized, referenceDate, { forwardDate: true });
+  const parsed = chronoParseDate(normalized, referenceDate, { forwardDate: true });
   if (!parsed || !isValid(parsed)) {
     return { error: 'Could not understand that date.' };
   }

@@ -1590,6 +1590,8 @@ function TaskDetailPanelBody({
               <DatePicker
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                kind="due"
+                label="Due date"
                 placeholder="None"
                 disablePast
                 hideIcon
@@ -1626,9 +1628,15 @@ function TaskDetailPanelBody({
                       </>
                     )}
                     renderOption={(v) => {
+                      if (v === '__none__') return <span className="truncate">No agent</span>;
                       const a = delivery.agents.find((ag) => ag.id === v);
                       if (!a) return null;
-                      return <AgentAvatar agent={a} className="h-5 w-5" />;
+                      return (
+                        <>
+                          <AgentAvatar agent={a} className="h-5 w-5" />
+                          <span className="truncate">{a.name}</span>
+                        </>
+                      );
                     }}
                   />
                 </MetadataRow>

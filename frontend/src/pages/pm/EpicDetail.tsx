@@ -790,6 +790,15 @@ export function EpicDetailPage() {
               <DatePicker
                 value={form.planned_start_date}
                 onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'Target date',
+                  kind: 'target',
+                  value: form.deadline,
+                  onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                  placeholder: 'None',
+                }}
                 placeholder="None"
                 hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
@@ -799,8 +808,19 @@ export function EpicDetailPage() {
             {/* Target Date */}
             <MetadataRow icon={CalendarDays} label="Target date">
               <DatePicker
-                value={form.deadline}
-                onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                value={form.planned_start_date}
+                onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'Target date',
+                  kind: 'target',
+                  value: form.deadline,
+                  onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                  placeholder: 'None',
+                }}
+                triggerField="linked"
+                defaultActiveField="linked"
                 placeholder="None"
                 hideIcon
                 urgencyColor

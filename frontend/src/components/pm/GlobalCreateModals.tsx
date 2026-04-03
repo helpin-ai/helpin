@@ -315,6 +315,15 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <DatePicker
                   value={meta.startDate}
                   onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: meta.targetDate,
+                    onChange: (v) => setMeta((m) => ({ ...m, targetDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -323,8 +332,19 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
-                  value={meta.targetDate}
-                  onChange={(v) => setMeta((m) => ({ ...m, targetDate: v }))}
+                  value={meta.startDate}
+                  onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: meta.targetDate,
+                    onChange: (v) => setMeta((m) => ({ ...m, targetDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -711,6 +731,15 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.endDate,
+                    onChange: (v) => setForm((f) => ({ ...f, endDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -719,8 +748,19 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">End date</span>
                 <DatePicker
-                  value={form.endDate}
-                  onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.endDate,
+                    onChange: (v) => setForm((f) => ({ ...f, endDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -1037,6 +1077,15 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.targetDate,
+                    onChange: (v) => setForm((f) => ({ ...f, targetDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -1045,8 +1094,19 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
-                  value={form.targetDate}
-                  onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.targetDate,
+                    onChange: (v) => setForm((f) => ({ ...f, targetDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
