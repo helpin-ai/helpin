@@ -43,6 +43,7 @@ export function GeneralTab({ workspaceId, editable }: {
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
   const [websiteUrl, setWebsiteUrl] = useState(workspace?.website_url ?? '');
+  const [workspaceKeyInput, setWorkspaceKeyInput] = useState(workspace?.workspace_key ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
   const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -56,6 +57,7 @@ export function GeneralTab({ workspaceId, editable }: {
     setName(workspace?.name ?? '');
     setDescription(workspace?.description ?? '');
     setWebsiteUrl(workspace?.website_url ?? '');
+    setWorkspaceKeyInput(workspace?.workspace_key ?? '');
     setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
   }, [workspace?.id, workspace?.updated_at]);
@@ -133,12 +135,17 @@ export function GeneralTab({ workspaceId, editable }: {
       return;
     }
     setSaving(true);
-    const { data, error } = await workspacesService.update(workspaceId, {
+    const updates: Record<string, unknown> = {
       name: name.trim(),
       description: description.trim() || undefined,
       website_url: websiteUrl.trim(),
       timezone,
-    });
+    };
+    const trimmedKey = workspaceKeyInput.trim().toUpperCase();
+    if (trimmedKey && trimmedKey !== workspace?.workspace_key) {
+      updates.workspace_key = trimmedKey;
+    }
+    const { data, error } = await workspacesService.update(workspaceId, updates);
     setSaving(false);
     if (error) {
       toast.error(error);
@@ -261,6 +268,22 @@ export function GeneralTab({ workspaceId, editable }: {
               disabled={!editable}
               placeholder="My Workspace"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-key">Task Key Prefix</Label>
+            <Input
+              id="ws-key"
+              value={workspaceKeyInput}
+              onChange={(e) => setWorkspaceKeyInput(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
+              disabled={!editable}
+              placeholder="ACM"
+              maxLength={5}
+            />
+            <p className="text-xs text-muted-foreground">
+              2-5 uppercase letters used in task identifiers (e.g. {workspace?.workspace_key || '...'}-123).
+              {workspace?.workspace_key && ' Changing this will update new task keys. Old references will continue to work.'}
+            </p>
           </div>
 
           <div className="space-y-2">

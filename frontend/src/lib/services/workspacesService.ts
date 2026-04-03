@@ -4,7 +4,7 @@ import type { AssignableMember, Workspace, WorkspaceAccess, WorkspaceMember, Mem
 export const workspacesService = {
   list: (organizationId?: string) =>
     api.get<Workspace[]>(organizationId ? `/workspaces?organization_id=${organizationId}` : '/workspaces'),
-  create: (data: { name: string; slug: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
+  create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
     api.post<Workspace>('/workspaces', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>

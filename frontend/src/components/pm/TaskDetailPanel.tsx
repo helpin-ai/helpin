@@ -962,7 +962,7 @@ function TaskDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.task_key}</span>
           {taskDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
@@ -1334,7 +1334,7 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskKey={taskDetail.task.task_key} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}

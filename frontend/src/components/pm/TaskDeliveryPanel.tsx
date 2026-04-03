@@ -126,7 +126,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
   const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
-  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.display_id, taskDetail.task.name);
+  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.task_key, taskDetail.task.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
   const agentSelectionSaved = selectedAgentId === assignedAgentId;
   const deliveryTargetSaved =
@@ -618,7 +618,7 @@ function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: str
   );
 }
 
-function buildBranchPreview(displayId: number, taskName: string) {
+function buildBranchPreview(displayId: number | string, taskName: string) {
   return `${displayId}-${slugify(taskName)}`;
 }
 

@@ -476,9 +476,9 @@ export function TaskRelationshipsSection({
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <span className="min-w-0 flex-1 truncate text-ui font-medium">{task.name}</span>
-                {task.display_id ? (
+                {(task.task_key || task.display_id) ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
-                    {task.display_id}
+                    {task.task_key ?? task.display_id}
                   </Badge>
                 ) : null}
               </button>
@@ -575,12 +575,12 @@ export function TaskRelationshipsSection({
                 </button>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {relatedTask.display_id ? (
+                {(relatedTask.task_key || relatedTask.display_id) ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
                     {relatedTask.task_type ? (
                       <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
-                    {relatedTask.display_id}
+                    {relatedTask.task_key ?? relatedTask.display_id}
                     {(relatedTask.completed || resolved) ? (
                       <Check className="h-3 w-3 text-green-600" />
                     ) : null}

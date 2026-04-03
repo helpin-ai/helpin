@@ -455,7 +455,7 @@ export function TaskListView({
   // Table columns
   const tableColumns = useMemo(
     () => [
-      columnHelper.accessor('display_id', {
+      columnHelper.accessor('task_key', {
         id: 'displayId',
         header: 'ID',
         size: 90,

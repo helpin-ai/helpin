@@ -32,6 +32,7 @@ export interface Workspace {
   id: string;
   name: string;
   slug: string;
+  workspace_key: string;
   owner_id: string;
   organization_id?: string;
   description?: string;

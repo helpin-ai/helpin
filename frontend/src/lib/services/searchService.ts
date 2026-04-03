@@ -5,6 +5,7 @@ export interface SearchResult {
   name: string;
   type: string;
   display_id?: number;
+  task_key?: string;
   team_id?: string;
   team_name?: string;
 }
