@@ -3,12 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"sync"
 
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+// taskKeyPattern matches task key queries like "HLP-123".
+var taskKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}-(\d+)$`)
 
 type SearchRepository struct {
 	db *gorm.DB
@@ -34,6 +39,12 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 
 	pattern := "%" + query + "%"
 
+	// Check if query matches the task key pattern (e.g. "HLP-123").
+	var taskKeyDisplayID int
+	if m := taskKeyPattern.FindStringSubmatch(query); m != nil {
+		taskKeyDisplayID, _ = strconv.Atoi(m[1])
+	}
+
 	var (
 		stories    []model.SearchResult
 		epics      []model.SearchResult
@@ -58,6 +69,24 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 
 	go func() {
 		defer wg.Done()
+
+		// When query looks like a task key, do an exact display_id lookup
+		// plus the normal text search, then merge with the exact match first.
+		var exactMatch []model.SearchResult
+		if taskKeyDisplayID > 0 {
+			if err := r.db.WithContext(ctx).
+				Raw(`SELECT id, name, 'task' AS type, display_id, team_id
+					FROM pm_tasks
+					WHERE workspace_id = ? AND archived = false
+					  AND display_id = ?
+					LIMIT 1`, workspaceID, taskKeyDisplayID).
+				Scan(&exactMatch).Error; err != nil {
+				setErr(fmt.Errorf("search task by key: %w", err))
+				return
+			}
+		}
+
+		var textResults []model.SearchResult
 		if err := r.db.WithContext(ctx).
 			Raw(`SELECT id, name, 'task' AS type, display_id, team_id
 				FROM pm_tasks
@@ -65,8 +94,23 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				  AND (name ILIKE ? OR CAST(display_id AS TEXT) ILIKE ?)
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
-			Scan(&stories).Error; err != nil {
+			Scan(&textResults).Error; err != nil {
 			setErr(fmt.Errorf("search stories: %w", err))
+			return
+		}
+
+		// Prepend exact match, deduplicating against text results.
+		if len(exactMatch) > 0 {
+			exactID := exactMatch[0].ID
+			deduped := make([]model.SearchResult, 0, len(textResults))
+			for _, r := range textResults {
+				if r.ID != exactID {
+					deduped = append(deduped, r)
+				}
+			}
+			stories = append(exactMatch, deduped...)
+		} else {
+			stories = textResults
 		}
 	}()
 

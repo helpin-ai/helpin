@@ -7,6 +7,7 @@ interface BuildTaskUrlOptions {
 interface BuildTaskCopyUrlOptions {
   currentHref: string;
   displayId: number | string;
+  taskKey?: string | null;
   origin?: string;
   slug?: string | null;
   taskId?: string | null;
@@ -23,6 +24,7 @@ export function buildTaskUrl({ origin, slug, taskId }: BuildTaskUrlOptions) {
 export function buildTaskCopyUrl({
   currentHref,
   displayId,
+  taskKey,
   origin,
   slug,
   taskId,
@@ -32,6 +34,7 @@ export function buildTaskCopyUrl({
   }
 
   const url = new URL(currentHref);
-  url.searchParams.set('task', String(displayId));
+  // Prefer task_key format (e.g. "HLP-123") over bare display_id for shareable URLs.
+  url.searchParams.set('task', taskKey || String(displayId));
   return url.toString();
 }

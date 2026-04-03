@@ -1809,6 +1809,7 @@ function InlineActionsCell({
     const url = buildTaskCopyUrl({
       currentHref: window.location.href,
       displayId: task.display_id,
+      taskKey: task.task_key,
       origin: window.location.origin,
       slug: workspaceSlug,
       taskId: task.id,

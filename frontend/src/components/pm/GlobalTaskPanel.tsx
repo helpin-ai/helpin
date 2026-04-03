@@ -16,6 +16,7 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
+import { parseTaskKey } from '@/lib/taskKeyUtils';
 import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -58,15 +59,26 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     }
   }, [activeTaskRoute, closeContextualTask, contextualTaskId]);
 
-  // Open task panel from ?task= URL param on any page (e.g. sprints, epics)
+  // Open task panel from ?task= URL param on any page (e.g. sprints, epics).
+  // Supports both task key format ("HLP-123") and bare numeric display_id ("123").
   useEffect(() => {
     if (activeTaskId || !workspaceId || !workspaceSlug) return;
     const maybeTask = new URLSearchParams(window.location.search).get('task');
     if (!maybeTask) return;
-    const match = maybeTask.match(/^(\d+)$/);
-    if (!match) return;
+
+    // Try task key format first (e.g. "HLP-123"), fall back to bare number.
+    let displayId: number | null = null;
+    const parsed = parseTaskKey(maybeTask);
+    if (parsed) {
+      displayId = parsed.displayId;
+    } else {
+      const numMatch = maybeTask.match(/^(\d+)$/);
+      if (numMatch) displayId = Number(numMatch[1]);
+    }
+    if (!displayId) return;
+
     (async () => {
-      const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
+      const res = await pmTaskService.getByDisplayId(workspaceId, displayId!);
       if (res.data && workspaceSlug) {
         openTaskRoute(navigateRef.current as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
       }

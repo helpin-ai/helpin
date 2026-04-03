@@ -549,7 +549,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 			SkipFollowers:      len(mentionedUserIDs) > 0,
 			EntitySnapshot: model.JSONB{
 				"title":      newTask.Name,
-				"display_id": newTask.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID),
 				"type":       newTask.TaskType,
 			},
 		}); err != nil {
@@ -928,7 +928,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {
@@ -957,7 +957,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 				ReadableTeamIDs: mentionScopeForTeamID(current.TeamID),
 				EntitySnapshot: model.JSONB{
 					"title":      current.Name,
-					"display_id": current.DisplayID,
+					"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 					"type":       current.TaskType,
 				},
 			}); err != nil {
@@ -1080,7 +1080,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {
@@ -1228,7 +1228,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 			ExplicitRecipients: []string{userID},
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
-				"display_id": current.DisplayID,
+				"display_id": model.FormatTaskKey(s.getWorkspaceKey(ctx, current.WorkspaceID), current.DisplayID),
 				"type":       current.TaskType,
 			},
 		}); err != nil {

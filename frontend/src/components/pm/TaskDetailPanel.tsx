@@ -825,6 +825,7 @@ function TaskDetailPanelBody({
       buildTaskCopyUrl({
         currentHref: window.location.href,
         displayId: taskDetail.task.display_id,
+        taskKey: taskDetail.task.task_key,
         origin: window.location.origin,
         slug: workspace?.slug,
         taskId: taskDetail.task.id,
