@@ -19,6 +19,7 @@ import {
   Link2,
   Loader2,
   Maximize2,
+  MessageSquare,
   MoreVertical,
   Paperclip,
   Pencil,
@@ -67,7 +68,7 @@ import {
 import { TaskGitPanel } from '@/components/pm/TaskGitPanel';
 import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
-import { cn, getInitials } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -200,10 +201,6 @@ function formatRelativeTime(iso: string) {
   }
 }
 
-function userInitials(user?: { full_name?: string; email?: string } | null): string {
-  return getInitials(user?.full_name || user?.email);
-}
-
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
@@ -231,14 +228,72 @@ type TimelineItem =
   | { kind: 'activity'; data: ActivityLogEntry; time: string }
   | { kind: 'comment'; data: CommentWithAuthor; time: string };
 
-function TimelineEntry({ item }: { item: TimelineItem }) {
+const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
+  workflow_state_id: { icon: Hash, color: 'text-blue-500' },
+  owner_member_id: { icon: User, color: 'text-violet-500' },
+  team_id: { icon: Users, color: 'text-teal-500' },
+  priority: { icon: Gauge, color: 'text-orange-500' },
+  sprint_id: { icon: Hexagon, color: 'text-green-500' },
+  epic_id: { icon: Layers, color: 'text-purple-500' },
+  estimate: { icon: LayoutGrid, color: 'text-amber-500' },
+  deadline: { icon: CalendarDays, color: 'text-red-500' },
+  task_type: { icon: Tag, color: 'text-indigo-500' },
+  labels: { icon: Tag, color: 'text-pink-500' },
+  severity: { icon: ShieldAlert, color: 'text-red-500' },
+  name: { icon: Pencil, color: 'text-muted-foreground' },
+  description: { icon: Pencil, color: 'text-muted-foreground' },
+};
+
+/** Map raw action strings like "comment_added" to readable labels. */
+const ACTION_LABELS: Record<string, string> = {
+  comment_added: 'added a comment',
+  comment_updated: 'edited a comment',
+  comment_deleted: 'deleted a comment',
+  attachment_added: 'attached a file',
+  attachment_removed: 'removed an attachment',
+  task_created: 'created this task',
+  created: 'created this task',
+  label_added: 'added a label',
+  label_removed: 'removed a label',
+};
+
+function formatAction(action?: string): string {
+  if (!action) return '';
+  return ACTION_LABELS[action] ?? action.replace(/_/g, ' ');
+}
+
+function getActivityIcon(action?: string, fieldName?: string): { icon: React.ElementType; color: string } {
+  if (fieldName && ACTIVITY_ICON_MAP[fieldName]) return ACTIVITY_ICON_MAP[fieldName];
+  if (action?.includes('comment')) return { icon: MessageSquare, color: 'text-blue-500' };
+  if (action?.includes('attachment') || action?.includes('file')) return { icon: Paperclip, color: 'text-muted-foreground' };
+  if (action?.includes('label')) return { icon: Tag, color: 'text-pink-500' };
+  if (action?.includes('moved') || action?.includes('state')) return { icon: Hash, color: 'text-blue-500' };
+  if (action?.includes('priority')) return { icon: Gauge, color: 'text-orange-500' };
+  if (action?.includes('owner') || action?.includes('assigned') || action?.includes('requester')) return { icon: User, color: 'text-violet-500' };
+  if (action?.includes('team')) return { icon: Users, color: 'text-teal-500' };
+  if (action?.includes('sprint')) return { icon: Hexagon, color: 'text-green-500' };
+  if (action?.includes('epic')) return { icon: Layers, color: 'text-purple-500' };
+  if (action?.includes('blocked')) return { icon: ShieldAlert, color: 'text-red-500' };
+  if (action?.includes('archived')) return { icon: Archive, color: 'text-amber-500' };
+  if (action?.includes('created')) return { icon: Play, color: 'text-green-500' };
+  if (action?.includes('deadline') || action?.includes('due date')) return { icon: CalendarDays, color: 'text-red-500' };
+  if (action?.includes('estimate')) return { icon: LayoutGrid, color: 'text-amber-500' };
+  if (action?.includes('type')) return { icon: Tag, color: 'text-indigo-500' };
+  if (action?.includes('severity')) return { icon: ShieldAlert, color: 'text-red-500' };
+  return { icon: ArrowRightLeft, color: 'text-muted-foreground' };
+}
+
+function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: WorkflowState[] }) {
   if (item.kind === 'comment') {
     const { comment, author } = item.data;
     return (
-      <div className="flex items-start gap-2">
-        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-medium">
-          {userInitials(author)}
-        </div>
+      <div className="flex items-start gap-2.5">
+        <UserAvatar
+          name={author.full_name || author.email}
+          avatarUrl={author.avatar_url}
+          className="h-5 w-5"
+          fallbackClassName="text-[7px]"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
             <span className="text-xs font-medium">{author.full_name || author.email}</span>
@@ -251,17 +306,109 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   }
 
   const { activity, actor } = item.data;
+  const iconConfig = getActivityIcon(activity.action, activity.field_name);
+  const ActivityIconEl = iconConfig.icon;
+  const label = formatAction(activity.action);
+
+  // For state changes, extract the target state name and use its color
+  const stateMatch = activity.action?.match(/moved this (?:task|story) to (.+)/);
+  const isStateChange = !!stateMatch;
+  const targetStateName = stateMatch?.[1] ?? null;
+  const matchedState = targetStateName ? states.find((s) => s.name === targetStateName) : null;
+  const stateColor = matchedState?.color ?? null;
+
+  // Always show avatar; fall back to icon for system/no-actor entries
+  const marker = actor ? (
+    <span className="relative z-10">
+      <UserAvatar
+        name={actor.full_name || actor.email}
+        avatarUrl={actor.avatar_url}
+        className="h-5 w-5"
+        fallbackClassName="text-[7px]"
+      />
+    </span>
+  ) : (
+    <span className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+      <ActivityIconEl className={`h-3 w-3 ${iconConfig.color}`} />
+    </span>
+  );
+
+  // Build rich inline label
+  let richLabel: React.ReactNode = null;
+
+  if (isStateChange && targetStateName) {
+    richLabel = (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        moved to
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+          style={stateColor ? { backgroundColor: `${stateColor}18`, color: stateColor, border: `1px solid ${stateColor}30` } : undefined}
+        >
+          {matchedState && <StateTypeIcon stateType={matchedState.state_type} className="h-3 w-3" />}
+          {targetStateName}
+        </span>
+      </span>
+    );
+  } else {
+    // Parse "changed X from Y to Z" patterns
+    const changeMatch = activity.action?.match(/changed (type|priority|severity) from (\S+) to (\S+)/);
+    if (changeMatch) {
+      const [, field, oldVal, newVal] = changeMatch;
+      const renderBadge = (value: string) => {
+        if (field === 'type') {
+          const cfg = TASK_TYPE_CONFIG[value as TaskType];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <TaskTypeIcon taskType={value as TaskType} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        if (field === 'priority') {
+          const cfg = PRIORITY_CONFIG[value as Priority];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <PriorityIcon priority={value as Priority} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        if (field === 'severity') {
+          const cfg = SEVERITY_CONFIG[value as Severity];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <SeverityIcon severity={value as Severity} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        return <span className="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">{value}</span>;
+      };
+
+      richLabel = (
+        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground flex-wrap">
+          changed {field} from {renderBadge(oldVal)}
+          <ArrowRightLeft className="h-2.5 w-2.5 text-muted-foreground/50" />
+          {renderBadge(newVal)}
+        </span>
+      );
+    }
+  }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-medium text-muted-foreground">
-        {userInitials(actor)}
-      </div>
+    <div className="flex items-center gap-2.5">
+      {marker}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs font-medium">{actor?.full_name || actor?.email || 'System'}</span>
-          <span className="text-[11px] text-muted-foreground">{activity.action}</span>
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatRelativeTime(activity.created_at)}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium shrink-0">{actor?.full_name || actor?.email || 'System'}</span>
+          {richLabel ?? <span className="text-[11px] text-muted-foreground truncate">{label}</span>}
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{formatRelativeTime(activity.created_at)}</span>
         </div>
       </div>
     </div>
@@ -1162,19 +1309,23 @@ function TaskDetailPanelBody({
             {activity.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
-                <div className="mt-3 space-y-2">
-                  {!showAllActivity && activity.length > 5 && (
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      onClick={() => setShowAllActivity(true)}
-                    >
-                      Show {activity.length - 5} older entries...
-                    </button>
-                  )}
-                  {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
-                    <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} />
-                  ))}
+                <div className="relative mt-3">
+                  {/* Vertical timeline line */}
+                  <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />
+                  <div className="space-y-3">
+                    {!showAllActivity && activity.length > 5 && (
+                      <button
+                        type="button"
+                        className="relative z-10 ml-6 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        onClick={() => setShowAllActivity(true)}
+                      >
+                        Show {activity.length - 5} older entries...
+                      </button>
+                    )}
+                    {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
+                      <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} states={states} />
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

@@ -551,6 +551,22 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		}
 	}
 
+	// Extract entity display info from snapshot.
+	entityTitle := ""
+	entityDisplayID := ""
+	if event.EntitySnapshot != nil {
+		if raw, ok := event.EntitySnapshot["title"]; ok {
+			if v, ok := raw.(string); ok {
+				entityTitle = v
+			}
+		}
+		if raw, ok := event.EntitySnapshot["display_id"]; ok {
+			if v, ok := raw.(string); ok {
+				entityDisplayID = v
+			}
+		}
+	}
+
 	entityURL := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID)
 
 	subject := fmt.Sprintf("[%s] %s", workspaceName, event.Title)
@@ -563,38 +579,33 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		textBody += "\n\nView in Helpin: " + entityURL
 	}
 
+	// Build the actor action line based on the event category.
+	actorLine := fmt.Sprintf(`<strong style="color: #111111; font-weight: 600;">%s</strong> %s`,
+		html.EscapeString(actorName), html.EscapeString(immediateEmailActionText(event)))
+
+	// Build the task/entity block if we have a title.
+	taskBlockHTML := ""
+	if entityTitle != "" {
+		taskBlockHTML = emailtpl.TaskBlockHTML(entityDisplayID, entityTitle)
+	}
+
+	// Build the comment/body block (only if non-empty).
+	commentBlockHTML := ""
+	if trimmedBody := strings.TrimSpace(event.Body); trimmedBody != "" {
+		escapedBody := html.EscapeString(trimmedBody)
+		escapedBody = emailMentionPattern.ReplaceAllString(escapedBody,
+			`<span style="color: #111111; font-weight: 500;">$1</span>`)
+		commentBlockHTML = emailtpl.CommentBlockHTML(escapedBody)
+	}
+
 	// Build CTA section only if we have a URL.
 	ctaHTML := ""
 	if entityURL != "" {
-		ctaHTML = fmt.Sprintf(`
-                      <!-- CTA Button -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 24px;">
-                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                            <tr>
-                              <td style="border-radius: 8px; background-color: #18181b;">
-                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">View in Helpin</a>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>`, html.EscapeString(entityURL))
+		ctaHTML = emailtpl.CTAButtonHTML(entityURL)
 	}
 
-	// Body paragraph (only if non-empty).
-	bodyHTML := ""
-	if trimmedBody := strings.TrimSpace(event.Body); trimmedBody != "" {
-		escapedBody := html.EscapeString(trimmedBody)
-		// Highlight @mentions with blue color
-		escapedBody = emailMentionPattern.ReplaceAllString(escapedBody,
-			`<span style="color: #2563eb; font-weight: 600;">$1</span>`)
-		bodyHTML = fmt.Sprintf(`
-                      <tr>
-                        <td align="center" style="padding-bottom: 24px;">
-                          <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #52525b;">%s</p>
-                        </td>
-                      </tr>`, escapedBody)
-	}
+	// Build contextual footer line.
+	footerText := immediateEmailFooterText(event, workspaceName, entityDisplayID)
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -605,87 +616,107 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
   <title>Notification</title>
   %s
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; -webkit-font-smoothing: antialiased;">
   <!-- Preheader text (hidden) -->
   <div style="display: none; max-height: 0; overflow: hidden;">
     %s in %s: %s
   </div>
 
-	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
-	    <tr>
-	      <td align="center" style="padding: 48px 16px;">
-	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+  <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
 
-	          %s
+          %s
 
-	          <!-- Main Card -->
-	          <tr>
-	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
-              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+          <!-- Content -->
+          <tr>
+            <td style="padding: 28px 32px 32px;">
+              <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0">
 
-                <!-- Top accent bar -->
+                <!-- Actor line -->
                 <tr>
-                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
-                </tr>
-
-                <!-- Content -->
-                <tr>
-                  <td style="padding: 40px 36px 36px;">
-                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
-
-                      <!-- Workspace name badge -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 20px;">
-                          <span style="display: inline-block; font-size: 13px; font-weight: 600; color: #52525b; background-color: #f4f4f5; padding: 4px 12px; border-radius: 6px;">%s</span>
-                        </td>
-                      </tr>
-
-                      <!-- Heading -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 12px;">
-                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">%s</h1>
-                        </td>
-                      </tr>
-
-                      <!-- Body -->
-                      %s
-
-                      %s
-
-                    </table>
+                  <td style="font-size: 14px; color: #555555; line-height: 1.5; padding-bottom: 20px;">
+                    %s
                   </td>
                 </tr>
+
+                %s
+
+                %s
+
+                %s
+
               </table>
             </td>
           </tr>
 
-          <!-- Footer -->
-          <tr>
-            <td align="center" style="padding: 28px 16px 0;">
-              <p style="margin: 0; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
-                You received this email because you have notifications enabled on Helpin.
-              </p>
-            </td>
-          </tr>
+          %s
 
         </table>
       </td>
     </tr>
-	  </table>
+  </table>
 </body>
 </html>`,
 		emailtpl.BrandHeaderCSS(),
 		html.EscapeString(actorName),
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
-		emailtpl.BrandHeaderHTML(),
-		html.EscapeString(workspaceName),
-		html.EscapeString(event.Title),
-		bodyHTML,
+		emailtpl.NotificationEmailHeaderHTML(workspaceName),
+		actorLine,
+		taskBlockHTML,
+		commentBlockHTML,
 		ctaHTML,
+		emailtpl.NotificationFooterHTML(footerText),
 	)
 
 	return subject, htmlBody, textBody
+}
+
+// immediateEmailActionText returns a human-readable action phrase for the actor line.
+func immediateEmailActionText(event model.NotificationEventInput) string {
+	switch event.Category {
+	case model.NotifCategoryMentions:
+		return "mentioned you"
+	case model.NotifCategoryComments:
+		return "commented on a task assigned to you"
+	case model.NotifCategoryAssignments:
+		return "assigned a task to you"
+	case model.NotifCategoryStatusChanges:
+		return "updated the status"
+	case model.NotifCategorySupportReplies:
+		return "replied to a conversation"
+	case model.NotifCategorySupportMentions:
+		return "mentioned you in a conversation"
+	case model.NotifCategorySprints:
+		return "updated a sprint"
+	case model.NotifCategorySubscriptions:
+		return "made an update"
+	default:
+		return "made an update"
+	}
+}
+
+// immediateEmailFooterText returns a contextual one-liner for the email footer.
+func immediateEmailFooterText(event model.NotificationEventInput, workspaceName, displayID string) string {
+	switch event.Category {
+	case model.NotifCategoryMentions:
+		return fmt.Sprintf("You were mentioned in %s", workspaceName)
+	case model.NotifCategoryComments:
+		if displayID != "" {
+			return fmt.Sprintf("You're assigned to %s", displayID)
+		}
+		return fmt.Sprintf("You received a comment in %s", workspaceName)
+	case model.NotifCategoryAssignments:
+		return fmt.Sprintf("A task was assigned to you in %s", workspaceName)
+	case model.NotifCategorySupportReplies:
+		return fmt.Sprintf("New reply in %s", workspaceName)
+	case model.NotifCategorySupportMentions:
+		return fmt.Sprintf("You were mentioned in %s", workspaceName)
+	default:
+		return fmt.Sprintf("Notification from %s", workspaceName)
+	}
 }
 
 // ProcessPendingSupportReplyEmails sends delayed fallback emails for unread customer replies.
@@ -1165,17 +1196,23 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 	ctaHTML := ""
 	if ctaURL != "" {
 		ctaHTML = fmt.Sprintf(`
-                      <tr>
-                        <td align="center" style="padding-top: 8px; padding-bottom: 24px;">
-                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                            <tr>
-                              <td style="border-radius: 8px; background-color: #18181b;">
-                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">View All Notifications</a>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>`, html.EscapeString(ctaURL))
+                        <tr>
+                          <td align="center" style="padding-top: 4px; padding-bottom: 8px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                              <tr>
+                                <td style="border-radius: 7px; background-color: #111111;">
+                                  <a href="%s" target="_blank" style="display: inline-block; padding: 10px 28px; font-size: 13px; font-weight: 600; color: #ffffff; text-decoration: none;">View All Notifications</a>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>`, html.EscapeString(ctaURL))
+	}
+
+	// Use the first workspace name for the header; fall back to "Helpin".
+	headerWorkspaceName := "Helpin"
+	if len(workspaceOrder) > 0 {
+		headerWorkspaceName = workspaceNames[workspaceOrder[0]]
 	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
@@ -1187,76 +1224,64 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
   <title>Notification Digest</title>
   %s
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; -webkit-font-smoothing: antialiased;">
   <!-- Preheader text (hidden) -->
   <div style="display: none; max-height: 0; overflow: hidden;">
     You have %d unread notifications
   </div>
 
-	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
-	    <tr>
-	      <td align="center" style="padding: 48px 16px;">
-	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+  <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
 
-	          %s
+          %s
 
-	          <!-- Main Card -->
-	          <tr>
-	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
-              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+          <!-- Content -->
+          <tr>
+            <td style="padding: 28px 32px 32px;">
+              <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0">
 
-                <!-- Top accent bar -->
+                <!-- Heading -->
                 <tr>
-                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
-                </tr>
-
-                <!-- Content -->
-                <tr>
-                  <td style="padding: 40px 36px 36px;">
-                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
-
-                      <!-- Heading -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 8px;">
-                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">Notification digest</h1>
-                        </td>
-                      </tr>
-
-                      <!-- Subtext -->
-                      <tr>
-                        <td align="center" style="padding-bottom: 28px;">
-                          <p style="margin: 0; font-size: 15px; color: #52525b;">You have %d unread notifications</p>
-                        </td>
-                      </tr>
-
-                      <!-- Workspace sections -->
-                      %s
-
-                      <!-- CTA -->
-                      %s
-
-                    </table>
+                  <td style="padding-bottom: 4px;">
+                    <h1 style="margin: 0; font-size: 18px; font-weight: 700; color: #111111; line-height: 1.3;">Notification digest</h1>
                   </td>
                 </tr>
+
+                <!-- Subtext -->
+                <tr>
+                  <td style="padding-bottom: 24px;">
+                    <p style="margin: 0; font-size: 14px; color: #555555;">You have %d unread notifications</p>
+                  </td>
+                </tr>
+
+                <!-- Workspace sections -->
+                %s
+
+                <!-- CTA -->
+                %s
+
               </table>
             </td>
           </tr>
 
-          <!-- Footer -->
-          <tr>
-            <td align="center" style="padding: 28px 16px 0;">
-              <p style="margin: 0; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
-                You received this email because you have notifications enabled on Helpin.
-              </p>
-            </td>
-          </tr>
+          %s
 
         </table>
       </td>
     </tr>
-	  </table>
+  </table>
 </body>
-</html>`, emailtpl.BrandHeaderCSS(), len(items), emailtpl.BrandHeaderHTML(), len(items), wsSections.String(), ctaHTML)
+</html>`,
+		emailtpl.BrandHeaderCSS(),
+		len(items),
+		emailtpl.NotificationEmailHeaderHTML(headerWorkspaceName),
+		len(items),
+		wsSections.String(),
+		ctaHTML,
+		emailtpl.NotificationFooterHTML(fmt.Sprintf("You have notifications enabled on %s", headerWorkspaceName)),
+	)
 
 	return subject, htmlBody, strings.TrimSpace(textBody.String())
 }
