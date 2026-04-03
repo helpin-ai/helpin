@@ -14,7 +14,7 @@ type Workspace struct {
 	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	Name           string    `json:"name" gorm:"not null"`
 	Slug           string    `json:"slug" gorm:"uniqueIndex;not null"`
-	WorkspaceKey   string    `json:"workspace_key" gorm:"type:varchar(5);uniqueIndex;not null"`
+	WorkspaceKey   string    `json:"workspace_key" gorm:"type:varchar(5);uniqueIndex"`
 	OwnerID        string    `json:"owner_id" gorm:"type:uuid;not null"`
 	OrganizationID *string   `json:"organization_id" gorm:"type:uuid"`
 	Description    *string   `json:"description"`
