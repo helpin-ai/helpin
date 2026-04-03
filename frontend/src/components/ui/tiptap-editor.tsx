@@ -2,6 +2,12 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TaskList } from '@tiptap/extension-task-list';
+import { TaskItem } from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
@@ -44,6 +50,8 @@ interface TiptapEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
+  /** Use compact spacing (for task descriptions) */
+  compact?: boolean;
 }
 
 function ToolbarButton({
@@ -79,7 +87,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady, compact }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -194,6 +202,12 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         emptyNodeClass: 'is-empty',
         emptyEditorClass: 'is-editor-empty',
       }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TaskList,
+      TaskItem.configure({ nested: true }),
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -225,7 +239,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+        class: `prose prose-sm dark:prose-invert max-w-none focus:outline-none ${compact ? 'min-h-[80px] px-2.5 py-1.5 tiptap-compact' : 'min-h-[120px] px-4 py-3'}`,
       },
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false;

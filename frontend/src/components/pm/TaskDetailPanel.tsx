@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   Tag,
   Target,
+  Upload,
   User,
   Users,
   X,
@@ -306,6 +307,10 @@ function TaskDetailPanelBody({
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
+  const [panelDragging, setPanelDragging] = useState(false);
+  const openFilePickerRef = useRef<(() => void) | null>(null);
+  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
+  const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const taskId = taskDetail.task.id;
 
@@ -875,7 +880,36 @@ function TaskDetailPanelBody({
       </div>
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+      <div
+        className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current++;
+          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragCounterRef.current--;
+          if (dragCounterRef.current === 0) setPanelDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setPanelDragging(false);
+          if (e.dataTransfer.files.length > 0) {
+            uploadFilesRef.current?.(e.dataTransfer.files);
+          }
+        }}
+      >
+        {panelDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
+              <Upload className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground">Max 10MB per file</p>
+            </div>
+          </div>
+        )}
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
@@ -937,6 +971,7 @@ function TaskDetailPanelBody({
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
+                  compact
                 />
                 <div className="mt-2 flex justify-end">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
@@ -951,7 +986,8 @@ function TaskDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
@@ -1010,9 +1046,7 @@ function TaskDetailPanelBody({
             <button
               type="button"
               className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => {
-                document.getElementById('attachments-section')?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={() => openFilePickerRef.current?.()}
             >
               <Paperclip className="h-3 w-3" />
               Attach Files
@@ -1089,6 +1123,8 @@ function TaskDetailPanelBody({
               entityId={taskDetail.task.id}
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
+              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 

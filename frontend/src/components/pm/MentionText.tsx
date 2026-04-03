@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { getMemberMentionHandle } from '@/components/pm/mentionSuggestions'
@@ -30,27 +31,34 @@ function resolveMention(
 }
 
 function MentionChip({ mention }: { mention: MentionMatch }) {
-  const [showProfile, setShowProfile] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTeam = mention.type === 'team'
 
-  return (
+  const show = useCallback(() => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null }
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      setPos({ top: rect.top - 6, left: rect.left })
+    }
+    setVisible(true)
+  }, [])
+
+  const hide = useCallback(() => {
+    hideTimer.current = setTimeout(() => setVisible(false), 120)
+  }, [])
+
+  const profileCard = visible && pos && (mention.member || mention.team) ? createPortal(
     <span
-      className="relative inline-flex"
-      data-mention-type={mention.type}
-      onMouseEnter={() => setShowProfile(true)}
-      onMouseLeave={() => setShowProfile(false)}
+      className="fixed z-[9999] flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md animate-in fade-in-0 zoom-in-95 duration-150"
+      style={{ top: pos.top, left: pos.left, transform: 'translateY(-100%)' }}
+      onMouseEnter={show}
+      onMouseLeave={hide}
     >
-      <span
-        className={`cursor-pointer font-medium ${
-          isTeam
-            ? 'rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300'
-            : 'text-blue-600 dark:text-blue-400'
-        }`}
-      >
-        @{mention.member?.display_name ?? mention.team?.name ?? mention.handle}
-      </span>
-      {showProfile && mention.member && (
-        <span className="absolute bottom-full left-0 z-50 mb-1.5 flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md">
+      {mention.member && (
+        <>
           <UserAvatar
             name={mention.member.display_name}
             avatarUrl={mention.member.avatar_url}
@@ -64,10 +72,10 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
               {mention.member.email}
             </span>
           </span>
-        </span>
+        </>
       )}
-      {showProfile && mention.team && (
-        <span className="absolute bottom-full left-0 z-50 mb-1.5 flex items-center gap-2.5 whitespace-nowrap rounded-lg border border-border/60 bg-popover px-3 py-2 shadow-md">
+      {mention.team && (
+        <>
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
             {mention.team.name.slice(0, 1).toUpperCase()}
           </span>
@@ -79,8 +87,30 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
               @{mention.team.handle}
             </span>
           </span>
-        </span>
+        </>
       )}
+    </span>,
+    document.body,
+  ) : null
+
+  return (
+    <span
+      ref={ref}
+      className="inline-flex"
+      data-mention-type={mention.type}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      <span
+        className={`cursor-pointer font-medium ${
+          isTeam
+            ? 'rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300'
+            : 'text-blue-600 dark:text-blue-400'
+        }`}
+      >
+        @{mention.member?.display_name ?? mention.team?.name ?? mention.handle}
+      </span>
+      {profileCard}
     </span>
   )
 }
