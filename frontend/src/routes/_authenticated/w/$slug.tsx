@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react'
+import { memo, useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
@@ -31,9 +31,6 @@ function WorkspaceLayout() {
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
-
-  const location = useLocation()
-  const isSupportPage = location.pathname.includes('/support')
 
   useRealtimeSync(wsId)
 
@@ -98,15 +95,25 @@ function WorkspaceLayout() {
         >
           <Sidebar />
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
-            {!isSupportPage && <Header />}
+            <RouteAwareHeader />
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />
             </main>
-            <GlobalCreateModals workspaceId={currentWorkspace.id} />
-            <GlobalTaskPanel workspaceId={currentWorkspace.id} />
+            <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
+            <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
           </SidebarInset>
         </SidebarProvider>
       </div>
     </div>
   )
 }
+
+/** Isolates useLocation subscription so WorkspaceLayout doesn't re-render on every navigation */
+function RouteAwareHeader() {
+  const location = useLocation()
+  if (location.pathname.includes('/support')) return null
+  return <Header />
+}
+
+const MemoizedGlobalCreateModals = memo(GlobalCreateModals)
+const MemoizedGlobalTaskPanel = memo(GlobalTaskPanel)
