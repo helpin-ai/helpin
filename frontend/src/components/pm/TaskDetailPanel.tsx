@@ -951,7 +951,7 @@ function TaskDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
                     onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (

@@ -163,5 +163,5 @@ export function RichTextMentionContent({
     return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
   }
 
-  return <div className={`tiptap ${className ?? ''}`}>{content}</div>
+  return <div className={`tiptap tiptap-compact ${className ?? ''}`}>{content}</div>
 }

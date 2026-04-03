@@ -381,6 +381,18 @@
   text-decoration: line-through;
   opacity: 0.6;
 }
+/* Compact tiptap: tighter spacing for read-only task descriptions */
+.tiptap-compact h1 { margin: 0.75rem 0 0.25rem; }
+.tiptap-compact h2 { margin: 0.625rem 0 0.25rem; }
+.tiptap-compact h3 { margin: 0.5rem 0 0.125rem; }
+.tiptap-compact p { margin: 0 0 0.25rem; }
+.tiptap-compact ul,
+.tiptap-compact ol { margin: 0.25rem 0 0.5rem; }
+.tiptap-compact li { margin: 0 0 0.125rem; }
+.tiptap-compact blockquote { margin: 0 0 0.375rem; }
+.tiptap-compact hr { margin: 0.5rem 0; padding: 2px 0; }
+.tiptap-compact ul[data-type="taskList"] { margin: 0.25rem 0 0.5rem; }
+
 .mention-highlight {
   color: oklch(0.55 0.2 260);
   font-weight: 500;
