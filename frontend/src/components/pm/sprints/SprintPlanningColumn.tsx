@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { CalendarDays, ChevronDown, ChevronUp, Loader2, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -27,7 +27,7 @@ function formatSprintRange(startDate: string | null, endDate: string | null) {
   return `${format(parseISO(startDate), 'MMM d')} – ${format(parseISO(endDate), 'MMM d')}`;
 }
 
-export function SprintPlanningColumn({
+export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   card,
   workspaceId,
   ownerByMemberId,
@@ -36,10 +36,8 @@ export function SprintPlanningColumn({
   onOpenTask,
   onCreateTask,
 }: SprintPlanningColumnProps) {
-  const isCompleted = card.sprint.status === 'done';
   const { setNodeRef, isOver } = useDroppable({
     id: `sprint:${card.sprint.id}`,
-    disabled: isCompleted,
   });
   const statusConfig = SPRINT_STATUS_CONFIG[card.sprint.status];
   const total = card.stats.task_count;
@@ -113,6 +111,7 @@ export function SprintPlanningColumn({
                   key={task.id}
                   task={task}
                   owner={task.owner_member_id ? ownerByMemberId.get(task.owner_member_id) : undefined}
+                  canDrag={canEdit}
                   onOpen={() => onOpenTask(task.id)}
                 />
               ))}
@@ -168,4 +167,4 @@ export function SprintPlanningColumn({
         </CardContent>
       </Card>
   );
-}
+});

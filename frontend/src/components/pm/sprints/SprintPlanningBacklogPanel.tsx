@@ -1,5 +1,5 @@
 import { useDroppable } from '@dnd-kit/core';
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Funnel, Inbox, PlusCircle } from 'lucide-react';
 import { Collapsible } from 'radix-ui';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +39,7 @@ const STATE_OPTIONS: Array<{ value: StateType | '__all__'; label: string }> = [
   { value: 'started', label: 'Started' },
 ];
 
-export function SprintPlanningBacklogPanel({
+export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPanel({
   open,
   onToggle,
   tasks,
@@ -223,4 +223,4 @@ export function SprintPlanningBacklogPanel({
         </CardContent>
       </Card>
   );
-}
+});

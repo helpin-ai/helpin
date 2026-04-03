@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Plus, UserPlus } from 'lucide-react';
@@ -22,7 +23,7 @@ interface SprintPlanningTaskCardProps {
   onAddToSprint?: () => void;
 }
 
-export function SprintPlanningTaskCard({
+export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
   task,
   owner,
   compact = false,
@@ -143,4 +144,4 @@ export function SprintPlanningTaskCard({
       ) : null}
     </article>
   );
-}
+});
