@@ -47,6 +47,16 @@ function renderNode(
     return createElement(LoadingImage, props)
   }
 
+  // Render checkboxes as read-only React inputs
+  if (tag === 'input') {
+    const inputEl = element as HTMLInputElement
+    const inputProps: Record<string, unknown> = { key, type: inputEl.type, readOnly: true }
+    if (inputEl.type === 'checkbox') {
+      inputProps.defaultChecked = inputEl.checked
+    }
+    return createElement('input', inputProps)
+  }
+
   // Enforce links open in new tab with consistent styling
   if (tag === 'a') {
     props.target = '_blank'
@@ -80,5 +90,5 @@ export function RichTextMentionContent({
     return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
   }
 
-  return <div className={className}>{content}</div>
+  return <div className={`tiptap ${className ?? ''}`}>{content}</div>
 }
