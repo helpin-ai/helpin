@@ -70,7 +70,7 @@ export function PMDataTable<T>({
     onSortingChange: onSortingChange ?? setInternalSorting,
     onColumnSizingChange: onColumnSizingChange ?? setInternalColumnSizing,
     enableColumnResizing: true,
-    columnResizeMode: 'onChange',
+    columnResizeMode: 'onEnd',
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
