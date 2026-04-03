@@ -237,12 +237,13 @@ export function RoadmapPage() {
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-72 max-h-96">
               {/* Objective filter */}
               {objectives.length > 0 && (
                 <>
-                  <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase">Objective</div>
+                  <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase">Objective</div>
                   <DropdownMenuCheckboxItem
+                    className="py-1 pl-2 pr-6 text-sm rounded-md"
                     checked={!filterObjectiveId}
                     onCheckedChange={() => setFilterObjectiveId(undefined)}
                   >
@@ -251,12 +252,13 @@ export function RoadmapPage() {
                   {objectives.map((obj) => (
                     <DropdownMenuCheckboxItem
                       key={obj.id}
+                      className="py-1 pl-2 pr-6 text-sm rounded-md"
                       checked={filterObjectiveId === obj.id}
                       onCheckedChange={() =>
                         setFilterObjectiveId(filterObjectiveId === obj.id ? undefined : obj.id)
                       }
                     >
-                      {obj.name}
+                      <span className="truncate">{obj.name}</span>
                     </DropdownMenuCheckboxItem>
                   ))}
                 </>
@@ -265,8 +267,9 @@ export function RoadmapPage() {
               {/* Team filter */}
               {teams.length > 1 && (
                 <>
-                  <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase mt-1">Team</div>
+                  <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase mt-1">Team</div>
                   <DropdownMenuCheckboxItem
+                    className="py-1 pl-2 pr-6 text-sm rounded-md"
                     checked={!filterTeamId}
                     onCheckedChange={() => setFilterTeamId(undefined)}
                   >
@@ -275,6 +278,7 @@ export function RoadmapPage() {
                   {teams.map((team) => (
                     <DropdownMenuCheckboxItem
                       key={team.id}
+                      className="py-1 pl-2 pr-6 text-sm rounded-md"
                       checked={filterTeamId === team.id}
                       onCheckedChange={() =>
                         setFilterTeamId(filterTeamId === team.id ? undefined : team.id)
@@ -287,8 +291,9 @@ export function RoadmapPage() {
               )}
 
               {/* Health filter */}
-              <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase mt-1">Health</div>
+              <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase mt-1">Health</div>
               <DropdownMenuCheckboxItem
+                className="py-1 pl-2 pr-6 text-sm rounded-md"
                 checked={!filterHealth}
                 onCheckedChange={() => setFilterHealth(undefined)}
               >
@@ -297,6 +302,7 @@ export function RoadmapPage() {
               {Object.entries(HEALTH_CONFIG).map(([key, { label, dot }]) => (
                 <DropdownMenuCheckboxItem
                   key={key}
+                  className="py-1 pl-2 pr-6 text-sm rounded-md"
                   checked={filterHealth === key}
                   onCheckedChange={() =>
                     setFilterHealth(filterHealth === key ? undefined : key)

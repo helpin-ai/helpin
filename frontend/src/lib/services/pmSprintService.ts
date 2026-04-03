@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   CreateSprintRequest,
   SprintPlanningFilters,
+  SprintPlanningTaskPreview,
   SprintPlanningWorkspace,
   SprintWithStats,
   Task,
@@ -58,4 +59,5 @@ export const pmSprintService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
+  listPreviewTasks: (workspaceId: string, id: string) => api.get<SprintPlanningTaskPreview[]>(`/pm/sprints/${id}/preview-tasks${qs(workspaceId)}`),
 };

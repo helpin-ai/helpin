@@ -397,6 +397,33 @@ func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs
 	return statsBySprintID, nil
 }
 
+// ListAllPreviewTasks returns all SprintPlanningTaskPreview rows for a single sprint (no limit).
+func (r *PMSprintRepository) ListAllPreviewTasks(ctx context.Context, sprintID string) ([]model.SprintPlanningTaskPreview, error) {
+	var rows []model.SprintPlanningTaskPreview
+	if err := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Select(`
+			s.id,
+			s.display_id,
+			s.name,
+			s.workflow_state_id,
+			ws.name AS state_name,
+			ws.state_type AS state_type,
+			s.owner_member_id,
+			s.estimate,
+			s.priority,
+			s.sprint_id,
+			s.team_id
+		`).
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.sprint_id = ? AND s.archived = false", sprintID).
+		Order("s.position ASC, s.created_at DESC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list all preview tasks: %w", err)
+	}
+	return rows, nil
+}
+
 func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
 	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
 	if len(sprintIDs) == 0 {

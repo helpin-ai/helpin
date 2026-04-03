@@ -18,6 +18,7 @@ import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 
 interface SprintPlanningWorkspaceProps {
   workspace: SprintPlanningWorkspaceData | null;
+  workspaceId: string;
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
@@ -31,6 +32,7 @@ interface SprintPlanningWorkspaceProps {
 
 export function SprintPlanningWorkspace({
   workspace,
+  workspaceId,
   backlogOpen,
   onBacklogToggle,
   canEdit,
@@ -121,6 +123,7 @@ export function SprintPlanningWorkspace({
               <SprintPlanningColumn
                 key={card.sprint.id}
                 card={card}
+                workspaceId={workspaceId}
                 ownerByMemberId={ownerByMemberId}
                 canEdit={canEdit}
                 onOpenSprint={onOpenSprint}

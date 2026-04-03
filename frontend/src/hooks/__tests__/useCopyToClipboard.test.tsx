@@ -23,7 +23,6 @@ function CopyHarness({ text }: { text: string }) {
 describe('useCopyToClipboard', () => {
   const originalClipboard = navigator.clipboard
   const originalExecCommand = document.execCommand
-  const originalSecureContext = window.isSecureContext
 
   afterEach(() => {
     Object.defineProperty(navigator, 'clipboard', {
@@ -31,23 +30,45 @@ describe('useCopyToClipboard', () => {
       value: originalClipboard,
     })
     document.execCommand = originalExecCommand
-    Object.defineProperty(window, 'isSecureContext', {
-      configurable: true,
-      value: originalSecureContext,
-    })
   })
 
-  it('uses the textarea fallback immediately when the page is not in a secure context', async () => {
+  it('copies via navigator.clipboard.writeText when available', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
-    const execCommand = vi.fn(() => true)
 
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     })
-    Object.defineProperty(window, 'isSecureContext', {
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<CopyHarness text="ST-123" />)
+    })
+
+    const button = container.querySelector('button')
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(writeText).toHaveBeenCalledWith('ST-123')
+    expect(container.textContent).toContain('copied')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('uses the textarea fallback when clipboard API is unavailable', async () => {
+    const execCommand = vi.fn(() => true)
+
+    Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
-      value: false,
+      value: undefined,
     })
     document.execCommand = execCommand
 
@@ -65,7 +86,40 @@ describe('useCopyToClipboard', () => {
       button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(writeText).not.toHaveBeenCalled()
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(container.textContent).toContain('copied')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('falls back to execCommand when clipboard API rejects', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('clipboard denied'))
+    const execCommand = vi.fn(() => true)
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    document.execCommand = execCommand
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<CopyHarness text="ST-456" />)
+    })
+
+    const button = container.querySelector('button')
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(writeText).toHaveBeenCalledWith('ST-456')
     expect(execCommand).toHaveBeenCalledWith('copy')
     expect(container.textContent).toContain('copied')
 
@@ -82,10 +136,6 @@ describe('useCopyToClipboard', () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
-    })
-    Object.defineProperty(window, 'isSecureContext', {
-      configurable: true,
-      value: true,
     })
     document.execCommand = execCommand
 

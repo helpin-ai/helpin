@@ -1,17 +1,20 @@
+import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { CalendarDays, Plus } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Loader2, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import type { AssignableMember } from '@/lib/types';
-import type { SprintPlanningCard } from '@/lib/pmTypes';
+import type { SprintPlanningCard, SprintPlanningTaskPreview } from '@/lib/pmTypes';
+import { pmSprintService } from '@/lib/services/pmSprintService';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { cn } from '@/lib/utils';
 
 interface SprintPlanningColumnProps {
   card: SprintPlanningCard;
+  workspaceId: string;
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
   onOpenSprint: (sprintId: string) => void;
@@ -26,6 +29,7 @@ function formatSprintRange(startDate: string | null, endDate: string | null) {
 
 export function SprintPlanningColumn({
   card,
+  workspaceId,
   ownerByMemberId,
   canEdit,
   onOpenSprint,
@@ -41,7 +45,25 @@ export function SprintPlanningColumn({
   const total = card.stats.task_count;
   const done = card.stats.done_task_count;
   const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
-  const tasks = card.preview_tasks ?? [];
+  const previewTasks = card.preview_tasks ?? [];
+
+  const [expanded, setExpanded] = useState(false);
+  const [allTasks, setAllTasks] = useState<SprintPlanningTaskPreview[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+
+  const handleExpand = async () => {
+    if (allTasks) {
+      setExpanded(true);
+      return;
+    }
+    setLoadingAll(true);
+    const { data } = await pmSprintService.listPreviewTasks(workspaceId, card.sprint.id);
+    if (data) setAllTasks(data);
+    setExpanded(true);
+    setLoadingAll(false);
+  };
+
+  const tasks = expanded && allTasks ? allTasks : previewTasks;
 
   return (
       <Card
@@ -106,8 +128,30 @@ export function SprintPlanningColumn({
             </div>
           )}
 
-          {card.task_preview_overflow > 0 && (
-            <p className="text-center text-xs text-muted-foreground">+{card.task_preview_overflow} more tasks</p>
+          {card.task_preview_overflow > 0 && !expanded && (
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              onClick={handleExpand}
+              disabled={loadingAll}
+            >
+              {loadingAll ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+              {loadingAll ? 'Loading…' : `+${card.task_preview_overflow} more tasks`}
+            </button>
+          )}
+          {expanded && allTasks && (
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              onClick={() => setExpanded(false)}
+            >
+              <ChevronUp className="h-3 w-3" />
+              Show less
+            </button>
           )}
 
           {canEdit && (

@@ -323,6 +323,11 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 	return s.sprintRepo.ListTasks(ctx, sprintID)
 }
 
+// ListPreviewTasks returns all lightweight task previews for a sprint (with state info).
+func (s *PMSprintService) ListPreviewTasks(ctx context.Context, sprintID string) ([]model.SprintPlanningTaskPreview, error) {
+	return s.sprintRepo.ListAllPreviewTasks(ctx, sprintID)
+}
+
 // ComputeStats returns computed story/point stats for a sprint.
 func (s *PMSprintService) ComputeStats(ctx context.Context, sprintID string) (model.PMSprintStats, error) {
 	return s.sprintRepo.ComputeStats(ctx, sprintID)

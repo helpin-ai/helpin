@@ -1,15 +1,17 @@
 import path from "path"
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  return {
   plugins: [
     TanStackRouterVite({ autoCodeSplitting: true }),
     react(),
     tailwindcss(),
-    mode === 'development' && process.env.VITE_REACT_SCAN === 'true' && {
+    mode === 'development' && env.VITE_REACT_SCAN === 'true' && {
       name: 'react-scan',
       transformIndexHtml(html: string) {
         return html.replace(
@@ -30,4 +32,4 @@ export default defineConfig(({ mode }) => ({
       "@helpin/widget-core": path.resolve(__dirname, "../packages/widget-core/dist/index.js"),
     },
   },
-}))
+}})

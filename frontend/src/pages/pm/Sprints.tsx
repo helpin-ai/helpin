@@ -270,6 +270,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       ) : (
         <SprintPlanningWorkspace
           workspace={filteredWorkspace}
+          workspaceId={workspaceId}
           backlogOpen={backlogOpen}
           onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
           canEdit={canEdit}
