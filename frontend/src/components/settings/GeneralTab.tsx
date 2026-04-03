@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -41,7 +40,6 @@ export function GeneralTab({ workspaceId, editable }: {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [name, setName] = useState(workspace?.name ?? '');
-  const [description, setDescription] = useState(workspace?.description ?? '');
   const [websiteUrl, setWebsiteUrl] = useState(workspace?.website_url ?? '');
   const [workspaceKeyInput, setWorkspaceKeyInput] = useState(workspace?.workspace_key ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
@@ -58,7 +56,6 @@ export function GeneralTab({ workspaceId, editable }: {
 
   useEffect(() => {
     setName(workspace?.name ?? '');
-    setDescription(workspace?.description ?? '');
     setWebsiteUrl(workspace?.website_url ?? '');
     setWorkspaceKeyInput(workspace?.workspace_key ?? '');
     setLogoUrl(workspace?.logo_url ?? '');
@@ -159,7 +156,6 @@ export function GeneralTab({ workspaceId, editable }: {
     setSaving(true);
     const updates: Record<string, unknown> = {
       name: name.trim(),
-      description: description.trim() || undefined,
       website_url: websiteUrl.trim(),
       timezone,
     };
@@ -287,51 +283,41 @@ export function GeneralTab({ workspaceId, editable }: {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ws-name">Workspace Name</Label>
-            <Input
-              id="ws-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!editable}
-              placeholder="My Workspace"
-            />
-          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ws-name">Workspace Name</Label>
+              <Input
+                id="ws-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!editable}
+                placeholder="My Workspace"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ws-key">Task Key Prefix</Label>
-            <Input
-              id="ws-key"
-              value={workspaceKeyInput}
-              onChange={(e) => setWorkspaceKeyInput(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
-              disabled={!editable}
-              placeholder="ACM"
-              maxLength={5}
-            />
-            <p className="text-xs text-muted-foreground">
-              2-5 uppercase letters used in task identifiers (e.g. {workspace?.workspace_key || '...'}-123).
-              {workspace?.workspace_key && ' Changing this will update new task keys. Old references will continue to work.'}
-            </p>
-            {keyHistory.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <span className="text-[11px] text-muted-foreground">Previously:</span>
-                {keyHistory.map((h, i) => (
-                  <Badge key={i} variant="outline" className="text-[11px]">{h.old_key}</Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="ws-desc">Description</Label>
-            <Textarea
-              id="ws-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={!editable}
-              placeholder="A brief description of this workspace"
-              rows={3}
-            />
+            <div className="space-y-2">
+              <Label htmlFor="ws-key">Task Key Prefix</Label>
+              <Input
+                id="ws-key"
+                value={workspaceKeyInput}
+                onChange={(e) => setWorkspaceKeyInput(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
+                disabled={!editable}
+                placeholder="ACM"
+                maxLength={5}
+              />
+              <p className="text-xs text-muted-foreground">
+                Used in task IDs (e.g. {workspace?.workspace_key || '...'}-123).
+                {workspace?.workspace_key && ' Old references persist.'}
+              </p>
+              {keyHistory.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground">Previously:</span>
+                  {keyHistory.map((h, i) => (
+                    <Badge key={i} variant="outline" className="text-[11px]">{h.old_key}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -346,7 +332,7 @@ export function GeneralTab({ workspaceId, editable }: {
             />
             {!savedWebsiteUrl && (
               <p className="text-xs text-muted-foreground">
-                Optional public website for this workspace. We normalize bare domains to `https://...`.
+                Optional public website. Bare domains are normalized to `https://...`.
               </p>
             )}
             {savedWebsiteUrl && (
@@ -359,11 +345,11 @@ export function GeneralTab({ workspaceId, editable }: {
                     </div>
                     {websiteContentSource ? (
                       <p className="text-xs text-muted-foreground">
-                        This website is connected as a Website Content Source. You can manage sync and Support AI access from Knowledge.
+                        Connected as a Website Content Source. Manage sync and Support AI access from Knowledge.
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        This website is saved for workspace identity, but it is not yet connected as a Website Content Source for Support AI.
+                        Saved for identity, but not yet connected as a Content Source for Support AI.
                       </p>
                     )}
                   </div>
@@ -390,7 +376,7 @@ export function GeneralTab({ workspaceId, editable }: {
           <div className="space-y-2">
             <Label htmlFor="ws-tz">Timezone</Label>
             <p className="text-xs text-muted-foreground">
-              Used for sprint boundaries, due dates, and reporting. All members see the same deadlines.
+              Used for sprint boundaries, due dates, and reporting.
             </p>
             <Popover>
               <PopoverTrigger asChild>
@@ -437,10 +423,11 @@ export function GeneralTab({ workspaceId, editable }: {
                 </div>
               </PopoverContent>
             </Popover>
-            <p className="text-xs text-muted-foreground">
-              Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
-            </p>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
+          </p>
 
           {editable && (
             <div className="flex justify-end">
