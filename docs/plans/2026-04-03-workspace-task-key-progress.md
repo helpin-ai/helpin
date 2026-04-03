@@ -6,18 +6,18 @@
 
 | Workstream | Status | Notes |
 | --- | --- | --- |
-| Schema and migrations | Pending | Add `workspace_key` column + `workspace_key_history` table, alpha-only backfill (batched) |
-| Backend workspace key | Pending | Model, DTOs, creation/validation, key change flow |
-| Key alias infrastructure | Pending | Merged into Phase 1 — `workspace_key_history` model, alias resolution, cross-table uniqueness |
-| Backend task key computation | Pending | `FormatTaskKey()` helper, `TaskKey` field on `PMTask` with `gorm:"-"`, central population |
-| Workspace key caching | Pending | Inject into request context or batch-fetch to avoid N+1 on large task lists |
-| Frontend workspace key | Pending | TypeScript types, creation form, settings with editable key + confirmation dialog |
-| Frontend PM UI rollout | Pending | Replace `display_id` with `task_key` across all task display surfaces |
-| Branch template standardization | Pending | New tokens, converge all three default codepaths, template form update |
-| Search and URL resolution | Pending | Task key format parsing, `?task=HLP-123` URL support, alias-aware resolution, false positive mitigation |
-| Cross-product integration | Pending | Emails, notifications, activity feeds, CRM/support associations, WebSocket payloads |
-| Backward compatibility | Pending | Numeric URL compat, alias URL compat, API filter compat, CRM verification |
-| Optional full-page task route | Pending | `/pm/tasks/HLP-123` for external sharing (Phase 7+ additive) |
+| Schema and migrations | Done | Migration `202604030001_add_workspace_key.sql`: workspace_key column + backfill + workspace_key_history table |
+| Backend workspace key | Done | WorkspaceKey on Workspace struct, CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceKeyHistory model |
+| Key alias infrastructure | Done | Merged into Phase 1 — FindWorkspaceByKeyOrAlias, InsertKeyHistory, IsWorkspaceKeyAvailable, UpdateWorkspaceKey |
+| Backend task key computation | Done | FormatTaskKey() helper, TaskKey gorm:"-" on PMTask/TaskDependencyTask/SearchResult, central population in PMTaskService |
+| Workspace key caching | Done | getWorkspaceKey() on PMTaskService fetches once per workspace per request |
+| Frontend workspace key | Done | Workspace interface, creation form with auto-suggest, GeneralTab editable field |
+| Frontend PM UI rollout | Done | TaskDetailPanel, TaskSidebarIdRow, TaskListView, TaskCard, MyWork, TaskRelationshipsSection, TaskDeliveryPanel |
+| Branch template standardization | Done | {task_key}/{workspace_key}/{task_type} tokens in temporal activities, default changed to {task_key}-{slug} across model/repo/frontend |
+| Search and URL resolution | Done | Backend regex parser for HLP-123, frontend parseTaskKey in GlobalTaskPanel, SearchCommandPalette badges, pmTaskLinks with taskKey |
+| Cross-product integration | Done | Notification snapshots emit task_key format, emails render it automatically, WebSocket re-fetch includes task_key |
+| Backward compatibility | Done | Numeric ?task=123 still works, display_id still accepted in API filters, CRM prefixes (C-/CO-/D-) unaffected |
+| Optional full-page task route | Pending | `/pm/tasks/HLP-123` for external sharing (Phase 7+ additive, not blocking) |
 
 ## Checklist
 

@@ -273,6 +273,34 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 - Never edit an already-applied migration file — create a new one instead (or run `migrate repair` if you must)
 - Legacy SQL migrations in `server/migrations/` are reference docs only — new migrations go in `server/internal/dbmigrate/sql/`
 
+### Workspace Key & Task Key
+
+Every workspace has a `workspace_key` (2-5 uppercase letters, e.g. `HLP`) stored on the `workspaces` table. Every PM task has a computed `task_key` (e.g. `HLP-123`) = `workspace_key` + `-` + `display_id`.
+
+**Key properties:**
+- `workspace_key`: first-class column on `workspaces`, validated `^[A-Z]{2,5}$`, unique across all workspaces and retired keys
+- `task_key`: computed field on `PMTask` via `gorm:"-"` — not stored, populated by the service layer using `model.FormatTaskKey()`
+- Also on `TaskDependencyTask` and `SearchResult`
+
+**Workspace key changes:**
+- Changeable via `UpdateWorkspaceRequest.WorkspaceKey` (admin/owner only)
+- Old keys are preserved in `workspace_key_history` table for alias resolution
+- `FindWorkspaceByKeyOrAlias()` resolves current keys and aliases
+- Old keys can never be reused by a different workspace (unique index on `old_key`)
+
+**Branch template tokens:**
+- `{task_key}` → `HLP-123`, `{workspace_key}` → `HLP`, `{task_type}` → `feature`/`bug`/`chore`
+- `{display_id}` and `{slug}` still work (backward compat)
+- Default template: `{task_key}-{slug}`
+
+**Frontend:**
+- `task_key: string` on `Task`, `TaskDependencyTask` interfaces
+- `formatTaskKey()` / `parseTaskKey()` in `src/lib/taskKeyUtils.ts`
+- `?task=` URL param accepts both `HLP-123` and `123` formats
+- Search parses `HLP-123` format for exact lookup
+
+**Plan:** `docs/plans/2026-04-03-workspace-task-key-plan.md`
+
 ### WebSocket
 - Endpoint: `GET /api/ws?token=JWT&workspace_id=ID`
 - Bypasses Chi middleware stack (Recoverer strips http.Hijacker)
