@@ -7,7 +7,7 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
-import { useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
 import { agentService } from '@/lib/services/agentService';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -52,11 +52,13 @@ export function Sidebar() {
     selectedMailboxId,
     setSelectedMailboxId,
     setTeamInboxDialogOpen,
+    setEditMailboxId,
     activeContext,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId);
+  const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
     [inboxScopes],
@@ -311,6 +313,8 @@ export function Sidebar() {
                 onNavFilterChange={setNavFilter}
                 onMailboxSelect={setSelectedMailboxId}
                 onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}
+                onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
                 onNavigate={(to) => navigate({ to })}
               />
             )}
