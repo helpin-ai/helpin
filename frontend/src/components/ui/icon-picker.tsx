@@ -1,11 +1,10 @@
-import { useState, useMemo, useCallback } from 'react'
-import { icons } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
 import type { IconComponent } from '@/lib/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-// Build a searchable list from all Lucide exports.
 interface IconEntry {
   /** kebab-case key stored in the DB, e.g. "rocket" */
   value: string
@@ -20,33 +19,41 @@ function pascalToKebab(s: string): string {
 }
 
 function pascalToLabel(s: string): string {
-  return s.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  return s.replace(/(\d+)/g, ' $1 ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/Icon$/, '').trim()
 }
 
-const ALL_ICONS: IconEntry[] = (() => {
+type HugeIconData = Parameters<typeof HugeiconsIcon>[0]['icon'];
+
+let _cachedIcons: IconEntry[] | null = null
+let _cachedMap: Record<string, IconComponent> | null = null
+
+async function loadAllIcons(): Promise<IconEntry[]> {
+  if (_cachedIcons) return _cachedIcons
+  const allIcons = await import('@hugeicons/core-free-icons')
   const entries: IconEntry[] = []
-  for (const [name, component] of Object.entries(icons)) {
-    if (typeof component !== 'object' && typeof component !== 'function') continue
-    if (component === null) continue
-    const kebab = pascalToKebab(name)
-    entries.push({
-      value: kebab,
-      label: pascalToLabel(name),
-      Component: component as IconComponent,
-    })
+  for (const [name, iconData] of Object.entries(allIcons)) {
+    if (!name.endsWith('Icon') || !Array.isArray(iconData)) continue
+    const kebab = pascalToKebab(name.replace(/Icon$/, ''))
+    const label = pascalToLabel(name)
+    const data = iconData as HugeIconData
+    const Component: IconComponent = ({ className, style }) => (
+      <HugeiconsIcon icon={data} className={className} style={style} />
+    )
+    entries.push({ value: kebab, label, Component })
   }
   entries.sort((a, b) => a.label.localeCompare(b.label))
+  _cachedIcons = entries
+  _cachedMap = Object.fromEntries(entries.map((e) => [e.value, e.Component]))
   return entries
-})()
+}
 
-/** Kebab-case -> Lucide component map for rendering icons by stored name */
-export const ICON_MAP: Record<string, IconComponent> = (() => {
-  const map: Record<string, IconComponent> = {}
-  for (const entry of ALL_ICONS) {
-    map[entry.value] = entry.Component
-  }
-  return map
-})()
+/** Kebab-case -> icon component map. Populates async after chunk loads. */
+export const ICON_MAP: Record<string, IconComponent> = {}
+
+// Eagerly kick off the load so ICON_MAP is populated ASAP
+loadAllIcons().then(() => {
+  if (_cachedMap) Object.assign(ICON_MAP, _cachedMap)
+})
 
 interface IconPickerProps {
   value: string
@@ -57,18 +64,26 @@ interface IconPickerProps {
 export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPickerProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [icons, setIcons] = useState<IconEntry[]>(_cachedIcons ?? [])
+  const loaded = useRef(false)
+
+  useEffect(() => {
+    if (loaded.current) return
+    loaded.current = true
+    loadAllIcons().then(setIcons)
+  }, [])
 
   const filtered = useMemo(() => {
-    if (!search) return ALL_ICONS.slice(0, 60)
+    if (!search) return icons.slice(0, 60)
     const q = search.toLowerCase()
-    return ALL_ICONS.filter(
+    return icons.filter(
       (e) => e.label.toLowerCase().includes(q) || e.value.includes(q),
     ).slice(0, 60)
-  }, [search])
+  }, [search, icons])
 
   const selected = useMemo(
-    () => ALL_ICONS.find((e) => e.value === value),
-    [value],
+    () => icons.find((e) => e.value === value),
+    [value, icons],
   )
 
   const handleSelect = useCallback(
