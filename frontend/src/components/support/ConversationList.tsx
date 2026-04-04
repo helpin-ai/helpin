@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useState, memo, useEffect } from 'react';
-import { MessageSquare, Search, X, ChevronDown } from 'lucide-react';
+import { Message01Icon, Search01Icon, Cancel01Icon, ArrowDown01Icon } from '@/lib/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -86,7 +86,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       >
         {searchExpanded ? (
           <div className="flex flex-1 items-center gap-1">
-            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Search01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <Input
               autoFocus
               className="h-7 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0 dark:text-sidebar-foreground dark:placeholder:text-sidebar-foreground/60"
@@ -106,7 +106,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
               className="h-6 w-6 shrink-0"
               onClick={() => { setSearchQuery(''); setSearchExpanded(false); }}
             >
-              <X className="h-3.5 w-3.5" />
+              <Cancel01Icon className="h-3.5 w-3.5" />
             </Button>
           </div>
         ) : (
@@ -120,7 +120,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
                     return Icon ? <Icon className={`h-3.5 w-3.5 ${active.color}`} /> : null;
                   })()}
                   {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
-                  <ChevronDown className="h-3 w-3 opacity-50" />
+                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-44">
@@ -144,7 +144,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
               className="h-7 w-7 shrink-0"
               onClick={() => setSearchExpanded(true)}
             >
-              <Search className="h-3.5 w-3.5" />
+              <Search01Icon className="h-3.5 w-3.5" />
             </Button>
           </>
         )}
@@ -166,7 +166,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
         )}
         {!isLoading && filteredConversations.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <MessageSquare className="h-10 w-10 text-muted-foreground/30" />
+            <Message01Icon className="h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">No conversations found.</p>
           </div>
         )}

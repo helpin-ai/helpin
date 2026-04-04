@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { getInitials } from '@/lib/utils';
-import { Camera, Loader2, Mail, Trash2 } from 'lucide-react';
+import { Camera01Icon, Loading01Icon, Mail01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
@@ -178,9 +178,9 @@ export default function Profile() {
               </Avatar>
               <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                 {uploadingAvatar ? (
-                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                  <Loading01Icon className="h-5 w-5 text-white animate-spin" />
                 ) : (
-                  <Camera className="h-5 w-5 text-white" />
+                  <Camera01Icon className="h-5 w-5 text-white" />
                 )}
                 <input
                   ref={avatarInputRef}
@@ -195,7 +195,7 @@ export default function Profile() {
             <div>
               <CardTitle>{user?.full_name || 'User'}</CardTitle>
               <CardDescription className="flex items-center gap-1">
-                <Mail className="h-3 w-3" />
+                <Mail01Icon className="h-3 w-3" />
                 {user?.email}
               </CardDescription>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -209,7 +209,7 @@ export default function Profile() {
                   onClick={handleRemoveAvatar}
                   disabled={uploadingAvatar}
                 >
-                  <Trash2 className="h-3 w-3 mr-1" />
+                  <Delete01Icon className="h-3 w-3 mr-1" />
                   Remove photo
                 </Button>
               )}

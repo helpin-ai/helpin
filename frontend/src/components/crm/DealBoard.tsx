@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Maximize2, Minimize2, Plus, SquareKanban } from 'lucide-react';
+import { Maximize01Icon, Minimize01Icon, PlusSignIcon, KanbanIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { StageTypeIcon } from '@/lib/crmConstants';
@@ -67,7 +67,7 @@ function Column({
           className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
           onClick={() => onToggleCollapse(stage.id)}
         >
-          <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Maximize01Icon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <StageTypeIcon stageType={stage.stage_type} className="mb-2 h-4 w-4 shrink-0" />
           <span className="text-xs font-medium text-muted-foreground">{deals.length}</span>
           <div className="mt-3 flex flex-1 items-start">
@@ -106,12 +106,12 @@ function Column({
               className="h-7 w-7"
               onClick={() => onToggleCollapse(stage.id)}
             >
-              <Minimize2 className="h-3.5 w-3.5" />
+              <Minimize01Icon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           {onCreateClick && (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCreateClick}>
-              <Plus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -140,7 +140,7 @@ function Column({
               className="w-full justify-start text-xs text-muted-foreground"
               onClick={onCreateClick}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <PlusSignIcon className="h-3.5 w-3.5" />
               Add deal
             </Button>
           )}
@@ -263,7 +263,7 @@ export function DealBoard({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <SquareKanban className="h-8 w-8 text-muted-foreground/50" />
+          <KanbanIcon className="h-8 w-8 text-muted-foreground/50" />
         </div>
         <h3 className="mt-4 text-base font-medium">No pipeline configured</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">

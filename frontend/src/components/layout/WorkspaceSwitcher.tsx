@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Check, ChevronsUpDown, Plus } from 'lucide-react';
+import { Tick01Icon, ArrowUpDownIcon, PlusSignIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import { useWorkspaces } from '@/hooks/queries';
@@ -62,7 +62,7 @@ export function WorkspaceSwitcher() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
-              <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+              <ArrowUpDownIcon className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
             </SidebarMenuButton>
           </PopoverTrigger>
           <PopoverContent
@@ -106,7 +106,7 @@ export function WorkspaceSwitcher() {
                         />
                         <span className="truncate">{workspace.name}</span>
                       </div>
-                      {isActive && <Check className="h-4 w-4 text-green-500" />}
+                      {isActive && <Tick01Icon className="h-4 w-4 text-green-500" />}
                     </button>
                   );
                 })
@@ -131,7 +131,7 @@ export function WorkspaceSwitcher() {
                 }}
                 className="flex items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
               >
-                <Plus className="h-3 w-3" />
+                <PlusSignIcon className="h-3 w-3" />
                 Create
               </button>
             </div>

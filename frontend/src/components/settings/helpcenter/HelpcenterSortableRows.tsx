@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { DragDropVerticalIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,7 +27,7 @@ export function SortableHeaderLinkRow({
   return (
     <div ref={setNodeRef} style={style} className="group flex items-center gap-2">
       <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing">
-        <GripVertical className="h-4 w-4" />
+        <DragDropVerticalIcon className="h-4 w-4" />
       </button>
       <Input
         value={link.label}
@@ -51,7 +51,7 @@ export function SortableHeaderLinkRow({
         </SelectContent>
       </Select>
       <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" onClick={onRemove}>
-        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+        <Delete01Icon className="h-3.5 w-3.5 text-destructive" />
       </Button>
     </div>
   );
@@ -78,7 +78,7 @@ export function SortableFooterLinkRow({
   return (
     <div ref={setNodeRef} style={style} className="group flex items-center gap-2">
       <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing">
-        <GripVertical className="h-4 w-4" />
+        <DragDropVerticalIcon className="h-4 w-4" />
       </button>
       <Input
         value={link.label}
@@ -93,7 +93,7 @@ export function SortableFooterLinkRow({
         className="h-8 flex-1 text-sm"
       />
       <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" onClick={onRemove}>
-        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+        <Delete01Icon className="h-3.5 w-3.5 text-destructive" />
       </Button>
     </div>
   );

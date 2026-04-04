@@ -1,4 +1,4 @@
-import { Settings2 } from 'lucide-react';
+import { Settings02Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -33,7 +33,7 @@ export function DisplayPropertiesPopover({
             size={iconOnly ? 'icon' : 'sm'}
             className={iconOnly ? 'h-7 w-7' : 'h-8 gap-1.5 text-xs'}
           >
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings02Icon className="h-3.5 w-3.5" />
             {iconOnly ? null : 'Display'}
           </Button>
         </PopoverTrigger>

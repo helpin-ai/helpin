@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Info } from 'lucide-react';
+import { InformationCircleIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -170,7 +170,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-            <Info className="h-4 w-4 shrink-0" />
+            <InformationCircleIcon className="h-4 w-4 shrink-0" />
             Changes to Epic Automations affect the entire workspace.
           </div>
 

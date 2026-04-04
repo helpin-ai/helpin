@@ -2,17 +2,17 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
-  ArrowUpDown,
-  BookOpen,
-  Check,
-  ChevronRight,
-  CircleHelp,
-  FileText,
-  Folder,
-  Globe,
-  Loader2,
-  Plus,
-} from 'lucide-react'
+  ArrowUpDownIcon,
+  BookOpen01Icon,
+  Tick01Icon,
+  ArrowRight01Icon,
+  HelpCircleIcon,
+  File01Icon,
+  Folder01Icon,
+  GlobeIcon,
+  Loading01Icon,
+  PlusSignIcon,
+} from '@/lib/icons'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
@@ -91,7 +91,7 @@ function DocRow({
       }
       className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
     >
-      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
       <span className={`shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
@@ -110,7 +110,7 @@ function CollectionIcon({ name }: { name?: string }) {
     const Icon = ICON_MAP[name]
     if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
   }
-  return <Folder className="h-3.5 w-3.5 shrink-0" />
+  return <Folder01Icon className="h-3.5 w-3.5 shrink-0" />
 }
 
 function CollectionSection({
@@ -135,7 +135,7 @@ function CollectionSection({
           type="button"
           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-muted/40"
         >
-          <ChevronRight
+          <ArrowRight01Icon
             className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
           <CollectionIcon name={icon} />
@@ -200,13 +200,13 @@ function SpaceSection({
             type="button"
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
           >
-            <ChevronRight
+            <ArrowRight01Icon
               className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
             {space.icon ? (
               <span className="text-base">{space.icon}</span>
             ) : (
-              <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
             <div className="min-w-0 flex-1">
               <span className="truncate text-sm font-semibold">{space.name}</span>
@@ -238,7 +238,7 @@ function SpaceSection({
               })
             }
           >
-            <BookOpen className="h-3.5 w-3.5" />
+            <BookOpen01Icon className="h-3.5 w-3.5" />
           </Button>
         </QuickTooltip>
       </div>
@@ -389,7 +389,7 @@ export function DocsHome() {
             className="gap-1.5"
             onClick={() => setArrangeMode(!arrangeMode)}
           >
-            <ArrowUpDown className="h-3.5 w-3.5" />
+            <ArrowUpDownIcon className="h-3.5 w-3.5" />
             {arrangeMode ? 'Done arranging' : 'Arrange'}
           </Button>
         )}
@@ -411,7 +411,7 @@ export function DocsHome() {
         <div className="py-8 px-4">
           <div className="text-center mb-8">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 mb-4 mx-auto">
-              <BookOpen className="h-7 w-7 text-blue-500" />
+              <BookOpen01Icon className="h-7 w-7 text-blue-500" />
             </div>
             <h3 className="text-lg font-semibold mb-1.5">Get started with Documentation</h3>
             <p className="text-sm text-muted-foreground max-w-lg mx-auto">
@@ -434,12 +434,12 @@ export function DocsHome() {
                 >
                   {creating ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loading01Icon className="h-4 w-4 animate-spin" />
                       Creating...
                     </>
                   ) : (
                     <>
-                      <Plus className="h-4 w-4" />
+                      <PlusSignIcon className="h-4 w-4" />
                       Create {selected.size} Space{selected.size !== 1 ? 's' : ''}
                     </>
                   )}
@@ -468,7 +468,7 @@ export function DocsHome() {
                           <span className="text-sm font-semibold truncate">{t.name}</span>
                           {t.type === 'external_capable' && (
                             <QuickTooltip label="External">
-                              <Globe className="h-3 w-3 shrink-0 text-blue-500" />
+                              <GlobeIcon className="h-3 w-3 shrink-0 text-blue-500" />
                             </QuickTooltip>
                           )}
                         </div>
@@ -481,7 +481,7 @@ export function DocsHome() {
                             : 'border-border bg-background'
                         }`}
                       >
-                        {isSelected && <Check className="h-3 w-3" />}
+                        {isSelected && <Tick01Icon className="h-3 w-3" />}
                       </div>
                     </button>
                   )
@@ -536,7 +536,7 @@ export function DocsHome() {
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   External Spaces
                   <QuickTooltip label="These spaces are published to your public help center">
-                    <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    <HelpCircleIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
                   </QuickTooltip>
                 </h3>
                 <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">

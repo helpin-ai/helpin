@@ -307,9 +307,11 @@ export function Sidebar() {
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
                 canManageSettings={canManageSettings}
+                wsSlug={wsSlug}
                 onNavFilterChange={setNavFilter}
                 onMailboxSelect={setSelectedMailboxId}
                 onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                onNavigate={(to) => navigate({ to })}
               />
             )}
 

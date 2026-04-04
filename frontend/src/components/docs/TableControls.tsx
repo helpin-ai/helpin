@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  ArrowDown,
-  Copy,
-  Eraser,
-  Trash2,
-  XCircle,
-  Plus,
-  MoreHorizontal,
-  MoreVertical,
-} from 'lucide-react';
+  ArrowLeft02Icon,
+  ArrowRight02Icon,
+  ArrowUp02Icon,
+  ArrowDown02Icon,
+  Copy01Icon,
+  Delete01Icon,
+  CancelCircleIcon,
+  PlusSignIcon,
+  MoreHorizontalIcon,
+  MoreVerticalIcon,
+  EraserIcon,
+} from '@/lib/icons';
 
 interface TableControlsProps {
   editor: Editor;
@@ -505,7 +505,7 @@ export function TableControls({ editor }: TableControlsProps) {
               });
             }}
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <MoreHorizontalIcon className="h-4 w-4" />
           </button>
         </>
       )}
@@ -525,7 +525,7 @@ export function TableControls({ editor }: TableControlsProps) {
             editor.chain().focus().addColumnAfter().run();
           }}
         >
-          <Plus className="h-3 w-3" />
+          <PlusSignIcon className="h-3 w-3" />
         </button>
 
         {/* Add row bar at the bottom — positioned by RAF loop */}
@@ -540,7 +540,7 @@ export function TableControls({ editor }: TableControlsProps) {
             editor.chain().focus().addRowAfter().run();
           }}
         >
-          <Plus className="h-3 w-3" />
+          <PlusSignIcon className="h-3 w-3" />
         </button>
         </>
       )}
@@ -557,7 +557,7 @@ export function TableControls({ editor }: TableControlsProps) {
           onClick={openColumnMenu}
           title="Column options"
         >
-          <MoreHorizontal className="h-3.5 w-3.5" />
+          <MoreHorizontalIcon className="h-3.5 w-3.5" />
         </button>
       )}
 
@@ -573,7 +573,7 @@ export function TableControls({ editor }: TableControlsProps) {
           onClick={openRowMenu}
           title="Row options"
         >
-          <MoreVertical className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-3.5 w-3.5" />
         </button>
       )}
 
@@ -589,17 +589,17 @@ export function TableControls({ editor }: TableControlsProps) {
         >
           {menu.type === 'table' ? (
             <>
-              <MenuItem icon={Eraser} label="Clear content" onClick={() => runAndClose(() => clearTableContent())} />
-              <MenuItem icon={Trash2} label="Delete table" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteTable().run())} />
+              <MenuItem icon={EraserIcon} label="Clear content" onClick={() => runAndClose(() => clearTableContent())} />
+              <MenuItem icon={Delete01Icon} label="Delete table" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteTable().run())} />
             </>
           ) : menu.type === 'column' ? (
             <>
-              <MenuItem icon={ArrowLeft} label="Add column left" onClick={() => runAndClose(() => editor.chain().focus().addColumnBefore().run())} />
-              <MenuItem icon={ArrowRight} label="Add column right" onClick={() => runAndClose(() => editor.chain().focus().addColumnAfter().run())} />
-              <MenuItem icon={Copy} label="Duplicate" onClick={() => runAndClose(() => duplicateColumn())} />
+              <MenuItem icon={ArrowLeft02Icon} label="Add column left" onClick={() => runAndClose(() => editor.chain().focus().addColumnBefore().run())} />
+              <MenuItem icon={ArrowRight02Icon} label="Add column right" onClick={() => runAndClose(() => editor.chain().focus().addColumnAfter().run())} />
+              <MenuItem icon={Copy01Icon} label="Duplicate" onClick={() => runAndClose(() => duplicateColumn())} />
               <div className="my-1 h-px bg-border" />
-              <MenuItem icon={Eraser} label="Clear content" onClick={() => runAndClose(() => clearColumnContent())} />
-              <MenuItem icon={Trash2} label="Delete" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteColumn().run())} />
+              <MenuItem icon={EraserIcon} label="Clear content" onClick={() => runAndClose(() => clearColumnContent())} />
+              <MenuItem icon={Delete01Icon} label="Delete" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteColumn().run())} />
             </>
           ) : (
             <>
@@ -613,18 +613,18 @@ export function TableControls({ editor }: TableControlsProps) {
                 }}
               />
               <div className="my-1 h-px bg-border" />
-              <MenuItem icon={ArrowUp} label="Add row above" onClick={() => runAndClose(() => editor.chain().focus().addRowBefore().run())} />
-              <MenuItem icon={ArrowDown} label="Add row below" onClick={() => runAndClose(() => editor.chain().focus().addRowAfter().run())} />
-              <MenuItem icon={Copy} label="Duplicate" onClick={() => runAndClose(() => duplicateRow())} />
+              <MenuItem icon={ArrowUp02Icon} label="Add row above" onClick={() => runAndClose(() => editor.chain().focus().addRowBefore().run())} />
+              <MenuItem icon={ArrowDown02Icon} label="Add row below" onClick={() => runAndClose(() => editor.chain().focus().addRowAfter().run())} />
+              <MenuItem icon={Copy01Icon} label="Duplicate" onClick={() => runAndClose(() => duplicateRow())} />
               <div className="my-1 h-px bg-border" />
-              <MenuItem icon={Eraser} label="Clear content" onClick={() => runAndClose(() => clearRowContent())} />
-              <MenuItem icon={Trash2} label="Delete" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteRow().run())} />
+              <MenuItem icon={EraserIcon} label="Clear content" onClick={() => runAndClose(() => clearRowContent())} />
+              <MenuItem icon={Delete01Icon} label="Delete" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteRow().run())} />
             </>
           )}
           {menu.type !== 'table' && (
             <>
               <div className="my-1 h-px bg-border" />
-              <MenuItem icon={XCircle} label="Delete table" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteTable().run())} />
+              <MenuItem icon={CancelCircleIcon} label="Delete table" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteTable().run())} />
             </>
           )}
         </div>
@@ -634,7 +634,7 @@ export function TableControls({ editor }: TableControlsProps) {
 }
 
 function MenuItem({ icon: Icon, label, onClick, destructive }: {
-  icon: typeof Trash2;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   destructive?: boolean;

@@ -3,19 +3,19 @@ import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import {
-  Bot,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  HelpCircle,
-  LayoutGrid,
-  LayoutList,
-  Pencil,
-  Plus,
-  Users,
-  X,
-  Zap,
-} from 'lucide-react';
+  BotIcon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Clock01Icon,
+  HelpCircleIcon,
+  LayoutGridIcon,
+  LayoutTable01Icon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+  ZapIcon,
+} from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -168,17 +168,17 @@ const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; descript
 
 const EMPTY_STATE_CARDS = [
   {
-    icon: Zap,
+    icon: ZapIcon,
     title: 'Automate work',
     desc: 'Handle planning, coding, doc updates, support replies, and deal management so your team can focus on what matters.',
   },
   {
-    icon: Bot,
+    icon: BotIcon,
     title: 'Cross-module',
     desc: 'Agents can span projects, CRM, support, and docs — just pick the capabilities they need.',
   },
   {
-    icon: Users,
+    icon: UserGroupIcon,
     title: 'Team-aware',
     desc: 'Assign agents to teams so they only work on relevant tasks, or let them operate workspace-wide.',
   },
@@ -518,7 +518,7 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
       {tooltip && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+            <HelpCircleIcon className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
           </TooltipTrigger>
           <TooltipContent side="right" className="max-w-56 text-xs">
             {tooltip}
@@ -623,7 +623,7 @@ function AgentCard({
                     className="hidden group-hover:flex p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                     onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <PencilEdit01Icon className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
@@ -639,7 +639,7 @@ function AgentCard({
           )}
           {teamName && (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Users className="h-3 w-3" />
+              <UserGroupIcon className="h-3 w-3" />
               {teamName}
             </span>
           )}
@@ -653,18 +653,18 @@ function AgentCard({
         )}
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            <Bot className="h-3 w-3" />
+            <BotIcon className="h-3 w-3" />
             {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
           </span>
           {agent.schedule && (
             <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+              <Clock01Icon className="h-3 w-3" />
               Scheduled
             </span>
           )}
           {stats && (
             <span className="flex items-center gap-1">
-              <Zap className="h-3 w-3" />
+              <ZapIcon className="h-3 w-3" />
               {stats.total > 0 ? `${stats.total} ${stats.total === 1 ? 'run' : 'runs'}` : 'No runs'}
             </span>
           )}
@@ -779,7 +779,7 @@ function AgentRow({
                 className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all text-muted-foreground hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
               >
-                <Pencil className="h-3.5 w-3.5" />
+                <PencilEdit01Icon className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
@@ -1163,19 +1163,19 @@ export function AgentsPage() {
                 className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setViewMode('list')}
               >
-                <LayoutList className="h-4 w-4" />
+                <LayoutTable01Icon className="h-4 w-4" />
               </button>
               <button
                 type="button"
                 className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setViewMode('cards')}
               >
-                <LayoutGrid className="h-4 w-4" />
+                <LayoutGridIcon className="h-4 w-4" />
               </button>
             </div>
             {canEdit && (
               <Button size="sm" onClick={openCreateDialog}>
-                <Plus className="mr-1.5 h-4 w-4" />
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
                 New Custom Agent
               </Button>
             )}
@@ -1190,7 +1190,7 @@ export function AgentsPage() {
       {!loading && visibleAgents.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <Bot className="h-7 w-7 text-violet-500" />
+            <BotIcon className="h-7 w-7 text-violet-500" />
           </div>
           <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
@@ -1198,7 +1198,7 @@ export function AgentsPage() {
           </p>
           {canEdit && (
             <Button className="gap-2 mb-8" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
               New Custom Agent
             </Button>
           )}
@@ -1619,7 +1619,7 @@ export function AgentsPage() {
                               className="h-8 gap-1.5 px-2 text-[11px]"
                               disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities || systemVersionReadOnly}
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              <PlusSignIcon className="h-3.5 w-3.5" />
                               Add tool
                             </Button>
                           </PopoverTrigger>
@@ -1666,7 +1666,7 @@ export function AgentsPage() {
                                 onClick={() => removeTool(tool)}
                                 aria-label={`Remove ${tool}`}
                               >
-                                <X className="h-3 w-3" />
+                                <Cancel01Icon className="h-3 w-3" />
                               </button>
                             )}
                           </Badge>
@@ -2025,7 +2025,7 @@ export function AgentsPage() {
                         className="h-8 gap-1.5 px-2 text-[11px]"
                         disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities}
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <PlusSignIcon className="h-3.5 w-3.5" />
                         Add tool
                       </Button>
                     </PopoverTrigger>
@@ -2077,7 +2077,7 @@ export function AgentsPage() {
                         disabled={codexUsesPresetCapabilities}
                         aria-label={`Remove ${tool}`}
                       >
-                        <X className="h-3 w-3" />
+                        <Cancel01Icon className="h-3 w-3" />
                       </button>
                     </Badge>
                   )) : (
@@ -2091,12 +2091,12 @@ export function AgentsPage() {
               <Collapsible.Trigger asChild>
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
-                    {automationOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
                     Scheduling & Approval
                   </span>
                   {form.schedule.trim() && !automationOpen && (
                     <Badge variant="outline" className="text-[11px] gap-1">
-                      <Clock className="h-3 w-3" />
+                      <Clock01Icon className="h-3 w-3" />
                       Scheduled
                     </Badge>
                   )}
@@ -2169,7 +2169,7 @@ export function AgentsPage() {
               <Collapsible.Trigger asChild>
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
-                    {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {advancedOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
                     Advanced
                   </span>
                   {advancedConfigured && !advancedOpen && (

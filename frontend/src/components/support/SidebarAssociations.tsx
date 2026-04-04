@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
-  FileText,
-  GitBranch,
-  Loader2,
-  Plus,
-  Search,
-} from 'lucide-react';
+  File01Icon,
+  GitBranchIcon,
+  Loading01Icon,
+  PlusSignIcon,
+  Search01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -134,7 +134,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   if (associationsQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
         Loading...
       </div>
     );
@@ -147,7 +147,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     <div>
       <CollapsibleSection
         title="Tasks"
-        icon={GitBranch}
+        icon={GitBranchIcon}
         count={tasks.length}
         defaultOpen={tasks.length > 0}
         onAdd={() => setPickerSection('tasks')}
@@ -169,7 +169,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
 
       <CollapsibleSection
         title="Docs"
-        icon={FileText}
+        icon={File01Icon}
         count={docs.length}
         defaultOpen={docs.length > 0}
         onAdd={() => setPickerSection('docs')}
@@ -208,12 +208,12 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   setCreateTaskOpen(true);
                 }}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <PlusSignIcon className="h-3.5 w-3.5" />
                 Create New Task
               </Button>
             )}
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -225,7 +225,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Searching...
+                  <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
               {!searching && results.map((r) => (
@@ -236,7 +236,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   onClick={() => handleAdd(pickerSection!, r.id)}
                 >
                   <div className="flex items-center gap-2">
-                    {pickerSection === 'tasks' ? <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    {pickerSection === 'tasks' ? <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                     <span className="font-medium truncate">{r.name}</span>
                     {r.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">

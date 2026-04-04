@@ -2,28 +2,28 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Check,
-  ChevronDown,
-  Copy,
-  FileText,
-  Folder,
-  FolderInput,
-  FolderOpen,
-  Globe,
-  Languages,
-  ListFilter,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Send,
-  Settings,
-  Trash2,
-} from 'lucide-react'
+  ArchiveIcon,
+  ArrowDown02Icon,
+  ArrowLeft02Icon,
+  ArrowUp02Icon,
+  Tick01Icon,
+  ArrowDown01Icon,
+  Copy01Icon,
+  File01Icon,
+  Folder01Icon,
+  FolderOpenIcon,
+  GlobeIcon,
+  FilterHorizontalIcon,
+  MoreHorizontalIcon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+  SentIcon,
+  Setting06Icon,
+  Delete01Icon,
+  ArchiveRestoreIcon,
+  FolderInputIcon,
+  LanguageCircleIcon,
+} from '@/lib/icons'
 import { toast } from 'sonner'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { useTitle } from '@/hooks/useTitle'
@@ -105,7 +105,7 @@ function CollectionTabIcon({ name }: { name?: string | null }) {
     const Icon = ICON_MAP[name]
     if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
   }
-  return <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+  return <FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />
 }
 
 export function DocsSpaceDetail() {
@@ -408,14 +408,14 @@ export function DocsSpaceDetail() {
             className="mt-0.5 h-8 w-8 shrink-0"
             onClick={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft02Icon className="h-4 w-4" />
           </Button>
           <div>
             <div className="flex items-center gap-2">
               {space.icon ? (
                 <span className="text-xl">{space.icon}</span>
               ) : (
-                <Folder className="h-5 w-5 shrink-0 text-muted-foreground" />
+                <Folder01Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
               )}
               {renamingSpace ? (
                 <input
@@ -442,7 +442,7 @@ export function DocsSpaceDetail() {
               {space.type === 'external_capable' && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Globe className="h-4 w-4 text-blue-500" />
+                    <GlobeIcon className="h-4 w-4 text-blue-500" />
                   </TooltipTrigger>
                   <TooltipContent>External</TooltipContent>
                 </Tooltip>
@@ -460,19 +460,19 @@ export function DocsSpaceDetail() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontalIcon className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem onClick={() => setEditSpaceOpen(true)}>
-                  <Settings className="h-3.5 w-3.5" />
+                  <Setting06Icon className="h-3.5 w-3.5" />
                   Edit space
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
                   className="text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Delete01Icon className="h-3.5 w-3.5" />
                   Delete space
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -522,19 +522,19 @@ export function DocsSpaceDetail() {
                     }`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <MoreHorizontal className="h-3.5 w-3.5" />
+                    <MoreHorizontalIcon className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-44">
                   <DropdownMenuItem onClick={() => setEditingCollection(col)}>
-                    <Pencil className="h-3.5 w-3.5" />
+                    <PencilEdit01Icon className="h-3.5 w-3.5" />
                     Edit collection
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setConfirmDelete({ type: 'collection', id: col.id, name: col.name })}
                     className="text-destructive focus:text-destructive"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Delete01Icon className="h-3.5 w-3.5" />
                     Delete
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -565,7 +565,7 @@ export function DocsSpaceDetail() {
               onClick={() => openCreate('docs_collection', { spaceId })}
               className="flex items-center gap-1 rounded-full border border-dashed border-primary/40 px-2.5 py-1 text-xs font-medium text-primary/70 transition-colors hover:border-primary hover:text-primary hover:bg-primary/5"
             >
-              <Plus className="h-3 w-3" />
+              <PlusSignIcon className="h-3 w-3" />
               Collection
             </button>
           </QuickTooltip>
@@ -584,9 +584,9 @@ export function DocsSpaceDetail() {
                   : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
               }`}
             >
-              <ListFilter className="h-3 w-3" />
+              <FilterHorizontalIcon className="h-3 w-3" />
               {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-              <ChevronDown className="h-3 w-3 opacity-50" />
+              <ArrowDown01Icon className="h-3 w-3 opacity-50" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
@@ -595,7 +595,7 @@ export function DocsSpaceDetail() {
               className={!filterStatus ? 'font-medium' : ''}
             >
               All
-              {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
+              {!filterStatus && <Tick01Icon className="ml-auto h-3.5 w-3.5" />}
             </DropdownMenuItem>
             {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
               <DropdownMenuItem
@@ -604,7 +604,7 @@ export function DocsSpaceDetail() {
                 className={filterStatus === key ? 'font-medium' : ''}
               >
                 {label}
-                {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
+                {filterStatus === key && <Tick01Icon className="ml-auto h-3.5 w-3.5" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -641,7 +641,7 @@ export function DocsSpaceDetail() {
             <div className="flex flex-col items-center justify-center py-12 px-4 max-w-md mx-auto">
               {hasCollections ? (
                 <>
-                  <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                  <File01Icon className="h-10 w-10 text-muted-foreground/30 mb-3" />
                   <p className="text-sm text-muted-foreground">No documents found.</p>
                   {canEditDocs && (
                     <button
@@ -652,14 +652,14 @@ export function DocsSpaceDetail() {
                       })}
                       className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <PlusSignIcon className="h-3.5 w-3.5" />
                       Create a document
                     </button>
                   )}
                 </>
               ) : (
                 <>
-                  <FolderOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                  <FolderOpenIcon className="h-10 w-10 text-muted-foreground/30 mb-3" />
                   <p className="text-sm font-medium">No collections yet</p>
                   <p className="mt-1.5 text-center text-xs text-muted-foreground leading-relaxed">
                     Collections help you organize documents into groups — like topics, categories, or projects. Create your first collection to start adding documents.
@@ -670,7 +670,7 @@ export function DocsSpaceDetail() {
                       onClick={() => openCreate('docs_collection', { spaceId })}
                       className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <PlusSignIcon className="h-3.5 w-3.5" />
                       Create a collection
                     </button>
                   )}
@@ -685,17 +685,17 @@ export function DocsSpaceDetail() {
             <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <button type="button" onClick={() => { if (sortField === 'title') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('title'); setSortDir('asc') } }} className="min-w-0 flex-1 flex items-center gap-1 hover:text-foreground transition-colors text-left">
                 Title
-                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               <span className="w-36 shrink-0">Owner</span>
               <span className="w-28 shrink-0">Collection</span>
               <button type="button" onClick={() => { if (sortField === 'status') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('status'); setSortDir('asc') } }} className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
                 Status
-                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               <button type="button" onClick={() => { if (sortField === 'updated_at') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('updated_at'); setSortDir('desc') } }} className="w-20 shrink-0 flex items-center gap-1 justify-end hover:text-foreground transition-colors">
                 Updated
-                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               {canEditDocs && <span className="w-8 shrink-0" />}
             </div>
@@ -716,7 +716,7 @@ export function DocsSpaceDetail() {
                   }
                   className="flex min-w-0 flex-1 items-center gap-2 text-left justify-start"
                 >
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate font-medium">{doc.title}</span>
                 </button>
                 <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
@@ -750,7 +750,7 @@ export function DocsSpaceDetail() {
                           className="rounded p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreHorizontal className="h-4 w-4" />
+                          <MoreHorizontalIcon className="h-4 w-4" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
@@ -758,13 +758,13 @@ export function DocsSpaceDetail() {
                           disabled={duplicatingDocId === doc.id}
                           onClick={() => void handleDuplicateDoc(doc)}
                         >
-                          <Copy className="h-3.5 w-3.5" />
+                          <Copy01Icon className="h-3.5 w-3.5" />
                           {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setMovingDoc(doc)}
                         >
-                          <FolderInput className="h-3.5 w-3.5" />
+                          <FolderInputIcon className="h-3.5 w-3.5" />
                           Move to...
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -777,7 +777,7 @@ export function DocsSpaceDetail() {
                               })
                             }}
                           >
-                            <Send className="h-3.5 w-3.5" />
+                            <SentIcon className="h-3.5 w-3.5" />
                             Publish
                           </DropdownMenuItem>
                         )}
@@ -790,7 +790,7 @@ export function DocsSpaceDetail() {
                               })
                             }}
                           >
-                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            <ArchiveRestoreIcon className="h-3.5 w-3.5" />
                             Unarchive
                           </DropdownMenuItem>
                         ) : (
@@ -802,7 +802,7 @@ export function DocsSpaceDetail() {
                               })
                             }}
                           >
-                            <Archive className="h-3.5 w-3.5" />
+                            <ArchiveIcon className="h-3.5 w-3.5" />
                             Archive
                           </DropdownMenuItem>
                         )}
@@ -811,7 +811,7 @@ export function DocsSpaceDetail() {
                           className="text-destructive focus:text-destructive"
                           onClick={() => setDeleteConfirmDoc(doc)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Delete01Icon className="h-3.5 w-3.5" />
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -829,7 +829,7 @@ export function DocsSpaceDetail() {
         <SheetContent className="w-full sm:max-w-2xl">
           <SheetHeader className="border-b border-border/60">
             <SheetTitle className="flex items-center gap-2">
-              <Languages className="h-4 w-4 text-primary" />
+              <LanguageCircleIcon className="h-4 w-4 text-primary" />
               Public translations
             </SheetTitle>
             <SheetDescription>

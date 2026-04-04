@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  CalendarDays,
-  Hash,
-  Layers,
-  Loader2,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+  Calendar03Icon,
+  Loading01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+  HashtagIcon,
+  Layers01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -212,7 +212,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create epic</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -258,7 +258,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 Epics are collections of tasks that together represent a major initiative or feature.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Team *</span>
                 <Select value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -271,7 +271,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </SelectContent>
                 </Select>
 
-                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owner</span>
                 <MemberPickerPopover
                   value={meta.ownerMemberId || '__none__'}
@@ -296,7 +296,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   }}
                 />
 
-                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">State</span>
                 <Select value={meta.stateId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, stateId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -310,7 +310,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </SelectContent>
                 </Select>
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
                   value={meta.startDate}
@@ -329,7 +329,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
                   value={meta.startDate}
@@ -354,7 +354,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   <>
                     <Separator className="col-span-3 my-1" />
 
-                    <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                    <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                     <span className="text-xs text-muted-foreground self-center">Plan repo</span>
                     <Select
                       value={meta.planningRepositoryId || '__none__'}
@@ -382,7 +382,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               Discard
             </Button>
             <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Epic'}
             </Button>
           </div>
@@ -634,7 +634,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 No thanks
               </Button>
               <Button size="sm" onClick={enableAutomations} disabled={enablingAutomation || dismissingAutomation}>
-                {enablingAutomation ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                {enablingAutomation ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                 {enablingAutomation ? 'Enabling...' : 'Enable'}
               </Button>
             </div>
@@ -667,7 +667,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create sprint</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -713,7 +713,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 Sprints are time-boxed periods for planning and tracking work.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Team *</span>
                 <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -726,7 +726,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   </SelectContent>
                 </Select>
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
                   value={form.startDate}
@@ -745,7 +745,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">End date</span>
                 <DatePicker
                   value={form.startDate}
@@ -775,7 +775,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
               Discard
             </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
           </div>
@@ -931,7 +931,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create objective</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -1014,7 +1014,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 Objectives define high-level goals. Tactical objectives track linked Epics; Strategic objectives combine Key Results and Epics.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">State</span>
                 <Select value={form.state} onValueChange={(v) => setForm((f) => ({ ...f, state: v as ObjectiveState }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -1027,7 +1027,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   </SelectContent>
                 </Select>
 
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Teams</span>
                 <MultiSelectPopover
                   items={teams.map((t) => ({ id: t.id, name: t.name }))}
@@ -1036,7 +1036,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   placeholder="Select teams"
                 />
 
-                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owners</span>
                 <MultiMemberPickerPopover
                   values={form.ownerMemberIds}
@@ -1072,7 +1072,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   contentClassName="w-[260px]"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
                   value={form.startDate}
@@ -1091,7 +1091,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
                   value={form.startDate}
@@ -1121,7 +1121,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
               Discard
             </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}
             </Button>
           </div>

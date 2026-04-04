@@ -14,7 +14,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronRight, FileText, Folder, GripVertical } from 'lucide-react'
+import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon } from '@/lib/icons'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { ICON_MAP } from '@/components/ui/icon-picker'
@@ -46,7 +46,7 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
         {...listeners}
         className="flex h-8 w-6 shrink-0 items-center justify-center cursor-grab rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 active:cursor-grabbing"
       >
-        <GripVertical className="h-4 w-4" />
+        <DragDropVerticalIcon className="h-4 w-4" />
       </button>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -66,7 +66,7 @@ function statusColor(status: string): string {
 function ArrangeDocRow({ doc }: { doc: DocsDocument }) {
   return (
     <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm">
-      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
       <span className={`shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
@@ -120,7 +120,7 @@ function ArrangeBucket({
     )
   }
 
-  const CollIcon = icon ? (ICON_MAP[icon] ?? Folder) : Folder
+  const CollIcon = icon ? (ICON_MAP[icon] ?? Folder01Icon) : Folder01Icon
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -129,7 +129,7 @@ function ArrangeBucket({
           type="button"
           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
         >
-          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+          <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
           <CollIcon className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{label}</span>
           <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}</span>
@@ -214,11 +214,11 @@ function ArrangeSpace({
           type="button"
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
         >
-          <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <ArrowRight01Icon className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
           {space.icon ? (
             <span className="text-base">{space.icon}</span>
           ) : (
-            <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1 flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{space.name}</span>

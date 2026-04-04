@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  CalendarDays,
-  ChevronDown,
-  GanttChart,
-  Layers,
-  Plus,
-  Target,
-} from 'lucide-react';
+  Calendar03Icon,
+  ArrowDown01Icon,
+  PlusSignIcon,
+  Target01Icon,
+  ChartGanttIcon,
+  Layers01Icon,
+} from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import { Button } from '@/components/ui/button';
 import {
@@ -134,7 +134,7 @@ export function RoadmapPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex flex-col items-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-500/10 mb-5">
-            <GanttChart className="h-7 w-7 text-teal-500" />
+            <ChartGanttIcon className="h-7 w-7 text-teal-500" />
           </div>
           <h3 className="text-base font-medium mb-1">Plan your roadmap</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -144,7 +144,7 @@ export function RoadmapPage() {
           <div className="flex items-center gap-3 mt-6">
             {canEdit && (
               <Button size="sm" onClick={() => openCreate('epic')}>
-                <Plus className="h-4 w-4 mr-1.5" />
+                <PlusSignIcon className="h-4 w-4 mr-1.5" />
                 Create an Epic
               </Button>
             )}
@@ -153,16 +153,16 @@ export function RoadmapPage() {
               size="sm"
               onClick={() => navigate({ to: '/w/$slug/pm/epics', params: { slug } })}
             >
-              <Layers className="h-4 w-4 mr-1.5" />
+              <Layers01Icon className="h-4 w-4 mr-1.5" />
               Browse Epics
             </Button>
           </div>
           <div className="w-full max-w-4xl mt-10">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { icon: Layers, title: 'Create epics', description: 'Group related tasks into epics — your key initiatives' },
-                { icon: Target, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
-                { icon: CalendarDays, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
+                { icon: Layers01Icon, title: 'Create epics', description: 'Group related tasks into epics — your key initiatives' },
+                { icon: Target01Icon, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
+                { icon: Calendar03Icon, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
               ].map(({ icon: Icon, title, description }) => (
                 <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                   <Icon className="h-5 w-5 text-muted-foreground mb-3" />
@@ -198,7 +198,7 @@ export function RoadmapPage() {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
                 Group: {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
-                <ChevronDown className="h-3 w-3" />
+                <ArrowDown01Icon className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -215,7 +215,7 @@ export function RoadmapPage() {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
                 Zoom: {zoom === 'month' ? 'Month' : 'Quarter'}
-                <ChevronDown className="h-3 w-3" />
+                <ArrowDown01Icon className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -234,7 +234,7 @@ export function RoadmapPage() {
                     {[filterTeamId, filterObjectiveId, filterHealth].filter(Boolean).length}
                   </span>
                 )}
-                <ChevronDown className="h-3 w-3" />
+                <ArrowDown01Icon className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 max-h-96">
@@ -332,7 +332,7 @@ export function RoadmapPage() {
       {loading ? null : epics.length === 0 && hasActiveFilters ? (
         <div className="flex flex-col items-center justify-center py-20 px-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted mb-3">
-            <GanttChart className="h-5 w-5 text-muted-foreground" />
+            <ChartGanttIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           <p className="text-sm font-medium mb-1">No epics match your filters</p>
           <p className="text-sm text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { GitBranch, Loader2 } from 'lucide-react';
+import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,7 +52,7 @@ export function CodingSessionHeader({
           ) : null}
           {onCancelRun ? (
             <Button variant="outline" size="sm" onClick={onCancelRun} disabled={acting !== null || !canCancel}>
-              {acting === 'cancel' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              {acting === 'cancel' ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               Cancel run
             </Button>
           ) : null}
@@ -90,7 +90,7 @@ export function CodingSessionHeader({
           <>
             <span>•</span>
             <span className="inline-flex items-center gap-1">
-              <GitBranch className="h-3 w-3" />
+              <GitBranchIcon className="h-3 w-3" />
               {session.repo.branch}
             </span>
           </>

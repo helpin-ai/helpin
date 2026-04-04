@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown,
-  Eye,
-  Globe,
-  Lock,
-  Pencil,
-  Pin,
-  PinOff,
-  Plus,
-  Save,
-  Trash2,
-  Undo2,
-  X,
-  Copy,
-} from 'lucide-react';
+  ArrowDown01Icon,
+  LockIcon,
+  PinIcon,
+  PinOffIcon,
+  UndoIcon,
+  ViewIcon,
+  GlobeIcon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+  FloppyDiskIcon,
+  Delete01Icon,
+  Cancel01Icon,
+  Copy01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -140,7 +140,7 @@ function SaveViewDialog({
           <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <div className={`flex h-7 w-7 items-center justify-center rounded-md ${isShared ? 'bg-blue-500/10 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
-                {isShared ? <Globe className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                {isShared ? <GlobeIcon className="h-3.5 w-3.5" /> : <LockIcon className="h-3.5 w-3.5" />}
               </div>
               <div>
                 <p className="text-sm font-medium leading-none">{isShared ? 'Shared' : 'Personal'}</p>
@@ -190,7 +190,7 @@ function ActiveViewMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="ml-0.5 rounded p-0.5 hover:bg-accent transition-colors">
-            <ChevronDown className="h-3 w-3" />
+            <ArrowDown01Icon className="h-3 w-3" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
@@ -198,23 +198,23 @@ function ActiveViewMenu({
             disabled={!hasChanges}
             onClick={() => saveChangesToView(workspaceId)}
           >
-            <Save className="mr-2 h-4 w-4" />
+            <FloppyDiskIcon className="mr-2 h-4 w-4" />
             Save Changes
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={!hasChanges}
             onClick={discardChanges}
           >
-            <Undo2 className="mr-2 h-4 w-4" />
+            <UndoIcon className="mr-2 h-4 w-4" />
             Discard Changes
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
-            <Pencil className="mr-2 h-4 w-4" />
+            <PencilEdit01Icon className="mr-2 h-4 w-4" />
             Edit
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setSaveAsOpen(true)}>
-            <Copy className="mr-2 h-4 w-4" />
+            <Copy01Icon className="mr-2 h-4 w-4" />
             Save As...
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -224,12 +224,12 @@ function ActiveViewMenu({
           >
             {view.is_pinned ? (
               <>
-                <PinOff className="mr-2 h-4 w-4" />
+                <PinOffIcon className="mr-2 h-4 w-4" />
                 Unpin
               </>
             ) : (
               <>
-                <Pin className="mr-2 h-4 w-4" />
+                <PinIcon className="mr-2 h-4 w-4" />
                 Pin
               </>
             )}
@@ -239,7 +239,7 @@ function ActiveViewMenu({
             className="text-destructive focus:text-destructive"
             onClick={() => deleteView(workspaceId, view.id)}
           >
-            <Trash2 className="mr-2 h-4 w-4" />
+            <Delete01Icon className="mr-2 h-4 w-4" />
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -292,7 +292,7 @@ function ViewsDropdown({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
             Views
           </Button>
         </PopoverTrigger>
@@ -308,7 +308,7 @@ function ViewsDropdown({
                     setCreateOpen(true);
                   }}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  <PlusSignIcon className="mr-2 h-4 w-4" />
                   Create New View
                 </CommandItem>
               </CommandGroup>
@@ -325,9 +325,9 @@ function ViewsDropdown({
                           setOpen(false);
                         }}
                       >
-                        <Eye className="mr-2 h-4 w-4" />
+                        <ViewIcon className="mr-2 h-4 w-4" />
                         {view.name}
-                        {view.is_pinned && <Pin className="ml-auto h-3 w-3 text-muted-foreground" />}
+                        {view.is_pinned && <PinIcon className="ml-auto h-3 w-3 text-muted-foreground" />}
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -346,9 +346,9 @@ function ViewsDropdown({
                           setOpen(false);
                         }}
                       >
-                        <Globe className="mr-2 h-4 w-4" />
+                        <GlobeIcon className="mr-2 h-4 w-4" />
                         {view.name}
-                        {view.is_pinned && <Pin className="ml-auto h-3 w-3 text-muted-foreground" />}
+                        {view.is_pinned && <PinIcon className="ml-auto h-3 w-3 text-muted-foreground" />}
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -413,7 +413,7 @@ function ViewTab({
           }}
           className="ml-0.5 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
         >
-          <Plus className="h-3 w-3" />
+          <PlusSignIcon className="h-3 w-3" />
           New View
         </span>
       )}
@@ -432,7 +432,7 @@ function ViewTab({
           }}
           className="ml-0.5 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent transition-all"
         >
-          <X className="h-3 w-3" />
+          <Cancel01Icon className="h-3 w-3" />
         </span>
       )}
     </button>

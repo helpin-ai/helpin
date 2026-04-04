@@ -1,4 +1,4 @@
-import { BellOff, BellRing } from 'lucide-react'
+import { NotificationOff02Icon, Notification02Icon } from '@/lib/icons'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useIsFollowing, useFollowEntity, useUnfollowEntity } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
@@ -44,12 +44,12 @@ export function FollowButton({ entityType, entityId, size = 'icon' }: FollowButt
         >
           {isFollowing ? (
             <>
-              <BellRing className="h-3.5 w-3.5 text-primary" />
+              <Notification02Icon className="h-3.5 w-3.5 text-primary" />
               {size === 'sm' && <span>Following</span>}
             </>
           ) : (
             <>
-              <BellOff className="h-3.5 w-3.5 text-muted-foreground" />
+              <NotificationOff02Icon className="h-3.5 w-3.5 text-muted-foreground" />
               {size === 'sm' && <span>Follow</span>}
             </>
           )}

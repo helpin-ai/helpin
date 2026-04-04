@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { GitBranch, GitPullRequest, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlusSignIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -99,7 +99,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                <GitBranchIcon className="h-4 w-4 text-muted-foreground" />
                 <CardTitle className="text-base">GitHub Connection</CardTitle>
               </div>
               <CardDescription className="mt-1.5">Connect GitHub to sync repositories, automate branches, and track PRs.</CardDescription>
@@ -125,11 +125,11 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                     window.location.assign(data.install_url);
                   }}
                 >
-                  {installingGitHubApp ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {installingGitHubApp ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : null}
                   {installingGitHubApp ? 'Opening GitHub...' : hasGitHubAppIntegration ? 'Manage access' : hasIntegrations ? 'Add integration' : 'Install GitHub App'}
                 </Button>
                 <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setIntegrationDialogOpen(true)}>
-                  <Plus className="h-3.5 w-3.5" />
+                  <PlusSignIcon className="h-3.5 w-3.5" />
                   Manual
                 </Button>
               </div>
@@ -211,8 +211,8 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                     }}
                   >
                     {syncingIntegrationId === integration.id
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <RefreshCw className="h-3.5 w-3.5" />
+                      ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                      : <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
                     }
                     {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync'}
                   </Button>
@@ -227,7 +227,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <GitPullRequest className="h-4 w-4 text-muted-foreground" />
+            <GitPullRequestIcon className="h-4 w-4 text-muted-foreground" />
             <CardTitle className="text-base">Repository Catalog</CardTitle>
             {hasRepositories && (
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

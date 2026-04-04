@@ -1,21 +1,21 @@
 import {
-  Ban,
-  Bug,
-  ChevronsUp,
-  CircleCheck,
-  CircleDashed,
-  CircleDot,
-  Minus,
-  OctagonAlert,
-  ShieldAlert,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  Sparkles,
-  RefreshCw,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react';
+  ArrowUpDoubleIcon,
+  Bug01Icon,
+  CancelCircleIcon,
+  CheckmarkCircle02Icon,
+  DashedLineCircleIcon,
+  MinusSignIcon,
+  OctagonIcon,
+  RecordIcon,
+  Shield02Icon,
+  SignalFull01Icon,
+  SignalLow01Icon,
+  SignalMedium01Icon,
+  SparklesIcon,
+  ArrowReloadHorizontalIcon,
+  Alert01Icon,
+  Wrench01Icon,
+} from '@/lib/icons';
 import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, TaskType } from './pmTypes';
 
 // ── Priority icons & colors ────────────────────────────────────────
@@ -24,11 +24,11 @@ export const PRIORITY_CONFIG: Record<
   Priority,
   { icon: React.ElementType; color: string; label: string; bold?: boolean }
 > = {
-  urgent: { icon: ChevronsUp, color: 'text-red-500', label: 'Urgent', bold: true },
-  high: { icon: SignalHigh, color: 'text-orange-500', label: 'High', bold: true },
-  medium: { icon: SignalMedium, color: 'text-amber-500', label: 'Medium', bold: true },
-  low: { icon: SignalLow, color: 'text-sky-500', label: 'Low', bold: true },
-  none: { icon: Ban, color: 'text-zinc-400', label: 'None' },
+  urgent: { icon: ArrowUpDoubleIcon, color: 'text-red-500', label: 'Urgent', bold: true },
+  high: { icon: SignalFull01Icon, color: 'text-orange-500', label: 'High', bold: true },
+  medium: { icon: SignalMedium01Icon, color: 'text-amber-500', label: 'Medium', bold: true },
+  low: { icon: SignalLow01Icon, color: 'text-sky-500', label: 'Low', bold: true },
+  none: { icon: CancelCircleIcon, color: 'text-zinc-400', label: 'None' },
 };
 
 export const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
@@ -57,10 +57,10 @@ export const SEVERITY_CONFIG: Record<
   Severity,
   { icon: React.ElementType; color: string; label: string }
 > = {
-  critical: { icon: OctagonAlert, color: 'text-red-600', label: 'Critical' },
-  major: { icon: ShieldAlert, color: 'text-orange-500', label: 'Major' },
-  minor: { icon: TriangleAlert, color: 'text-amber-500', label: 'Minor' },
-  none: { icon: Ban, color: 'text-zinc-400', label: 'None' },
+  critical: { icon: OctagonIcon, color: 'text-red-600', label: 'Critical' },
+  major: { icon: Shield02Icon, color: 'text-orange-500', label: 'Major' },
+  minor: { icon: Alert01Icon, color: 'text-amber-500', label: 'Minor' },
+  none: { icon: CancelCircleIcon, color: 'text-zinc-400', label: 'None' },
 };
 
 export function SeverityIcon({
@@ -81,10 +81,10 @@ export const STATE_TYPE_ICON_CONFIG: Record<
   StateType,
   { icon: React.ElementType; color: string }
 > = {
-  backlog: { icon: CircleDashed, color: 'text-zinc-400' },
-  unstarted: { icon: Minus, color: 'text-zinc-400' },
-  started: { icon: CircleDot, color: 'text-amber-500' },
-  done: { icon: CircleCheck, color: 'text-green-500' },
+  backlog: { icon: DashedLineCircleIcon, color: 'text-zinc-400' },
+  unstarted: { icon: MinusSignIcon, color: 'text-zinc-400' },
+  started: { icon: RecordIcon, color: 'text-amber-500' },
+  done: { icon: CheckmarkCircle02Icon, color: 'text-green-500' },
 };
 
 export function StateTypeIcon({
@@ -106,7 +106,7 @@ export function SprintIcon({
 }: {
   className?: string;
 }) {
-  return <RefreshCw className={className} />;
+  return <ArrowReloadHorizontalIcon className={className} />;
 }
 
 // ── Sprint status config ──────────────────────────────────────────
@@ -161,9 +161,9 @@ export const TASK_TYPE_CONFIG: Record<
   TaskType,
   { icon: React.ElementType; color: string; label: string }
 > = {
-  feature: { icon: Sparkles, color: 'text-amber-500', label: 'Feature' },
-  bug: { icon: Bug, color: 'text-red-500', label: 'Bug' },
-  chore: { icon: Wrench, color: 'text-indigo-500', label: 'Chore' },
+  feature: { icon: SparklesIcon, color: 'text-amber-500', label: 'Feature' },
+  bug: { icon: Bug01Icon, color: 'text-red-500', label: 'Bug' },
+  chore: { icon: Wrench01Icon, color: 'text-indigo-500', label: 'Chore' },
 };
 
 /** @deprecated Use TASK_TYPE_CONFIG */

@@ -5,7 +5,7 @@ import { authService } from '@/lib/services/authService';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
-import { Loader2 } from 'lucide-react';
+import { Loading01Icon } from '@/lib/icons';
 
 export default function VerifyEmail() {
   useTitle('Verify Email');
@@ -36,7 +36,7 @@ export default function VerifyEmail() {
         {status === 'loading' && (
           <CardHeader className="space-y-4 text-center">
             <div className="flex justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <Loading01Icon className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
             <div className="space-y-1">
               <CardTitle className="text-2xl">Verifying your email...</CardTitle>

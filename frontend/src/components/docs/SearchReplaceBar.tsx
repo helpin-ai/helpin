@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronRight, Replace, ReplaceAll, X } from 'lucide-react'
+import { ArrowDown02Icon, ArrowUp02Icon, ArrowRight01Icon, ReplaceIcon, Cancel01Icon } from '@/lib/icons'
 import { type Editor } from '@tiptap/react'
 import { searchReplacePluginKey, type SearchReplaceState } from './SearchReplaceExtension'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
@@ -91,7 +91,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
         onClick={() => setShowReplace(!showReplace)}
         className="mt-1 text-muted-foreground hover:text-foreground transition-colors"
       >
-        <ChevronRight className={`h-4 w-4 transition-transform ${showReplace ? 'rotate-90' : ''}`} />
+        <ArrowRight01Icon className={`h-4 w-4 transition-transform ${showReplace ? 'rotate-90' : ''}`} />
       </button>
 
       <div className="flex flex-col gap-1.5 flex-1 min-w-0">
@@ -126,7 +126,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
               disabled={matchCount === 0}
               className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp02Icon className="h-4 w-4" />
             </button>
           </QuickTooltip>
           <QuickTooltip label="Next (Enter)">
@@ -136,7 +136,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
               disabled={matchCount === 0}
               className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
             >
-              <ArrowDown className="h-4 w-4" />
+              <ArrowDown02Icon className="h-4 w-4" />
             </button>
           </QuickTooltip>
           <button
@@ -144,7 +144,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
             onClick={handleClose}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            <X className="h-4 w-4" />
+            <Cancel01Icon className="h-4 w-4" />
           </button>
         </div>
 
@@ -175,7 +175,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
                 disabled={matchCount === 0}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
               >
-                <Replace className="h-4 w-4" />
+                <ReplaceIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Replace All">
@@ -185,7 +185,7 @@ export function SearchReplaceBar({ editor, showReplace: initialShowReplace, onCl
                 disabled={matchCount === 0}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
               >
-                <ReplaceAll className="h-4 w-4" />
+                <ReplaceIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
           </div>

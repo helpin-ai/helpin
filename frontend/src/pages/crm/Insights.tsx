@@ -4,7 +4,7 @@ import { CRMSearchResults } from '@/components/crm/CRMSearchResults';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBuyerSignals, useHealthScores } from '@/hooks/queries/useCRM';
 import { Badge } from '@/components/ui/badge';
-import { Activity, Heart } from 'lucide-react';
+import { Activity01Icon, FavouriteIcon } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import type { CRMBuyerSignal } from '@/lib/crmTypes';
 
@@ -51,7 +51,7 @@ export function InsightsPage() {
               {signals.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-6 text-center">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                    <Activity className="h-5 w-5 text-muted-foreground/50" />
+                    <Activity01Icon className="h-5 w-5 text-muted-foreground/50" />
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">No buyer signals detected yet</p>
                   <p className="text-xs text-muted-foreground/70">Signals will appear as CRM activity grows</p>
@@ -108,7 +108,7 @@ export function InsightsPage() {
               {healthScores.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-6 text-center">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                    <Heart className="h-5 w-5 text-muted-foreground/50" />
+                    <FavouriteIcon className="h-5 w-5 text-muted-foreground/50" />
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">No deal health scores available</p>
                   <p className="text-xs text-muted-foreground/70">Health scores will be calculated as deals progress</p>

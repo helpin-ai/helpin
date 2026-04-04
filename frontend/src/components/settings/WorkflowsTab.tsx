@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ListTree, Pencil, Plus, Trash2 } from 'lucide-react';
+import { HierarchyIcon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
@@ -151,7 +151,7 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
             </Select>
             {editable && (
               <Button size="sm" onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-1" /> Create Workflow
+                <PlusSignIcon className="h-4 w-4 mr-1" /> Create Workflow
               </Button>
             )}
           </div>
@@ -203,14 +203,14 @@ export function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
                         }
                       }}
                     >
-                      <ListTree className="h-3.5 w-3.5" />
+                      <HierarchyIcon className="h-3.5 w-3.5" />
                       Modify States
                     </Button>
                     <Button size="icon" variant="ghost" onClick={() => openEdit(workflow)}>
-                      <Pencil className="h-3.5 w-3.5" />
+                      <PencilEdit01Icon className="h-3.5 w-3.5" />
                     </Button>
                     <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteWorkflowConfirm(workflow.workflow.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Delete01Icon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 )}

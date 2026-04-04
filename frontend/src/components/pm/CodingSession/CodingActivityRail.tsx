@@ -1,17 +1,16 @@
 import type { ReactNode } from 'react';
 import {
-  FileCode2,
-  GitBranch,
-  KeyRound,
-  ListTodo,
-  MessageSquareMore,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
-  TerminalSquare,
-  Wrench,
-  XCircle,
-} from 'lucide-react';
+  SourceCodeIcon,
+  GitBranchIcon,
+  Key01Icon,
+  CheckListIcon,
+  MessagePreview01Icon,
+  SecurityCheckIcon,
+  SparklesIcon,
+  TerminalIcon,
+  CancelCircleIcon,
+  Wrench01Icon,
+} from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -49,7 +48,7 @@ export function CodingActivityRail({
     <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <TerminalSquare className="h-3.5 w-3.5" />
+          <TerminalIcon className="h-3.5 w-3.5" />
           Activity
         </div>
         <Badge variant="outline" className="text-[10px]">
@@ -155,7 +154,7 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
     const totalCount = plan?.plan.length ?? 0;
     return (
       <TimelineRow
-        icon={<ListTodo className="h-3.5 w-3.5" />}
+        icon={<CheckListIcon className="h-3.5 w-3.5" />}
         iconClass="bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/50 text-blue-600 dark:text-blue-400"
         title="Plan updated"
         timestamp={toolCall.completed_at ?? toolCall.started_at ?? ''}
@@ -203,30 +202,30 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
 function eventChrome(event: CodingSessionEvent): { icon: ReactNode; iconClass: string } {
   if (event.type.startsWith('repo.')) {
     return {
-      icon: <GitBranch className="h-3.5 w-3.5" />,
+      icon: <GitBranchIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400',
     };
   }
   if (event.type.startsWith('interaction.') || event.type === 'approval.requested') {
     return {
-      icon: <ShieldCheck className="h-3.5 w-3.5" />,
+      icon: <SecurityCheckIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-600 dark:text-amber-400',
     };
   }
   if (event.type === 'input.requested') {
     return {
-      icon: <MessageSquareMore className="h-3.5 w-3.5" />,
+      icon: <MessagePreview01Icon className="h-3.5 w-3.5" />,
       iconClass: 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900/50 text-blue-600 dark:text-blue-400',
     };
   }
   if (event.type.startsWith('auth.')) {
     return {
-      icon: <KeyRound className="h-3.5 w-3.5" />,
+      icon: <Key01Icon className="h-3.5 w-3.5" />,
       iconClass: 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-600 dark:text-amber-400',
     };
   }
   return {
-    icon: <Sparkles className="h-3.5 w-3.5" />,
+    icon: <SparklesIcon className="h-3.5 w-3.5" />,
     iconClass: 'bg-muted/50 border-border text-muted-foreground',
   };
 }
@@ -234,14 +233,14 @@ function eventChrome(event: CodingSessionEvent): { icon: ReactNode; iconClass: s
 function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; iconClass: string } {
   if (isFailed) {
     return {
-      icon: <XCircle className="h-3.5 w-3.5" />,
+      icon: <CancelCircleIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-destructive/10 border-destructive/30 text-destructive',
     };
   }
   const name = toolName.toLowerCase();
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
-      icon: <Terminal className="h-3.5 w-3.5" />,
+      icon: <TerminalIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-400',
     };
   }
@@ -255,12 +254,12 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
     || name.includes('edit')
   ) {
     return {
-      icon: <FileCode2 className="h-3.5 w-3.5" />,
+      icon: <SourceCodeIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-violet-50 border-violet-200 dark:bg-violet-950/20 dark:border-violet-900/50 text-violet-600 dark:text-violet-400',
     };
   }
   return {
-    icon: <Wrench className="h-3.5 w-3.5" />,
+    icon: <Wrench01Icon className="h-3.5 w-3.5" />,
     iconClass: 'bg-muted/50 border-border text-muted-foreground',
   };
 }

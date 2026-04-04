@@ -10,7 +10,7 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from "@/lib/icons"
 
 function Calendar({
   className,
@@ -146,12 +146,12 @@ function Calendar({
         },
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === "left") {
-            return <ChevronLeft className={cn("size-4", className)} {...props} />
+            return <ArrowLeft01Icon className={cn("size-4", className)} {...props} />
           }
           if (orientation === "right") {
-            return <ChevronRight className={cn("size-4", className)} {...props} />
+            return <ArrowRight01Icon className={cn("size-4", className)} {...props} />
           }
-          return <ChevronDown className={cn("size-4", className)} {...props} />
+          return <ArrowDown01Icon className={cn("size-4", className)} {...props} />
         },
         DayButton: ({ ...props }) => (
           <CalendarDayButton locale={locale} {...props} />

@@ -22,7 +22,8 @@ type SettingsPageFrameProps = {
 };
 
 export function SettingsPageFrame({ section, children }: SettingsPageFrameProps) {
-  useTitle('Settings');
+  const sectionLabel = SETTINGS_ROUTE_SECTIONS.find((s) => s.id === section)?.label;
+  useTitle(sectionLabel ? `${sectionLabel} Settings` : 'Settings');
 
   const { currentWorkspace } = useWorkspaceStore();
   const workspaceId = currentWorkspace?.id ?? '';

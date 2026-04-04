@@ -1,16 +1,16 @@
-import { CheckCircle2, LoaderCircle, RefreshCw, Settings2, TriangleAlert } from 'lucide-react';
+import { CheckmarkCircle02Icon, Loading03Icon, ArrowReloadHorizontalIcon, Settings02Icon, Alert01Icon } from '@/lib/icons';
 
 export type WizardStep = 'connect' | 'review';
 
 export const STEP_ORDER: WizardStep[] = ['connect', 'review'];
 
-export const STATUS_META: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  queued: { label: 'Pending', className: 'border-amber-500/40 bg-amber-500/10 text-amber-700', icon: LoaderCircle },
-  running: { label: 'Syncing', className: 'border-sky-500/40 bg-sky-500/10 text-sky-700', icon: LoaderCircle },
-  ready: { label: 'Ready', className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700', icon: CheckCircle2 },
-  failed: { label: 'Failed', className: 'border-destructive/40 bg-destructive/10 text-destructive', icon: TriangleAlert },
-  stale: { label: 'Outdated', className: 'border-orange-500/40 bg-orange-500/10 text-orange-700', icon: RefreshCw },
-  disabled: { label: 'Disabled', className: 'border-muted-foreground/30 bg-muted text-muted-foreground', icon: Settings2 },
+export const STATUS_META: Record<string, { label: string; className: string; icon: typeof CheckmarkCircle02Icon }> = {
+  queued: { label: 'Pending', className: 'border-amber-500/40 bg-amber-500/10 text-amber-700', icon: Loading03Icon },
+  running: { label: 'Syncing', className: 'border-sky-500/40 bg-sky-500/10 text-sky-700', icon: Loading03Icon },
+  ready: { label: 'Ready', className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700', icon: CheckmarkCircle02Icon },
+  failed: { label: 'Failed', className: 'border-destructive/40 bg-destructive/10 text-destructive', icon: Alert01Icon },
+  stale: { label: 'Outdated', className: 'border-orange-500/40 bg-orange-500/10 text-orange-700', icon: ArrowReloadHorizontalIcon },
+  disabled: { label: 'Disabled', className: 'border-muted-foreground/30 bg-muted text-muted-foreground', icon: Settings02Icon },
 };
 
 export const CRAWL_SOURCE_OPTIONS = [

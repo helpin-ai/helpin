@@ -1,31 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import {
-  AlertTriangle,
-  CalendarDays,
-  Check,
-  CheckSquare,
-  Code2,
-  ExternalLink as ExternalLinkIcon,
-  FileText,
-  Gauge,
-  GripVertical,
-  Hash,
-  Layers,
-  LayoutGrid,
-  Link2,
-  Loader2,
-  Paperclip,
-  Plus,
-  RefreshCw,
-  Sparkles,
-  Tag,
-  Trash2,
-  Upload,
-  User,
-  Users,
-  X,
-} from "lucide-react";
+  Alert01Icon,
+  Calendar03Icon,
+  Tick01Icon,
+  CheckListIcon,
+  SourceCodeIcon,
+  LinkSquare01Icon as ExternalLinkIcon,
+  File01Icon,
+  DashboardSpeed01Icon,
+  DragDropVerticalIcon,
+  HashtagIcon,
+  Layers01Icon,
+  LayoutGridIcon,
+  Link01Icon,
+  Loading01Icon,
+  AttachmentIcon,
+  PlusSignIcon,
+  ArrowReloadHorizontalIcon,
+  SparklesIcon,
+  Tag01Icon,
+  Delete01Icon,
+  Upload01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -191,7 +191,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
                 }}
               >
                 <span>No sprint</span>
-                {value === '__none__' ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+                {value === '__none__' ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
               </CommandItem>
             </CommandGroup>
             {showGroupHeadings ? (
@@ -208,7 +208,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
                       }}
                     >
                       <span className="truncate">{option.label}</span>
-                      {value === option.value ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+                      {value === option.value ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -226,7 +226,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
                     }}
                   >
                     <span className="truncate">{option.label}</span>
-                    {value === option.value ? <Check className="ml-auto h-3 w-3 shrink-0" /> : null}
+                    {value === option.value ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -737,7 +737,7 @@ export function CreateTaskModal({
               {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
             </span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -781,7 +781,7 @@ export function CreateTaskModal({
                           className="h-7 gap-1.5 text-xs"
                           onClick={discardMarkdownSource}
                         >
-                          <X className="h-3 w-3" />
+                          <Cancel01Icon className="h-3 w-3" />
                           Discard
                         </Button>
                         <Button
@@ -790,7 +790,7 @@ export function CreateTaskModal({
                           className="h-7 gap-1.5 text-xs"
                           onClick={applyMarkdownSource}
                         >
-                          <Check className="h-3 w-3" />
+                          <Tick01Icon className="h-3 w-3" />
                           Apply
                         </Button>
                       </div>
@@ -834,7 +834,7 @@ export function CreateTaskModal({
                     }`}
                     onClick={() => setShowChecklist((v) => !v)}
                   >
-                    <CheckSquare className="h-3 w-3" />
+                    <CheckListIcon className="h-3 w-3" />
                     Checklist
                     {form.checklist_items.length > 0 && (
                       <span className="text-[10px] opacity-70">({form.checklist_items.length})</span>
@@ -849,7 +849,7 @@ export function CreateTaskModal({
                     }`}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
-                    <Link2 className="h-3 w-3" />
+                    <Link01Icon className="h-3 w-3" />
                     External Links
                     {form.external_links.length > 0 && (
                       <span className="text-[10px] opacity-70">({form.external_links.length})</span>
@@ -865,7 +865,7 @@ export function CreateTaskModal({
                       }`}
                       onClick={() => setShowAttachments((v) => !v)}
                     >
-                      <Paperclip className="h-3 w-3" />
+                      <AttachmentIcon className="h-3 w-3" />
                       Attach Files
                       {pendingFiles.length > 0 && (
                         <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
@@ -887,7 +887,7 @@ export function CreateTaskModal({
                       }
                     }}
                   >
-                    <Sparkles className="h-3 w-3" />
+                    <SparklesIcon className="h-3 w-3" />
                     Rich
                   </button>
                   <button
@@ -899,7 +899,7 @@ export function CreateTaskModal({
                     }`}
                     onClick={openMarkdownMode}
                   >
-                    <Code2 className="h-3 w-3" />
+                    <SourceCodeIcon className="h-3 w-3" />
                     Markdown
                   </button>
                 </div>
@@ -910,7 +910,7 @@ export function CreateTaskModal({
                 <div className="shrink-0 rounded-lg border border-border/60 bg-background">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                      <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                      <CheckListIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Checklist
                       {form.checklist_items.length > 0 && (
                         <span className="text-xs text-muted-foreground font-normal">({form.checklist_items.length})</span>
@@ -920,7 +920,7 @@ export function CreateTaskModal({
                   <div className="px-4 py-2 space-y-1">
                     {form.checklist_items.map((item, idx) => (
                       <div key={idx} className="group flex items-center gap-2">
-                        <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                        <DragDropVerticalIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                         <input
                           type="text"
                           value={item.text}
@@ -941,7 +941,7 @@ export function CreateTaskModal({
                             setForm((prev) => ({ ...prev, checklist_items: next }));
                           }}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Delete01Icon className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
@@ -955,7 +955,7 @@ export function CreateTaskModal({
                         }));
                       }}
                     >
-                      <Plus className="h-3 w-3" />
+                      <PlusSignIcon className="h-3 w-3" />
                       Add item
                     </button>
                   </div>
@@ -967,7 +967,7 @@ export function CreateTaskModal({
                 <div className="shrink-0 rounded-lg border border-border/60 bg-background">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       External Links
                       {form.external_links.length > 0 && (
                         <span className="text-xs text-muted-foreground font-normal">({form.external_links.length})</span>
@@ -998,7 +998,7 @@ export function CreateTaskModal({
                             setForm((prev) => ({ ...prev, external_links: next }));
                           }}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Delete01Icon className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
@@ -1012,7 +1012,7 @@ export function CreateTaskModal({
                         }));
                       }}
                     >
-                      <Plus className="h-3 w-3" />
+                      <PlusSignIcon className="h-3 w-3" />
                       Add link
                     </button>
                   </div>
@@ -1024,7 +1024,7 @@ export function CreateTaskModal({
                 <div className="shrink-0 rounded-lg border border-border/60 bg-background">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                      <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                      <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Attachments
                       {pendingFiles.length > 0 && (
                         <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length})</span>
@@ -1048,7 +1048,7 @@ export function CreateTaskModal({
                                   />
                                 ) : (
                                   <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
-                                    <Paperclip className="h-6 w-6 text-muted-foreground/50" />
+                                    <AttachmentIcon className="h-6 w-6 text-muted-foreground/50" />
                                     <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext}</span>
                                   </div>
                                 )}
@@ -1059,7 +1059,7 @@ export function CreateTaskModal({
                                   className="flex h-6 w-6 items-center justify-center rounded bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-destructive"
                                   onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  <Delete01Icon className="h-3 w-3" />
                                 </button>
                               </div>
                               <p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.name}>{file.name}</p>
@@ -1069,7 +1069,7 @@ export function CreateTaskModal({
                       </div>
                     )}
                     <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2 cursor-pointer hover:border-border hover:bg-muted/30 transition-colors">
-                      <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
                       <input
                         type="file"
@@ -1096,7 +1096,7 @@ export function CreateTaskModal({
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
                 {/* Template */}
                 {!isTemplateMode && templates.length > 0 && (
-                <MetadataRow icon={FileText} label="Template">
+                <MetadataRow icon={File01Icon} label="Template">
                   <SidebarPopoverSelect
                     value=""
                     options={[
@@ -1131,7 +1131,7 @@ export function CreateTaskModal({
                     }}
                     renderTrigger={() => (
                       <>
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                         <span>Apply template</span>
                       </>
                     )}
@@ -1141,7 +1141,7 @@ export function CreateTaskModal({
 
                 {/* Team */}
                 {teams.length > 0 && (
-                  <MetadataRow icon={Users} label="Team *">
+                  <MetadataRow icon={UserGroupIcon} label="Team *">
                     <SidebarPopoverSelect
                       value={form.team_id || "__none__"}
                       options={[
@@ -1164,7 +1164,7 @@ export function CreateTaskModal({
 
                 {/* State */}
                 {!isTemplateMode && workflow && (
-                <MetadataRow icon={Hash} label="State">
+                <MetadataRow icon={HashtagIcon} label="State">
                   <SidebarPopoverSelect
                     value={stateId}
                     options={workflow.states.map((s) => ({ value: s.id, label: s.name }))}
@@ -1194,7 +1194,7 @@ export function CreateTaskModal({
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
                 {/* Owner */}
-                <MetadataRow icon={User} label="Owner">
+                <MetadataRow icon={UserIcon} label="Owner">
                   <MemberPickerPopover
                     value={form.owner_member_id || "__none__"}
                     members={assignableMembers}
@@ -1226,7 +1226,7 @@ export function CreateTaskModal({
 
                 {/* Requester */}
                 {!isTemplateMode && (
-                <MetadataRow icon={User} label="Requester">
+                <MetadataRow icon={UserIcon} label="Requester">
                   <MemberPickerPopover
                     value={form.requester_member_id || "__none__"}
                     members={assignableMembers}
@@ -1262,7 +1262,7 @@ export function CreateTaskModal({
 
                 {/* Priority */}
                 {fieldVis.priority && (
-                <MetadataRow icon={Gauge} label="Priority">
+                <MetadataRow icon={DashboardSpeed01Icon} label="Priority">
                   <SidebarPopoverSelect
                     value={form.priority}
                     options={priorityOptions.map((p) => ({ value: p, label: PRIORITY_CONFIG[p].label }))}
@@ -1282,7 +1282,7 @@ export function CreateTaskModal({
 
                 {/* Severity */}
                 {fieldVis.severity && (
-                <MetadataRow icon={AlertTriangle} label="Severity">
+                <MetadataRow icon={Alert01Icon} label="Severity">
                   <SidebarPopoverSelect
                     value={form.severity}
                     options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
@@ -1302,7 +1302,7 @@ export function CreateTaskModal({
 
                 {/* Type */}
                 {fieldVis.task_type && (
-                <MetadataRow icon={Hash} label="Type">
+                <MetadataRow icon={HashtagIcon} label="Type">
                   <SidebarPopoverSelect
                     value={form.task_type}
                     options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
@@ -1323,7 +1323,7 @@ export function CreateTaskModal({
 
                 {/* Labels */}
                 {fieldVis.labels && (
-                <MetadataRow icon={Tag} label="Labels">
+                <MetadataRow icon={Tag01Icon} label="Labels">
                   <LabelPicker
                     workspaceId={workspaceId}
                     teamId={form.team_id || undefined}
@@ -1340,7 +1340,7 @@ export function CreateTaskModal({
 
                 {/* Epic */}
                 {fieldVis.epic && (
-                <MetadataRow icon={Layers} label="Epic">
+                <MetadataRow icon={Layers01Icon} label="Epic">
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
                     options={[
@@ -1383,7 +1383,7 @@ export function CreateTaskModal({
 
                 {/* Estimate */}
                 {fieldVis.estimate && (
-                <MetadataRow icon={LayoutGrid} label="Estimate">
+                <MetadataRow icon={LayoutGridIcon} label="Estimate">
                   <EstimatePicker
                     value={form.estimate}
                     teamId={form.team_id || undefined}
@@ -1396,7 +1396,7 @@ export function CreateTaskModal({
 
                 {/* Due date */}
                 {fieldVis.due_date && (
-                <MetadataRow icon={CalendarDays} label="Due date">
+                <MetadataRow icon={Calendar03Icon} label="Due date">
                   <DatePicker
                     value={form.deadline}
                     onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
@@ -1414,7 +1414,7 @@ export function CreateTaskModal({
                 {!isTemplateMode && (
                   <>
                     <div className="col-span-3 h-px bg-border/40 my-1" />
-                    <MetadataRow icon={RefreshCw} label="Recurring">
+                    <MetadataRow icon={ArrowReloadHorizontalIcon} label="Recurring">
                       <button
                         type="button"
                         className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
@@ -1452,7 +1452,7 @@ export function CreateTaskModal({
               onClick={submit}
               disabled={!canSubmit || submitting}
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : "Save"}
             </Button>
           </div>

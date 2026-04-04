@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core';
 import { memo, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Funnel, Inbox, PlusCircle } from 'lucide-react';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, FilterHorizontalIcon, InboxIcon, PlusSignCircleIcon } from '@/lib/icons';
 import { Collapsible } from 'radix-ui';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,7 +87,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
         )}
       >
         <div className="flex flex-col items-center gap-2">
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          <ArrowLeft01Icon className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground [writing-mode:vertical-lr]">
             Backlog ({total})
           </span>
@@ -117,7 +117,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
               onClick={onToggle}
               className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ArrowRight01Icon className="h-4 w-4" />
             </button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -134,13 +134,13 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <Funnel className="h-3.5 w-3.5" />
+                  <FilterHorizontalIcon className="h-3.5 w-3.5" />
                   Filters
                   {hasActiveFilters && (
                     <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                   )}
                 </span>
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', filtersOpen && 'rotate-180')} />
+                <ArrowDown01Icon className={cn('h-3.5 w-3.5 transition-transform', filtersOpen && 'rotate-180')} />
               </button>
             </Collapsible.Trigger>
             <Collapsible.Content className="space-y-2 pt-2">
@@ -203,7 +203,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                 ))
               ) : (
                 <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/10 p-6 text-center">
-                  <Inbox className="h-5 w-5 text-muted-foreground" />
+                  <InboxIcon className="h-5 w-5 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
                     {total === 0
                       ? 'All tasks are assigned to sprints.'
@@ -216,7 +216,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
 
           {canEdit ? (
             <Button variant="outline" className="gap-2" onClick={onCreateTask}>
-              <PlusCircle className="h-4 w-4" />
+              <PlusSignCircleIcon className="h-4 w-4" />
               Create task
             </Button>
           ) : null}

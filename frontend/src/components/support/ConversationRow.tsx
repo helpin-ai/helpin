@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckmarkCircle02Icon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -246,7 +246,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
               ) : (conversation.status === 'resolved' || conversation.status === 'closed') ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    <CheckmarkCircle02Icon className="h-5 w-5 text-green-500" />
                   </TooltipTrigger>
                   <TooltipContent side="left"><span className="text-xs">Resolved</span></TooltipContent>
                 </Tooltip>

@@ -1,5 +1,4 @@
-import type { LucideIcon } from 'lucide-react';
-import { ChevronDown, Plus } from 'lucide-react';
+import { ArrowDown01Icon, PlusSignIcon, type IconComponent } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,7 +10,7 @@ import {
 type SidebarCreateOption = {
   key: string;
   label: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   onSelect: () => void;
 };
 
@@ -33,13 +32,13 @@ export function SidebarCreateBar({
         className="h-7 flex-1 gap-1.5 rounded-r-none text-xs"
         onClick={onPrimaryClick}
       >
-        <Plus className="h-3 w-3" />
+        <PlusSignIcon className="h-3 w-3" />
         {primaryLabel}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-            <ChevronDown className="h-3 w-3" />
+            <ArrowDown01Icon className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">

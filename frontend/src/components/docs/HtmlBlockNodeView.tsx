@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { Code2, Eye, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon, Alert01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
 
@@ -96,7 +96,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
         {(focused || !hasContent) && (
           <div className="flex items-center justify-between rounded-t-lg bg-muted/50 px-3 py-1.5 text-xs">
             <span className="flex items-center gap-1.5 text-muted-foreground font-medium">
-              <Code2 className="h-3.5 w-3.5" />
+              <SourceCodeIcon className="h-3.5 w-3.5" />
               HTML Block
             </span>
             {editable && (
@@ -108,7 +108,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                       onClick={(e) => { e.stopPropagation(); editing ? switchToPreview() : switchToEdit(); }}
                       className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
                     >
-                      {editing ? <Eye className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                      {editing ? <ViewIcon className="h-3 w-3" /> : <PencilEdit01Icon className="h-3 w-3" />}
                     </button>
                   </QuickTooltip>
                 )}
@@ -118,7 +118,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                     onClick={(e) => { e.stopPropagation(); deleteNode(); }}
                     className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive cursor-pointer"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Delete01Icon className="h-3 w-3" />
                   </button>
                 </QuickTooltip>
               </div>
@@ -182,7 +182,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
               className="flex items-center justify-center gap-2 py-6 text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors"
               onClick={editable ? switchToEdit : undefined}
             >
-              <Code2 className="h-4 w-4" />
+              <SourceCodeIcon className="h-4 w-4" />
               <span className="text-sm">Click to add HTML</span>
             </div>
           )}
@@ -191,7 +191,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
         {/* Sanitization warning */}
         {wasStripped && !editing && (
           <div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="h-3 w-3 shrink-0" />
+            <Alert01Icon className="h-3 w-3 shrink-0" />
             Some HTML was removed for safety. The preview shows the sanitized version.
           </div>
         )}

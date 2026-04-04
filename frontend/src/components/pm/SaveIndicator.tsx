@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Tick01Icon, Loading01Icon } from '@/lib/icons';
 
 interface SaveIndicatorProps {
   saving: boolean;
@@ -23,17 +23,17 @@ export function SaveIndicator({ saving, error }: SaveIndicatorProps) {
     <div className="flex items-center gap-1 text-xs">
       {saving ? (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
           Saving...
         </span>
       ) : justSaved ? (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700 animate-in fade-in zoom-in-95 duration-300 dark:bg-emerald-900/40 dark:text-emerald-400">
-          <Check className="h-3.5 w-3.5" />
+          <Tick01Icon className="h-3.5 w-3.5" />
           Saved
         </span>
       ) : (
         <span className="inline-flex items-center gap-1 text-muted-foreground">
-          <Check className="h-3 w-3" />
+          <Tick01Icon className="h-3 w-3" />
           All changes saved
         </span>
       )}

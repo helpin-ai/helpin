@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, Play } from 'lucide-react';
+import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -130,7 +130,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       <div className="mb-3 space-y-2">
         {runs.length > 0 && (
           <div className="flex items-center gap-1.5">
-            <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+            <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent Runs</h3>
           </div>
         )}
@@ -162,7 +162,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
             disabled={triggering || loadingAgents || !selectedAgentId}
             className="h-7 gap-1 px-2.5 text-xs"
           >
-            {triggering ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
             Run
           </Button>
         </div>

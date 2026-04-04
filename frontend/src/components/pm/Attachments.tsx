@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
@@ -207,7 +207,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     <div className="space-y-3">
       {hasAttachments && (
         <div className="flex items-center gap-1.5">
-          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+          <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
         </div>
       )}
@@ -235,12 +235,12 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         >
           {uploading ? (
             <div className="flex items-center justify-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Uploading... {uploadProgress}%</span>
             </div>
           ) : (
             <div className="flex items-center justify-center gap-2">
-              <Upload className="h-4 w-4 text-muted-foreground" />
+              <Upload01Icon className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Drop files here</span>
             </div>
           )}
@@ -291,7 +291,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
                       onClick={(e) => { e.stopPropagation(); window.open(resolveUrl(entry), '_blank'); }}
                     >
-                      <Download className="h-3 w-3" />
+                      <Download04Icon className="h-3 w-3" />
                     </Button>
                   </QuickTooltip>
                   <QuickTooltip label="Delete">
@@ -301,7 +301,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
                       onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
+                      <Delete01Icon className="h-3 w-3 text-destructive" />
                     </Button>
                   </QuickTooltip>
                 </div>
@@ -344,7 +344,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
               className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20"
               onClick={() => setPreviewEntry(null)}
             >
-              <X className="h-5 w-5" />
+              <Cancel01Icon className="h-5 w-5" />
             </Button>
 
             {hasPrev && (
@@ -354,7 +354,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                 className="absolute left-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
                 onClick={(e) => { e.stopPropagation(); goPrev(); }}
               >
-                <ChevronLeft className="h-6 w-6" />
+                <ArrowLeft01Icon className="h-6 w-6" />
               </Button>
             )}
 
@@ -365,7 +365,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                 className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
                 onClick={(e) => { e.stopPropagation(); goNext(); }}
               >
-                <ChevronRight className="h-6 w-6" />
+                <ArrowRight01Icon className="h-6 w-6" />
               </Button>
             )}
 

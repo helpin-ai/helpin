@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe2 } from 'lucide-react'
+import { Globe02Icon } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -56,7 +56,7 @@ export function EditArticleTranslationDialog({
       <DialogContent className="flex max-h-[92vh] max-w-lg flex-col overflow-hidden p-0">
         <DialogHeader className="border-b border-border/60 px-6 py-5">
           <DialogTitle className="flex items-center gap-2">
-            <Globe2 className="h-4 w-4 text-primary" />
+            <Globe02Icon className="h-4 w-4 text-primary" />
             {getHelpcenterLocaleLabel(locale)} translation details
           </DialogTitle>
           <DialogDescription>

@@ -4,26 +4,28 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import {
-  AlertCircle,
-  Bold,
-  Check,
-  ChevronDown,
-  Code2,
-  Copy,
-  ExternalLink,
-  FileDown,
-  FileUp,
-  Heading2,
-  Heading3,
-  Italic,
-  Link2,
-  List,
-  ListOrdered,
-  Loader2,
-  Quote,
-  Underline,
-  X,
-} from 'lucide-react'
+  AlertCircleIcon,
+  Tick01Icon,
+  ArrowDown01Icon,
+  SourceCodeIcon,
+  Copy01Icon,
+  LinkSquare01Icon,
+  Link01Icon,
+  Menu01Icon,
+  Loading01Icon,
+  Cancel01Icon,
+} from '@/lib/icons'
+import {
+  CheckListIcon as ListOrderedIcon,
+  FileDownIcon,
+  FileUpIcon,
+  Heading02Icon,
+  Heading03Icon,
+  QuoteDownIcon,
+  TextBoldIcon,
+  TextItalicIcon,
+  TextUnderlineIcon,
+} from '@/lib/icons'
 import UnderlineExtension from '@tiptap/extension-underline'
 import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
@@ -135,14 +137,14 @@ function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedA
     case 'saving':
       return (
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loading01Icon className="h-3 w-3 animate-spin" />
           Saving...
         </span>
       )
     case 'saved':
       return (
         <span className="flex items-center gap-1 text-[11px] text-green-600">
-          <Check className="h-3 w-3" />
+          <Tick01Icon className="h-3 w-3" />
           Saved
         </span>
       )
@@ -406,47 +408,47 @@ function FloatingToolbar({ editor }: {
       {!linkOnlyMode && <div className="flex items-center gap-0.5 rounded-xl border border-border/70 bg-background/95 px-1.5 py-1 text-foreground shadow-xl backdrop-blur-md">
         {/* Bold, Italic, Underline */}
         <ToolbarButton title="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>
-          <Bold className="h-4 w-4" />
+          <TextBoldIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton title="Italic" onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')}>
-          <Italic className="h-4 w-4" />
+          <TextItalicIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton title="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')}>
-          <Underline className="h-4 w-4" />
+          <TextUnderlineIcon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* H2, H3 */}
         <ToolbarButton title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>
-          <Heading2 className="h-4 w-4" />
+          <Heading02Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton title="Heading 3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>
-          <Heading3 className="h-4 w-4" />
+          <Heading03Icon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Lists */}
         <ToolbarButton title="Bullet list" onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>
-          <List className="h-4 w-4" />
+          <Menu01Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton title="Ordered list" onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')}>
-          <ListOrdered className="h-4 w-4" />
+          <ListOrderedIcon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Link */}
         <ToolbarButton title="Link" onClick={openLinkPopover} active={editor.isActive('link') || showLinkPopover}>
-          <Link2 className="h-4 w-4" />
+          <Link01Icon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
         {/* Format dropdown */}
         <ToolbarButton title="Format" onClick={() => { setShowFormatMenu(!showFormatMenu); setShowLinkPopover(false); }} active={showFormatMenu}>
-          <ChevronDown className="h-4 w-4" />
+          <ArrowDown01Icon className="h-4 w-4" />
         </ToolbarButton>
       </div>}
 
@@ -470,14 +472,14 @@ function FloatingToolbar({ editor }: {
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer"
                   onClick={() => window.open(normalizeUrl(linkUrl), '_blank', 'noopener,noreferrer')}
                 >
-                  <ExternalLink className="h-4 w-4" />
+                  <LinkSquare01Icon className="h-4 w-4" />
                 </button>
               </QuickTooltip>
             )}
           </div>
           {linkUrl && !urlValid && (
             <p className="flex items-center gap-1 text-xs text-destructive">
-              <AlertCircle className="h-3 w-3 shrink-0" />
+              <AlertCircleIcon className="h-3 w-3 shrink-0" />
               Please enter a valid URL (e.g. google.com, /page, #section)
             </p>
           )}
@@ -489,7 +491,7 @@ function FloatingToolbar({ editor }: {
               onClick={() => setLinkNewTab(!linkNewTab)}
             >
               <span className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${linkNewTab ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                {linkNewTab && <Check className="h-3 w-3" />}
+                {linkNewTab && <Tick01Icon className="h-3 w-3" />}
               </span>
               <span>Open in new tab</span>
             </button>
@@ -507,8 +509,8 @@ function FloatingToolbar({ editor }: {
       {showFormatMenu && (
         <div className="mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
           <FormatMenuItem label="Normal" active={!editor.isActive('blockquote') && !editor.isActive('codeBlock')} onClick={() => { editor.chain().focus().clearNodes().run(); setShowFormatMenu(false); }} />
-          <FormatMenuItem label="Blockquote" icon={<Quote className="h-3.5 w-3.5" />} active={editor.isActive('blockquote')} onClick={() => { editor.chain().focus().toggleBlockquote().run(); setShowFormatMenu(false); }} />
-          <FormatMenuItem label="Code Block" icon={<Code2 className="h-3.5 w-3.5" />} active={editor.isActive('codeBlock')} onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Blockquote" icon={<QuoteDownIcon className="h-3.5 w-3.5" />} active={editor.isActive('blockquote')} onClick={() => { editor.chain().focus().toggleBlockquote().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Code Block" icon={<SourceCodeIcon className="h-3.5 w-3.5" />} active={editor.isActive('codeBlock')} onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowFormatMenu(false); }} />
           <div className="my-1 h-px bg-border" />
           <FormatMenuItem label="Inline Code" active={editor.isActive('code')} onClick={() => { editor.chain().focus().toggleCode().run(); setShowFormatMenu(false); }} />
           <FormatMenuItem label="Strikethrough" active={editor.isActive('strike')} onClick={() => { editor.chain().focus().toggleStrike().run(); setShowFormatMenu(false); }} />
@@ -585,38 +587,38 @@ function ImportExportMenu({
           className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:bg-muted hover:text-foreground"
         >
           Import / Export
-          <ChevronDown className="h-3 w-3" />
+          <ArrowDown01Icon className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuItem onSelect={handleCopyMarkdown}>
-          <Copy className="h-3.5 w-3.5 mr-2" />
+          <Copy01Icon className="h-3.5 w-3.5 mr-2" />
           Copy as Markdown
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onDownloadMarkdown}>
-          <FileDown className="h-3.5 w-3.5 mr-2" />
+          <FileDownIcon className="h-3.5 w-3.5 mr-2" />
           Download as .md
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onDownloadDocx}>
-          <FileDown className="h-3.5 w-3.5 mr-2" />
+          <FileDownIcon className="h-3.5 w-3.5 mr-2" />
           Download as .doc
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onImportMarkdown}>
-          <FileUp className="h-3.5 w-3.5 mr-2" />
+          <FileUpIcon className="h-3.5 w-3.5 mr-2" />
           Import Markdown
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onUploadMarkdownFile}>
-          <FileUp className="h-3.5 w-3.5 mr-2" />
+          <FileUpIcon className="h-3.5 w-3.5 mr-2" />
           Upload .md file
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onUploadDocxFile}>
-          <FileUp className="h-3.5 w-3.5 mr-2" />
+          <FileUpIcon className="h-3.5 w-3.5 mr-2" />
           Upload .docx file
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onToggleSource}>
-          <Code2 className="h-3.5 w-3.5 mr-2" />
+          <SourceCodeIcon className="h-3.5 w-3.5 mr-2" />
           {sourceView ? 'Back to Rich Editor' : 'Markdown Source'}
           <span className="ml-auto text-[10px] text-muted-foreground">
             {navigator.platform.includes('Mac') ? '⌘⇧M' : 'Ctrl+⇧+M'}
@@ -1373,7 +1375,7 @@ img { max-width: 100%; }
                   className="h-7 gap-1.5 text-xs"
                   onClick={discardSourceView}
                 >
-                  <X className="h-3 w-3" />
+                  <Cancel01Icon className="h-3 w-3" />
                   Discard
                 </Button>
                 <Button
@@ -1381,7 +1383,7 @@ img { max-width: 100%; }
                   className="h-7 gap-1.5 text-xs"
                   onClick={toggleSourceView}
                 >
-                  <Check className="h-3 w-3" />
+                  <Tick01Icon className="h-3 w-3" />
                   Apply
                 </Button>
               </div>
@@ -1509,7 +1511,7 @@ img { max-width: 100%; }
               Cancel
             </Button>
             <Button onClick={handleImportMarkdown} disabled={!importText.trim()}>
-              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              <FileDownIcon className="h-3.5 w-3.5 mr-1.5" />
               Import
             </Button>
           </DialogFooter>

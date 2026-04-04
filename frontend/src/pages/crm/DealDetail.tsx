@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
-  ArrowLeft,
-  Calendar,
-  Check,
-  ChevronRight,
-  DollarSign,
-  Gauge,
-  Loader2,
-  Tag,
-  Trash2,
-} from 'lucide-react';
+  ArrowLeft02Icon,
+  Calendar01Icon,
+  Tick01Icon,
+  ArrowRight01Icon,
+  DollarCircleIcon,
+  DashboardSpeed01Icon,
+  Loading01Icon,
+  Tag01Icon,
+  Delete01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -146,7 +146,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -156,7 +156,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">Deal not found</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to Deals
         </Button>
       </div>
@@ -168,22 +168,22 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
       {/* Header bar */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <DollarSign className="h-3.5 w-3.5 shrink-0 text-green-500" />
+          <DollarCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Deals
           </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)}>
-            <Trash2 className="h-4 w-4" />
+            <Delete01Icon className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -256,7 +256,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
 
           <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
-            <MetadataRow icon={Tag} label="Stage">
+            <MetadataRow icon={Tag01Icon} label="Stage">
               <Popover open={stageOpen} onOpenChange={setStageOpen}>
                 <PopoverTrigger asChild>
                   <button type="button" className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent">
@@ -270,25 +270,25 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
                         className={`flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors ${form.stage_id === option.value ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                         onClick={() => { updateField('stage_id', option.value, { stage_id: option.value }); setStageOpen(false); }}>
                         <span className="truncate">{option.label}</span>
-                        {form.stage_id === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
+                        {form.stage_id === option.value && <Tick01Icon className="ml-auto h-3 w-3 shrink-0" />}
                       </button>
                     ))}
                   </div>
                 </PopoverContent>
               </Popover>
             </MetadataRow>
-            <MetadataRow icon={DollarSign} label="Amount">
+            <MetadataRow icon={DollarCircleIcon} label="Amount">
               <div className="flex items-center gap-1">
                 <input className="w-full bg-transparent text-xs outline-none" type="number" step="0.01" value={form.amount}
                   onChange={(e) => updateField('amount', e.target.value, { amount: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
                 <span className="text-xs text-muted-foreground">{form.currency}</span>
               </div>
             </MetadataRow>
-            <MetadataRow icon={Calendar} label="Close Date">
+            <MetadataRow icon={Calendar01Icon} label="Close Date">
               <input className="w-full bg-transparent text-xs outline-none" type="date" value={form.close_date}
                 onChange={(e) => updateField('close_date', e.target.value, { close_date: e.target.value ? `${e.target.value}T00:00:00Z` : undefined })} />
             </MetadataRow>
-            <MetadataRow icon={Gauge} label="Probability">
+            <MetadataRow icon={DashboardSpeed01Icon} label="Probability">
               <div className="flex items-center gap-1">
                 <input className="w-16 bg-transparent text-xs outline-none" type="number" min="0" max="100" value={form.probability}
                   onChange={(e) => updateField('probability', e.target.value, { probability: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="—" />

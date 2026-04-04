@@ -1,15 +1,15 @@
 import { Link } from '@tanstack/react-router';
 import {
-  Chrome,
-  Globe,
-  Laptop,
-  Mail,
-  MessageSquare,
-  Monitor,
-  Smartphone,
-  Tablet,
-  User,
-} from 'lucide-react';
+  GlobeIcon,
+  Mail01Icon,
+  Message01Icon,
+  ComputerIcon,
+  UserIcon,
+  ChromeIcon,
+  LaptopIcon,
+  SmartPhone01Icon,
+  Tablet01Icon,
+} from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { STATUS_COLORS, STATUS_LABELS } from './constants';
@@ -45,29 +45,29 @@ function InfoRow({
 
 function DeviceIcon({ type }: { type: string }) {
   switch (type) {
-    case 'mobile': return <Smartphone className="h-3 w-3" />;
-    case 'tablet': return <Tablet className="h-3 w-3" />;
-    default: return <Laptop className="h-3 w-3" />;
+    case 'mobile': return <SmartPhone01Icon className="h-3 w-3" />;
+    case 'tablet': return <Tablet01Icon className="h-3 w-3" />;
+    default: return <LaptopIcon className="h-3 w-3" />;
   }
 }
 
 function BrowserIcon({ browser }: { browser: string }) {
   // Chrome icon exists in lucide; for others fall back to Globe
   switch (browser.toLowerCase()) {
-    case 'chrome': return <Chrome className="h-3 w-3" />;
-    default: return <Globe className="h-3 w-3" />;
+    case 'chrome': return <ChromeIcon className="h-3 w-3" />;
+    default: return <GlobeIcon className="h-3 w-3" />;
   }
 }
 
 function OSIcon({ os }: { os: string }) {
   // Use Monitor for all OS — lucide doesn't have Apple/Windows/Linux icons
   switch (os.toLowerCase()) {
-    case 'macos': return <Monitor className="h-3 w-3" />;
-    case 'windows': return <Monitor className="h-3 w-3" />;
-    case 'linux': return <Monitor className="h-3 w-3" />;
-    case 'ios': return <Smartphone className="h-3 w-3" />;
-    case 'android': return <Smartphone className="h-3 w-3" />;
-    default: return <Monitor className="h-3 w-3" />;
+    case 'macos': return <ComputerIcon className="h-3 w-3" />;
+    case 'windows': return <ComputerIcon className="h-3 w-3" />;
+    case 'linux': return <ComputerIcon className="h-3 w-3" />;
+    case 'ios': return <SmartPhone01Icon className="h-3 w-3" />;
+    case 'android': return <SmartPhone01Icon className="h-3 w-3" />;
+    default: return <ComputerIcon className="h-3 w-3" />;
   }
 }
 
@@ -81,12 +81,12 @@ const LIFECYCLE_COLORS: Record<string, string> = {
 };
 
 const SOURCE_ICONS: Record<string, React.ElementType> = {
-  live_chat: MessageSquare,
-  support: MessageSquare,
-  email: Mail,
-  widget: MessageSquare,
-  api: Globe,
-  manual: User,
+  live_chat: Message01Icon,
+  support: Message01Icon,
+  email: Mail01Icon,
+  widget: Message01Icon,
+  api: GlobeIcon,
+  manual: UserIcon,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -117,7 +117,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
     <div>
       {/* Device */}
       {hasDevice && (
-        <CollapsibleSection title="Device" icon={Monitor} count={0}>
+        <CollapsibleSection title="Device" icon={ComputerIcon} count={0}>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs">
               <BrowserIcon browser={device.browser} />
@@ -137,9 +137,9 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Location */}
       {hasLocation && (
-        <CollapsibleSection title="Location" icon={Globe} count={0}>
+        <CollapsibleSection title="Location" icon={GlobeIcon} count={0}>
           <div className="space-y-1.5">
-            <InfoRow label="Timezone" value={location.timezone} icon={Globe} />
+            <InfoRow label="Timezone" value={location.timezone} icon={GlobeIcon} />
             <InfoRow label="Locale" value={location.locale} />
             {location.last_page_url && (
               <div className="text-xs">
@@ -161,7 +161,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Contact Details */}
       {hasContact && (
-        <CollapsibleSection title="Contact Details" icon={User} count={0}>
+        <CollapsibleSection title="Contact Details" icon={UserIcon} count={0}>
           <div className="space-y-2">
             {contact.job_title && (
               <InfoRow label="Job title" value={contact.job_title} />
@@ -179,7 +179,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
                 <span className="text-muted-foreground shrink-0">Source</span>
                 <span className="flex items-center gap-1 truncate text-right capitalize">
                   {(() => {
-                    const SourceIcon = SOURCE_ICONS[contact.source] ?? Globe;
+                    const SourceIcon = SOURCE_ICONS[contact.source] ?? GlobeIcon;
                     return <SourceIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
                   })()}
                   {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
@@ -200,7 +200,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Other Conversations */}
       {hasOtherConvos && (
-        <CollapsibleSection title="Other Conversations" icon={MessageSquare} count={total_conversations - 1}>
+        <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={total_conversations - 1}>
           <div className="space-y-1.5">
             {other_conversations.map((conv) => (
               <Link

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Camera, ChevronRight, Globe, Loader2, Search, Trash2 } from 'lucide-react';
+import { Camera01Icon, ArrowRight01Icon, GlobeIcon, Loading01Icon, Search01Icon, Delete01Icon } from '@/lib/icons';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -257,9 +257,9 @@ export function GeneralTab({ workspaceId, editable }: {
                 {editable && (
                   <label className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                     {uploadingLogo ? (
-                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                      <Loading01Icon className="h-5 w-5 text-white animate-spin" />
                     ) : (
-                      <Camera className="h-5 w-5 text-white" />
+                      <Camera01Icon className="h-5 w-5 text-white" />
                     )}
                     <input
                       type="file"
@@ -405,17 +405,17 @@ export function GeneralTab({ workspaceId, editable }: {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between font-normal" disabled={!editable}>
                     <span className="flex items-center gap-2">
-                      <Globe className="h-4 w-4 text-muted-foreground" />
+                      <GlobeIcon className="h-4 w-4 text-muted-foreground" />
                       {timezone}
                       {selectedTz && <span className="text-muted-foreground">({selectedTz.offset})</span>}
                     </span>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[320px] p-0" align="start">
                   <div className="p-2 border-b">
                     <div className="flex items-center gap-2 px-2">
-                      <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <Search01Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                       <input
                         className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                         placeholder="Search timezones..."
@@ -479,7 +479,7 @@ export function GeneralTab({ workspaceId, editable }: {
                 </p>
               </div>
               <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Delete01Icon className="h-4 w-4 mr-2" />
                 Delete
               </Button>
             </div>
@@ -517,7 +517,7 @@ export function GeneralTab({ workspaceId, editable }: {
               disabled={deleteConfirmText.trim() !== workspace?.slug || deleting}
               onClick={handleDelete}
             >
-              {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : 'Delete workspace'}
+              {deleting ? <><Loading01Icon className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : 'Delete workspace'}
             </Button>
           </DialogFooter>
         </DialogContent>

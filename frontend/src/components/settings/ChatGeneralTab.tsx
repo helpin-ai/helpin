@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Check, Copy, Code, Loader2, MessageSquare, HelpCircle, ImageIcon, KeyRound, Bot, ChevronDown, Star } from 'lucide-react';
+import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -302,7 +302,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', 'https://client.prod.helpin.ai');
+    t.setAttribute('data-host', 'https://client.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
   })();
@@ -317,7 +317,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', 'https://client.prod.helpin.ai');
+    t.setAttribute('data-host', 'https://client.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
 
@@ -376,13 +376,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
             {saveStatus === 'saving' && (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                 <span className="text-muted-foreground">Saving...</span>
               </>
             )}
             {saveStatus === 'saved' && (
               <>
-                <Check className="h-3.5 w-3.5 text-green-500" />
+                <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Saved</span>
               </>
             )}
@@ -396,13 +396,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Code className="h-4 w-4" />
+              <CodeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Widget Installation</p>
               <p className="text-sm text-muted-foreground">Embed the chat widget on your website</p>
             </div>
-            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('widget-installation')}>
             <div>
@@ -410,7 +410,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               {!widgetKey ? (
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                    <KeyRound className="h-6 w-6 text-muted-foreground" />
+                    <Key01Icon className="h-6 w-6 text-muted-foreground" />
                   </div>
                   <div>
                     <p className="text-sm font-medium">No API key found</p>
@@ -436,7 +436,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                     <div className="flex items-center gap-2">
                       <Input value={widgetKey} readOnly className="font-mono text-sm" />
                       <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => copyToClipboard(widgetKey, 'Widget key')}>
-                        <Copy className="h-4 w-4" />
+                        <Copy01Icon className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -493,13 +493,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <MessageSquare className="h-4 w-4" />
+              <Message01Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Identity Capture</p>
               <p className="text-sm text-muted-foreground">Control what information is collected before starting a chat</p>
             </div>
-            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('identity-capture')}>
             <div>
@@ -550,13 +550,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <ImageIcon className="h-4 w-4" />
+              <Image01Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Appearance</p>
               <p className="text-sm text-muted-foreground">Customize the widget's visual appearance</p>
             </div>
-            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('appearance') && 'rotate-180')} />
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('appearance') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('appearance')}>
             <div>
@@ -670,7 +670,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                   >
-                    <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
+                    <Image01Icon className="h-6 w-6 text-muted-foreground/50" />
                     <div className="text-center">
                       <p className="text-sm text-muted-foreground">
                         Drop an image or{' '}
@@ -795,13 +795,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <HelpCircle className="h-4 w-4" />
+              <HelpCircleIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Help Center</p>
               <p className="text-sm text-muted-foreground">Select docs spaces for the widget Help tab</p>
             </div>
-            <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('help-center') && 'rotate-180')} />
+            <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('help-center') && 'rotate-180')} />
           </button>
           <div className="accordion-animate" data-open={isExpanded('help-center')}>
             <div>
@@ -849,13 +849,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Bot className="h-4 w-4" />
+                <BotIcon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">AI Auto-Reply</p>
                 <p className="text-sm text-muted-foreground">Configure AI-powered automatic responses</p>
               </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
+              <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
             </button>
             <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
               <div>
@@ -1027,13 +1027,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <MessageSquare className="h-4 w-4" />
+                <Message01Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Availability</p>
                 <p className="text-sm text-muted-foreground">Set when your team appears online and what visitors should expect</p>
               </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('business-hours') && 'rotate-180')} />
+              <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('business-hours') && 'rotate-180')} />
             </button>
             <div className="accordion-animate" data-open={isExpanded('business-hours')}>
               <div>
@@ -1122,13 +1122,13 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Star className="h-4 w-4" />
+                <StarIcon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Chat Features</p>
                 <p className="text-sm text-muted-foreground">File uploads, satisfaction surveys, and fallback emails</p>
               </div>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-features') && 'rotate-180')} />
+              <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-features') && 'rotate-180')} />
             </button>
             <div className="accordion-animate" data-open={isExpanded('chat-features')}>
               <div>

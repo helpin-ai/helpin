@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Building2, Globe, Trash2, Users } from 'lucide-react';
+import { Building03Icon, GlobeIcon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -135,7 +135,7 @@ export default function AccountSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
+            <GlobeIcon className="h-4 w-4" />
             Default Workspace
           </CardTitle>
         </CardHeader>
@@ -163,7 +163,7 @@ export default function AccountSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
+            <Building03Icon className="h-4 w-4" />
             Organization
           </CardTitle>
         </CardHeader>
@@ -192,7 +192,7 @@ export default function AccountSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
+            <UserGroupIcon className="h-4 w-4" />
             Members
           </CardTitle>
         </CardHeader>
@@ -267,7 +267,7 @@ export default function AccountSettings() {
                               className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => setRemoveMemberConfirm({ userId: member.user_id, name: member.full_name })}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Delete01Icon className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </TableCell>

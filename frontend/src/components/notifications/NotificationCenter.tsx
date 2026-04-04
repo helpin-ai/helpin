@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, CheckCheck, Archive, Clock, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Notification02Icon, TickDouble01Icon, ArchiveIcon, Clock01Icon, Delete01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons'
 import { formatDistanceToNow } from 'date-fns'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -129,15 +129,15 @@ function NotificationRow({
             <DropdownMenuContent align="end" className="w-44">
               {isUnread ? (
                 <DropdownMenuItem onClick={() => onRead(notification.id)}>
-                  <Eye className="h-3.5 w-3.5 mr-2" /> Mark as read
+                  <ViewIcon className="h-3.5 w-3.5 mr-2" /> Mark as read
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem onClick={() => onUnread(notification.id)}>
-                  <EyeOff className="h-3.5 w-3.5 mr-2" /> Mark as unread
+                  <ViewOffIcon className="h-3.5 w-3.5 mr-2" /> Mark as unread
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => onArchive(notification.id)}>
-                <Archive className="h-3.5 w-3.5 mr-2" /> Archive
+                <ArchiveIcon className="h-3.5 w-3.5 mr-2" /> Archive
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => {
                 const tomorrow = new Date()
@@ -145,10 +145,10 @@ function NotificationRow({
                 tomorrow.setHours(9, 0, 0, 0)
                 onSnooze(notification.id, tomorrow.toISOString())
               }}>
-                <Clock className="h-3.5 w-3.5 mr-2" /> Snooze until tomorrow
+                <Clock01Icon className="h-3.5 w-3.5 mr-2" /> Snooze until tomorrow
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onDelete(notification.id)} className="text-destructive">
-                <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                <Delete01Icon className="h-3.5 w-3.5 mr-2" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -212,7 +212,7 @@ export function NotificationCenter() {
           className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
           aria-label="Notifications"
         >
-          <Bell className="h-4 w-4" />
+          <Notification02Icon className="h-4 w-4" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -235,7 +235,7 @@ export function NotificationCenter() {
               className="h-7 gap-1.5 text-xs text-muted-foreground"
               onClick={() => markAllRead.mutate()}
             >
-              <CheckCheck className="h-3.5 w-3.5" />
+              <TickDouble01Icon className="h-3.5 w-3.5" />
               Mark all read
             </Button>
           )}
@@ -264,7 +264,7 @@ export function NotificationCenter() {
         <div className="overflow-y-auto overscroll-contain">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Bell className="h-8 w-8 mb-2 opacity-40" />
+              <Notification02Icon className="h-8 w-8 mb-2 opacity-40" />
               <p className="text-sm">No notifications</p>
               <p className="text-xs mt-1">You're all caught up</p>
             </div>

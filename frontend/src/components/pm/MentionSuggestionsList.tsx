@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react';
+import { UserGroupIcon } from '@/lib/icons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
 import { cn } from '@/lib/utils';
@@ -45,7 +45,7 @@ export function MentionSuggestionsList({
               />
             ) : (
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                <Users className="h-3.5 w-3.5" />
+                <UserGroupIcon className="h-3.5 w-3.5" />
               </span>
             )}
             <span className="min-w-0 flex-1">

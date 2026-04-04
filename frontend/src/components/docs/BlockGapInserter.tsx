@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Editor } from '@tiptap/core';
-import { Plus } from 'lucide-react';
+import { PlusSignIcon } from '@/lib/icons';
 
 interface BlockGapInserterProps {
   editor: Editor;
@@ -163,7 +163,7 @@ export function BlockGapInserter({ editor }: BlockGapInserterProps) {
       <div className="absolute inset-x-4 top-1/2 h-px bg-primary/0 group-hover:bg-primary/30 transition-colors" />
       {/* Plus icon */}
       <div className="flex h-5 w-5 items-center justify-center rounded-full bg-transparent text-transparent group-hover:bg-primary/10 group-hover:text-primary/60 transition-colors">
-        <Plus className="h-3 w-3" />
+        <PlusSignIcon className="h-3 w-3" />
       </div>
     </button>
   );

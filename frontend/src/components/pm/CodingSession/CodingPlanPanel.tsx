@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, ListTodo, Loader2 } from 'lucide-react';
+import { CheckmarkCircle02Icon, CircleIcon, CheckListIcon, Loading01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -18,7 +18,7 @@ export function CodingPlanPanel({ plan }: { plan: RunPlanArtifact | null }) {
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <ListTodo className="h-3.5 w-3.5" />
+          <CheckListIcon className="h-3.5 w-3.5" />
           Agent plan
         </div>
         <Badge variant="outline" className="text-[10px]">
@@ -50,7 +50,7 @@ function PlanStepRow({ step }: { step: RunPlanStep }) {
   if (step.status === 'completed') {
     return (
       <li className="flex items-start gap-2.5 text-sm">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+        <CheckmarkCircle02Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
         <span className="text-muted-foreground line-through">{step.step}</span>
       </li>
     );
@@ -61,14 +61,14 @@ function PlanStepRow({ step }: { step: RunPlanStep }) {
         'flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-sm',
         'bg-amber-50 dark:bg-amber-950/30',
       )}>
-        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+        <Loading01Icon className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
         <span className="font-medium text-foreground">{step.step}</span>
       </li>
     );
   }
   return (
     <li className="flex items-start gap-2.5 text-sm">
-      <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
+      <CircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/40" />
       <span className="text-muted-foreground">{step.step}</span>
     </li>
   );

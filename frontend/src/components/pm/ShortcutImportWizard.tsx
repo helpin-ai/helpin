@@ -10,17 +10,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  GripVertical,
-  Key,
-  Loader2,
-  Mail,
-  Upload,
-  X,
-} from 'lucide-react';
+  Alert01Icon,
+  Tick01Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  DragDropVerticalIcon,
+  Key01Icon,
+  Loading01Icon,
+  Mail01Icon,
+  Upload01Icon,
+  Cancel01Icon,
+} from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -452,7 +452,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
                       : 'bg-muted text-muted-foreground',
                 )}
               >
-                {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                {i < step ? <Tick01Icon className="h-3.5 w-3.5" /> : i + 1}
               </div>
               <span
                 className={cn(
@@ -569,7 +569,7 @@ function UploadStep({
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-8 w-8 animate-spin text-muted-foreground" />
         <p className="text-sm text-muted-foreground">Analyzing CSV file...</p>
       </div>
     );
@@ -586,7 +586,7 @@ function UploadStep({
         <Card>
           <CardContent className="px-4 py-3">
             <div className="flex items-start gap-3">
-              <Key className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <Key01Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
                 <div>
                   <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
@@ -616,7 +616,7 @@ function UploadStep({
           onClick={() => fileInputRef.current?.click()}
           className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-16 transition-colors hover:border-primary/50 hover:bg-muted/30"
         >
-          <Upload className="h-8 w-8 text-muted-foreground" />
+          <Upload01Icon className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm font-medium">Drag and drop your CSV file here</p>
           <p className="text-xs text-muted-foreground">or click to browse — .csv up to 50 MB</p>
           <input
@@ -656,7 +656,7 @@ function UploadStep({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Check className="h-4 w-4 text-green-500" />
+          <Tick01Icon className="h-4 w-4 text-green-500" />
           <span className="text-sm font-medium truncate max-w-[300px]">{file.name}</span>
         </div>
         <Button variant="ghost" size="sm" onClick={onClear}>
@@ -703,7 +703,7 @@ function UploadStep({
         <div className="space-y-1">
           {preview.warnings.map((w, i) => (
             <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
               <span>{w}</span>
             </div>
           ))}
@@ -742,7 +742,7 @@ function SortableStateRow({
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="h-3.5 w-3.5" />
+          <DragDropVerticalIcon className="h-3.5 w-3.5" />
         </button>
       </TableCell>
       <TableCell className="py-1.5">
@@ -846,9 +846,9 @@ function WorkflowStep({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {wf.expanded ? (
-                    <ChevronDown className="h-4 w-4" />
+                    <ArrowDown01Icon className="h-4 w-4" />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <ArrowRight01Icon className="h-4 w-4" />
                   )}
                   <CardTitle className="text-sm">{wf.shortcutWorkflowName}</CardTitle>
                   {isValid && <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Ready</Badge>}
@@ -921,7 +921,7 @@ function WorkflowStep({
 
                     {!hasDone && (
                       <p className="flex items-center gap-1.5 text-xs text-destructive">
-                        <X className="h-3 w-3" /> At least one Done state is required.
+                        <Cancel01Icon className="h-3 w-3" /> At least one Done state is required.
                       </p>
                     )}
                   </>
@@ -1001,7 +1001,7 @@ function WorkflowStep({
 
       {allReady && (
         <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1.5">
-          <Check className="h-3.5 w-3.5" />
+          <Tick01Icon className="h-3.5 w-3.5" />
           All workflows are ready. You can continue or expand to customize.
         </p>
       )}
@@ -1047,7 +1047,7 @@ function UserStep({
         </p>
         {unmatchedCount > 0 && (
           <Button variant="outline" size="sm" onClick={onInviteAll}>
-            <Mail className="mr-1.5 h-3.5 w-3.5" />
+            <Mail01Icon className="mr-1.5 h-3.5 w-3.5" />
             Invite All Unmatched ({unmatchedCount})
           </Button>
         )}
@@ -1068,7 +1068,7 @@ function UserStep({
                 <TableRow key={u.email}>
                   <TableCell className="py-1.5">
                     <div className="flex items-center gap-1.5 text-sm">
-                      <Check className="h-3.5 w-3.5 text-green-500" />
+                      <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
                       <div>
                         {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
                         {u.email}
@@ -1101,9 +1101,9 @@ function UserStep({
                     <TableCell className="py-1.5">
                       <div className="flex items-center gap-1.5 text-sm">
                         {u.invited ? (
-                          <Mail className="h-3.5 w-3.5 text-blue-500" />
+                          <Mail01Icon className="h-3.5 w-3.5 text-blue-500" />
                         ) : (
-                          <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
+                          <Alert01Icon className="h-3.5 w-3.5 text-yellow-500" />
                         )}
                         <div>
                           {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
@@ -1150,12 +1150,12 @@ function UserStep({
                               ))}
                               <SelectItem value="__action__invite">
                                 <span className="flex items-center gap-1">
-                                  <Mail className="h-3 w-3" /> Invite &amp; Map
+                                  <Mail01Icon className="h-3 w-3" /> Invite &amp; Map
                                 </span>
                               </SelectItem>
                               <SelectItem value="__action__skip">
                                 <span className="flex items-center gap-1">
-                                  <X className="h-3 w-3" /> Skip
+                                  <Cancel01Icon className="h-3 w-3" /> Skip
                                 </span>
                               </SelectItem>
                             </SelectContent>
@@ -1265,9 +1265,9 @@ function ImportStep({
                   )}
                 >
                   {done ? (
-                    <Check className="h-3.5 w-3.5" />
+                    <Tick01Icon className="h-3.5 w-3.5" />
                   ) : active ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <div className="h-3.5 w-3.5 rounded-full border" />
                   )}
@@ -1362,7 +1362,7 @@ function ImportStep({
           <CardContent className="space-y-1.5 px-4 pb-4 pt-0">
             {preview.warnings.map((w, i) => (
               <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>{w}</span>
               </div>
             ))}
@@ -1442,7 +1442,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
           <CardContent className="space-y-1.5 px-4 pb-4 pt-0">
             {result.warnings.map((w, i) => (
               <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>{w}</span>
               </div>
             ))}

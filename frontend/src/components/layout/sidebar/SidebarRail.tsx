@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Moon, Sun } from 'lucide-react';
+import { Moon02Icon, Sun01Icon } from '@/lib/icons';
 import { isModuleEnabled } from '@/lib/featureFlags';
 import type { RailId, RailItem } from './types';
 
@@ -68,8 +68,8 @@ export function SidebarRail({
           onClick={onToggleTheme}
           aria-label="Toggle theme"
         >
-          <Sun className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
-          <Moon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+          <Sun01Icon className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
+          <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
           <span className="sr-only">{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
         </button>
         {accountMenu}

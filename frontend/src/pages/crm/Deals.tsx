@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Columns2, LayoutList, Plus, Search } from 'lucide-react';
+import { LayoutTwoColumnIcon, LayoutTable01Icon, PlusSignIcon, Search01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -91,7 +91,7 @@ export function DealsPage() {
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search deals..."
             value={search}
@@ -109,7 +109,7 @@ export function DealsPage() {
               className="h-7 w-7"
               onClick={() => setView('board')}
             >
-              <Columns2 className="h-4 w-4" />
+              <LayoutTwoColumnIcon className="h-4 w-4" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="List view">
@@ -119,11 +119,11 @@ export function DealsPage() {
               className="h-7 w-7"
               onClick={() => setView('list')}
             >
-              <LayoutList className="h-4 w-4" />
+              <LayoutTable01Icon className="h-4 w-4" />
             </Button>
           </QuickTooltip>
           <Button size="sm" className="ml-2 h-7 text-xs" onClick={() => setShowCreate(true)}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
             Deal
           </Button>
         </div>

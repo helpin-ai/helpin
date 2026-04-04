@@ -1,18 +1,19 @@
 import { useState, useMemo } from 'react'
+import { useTitle } from '@/hooks/useTitle'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
-  Bell,
-  CheckCheck,
-  Archive,
-  Clock,
-  Trash2,
-  Eye,
-  EyeOff,
-  EllipsisVertical,
-  Inbox,
-  AtSign,
-  UserPlus,
-} from 'lucide-react'
+  Notification02Icon,
+  TickDouble01Icon,
+  ArchiveIcon,
+  Clock01Icon,
+  Delete01Icon,
+  ViewIcon,
+  ViewOffIcon,
+  MoreVerticalIcon,
+  InboxIcon,
+  UserAdd01Icon,
+  AtIcon,
+} from '@/lib/icons'
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
@@ -39,10 +40,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { Notification, NotificationFilter } from '@/lib/notificationTypes'
 
-const FILTERS: { key: NotificationFilter; label: string; icon: typeof Inbox }[] = [
-  { key: 'all', label: 'All Notifications', icon: Inbox },
-  { key: 'mentions', label: 'Mentions', icon: AtSign },
-  { key: 'assigned', label: 'Assigned to me', icon: UserPlus },
+const FILTERS: { key: NotificationFilter; label: string; icon: typeof InboxIcon }[] = [
+  { key: 'all', label: 'All Notifications', icon: InboxIcon },
+  { key: 'mentions', label: 'Mentions', icon: AtIcon },
+  { key: 'assigned', label: 'Assigned to me', icon: UserAdd01Icon },
 ]
 
 function getTimeAgo(dateStr: string): string {
@@ -181,28 +182,28 @@ function NotificationListItem({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => e.stopPropagation()}>
-              <EllipsisVertical className="h-3.5 w-3.5" />
+              <MoreVerticalIcon className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             {isUnread ? (
               <DropdownMenuItem onClick={() => onRead(notification.id)}>
-                <Eye className="h-3.5 w-3.5 mr-2" /> Mark as read
+                <ViewIcon className="h-3.5 w-3.5 mr-2" /> Mark as read
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem onClick={() => onUnread(notification.id)}>
-                <EyeOff className="h-3.5 w-3.5 mr-2" /> Mark as unread
+                <ViewOffIcon className="h-3.5 w-3.5 mr-2" /> Mark as unread
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={() => onArchive(notification.id)}>
-              <Archive className="h-3.5 w-3.5 mr-2" /> Archive
+              <ArchiveIcon className="h-3.5 w-3.5 mr-2" /> Archive
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => {
               const inOneHour = new Date(Date.now() + 60 * 60 * 1000)
               onSnooze(notification.id, inOneHour.toISOString())
             }}>
-              <Clock className="h-3.5 w-3.5 mr-2" /> Snooze 1 hour
+              <Clock01Icon className="h-3.5 w-3.5 mr-2" /> Snooze 1 hour
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => {
               const tomorrow = new Date()
@@ -210,11 +211,11 @@ function NotificationListItem({
               tomorrow.setHours(9, 0, 0, 0)
               onSnooze(notification.id, tomorrow.toISOString())
             }}>
-              <Clock className="h-3.5 w-3.5 mr-2" /> Snooze until tomorrow
+              <Clock01Icon className="h-3.5 w-3.5 mr-2" /> Snooze until tomorrow
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDelete(notification.id)} className="text-destructive">
-              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+              <Delete01Icon className="h-3.5 w-3.5 mr-2" /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -350,6 +351,7 @@ function NotificationDetail({ notification }: { notification: Notification }) {
 }
 
 export function NotificationsPage() {
+  useTitle('Notifications')
   const [filter, setFilter] = useState<NotificationFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -383,7 +385,7 @@ export function NotificationsPage() {
         {/* List header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
+            <Notification02Icon className="h-4 w-4" />
             <h1 className="text-sm font-semibold">Notifications</h1>
             {unreadCount > 0 && (
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground">
@@ -394,15 +396,15 @@ export function NotificationsPage() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
-                <EllipsisVertical className="h-4 w-4" />
+                <MoreVerticalIcon className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={() => markAllRead.mutate()}>
-                <CheckCheck className="h-3.5 w-3.5 mr-2" /> Mark all as read
+                <TickDouble01Icon className="h-3.5 w-3.5 mr-2" /> Mark all as read
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => archiveAllRead.mutate()}>
-                <Archive className="h-3.5 w-3.5 mr-2" /> Archive all read
+                <ArchiveIcon className="h-3.5 w-3.5 mr-2" /> Archive all read
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -432,7 +434,7 @@ export function NotificationsPage() {
         <ScrollArea className="flex-1">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Inbox className="h-10 w-10 mb-3 opacity-30" />
+              <InboxIcon className="h-10 w-10 mb-3 opacity-30" />
               <p className="text-sm font-medium">No notifications</p>
               <p className="text-xs mt-1">You're all caught up</p>
             </div>
@@ -484,7 +486,7 @@ export function NotificationsPage() {
           <NotificationDetail notification={selected} />
         ) : (
           <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-            <Bell className="h-12 w-12 mb-3 opacity-20" />
+            <Notification02Icon className="h-12 w-12 mb-3 opacity-20" />
             <p className="text-sm font-medium">Select a notification</p>
             <p className="text-xs mt-1">Click on a notification to view details</p>
           </div>

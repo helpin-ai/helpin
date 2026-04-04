@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  BookOpen,
-  CircleDot,
-  Crosshair,
-  FileText,
-  Loader2,
-  Target,
-  User,
-} from 'lucide-react';
+  BookOpen01Icon,
+  File01Icon,
+  Loading01Icon,
+  RecordIcon,
+  Target01Icon,
+  Target02Icon,
+  UserIcon,
+} from '@/lib/icons';
 import {
   CommandDialog,
   CommandEmpty,
@@ -147,7 +147,7 @@ export function SearchCommandPalette({
       <CommandList>
         {searching && (
           <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loading01Icon className="h-4 w-4 animate-spin" />
             Searching...
           </div>
         )}
@@ -171,7 +171,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('task', item)}
                 className="cursor-pointer"
               >
-                <CircleDot className="h-4 w-4 text-blue-500" />
+                <RecordIcon className="h-4 w-4 text-blue-500" />
                 <span className="text-muted-foreground text-xs font-mono mr-1">
                   {item.task_key || `#${item.display_id}`}
                 </span>
@@ -190,7 +190,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('epic', item)}
                 className="cursor-pointer"
               >
-                <BookOpen className="h-4 w-4 text-purple-500" />
+                <BookOpen01Icon className="h-4 w-4 text-purple-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -206,7 +206,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('sprint', item)}
                 className="cursor-pointer"
               >
-                <Crosshair className="h-4 w-4 text-green-500" />
+                <Target02Icon className="h-4 w-4 text-green-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -222,7 +222,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('objective', item)}
                 className="cursor-pointer"
               >
-                <Target className="h-4 w-4 text-orange-500" />
+                <Target01Icon className="h-4 w-4 text-orange-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -238,7 +238,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('document', item)}
                 className="cursor-pointer"
               >
-                <FileText className="h-4 w-4 text-blue-400" />
+                <File01Icon className="h-4 w-4 text-blue-400" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -254,7 +254,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('member', item)}
                 className="cursor-pointer"
               >
-                <User className="h-4 w-4 text-cyan-500" />
+                <UserIcon className="h-4 w-4 text-cyan-500" />
                 <span className="truncate">{item.name}</span>
                 {item.team_name && (
                   <span className="ml-auto text-xs text-muted-foreground truncate">

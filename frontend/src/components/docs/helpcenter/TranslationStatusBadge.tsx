@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react'
+import { PlusSignIcon } from '@/lib/icons'
 import type { DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 
 const STATUS_META: Record<DocsHelpcenterTranslationState, { label: string; className: string; icon?: boolean }> = {
@@ -25,7 +25,7 @@ export function TranslationStatusBadge({ state }: { state: DocsHelpcenterTransla
   const meta = STATUS_META[state]
   return (
     <span className={`inline-flex items-center text-[11px] font-medium ${meta.className}`}>
-      {meta.icon && <Plus className="h-3 w-3 mr-0.5" />}
+      {meta.icon && <PlusSignIcon className="h-3 w-3 mr-0.5" />}
       {meta.label}
     </span>
   )

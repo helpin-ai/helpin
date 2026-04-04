@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Mail, User, Clock } from 'lucide-react';
+import { ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, UserIcon, Clock01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarVisitorContext } from './SidebarVisitorContext';
@@ -21,7 +21,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
     return (
       <div className="flex w-10 flex-col items-center border-l bg-muted/30 pt-2">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
-          <ChevronLeft className="h-4 w-4" />
+          <ArrowLeft01Icon className="h-4 w-4" />
         </Button>
       </div>
     );
@@ -35,7 +35,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h3 className="text-sm font-semibold">Details</h3>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
-          <ChevronRight className="h-4 w-4" />
+          <ArrowRight01Icon className="h-4 w-4" />
         </Button>
       </div>
 
@@ -53,7 +53,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             <span className="text-sm font-semibold truncate max-w-full">{displayName}</span>
             {conversation.customer_email && conversation.customer_name && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground truncate max-w-full">
-                <Mail className="h-3 w-3 shrink-0" />
+                <Mail01Icon className="h-3 w-3 shrink-0" />
                 {conversation.customer_email}
               </span>
             )}
@@ -63,7 +63,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
                 params={{ slug: workspace.slug, contactId: conversation.crm_contact_id }}
                 className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 mt-0.5"
               >
-                <User className="h-3 w-3" />
+                <UserIcon className="h-3 w-3" />
                 View CRM Contact
               </Link>
             )}
@@ -72,11 +72,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
           {/* ── Conversation Info ────────────────────────── */}
           <div className="border-b px-3 py-3 space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Created</span>
+              <span className="text-muted-foreground flex items-center gap-1"><Clock01Icon className="h-3 w-3" /> Created</span>
               <span>{formatTimestamp(conversation.created_at)}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Updated</span>
+              <span className="text-muted-foreground flex items-center gap-1"><Clock01Icon className="h-3 w-3" /> Updated</span>
               <span>{formatTimestamp(conversation.updated_at)}</span>
             </div>
           </div>

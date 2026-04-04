@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { Editor } from '@tiptap/core';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft02Icon } from '@/lib/icons';
 import { slashMenuPluginKey, type SlashMenuState } from './SlashMenuExtension';
 import { slashCommands, type SlashCommand } from './slash-commands';
 
@@ -259,7 +259,7 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
           onMouseDown={(e) => e.preventDefault()}
           onClick={goBack}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="h-3.5 w-3.5" />
           <span className="font-medium">{submenuTitle}</span>
         </button>
       )}

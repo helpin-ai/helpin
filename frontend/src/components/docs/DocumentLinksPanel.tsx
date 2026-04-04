@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { FileText, Link2, Plus, Search, Trash2, X } from 'lucide-react'
+import { File01Icon, Link01Icon, PlusSignIcon, Search01Icon, Delete01Icon, Cancel01Icon } from '@/lib/icons'
 import { toast } from 'sonner'
 import {
   useDocsLinks,
@@ -111,7 +111,7 @@ export function DocumentLinksPanel({
       <SheetContent className="w-80 sm:w-96">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <Link2 className="h-4 w-4" />
+            <Link01Icon className="h-4 w-4" />
             Linked Tasks
           </SheetTitle>
         </SheetHeader>
@@ -125,7 +125,7 @@ export function DocumentLinksPanel({
               className="w-full gap-1.5"
               onClick={() => setShowSearch(true)}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <PlusSignIcon className="h-3.5 w-3.5" />
               Link a Task
             </Button>
           )}
@@ -133,7 +133,7 @@ export function DocumentLinksPanel({
           {showSearch && (
             <div className="space-y-2">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   ref={inputRef}
                   className="h-8 pl-8 pr-8 text-xs"
@@ -146,7 +146,7 @@ export function DocumentLinksPanel({
                   onClick={() => { setShowSearch(false); setQuery('') }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <Cancel01Icon className="h-3.5 w-3.5" />
                 </button>
               </div>
 
@@ -166,7 +166,7 @@ export function DocumentLinksPanel({
                         disabled={createLink.isPending}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/40 disabled:opacity-50"
                       >
-                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="shrink-0 font-medium text-muted-foreground">
                           #{task.display_id}
                         </span>
@@ -203,7 +203,7 @@ export function DocumentLinksPanel({
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     disabled={!link.linked_object_display_id}
                   >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     {link.linked_object_display_id ? (
                       <>
                         <span className="shrink-0 text-xs font-medium text-muted-foreground">
@@ -225,7 +225,7 @@ export function DocumentLinksPanel({
                       onClick={() => handleUnlink(link)}
                       disabled={deleteLink.isPending}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Delete01Icon className="h-3 w-3" />
                     </Button>
                   )}
                 </div>

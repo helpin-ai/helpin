@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CheckCircle2, GitCommitHorizontal, ShieldCheck } from 'lucide-react';
+import { CheckmarkCircle02Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,7 +44,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
       return (
         <InteractionShell compact={compact}
-          icon={<CheckCircle2 className="h-4 w-4" />}
+          icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
           summary={interaction.summary}
@@ -176,7 +176,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
       return (
         <InteractionShell compact={compact}
-          icon={<CheckCircle2 className="h-4 w-4" />}
+          icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
           summary={interaction.summary}
@@ -272,7 +272,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
     const checkpoint = parseReviewCheckpointRequest(requestPayload);
     return (
       <InteractionShell compact={compact}
-        icon={<ShieldCheck className="h-4 w-4" />}
+        icon={<SecurityCheckIcon className="h-4 w-4" />}
         eyebrow={checkpoint?.phase ? `${checkpoint.phase} review checkpoint` : 'Review checkpoint'}
         title={interaction.title ?? checkpoint?.title ?? 'Review required'}
         summary={interaction.summary ?? checkpoint?.summary}
@@ -317,7 +317,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
     const requestedPermissions = permissions?.permissions ?? {};
     return (
       <InteractionShell compact={compact}
-        icon={<ShieldCheck className="h-4 w-4" />}
+        icon={<SecurityCheckIcon className="h-4 w-4" />}
         eyebrow="Permissions approval"
         title={interaction.title ?? 'Approve additional permissions'}
         summary={interaction.summary}
@@ -367,7 +367,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
     return (
       <InteractionShell compact={compact}
-        icon={<GitCommitHorizontal className="h-4 w-4" />}
+        icon={<GitCommitIcon className="h-4 w-4" />}
         eyebrow={interaction.interaction_kind === 'command_execution_approval' ? 'Command approval' : 'File-change approval'}
         title={interaction.title ?? runtimeApproval.title}
       >
@@ -408,7 +408,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
   return (
     <InteractionShell compact={compact}
-      icon={<ShieldCheck className="h-4 w-4" />}
+      icon={<SecurityCheckIcon className="h-4 w-4" />}
       eyebrow="Interaction"
       title={interaction.title ?? interaction.interaction_kind.replaceAll('_', ' ')}
       summary={interaction.summary}

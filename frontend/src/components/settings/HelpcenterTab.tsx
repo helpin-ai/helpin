@@ -30,9 +30,10 @@ import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/Helpcent
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
 import {
-  Plus, Info, ChevronDown, X,
-  Globe, Palette, LayoutGrid, LinkIcon, ImageIcon, Languages,
-} from 'lucide-react';
+  PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
+  GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
+  LanguageCircleIcon,
+} from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -506,13 +507,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('branding') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('branding')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Palette className="h-4 w-4" />
+            <PaintBoardIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Branding</p>
             <p className="text-xs text-muted-foreground">Logo, colors, and theme for your help center</p>
           </div>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('branding') && 'rotate-180')} />
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('branding') && 'rotate-180')} />
         </button>
         <div className="accordion-animate" data-open={isExpanded('branding')}>
           <div>
@@ -541,7 +542,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   onClick={() => logoInputRef.current?.click()}
                   className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/20 text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
                 >
-                  <ImageIcon className="h-6 w-6" />
+                  <Image01Icon className="h-6 w-6" />
                   <span className="text-xs">{uploadingLogo ? 'Uploading...' : '200 × 50 px · SVG or PNG'}</span>
                 </button>
               )}
@@ -569,7 +570,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   onClick={() => logoDarkInputRef.current?.click()}
                   className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-secondary text-muted-foreground transition-colors hover:border-primary/30 hover:bg-secondary/80 hover:text-foreground"
                 >
-                  <ImageIcon className="h-6 w-6" />
+                  <Image01Icon className="h-6 w-6" />
                   <span className="text-xs">{uploadingLogoDark ? 'Uploading...' : '200 × 50 px · SVG or PNG'}</span>
                 </button>
               )}
@@ -597,7 +598,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   onClick={() => faviconInputRef.current?.click()}
                   className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/20 text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
                 >
-                  <ImageIcon className="h-5 w-5" />
+                  <Image01Icon className="h-5 w-5" />
                   <span className="text-xs">{uploadingFavicon ? 'Uploading...' : '32 × 32 px · ICO, PNG, or SVG'}</span>
                 </button>
               )}
@@ -648,7 +649,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
                       <p><strong>Light</strong> — Forces light theme, hides toggle</p>
@@ -682,13 +683,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Globe className="h-4 w-4" />
+            <GlobeIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Domain & SEO</p>
             <p className="text-xs text-muted-foreground">URL configuration and search engine optimization</p>
           </div>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('domain-seo') && 'rotate-180')} />
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('domain-seo') && 'rotate-180')} />
         </button>
         <div className="accordion-animate" data-open={isExpanded('domain-seo')}>
           <div>
@@ -761,13 +762,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('homepage') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('homepage')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <LayoutGrid className="h-4 w-4" />
+            <LayoutGridIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Homepage</p>
             <p className="text-xs text-muted-foreground">Hero section and featured content visitors see first</p>
           </div>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('homepage') && 'rotate-180')} />
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('homepage') && 'rotate-180')} />
         </button>
         <div className="accordion-animate" data-open={isExpanded('homepage')}>
           <div>
@@ -871,13 +872,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('navigation') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('navigation')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <LinkIcon className="h-4 w-4" />
+            <Link01Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Navigation</p>
             <p className="text-xs text-muted-foreground">Header links and footer configuration</p>
           </div>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('navigation') && 'rotate-180')} />
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('navigation') && 'rotate-180')} />
         </button>
         <div className="accordion-animate" data-open={isExpanded('navigation')}>
           <div>
@@ -909,7 +910,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               )}
               <div className="flex justify-center">
                 <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+                  <PlusSignIcon className="mr-1 h-3.5 w-3.5" /> Add Link
                 </Button>
               </div>
             </div>
@@ -951,7 +952,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 )}
                 <div className="flex justify-center">
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+                    <PlusSignIcon className="mr-1 h-3.5 w-3.5" /> Add Link
                   </Button>
                 </div>
               </div>
@@ -966,13 +967,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Languages className="h-4 w-4" />
+            <LanguageCircleIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Languages & Translation</p>
             <p className="text-xs text-muted-foreground">Manage supported languages and translation settings</p>
           </div>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('locales') && 'rotate-180')} />
         </button>
         <div className="accordion-animate" data-open={isExpanded('locales')}>
           <div>
@@ -1010,7 +1011,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                             onClick={() => setConfig({ ...config, protected_terms: config.protected_terms.filter((_, j) => j !== i) })}
                             className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
                           >
-                            <X className="h-3 w-3" />
+                            <Cancel01Icon className="h-3 w-3" />
                           </button>
                         </span>
                       ))}

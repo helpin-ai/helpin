@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Delete01Icon } from '@/lib/icons';
 
 interface CompactChipProps {
   title: string;
@@ -28,7 +28,7 @@ export function CompactChip({ title, displayId, onClick, onRemove }: CompactChip
       )}
       {onRemove && (
         <button type="button" onClick={onRemove} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors">
-          <Trash2 className="h-3 w-3" />
+          <Delete01Icon className="h-3 w-3" />
         </button>
       )}
     </div>

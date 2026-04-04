@@ -98,8 +98,8 @@ vi.mock('@/components/ui/icon-picker', () => ({
   ICON_MAP: {},
 }))
 
-vi.mock('lucide-react', () => ({
-  FolderOpen: () => null,
+vi.mock('@/lib/icons', () => ({
+  FolderOpenIcon: () => null,
 }))
 
 vi.mock('sonner', () => ({

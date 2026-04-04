@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, GitBranch, Terminal } from 'lucide-react';
+import { Tick01Icon, Copy01Icon, GitBranchIcon, TerminalIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,7 +60,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
           aria-label={`Copy task ID ${taskKey ?? displayId}`}
           onClick={() => copy(taskKey ?? String(displayId))}
         >
-          {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <Tick01Icon className="h-3.5 w-3.5 text-green-500" /> : <Copy01Icon className="h-3.5 w-3.5" />}
         </Button>
       </QuickTooltip>
 
@@ -74,7 +74,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
               className="h-6 w-6 shrink-0"
               aria-label="Copy git branch name"
             >
-              <GitBranch className="h-3.5 w-3.5" />
+              <GitBranchIcon className="h-3.5 w-3.5" />
             </Button>
           </PopoverTrigger>
         </QuickTooltip>
@@ -82,7 +82,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
           <div>
             <p className="text-[11px] leading-none font-medium text-muted-foreground">Branch</p>
             <div className="mt-1.5 flex items-center gap-1 rounded border border-border bg-muted/50 px-2 py-1">
-              <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <code className="min-w-0 flex-1 truncate text-[11px]">{branchName}</code>
               <Button
                 type="button"
@@ -92,14 +92,14 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
                 aria-label="Copy branch name"
                 onClick={(e) => { e.stopPropagation(); copyBranch(branchName); }}
               >
-                {branchCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                {branchCopied ? <Tick01Icon className="h-3 w-3 text-green-500" /> : <Copy01Icon className="h-3 w-3" />}
               </Button>
             </div>
           </div>
           <div>
             <p className="text-[11px] leading-none font-medium text-muted-foreground">Checkout</p>
             <div className="mt-1.5 flex items-center gap-1 rounded border border-border bg-muted/50 px-2 py-1">
-              <Terminal className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <TerminalIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <code className="min-w-0 flex-1 truncate text-[11px]">{checkoutCmd}</code>
               <Button
                 type="button"
@@ -109,7 +109,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
                 aria-label="Copy checkout command"
                 onClick={(e) => { e.stopPropagation(); copyCmd(checkoutCmd); }}
               >
-                {cmdCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                {cmdCopied ? <Tick01Icon className="h-3 w-3 text-green-500" /> : <Copy01Icon className="h-3 w-3" />}
               </Button>
             </div>
           </div>

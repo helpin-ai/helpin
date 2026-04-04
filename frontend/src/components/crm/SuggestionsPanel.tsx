@@ -1,4 +1,4 @@
-import { Lightbulb, Check, X } from 'lucide-react';
+import { BulbIcon, Tick01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +29,7 @@ export function SuggestionsPanel({ workspaceId, objectType, objectId }: Suggesti
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Lightbulb className="h-4 w-4 text-yellow-500" />
+          <BulbIcon className="h-4 w-4 text-yellow-500" />
           AI Suggestions
         </CardTitle>
       </CardHeader>
@@ -56,7 +56,7 @@ export function SuggestionsPanel({ workspaceId, objectType, objectId }: Suggesti
                   onClick={() => updateSuggestion.mutate({ id: suggestion.id, status: 'accepted' })}
                   title="Accept"
                 >
-                  <Check className="h-3.5 w-3.5 text-green-500" />
+                  <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -65,7 +65,7 @@ export function SuggestionsPanel({ workspaceId, objectType, objectId }: Suggesti
                   onClick={() => updateSuggestion.mutate({ id: suggestion.id, status: 'dismissed' })}
                   title="Dismiss"
                 >
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Cancel01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
               </div>
             </div>

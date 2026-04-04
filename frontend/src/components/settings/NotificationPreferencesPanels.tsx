@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Bell, BellOff, ChevronRight, Globe, Mail, Search } from 'lucide-react';
+import { Notification02Icon, NotificationOff02Icon, ArrowRight01Icon, GlobeIcon, Mail01Icon, Search01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import {
@@ -86,17 +86,17 @@ function TimezonePicker({
       <PopoverTrigger asChild>
         <Button variant="outline" className="w-full justify-between font-normal" disabled={disabled}>
           <span className="flex items-center gap-2 overflow-hidden">
-            <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <GlobeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{value}</span>
             {selectedTz ? <span className="truncate text-muted-foreground">({selectedTz.offset})</span> : null}
           </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[320px] p-0" align="end">
         <div className="border-b p-2">
           <div className="flex items-center gap-2 px-2">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Search01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               placeholder="Search timezones..."
@@ -205,7 +205,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
       <Card className={cardClassName}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
+            <Mail01Icon className="h-4 w-4" />
             Email Notifications
           </CardTitle>
           <CardDescription>
@@ -349,7 +349,7 @@ export function WorkspaceMuteNotificationsCard({
     <Card className={cardClassName}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <BellOff className="h-4 w-4" />
+          <NotificationOff02Icon className="h-4 w-4" />
           Workspace Notifications
         </CardTitle>
         <CardDescription>This personal workspace override sits on top of the notification types below.</CardDescription>
@@ -425,7 +425,7 @@ function NotificationCategoriesCard({
     <Card className={cardClassName}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Bell className="h-4 w-4" />
+          <Notification02Icon className="h-4 w-4" />
           {title}
         </CardTitle>
         <CardDescription>{description}</CardDescription>

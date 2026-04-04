@@ -1,17 +1,17 @@
-import { Zap, AlertTriangle, TrendingUp, Shield, Clock, Trophy, Users } from 'lucide-react';
+import { ZapIcon, Alert01Icon, ChartIncreaseIcon, Shield01Icon, Clock01Icon, Award01Icon, UserGroupIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { useContactSignals, useDealSignals } from '@/hooks/queries/useCRM';
 import type { CRMBuyerSignal, CRMSignalType } from '@/lib/crmTypes';
 
 const signalConfig: Record<CRMSignalType, { icon: React.ElementType; color: string; label: string }> = {
-  buying_intent: { icon: TrendingUp, color: 'text-green-500', label: 'Buying Intent' },
-  objection: { icon: AlertTriangle, color: 'text-yellow-500', label: 'Objection' },
-  competitor_mention: { icon: Users, color: 'text-orange-500', label: 'Competitor' },
-  budget_signal: { icon: Zap, color: 'text-blue-500', label: 'Budget' },
-  timeline_signal: { icon: Clock, color: 'text-purple-500', label: 'Timeline' },
-  champion_signal: { icon: Trophy, color: 'text-emerald-500', label: 'Champion' },
-  risk_signal: { icon: Shield, color: 'text-red-500', label: 'Risk' },
+  buying_intent: { icon: ChartIncreaseIcon, color: 'text-green-500', label: 'Buying Intent' },
+  objection: { icon: Alert01Icon, color: 'text-yellow-500', label: 'Objection' },
+  competitor_mention: { icon: UserGroupIcon, color: 'text-orange-500', label: 'Competitor' },
+  budget_signal: { icon: ZapIcon, color: 'text-blue-500', label: 'Budget' },
+  timeline_signal: { icon: Clock01Icon, color: 'text-purple-500', label: 'Timeline' },
+  champion_signal: { icon: Award01Icon, color: 'text-emerald-500', label: 'Champion' },
+  risk_signal: { icon: Shield01Icon, color: 'text-red-500', label: 'Risk' },
 };
 
 interface BuyerSignalsProps {
