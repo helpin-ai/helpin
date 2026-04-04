@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
@@ -25,7 +26,10 @@ export function SupportInboxLayout() {
     setCreateDialogOpen,
     teamInboxDialogOpen,
     setTeamInboxDialogOpen,
+    editMailboxId,
   } = useSupportInboxStore();
+  const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
+  const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { conversationId?: string };
 
@@ -102,6 +106,7 @@ export function SupportInboxLayout() {
         workspaceId={workspaceId}
         open={teamInboxDialogOpen}
         onOpenChange={setTeamInboxDialogOpen}
+        mailbox={editMailbox}
       />
     </div>
   );

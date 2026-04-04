@@ -91,6 +91,7 @@ interface SupportInboxState {
   // Create dialog
   createDialogOpen: boolean;
   teamInboxDialogOpen: boolean;
+  editMailboxId: string | null;
   // Mobile
   activePanel: ActivePanel;
   // Drafts: conversationId → unsent textarea content
@@ -107,6 +108,7 @@ interface SupportInboxState {
   toggleDetailSidebar: () => void;
   setCreateDialogOpen: (open: boolean) => void;
   setTeamInboxDialogOpen: (open: boolean) => void;
+  setEditMailboxId: (id: string | null) => void;
   setActivePanel: (panel: ActivePanel) => void;
   setDraft: (conversationId: string, content: string) => void;
   clearDraft: (conversationId: string) => void;
@@ -128,6 +130,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     createDialogOpen: false,
     teamInboxDialogOpen: false,
+    editMailboxId: null,
     activePanel: 'list',
     drafts: persistedDrafts,
 
@@ -183,7 +186,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
-    setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open }),
+    setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
+    setEditMailboxId: (id) => set({ editMailboxId: id }),
     setActivePanel: (panel) => set({ activePanel: panel }),
     setDraft: (conversationId, content) =>
       set((state) => {

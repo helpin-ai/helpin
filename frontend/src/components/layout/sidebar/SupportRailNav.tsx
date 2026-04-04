@@ -1,6 +1,8 @@
-import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon } from '@/lib/icons';
+import { useState } from 'react';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   SidebarGroup,
@@ -45,6 +47,8 @@ type SupportRailNavProps = {
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
   onCreateMailbox: () => void;
+  onEditMailbox: (mailboxId: string) => void;
+  onArchiveMailbox: (mailboxId: string) => void;
   onNavigate: (to: string) => void;
 };
 
@@ -59,9 +63,12 @@ export function SupportRailNav({
   onNavFilterChange,
   onMailboxSelect,
   onCreateMailbox,
+  onEditMailbox,
+  onArchiveMailbox,
   onNavigate,
 }: SupportRailNavProps) {
   const mailboxes = inboxScopes?.mailboxes ?? [];
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const handleSettingsNavigate = (section: string) => {
     onNavigate(`/w/${wsSlug}/settings/${section}`);
@@ -145,9 +152,10 @@ export function SupportRailNav({
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
             const isActiveMailbox = selectedMailboxId === mailbox.id;
+            const isMenuOpen = openMenuId === mailbox.id;
 
             return (
-              <SidebarMenuItem key={mailbox.id}>
+              <SidebarMenuItem key={mailbox.id} className="group/mailbox">
                 <SidebarMenuButton
                   isActive={isActiveMailbox}
                   className="h-8 rounded-md px-2 text-sm"
@@ -155,10 +163,35 @@ export function SupportRailNav({
                 >
                   <MailboxIcon className="h-4 w-4" />
                   <span className="flex-1 truncate">{mailbox.name}</span>
-                  {mailbox.unread_count > 0 && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                  {mailbox.unread_count > 0 && !isMenuOpen && (
+                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white group-hover/mailbox:hidden">
                       {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
                     </span>
+                  )}
+                  {canManageSettings && (
+                    <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <span
+                          role="button"
+                          className={`ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover/mailbox:opacity-100'}`}
+                        >
+                          <MoreVerticalIcon className="h-3.5 w-3.5" />
+                        </span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="right" align="start" className="w-36">
+                        <DropdownMenuItem onClick={() => onEditMailbox(mailbox.id)}>
+                          <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => onArchiveMailbox(mailbox.id)}
+                        >
+                          <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
