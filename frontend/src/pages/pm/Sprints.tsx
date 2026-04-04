@@ -25,9 +25,11 @@ interface SprintsPageProps {
 }
 
 function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintPlanningWorkspaceData {
+  const buckets = workspace.buckets ?? [];
+  const backlogTasks = workspace.backlog_tasks ?? [];
   return {
     ...workspace,
-    buckets: workspace.buckets.map((bucket) => ({
+    buckets: buckets.map((bucket) => ({
       ...bucket,
       sprints: (bucket.sprints ?? []).map((card) => ({
         ...card,
@@ -35,22 +37,24 @@ function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintP
         preview_tasks: [...(card.preview_tasks ?? [])],
       })),
     })),
-    backlog_tasks: [...workspace.backlog_tasks],
+    backlog_tasks: [...backlogTasks],
   };
 }
 
 function removeTaskFromCards(workspace: SprintPlanningWorkspaceData, taskId: string) {
   let found: SprintPlanningTaskPreview | null = null;
   let sourceSprintId: string | null = null;
+  const backlogTasks = workspace.backlog_tasks ?? [];
 
-  const backlogIndex = workspace.backlog_tasks.findIndex((t) => t.id === taskId);
+  const backlogIndex = backlogTasks.findIndex((t) => t.id === taskId);
   if (backlogIndex >= 0) {
-    found = workspace.backlog_tasks[backlogIndex];
-    workspace.backlog_tasks.splice(backlogIndex, 1);
+    found = backlogTasks[backlogIndex];
+    backlogTasks.splice(backlogIndex, 1);
+    workspace.backlog_tasks = backlogTasks;
     workspace.backlog_total = Math.max(0, workspace.backlog_total - 1);
   }
 
-  for (const bucket of workspace.buckets) {
+  for (const bucket of (workspace.buckets ?? [])) {
     for (const card of (bucket.sprints ?? [])) {
       const tasks = card.preview_tasks ?? [];
       const index = tasks.findIndex((t) => t.id === taskId);
@@ -90,7 +94,8 @@ function addTaskToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['s
 
 function addTaskToBacklog(workspace: SprintPlanningWorkspaceData, task: SprintPlanningTaskPreview) {
   const nextTask = { ...task, sprint_id: undefined };
-  workspace.backlog_tasks = [nextTask, ...workspace.backlog_tasks.filter((item) => item.id !== task.id)].slice(0, BACKLOG_LIMIT);
+  const backlogTasks = workspace.backlog_tasks ?? [];
+  workspace.backlog_tasks = [nextTask, ...backlogTasks.filter((item) => item.id !== task.id)].slice(0, BACKLOG_LIMIT);
   workspace.backlog_total += 1;
 }
 
@@ -109,7 +114,7 @@ function applyTaskAssignment(
     return next;
   }
 
-  for (const bucket of next.buckets) {
+  for (const bucket of (next.buckets ?? [])) {
     for (const card of (bucket.sprints ?? [])) {
       if (card.sprint.id === targetSprintId) {
         addTaskToSprint(card, movingTask, targetSprintId);
