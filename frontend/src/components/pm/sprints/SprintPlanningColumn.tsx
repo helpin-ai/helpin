@@ -97,8 +97,8 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
           return existing;
         }
         return {
-          pageParams: existing.pageParams.length > 0 ? existing.pageParams : [1],
-          pages: [seededFirstPage, ...existing.pages.slice(1)],
+          pageParams: [1],
+          pages: [seededFirstPage],
         };
       },
     );

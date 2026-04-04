@@ -195,7 +195,7 @@ type HugeIconData = Parameters<typeof HugeiconsIcon>[0]['icon'];
 
 function hi(icon: HugeIconData): IconComponent {
   const C = ({ className, style }: { className?: string; style?: CSSProperties }) => (
-    <HugeiconsIcon icon={icon} className={className} style={style} />
+    <HugeiconsIcon icon={icon} className={className} style={style} strokeWidth={2} />
   );
   return C;
 }

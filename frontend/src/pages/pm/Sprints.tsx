@@ -31,6 +31,7 @@ function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintP
       ...bucket,
       sprints: (bucket.sprints ?? []).map((card) => ({
         ...card,
+        stats: { ...card.stats },
         preview_tasks: [...(card.preview_tasks ?? [])],
       })),
     })),
@@ -66,8 +67,10 @@ function removeTaskFromCards(workspace: SprintPlanningWorkspaceData, taskId: str
         }
         const hiddenCount = Math.max(card.stats.task_count - card.preview_tasks.length, 0);
         card.task_preview_overflow = hiddenCount;
+        break;
       }
     }
+    if (found) break;
   }
 
   return { found, sourceSprintId };
@@ -183,12 +186,23 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
     queryClient.setQueryData(planningQueryKey, optimistic);
     try {
-      const { error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
+      const { data, error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
       if (error) throw new Error(error);
+      if (data) {
+        queryClient.setQueryData(queryKeys.pm.task(workspaceId, task.id), data);
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: planningQueryKey });
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: planningQueryKey });
       toast.error(error instanceof Error ? error.message : 'Failed to update task sprint');
     }
   };

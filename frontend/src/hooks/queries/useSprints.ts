@@ -51,6 +51,20 @@ export function useInfiniteSprintPreviewTasks(
   perPage = 20,
 ) {
   const totalPages = total > 0 ? Math.ceil(total / perPage) : 0
+  const seededInitialData =
+    initialTasks.length > 0 || total === 0
+      ? {
+          pageParams: [1],
+          pages: [{
+            data: initialTasks,
+            total,
+            page: 1,
+            per_page: perPage,
+            total_pages: totalPages,
+          } satisfies PaginatedResponse<SprintPlanningTaskPreview[]>],
+        }
+      : undefined
+
   return useInfiniteQuery({
     queryKey: queryKeys.pm.sprintPreviewTasks(wsId, sprintId),
     queryFn: async ({ pageParam }) =>
@@ -59,16 +73,7 @@ export function useInfiniteSprintPreviewTasks(
     getNextPageParam: (lastPage) => lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined,
     enabled: !!wsId && !!sprintId,
     staleTime: 30_000,
-    initialData: {
-      pageParams: [1],
-      pages: [{
-        data: initialTasks,
-        total,
-        page: 1,
-        per_page: perPage,
-        total_pages: totalPages,
-      } satisfies PaginatedResponse<SprintPlanningTaskPreview[]>],
-    },
+    initialData: seededInitialData,
   })
 }
 

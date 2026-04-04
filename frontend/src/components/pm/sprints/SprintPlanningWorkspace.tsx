@@ -2,8 +2,8 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  closestCenter,
   pointerWithin,
+  rectIntersection,
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
@@ -19,12 +19,14 @@ import { SprintPlanningColumn } from './SprintPlanningColumn';
 import { SprintPlanningEmptyState } from './SprintPlanningEmptyState';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 
-// Pointer-first collision: detects which droppable the pointer is over.
-// Falls back to closestCenter when pointer is between containers (e.g. in the gap).
+// Prefer the pointer target, but fall back to geometry when release/motion
+// briefly leaves the pointer outside a column rect during cross-column drags.
 const sprintCollision: CollisionDetection = (args) => {
-  const within = pointerWithin(args);
-  if (within.length > 0) return within;
-  return closestCenter(args);
+  const pointerHits = pointerWithin(args);
+  if (pointerHits.length > 0) {
+    return pointerHits;
+  }
+  return rectIntersection(args);
 };
 
 interface SprintPlanningWorkspaceProps {
@@ -105,13 +107,18 @@ export function SprintPlanningWorkspace({
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const nextDropTargetId = resolveDropTarget(event.over?.id ? String(event.over.id) : null);
-    overContainerRef.current = nextDropTargetId;
-    setActiveDropTargetId((current) => current === nextDropTargetId ? current : nextDropTargetId);
+    // Only update when a valid droppable is found — don't clear on gaps
+    // between columns, otherwise onDragEnd has no fallback target.
+    if (nextDropTargetId) {
+      overContainerRef.current = nextDropTargetId;
+      setActiveDropTargetId((current) => current === nextDropTargetId ? current : nextDropTargetId);
+    }
   }, [resolveDropTarget]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const task = (event.active.data.current?.task as SprintPlanningTaskPreview | undefined) ?? activeTaskRef.current;
     // Use event.over when available; fall back to last container from onDragOver
+    // (preserved even when pointer enters gaps between columns)
     const overId = resolveDropTarget(event.over?.id ? String(event.over.id) : null) ?? overContainerRef.current;
     overContainerRef.current = null;
     setActiveDropTargetId(null);

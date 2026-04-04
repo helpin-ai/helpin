@@ -37,7 +37,7 @@ async function loadAllIcons(): Promise<IconEntry[]> {
     const label = pascalToLabel(name)
     const data = iconData as HugeIconData
     const Component: IconComponent = ({ className, style }) => (
-      <HugeiconsIcon icon={data} className={className} style={style} />
+      <HugeiconsIcon icon={data} className={className} style={style} strokeWidth={2} />
     )
     entries.push({ value: kebab, label, Component })
   }
