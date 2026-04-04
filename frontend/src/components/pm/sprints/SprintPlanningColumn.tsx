@@ -51,11 +51,13 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   });
   const showDropIndicator = isOver || isDropTargetActive;
   const statusConfig = SPRINT_STATUS_CONFIG[card.sprint.status];
-  const total = card.stats.task_count;
+  const cardTotal = card.stats.task_count;
+  const previewTasks = card.preview_tasks ?? [];
+  const previewQuery = useInfiniteSprintPreviewTasks(workspaceId, card.sprint.id, previewTasks, cardTotal, SPRINT_PREVIEW_PAGE_SIZE);
+  const previewQueryTotal = previewQuery.data?.pages[0]?.total;
+  const total = typeof previewQueryTotal === 'number' ? previewQueryTotal : cardTotal;
   const done = card.stats.done_task_count;
   const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
-  const previewTasks = card.preview_tasks ?? [];
-  const previewQuery = useInfiniteSprintPreviewTasks(workspaceId, card.sprint.id, previewTasks, total, SPRINT_PREVIEW_PAGE_SIZE);
   const listRef = useRef<HTMLDivElement | null>(null);
   const previewSignature = useMemo(
     () => `${total}:${previewTasks.map((task) => task.id).join(',')}`,

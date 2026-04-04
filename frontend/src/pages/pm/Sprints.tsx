@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { InfiniteData } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -125,6 +126,32 @@ function applyTaskAssignment(
   return workspace;
 }
 
+function syncPreviewQueryCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  workspace: SprintPlanningWorkspaceData,
+) {
+  for (const bucket of (workspace.buckets ?? [])) {
+    for (const card of (bucket.sprints ?? [])) {
+      const previewTasks = card.preview_tasks ?? [];
+      const total = card.stats.task_count ?? 0;
+      queryClient.setQueryData<InfiniteData<{ data: SprintPlanningTaskPreview[]; total: number; page: number; per_page: number; total_pages: number }>>(
+        queryKeys.pm.sprintPreviewTasks(workspaceId, card.sprint.id),
+        {
+          pageParams: [1],
+          pages: [{
+            data: previewTasks,
+            total,
+            page: 1,
+            per_page: TASK_PREVIEW_LIMIT,
+            total_pages: total > 0 ? Math.ceil(total / TASK_PREVIEW_LIMIT) : 0,
+          }],
+        },
+      );
+    }
+  }
+}
+
 export function SprintsPage({ teamId }: SprintsPageProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
@@ -190,6 +217,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     if (optimistic === previous) return;
 
     queryClient.setQueryData(planningQueryKey, optimistic);
+    syncPreviewQueryCaches(queryClient, workspaceId, optimistic);
     try {
       const { data, error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
       if (error) throw new Error(error);
@@ -203,6 +231,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       queryClient.invalidateQueries({ queryKey: planningQueryKey });
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
+      syncPreviewQueryCaches(queryClient, workspaceId, previous);
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
