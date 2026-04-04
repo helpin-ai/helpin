@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareMore, Play } from 'lucide-react';
+import { BotIcon, ArrowDown01Icon, ArrowRight01Icon, Loading01Icon, MessagePreview01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -221,7 +221,7 @@ export function EpicPlannerPanel({
   return (
     <div className="space-y-3 rounded-lg border border-border/60 p-3">
       <div className="flex items-center gap-2">
-        {selectedPlanner ? <AgentAvatar agent={selectedPlanner} className="h-6 w-6" /> : <Bot className="h-4 w-4 text-muted-foreground" />}
+        {selectedPlanner ? <AgentAvatar agent={selectedPlanner} className="h-6 w-6" /> : <BotIcon className="h-4 w-4 text-muted-foreground" />}
         <span className="text-sm font-medium">Epic Agent Runs</span>
       </div>
 
@@ -253,7 +253,7 @@ export function EpicPlannerPanel({
               ) : null}
             </div>
             <Button onClick={handleStart} disabled={!selectedAgentId || starting} className="w-full gap-1.5 md:w-auto md:min-w-44">
-              {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {starting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4" />}
               Start Planner Run
             </Button>
           </div>
@@ -275,9 +275,9 @@ export function EpicPlannerPanel({
                 </p>
               </div>
               {additionalContextOpen ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ArrowDown01Icon className="h-4 w-4 text-muted-foreground" />
               ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />
               )}
             </button>
 
@@ -307,7 +307,7 @@ export function EpicPlannerPanel({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Runs On This Epic</p>
           {loadingRuns ? (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loading01Icon className="h-3 w-3 animate-spin" />
               Loading
             </span>
           ) : null}
@@ -337,7 +337,7 @@ export function EpicPlannerPanel({
                         <p className="truncate text-sm font-medium">{agentName}</p>
                         {run.invocation_mode === 'interactive' ? (
                           <Badge variant="secondary" className="gap-1">
-                            <MessageSquareMore className="h-3 w-3" />
+                            <MessagePreview01Icon className="h-3 w-3" />
                             Interactive
                           </Badge>
                         ) : null}

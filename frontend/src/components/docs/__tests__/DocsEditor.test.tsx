@@ -200,28 +200,28 @@ vi.mock('@/components/ui/button', () => ({
   ),
 }))
 
-vi.mock('lucide-react', () => {
+vi.mock('@/lib/icons', () => {
   const Icon = () => null
   return {
-    AlertCircle: Icon,
-    Bold: Icon,
-    Check: Icon,
-    ChevronDown: Icon,
-    Code2: Icon,
-    Copy: Icon,
-    ExternalLink: Icon,
-    FileDown: Icon,
-    FileUp: Icon,
-    Heading2: Icon,
-    Heading3: Icon,
-    Italic: Icon,
-    Link2: Icon,
-    List: Icon,
-    ListOrdered: Icon,
-    Loader2: Icon,
-    Quote: Icon,
-    Underline: Icon,
-    X: Icon,
+    AlertCircleIcon: Icon,
+    TextBoldIcon: Icon,
+    Tick01Icon: Icon,
+    ArrowDown01Icon: Icon,
+    SourceCodeIcon: Icon,
+    Copy01Icon: Icon,
+    LinkSquare01Icon: Icon,
+    FileDownIcon: Icon,
+    FileUpIcon: Icon,
+    Heading02Icon: Icon,
+    Heading03Icon: Icon,
+    TextItalicIcon: Icon,
+    Link01Icon: Icon,
+    Menu01Icon: Icon,
+    CheckListIcon: Icon,
+    Loading01Icon: Icon,
+    QuoteDownIcon: Icon,
+    TextUnderlineIcon: Icon,
+    Cancel01Icon: Icon,
   }
 })
 

@@ -1,4 +1,4 @@
-import { Settings2 } from 'lucide-react';
+import { Settings02Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -25,7 +25,7 @@ export function DealDisplayMenu({ mode }: DealDisplayMenuProps) {
       <QuickTooltip label="Display settings">
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" className="h-7 w-7">
-            <Settings2 className="h-4 w-4" />
+            <Settings02Icon className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
       </QuickTooltip>

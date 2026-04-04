@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { differenceInDays, format, isBefore, isSameDay, startOfDay } from 'date-fns';
-import { CalendarDays, CornerDownLeft, X } from 'lucide-react';
+import { Calendar03Icon, ArrowTurnDownIcon, Cancel01Icon } from '@/lib/icons';
 import type { DateRange, Matcher } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import {
@@ -337,7 +337,7 @@ export function DatePicker({
           <div
             className="flex h-8 w-[13rem] items-center gap-1.5 rounded-md border border-ring bg-background px-2.5 text-sm text-foreground shadow-sm"
           >
-            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <input
               ref={(el) => { inputRefs.current[field] = el; }}
               type="text"
@@ -362,7 +362,7 @@ export function DatePicker({
                   setParseError(null);
                 }}
               >
-                <X className="h-3 w-3" />
+                <Cancel01Icon className="h-3 w-3" />
               </button>
             )}
           </div>
@@ -378,7 +378,7 @@ export function DatePicker({
               focusInputField(field);
             }}
           >
-            <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+            <Calendar03Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left">
               {fieldValue ? formatShortDateValue(fieldValue, '') : fieldLabel}
             </span>
@@ -393,7 +393,7 @@ export function DatePicker({
           >
             <span className="text-sm">{nlpSuggestion.label}</span>
             <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-              Return <CornerDownLeft className="h-3 w-3" />
+              Return <ArrowTurnDownIcon className="h-3 w-3" />
             </span>
           </button>
         )}
@@ -414,7 +414,7 @@ export function DatePicker({
             className,
           )}
         >
-          {!hideIcon && <CalendarDays className="mr-2 h-3.5 w-3.5" />}
+          {!hideIcon && <Calendar03Icon className="mr-2 h-3.5 w-3.5" />}
           {triggerSelected ? format(triggerSelected, 'MMM d, yyyy') : triggerPlaceholder}
         </Button>
       </PopoverTrigger>
@@ -474,7 +474,7 @@ export function DatePicker({
                 onClick={handleClear}
               >
                 <span>Clear</span>
-                <X className="h-3.5 w-3.5" />
+                <Cancel01Icon className="h-3.5 w-3.5" />
               </button>
             </div>
           </ScrollArea>

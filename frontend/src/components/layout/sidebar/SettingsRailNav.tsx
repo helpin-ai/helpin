@@ -1,5 +1,5 @@
 import { Collapsible } from 'radix-ui';
-import { ChevronRight } from 'lucide-react';
+import { ArrowRight01Icon } from '@/lib/icons';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -69,7 +69,7 @@ export function SettingsRailNav({
                 <Collapsible.Trigger asChild>
                   <SidebarGroupLabel className="h-7 cursor-pointer select-none px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 hover:text-muted-foreground">
                     <span className="flex-1">{group.label}</span>
-                    <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                    <ArrowRight01Icon className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
                   </SidebarGroupLabel>
                 </Collapsible.Trigger>
                 <Collapsible.Content>

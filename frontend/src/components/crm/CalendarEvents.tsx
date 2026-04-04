@@ -1,4 +1,4 @@
-import { Calendar, Clock3, MapPin } from 'lucide-react';
+import { Calendar01Icon, Clock02Icon, MapPinIcon } from '@/lib/icons';
 import { format } from 'date-fns';
 import { useContactCalendar, useDealCalendar } from '@/hooks/queries/useCRM';
 import type { CRMCalendarEvent } from '@/lib/crmTypes';
@@ -35,7 +35,7 @@ export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEvent
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
         <div className="rounded-full bg-muted p-3">
-          <Calendar className="h-7 w-7 text-muted-foreground" />
+          <Calendar01Icon className="h-7 w-7 text-muted-foreground" />
         </div>
         <p className="mt-4 text-base font-medium text-foreground">No meetings tracked</p>
         <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -63,13 +63,13 @@ export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEvent
 
           <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <Clock3 className="h-3.5 w-3.5" />
+              <Clock02Icon className="h-3.5 w-3.5" />
               {format(new Date(event.start_time), 'MMM d, yyyy h:mm a')} to{' '}
               {format(new Date(event.end_time), 'h:mm a')}
             </span>
             {event.location ? (
               <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" />
+                <MapPinIcon className="h-3.5 w-3.5" />
                 {event.location}
               </span>
             ) : null}

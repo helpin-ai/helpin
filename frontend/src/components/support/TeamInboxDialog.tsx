@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowRight, Check, ChevronLeft, HelpCircle, Search } from 'lucide-react';
+import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, Search01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,7 @@ function FieldLabel({ htmlFor, children, tip }: { htmlFor?: string; children: Re
       <Label htmlFor={htmlFor}>{children}</Label>
       <Tooltip>
         <TooltipTrigger asChild>
-          <HelpCircle className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+          <HelpCircleIcon className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
           {tip}
@@ -212,7 +212,7 @@ export function TeamInboxDialog({
             className="flex items-center gap-2 text-sm font-medium"
           >
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 1 ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
-              {step > 1 ? <Check className="h-3.5 w-3.5" /> : '1'}
+              {step > 1 ? <Tick01Icon className="h-3.5 w-3.5" /> : '1'}
             </span>
             <span className={step === 1 ? 'text-foreground' : 'text-muted-foreground'}>Details</span>
           </button>
@@ -225,7 +225,7 @@ export function TeamInboxDialog({
             className="flex items-center gap-2 text-sm font-medium"
           >
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 2 ? 'bg-primary text-primary-foreground' : step > 2 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-              {step > 2 ? <Check className="h-3.5 w-3.5" /> : '2'}
+              {step > 2 ? <Tick01Icon className="h-3.5 w-3.5" /> : '2'}
             </span>
             <span className={step === 2 ? 'text-foreground' : 'text-muted-foreground'}>Members</span>
           </button>
@@ -360,7 +360,7 @@ export function TeamInboxDialog({
             </DialogHeader>
 
             <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={memberSearch}
                 onChange={(e) => setMemberSearch(e.target.value)}
@@ -400,7 +400,7 @@ export function TeamInboxDialog({
                           <p className="truncate text-xs text-muted-foreground">{member.email}</p>
                         )}
                       </div>
-                      {isSelected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      {isSelected && <Tick01Icon className="h-4 w-4 shrink-0 text-primary" />}
                     </label>
                   );
                 })}
@@ -470,26 +470,26 @@ export function TeamInboxDialog({
               </Button>
               <Button onClick={goToStep2} disabled={!canProceedToStep2} className="gap-2">
                 Continue
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight02Icon className="h-4 w-4" />
               </Button>
             </>
           )}
           {step === 2 && (
             <>
               <Button variant="outline" onClick={() => setStep(1)} className="mr-auto gap-2">
-                <ChevronLeft className="h-4 w-4" />
+                <ArrowLeft01Icon className="h-4 w-4" />
                 Back
               </Button>
               <Button onClick={() => setStep(3)} className="gap-2">
                 Continue
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight02Icon className="h-4 w-4" />
               </Button>
             </>
           )}
           {step === 3 && (
             <>
               <Button variant="outline" onClick={() => setStep(2)} className="mr-auto gap-2">
-                <ChevronLeft className="h-4 w-4" />
+                <ArrowLeft01Icon className="h-4 w-4" />
                 Back
               </Button>
               <Button

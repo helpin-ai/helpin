@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
-import { Copy, Check } from 'lucide-react';
+import { Copy01Icon, Tick01Icon } from '@/lib/icons';
 import { Button } from './button';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
@@ -55,9 +55,9 @@ export function CodeBlock({ code, language = 'markup', showLineNumbers = false }
         onClick={handleCopy}
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-green-500" />
+          <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
         ) : (
-          <Copy className="h-3.5 w-3.5" />
+          <Copy01Icon className="h-3.5 w-3.5" />
         )}
       </Button>
     </div>

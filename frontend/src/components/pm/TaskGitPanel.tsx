@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
+import { LinkSquare01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
@@ -34,7 +34,7 @@ export function TaskGitPanel({
   if (loading) {
     return (
       <div className="mt-6 flex items-center gap-2 py-4 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
         Loading development history...
       </div>
     );
@@ -48,7 +48,7 @@ export function TaskGitPanel({
     <div className="mt-6">
       <CollapsibleSection
         title="Development History"
-        icon={GitBranch}
+        icon={GitBranchIcon}
         count={links.length}
         defaultOpen
       >
@@ -58,13 +58,13 @@ export function TaskGitPanel({
               <div className="font-medium">{link.repo}</div>
               {link.branch && (
                 <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <GitBranch className="h-3 w-3 shrink-0" />
+                  <GitBranchIcon className="h-3 w-3 shrink-0" />
                   <span className="truncate font-mono">{link.branch}</span>
                 </div>
               )}
               {link.pr_url && (
                 <div className="flex items-center gap-1.5">
-                  <GitPullRequest className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <GitPullRequestIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
                   <a
                     href={link.pr_url}
                     target="_blank"
@@ -73,7 +73,7 @@ export function TaskGitPanel({
                   >
                     <span>#{link.pr_number}</span>
                     <span className="truncate">{link.pr_title ?? 'Pull request'}</span>
-                    <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                    <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
                   </a>
                   {link.pr_status && (
                     <Badge

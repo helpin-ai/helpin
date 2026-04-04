@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Plus, Search, Pencil } from 'lucide-react';
+import { Delete01Icon, PlusSignIcon, Search01Icon, PencilEdit01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -169,7 +169,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
           <span className="text-sm text-muted-foreground">{total} {total === 1 ? 'redirect' : 'redirects'}</span>
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -190,7 +190,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
             </Select>
             {editable && (
               <Button size="sm" onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-1" /> Add Redirect
+                <PlusSignIcon className="h-4 w-4 mr-1" /> Add Redirect
               </Button>
             )}
           </div>
@@ -206,7 +206,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
             </div>
             {editable && (
               <Button onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-1" />
+                <PlusSignIcon className="h-4 w-4 mr-1" />
                 Add Redirect
               </Button>
             )}
@@ -248,7 +248,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
                               className="h-7 w-7"
                               onClick={() => openEdit(r)}
                             >
-                              <Pencil className="h-3 w-3" />
+                              <PencilEdit01Icon className="h-3 w-3" />
                             </Button>
                           </QuickTooltip>
                           <QuickTooltip label="Delete redirect">
@@ -259,7 +259,7 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
                               disabled={deletingId === r.id}
                               onClick={() => setDeleteConfirmId(r.id)}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Delete01Icon className="h-3 w-3" />
                             </Button>
                           </QuickTooltip>
                         </div>

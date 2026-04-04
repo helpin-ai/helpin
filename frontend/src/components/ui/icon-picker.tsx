@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
-import { icons, type LucideIcon } from 'lucide-react'
+import { icons } from 'lucide-react';
+import type { IconComponent } from '@/lib/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ interface IconEntry {
   /** Human-readable label, e.g. "Rocket" */
   label: string
   /** The React component */
-  Component: LucideIcon
+  Component: IconComponent
 }
 
 function pascalToKebab(s: string): string {
@@ -31,7 +32,7 @@ const ALL_ICONS: IconEntry[] = (() => {
     entries.push({
       value: kebab,
       label: pascalToLabel(name),
-      Component: component as LucideIcon,
+      Component: component as IconComponent,
     })
   }
   entries.sort((a, b) => a.label.localeCompare(b.label))
@@ -39,8 +40,8 @@ const ALL_ICONS: IconEntry[] = (() => {
 })()
 
 /** Kebab-case -> Lucide component map for rendering icons by stored name */
-export const ICON_MAP: Record<string, LucideIcon> = (() => {
-  const map: Record<string, LucideIcon> = {}
+export const ICON_MAP: Record<string, IconComponent> = (() => {
+  const map: Record<string, IconComponent> = {}
   for (const entry of ALL_ICONS) {
     map[entry.value] = entry.Component
   }

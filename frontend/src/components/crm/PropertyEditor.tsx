@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { Cancel01Icon } from '@/lib/icons';
 import type { CRMPropertyDefinition, CRMFieldType } from '@/lib/crmTypes';
 
 interface PropertyEditorProps {
@@ -218,7 +218,7 @@ function MultiSelectField({
             {item}
             {!readOnly && (
               <button onClick={() => removeItem(item)} className="ml-1 hover:text-destructive">
-                <X className="h-3 w-3" />
+                <Cancel01Icon className="h-3 w-3" />
               </button>
             )}
           </Badge>

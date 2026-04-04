@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Mail, Clock, CheckSquare, Trash2, GripVertical } from 'lucide-react';
+import { PlusSignIcon, Mail01Icon, Clock01Icon, CheckmarkSquare02Icon, Delete01Icon, DragDropVerticalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,9 +20,9 @@ interface SequenceBuilderProps {
 }
 
 const stepIcons = {
-  email: Mail,
-  delay: Clock,
-  task: CheckSquare,
+  email: Mail01Icon,
+  delay: Clock01Icon,
+  task: CheckmarkSquare02Icon,
 };
 
 export function SequenceBuilder({ steps, onChange, readOnly }: SequenceBuilderProps) {
@@ -67,7 +67,7 @@ export function SequenceBuilder({ steps, onChange, readOnly }: SequenceBuilderPr
           return (
             <div key={index} className="rounded-md border p-3">
               <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                <DragDropVerticalIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
                   {step.step_number}
                 </span>
@@ -81,7 +81,7 @@ export function SequenceBuilder({ steps, onChange, readOnly }: SequenceBuilderPr
                       className="h-6 w-6"
                       onClick={() => setEditingStep(isEditing ? null : index)}
                     >
-                      <Mail className="h-3 w-3" />
+                      <Mail01Icon className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -89,7 +89,7 @@ export function SequenceBuilder({ steps, onChange, readOnly }: SequenceBuilderPr
                       className="h-6 w-6"
                       onClick={() => removeStep(index)}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Delete01Icon className="h-3 w-3" />
                     </Button>
                   </div>
                 )}
@@ -136,13 +136,13 @@ export function SequenceBuilder({ steps, onChange, readOnly }: SequenceBuilderPr
         {!readOnly && (
           <div className="flex gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => addStep('email')}>
-              <Plus className="mr-1 h-3 w-3" /> Email
+              <PlusSignIcon className="mr-1 h-3 w-3" /> Email
             </Button>
             <Button variant="outline" size="sm" onClick={() => addStep('delay')}>
-              <Plus className="mr-1 h-3 w-3" /> Delay
+              <PlusSignIcon className="mr-1 h-3 w-3" /> Delay
             </Button>
             <Button variant="outline" size="sm" onClick={() => addStep('task')}>
-              <Plus className="mr-1 h-3 w-3" /> Task
+              <PlusSignIcon className="mr-1 h-3 w-3" /> Task
             </Button>
           </div>
         )}

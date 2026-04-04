@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -54,7 +54,7 @@ export function SprintPlanningFilters({
 
         {canEdit && (
           <Button size="sm" className="h-9 gap-2" onClick={onCreateSprint}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Create Sprint
           </Button>
         )}

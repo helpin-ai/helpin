@@ -2,14 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns';
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Forward,
-  Mail,
-  Reply,
-  ReplyAll,
-  Trash2,
-} from 'lucide-react';
+  ArrowDown02Icon,
+  ArrowUp02Icon,
+  Forward01Icon,
+  Mail01Icon,
+  ArrowTurnBackwardIcon,
+  Delete01Icon,
+} from '@/lib/icons';
 // ArrowDownLeft/ArrowUpRight kept for email detail dialog direction badge
 import { useContactEmails, useDealEmails, useEmailAccounts } from '@/hooks/queries/useCRM';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -224,7 +223,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
     return (
       <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
         <div className="rounded-full bg-muted p-3">
-          <Mail className="h-7 w-7 text-muted-foreground" />
+          <Mail01Icon className="h-7 w-7 text-muted-foreground" />
         </div>
         <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
         <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -290,7 +289,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
               const toAddresses = (selectedMessage.to_addresses ?? []).map((address) => parseAddress(address));
               const ccAddresses = (selectedMessage.cc_addresses ?? []).map((address) => parseAddress(address));
               const { mainBody, quotedBody } = splitQuotedReply(getMessageText(selectedMessage));
-              const DirectionIcon = selectedMessage.direction === 'inbound' ? ArrowDownLeft : ArrowUpRight;
+              const DirectionIcon = selectedMessage.direction === 'inbound' ? ArrowDown02Icon : ArrowUp02Icon;
 
               return (
                 <>
@@ -342,15 +341,15 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
                   <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" size="sm" disabled>
-                        <Reply className="mr-2 h-3.5 w-3.5" />
+                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5" />
                         Reply
                       </Button>
                       <Button variant="outline" size="sm" disabled>
-                        <ReplyAll className="mr-2 h-3.5 w-3.5" />
+                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5" />
                         Reply all
                       </Button>
                       <Button variant="outline" size="sm" disabled>
-                        <Forward className="mr-2 h-3.5 w-3.5" />
+                        <Forward01Icon className="mr-2 h-3.5 w-3.5" />
                         Forward
                       </Button>
                     </div>
@@ -360,7 +359,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
                         Set up email sending
                       </Button>
                       <Button variant="outline" size="sm" disabled>
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        <Delete01Icon className="mr-2 h-3.5 w-3.5" />
                         Delete
                       </Button>
                     </div>

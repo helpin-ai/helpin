@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckSquare } from 'lucide-react';
+import { CheckmarkSquare02Icon } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 
 export default function Tasks() {
@@ -9,7 +9,7 @@ export default function Tasks() {
       <Card>
         <CardHeader className="text-center">
           <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-            <CheckSquare className="h-6 w-6 text-primary" />
+            <CheckmarkSquare02Icon className="h-6 w-6 text-primary" />
           </div>
           <CardTitle className="text-xl">Tasks</CardTitle>
           <CardDescription>Coming soon</CardDescription>

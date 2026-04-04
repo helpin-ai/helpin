@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { AlignLeft, AlignCenter, AlignRight, Maximize2, Download, Copy, Link2, Trash2, X, Check, TextCursorInput } from 'lucide-react';
+import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01Icon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { useImageActions } from '@/hooks/useImageActions';
@@ -15,9 +15,9 @@ const ALIGNMENT_CLASS: Record<string, string> = {
 };
 
 const ALIGNMENT_OPTIONS = [
-  { value: 'left', label: 'Left', icon: AlignLeft },
-  { value: 'center', label: 'Center', icon: AlignCenter },
-  { value: 'right', label: 'Right', icon: AlignRight },
+  { value: 'left', label: 'Left', icon: TextAlignLeftIcon },
+  { value: 'center', label: 'Center', icon: TextAlignCenterIcon },
+  { value: 'right', label: 'Right', icon: TextAlignRightIcon },
 ] as const;
 
 export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor }: NodeViewProps) {
@@ -241,9 +241,9 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                   onClick={(e) => { e.stopPropagation(); setShowAlignMenu(!showAlignMenu); setShowAltInput(false); setShowSettings(false); }}
                   className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {currentAlignment === 'left' ? <AlignLeft className="h-4 w-4" /> :
-                   currentAlignment === 'right' ? <AlignRight className="h-4 w-4" /> :
-                   <AlignCenter className="h-4 w-4" />}
+                  {currentAlignment === 'left' ? <TextAlignLeftIcon className="h-4 w-4" /> :
+                   currentAlignment === 'right' ? <TextAlignRightIcon className="h-4 w-4" /> :
+                   <TextAlignCenterIcon className="h-4 w-4" />}
                 </button>
               </QuickTooltip>
               {showAlignMenu && (
@@ -277,7 +277,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                   onClick={(e) => { e.stopPropagation(); setShowAltInput(!showAltInput); setShowAlignMenu(false); setShowSettings(false); }}
                   className={`flex h-8 w-8 items-center justify-center transition-colors ${showAltInput ? 'text-primary' : altText ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 >
-                  <TextCursorInput className="h-4 w-4" />
+                  <CursorTextIcon className="h-4 w-4" />
                 </button>
               </QuickTooltip>
               {showAltInput && (
@@ -304,7 +304,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Maximize2 className="h-4 w-4" />
+                <Maximize01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Download">
@@ -313,7 +313,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Download className="h-4 w-4" />
+                <Download04Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Copy image">
@@ -322,7 +322,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); copyImage(src); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Copy className="h-4 w-4" />
+                <Copy01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Add link">
@@ -331,7 +331,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); setShowAlignMenu(false); setShowAltInput(false); }}
                 className={`flex h-8 w-8 items-center justify-center transition-colors ${showSettings ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                <Link2 className="h-4 w-4" />
+                <Link01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
 
@@ -345,7 +345,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-destructive"
               >
-                <Trash2 className="h-4 w-4" />
+                <Delete01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
           </div>
@@ -378,7 +378,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                     onClick={clearLink}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:text-destructive"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <Cancel01Icon className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
@@ -399,7 +399,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                   linkNewTabInput ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
                 }`}
               >
-                {linkNewTabInput && <Check className="h-3 w-3" />}
+                {linkNewTabInput && <Tick01Icon className="h-3 w-3" />}
               </span>
               <span className="text-sm">Open in new tab</span>
             </button>
@@ -432,7 +432,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
               onClick={() => setIsFullscreen(false)}
               className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
             >
-              <X className="h-5 w-5" />
+              <Cancel01Icon className="h-5 w-5" />
             </button>
           </QuickTooltip>
           <LoadingImage

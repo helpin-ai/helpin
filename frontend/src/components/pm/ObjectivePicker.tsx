@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Plus, Target, X } from 'lucide-react';
+import { Tick01Icon, PlusSignIcon, Target01Icon, Cancel01Icon } from '@/lib/icons';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -38,7 +38,7 @@ function ObjectiveBadge({
 }) {
   return (
     <span className="inline-flex h-5 max-w-full min-w-0 items-center gap-1 rounded-sm border-[0.5px] border-border px-2 text-[11px] font-medium text-foreground/80">
-      <Target className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <Target01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate">{objective.name}</span>
       {onRemove ? (
         <button
@@ -49,7 +49,7 @@ function ObjectiveBadge({
           }}
           className="ml-0.5 rounded-sm opacity-60 transition-opacity hover:opacity-100"
         >
-          <X className="h-3 w-3" />
+          <Cancel01Icon className="h-3 w-3" />
         </button>
       ) : null}
     </span>
@@ -110,7 +110,7 @@ export function ObjectivePicker({
               setOpen(true);
             }}
           >
-            <Plus className="h-3 w-3" />
+            <PlusSignIcon className="h-3 w-3" />
             {selectedObjectives.length === 0 ? addLabel : 'Add'}
           </button>
         </PopoverTrigger>
@@ -124,7 +124,7 @@ export function ObjectivePicker({
           >
             {availableObjectives.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
-                <Target className="h-4 w-4 text-muted-foreground" />
+                <Target01Icon className="h-4 w-4 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">No objectives yet</p>
                 <button
                   type="button"
@@ -134,7 +134,7 @@ export function ObjectivePicker({
                     useGlobalCreateStore.getState().openCreate('objective');
                   }}
                 >
-                  <Plus className="h-3 w-3" />
+                  <PlusSignIcon className="h-3 w-3" />
                   Create objective
                 </button>
               </div>
@@ -155,9 +155,9 @@ export function ObjectivePicker({
                           className="flex items-center gap-2 text-xs"
                           onSelect={() => toggleObjective(objective.id)}
                         >
-                          <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <Target01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <span className="min-w-0 flex-1 truncate">{objective.name}</span>
-                          {isSelected ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
+                          {isSelected ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
                         </CommandItem>
                       );
                     })}

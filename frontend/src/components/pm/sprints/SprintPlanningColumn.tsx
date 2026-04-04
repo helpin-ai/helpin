@@ -3,7 +3,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDroppable } from '@dnd-kit/core';
-import { CalendarDays, Loader2, Plus } from 'lucide-react';
+import { Calendar03Icon, Loading01Icon, PlusSignIcon } from '@/lib/icons';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -158,7 +158,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
             <button type="button" className="min-w-0 cursor-pointer text-left" onClick={() => onOpenSprint(card.sprint.id)}>
               <h3 className="truncate text-base font-semibold hover:underline">{card.sprint.name}</h3>
               <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
+                <Calendar03Icon className="h-3.5 w-3.5" />
                 {formatSprintRange(card.sprint.start_date, card.sprint.end_date)}
               </p>
             </button>
@@ -198,7 +198,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
                     >
                       {isLoaderRow ? (
                         <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
                           Loading more tasks…
                         </div>
                       ) : (
@@ -238,7 +238,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
               className="mt-auto w-full gap-2 text-muted-foreground"
               onClick={() => onCreateTask(card.sprint.id)}
             >
-              <Plus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
               Create task
             </Button>
           )}

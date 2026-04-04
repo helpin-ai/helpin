@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
+import { Tick01Icon } from '@/lib/icons';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -63,7 +63,7 @@ export function SidebarPopoverSelect<T extends string>({
                     className="flex items-center gap-2 text-xs"
                   >
                     {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
-                    {value === option.value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-primary" />}
+                    {value === option.value && <Tick01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>

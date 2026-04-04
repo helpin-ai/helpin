@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Bot, ChevronDown, Inbox, Pencil, Plus, Settings2, Sparkles, Trash2, Workflow } from 'lucide-react';
+import { ArrowRight02Icon, BotIcon, ArrowDown01Icon, InboxIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, SparklesIcon, Delete01Icon, WorkflowSquare01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -392,9 +392,9 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
       <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">How routing works:</span>
         <span>Rules</span>
-        <ArrowRight className="h-3 w-3 shrink-0" />
+        <ArrowRight02Icon className="h-3 w-3 shrink-0" />
         <span>AI Triage</span>
-        <ArrowRight className="h-3 w-3 shrink-0" />
+        <ArrowRight02Icon className="h-3 w-3 shrink-0" />
         <span>Fallback Inbox</span>
       </div>
 
@@ -410,21 +410,21 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
             className="flex flex-1 items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Workflow className="h-4 w-4" />
+              <WorkflowSquare01Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Routing Rules</p>
               <p className="text-sm text-muted-foreground">Exact-match rules that run first</p>
             </div>
             {rules.length > 0 && <Badge variant="secondary" className="mr-2">{rules.length}</Badge>}
-            <ChevronDown className={cn(
+            <ArrowDown01Icon className={cn(
               'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
               isExpanded('routing-rules') && 'rotate-180',
             )} />
           </button>
           <div className="pr-4">
             <Button size="sm" onClick={openCreateRule} disabled={activeMailboxes.length === 0}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
               New Rule
             </Button>
           </div>
@@ -434,7 +434,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
             <div className="border-t border-border">
               {rules.length === 0 ? (
                 <div className="px-6 py-10 text-center">
-                  <Sparkles className="mx-auto h-6 w-6 text-muted-foreground/60" />
+                  <SparklesIcon className="mx-auto h-6 w-6 text-muted-foreground/60" />
                   <p className="mt-3 text-sm font-medium">No routing rules yet</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Add rules for deterministic matches before AI triage runs.
@@ -466,10 +466,10 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                         </div>
                         <div className="flex shrink-0 gap-1">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditRule(rule)}>
-                            <Pencil className="h-3.5 w-3.5" />
+                            <PencilEdit01Icon className="h-3.5 w-3.5" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRule(rule)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Delete01Icon className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -502,7 +502,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
                   {/* Footer hint */}
                   <div className="flex items-center justify-center gap-2 px-5 py-3 text-xs text-muted-foreground">
-                    <Sparkles className="h-3 w-3" />
+                    <SparklesIcon className="h-3 w-3" />
                     <span>No more rules — AI triage handles the rest</span>
                   </div>
                 </div>
@@ -523,14 +523,14 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
           className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Bot className="h-4 w-4" />
+            <BotIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">AI Triage</p>
             <p className="text-sm text-muted-foreground">Classify unmatched conversations by meaning</p>
           </div>
           {draft.triage_enabled && <Badge variant="secondary" className="mr-2">On</Badge>}
-          <ChevronDown className={cn(
+          <ArrowDown01Icon className={cn(
             'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
             isExpanded('ai-triage') && 'rotate-180',
           )} />
@@ -646,13 +646,13 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
           className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Inbox className="h-4 w-4" />
+            <InboxIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Inboxes & Routing Prompts</p>
             <p className="text-sm text-muted-foreground">Where conversations land and how AI identifies each inbox</p>
           </div>
-          <ChevronDown className={cn(
+          <ArrowDown01Icon className={cn(
             'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
             isExpanded('inbox-catalog') && 'rotate-180',
           )} />
@@ -700,7 +700,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                       </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => setEditingMailbox(mailbox)}>
-                          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                          <PencilEdit01Icon className="mr-1.5 h-3.5 w-3.5" />
                           Edit
                         </Button>
                       </TableCell>
@@ -724,13 +724,13 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
           className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Settings2 className="h-4 w-4" />
+            <Settings02Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Advanced Settings</p>
             <p className="text-sm text-muted-foreground">Fallback behavior, daily limits, and spam prevention</p>
           </div>
-          <ChevronDown className={cn(
+          <ArrowDown01Icon className={cn(
             'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
             isExpanded('advanced') && 'rotate-180',
           )} />

@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Inbox, MailPlus, Trash2 } from 'lucide-react';
+import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon, InboxIcon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -59,7 +59,7 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
           onClick={() => setShowHowItWorks((v) => !v)}
           className="mt-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          {showHowItWorks ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {showHowItWorks ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
           How it works
         </button>
         {showHowItWorks && (
@@ -94,7 +94,7 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
                 <EmailRouteRow
                   title="Shared Inbox"
                   description="Workspace-wide — all forwarded email lands here."
-                  icon={<Inbox className="h-4 w-4 text-muted-foreground" />}
+                  icon={<InboxIcon className="h-4 w-4 text-muted-foreground" />}
                   route={sharedRoute}
                   busy={busy}
                   onEnable={() => enableRoute(null)}
@@ -166,7 +166,7 @@ function MailboxEmailRouteRow({
     <EmailRouteRow
       title={mailbox.name}
       description={mailbox.linked_team_name ? `Linked to ${mailbox.linked_team_name}` : 'Team inbox'}
-      icon={MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : <Inbox className="h-4 w-4 text-muted-foreground" />}
+      icon={MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : <InboxIcon className="h-4 w-4 text-muted-foreground" />}
       route={route}
       busy={busy}
       onEnable={onEnable}
@@ -239,7 +239,7 @@ function EmailRouteRow({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onCopy(route.inbound_address)} disabled={busy}>
-                    <Copy className="h-3.5 w-3.5" />
+                    <Copy01Icon className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Copy forwarding address</TooltipContent>
@@ -247,7 +247,7 @@ function EmailRouteRow({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDisable()} disabled={busy}>
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Delete01Icon className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Disable forwarding</TooltipContent>
@@ -255,7 +255,7 @@ function EmailRouteRow({
             </>
           ) : (
             <Button size="sm" className="gap-1.5" onClick={() => onEnable()} disabled={busy}>
-              <MailPlus className="h-3.5 w-3.5" />
+              <MailAdd01Icon className="h-3.5 w-3.5" />
               Enable
             </Button>
           )}

@@ -1,4 +1,4 @@
-import { Clock, Loader2, CheckCircle2, KeyRound, MessageSquareMore, XCircle, ShieldCheck } from 'lucide-react';
+import { Clock01Icon, Loading01Icon, CheckmarkCircle02Icon, Key01Icon, MessagePreview01Icon, CancelCircleIcon, SecurityCheckIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
@@ -14,21 +14,21 @@ interface Props {
 }
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
-  queued: <Clock className="h-3 w-3" />,
-  running: <Loader2 className="h-3 w-3 animate-spin" />,
-  awaiting_input: <MessageSquareMore className="h-3 w-3" />,
-  awaiting_approval: <ShieldCheck className="h-3 w-3" />,
-  awaiting_auth: <KeyRound className="h-3 w-3" />,
-  completed: <CheckCircle2 className="h-3 w-3" />,
-  failed: <XCircle className="h-3 w-3" />,
-  cancelled: <XCircle className="h-3 w-3" />,
+  queued: <Clock01Icon className="h-3 w-3" />,
+  running: <Loading01Icon className="h-3 w-3 animate-spin" />,
+  awaiting_input: <MessagePreview01Icon className="h-3 w-3" />,
+  awaiting_approval: <SecurityCheckIcon className="h-3 w-3" />,
+  awaiting_auth: <Key01Icon className="h-3 w-3" />,
+  completed: <CheckmarkCircle02Icon className="h-3 w-3" />,
+  failed: <CancelCircleIcon className="h-3 w-3" />,
+  cancelled: <CancelCircleIcon className="h-3 w-3" />,
 };
 
 export function AgentRunTable({ runs, selectedRunId, onSelectRun, loading }: Props) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
         Loading runs...
       </div>
     );

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Plus, Search } from 'lucide-react';
+import { PlusSignIcon, Search01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -33,7 +33,7 @@ export function CompaniesPage() {
       {/* Header bar */}
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search companies..."
             value={search}
@@ -44,7 +44,7 @@ export function CompaniesPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <Button size="sm" className="h-7 text-xs" onClick={() => setShowCreate(true)}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
             Company
           </Button>
         </div>

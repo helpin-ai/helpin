@@ -1,5 +1,5 @@
 import { Collapsible } from 'radix-ui';
-import { ChevronRight, EllipsisVertical, RefreshCw, Settings } from 'lucide-react';
+import { ArrowRight01Icon, MoreVerticalIcon, ArrowReloadHorizontalIcon, Setting06Icon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -64,7 +64,7 @@ export function ProjectsTeamsNav({
                 <div className="group/team relative flex items-center">
                   <Collapsible.Trigger asChild>
                     <SidebarMenuButton className="h-8 flex-1 rounded-md px-2">
-                      <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                       <span className="truncate">{team.name}</span>
                     </SidebarMenuButton>
                   </Collapsible.Trigger>
@@ -74,7 +74,7 @@ export function ProjectsTeamsNav({
                         type="button"
                         className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
                       >
-                        <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                        <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="start">
@@ -86,7 +86,7 @@ export function ProjectsTeamsNav({
                           })
                         }
                       >
-                        <Settings className="h-4 w-4" />
+                        <Setting06Icon className="h-4 w-4" />
                         Settings
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -130,7 +130,7 @@ export function ProjectsTeamsNav({
                                         });
                                       }}
                                     >
-                                      <RefreshCw className="h-3.5 w-3.5" />
+                                      <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
                                       <span>Sprints</span>
                                     </a>
                                   </SidebarMenuSubButton>

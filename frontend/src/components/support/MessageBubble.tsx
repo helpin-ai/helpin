@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckCheck, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Paperclip, RotateCcw, StickyNote, X, XCircle } from 'lucide-react';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -96,7 +96,7 @@ function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview;
       <div className="space-y-1.5 p-3">
         <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
           <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
-          <ExternalLink className="h-3 w-3 shrink-0" />
+          <LinkSquare01Icon className="h-3 w-3 shrink-0" />
         </div>
         <div className="text-sm font-semibold leading-snug">{preview.title}</div>
         {preview.description ? (
@@ -253,10 +253,10 @@ export const MessageBubble = memo(function MessageBubble({
     const isReopened = message.content.toLowerCase().includes('reopened');
     const isClosed = message.content.toLowerCase().includes('closed');
 
-    const icon = isResolved ? <CheckCircle2 className="h-4 w-4 shrink-0" />
-      : isReopened ? <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-      : isClosed ? <XCircle className="h-4 w-4 shrink-0" />
-      : <CheckCircle2 className="h-4 w-4 shrink-0" />;
+    const icon = isResolved ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
+      : isReopened ? <RotateLeft01Icon className="h-3.5 w-3.5 shrink-0" />
+      : isClosed ? <CancelCircleIcon className="h-4 w-4 shrink-0" />
+      : <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />;
 
     return (
       <div className="my-4 flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -292,7 +292,7 @@ export const MessageBubble = memo(function MessageBubble({
             <TooltipTrigger asChild>
               <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 dark:bg-amber-950/20">
                 <div className="mb-1.5 flex items-center gap-1.5">
-                  <StickyNote className="h-3 w-3 text-amber-500 dark:text-amber-400" />
+                  <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                   <span className="text-[11px] text-amber-600 dark:text-amber-400">
                     <span className="font-semibold">{resolvedSenderName}</span>
                     <span className="font-normal"> left a private note</span>
@@ -384,10 +384,10 @@ export const MessageBubble = memo(function MessageBubble({
                             isCustomer ? 'border-border' : 'border-white/20 text-white hover:bg-white/10'
                           }`}
                         >
-                          <Paperclip className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                          <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
                           <span className="truncate font-medium">{att.file_name}</span>
                           <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
-                          <Download className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+                          <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
                         </a>
                       ))}
                     </div>
@@ -451,7 +451,7 @@ export const MessageBubble = memo(function MessageBubble({
             onClick={() => setLightboxSrc(null)}
             className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
           >
-            <X className="h-5 w-5" />
+            <Cancel01Icon className="h-5 w-5" />
           </button>
           <img
             src={lightboxSrc}
@@ -477,22 +477,22 @@ export const MessageBubble = memo(function MessageBubble({
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
                 <>
-                  <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
                   <span className="text-[11px] text-muted-foreground">Read in chat</span>
                 </>
               ) : receiptStatus === 'read_email' ? (
                 <>
-                  <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
                   <span className="text-[11px] text-muted-foreground">Read via email</span>
                 </>
               ) : receiptStatus === 'delivered_email' ? (
                 <>
-                  <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered via email</span>
                 </>
               ) : (
                 <>
-                  <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered</span>
                 </>
               )}
@@ -511,9 +511,9 @@ export const MessageBubble = memo(function MessageBubble({
                     onClick={() => setSourcesOpen(!sourcesOpen)}
                     className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
                   >
-                    <FileText className="h-3 w-3" />
+                    <File01Icon className="h-3 w-3" />
                     {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                    {sourcesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    {sourcesOpen ? <ArrowUp01Icon className="h-3 w-3" /> : <ArrowDown01Icon className="h-3 w-3" />}
                   </button>
                 )}
               </div>
@@ -521,7 +521,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
                   {aiMeta.ai_sources.map((src) => (
                     <div key={src.docId} className="flex items-start gap-1.5">
-                      <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                      <File01Icon className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
                       <span className="font-medium">{src.title}</span>
                     </div>
                   ))}

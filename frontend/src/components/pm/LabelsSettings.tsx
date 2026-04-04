@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
+import { Loading01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -77,7 +77,7 @@ function LabelCard({
               className="text-muted-foreground hover:text-foreground"
               onClick={onEdit}
             >
-              <Pencil className="h-3 w-3" />
+              <PencilEdit01Icon className="h-3 w-3" />
             </Button>
             <Button
               variant="ghost"
@@ -85,7 +85,7 @@ function LabelCard({
               className="text-muted-foreground hover:text-destructive"
               onClick={onDelete}
             >
-              <Trash2 className="h-3 w-3" />
+              <Delete01Icon className="h-3 w-3" />
             </Button>
           </div>
         )}
@@ -172,7 +172,7 @@ function LabelForm({
       </div>
       <DialogFooter className="pt-2">
         <Button type="submit" disabled={saving || !form.name.trim()}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {saving ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : null}
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </DialogFooter>
@@ -270,7 +270,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -288,7 +288,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
               setEditingId(null);
             }}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
             Add label
           </Button>
         </div>
@@ -343,7 +343,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
       {labels.length === 0 && !labelDialogOpen && (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Tag className="h-6 w-6 text-muted-foreground/60" />
+            <Tag01Icon className="h-6 w-6 text-muted-foreground/60" />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">No labels yet</p>
@@ -360,7 +360,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
                 setEditingId(null);
               }}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <PlusSignIcon className="h-3.5 w-3.5" />
               Create your first label
             </Button>
           )}

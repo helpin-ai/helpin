@@ -4,33 +4,33 @@ import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import {
-  ArrowLeft,
-  Archive,
-  ArchiveRestore,
-  CalendarDays,
-  Check,
-  ChevronRight,
-  Clock,
-  Copy,
-  Eye,
-  ExternalLink,
-  FileText,
-  FolderInput,
-  FolderOpen,
-  Globe,
-  Link2,
-  Lock,
-  MoreHorizontal,
-  RotateCcw,
-  Send,
-  Trash2,
-  Unlock,
-  User,
-  UserCheck,
-  X,
-  Loader2,
-  WandSparkles,
-} from 'lucide-react'
+  ArrowLeft02Icon,
+  ArchiveIcon,
+  Calendar03Icon,
+  Tick01Icon,
+  ArrowRight01Icon,
+  Clock01Icon,
+  Copy01Icon,
+  ViewIcon,
+  LinkSquare01Icon,
+  File01Icon,
+  FolderOpenIcon,
+  GlobeIcon,
+  Link01Icon,
+  MoreHorizontalIcon,
+  RotateLeft01Icon,
+  SentIcon,
+  Delete01Icon,
+  UserIcon,
+  Cancel01Icon,
+  Loading01Icon,
+  MagicWand01Icon,
+  ArchiveRestoreIcon,
+  FolderInputIcon,
+  LockIcon,
+  SquareUnlock01Icon,
+  UserCheck01Icon,
+} from '@/lib/icons'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -143,7 +143,7 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
     const Icon = ICON_MAP[name];
     if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
   }
-  return <FolderOpen className="h-3 w-3 shrink-0" />;
+  return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
 }
 
 interface ArticleTranslationDraftState {
@@ -761,7 +761,7 @@ export function DocsDocumentDetail() {
   if (!doc) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-4">
-        <FileText className="h-12 w-12 text-muted-foreground/30 mb-3" />
+        <File01Icon className="h-12 w-12 text-muted-foreground/30 mb-3" />
         <p className="text-sm text-muted-foreground">Document not found.</p>
         <Button
           variant="ghost"
@@ -785,7 +785,7 @@ export function DocsDocumentDetail() {
           className="h-8 w-8 shrink-0"
           onClick={() => router.history.back()}
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         {/* Breadcrumb */}
@@ -799,7 +799,7 @@ export function DocsDocumentDetail() {
           </button>
           {space && (
             <>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
               <button
                 type="button"
                 onClick={() =>
@@ -819,7 +819,7 @@ export function DocsDocumentDetail() {
             if (!col) return null
             return (
               <>
-                <ChevronRight className="h-3 w-3 shrink-0" />
+                <ArrowRight01Icon className="h-3 w-3 shrink-0" />
                 <DocCollectionIcon name={col.icon} />
                 <span className="truncate">{col.name}</span>
               </>
@@ -899,7 +899,7 @@ export function DocsDocumentDetail() {
               }
             }}
           >
-            <Eye className="h-3.5 w-3.5" />
+            <ViewIcon className="h-3.5 w-3.5" />
             Preview
           </Button>
         )}
@@ -932,7 +932,7 @@ export function DocsDocumentDetail() {
               }}
               disabled={publishDisabled}
             >
-              <Send className="h-3 w-3" />
+              <SentIcon className="h-3 w-3" />
               {activePublishLabel}
             </Button>
           </>
@@ -945,7 +945,7 @@ export function DocsDocumentDetail() {
             className="h-8 w-8 shrink-0"
             onClick={() => setMetaOpen((v) => !v)}
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <MoreHorizontalIcon className="h-4 w-4" />
           </Button>
         </QuickTooltip>
       </div>
@@ -973,7 +973,7 @@ export function DocsDocumentDetail() {
                 disabled={regenerating}
                 onClick={() => setRegenerateConfirmOpen(true)}
               >
-                <WandSparkles className="h-3.5 w-3.5" />
+                <MagicWand01Icon className="h-3.5 w-3.5" />
                 Regenerate with AI
               </Button>
             )}
@@ -984,7 +984,7 @@ export function DocsDocumentDetail() {
       {/* Archive banner */}
       {doc.status === 'archived' && (
         <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
-          <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <ArchiveIcon className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <span className="text-sm text-amber-700 dark:text-amber-300">
             This document is archived and read-only.
           </span>
@@ -996,7 +996,7 @@ export function DocsDocumentDetail() {
               onClick={handleUnarchive}
               disabled={unarchiveDoc.isPending}
             >
-              <ArchiveRestore className="h-3 w-3" />
+              <ArchiveRestoreIcon className="h-3 w-3" />
               Unarchive
             </Button>
           )}
@@ -1009,7 +1009,7 @@ export function DocsDocumentDetail() {
         const lockerName = locker ? formatAssignableMemberName(locker) : 'someone'
         return (
           <div className="flex items-center gap-2 border-b border-blue-500/30 bg-blue-500/10 px-4 py-2">
-            <Lock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <LockIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <span className="text-sm text-blue-700 dark:text-blue-300">
               {canUnlock
                 ? `This document is locked${doc.locked_by ? ` by ${lockerName}` : ''}. Unlock to edit.`
@@ -1031,7 +1031,7 @@ export function DocsDocumentDetail() {
                 }}
                 disabled={toggleLock.isPending}
               >
-                <Unlock className="h-3 w-3" />
+                <SquareUnlock01Icon className="h-3 w-3" />
                 Unlock
               </Button>
             )}
@@ -1042,7 +1042,7 @@ export function DocsDocumentDetail() {
       {/* Version preview banner */}
       {previewVersion && (
         <div className="flex items-center gap-3 border-b border-purple-500/30 bg-purple-500/10 px-4 py-2">
-          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0" />
+          <ViewIcon className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0" />
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
               Previewing: {previewVersion.snapshot_label || 'Untitled snapshot'}
@@ -1061,7 +1061,7 @@ export function DocsDocumentDetail() {
               onClick={handleRestoreFromPreview}
               disabled={revertVersion.isPending}
             >
-              <RotateCcw className="h-3 w-3" />
+              <RotateLeft01Icon className="h-3 w-3" />
               Restore
             </Button>
           )}
@@ -1071,7 +1071,7 @@ export function DocsDocumentDetail() {
             className="h-7 gap-1 text-xs shrink-0"
             onClick={() => setPreviewVersion(null)}
           >
-            <X className="h-3 w-3" />
+            <Cancel01Icon className="h-3 w-3" />
             Exit preview
           </Button>
         </div>
@@ -1191,7 +1191,7 @@ export function DocsDocumentDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">Public link</span>
                     </div>
                     <Switch
@@ -1219,7 +1219,7 @@ export function DocsDocumentDetail() {
                         toast.success('Link copied to clipboard')
                       }}
                     >
-                      {linkCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {linkCopied ? <Tick01Icon className="h-3 w-3" /> : <Copy01Icon className="h-3 w-3" />}
                       {linkCopied ? 'Copied!' : 'Copy link'}
                     </Button>
                   )}
@@ -1232,7 +1232,7 @@ export function DocsDocumentDetail() {
             <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
               {/* Owner (source only) */}
               {isSourceLocaleActive && (<>
-              <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
@@ -1266,7 +1266,7 @@ export function DocsDocumentDetail() {
               </div>
 
               {/* Created by */}
-              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <UserCheck01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Created by</span>
               <div className="min-w-0 self-center">
                 {(() => {
@@ -1280,7 +1280,7 @@ export function DocsDocumentDetail() {
               </div>
 
               {/* Collection */}
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <FolderOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
 
               <span className="text-xs text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
@@ -1327,14 +1327,14 @@ export function DocsDocumentDetail() {
               </>)}
 
               {/* Created */}
-              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
               </div>
 
               {/* Updated */}
-              <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <Clock01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
@@ -1343,7 +1343,7 @@ export function DocsDocumentDetail() {
               {/* Published */}
               {(isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at) && (
                 <>
-                  <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                  <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                   <span className="text-xs text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
                     <span className="text-xs">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
@@ -1362,7 +1362,7 @@ export function DocsDocumentDetail() {
                   onClick={() => { setVersionsOpen(true); setMetaOpen(false) }}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
-                  <Clock className="h-3.5 w-3.5" />
+                  <Clock01Icon className="h-3.5 w-3.5" />
                   Version History
                 </button>
                 <button
@@ -1370,7 +1370,7 @@ export function DocsDocumentDetail() {
                   onClick={() => setLinksOpen(true)}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <LinkSquare01Icon className="h-3.5 w-3.5" />
                   Linked Items
                 </button>
               </div>
@@ -1394,7 +1394,7 @@ export function DocsDocumentDetail() {
                       disabled={markArticleTranslationReviewed.isPending}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <Check className="h-3.5 w-3.5" />
+                      <Tick01Icon className="h-3.5 w-3.5" />
                       Mark as reviewed
                     </button>
                   )}
@@ -1410,7 +1410,7 @@ export function DocsDocumentDetail() {
                       disabled={unpublishArticleTranslation.isPending}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
+                      <RotateLeft01Icon className="h-3.5 w-3.5" />
                       Unpublish translation
                     </button>
                   )}
@@ -1440,7 +1440,7 @@ export function DocsDocumentDetail() {
                       disabled={toggleLock.isPending}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      {doc.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                      {doc.is_locked ? <SquareUnlock01Icon className="h-3.5 w-3.5" /> : <LockIcon className="h-3.5 w-3.5" />}
                       {doc.is_locked ? 'Unlock document' : 'Lock document'}
                     </button>
                   )}
@@ -1461,7 +1461,7 @@ export function DocsDocumentDetail() {
                       disabled={unpublishDoc.isPending || doc.is_locked}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
+                      <RotateLeft01Icon className="h-3.5 w-3.5" />
                       Revert to draft
                     </button>
                   )}
@@ -1471,7 +1471,7 @@ export function DocsDocumentDetail() {
                     disabled={doc.is_locked}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <FolderInput className="h-3.5 w-3.5" />
+                    <FolderInputIcon className="h-3.5 w-3.5" />
                     Move to...
                   </button>
                   {doc.status !== 'archived' && (
@@ -1481,7 +1481,7 @@ export function DocsDocumentDetail() {
                       disabled={doc.is_locked}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <Archive className="h-3.5 w-3.5" />
+                      <ArchiveIcon className="h-3.5 w-3.5" />
                       Archive
                     </button>
                   )}
@@ -1491,7 +1491,7 @@ export function DocsDocumentDetail() {
                     disabled={doc.is_locked}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Delete01Icon className="h-3.5 w-3.5" />
                     Delete
                   </button>
                 </div>
@@ -1608,7 +1608,7 @@ export function DocsDocumentDetail() {
                 </Button>
                 <Button type="button" disabled={generatingParents} onClick={() => void handleGenerateParentsAndPublish()}>
                   {generatingParents ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...</>
+                    <><Loading01Icon className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...</>
                   ) : (
                     'Proceed'
                   )}

@@ -1,4 +1,4 @@
-import { Inbox, Plus } from 'lucide-react';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -41,9 +41,11 @@ type SupportRailNavProps = {
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
   canManageSettings: boolean;
+  wsSlug: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
   onCreateMailbox: () => void;
+  onNavigate: (to: string) => void;
 };
 
 export function SupportRailNav({
@@ -53,11 +55,17 @@ export function SupportRailNav({
   inboxScopes,
   selectedMailboxId,
   canManageSettings,
+  wsSlug,
   onNavFilterChange,
   onMailboxSelect,
   onCreateMailbox,
+  onNavigate,
 }: SupportRailNavProps) {
   const mailboxes = inboxScopes?.mailboxes ?? [];
+
+  const handleSettingsNavigate = (section: string) => {
+    onNavigate(`/w/${wsSlug}/settings/${section}`);
+  };
 
   return (
     <>
@@ -126,7 +134,7 @@ export function SupportRailNav({
                   className="h-5 w-5 rounded-sm text-muted-foreground hover:text-foreground"
                   onClick={onCreateMailbox}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <PlusSignIcon className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">Create Team Inbox</TooltipContent>
@@ -135,7 +143,7 @@ export function SupportRailNav({
         </div>
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
-            const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? Inbox) : Inbox;
+            const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
             const isActiveMailbox = selectedMailboxId === mailbox.id;
 
             return (
@@ -162,13 +170,54 @@ export function SupportRailNav({
                 className="h-8 rounded-md px-2 text-sm"
                 onClick={onCreateMailbox}
               >
-                <Plus className="h-4 w-4" />
+                <PlusSignIcon className="h-4 w-4" />
                 <span>Create Inbox</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
         </SidebarMenu>
       </SidebarGroup>
+
+      <div className="fixed inset-x-0 bottom-0 z-10 ml-16 w-[calc(var(--sidebar-width)-4rem)] border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
+        <div className="flex items-center justify-around">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('knowledge')}
+              >
+                <BookOpen01Icon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Knowledge</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('inboxes-routing')}
+              >
+                <InboxIcon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Inboxes & Routing</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('chat-general')}
+              >
+                <LifebuoyIcon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Chat Widget</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Tick01Icon } from '@/lib/icons';
 
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -78,7 +78,7 @@ function MemberList({
               )}
             >
               <span className="min-w-0 flex-1 truncate">{noneLabel}</span>
-              {selectedValues.includes('__none__') && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+              {selectedValues.includes('__none__') && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
             </CommandItem>
           ) : null}
 
@@ -103,7 +103,7 @@ function MemberList({
                   fallbackClassName="text-[8px]"
                 />
                 <span className="min-w-0 flex-1 truncate">{member.display_name || member.email}</span>
-                {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                {isSelected && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
               </CommandItem>
             );
           })}

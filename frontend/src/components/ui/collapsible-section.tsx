@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { ArrowDown01Icon, ArrowRight01Icon, PlusSignIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 
 interface CollapsibleSectionProps {
@@ -29,7 +29,7 @@ export function CollapsibleSection({
           className="flex flex-1 items-center gap-2 px-3 py-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
           onClick={() => setOpen(!open)}
         >
-          {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+          {open ? <ArrowDown01Icon className="h-3.5 w-3.5 shrink-0" /> : <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" />}
           <Icon className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1 text-left">{title}</span>
           {count > 0 && (
@@ -43,7 +43,7 @@ export function CollapsibleSection({
             onClick={(e) => { e.stopPropagation(); onAdd(); }}
             aria-label={`Add ${title.toLowerCase()}`}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
           </button>
         )}
       </div>

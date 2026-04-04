@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CircleHelp } from 'lucide-react';
+import { HelpCircleIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -144,7 +144,7 @@ export function SprintSettingsForm({
                     Upcoming sprints to create
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <CircleHelp className="h-3.5 w-3.5 text-muted-foreground" />
+                        <HelpCircleIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px] text-xs">
                         How many unstarted sprints to keep ready ahead of the active sprint.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { Cancel01Icon } from '@/lib/icons'
 import {
   Dialog,
   DialogContent,
@@ -148,7 +148,7 @@ export function CreateCollectionDialog({
                   className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   title="Remove icon"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <Cancel01Icon className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>

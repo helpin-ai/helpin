@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loading01Icon } from '@/lib/icons'
 
 import { cn } from '@/lib/utils'
 
@@ -25,7 +25,7 @@ export const LoadingImage = forwardRef<HTMLImageElement, LoadingImageProps>(func
           data-loading-image-spinner="true"
           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] bg-muted/60 backdrop-blur-[1px]"
         >
-          <Loader2 className={cn('h-4 w-4 animate-spin text-muted-foreground', spinnerClassName)} />
+          <Loading01Icon className={cn('h-4 w-4 animate-spin text-muted-foreground', spinnerClassName)} />
         </span>
       )}
 

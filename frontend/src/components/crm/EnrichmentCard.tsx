@@ -1,4 +1,4 @@
-import { Database, RefreshCw } from 'lucide-react';
+import { DatabaseIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,11 +33,11 @@ export function EnrichmentCard({ workspaceId, objectType, objectId }: Enrichment
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="h-4 w-4" />
+            <DatabaseIcon className="h-4 w-4" />
             Enrichment Data
           </CardTitle>
           <Button variant="outline" size="sm" onClick={handleReEnrich} disabled={createEnrichment.isPending}>
-            <RefreshCw className="mr-1 h-3 w-3" />
+            <ArrowReloadHorizontalIcon className="mr-1 h-3 w-3" />
             Re-enrich
           </Button>
         </div>

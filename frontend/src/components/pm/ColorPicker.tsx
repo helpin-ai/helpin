@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Palette } from 'lucide-react';
+import { PaintBoardIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -390,7 +390,7 @@ export function ColorPicker({
             style={isCustom ? { backgroundColor: value } : undefined}
             title="Custom color"
           >
-            {!isCustom && <Palette className="h-3 w-3 text-muted-foreground" />}
+            {!isCustom && <PaintBoardIcon className="h-3 w-3 text-muted-foreground" />}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-[260px] p-3" align="start" side="top">

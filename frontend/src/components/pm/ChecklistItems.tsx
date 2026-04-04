@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckSquare, GripVertical, Plus, Trash2, X } from 'lucide-react';
+import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import {
   DndContext,
@@ -87,7 +87,7 @@ function SortableItem({
         {...attributes}
         {...listeners}
       >
-        <GripVertical className="h-3 w-3" />
+        <DragDropVerticalIcon className="h-3 w-3" />
       </button>
       <input
         type="checkbox"
@@ -126,7 +126,7 @@ function SortableItem({
               className="h-5 w-5 text-[8px]"
             />
           ) : (
-            <Plus className="h-2.5 w-2.5" />
+            <PlusSignIcon className="h-2.5 w-2.5" />
           )}
         />
         {assignee ? (
@@ -139,7 +139,7 @@ function SortableItem({
                 onAssigneeChange(item.id, null);
               }}
             >
-              <X className="h-2.5 w-2.5" />
+              <Cancel01Icon className="h-2.5 w-2.5" />
             </button>
           </QuickTooltip>
         ) : null}
@@ -151,7 +151,7 @@ function SortableItem({
           className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-destructive cursor-pointer"
           onClick={() => onDelete(item.id)}
         >
-          <Trash2 className="h-3 w-3" />
+          <Delete01Icon className="h-3 w-3" />
         </button>
       </QuickTooltip>
     </div>
@@ -277,7 +277,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
-        <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           Checklist
           {items.length > 0 && (
@@ -327,7 +327,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
       {/* Add input */}
       <div className="relative">
         <div className="flex items-center gap-2">
-          <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"

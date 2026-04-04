@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
-  Building2,
-  DollarSign,
-  FileText,
-  GitBranch,
-  Hexagon,
-  Loader2,
-  MessageSquareText,
-  Search,
-  Users,
-} from 'lucide-react';
+  Building03Icon,
+  DollarCircleIcon,
+  File01Icon,
+  GitBranchIcon,
+  Loading01Icon,
+  Search01Icon,
+  UserGroupIcon,
+} from '@/lib/icons';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
@@ -44,13 +42,13 @@ interface AssociationsListProps {
 type SectionType = CRMObjectType;
 
 const sectionConfig: Record<string, { title: string; icon: React.ElementType }> = {
-  contact: { title: 'Contacts', icon: Users },
-  company: { title: 'Companies', icon: Building2 },
-  deal: { title: 'Deals', icon: DollarSign },
-  epic: { title: 'Epics', icon: Hexagon },
-  task: { title: 'Tasks', icon: GitBranch },
+  contact: { title: 'Contacts', icon: UserGroupIcon },
+  company: { title: 'Companies', icon: Building03Icon },
+  deal: { title: 'Deals', icon: DollarCircleIcon },
+  epic: { title: 'Epics', icon: File01Icon },
+  task: { title: 'Tasks', icon: GitBranchIcon },
 
-  support_conversation: { title: 'Support', icon: MessageSquareText },
+  support_conversation: { title: 'Support', icon: File01Icon },
 };
 
 export function AssociationsList({
@@ -181,7 +179,7 @@ export function AssociationsList({
     pickerSection === 'epic' || pickerSection === 'task' ? `Search ${pickerSection}s by title or ID` :
     `Search ${pickerSection ? pickerSection + 's' : ''}`;
 
-  const pickerIcon = pickerConfig?.icon ?? FileText;
+  const pickerIcon = pickerConfig?.icon ?? File01Icon;
   const PickerIcon = pickerIcon;
 
   return (
@@ -224,7 +222,7 @@ export function AssociationsList({
           </DialogHeader>
           <div className="space-y-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -236,7 +234,7 @@ export function AssociationsList({
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Searching...
+                  <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
 
@@ -248,7 +246,7 @@ export function AssociationsList({
                   onClick={() => handleAdd('support_conversation', c.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium truncate">{c.subject}</span>
                     <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                       C-{c.display_id}

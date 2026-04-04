@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ListFilter, X } from 'lucide-react';
+import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -129,7 +129,7 @@ function FilterValueSelect({
                     onSelect={() => onToggle(opt.value)}
                   >
                     <div className={`mr-2 flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                      {isSelected ? <Check className="h-3 w-3" /> : null}
+                      {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
                     </div>
                     {opt.icon ? <span className="mr-1.5 shrink-0">{opt.icon}</span> : null}
                     <span className="truncate">{opt.label}</span>
@@ -164,7 +164,7 @@ function FilterPill({
         onClick={onRemove}
         className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors"
       >
-        <X className="h-3 w-3" />
+        <Cancel01Icon className="h-3 w-3" />
       </button>
     </div>
   );
@@ -403,7 +403,7 @@ export function TaskFilterTrigger() {
           <PopoverTrigger asChild>
             <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <ListFilter className="h-3.5 w-3.5" />
+                <FilterHorizontalIcon className="h-3.5 w-3.5" />
                 Filters
               </span>
               <Badge
@@ -440,7 +440,7 @@ export function TaskFilterTrigger() {
       ) : (
         <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
           <span className="inline-flex items-center gap-1">
-            <ListFilter className="h-3.5 w-3.5" />
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
             Filters
           </span>
           <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">

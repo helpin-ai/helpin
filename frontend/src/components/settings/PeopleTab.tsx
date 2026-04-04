@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { Pencil, Trash2 } from 'lucide-react';
+import { PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -92,10 +92,10 @@ export function PeopleTab({ workspaceId, people, editable, onRefresh }: {
                       <TableCell>
                         <div className="flex gap-1">
                           <Button size="icon" variant="ghost" onClick={() => openEdit(p)}>
-                            <Pencil className="h-3.5 w-3.5" />
+                            <PencilEdit01Icon className="h-3.5 w-3.5" />
                           </Button>
                           <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeletePersonConfirm(p.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Delete01Icon className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>

@@ -1,4 +1,4 @@
-import { Copy, Pause, Play, StepForward, Trash2, Zap } from 'lucide-react';
+import { Copy01Icon, PauseIcon, PlayIcon, Forward01Icon, Delete01Icon, ZapIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import type { RecurringTemplateDetail } from '@/lib/pmTypes';
 import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
@@ -80,30 +80,30 @@ export function RecurringTemplateList({
             <div className="mt-3 flex flex-wrap gap-2">
               {item.template.status === 'active' ? (
                 <Button type="button" variant="outline" size="xs" onClick={() => onPause?.(item)}>
-                  <Pause className="h-3 w-3" />
+                  <PauseIcon className="h-3 w-3" />
                   Pause
                 </Button>
               ) : null}
               {item.template.status === 'paused' ? (
                 <Button type="button" variant="outline" size="xs" onClick={() => onResume?.(item)}>
-                  <Play className="h-3 w-3" />
+                  <PlayIcon className="h-3 w-3" />
                   Resume
                 </Button>
               ) : null}
               <Button type="button" variant="outline" size="xs" onClick={() => onGenerateNow?.(item)}>
-                <Zap className="h-3 w-3" />
+                <ZapIcon className="h-3 w-3" />
                 Generate now
               </Button>
               <Button type="button" variant="outline" size="xs" onClick={() => onSkipNext?.(item)}>
-                <StepForward className="h-3 w-3" />
+                <Forward01Icon className="h-3 w-3" />
                 Skip next
               </Button>
               <Button type="button" variant="outline" size="xs" onClick={() => onDuplicate?.(item)}>
-                <Copy className="h-3 w-3" />
+                <Copy01Icon className="h-3 w-3" />
                 Duplicate
               </Button>
               <Button type="button" variant="destructive" size="xs" onClick={() => onStop?.(item)}>
-                <Trash2 className="h-3 w-3" />
+                <Delete01Icon className="h-3 w-3" />
                 Delete
               </Button>
             </div>

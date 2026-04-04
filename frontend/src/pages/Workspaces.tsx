@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { Favicon } from '@/components/ui/favicon';
-import { CheckCircle2, Loader2, Plus, X } from 'lucide-react';
+import { CheckmarkCircle02Icon, Loading01Icon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
   buildPresetFieldVisibility,
@@ -463,7 +463,7 @@ export default function Workspaces() {
           <Dialog open={dialogOpen} onOpenChange={handleWorkspaceDialogChange}>
             <DialogTrigger asChild>
               <Button disabled={!currentOrganization} onClick={openWorkspaceDialog}>
-                <Plus className="h-4 w-4 mr-2" />
+                <PlusSignIcon className="h-4 w-4 mr-2" />
                 Create Workspace
               </Button>
             </DialogTrigger>
@@ -509,7 +509,7 @@ export default function Workspaces() {
                               <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
                             ))}
                             <SelectItem value="__new_org__" className="text-primary">
-                              <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" /> New Organization</span>
+                              <span className="flex items-center gap-1.5"><PlusSignIcon className="h-3.5 w-3.5" /> New Organization</span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -605,7 +605,7 @@ export default function Workspaces() {
                             )}
                             {team.isCustom && (
                               <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeCustomTeam(team.id)}>
-                                <X className="h-3.5 w-3.5" />
+                                <Cancel01Icon className="h-3.5 w-3.5" />
                               </Button>
                             )}
                           </div>
@@ -617,7 +617,7 @@ export default function Workspaces() {
                       onClick={addCustomTeam}
                       className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <PlusSignIcon className="h-3.5 w-3.5" />
                       Add custom team
                     </button>
                   </div>
@@ -629,9 +629,9 @@ export default function Workspaces() {
                         <div className="flex items-start gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
                             {websiteSourceAdded ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <CheckmarkCircle02Icon className="h-4 w-4 text-emerald-600" />
                             ) : createWebsiteSourceMutation.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <Loading01Icon className="h-4 w-4 animate-spin" />
                             ) : (
                               <Favicon
                                 url={createdWorkspace.website_url}
@@ -767,7 +767,7 @@ export default function Workspaces() {
           <div className="text-center py-16">
             <p className="text-muted-foreground mb-4">No workspaces yet.</p>
             <Button onClick={openWorkspaceDialog} disabled={!currentOrganization}>
-              <Plus className="h-4 w-4 mr-2" />
+              <PlusSignIcon className="h-4 w-4 mr-2" />
               Create your first workspace
             </Button>
           </div>

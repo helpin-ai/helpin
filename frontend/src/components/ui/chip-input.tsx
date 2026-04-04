@@ -1,5 +1,5 @@
 import { useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
+import { Cancel01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -109,7 +109,7 @@ export function ChipInput({
             disabled={disabled}
             aria-label={`Remove ${chip}`}
           >
-            <X className="h-3 w-3" />
+            <Cancel01Icon className="h-3 w-3" />
           </button>
         </Badge>
       ))}

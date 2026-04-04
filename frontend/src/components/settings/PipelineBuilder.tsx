@@ -5,7 +5,7 @@ import type { Agent, AutomationRule, WorkflowState } from '@/lib/pmTypes';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Bot, ChevronRight, GitBranch, X } from 'lucide-react';
+import { BotIcon, ArrowRight01Icon, GitBranchIcon, Cancel01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 export function PipelineBuilder({
@@ -129,7 +129,7 @@ export function PipelineBuilder({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Bot className="h-4 w-4 text-violet-500" />
+        <BotIcon className="h-4 w-4 text-violet-500" />
         <span className="text-sm font-semibold">Pipeline</span>
         <span className="text-xs text-muted-foreground">Assign agents to workflow stages</span>
       </div>
@@ -181,7 +181,7 @@ export function PipelineBuilder({
                           {agents.map((agent) => (
                             <SelectItem key={agent.id} value={agent.id}>
                               <span className="flex items-center gap-1.5">
-                                <Bot className="h-3 w-3 text-violet-500" />
+                                <BotIcon className="h-3 w-3 text-violet-500" />
                                 {agent.name}
                               </span>
                             </SelectItem>
@@ -193,7 +193,7 @@ export function PipelineBuilder({
                     <div className="space-y-1 text-xs text-muted-foreground px-1">
                       {selectedAgentId ? (
                         <div className="flex items-center gap-1.5">
-                          <Bot className="h-3 w-3 text-violet-500" />
+                          <BotIcon className="h-3 w-3 text-violet-500" />
                           <span className="truncate">{agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Agent'}</span>
                         </div>
                       ) : (
@@ -231,7 +231,7 @@ export function PipelineBuilder({
                       'h-[2px] w-6',
                       hasAdvance ? 'bg-violet-400' : 'bg-border',
                     )} />
-                    <ChevronRight className={cn(
+                    <ArrowRight01Icon className={cn(
                       'h-3.5 w-3.5 -ml-1',
                       hasAdvance ? 'text-violet-400' : 'text-border',
                     )} />
@@ -260,7 +260,7 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
         className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => { onChange('{base_branch}'); }}
       >
-        <GitBranch className="h-2.5 w-2.5" />
+        <GitBranchIcon className="h-2.5 w-2.5" />
         Merge branch...
       </button>
     );
@@ -269,17 +269,17 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
   if (!editing) {
     return (
       <div className="mt-2 flex items-center gap-1 text-[10px]">
-        <GitBranch className="h-2.5 w-2.5 text-muted-foreground" />
+        <GitBranchIcon className="h-2.5 w-2.5 text-muted-foreground" />
         {isBaseBranch ? (
           <span className="truncate text-muted-foreground">→ base branch <span className="opacity-60">(from team defaults)</span></span>
         ) : (
           <span className="truncate text-muted-foreground">→ {value}</span>
         )}
         <button type="button" className="text-muted-foreground hover:text-foreground ml-0.5" onClick={() => setEditing(true)}>
-          <ChevronRight className="h-2.5 w-2.5 rotate-90" />
+          <ArrowRight01Icon className="h-2.5 w-2.5 rotate-90" />
         </button>
         <button type="button" className="text-muted-foreground hover:text-destructive" onClick={() => onChange('')}>
-          <X className="h-2.5 w-2.5" />
+          <Cancel01Icon className="h-2.5 w-2.5" />
         </button>
       </div>
     );
@@ -288,7 +288,7 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
   return (
     <div className="mt-2 space-y-1">
       <div className="flex items-center gap-1">
-        <GitBranch className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+        <GitBranchIcon className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
         <Select
           value={mode || '{base_branch}'}
           onValueChange={(v) => {

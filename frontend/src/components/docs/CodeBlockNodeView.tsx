@@ -1,6 +1,6 @@
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ArrowDown01Icon } from '@/lib/icons'
 import { common } from 'lowlight'
 
 const LANGUAGES = Object.keys(common).sort()
@@ -89,7 +89,7 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
             contentEditable={false}
           >
             {displayName(language)}
-            <ChevronDown className="h-3 w-3" />
+            <ArrowDown01Icon className="h-3 w-3" />
           </button>
 
           {open && (

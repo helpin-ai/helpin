@@ -1,38 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
-  Archive,
-  ArrowRightLeft,
-  Bot,
-  CalendarDays,
-  Check,
-  CheckSquare,
-  ChevronRight,
-  Gauge,
-  GitBranch,
-  Hash,
-  Hexagon,
-  Layers,
-  LayoutGrid,
-  Link2,
-  Loader2,
-  Maximize2,
-  MessageSquare,
-  MoreVertical,
-  Paperclip,
-  Pencil,
-  Play,
-  RefreshCw,
-  ShieldAlert,
-  Tag,
-  Target,
-  Upload,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+  ArchiveIcon,
+  ArrowLeftRightIcon,
+  BotIcon,
+  Calendar03Icon,
+  DashboardSpeed01Icon,
+  HashtagIcon,
+  HexagonIcon,
+  Layers01Icon,
+  LayoutGridIcon,
+  Tick01Icon,
+  CheckmarkSquare02Icon,
+  ArrowRight01Icon,
+  GitBranchIcon,
+  Link01Icon,
+  Loading01Icon,
+  Maximize01Icon,
+  Message01Icon,
+  MoreVerticalIcon,
+  AttachmentIcon,
+  PencilEdit01Icon,
+  PlayIcon,
+  ArrowReloadHorizontalIcon,
+  Shield02Icon,
+  Tag01Icon,
+  Target01Icon,
+  Upload01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+} from '@/lib/icons';
 import {
   PRIORITY_CONFIG,
   PriorityIcon,
@@ -229,19 +230,19 @@ type TimelineItem =
   | { kind: 'comment'; data: CommentWithAuthor; time: string };
 
 const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
-  workflow_state_id: { icon: Hash, color: 'text-blue-500' },
-  owner_member_id: { icon: User, color: 'text-violet-500' },
-  team_id: { icon: Users, color: 'text-teal-500' },
-  priority: { icon: Gauge, color: 'text-orange-500' },
-  sprint_id: { icon: Hexagon, color: 'text-green-500' },
-  epic_id: { icon: Layers, color: 'text-purple-500' },
-  estimate: { icon: LayoutGrid, color: 'text-amber-500' },
-  deadline: { icon: CalendarDays, color: 'text-red-500' },
-  task_type: { icon: Tag, color: 'text-indigo-500' },
-  labels: { icon: Tag, color: 'text-pink-500' },
-  severity: { icon: ShieldAlert, color: 'text-red-500' },
-  name: { icon: Pencil, color: 'text-muted-foreground' },
-  description: { icon: Pencil, color: 'text-muted-foreground' },
+  workflow_state_id: { icon: HashtagIcon, color: 'text-blue-500' },
+  owner_member_id: { icon: UserIcon, color: 'text-violet-500' },
+  team_id: { icon: UserGroupIcon, color: 'text-teal-500' },
+  priority: { icon: DashboardSpeed01Icon, color: 'text-orange-500' },
+  sprint_id: { icon: HexagonIcon, color: 'text-green-500' },
+  epic_id: { icon: Layers01Icon, color: 'text-purple-500' },
+  estimate: { icon: LayoutGridIcon, color: 'text-amber-500' },
+  deadline: { icon: Calendar03Icon, color: 'text-red-500' },
+  task_type: { icon: Tag01Icon, color: 'text-indigo-500' },
+  labels: { icon: Tag01Icon, color: 'text-pink-500' },
+  severity: { icon: Shield02Icon, color: 'text-red-500' },
+  name: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
+  description: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
 };
 
 /** Map raw action strings like "comment_added" to readable labels. */
@@ -264,23 +265,23 @@ function formatAction(action?: string): string {
 
 function getActivityIcon(action?: string, fieldName?: string): { icon: React.ElementType; color: string } {
   if (fieldName && ACTIVITY_ICON_MAP[fieldName]) return ACTIVITY_ICON_MAP[fieldName];
-  if (action?.includes('comment')) return { icon: MessageSquare, color: 'text-blue-500' };
-  if (action?.includes('attachment') || action?.includes('file')) return { icon: Paperclip, color: 'text-muted-foreground' };
-  if (action?.includes('label')) return { icon: Tag, color: 'text-pink-500' };
-  if (action?.includes('moved') || action?.includes('state')) return { icon: Hash, color: 'text-blue-500' };
-  if (action?.includes('priority')) return { icon: Gauge, color: 'text-orange-500' };
-  if (action?.includes('owner') || action?.includes('assigned') || action?.includes('requester')) return { icon: User, color: 'text-violet-500' };
-  if (action?.includes('team')) return { icon: Users, color: 'text-teal-500' };
-  if (action?.includes('sprint')) return { icon: Hexagon, color: 'text-green-500' };
-  if (action?.includes('epic')) return { icon: Layers, color: 'text-purple-500' };
-  if (action?.includes('blocked')) return { icon: ShieldAlert, color: 'text-red-500' };
-  if (action?.includes('archived')) return { icon: Archive, color: 'text-amber-500' };
-  if (action?.includes('created')) return { icon: Play, color: 'text-green-500' };
-  if (action?.includes('deadline') || action?.includes('due date')) return { icon: CalendarDays, color: 'text-red-500' };
-  if (action?.includes('estimate')) return { icon: LayoutGrid, color: 'text-amber-500' };
-  if (action?.includes('type')) return { icon: Tag, color: 'text-indigo-500' };
-  if (action?.includes('severity')) return { icon: ShieldAlert, color: 'text-red-500' };
-  return { icon: ArrowRightLeft, color: 'text-muted-foreground' };
+  if (action?.includes('comment')) return { icon: Message01Icon, color: 'text-blue-500' };
+  if (action?.includes('attachment') || action?.includes('file')) return { icon: AttachmentIcon, color: 'text-muted-foreground' };
+  if (action?.includes('label')) return { icon: Tag01Icon, color: 'text-pink-500' };
+  if (action?.includes('moved') || action?.includes('state')) return { icon: HashtagIcon, color: 'text-blue-500' };
+  if (action?.includes('priority')) return { icon: DashboardSpeed01Icon, color: 'text-orange-500' };
+  if (action?.includes('owner') || action?.includes('assigned') || action?.includes('requester')) return { icon: UserIcon, color: 'text-violet-500' };
+  if (action?.includes('team')) return { icon: UserGroupIcon, color: 'text-teal-500' };
+  if (action?.includes('sprint')) return { icon: HexagonIcon, color: 'text-green-500' };
+  if (action?.includes('epic')) return { icon: Layers01Icon, color: 'text-purple-500' };
+  if (action?.includes('blocked')) return { icon: Shield02Icon, color: 'text-red-500' };
+  if (action?.includes('archived')) return { icon: ArchiveIcon, color: 'text-amber-500' };
+  if (action?.includes('created')) return { icon: PlayIcon, color: 'text-green-500' };
+  if (action?.includes('deadline') || action?.includes('due date')) return { icon: Calendar03Icon, color: 'text-red-500' };
+  if (action?.includes('estimate')) return { icon: LayoutGridIcon, color: 'text-amber-500' };
+  if (action?.includes('type')) return { icon: Tag01Icon, color: 'text-indigo-500' };
+  if (action?.includes('severity')) return { icon: Shield02Icon, color: 'text-red-500' };
+  return { icon: ArrowLeftRightIcon, color: 'text-muted-foreground' };
 }
 
 function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: WorkflowState[] }) {
@@ -394,7 +395,7 @@ function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: Wor
       richLabel = (
         <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground flex-wrap">
           changed {field} from {renderBadge(oldVal)}
-          <ArrowRightLeft className="h-2.5 w-2.5 text-muted-foreground/50" />
+          <ArrowLeftRightIcon className="h-2.5 w-2.5 text-muted-foreground/50" />
           {renderBadge(newVal)}
         </span>
       );
@@ -913,7 +914,7 @@ function TaskDetailPanelBody({
         <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {taskDetail.objective_name && taskDetail.objective_id && workspace && (
             <>
-              <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
@@ -925,12 +926,12 @@ function TaskDetailPanelBody({
               >
                 {taskDetail.objective_name}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {taskDetail.epic_name && taskDetail.task.epic_id && workspace && (
             <>
-              <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <HexagonIcon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
@@ -942,7 +943,7 @@ function TaskDetailPanelBody({
               >
                 {taskDetail.epic_name}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {currentSprintName !== 'No sprint' && form.sprint_id && workspace && teamSprintsEnabled && (
@@ -959,7 +960,7 @@ function TaskDetailPanelBody({
               >
                 {currentSprintName}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
@@ -976,29 +977,29 @@ function TaskDetailPanelBody({
           <SaveIndicator saving={isSaving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
-              <Check className="h-3.5 w-3.5" />
+              <Tick01Icon className="h-3.5 w-3.5" />
               Copied!
             </span>
           ) : (
             <QuickTooltip label="Copy link">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink}>
-                <Link2 className="h-3.5 w-3.5" />
+                <Link01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreVertical className="h-4 w-4" />
+                <MoreVerticalIcon className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
                 {recurringSummary ? 'Edit recurring' : 'Make recurring'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                <ArchiveIcon className="mr-2 h-4 w-4 text-amber-500" />
                 Archive
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1017,12 +1018,12 @@ function TaskDetailPanelBody({
                   );
                 }}
               >
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-            <X className="h-4 w-4" />
+            <Cancel01Icon className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -1052,7 +1053,7 @@ function TaskDetailPanelBody({
         {panelDragging && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
-              <Upload className="h-8 w-8 text-primary" />
+              <Upload01Icon className="h-8 w-8 text-primary" />
               <p className="text-sm font-medium text-foreground">Drop files to attach</p>
               <p className="text-xs text-muted-foreground">Max 10MB per file</p>
             </div>
@@ -1082,9 +1083,9 @@ function TaskDetailPanelBody({
                             : 'border-border bg-background text-muted-foreground'
                       }`}>
                         {isPast ? (
-                          <Check className="h-2.5 w-2.5" />
+                          <Tick01Icon className="h-2.5 w-2.5" />
                         ) : isAutomated ? (
-                          <Bot className="h-2.5 w-2.5" />
+                          <BotIcon className="h-2.5 w-2.5" />
                         ) : (
                           <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         )}
@@ -1145,7 +1146,7 @@ function TaskDetailPanelBody({
                   className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                   onClick={() => setEditingDescription(true)}
                 >
-                  <Pencil className="h-3 w-3" />
+                  <PencilEdit01Icon className="h-3 w-3" />
                   Edit description
                 </button>
               </div>
@@ -1163,7 +1164,7 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setShowChecklist((v) => !v)}
             >
-              <CheckSquare className="h-3 w-3" />
+              <CheckmarkSquare02Icon className="h-3 w-3" />
               Checklist
             </button>
             <button
@@ -1176,7 +1177,7 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setRelationshipComposerOpen(true)}
             >
-              <ArrowRightLeft className="h-3 w-3" />
+              <ArrowLeftRightIcon className="h-3 w-3" />
               Relationships
             </button>
             <button
@@ -1188,7 +1189,7 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setShowExternalLinks((v) => !v)}
             >
-              <Link2 className="h-3 w-3" />
+              <Link01Icon className="h-3 w-3" />
               External Links
             </button>
             <button
@@ -1196,7 +1197,7 @@ function TaskDetailPanelBody({
               className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
               onClick={() => openFilePickerRef.current?.()}
             >
-              <Paperclip className="h-3 w-3" />
+              <AttachmentIcon className="h-3 w-3" />
               Attach Files
             </button>
           </div>
@@ -1208,7 +1209,7 @@ function TaskDetailPanelBody({
               className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
               onClick={() => void openRecurringDialog()}
             >
-              <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ArrowReloadHorizontalIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{recurringSummary.rule_summary}</span>
@@ -1220,7 +1221,7 @@ function TaskDetailPanelBody({
                   {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
                 </p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </button>
           ) : null}
 
@@ -1339,7 +1340,7 @@ function TaskDetailPanelBody({
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
-            <MetadataRow icon={Users} label="Team">
+            <MetadataRow icon={UserGroupIcon} label="Team">
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
@@ -1355,7 +1356,7 @@ function TaskDetailPanelBody({
             </MetadataRow>
 
             {/* State */}
-            <MetadataRow icon={Hash} label="State">
+            <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
                 value={form.workflow_state_id}
                 options={states.map((s) => ({ value: s.id, label: s.name }))}
@@ -1388,7 +1389,7 @@ function TaskDetailPanelBody({
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Owner */}
-            <MetadataRow icon={User} label="Owner">
+            <MetadataRow icon={UserIcon} label="Owner">
               <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
                 members={assignableMembers}
@@ -1417,7 +1418,7 @@ function TaskDetailPanelBody({
             </MetadataRow>
 
             {/* Requester */}
-            <MetadataRow icon={User} label="Requester">
+            <MetadataRow icon={UserIcon} label="Requester">
               <MemberPickerPopover
                 value={form.requester_member_id || '__none__'}
                 members={assignableMembers}
@@ -1450,7 +1451,7 @@ function TaskDetailPanelBody({
 
             {/* Priority */}
             {fieldVis.priority && (
-            <MetadataRow icon={Gauge} label="Priority">
+            <MetadataRow icon={DashboardSpeed01Icon} label="Priority">
               <SidebarPopoverSelect
                 value={form.priority}
                 options={priorityOptions.map((p) => ({ value: p, label: PRIORITY_CONFIG[p].label }))}
@@ -1468,7 +1469,7 @@ function TaskDetailPanelBody({
 
             {/* Severity */}
             {fieldVis.severity && (
-            <MetadataRow icon={ShieldAlert} label="Severity">
+            <MetadataRow icon={Shield02Icon} label="Severity">
               <SidebarPopoverSelect
                 value={form.severity}
                 options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
@@ -1486,7 +1487,7 @@ function TaskDetailPanelBody({
 
             {/* Type */}
             {fieldVis.task_type && (
-            <MetadataRow icon={Hash} label="Type">
+            <MetadataRow icon={HashtagIcon} label="Type">
               <SidebarPopoverSelect
                 value={form.task_type}
                 options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
@@ -1504,7 +1505,7 @@ function TaskDetailPanelBody({
 
             {/* Labels */}
             {fieldVis.labels && (
-            <MetadataRow icon={Tag} label="Labels">
+            <MetadataRow icon={Tag01Icon} label="Labels">
               <LabelPicker
                 workspaceId={workspaceId}
                 teamId={form.team_id || undefined}
@@ -1534,7 +1535,7 @@ function TaskDetailPanelBody({
 
             {/* Epic */}
             {fieldVis.epic && (
-            <MetadataRow icon={Layers} label="Epic">
+            <MetadataRow icon={Layers01Icon} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
                 options={[
@@ -1572,7 +1573,7 @@ function TaskDetailPanelBody({
 
             {/* Estimate */}
             {fieldVis.estimate && (
-            <MetadataRow icon={LayoutGrid} label="Estimate">
+            <MetadataRow icon={LayoutGridIcon} label="Estimate">
               <EstimatePicker
                 value={form.estimate}
                 teamId={form.team_id}
@@ -1587,7 +1588,7 @@ function TaskDetailPanelBody({
 
             {/* Due date */}
             {fieldVis.due_date && (
-            <MetadataRow icon={CalendarDays} label="Due date">
+            <MetadataRow icon={Calendar03Icon} label="Due date">
               <DatePicker
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
@@ -1608,7 +1609,7 @@ function TaskDetailPanelBody({
               <>
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
-                <MetadataRow icon={Bot} label="Agent">
+                <MetadataRow icon={BotIcon} label="Agent">
                   <SidebarPopoverSelect
                     value={delivery.selectedAgentId || '__none__'}
                     options={[
@@ -1625,7 +1626,7 @@ function TaskDetailPanelBody({
                       <>
                         {delivery.selectedAgent && <AgentAvatar agent={delivery.selectedAgent} className="h-5 w-5" />}
                         <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
-                        {delivery.savingAssignment && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {delivery.savingAssignment && <Loading01Icon className="h-3 w-3 animate-spin" />}
                       </>
                     )}
                     renderOption={(v) => {
@@ -1642,7 +1643,7 @@ function TaskDetailPanelBody({
                   />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Repository">
+                <MetadataRow icon={GitBranchIcon} label="Repository">
                   <SidebarPopoverSelect
                     value={delivery.repositoryId || '__none__'}
                     options={[
@@ -1661,7 +1662,7 @@ function TaskDetailPanelBody({
                   />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Base">
+                <MetadataRow icon={GitBranchIcon} label="Base">
                   <Popover>
                     <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
                       <TooltipTrigger asChild>
@@ -1695,14 +1696,14 @@ function TaskDetailPanelBody({
                         onClick={delivery.handleSaveDelivery}
                         disabled={delivery.savingTarget || !delivery.repositoryId}
                       >
-                        {delivery.savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
                         Save
                       </Button>
                     </PopoverContent>
                   </Popover>
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Branch">
+                <MetadataRow icon={GitBranchIcon} label="Branch">
                   <Tooltip open={isDeliveryTruncated('delivery-branch') ? undefined : false}>
                     <TooltipTrigger asChild>
                       <span
@@ -1717,7 +1718,7 @@ function TaskDetailPanelBody({
                 </MetadataRow>
 
                 {delivery.deliveryStateCfg && (
-                  <MetadataRow icon={Play} label="Status">
+                  <MetadataRow icon={PlayIcon} label="Status">
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.deliveryStateCfg.className}`}>
                       {delivery.deliveryStateCfg.label}
                     </span>
@@ -1796,6 +1797,10 @@ export function TaskDetailPanel({
   onTaskArchived,
 }: TaskDetailPanelProps) {
   const openedAtRef = useRef<number | null>(null);
+  const taskTitle = open && taskDetail
+    ? [taskDetail.task.task_key, taskDetail.task.name].filter(Boolean).join(' ')
+    : undefined;
+  useTitle(taskTitle);
 
   useEffect(() => {
     if (open) {
@@ -1837,7 +1842,7 @@ export function TaskDetailPanel({
           />
         ) : loading ? (
           <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : null}
       </SheetContent>

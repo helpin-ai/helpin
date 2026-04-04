@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react';
+import { ArrowReloadHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,7 @@ export function RecurringTemplateBadge({
         className,
       )}
     >
-      <RefreshCw className={cn('shrink-0', compact ? 'h-2.5 w-2.5' : 'h-3 w-3')} />
+      <ArrowReloadHorizontalIcon className={cn('shrink-0', compact ? 'h-2.5 w-2.5' : 'h-3 w-3')} />
       <span className="truncate">{occurrenceNumber ? `Recurring #${occurrenceNumber}` : 'Recurring'}</span>
     </Badge>
   );

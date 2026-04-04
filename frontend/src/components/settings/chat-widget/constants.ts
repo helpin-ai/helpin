@@ -1,16 +1,16 @@
-import { CircleHelp, HelpCircle, MessageSquare, Monitor, Moon, Sun } from 'lucide-react';
+import { HelpCircleIcon, Message01Icon, ComputerIcon, Moon02Icon, Sun01Icon } from '@/lib/icons';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
 
 export const ICON_OPTIONS = [
-  { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
-  { value: 'question_mark', label: 'Question Mark', icon: HelpCircle },
-  { value: 'help', label: 'Help', icon: CircleHelp },
+  { value: 'chat_bubble', label: 'Chat Bubble', icon: Message01Icon },
+  { value: 'question_mark', label: 'Question Mark', icon: HelpCircleIcon },
+  { value: 'help', label: 'Help', icon: HelpCircleIcon },
 ];
 
 export const COLOR_SCHEME_OPTIONS = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: ComputerIcon },
+  { value: 'light', label: 'Light', icon: Sun01Icon },
+  { value: 'dark', label: 'Dark', icon: Moon02Icon },
 ];
 
 export const DAYS = [

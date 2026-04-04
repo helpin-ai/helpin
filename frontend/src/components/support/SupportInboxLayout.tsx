@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft02Icon } from '@/lib/icons';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -65,7 +65,7 @@ export function SupportInboxLayout() {
               setActivePanel('list');
             }}
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft02Icon className="h-4 w-4" />
             Back
           </Button>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Play, Pause } from 'lucide-react';
+import { ArrowLeft02Icon, PlayIcon, PauseIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -35,7 +35,7 @@ export function SequenceDetailView({ workspaceId, sequenceId, onBack }: Sequence
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft02Icon className="h-4 w-4" />
           </Button>
           <div>
             <h2 className="text-lg font-semibold">{sequence.name}</h2>
@@ -49,7 +49,7 @@ export function SequenceDetailView({ workspaceId, sequenceId, onBack }: Sequence
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={toggleStatus}>
-            {isActive ? <Pause className="mr-1 h-3 w-3" /> : <Play className="mr-1 h-3 w-3" />}
+            {isActive ? <PauseIcon className="mr-1 h-3 w-3" /> : <PlayIcon className="mr-1 h-3 w-3" />}
             {isActive ? 'Pause' : 'Activate'}
           </Button>
         </div>

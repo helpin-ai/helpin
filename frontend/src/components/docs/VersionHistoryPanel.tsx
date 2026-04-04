@@ -1,20 +1,20 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
-  Clock,
-  RotateCcw,
-  Plus,
-  Eye,
-  EyeOff,
-  Pencil,
-  Check,
-  X,
-  User,
-  Bookmark,
-  Zap,
-  Globe,
-  History,
-} from 'lucide-react'
+  Clock01Icon,
+  RotateLeft01Icon,
+  PlusSignIcon,
+  ViewIcon,
+  ViewOffIcon,
+  PencilEdit01Icon,
+  Tick01Icon,
+  Cancel01Icon,
+  UserIcon,
+  ZapIcon,
+  GlobeIcon,
+  Bookmark01Icon,
+  Clock03Icon,
+} from '@/lib/icons'
 import { toast } from 'sonner'
 import {
   useDocsVersions,
@@ -51,15 +51,15 @@ const TYPE_BADGE_STYLES: Record<VersionType, string> = {
   revert: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
 }
 
-const TYPE_ICONS: Record<VersionType, typeof Bookmark> = {
-  manual: Bookmark,
-  auto: Zap,
-  publish: Globe,
-  revert: History,
+const TYPE_ICONS: Record<VersionType, React.ComponentType<{ className?: string }>> = {
+  manual: Bookmark01Icon,
+  auto: ZapIcon,
+  publish: GlobeIcon,
+  revert: Clock03Icon,
 }
 
 export function VersionTypeBadge({ type }: { type: VersionType }) {
-  const Icon = TYPE_ICONS[type] || Clock
+  const Icon = TYPE_ICONS[type] || Clock01Icon
   return (
     <Badge
       variant="outline"
@@ -78,7 +78,7 @@ export function AuthorDisplay({ userId, members }: { userId: string; members: As
   if (!member) {
     return (
       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <User className="h-3 w-3" />
+        <UserIcon className="h-3 w-3" />
         System
       </span>
     )
@@ -148,10 +148,10 @@ function InlineLabelEditor({
         onClick={handleSave}
         disabled={updateLabel.isPending}
       >
-        <Check className="h-3 w-3" />
+        <Tick01Icon className="h-3 w-3" />
       </Button>
       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onDone}>
-        <X className="h-3 w-3" />
+        <Cancel01Icon className="h-3 w-3" />
       </Button>
     </div>
   )
@@ -192,7 +192,7 @@ function CreateSnapshotInline({
         className="w-full gap-1.5"
         onClick={() => setOpen(true)}
       >
-        <Plus className="h-3.5 w-3.5" />
+        <PlusSignIcon className="h-3.5 w-3.5" />
         Create Snapshot
       </Button>
     )
@@ -218,7 +218,7 @@ function CreateSnapshotInline({
           onClick={handleCreate}
           disabled={createVersion.isPending}
         >
-          <Plus className="h-3 w-3" />
+          <PlusSignIcon className="h-3 w-3" />
           Create
         </Button>
         <Button
@@ -279,10 +279,10 @@ export function VersionHistoryPanel({
       <aside className="w-80 shrink-0 border-l border-border/60 flex flex-col bg-background">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
-          <Clock className="h-4 w-4 text-muted-foreground" />
+          <Clock01Icon className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold flex-1">Version History</h3>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-            <X className="h-3.5 w-3.5" />
+            <Cancel01Icon className="h-3.5 w-3.5" />
           </Button>
         </div>
 
@@ -300,7 +300,7 @@ export function VersionHistoryPanel({
             </div>
           ) : !versions || versions.length === 0 ? (
             <div className="py-12 text-center">
-              <Clock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+              <Clock01Icon className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">
                 No versions yet.
               </p>
@@ -346,7 +346,7 @@ export function VersionHistoryPanel({
                                   className="opacity-0 group-hover:opacity-100 transition-opacity"
                                   onClick={(e) => { e.stopPropagation(); setEditingLabelId(version.id) }}
                                 >
-                                  <Pencil className="h-2.5 w-2.5 text-muted-foreground hover:text-foreground" />
+                                  <PencilEdit01Icon className="h-2.5 w-2.5 text-muted-foreground hover:text-foreground" />
                                 </button>
                               </QuickTooltip>
                             )}
@@ -375,7 +375,7 @@ export function VersionHistoryPanel({
                               className="h-6 w-6"
                               onClick={() => onPreview(version)}
                             >
-                              <EyeOff className="h-3 w-3" />
+                              <ViewOffIcon className="h-3 w-3" />
                             </Button>
                           </QuickTooltip>
                         ) : (
@@ -386,7 +386,7 @@ export function VersionHistoryPanel({
                               className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => onPreview(version)}
                             >
-                              <Eye className="h-3 w-3" />
+                              <ViewIcon className="h-3 w-3" />
                             </Button>
                           </QuickTooltip>
                         )}
@@ -399,7 +399,7 @@ export function VersionHistoryPanel({
                               onClick={() => setRestoreConfirmId(version.id)}
                               disabled={revertVersion.isPending}
                             >
-                              <RotateCcw className="h-3 w-3" />
+                              <RotateLeft01Icon className="h-3 w-3" />
                             </Button>
                           </QuickTooltip>
                         )}

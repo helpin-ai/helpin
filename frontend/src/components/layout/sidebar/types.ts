@@ -1,9 +1,9 @@
-import type { LucideIcon } from 'lucide-react';
+import type { IconComponent } from '@/lib/icons';
 
 export type NavItem = {
   link: string;
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
 };
 
 export type NavGroup = {
@@ -16,7 +16,7 @@ export type RailId = 'projects' | 'support' | 'crm' | 'agents' | 'docs' | 'setti
 export type RailItem = {
   id: RailId;
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   defaultLink: string;
   badge?: number;
   indicator?: boolean;

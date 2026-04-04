@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomInAreaIcon, ZoomOutAreaIcon } from '@/lib/icons';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -231,7 +231,7 @@ export function AvatarCropDialog({
           {/* Zoom controls */}
           <div className="w-full max-w-sm space-y-2">
             <div className="flex items-center gap-3">
-              <ZoomOut className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ZoomOutAreaIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 type="range"
                 min={MIN_ZOOM}
@@ -242,7 +242,7 @@ export function AvatarCropDialog({
                 disabled={!loadedImage || saving}
                 className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
-              <ZoomIn className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ZoomInAreaIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{zoomPercent}%</span>

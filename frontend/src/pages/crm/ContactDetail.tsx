@@ -2,20 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
-  ArrowLeft,
-  Briefcase,
-  Building2,
-  Check,
-  ChevronRight,
-  Globe,
-  Loader2,
-  Mail,
-  MessageSquare,
-  Phone,
-  Tag,
-  Trash2,
-  User,
-} from 'lucide-react';
+  ArrowLeft02Icon,
+  Briefcase01Icon,
+  Building03Icon,
+  Tick01Icon,
+  ArrowRight01Icon,
+  GlobeIcon,
+  Loading01Icon,
+  Mail01Icon,
+  Message01Icon,
+  TelephoneIcon,
+  Tag01Icon,
+  Delete01Icon,
+  UserIcon,
+} from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -105,7 +105,7 @@ function SidebarPopoverSelect<T extends string>({
           className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
         >
           <span className="truncate">{current?.label ?? value}</span>
-          <ChevronRight className="h-3 w-3 rotate-90 text-muted-foreground" />
+          <ArrowRight01Icon className="h-3 w-3 rotate-90 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-40 p-0.5" align="start">
@@ -126,7 +126,7 @@ function SidebarPopoverSelect<T extends string>({
               }}
             >
               <span className="truncate">{option.label}</span>
-              {value === option.value ? <Check className="ml-auto h-3.5 w-3.5 shrink-0" /> : null}
+              {value === option.value ? <Tick01Icon className="ml-auto h-3.5 w-3.5 shrink-0" /> : null}
             </button>
           ))}
         </div>
@@ -231,7 +231,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -241,7 +241,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">Contact not found</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to contacts
         </Button>
       </div>
@@ -253,22 +253,22 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
       {/* Header bar */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <User className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+          <UserIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />
           <button type="button" className="shrink-0 transition-colors hover:text-foreground cursor-pointer" onClick={goBack}>
             Contacts
           </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{fullName}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)}>
-            <Trash2 className="h-4 w-4" />
+            <Delete01Icon className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -374,7 +374,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                           params={{ slug: wsSlug }}
                           className="flex items-center gap-3 rounded-md border border-border/60 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
                         >
-                          <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <Message01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
@@ -412,7 +412,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
             <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
 
             <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
-              <MetadataRow icon={Building2} label="Company">
+              <MetadataRow icon={Building03Icon} label="Company">
                 {companyName ? (
                   <span className="text-xs text-foreground">{companyName}</span>
                 ) : (
@@ -420,7 +420,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 )}
               </MetadataRow>
 
-              <MetadataRow icon={Briefcase} label="Job title">
+              <MetadataRow icon={Briefcase01Icon} label="Job title">
                 <input
                   className="w-full bg-transparent text-xs outline-none"
                   value={form.job_title}
@@ -429,7 +429,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </MetadataRow>
 
-              <MetadataRow icon={Mail} label="Email">
+              <MetadataRow icon={Mail01Icon} label="Email">
                 <input
                   className="w-full bg-transparent text-xs outline-none"
                   value={form.email}
@@ -438,7 +438,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </MetadataRow>
 
-              <MetadataRow icon={Phone} label="Phone">
+              <MetadataRow icon={TelephoneIcon} label="TelephoneIcon">
                 <input
                   className="w-full bg-transparent text-xs outline-none"
                   value={form.phone}
@@ -447,7 +447,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </MetadataRow>
 
-              <MetadataRow icon={Globe} label="Source">
+              <MetadataRow icon={GlobeIcon} label="Source">
                 <input
                   className="w-full bg-transparent text-xs outline-none"
                   value={form.source}
@@ -456,7 +456,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </MetadataRow>
 
-              <MetadataRow icon={Tag} label="Display ID">
+              <MetadataRow icon={Tag01Icon} label="Display ID">
                 <span className="text-xs text-muted-foreground">{contact.display_id}</span>
               </MetadataRow>
             </div>
@@ -465,7 +465,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
             <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lifecycle</h3>
             <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
-              <MetadataRow icon={Tag} label="Stage">
+              <MetadataRow icon={Tag01Icon} label="Stage">
                 <SidebarPopoverSelect
                   value={form.lifecycle_stage}
                   options={lifecycleOptions}
@@ -473,7 +473,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </MetadataRow>
 
-              <MetadataRow icon={Tag} label="Status">
+              <MetadataRow icon={Tag01Icon} label="Status">
                 <SidebarPopoverSelect
                   value={form.lead_status}
                   options={leadStatusOptions}

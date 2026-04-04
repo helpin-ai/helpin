@@ -2,16 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowLeft,
-  CalendarDays,
-  ChevronRight,
-  Loader2,
-  Pencil,
-  RefreshCw,
-  Users,
-} from 'lucide-react';
+  ArchiveIcon,
+  ArrowLeft02Icon,
+  Calendar03Icon,
+  ArrowRight01Icon,
+  Loading01Icon,
+  PencilEdit01Icon,
+  ArrowReloadHorizontalIcon,
+  UserGroupIcon,
+  ArchiveRestoreIcon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
@@ -321,7 +321,7 @@ export function SprintDetailPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -331,7 +331,7 @@ export function SprintDetailPage() {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">{error ?? 'Sprint not found'}</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to Sprints
         </Button>
       </div>
@@ -343,15 +343,15 @@ export function SprintDetailPage() {
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <RefreshCw className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+          <ArrowReloadHorizontalIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Sprints
           </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
@@ -378,7 +378,7 @@ export function SprintDetailPage() {
               setSaving(false);
             }}
           >
-            {sprint.sprint.archived ? <><ArchiveRestore className="h-3.5 w-3.5" /> Unarchive</> : <><Archive className="h-3.5 w-3.5" /> Archive</>}
+            {sprint.sprint.archived ? <><ArchiveRestoreIcon className="h-3.5 w-3.5" /> Unarchive</> : <><ArchiveIcon className="h-3.5 w-3.5" /> Archive</>}
           </Button>
         </div>
       </div>
@@ -435,7 +435,7 @@ export function SprintDetailPage() {
                     className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                     onClick={() => setEditingDescription(true)}
                   >
-                    <Pencil className="h-3 w-3" />
+                    <PencilEdit01Icon className="h-3 w-3" />
                     Edit description
                   </button>
                 )}
@@ -519,14 +519,14 @@ export function SprintDetailPage() {
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* Status — computed from dates, display only */}
-            <MetadataRow icon={RefreshCw} label="Status">
+            <MetadataRow icon={ArrowReloadHorizontalIcon} label="Status">
               <span className={`text-xs ${SPRINT_STATUS_CONFIG[sprint.sprint.status]?.color ?? ''}`}>
                 {SPRINT_STATUS_CONFIG[sprint.sprint.status]?.label}
               </span>
             </MetadataRow>
 
             {/* Team */}
-            <MetadataRow icon={Users} label="Team">
+            <MetadataRow icon={UserGroupIcon} label="Team">
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
@@ -542,7 +542,7 @@ export function SprintDetailPage() {
             </MetadataRow>
 
             {/* Start Date */}
-            <MetadataRow icon={CalendarDays} label="Start date">
+            <MetadataRow icon={Calendar03Icon} label="Start date">
               <DatePicker
                 value={form.start_date}
                 onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
@@ -562,7 +562,7 @@ export function SprintDetailPage() {
             </MetadataRow>
 
             {/* End Date */}
-            <MetadataRow icon={CalendarDays} label="End date">
+            <MetadataRow icon={Calendar03Icon} label="End date">
               <DatePicker
                 value={form.start_date}
                 onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}

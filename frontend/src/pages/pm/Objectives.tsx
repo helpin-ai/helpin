@@ -3,19 +3,19 @@ import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  Archive,
-  CalendarDays,
-  Crosshair,
-  Filter,
-  Hexagon,
-  ListChecks,
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Target,
-  TrendingUp,
-  X,
-} from 'lucide-react';
+  ArchiveIcon,
+  Calendar03Icon,
+  FilterIcon,
+  Loading01Icon,
+  MoreHorizontalIcon,
+  PlusSignIcon,
+  Target01Icon,
+  ChartIncreaseIcon,
+  Cancel01Icon,
+  CheckListIcon,
+  HexagonIcon,
+  Target02Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -89,7 +89,7 @@ function FilterChip({
               className="ml-0.5 rounded-full hover:bg-accent p-0.5"
               onClick={(e) => { e.stopPropagation(); onChange(''); }}
             >
-              <X className="h-2.5 w-2.5" />
+              <Cancel01Icon className="h-2.5 w-2.5" />
             </span>
           )}
         </button>
@@ -168,7 +168,7 @@ export function ObjectivesPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -177,7 +177,7 @@ export function ObjectivesPage() {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 mb-5">
-          <Target className="h-7 w-7 text-amber-500" />
+          <Target01Icon className="h-7 w-7 text-amber-500" />
         </div>
         <h3 className="text-lg font-semibold mb-1.5">Create your first objective</h3>
         <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
@@ -185,15 +185,15 @@ export function ObjectivesPage() {
         </p>
         {canEdit && (
           <Button className="gap-2 mb-8" onClick={() => openCreate('objective')}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Create Objective
           </Button>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
           {[
-            { icon: Crosshair, title: 'Set goals', desc: 'Define clear objectives with measurable key results' },
-            { icon: TrendingUp, title: 'Measure progress', desc: 'Track completion across key results and linked epics' },
-            { icon: ListChecks, title: 'Align teams', desc: 'Connect objectives to team work for shared accountability' },
+            { icon: Target02Icon, title: 'Set goals', desc: 'Define clear objectives with measurable key results' },
+            { icon: ChartIncreaseIcon, title: 'Measure progress', desc: 'Track completion across key results and linked epics' },
+            { icon: CheckListIcon, title: 'Align teams', desc: 'Connect objectives to team work for shared accountability' },
           ].map((item) => (
             <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
               <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
@@ -215,7 +215,7 @@ export function ObjectivesPage() {
         </div>
         {canEdit && (
           <Button size="sm" className="gap-2" onClick={() => openCreate('objective')}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Create Objective
           </Button>
         )}
@@ -223,7 +223,7 @@ export function ObjectivesPage() {
 
       {/* Filters */}
       <div className="mb-4 flex items-center gap-2 flex-wrap">
-        <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+        <FilterIcon className="h-3.5 w-3.5 text-muted-foreground" />
         <FilterChip label="Status" options={stateFilterOptions} value={filterState} onChange={setFilterState} />
         <FilterChip label="Health" options={healthFilterOptions} value={filterHealth} onChange={setFilterHealth} />
         {teamOptions.length > 0 && (
@@ -315,7 +315,7 @@ function ObjectiveCard({
       <div className="p-3.5 pb-0">
         <div className="flex items-start gap-2">
           <span className={`mt-[2px] shrink-0 ${isStrategic ? 'text-violet-500' : 'text-blue-500'}`}>
-            {isStrategic ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
+            {isStrategic ? <Target02Icon className="h-3.5 w-3.5" /> : <Target01Icon className="h-3.5 w-3.5" />}
           </span>
           <p className="min-w-0 flex-1 text-sm font-semibold text-foreground leading-snug line-clamp-2">{objective.name}</p>
           {canEdit && (
@@ -327,13 +327,13 @@ function ObjectiveCard({
                   className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <MoreHorizontalIcon className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 {isAdmin && (
                   <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                    <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                    <ArchiveIcon className="mr-2 h-4 w-4 text-amber-500" />
                     Archive
                   </DropdownMenuItem>
                 )}
@@ -354,7 +354,7 @@ function ObjectiveCard({
           )}
           {dateLabel && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <CalendarDays className="h-3 w-3" />
+              <Calendar03Icon className="h-3 w-3" />
               {dateLabel}
             </span>
           )}
@@ -391,7 +391,7 @@ function ObjectiveCard({
               : 0;
             return (
               <div key={e.epic.id} className="flex items-center gap-1.5 py-0.5">
-                <Hexagon className="h-3 w-3 shrink-0 text-violet-400" />
+                <HexagonIcon className="h-3 w-3 shrink-0 text-violet-400" />
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{e.epic.name}</span>
                 <div className="w-16 shrink-0">
                   <Progress value={epicPct} className="h-1 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Clock3 } from 'lucide-react';
+import { Calendar03Icon, CheckmarkCircle02Icon, Clock02Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -144,10 +144,10 @@ export function RecurringTemplateForm({
         <Label>Trigger</Label>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={chip(scheduleType === 'time')} onClick={() => setScheduleType('time')}>
-            <Clock3 className="mr-1 inline h-3 w-3" /> Time-based
+            <Clock02Icon className="mr-1 inline h-3 w-3" /> Time-based
           </button>
           <button type="button" className={chip(scheduleType === 'completion')} onClick={() => setScheduleType('completion')}>
-            <CheckCircle2 className="mr-1 inline h-3 w-3" /> On completion
+            <CheckmarkCircle02Icon className="mr-1 inline h-3 w-3" /> On completion
           </button>
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -271,7 +271,7 @@ export function RecurringTemplateForm({
         <div className="space-y-1.5">
           <Label>Starts on</Label>
           <div className="relative">
-            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Calendar03Icon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} className="pl-9" />
           </div>
           <p className="text-[11px] text-muted-foreground">Leave empty to start immediately</p>

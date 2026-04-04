@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Bot,
-  FileCode2,
-  Loader2,
-  LockKeyhole,
-  Radio,
-  Send,
-  Terminal,
-  User2,
-  Wrench,
-  XCircle,
-} from 'lucide-react';
+  BotIcon,
+  SourceCodeIcon,
+  Loading01Icon,
+  SentIcon,
+  TerminalIcon,
+  UserIcon,
+  CancelCircleIcon,
+  LockKeyIcon,
+  RadioIcon,
+  Wrench01Icon,
+} from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -124,7 +124,7 @@ export function CodingTranscriptPane({
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <Bot className="h-3.5 w-3.5" />
+          <BotIcon className="h-3.5 w-3.5" />
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
@@ -236,7 +236,7 @@ function InterruptionOverlay({
       {session?.pause_reason === 'authentication' ? (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            <LockKeyhole className="h-3.5 w-3.5" />
+            <LockKeyIcon className="h-3.5 w-3.5" />
             Authentication required
           </div>
           <div className="text-sm font-semibold">ChatGPT sign-in required</div>
@@ -315,7 +315,7 @@ function MessageInput({ onSend, sending }: { onSend: (content: string) => Promis
           onClick={() => void handleSubmit()}
           disabled={!value.trim() || sending}
         >
-          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          {sending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <SentIcon className="h-3.5 w-3.5" />}
         </Button>
       </div>
     </div>
@@ -352,8 +352,8 @@ function TranscriptEntry({
           isAssistant ? 'bg-primary/10 text-primary' : 'bg-blue-600 text-white',
         )}>
           {isAssistant
-            ? (live && streaming ? <Radio className="h-3 w-3 animate-pulse" /> : <Bot className="h-3 w-3" />)
-            : <User2 className="h-3 w-3" />}
+            ? (live && streaming ? <RadioIcon className="h-3 w-3 animate-pulse" /> : <BotIcon className="h-3 w-3" />)
+            : <UserIcon className="h-3 w-3" />}
         </span>
         <span className="font-medium">{message.role}</span>
         {live ? (
@@ -437,20 +437,20 @@ function AssistantMessageBubble({
 function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { icon: ReactNode; iconClass: string } {
   if (isFailed) {
     return {
-      icon: <XCircle className="h-3.5 w-3.5" />,
+      icon: <CancelCircleIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-destructive/10 border-destructive/30 text-destructive',
     };
   }
   if (isRunning) {
     return {
-      icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+      icon: <Loading01Icon className="h-3.5 w-3.5 animate-spin" />,
       iconClass: 'bg-primary/10 border-primary/30 text-primary',
     };
   }
   const name = toolName.toLowerCase();
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
-      icon: <Terminal className="h-3.5 w-3.5" />,
+      icon: <TerminalIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-400',
     };
   }
@@ -464,12 +464,12 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
     || name.includes('edit')
   ) {
     return {
-      icon: <FileCode2 className="h-3.5 w-3.5" />,
+      icon: <SourceCodeIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-violet-50 border-violet-200 dark:bg-violet-950/20 dark:border-violet-900/50 text-violet-600 dark:text-violet-400',
     };
   }
   return {
-    icon: <Wrench className="h-3.5 w-3.5" />,
+    icon: <Wrench01Icon className="h-3.5 w-3.5" />,
     iconClass: 'bg-muted/50 border-border text-muted-foreground',
   };
 }
@@ -538,7 +538,7 @@ function ThinkingStrip({
     <details className="rounded-xl border border-border bg-muted/25 px-4 py-3" open={reasoning.status === 'streaming'}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <LockKeyhole className="h-3.5 w-3.5" />
+          <LockKeyIcon className="h-3.5 w-3.5" />
           Thinking
         </div>
         <div className="flex items-center gap-2">
@@ -559,7 +559,7 @@ function ThinkingStrip({
 
         {reasoning.encrypted_value ? (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-            <LockKeyhole className="h-3.5 w-3.5" />
+            <LockKeyIcon className="h-3.5 w-3.5" />
             Encrypted reasoning payload attached.
           </div>
         ) : null}

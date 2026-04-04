@@ -1,4 +1,4 @@
-import { FileText, Sparkles } from 'lucide-react';
+import { File01Icon, SparklesIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
@@ -89,7 +89,7 @@ function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
   return (
     <div className="rounded-md border border-border/60 bg-background/80 p-3">
       <div className="mb-2 flex items-center gap-2">
-        <FileText className="h-4 w-4 text-muted-foreground" />
+        <File01Icon className="h-4 w-4 text-muted-foreground" />
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
       </div>
       <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
@@ -115,7 +115,7 @@ function TaskPlanPanel({
   return (
     <div className="rounded-md border border-border/60 bg-background/80 p-3">
       <div className="mb-2 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-muted-foreground" />
+        <SparklesIcon className="h-4 w-4 text-muted-foreground" />
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
       </div>
       <div className="space-y-3">
@@ -134,7 +134,7 @@ function TaskPlanPanel({
               className="rounded-md px-1.5 py-1.5 transition-colors hover:bg-accent/30"
             >
               <div className="flex items-start gap-1.5">
-                <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <SparklesIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {item.type ? (
@@ -228,7 +228,7 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
       {latestSpecDraftPreview ? (
         <div className="rounded-md border border-border/60 bg-background/80 p-3">
           <div className="mb-2 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <File01Icon className="h-4 w-4 text-muted-foreground" />
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {latestSpecDraftPreview.title || 'PRD Draft'}
             </p>
