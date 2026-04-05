@@ -853,10 +853,17 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 	return doc, ha, content, nil
 }
 
-// GetPublicArticleByDocumentIDInSpaces finds a public article by document ID constrained to allowed spaces.
-func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx context.Context, spaceIDs []string, documentID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+// GetPublicArticleByDocumentIDInSpaces finds a public article by slug or document ID constrained to allowed spaces.
+func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx context.Context, spaceIDs []string, slugOrID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
 	if len(spaceIDs) == 0 {
 		return nil, nil, nil, nil
+	}
+
+	// Determine whether the caller passed a UUID (document ID) or a slug.
+	isUUID := len(slugOrID) == 36 && slugOrID[8] == '-' && slugOrID[13] == '-'
+	matchClause := "p.slug = ?"
+	if isUUID {
+		matchClause = "p.document_id = ?"
 	}
 
 	var row sourceArticleRow
@@ -880,13 +887,13 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
 		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
 		Where(`
-			p.document_id = ?
+			`+matchClause+`
 			AND d.space_id IN ?
 			AND p.locale = cfg.default_locale
 			AND d.status = 'published'
 			AND d.deleted_at IS NULL
 			AND ha.public_published_at IS NOT NULL
-		`, documentID, spaceIDs).
+		`, slugOrID, spaceIDs).
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, nil, nil
