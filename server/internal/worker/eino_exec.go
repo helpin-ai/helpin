@@ -235,7 +235,7 @@ func defaultModelForProvider(provider string) string {
 	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		return "openai/gpt-4.1"
 	default:
-		return "claude-sonnet-4-6-20250627"
+		return "claude-sonnet-4-6-20250514"
 	}
 }
 
