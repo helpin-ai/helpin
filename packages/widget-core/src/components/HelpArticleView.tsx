@@ -20,7 +20,9 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const articleExternalURL = article?.public_path
-    ? `${host.startsWith('http://') || host.startsWith('https://') ? host.replace(/\/$/, '') : `https://${host}`}${article.public_path}`
+    ? (article.public_path.startsWith('http://') || article.public_path.startsWith('https://')
+        ? article.public_path
+        : `${host.startsWith('http://') || host.startsWith('https://') ? host.replace(/\/$/, '') : `https://${host}`}${article.public_path}`)
     : null;
 
   useEffect(() => {
