@@ -147,7 +147,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
         isSelected
           ? 'bg-muted'
           : isUnread
-            ? 'bg-blue-50/50 dark:bg-blue-950/20'
+            ? 'bg-red-50/50 dark:bg-red-950/20'
             : ''
       }`}
     >
@@ -157,7 +157,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
           isSelected
             ? 'h-8 bg-primary'
             : isUnread
-              ? 'h-5 bg-blue-500'
+              ? 'h-5 bg-red-500'
               : 'h-0 bg-transparent'
         }`}
       />
@@ -234,7 +234,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
                   members={members}
                 />
               ) : isUnread ? (
-                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white animate-in zoom-in-75 duration-200">
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white animate-in zoom-in-75 duration-200">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               ) : viewingAgentIds.length > 0 ? (

@@ -40,13 +40,13 @@ async function fetchHelpJSON<T>(host: string, widgetKey: string, path: string): 
 }
 
 export function fetchHelpCollections(host: string, widgetKey: string, spaceSlug: string): Promise<HelpCollection[]> {
-  return fetchHelpJSON(host, widgetKey, `/api/widget/support/help/spaces/${encodeURIComponent(spaceSlug)}/collections`);
+  return fetchHelpJSON(host, widgetKey, `/widget/support/help/spaces/${encodeURIComponent(spaceSlug)}/collections`);
 }
 
 export function fetchHelpArticles(host: string, widgetKey: string, collectionSlug: string): Promise<HelpArticleSummary[]> {
-  return fetchHelpJSON(host, widgetKey, `/api/widget/support/help/collections/${encodeURIComponent(collectionSlug)}/articles`);
+  return fetchHelpJSON(host, widgetKey, `/widget/support/help/collections/${encodeURIComponent(collectionSlug)}/articles`);
 }
 
 export function fetchHelpArticle(host: string, widgetKey: string, articleSlug: string): Promise<HelpArticle> {
-  return fetchHelpJSON(host, widgetKey, `/api/widget/support/help/articles/${encodeURIComponent(articleSlug)}`);
+  return fetchHelpJSON(host, widgetKey, `/widget/support/help/articles/${encodeURIComponent(articleSlug)}`);
 }

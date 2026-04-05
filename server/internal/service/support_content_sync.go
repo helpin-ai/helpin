@@ -256,7 +256,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			"indexed_pages", indexedPages,
 			"indexed_chunks", indexedChunks,
 		)
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 		return nil
 	}
 
@@ -442,7 +442,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		if pct > 99 {
 			pct = 99
 		}
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 	}
 
 	completedAt := time.Now()

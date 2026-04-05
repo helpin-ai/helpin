@@ -377,7 +377,7 @@ export function SupportContentSourcesField({
           setAdvancedOpen(false);
         }
       }}>
-        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-4xl" showCloseButton>
+        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-6xl" showCloseButton>
           <SheetHeader className="border-b border-border/70 px-6 py-5 text-left">
             <SheetTitle>
               {editingSource ? 'Edit website source' : 'Add website source'}
@@ -619,7 +619,7 @@ export function SupportContentSourcesField({
       </Sheet>
 
       <Sheet open={!!viewingSource} onOpenChange={(open) => { if (!open) setViewingSource(null); }}>
-        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-4xl" showCloseButton>
+        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-6xl" showCloseButton>
           <SheetHeader className="border-b border-border/70 px-6 py-5 text-left">
             <SheetTitle>{viewingSource?.name} — Synced Pages</SheetTitle>
             <SheetDescription>

@@ -135,6 +135,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/support/attachments", h.SupportAttachment.WidgetCreate)
 			r.Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 		}
+		// Help center routes (used by widget-core helpApi.ts)
+		r.Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+		r.Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+		r.Get("/support/help/articles/{articleSlug}", h.SupportInboxWidget.GetHelpArticle)
+		if h.SupportAI != nil {
+			r.Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+		}
 	})
 
 	// ---- SDK asset serving (no JWT, open CORS, cache headers) ----
