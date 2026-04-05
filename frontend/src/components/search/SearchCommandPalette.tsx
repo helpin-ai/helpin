@@ -93,14 +93,6 @@ export function SearchCommandPalette({
     };
   }, [query, workspace?.id]);
 
-  const totalResults =
-    results.tasks.length +
-    results.epics.length +
-    results.sprints.length +
-    results.objectives.length +
-    results.members.length +
-    (results.documents?.length ?? 0);
-
   const slug = workspace?.slug ?? '';
   const taskResults = results.tasks;
 
@@ -173,46 +165,40 @@ export function SearchCommandPalette({
           </div>
         )}
 
-        {!searching && query.trim() && totalResults === 0 && (
-          <CommandEmpty>No results found.</CommandEmpty>
-        )}
+        <CommandEmpty>No results found.</CommandEmpty>
 
-        {!searching && !query.trim() && (
-          <>
-            <CommandGroup heading="Go to">
-              {quickNavItems.map((item) => (
-                <CommandItem
-                  key={item.label}
-                  value={`nav-${item.label}`}
-                  onSelect={() => {
-                    onOpenChange(false);
-                    navigate({ to: item.path });
-                  }}
-                  className="cursor-pointer"
-                >
-                  <item.icon className="h-4 w-4 text-muted-foreground" />
-                  <span>{item.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandGroup heading="Settings">
-              {settingsNavItems.map((item) => (
-                <CommandItem
-                  key={item.label}
-                  value={`settings-${item.label}`}
-                  onSelect={() => {
-                    onOpenChange(false);
-                    navigate({ to: item.path });
-                  }}
-                  className="cursor-pointer"
-                >
-                  <item.icon className="h-4 w-4 text-muted-foreground" />
-                  <span>{item.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+        <CommandGroup heading="Go to">
+          {quickNavItems.map((item) => (
+            <CommandItem
+              key={item.label}
+              value={`nav-${item.label}`}
+              onSelect={() => {
+                onOpenChange(false);
+                navigate({ to: item.path });
+              }}
+              className="cursor-pointer"
+            >
+              <item.icon className="h-4 w-4 text-muted-foreground" />
+              <span>{item.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        <CommandGroup heading="Settings">
+          {settingsNavItems.map((item) => (
+            <CommandItem
+              key={item.label}
+              value={`settings-${item.label}`}
+              onSelect={() => {
+                onOpenChange(false);
+                navigate({ to: item.path });
+              }}
+              className="cursor-pointer"
+            >
+              <item.icon className="h-4 w-4 text-muted-foreground" />
+              <span>{item.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
 
         {taskResults.length > 0 && (
           <CommandGroup heading="Tasks">
