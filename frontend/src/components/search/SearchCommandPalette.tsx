@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   BookOpen01Icon,
+  BotIcon,
+  Briefcase01Icon,
   File01Icon,
+  FolderKanbanIcon,
   Loading01Icon,
+  Message01Icon,
   RecordIcon,
   Target01Icon,
   Target02Icon,
@@ -18,6 +22,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { SETTINGS_ROUTE_SECTIONS } from '@/lib/settingsSections';
 import {
   searchService,
   type SearchResponse,
@@ -99,6 +104,22 @@ export function SearchCommandPalette({
   const slug = workspace?.slug ?? '';
   const taskResults = results.tasks;
 
+  const quickNavItems = [
+    { label: 'Projects', icon: FolderKanbanIcon, path: `/w/${slug}/pm/my-work` },
+    { label: 'CRM', icon: Briefcase01Icon, path: `/w/${slug}/crm/contacts` },
+    { label: 'Support', icon: Message01Icon, path: `/w/${slug}/support` },
+    { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
+    { label: 'Agents', icon: BotIcon, path: `/w/${slug}/pm/agents` },
+  ];
+
+  const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
+    (s) => s.sidebar !== false,
+  ).map((s) => ({
+    label: s.label,
+    icon: s.icon,
+    path: `/w/${slug}/settings/${s.id}`,
+  }));
+
   type EntityType = 'task' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
 
   const handleSelect = useCallback(
@@ -157,9 +178,40 @@ export function SearchCommandPalette({
         )}
 
         {!searching && !query.trim() && (
-          <div className="py-6 text-center text-sm text-muted-foreground">
-            Start typing to search...
-          </div>
+          <>
+            <CommandGroup heading="Go to">
+              {quickNavItems.map((item) => (
+                <CommandItem
+                  key={item.label}
+                  value={`nav-${item.label}`}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    navigate({ to: item.path });
+                  }}
+                  className="cursor-pointer"
+                >
+                  <item.icon className="h-4 w-4 text-muted-foreground" />
+                  <span>{item.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandGroup heading="Settings">
+              {settingsNavItems.map((item) => (
+                <CommandItem
+                  key={item.label}
+                  value={`settings-${item.label}`}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    navigate({ to: item.path });
+                  }}
+                  className="cursor-pointer"
+                >
+                  <item.icon className="h-4 w-4 text-muted-foreground" />
+                  <span>{item.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
         )}
 
         {taskResults.length > 0 && (

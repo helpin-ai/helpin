@@ -251,6 +251,7 @@ export function Sidebar() {
                 selectedPresenceMode={selectedSupportPresenceMode}
                 onPresenceChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : value)}
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
+                onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
                 onWorkspaces={() => handleNavigate('/workspaces')}
                 onSignOut={signOut}
               />
