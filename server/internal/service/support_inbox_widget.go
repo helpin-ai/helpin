@@ -1084,13 +1084,23 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 	subdomain := strings.TrimSpace(cfg.Subdomain)
 	articleSlug := strings.TrimSpace(article.Slug)
 
+	// Build the base URL: custom domain if configured, otherwise {subdomain}.helpin.ai.
+	baseURL := fmt.Sprintf("https://%s.helpin.ai", subdomain)
+	if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+		domain := strings.TrimSpace(*cfg.CustomDomain)
+		if !strings.HasPrefix(domain, "http") {
+			domain = "https://" + domain
+		}
+		baseURL = strings.TrimRight(domain, "/")
+	}
+
 	if doc.CollectionID != nil && strings.TrimSpace(*doc.CollectionID) != "" && s.docsCollectionRepo != nil {
 		collection, err := s.docsCollectionRepo.GetByID(ctx, strings.TrimSpace(*doc.CollectionID))
 		if err != nil {
 			return nil, fmt.Errorf("get docs collection: %w", err)
 		}
 		if collection != nil && strings.TrimSpace(collection.Slug) != "" {
-			path := fmt.Sprintf("/hc/%s/c/%s/%s", subdomain, strings.TrimSpace(collection.Slug), articleSlug)
+			path := fmt.Sprintf("%s/c/%s/%s", baseURL, strings.TrimSpace(collection.Slug), articleSlug)
 			return &path, nil
 		}
 	}
@@ -1101,7 +1111,7 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 			return nil, fmt.Errorf("get docs space: %w", err)
 		}
 		if space != nil && strings.TrimSpace(space.Slug) != "" {
-			path := fmt.Sprintf("/hc/%s/spaces/%s/articles/%s", subdomain, strings.TrimSpace(space.Slug), articleSlug)
+			path := fmt.Sprintf("%s/spaces/%s/articles/%s", baseURL, strings.TrimSpace(space.Slug), articleSlug)
 			return &path, nil
 		}
 	}
