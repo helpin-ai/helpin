@@ -46,6 +46,7 @@ type SupportRailNavProps = {
   wsSlug: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
+  aiHasUnread?: boolean;
   onCreateMailbox: () => void;
   onEditMailbox: (mailboxId: string) => void;
   onArchiveMailbox: (mailboxId: string) => void;
@@ -62,6 +63,7 @@ export function SupportRailNav({
   wsSlug,
   onNavFilterChange,
   onMailboxSelect,
+  aiHasUnread,
   onCreateMailbox,
   onEditMailbox,
   onArchiveMailbox,
@@ -97,7 +99,7 @@ export function SupportRailNav({
                 <item.icon />
                 <span className="flex-1">{item.label}</span>
                 {badge != null && badge > 0 && (
-                  <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                  <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
                     {badge > 99 ? '99+' : badge}
                   </span>
                 )}
@@ -120,7 +122,10 @@ export function SupportRailNav({
                 onClick={() => onNavFilterChange(item.key)}
               >
                 <item.icon />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {aiHasUnread && item.key === 'ai_pending' && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-red-500" />
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
@@ -164,7 +169,7 @@ export function SupportRailNav({
                   <MailboxIcon className="h-4 w-4" />
                   <span className="flex-1 truncate">{mailbox.name}</span>
                   {mailbox.unread_count > 0 && !isMenuOpen && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white group-hover/mailbox:hidden">
+                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white group-hover/mailbox:hidden">
                       {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
                     </span>
                   )}
