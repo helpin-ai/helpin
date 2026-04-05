@@ -20,7 +20,7 @@ func TestOpenCodeResolveModelIDDefaultsToAnthropicSonnet(t *testing.T) {
 	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
 
 	got := executor.resolveModelID(&model.Agent{})
-	want := "anthropic/claude-sonnet-4-6-20250514"
+	want := "anthropic/claude-sonnet-4-6"
 	if got != want {
 		t.Fatalf("expected default model %q, got %q", want, got)
 	}
@@ -157,7 +157,7 @@ func TestBuildOpenCodeConfigContentAddsOpenRouterModelAndBaseURL(t *testing.T) {
 
 func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
 	provider := model.AgentModelProviderAnthropic
-	modelName := "anthropic/claude-sonnet-4-6-20250514"
+	modelName := "anthropic/claude-sonnet-4-6"
 	execCtx := &ExecutionContext{
 		Agent: &model.Agent{
 			Provider: &provider,
@@ -166,7 +166,7 @@ func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
 	}
 
 	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, "https://api.anthropic.com/v1", "")
-	payload, err := buildOpenCodeConfigContent(execCtx, "anthropic/claude-sonnet-4-6-20250514", "system prompt", providerConfig)
+	payload, err := buildOpenCodeConfigContent(execCtx, "anthropic/claude-sonnet-4-6", "system prompt", providerConfig)
 	if err != nil {
 		t.Fatalf("build config: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
 	if anthropic.Options.BaseURL != "https://api.anthropic.com/v1" {
 		t.Fatalf("expected anthropic baseURL to be set, got %q", anthropic.Options.BaseURL)
 	}
-	if _, ok := anthropic.Models["claude-sonnet-4-6-20250514"]; !ok {
+	if _, ok := anthropic.Models["claude-sonnet-4-6"]; !ok {
 		t.Fatalf("expected anthropic model to be registered, got %#v", anthropic.Models)
 	}
 }

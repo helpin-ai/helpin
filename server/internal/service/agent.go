@@ -595,7 +595,7 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderAnthropic,
 			Label:            "Anthropic",
-			ModelPlaceholder: "claude-sonnet-4-6-20250514",
+			ModelPlaceholder: "claude-sonnet-4-6",
 		})
 	}
 	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) || s.isCodexOpenAIConfigured() {

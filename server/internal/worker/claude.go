@@ -14,7 +14,7 @@ import (
 
 const (
 	claudeAPIURL = "https://api.anthropic.com/v1/messages"
-	claudeModel  = "claude-sonnet-4-6-20250514"
+	claudeModel  = "claude-sonnet-4-6"
 )
 
 // ClaudeClient calls the Anthropic Messages API.

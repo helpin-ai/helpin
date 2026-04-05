@@ -13,7 +13,7 @@ func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
 		Messages: []Message{
 			{Role: "user", Content: "Pricing"},
 		},
-		Model:     "claude-sonnet-4-6-20250514",
+		Model:     "claude-sonnet-4-6",
 		MaxTokens: 512,
 		JSONMode:  true,
 	})
