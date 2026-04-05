@@ -1081,18 +1081,20 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 		return nil, nil
 	}
 
-	subdomain := strings.TrimSpace(cfg.Subdomain)
 	articleSlug := strings.TrimSpace(article.Slug)
 
-	// Build the base URL: custom domain if configured, otherwise {subdomain}.helpin.ai.
-	baseURL := fmt.Sprintf("https://%s.helpin.ai", subdomain)
-	if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
-		domain := strings.TrimSpace(*cfg.CustomDomain)
-		if !strings.HasPrefix(domain, "http") {
-			domain = "https://" + domain
-		}
-		baseURL = strings.TrimRight(domain, "/")
+	// Only build a public URL when the workspace has a custom domain configured.
+	// Without a custom domain the help center may not be publicly reachable,
+	// so we return nil and the widget hides the external link.
+	if cfg.CustomDomain == nil || strings.TrimSpace(*cfg.CustomDomain) == "" {
+		return nil, nil
 	}
+
+	domain := strings.TrimSpace(*cfg.CustomDomain)
+	if !strings.HasPrefix(domain, "http") {
+		domain = "https://" + domain
+	}
+	baseURL := strings.TrimRight(domain, "/")
 
 	if doc.CollectionID != nil && strings.TrimSpace(*doc.CollectionID) != "" && s.docsCollectionRepo != nil {
 		collection, err := s.docsCollectionRepo.GetByID(ctx, strings.TrimSpace(*doc.CollectionID))
@@ -1100,23 +1102,14 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 			return nil, fmt.Errorf("get docs collection: %w", err)
 		}
 		if collection != nil && strings.TrimSpace(collection.Slug) != "" {
-			path := fmt.Sprintf("%s/c/%s/%s", baseURL, strings.TrimSpace(collection.Slug), articleSlug)
+			path := fmt.Sprintf("%s/%s/%s", baseURL, strings.TrimSpace(collection.Slug), articleSlug)
 			return &path, nil
 		}
 	}
 
-	if s.docsSpaceRepo != nil {
-		space, err := s.docsSpaceRepo.GetByID(ctx, doc.SpaceID)
-		if err != nil {
-			return nil, fmt.Errorf("get docs space: %w", err)
-		}
-		if space != nil && strings.TrimSpace(space.Slug) != "" {
-			path := fmt.Sprintf("%s/spaces/%s/articles/%s", baseURL, strings.TrimSpace(space.Slug), articleSlug)
-			return &path, nil
-		}
-	}
-
-	return nil, nil
+	// Fallback: article without collection.
+	path := fmt.Sprintf("%s/%s", baseURL, articleSlug)
+	return &path, nil
 }
 
 // ListWidgetTokens returns all active widget installations formatted as tokens
