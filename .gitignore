@@ -2,6 +2,8 @@
 server/api
 server/bin/
 server/tmp/
+server/temporal-worker
+server/migrate
 
 # Node
 frontend/node_modules/
@@ -39,6 +41,8 @@ plane
 
 # Claude Code
 .claude/settings.local.json
+.claude/skills/
+.agents/skills/
 .worktrees/
 node_modules/
 .turbo/

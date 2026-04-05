@@ -1,4 +1,4 @@
-import { Logout01Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
+import { Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -30,6 +30,7 @@ type SidebarAccountMenuProps = {
   selectedPresenceMode: 'online' | 'away' | 'offline' | 'auto';
   onPresenceChange: (value: 'online' | 'away' | 'offline' | 'auto') => void;
   onProfile: () => void;
+  onSettings: () => void;
   onWorkspaces: () => void;
   onSignOut: () => void;
 };
@@ -47,6 +48,7 @@ export function SidebarAccountMenu({
   selectedPresenceMode,
   onPresenceChange,
   onProfile,
+  onSettings,
   onWorkspaces,
   onSignOut,
 }: SidebarAccountMenuProps) {
@@ -103,6 +105,10 @@ export function SidebarAccountMenu({
         <DropdownMenuItem onClick={onProfile}>
           <UserIcon className="h-4 w-4" />
           <span>Profile</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onSettings}>
+          <Setting07Icon className="h-4 w-4" />
+          <span>Settings</span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onWorkspaces}>
           <UserGroupIcon className="h-4 w-4" />
