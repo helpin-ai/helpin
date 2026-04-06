@@ -41,7 +41,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
   const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
-  const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced' | 'react' | 'nextjs'>('basic');
+  const [snippetTab, setSnippetTab] = useState<'html' | 'html-identify' | 'react' | 'nextjs'>('html');
 
   // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -515,58 +515,42 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-sm">Embed Snippet</Label>
-                    <div className="flex items-center gap-1 p-0.5 rounded-md border bg-muted/30 w-fit mb-2">
-                      <button
-                        onClick={() => setSnippetTab('basic')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'basic'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        Basic
-                      </button>
-                      <button
-                        onClick={() => setSnippetTab('advanced')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'advanced'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        With User Identity
-                      </button>
-                      <button
-                        onClick={() => setSnippetTab('react')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'react'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        React
-                      </button>
-                      <button
-                        onClick={() => setSnippetTab('nextjs')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'nextjs'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        Next.js
-                      </button>
+                  <div className="space-y-3">
+                    <Label className="text-sm">Installation Method</Label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {([
+                        { id: 'html' as const, label: 'HTML', icon: (
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M1.5 0h21l-1.91 21.563L11.977 24l-8.564-2.438L1.5 0zm7.031 9.75l-.232-2.718 10.059.003.071-.757.206-2.34.033-.37H6.693l.012.147.609 6.035h6.939l-.33 3.528-2.45.672h-.013l-2.457-.66-.158-1.752H6.27l.313 3.528 4.947 1.365h.02l4.92-1.364.667-7.318H8.531z"/></svg>
+                        )},
+                        { id: 'html-identify' as const, label: 'JavaScript', icon: (
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M0 0h24v24H0V0zm22.034 18.276c-.175-1.095-.888-2.015-3.003-2.873-.736-.345-1.554-.585-1.797-1.14-.091-.33-.105-.51-.046-.705.15-.646.915-.84 1.515-.66.39.12.75.42.976.9 1.034-.676 1.034-.676 1.755-1.125-.27-.42-.405-.6-.586-.78-.63-.705-1.469-1.065-2.834-1.034l-.705.089c-.676.165-1.32.525-1.71 1.005-1.14 1.291-.811 3.541.569 4.471 1.365 1.02 3.361 1.244 3.616 2.205.24 1.17-.87 1.545-1.966 1.41-.811-.18-1.26-.586-1.755-1.336l-1.83 1.051c.21.48.45.689.81 1.109 1.74 1.756 6.09 1.666 6.871-1.004.029-.09.24-.705.074-1.65l.046.067zm-8.983-7.245h-2.248c0 1.938-.009 3.864-.009 5.805 0 1.232.063 2.363-.138 2.711-.33.689-1.18.601-1.566.48-.396-.196-.597-.466-.83-.855-.063-.105-.11-.196-.127-.196l-1.825 1.125c.305.63.75 1.172 1.324 1.517.855.51 2.004.675 3.207.405.783-.226 1.458-.691 1.811-1.411.51-.93.402-2.07.397-3.346.012-2.054 0-4.109 0-6.179l.004-.056z"/></svg>
+                        )},
+                        { id: 'react' as const, label: 'React', icon: (
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M14.23 12.004a2.236 2.236 0 0 1-2.235 2.236 2.236 2.236 0 0 1-2.236-2.236 2.236 2.236 0 0 1 2.235-2.236 2.236 2.236 0 0 1 2.236 2.236zm2.648-10.69c-1.346 0-3.107.96-4.888 2.622-1.78-1.653-3.542-2.602-4.887-2.602-.31 0-.592.068-.837.188-.924.472-1.34 1.768-.967 3.625.076.378.179.763.304 1.152-1.378.414-2.503.964-3.254 1.616C1.56 8.63 1.29 9.41 1.29 10.186c0 1.452 1.236 2.88 3.298 3.856-.132.43-.228.857-.294 1.27-.362 1.84.024 3.115.937 3.583.235.122.513.181.817.181 1.346 0 3.107-.96 4.888-2.624 1.78 1.655 3.542 2.604 4.887 2.604.31 0 .592-.068.837-.188.924-.472 1.34-1.768.967-3.625-.076-.378-.18-.763-.304-1.152 1.378-.414 2.503-.964 3.254-1.616.79-.676 1.06-1.456 1.06-2.232 0-1.452-1.236-2.88-3.298-3.856.132-.43.228-.857.294-1.27.362-1.84-.024-3.115-.937-3.583a1.77 1.77 0 0 0-.817-.181zM17.5 3.473c.156 0 .29.03.395.085.343.175.59.753.46 1.41-.057.296-.144.59-.256.886a16.147 16.147 0 0 0-2.1-.44 16.374 16.374 0 0 0-1.388-1.642c1.45-1.373 2.843-2.3 3.889-2.3zM12 8.01a15.16 15.16 0 0 1 1.39 1.627 18.098 18.098 0 0 1-2.78 0A15.681 15.681 0 0 1 12 8.01zm-4.593 2.09c.208-.34.425-.667.65-.98.338.065.685.119 1.04.164a17.91 17.91 0 0 0-.85 1.418c-.302-.14-.59-.292-.84-.46v-.142zm-.857 1.786c.73.333 1.528.607 2.374.823a17.48 17.48 0 0 0 1.074 2.2 15.684 15.684 0 0 1-2.337 1.37c-.67-.604-1.14-1.405-1.112-2.3v-2.093zm4.45 6.107c-1.45 1.373-2.843 2.3-3.889 2.3-.156 0-.29-.03-.395-.085-.343-.175-.59-.753-.46-1.41.057-.296.144-.59.256-.886.53.162 1.1.3 1.695.41a16.374 16.374 0 0 0 1.388 1.642c-.194.012-.39.03-.595.03zm1-2.003a15.16 15.16 0 0 1-1.39-1.627c.913.065 1.852.065 2.78 0A15.681 15.681 0 0 1 12 15.99zm4.593-2.09c-.208.34-.425.667-.65.98-.338-.065-.685-.119-1.04-.164.296-.453.582-.926.85-1.418.302.14.59.292.84.46v.142zm1.265-1.926c-.73-.333-1.528-.607-2.374-.823a17.48 17.48 0 0 0-1.074-2.2 15.684 15.684 0 0 1 2.337-1.37c.67.604 1.14 1.405 1.112 2.3v2.093zm-2.966-3.597a16.147 16.147 0 0 0-1.695-.41 16.374 16.374 0 0 0-1.388-1.642c1.45-1.373 2.843-2.3 3.889-2.3.156 0 .29.03.395.085.343.175.59.753.46 1.41-.057.296-.144.59-.256.886z"/></svg>
+                        )},
+                        { id: 'nextjs' as const, label: 'Next.js', icon: (
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M11.572 0c-.176 0-.31.001-.358.007a19.76 19.76 0 0 1-.364.033C7.443.346 4.25 2.185 2.228 5.012a11.875 11.875 0 0 0-2.119 5.243c-.096.659-.108.854-.108 1.747s.012 1.089.108 1.748c.652 4.506 3.86 8.292 8.209 9.695.779.25 1.6.422 2.534.525.363.04 1.935.04 2.299 0 1.611-.178 2.977-.577 4.323-1.264.207-.106.247-.134.219-.158-.02-.013-.9-1.193-1.955-2.62l-1.919-2.592-2.404-3.558a338.739 338.739 0 0 0-2.422-3.556c-.009-.002-.018 1.579-.023 3.51-.007 3.38-.01 3.515-.052 3.595a.426.426 0 0 1-.206.214c-.075.037-.14.044-.495.044H7.81l-.108-.068a.438.438 0 0 1-.157-.171l-.05-.106.006-4.703.007-4.705.072-.092a.645.645 0 0 1 .174-.143c.096-.047.134-.051.54-.051.478 0 .558.018.682.154.035.038 1.337 1.999 2.895 4.361a10760.433 10760.433 0 0 0 4.735 7.17l1.9 2.879.096-.063a12.317 12.317 0 0 0 2.466-2.163 11.944 11.944 0 0 0 2.824-6.134c.096-.66.108-.854.108-1.748 0-.893-.012-1.088-.108-1.747-.652-4.506-3.86-8.292-8.209-9.695a12.597 12.597 0 0 0-2.499-.523A33.119 33.119 0 0 0 11.572 0zm4.069 7.217c.347 0 .408.005.486.047a.473.473 0 0 1 .237.277c.018.06.023 1.365.018 4.304l-.006 4.218-.744-1.14-.746-1.14v-3.066c0-1.982.01-3.097.023-3.15a.478.478 0 0 1 .233-.296c.096-.05.13-.054.5-.054z"/></svg>
+                        )},
+                      ] as const).map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setSnippetTab(tab.id)}
+                          className={cn(
+                            'flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors',
+                            snippetTab === tab.id
+                              ? 'border-primary/30 bg-primary/5 font-medium text-foreground shadow-sm'
+                              : 'border-border/60 bg-background text-muted-foreground hover:border-border hover:text-foreground'
+                          )}
+                        >
+                          {tab.icon}
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
                     <CodeBlock
                       code={
-                        snippetTab === 'basic' ? embedSnippet
-                        : snippetTab === 'advanced' ? jsApiSnippet
+                        snippetTab === 'html' ? embedSnippet
+                        : snippetTab === 'html-identify' ? jsApiSnippet
                         : snippetTab === 'react' ? reactSnippet
                         : nextjsSnippet
                       }
@@ -574,9 +558,9 @@ function Dashboard() {
                       showLineNumbers
                     />
                     <p className="text-xs text-muted-foreground">
-                      {snippetTab === 'basic'
+                      {snippetTab === 'html'
                         ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
-                        : snippetTab === 'advanced'
+                        : snippetTab === 'html-identify'
                         ? 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'
                         : snippetTab === 'react'
                         ? 'Install @helpin-ai/react from npm. Use useHelpin() hook to identify users and capture leads.'
