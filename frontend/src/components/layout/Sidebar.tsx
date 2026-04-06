@@ -311,7 +311,7 @@ export function Sidebar() {
                 selectedMailboxId={selectedMailboxId}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
-                aiHasUnread={(unreadStats?.total ?? 0) > (unreadStats?.my_inbox ?? 0) + (unreadStats?.unassigned ?? 0)}
+                aiHasUnread={(unreadStats?.ai_pending ?? 0) > 0}
                 onNavFilterChange={setNavFilter}
                 onMailboxSelect={setSelectedMailboxId}
                 onCreateMailbox={() => setTeamInboxDialogOpen(true)}

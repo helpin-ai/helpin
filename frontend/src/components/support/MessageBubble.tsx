@@ -151,6 +151,7 @@ interface MessageBubbleProps {
   source?: TicketSource;
   receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null;
   fallbackAvatarUrl?: string;
+  customerDisplayName?: string;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -160,6 +161,7 @@ export const MessageBubble = memo(function MessageBubble({
   source,
   receiptStatus,
   fallbackAvatarUrl,
+  customerDisplayName,
 }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
@@ -170,7 +172,7 @@ export const MessageBubble = memo(function MessageBubble({
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
   const senderName = message.sender_display_name
-    ?? (isCustomer ? 'Customer' : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
+    ?? (isCustomer ? (customerDisplayName || 'Customer') : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
