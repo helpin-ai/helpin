@@ -123,7 +123,7 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
-      '@helpin/widget-core':
+      '@helpin-ai/widget-core':
         specifier: workspace:*
         version: link:../packages/widget-core
       '@hookform/resolvers':
@@ -443,7 +443,7 @@ importers:
 
   packages/nextjs:
     dependencies:
-      '@helpin/sdk-js':
+      '@helpin-ai/sdk-js':
         specifier: workspace:*
         version: link:../sdk-js
       cookie:
@@ -483,7 +483,7 @@ importers:
 
   packages/react:
     dependencies:
-      '@helpin/sdk-js':
+      '@helpin-ai/sdk-js':
         specifier: workspace:*
         version: link:../sdk-js
     devDependencies:
@@ -514,10 +514,10 @@ importers:
 
   packages/sdk-js:
     dependencies:
-      '@helpin/shared':
+      '@helpin-ai/shared':
         specifier: workspace:*
         version: link:../shared
-      '@helpin/widget-core':
+      '@helpin-ai/widget-core':
         specifier: workspace:*
         version: link:../widget-core
     devDependencies:
@@ -620,7 +620,7 @@ importers:
 
   packages/widget-core:
     dependencies:
-      '@helpin/shared':
+      '@helpin-ai/shared':
         specifier: workspace:*
         version: link:../shared
       react:
@@ -651,13 +651,13 @@ importers:
 
   packages/widget-embed:
     dependencies:
-      '@helpin/sdk-js':
+      '@helpin-ai/sdk-js':
         specifier: workspace:*
         version: link:../sdk-js
-      '@helpin/shared':
+      '@helpin-ai/shared':
         specifier: workspace:*
         version: link:../shared
-      '@helpin/widget-core':
+      '@helpin-ai/widget-core':
         specifier: workspace:*
         version: link:../widget-core
     devDependencies:
