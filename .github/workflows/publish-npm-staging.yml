@@ -17,11 +17,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  publish:
+    name: Build & Publish (RC)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
-    outputs:
-      rc_version: ${{ steps.rc_version.outputs.RC_VERSION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,45 +60,13 @@ jobs:
       - name: Update package versions
         run: |
           VERSION=${{ steps.rc_version.outputs.RC_VERSION }}
-          for pkg in packages/sdk-js packages/react packages/nextjs; do
+          for pkg in packages/shared packages/widget-core packages/sdk-js packages/react packages/nextjs; do
             if [ -d "$pkg" ]; then
               cd $pkg
               npm version $VERSION --no-git-tag-version --allow-same-version
               cd ${{ github.workspace }}
             fi
           done
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: packages-artifacts
-          path: |
-            packages/
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            !**/node_modules/**
-
-  publish-sdk-js:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - uses: pnpm/action-setup@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: packages-artifacts
-          path: .
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
 
       - name: Publish SDK package
         env:
@@ -109,27 +76,6 @@ jobs:
           cd packages/sdk-js
           pnpm publish --no-git-checks --tag rc --access public
 
-  publish-react:
-    needs: publish-sdk-js
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - uses: pnpm/action-setup@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: packages-artifacts
-          path: .
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
       - name: Publish React package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
@@ -137,27 +83,6 @@ jobs:
         run: |
           cd packages/react
           pnpm publish --no-git-checks --tag rc --access public
-
-  publish-nextjs:
-    needs: publish-sdk-js
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - uses: pnpm/action-setup@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: packages-artifacts
-          path: .
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
 
       - name: Publish Next.js package
         env:
