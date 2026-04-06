@@ -5,29 +5,43 @@ import { globSync } from 'glob';
 import dts from 'vite-plugin-dts';
 
 /**
- * Vite plugin that injects the hashed SDK filename into the loader (lib.js).
- * Replaces __SDK_FILENAME__ with the actual content-hashed filename after build.
+ * Vite plugin that:
+ * 1. Injects the hashed SDK filename into the loader (lib.js) for CDN cache busting
+ * 2. Copies the hashed SDK bundle to helpin.es.js for npm consumers (stable filename)
  */
-function injectSDKFilename() {
+function postBuildSDK() {
   return {
-    name: 'inject-sdk-filename',
+    name: 'post-build-sdk',
     writeBundle(options: any, bundle: Record<string, any>) {
+      const fs = require('fs');
       // Find the hashed SDK bundle filename
       const sdkChunk = Object.values(bundle).find(
         (chunk: any) => chunk.type === 'chunk' && chunk.facadeModuleId?.endsWith('index.ts')
       );
       if (!sdkChunk) return;
 
-      const sdkFilename = (sdkChunk as any).fileName; // 'helpin.es.js'
+      const sdkFilename = (sdkChunk as any).fileName;
       const outDir = options.dir || 'dist';
-      const loaderPath = resolve(outDir, 'lib.js');
 
+      // 1. Inject hashed filename into loader for CDN
+      const loaderPath = resolve(outDir, 'lib.js');
       try {
         let loaderCode = readFileSync(loaderPath, 'utf-8');
         loaderCode = loaderCode.replace(/__SDK_FILENAME__/g, sdkFilename);
-        require('fs').writeFileSync(loaderPath, loaderCode);
+        fs.writeFileSync(loaderPath, loaderCode);
       } catch {
         // loader might not exist yet in watch mode
+      }
+
+      // 2. Copy hashed bundle to stable helpin.es.js for npm imports
+      try {
+        const hashedPath = resolve(outDir, sdkFilename);
+        const stablePath = resolve(outDir, 'helpin.es.js');
+        if (hashedPath !== stablePath) {
+          fs.copyFileSync(hashedPath, stablePath);
+        }
+      } catch {
+        // ignore in watch mode
       }
     },
   };
@@ -56,7 +70,6 @@ export default defineConfig(({ command }) => {
         output: {
           entryFileNames: (chunkInfo) => {
             if (chunkInfo.name === 'loader') return 'lib.js';
-            if (chunkInfo.name === 'index') return 'helpin.es.js';
             return 'helpin.[hash].js';
           },
           chunkFileNames: 'chunks/[name].[hash].js',
@@ -76,7 +89,7 @@ export default defineConfig(({ command }) => {
           exclude: ['test', 'node_modules', 'src/loader.ts'],
           outDir: 'dist',
         }),
-      isBuild && injectSDKFilename(),
+      isBuild && postBuildSDK(),
     ].filter(Boolean),
     server: {
       open: '/examples/index.html',
