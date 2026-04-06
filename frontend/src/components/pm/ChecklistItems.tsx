@@ -123,6 +123,10 @@ function SortableItem({
             <UserAvatar
               name={assignee.display_name}
               avatarUrl={assignee.avatar_url}
+              avatarStyle={assignee.avatar_style}
+              avatarSeed={assignee.avatar_seed}
+              avatarBackgroundMode={assignee.avatar_background_mode}
+              avatarBackgroundColor={assignee.avatar_background_color}
               className="h-5 w-5 text-[8px]"
             />
           ) : (

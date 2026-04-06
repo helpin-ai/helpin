@@ -59,7 +59,7 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
       }}
       style={{ transform: CSS.Translate.toString(appliedTransform) }}
       className={cn(
-        'group/card relative shrink-0 rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
+        'group/card relative shrink-0 rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
         'hover:border-border hover:shadow-md',
         canDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         renderedDragging && 'opacity-40',
@@ -115,6 +115,10 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
                   <UserAvatar
                     name={owner.display_name || owner.email}
                     avatarUrl={owner.avatar_url}
+                    avatarStyle={owner.avatar_style}
+                    avatarSeed={owner.avatar_seed}
+                    avatarBackgroundMode={owner.avatar_background_mode}
+                    avatarBackgroundColor={owner.avatar_background_color}
                     className="h-5 w-5"
                   />
                 ) : (

@@ -100,7 +100,7 @@ export function DealCard({
         }
       }}
       className={cn(
-        'group cursor-pointer rounded-lg border border-border/60 bg-background p-3 shadow-sm transition-all',
+        'group cursor-pointer rounded-lg border border-border/60 bg-card p-3 shadow-sm transition-all',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-30',
         isOverlay && 'rotate-2 shadow-lg',
@@ -184,11 +184,15 @@ export function DealCard({
                 <UserAvatar
                   name={selectedMember.display_name || selectedMember.email}
                   avatarUrl={selectedMember.avatar_url}
-                  className="h-5 w-5"
+                  avatarStyle={selectedMember.avatar_style}
+                  avatarSeed={selectedMember.avatar_seed}
+                  avatarBackgroundMode={selectedMember.avatar_background_mode}
+                  avatarBackgroundColor={selectedMember.avatar_background_color}
+                  className="h-7 w-7"
                 />
               ) : (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                  <UserAdd01Icon className="h-2.5 w-2.5" />
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <UserAdd01Icon className="h-3.5 w-3.5" />
                 </span>
               );
             }}
@@ -197,7 +201,7 @@ export function DealCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+                <UserAvatar name={currentOwnerName} className="h-7 w-7" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{currentOwnerName}</TooltipContent>

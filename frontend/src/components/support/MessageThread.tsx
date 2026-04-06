@@ -32,6 +32,7 @@ import { agentService } from '@/lib/services/agentService';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useAuthStore } from '@/stores/authStore';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
@@ -132,12 +133,20 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
 }
 
 function resolveAgentIdentity(
-  member: { full_name?: string | null; email?: string | null; avatar_url?: string | null } | undefined,
+  member: { full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_style?: string | null; avatar_seed?: string | null; avatar_background_mode?: string | null; avatar_background_color?: string | null } | undefined,
   typing: AgentTypingState
 ) {
+  const name = typing.name || member?.full_name || member?.email || 'Agent';
   return {
-    name: typing.name || member?.full_name || member?.email || 'Agent',
-    avatarUrl: typing.avatarUrl || member?.avatar_url || undefined,
+    name,
+    avatarUrl: typing.avatarUrl || resolveTeamMemberAvatarSrc({
+      avatarUrl: member?.avatar_url,
+      avatarStyle: member?.avatar_style,
+      avatarSeed: member?.avatar_seed,
+      avatarBackgroundMode: member?.avatar_background_mode,
+      avatarBackgroundColor: member?.avatar_background_color,
+      fallbackSeed: name,
+    }),
   };
 }
 
@@ -222,8 +231,16 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
-      if (member.user_id && member.avatar_url) {
-        map.set(member.user_id, member.avatar_url);
+      const avatarSrc = resolveTeamMemberAvatarSrc({
+        avatarUrl: member.avatar_url,
+        avatarStyle: member.avatar_style,
+        avatarSeed: member.avatar_seed,
+        avatarBackgroundMode: member.avatar_background_mode,
+        avatarBackgroundColor: member.avatar_background_color,
+        fallbackSeed: member.full_name ?? member.email,
+      });
+      if (member.user_id && avatarSrc) {
+        map.set(member.user_id, avatarSrc);
       }
     }
     return map;

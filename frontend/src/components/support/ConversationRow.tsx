@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
@@ -30,7 +31,7 @@ const AgentTypingActivity = memo(function AgentTypingActivity({
   viewingAgentIds: string[];
   agentTypingMap: Record<string, AgentTypingState> | undefined;
   agentTypingEntries: Array<[string, AgentTypingState]>;
-  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>;
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_style?: string | null; avatar_seed?: string | null; avatar_background_mode?: string | null; avatar_background_color?: string | null }>;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -67,11 +68,18 @@ const AgentTypingActivity = memo(function AgentTypingActivity({
 function resolveAgentIdentity(
   userId: string,
   typingState: AgentTypingState | undefined,
-  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_style?: string | null; avatar_seed?: string | null; avatar_background_mode?: string | null; avatar_background_color?: string | null }>
 ) {
   const member = members.find((m) => m.user_id === userId);
   const name = typingState?.name || member?.full_name || member?.email || 'Agent';
-  const avatarUrl = typingState?.avatarUrl || member?.avatar_url || undefined;
+  const avatarUrl = typingState?.avatarUrl || resolveTeamMemberAvatarSrc({
+    avatarUrl: member?.avatar_url,
+    avatarStyle: member?.avatar_style,
+    avatarSeed: member?.avatar_seed,
+    avatarBackgroundMode: member?.avatar_background_mode,
+    avatarBackgroundColor: member?.avatar_background_color,
+    fallbackSeed: name,
+  });
   return { name, avatarUrl };
 }
 
@@ -90,7 +98,14 @@ const AgentAvatar = memo(function AgentAvatar({
   const { data: members = [] } = useWorkspaceMembers(wsId);
   const member = members.find((m) => m.user_id === userId);
   const name = nameOverride || member?.full_name || member?.email || 'Agent';
-  const avatarUrl = avatarUrlOverride || member?.avatar_url || undefined;
+  const avatarUrl = avatarUrlOverride || resolveTeamMemberAvatarSrc({
+    avatarUrl: member?.avatar_url,
+    avatarStyle: member?.avatar_style,
+    avatarSeed: member?.avatar_seed,
+    avatarBackgroundMode: member?.avatar_background_mode,
+    avatarBackgroundColor: member?.avatar_background_color,
+    fallbackSeed: name,
+  });
 
   return (
     <Tooltip>

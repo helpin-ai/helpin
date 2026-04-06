@@ -45,7 +45,7 @@ export function RecurringTemplateList({
         const ownerName = item.template.owner_member_id ? ownerNames?.get(item.template.owner_member_id) : undefined;
 
         return (
-          <div key={item.template.id} className="rounded-lg border border-border/60 bg-background p-4">
+          <div key={item.template.id} className="rounded-lg border border-border/60 bg-card p-4">
             <RecurringTemplateSummary
               title={item.template.title}
               status={item.template.status}

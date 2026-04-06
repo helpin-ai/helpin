@@ -115,6 +115,10 @@ export interface SupportMailboxMember {
   email: string;
   display_name: string;
   avatar_url?: string | null;
+  avatar_style?: string | null;
+  avatar_seed?: string | null;
+  avatar_background_mode?: string | null;
+  avatar_background_color?: string | null;
   role: string;
 }
 

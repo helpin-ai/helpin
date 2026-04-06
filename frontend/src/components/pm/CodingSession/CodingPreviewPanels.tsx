@@ -46,7 +46,11 @@ function toTitleCase(value: string) {
 function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskPlanPreviewModel | null {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
-  const proposedTasks = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : [];
+  const proposedTasks = Array.isArray(record?.proposed_tasks)
+    ? record.proposed_tasks
+    : Array.isArray(record?.proposed_stories)
+      ? record.proposed_stories
+      : [];
   if (!record || proposedTasks.length === 0) return null;
 
   const normalizedTasks: TaskPlanTaskPreview[] = proposedTasks.flatMap((entry) => {
@@ -56,8 +60,12 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
     const implementationBrief = asRecord(task.implementation_brief);
     const filesToModify = Array.isArray(implementationBrief?.files_to_modify)
       ? implementationBrief.files_to_modify
-        .map((fileEntry) => asRecord(fileEntry))
-        .map((fileEntry) => asString(fileEntry?.path).trim())
+        .map((fileEntry) => {
+          if (typeof fileEntry === 'string') {
+            return fileEntry.trim();
+          }
+          return asString(asRecord(fileEntry)?.path).trim();
+        })
         .filter((path) => path.length > 0)
       : [];
 
@@ -67,10 +75,14 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
     return [{
       ref: asString(task.ref).trim() || undefined,
       title,
-      type: asString(task.task_type).trim() || asString(task.type).trim() || asString(task.slice_type).trim() || undefined,
+      type: asString(task.task_type).trim()
+        || asString(task.story_type).trim()
+        || asString(task.type).trim()
+        || asString(task.slice_type).trim()
+        || undefined,
       description: asString(task.description).trim() || undefined,
-      acceptanceCriteria: asStringArray(task.acceptance_criteria),
-      dependencyRefs: asStringArray(task.dependency_refs),
+      acceptanceCriteria: asStringArray(task.acceptance_criteria).concat(asStringArray(task.acceptanceCriteria)),
+      dependencyRefs: asStringArray(task.dependency_refs).concat(asStringArray(task.dependencyRefs)),
       filesToModify,
     } satisfies TaskPlanTaskPreview];
   });
@@ -87,7 +99,7 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
 
 function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+    <div className="rounded-md border border-border/60 bg-card/80 p-3">
       <div className="mb-2 flex items-center gap-2">
         <File01Icon className="h-4 w-4 text-muted-foreground" />
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
@@ -113,7 +125,7 @@ function TaskPlanPanel({
   preview: TaskPlanPreviewModel;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+    <div className="rounded-md border border-border/60 bg-card/80 p-3">
       <div className="mb-2 flex items-center gap-2">
         <SparklesIcon className="h-4 w-4 text-muted-foreground" />
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
@@ -226,7 +238,7 @@ export function CodingPreviewPanels({ previewsByKey }: { previewsByKey: Map<stri
   return (
     <>
       {latestSpecDraftPreview ? (
-        <div className="rounded-md border border-border/60 bg-background/80 p-3">
+        <div className="rounded-md border border-border/60 bg-card/80 p-3">
           <div className="mb-2 flex items-center gap-2">
             <File01Icon className="h-4 w-4 text-muted-foreground" />
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

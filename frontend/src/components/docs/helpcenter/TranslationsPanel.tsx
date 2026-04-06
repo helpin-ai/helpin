@@ -54,7 +54,7 @@ export function TranslationsPanel({
         {orderedRows.map((row) => (
           <div
             key={row.locale}
-            className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3"
+            className="rounded-2xl border border-border/60 bg-card/80 px-4 py-3"
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 space-y-2">

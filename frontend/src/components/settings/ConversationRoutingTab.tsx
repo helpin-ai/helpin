@@ -400,7 +400,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
       {/* ── 1. Routing Rules ─────────────────────────────────────────── */}
       <div className={cn(
-        'overflow-hidden rounded-lg border bg-background transition-colors',
+        'overflow-hidden rounded-lg border bg-card transition-colors',
         isExpanded('routing-rules') ? 'border-primary/20' : 'border-border/60',
       )}>
         <div className="flex items-center">
@@ -514,7 +514,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
       {/* ── 2. AI Triage ─────────────────────────────────────────────── */}
       <div className={cn(
-        'overflow-hidden rounded-lg border bg-background transition-colors',
+        'overflow-hidden rounded-lg border bg-card transition-colors',
         isExpanded('ai-triage') ? 'border-primary/20' : 'border-border/60',
       )}>
         <button
@@ -637,7 +637,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
       {/* ── 3. Inbox Catalog ─────────────────────────────────────────── */}
       <div className={cn(
-        'overflow-hidden rounded-lg border bg-background transition-colors',
+        'overflow-hidden rounded-lg border bg-card transition-colors',
         isExpanded('inbox-catalog') ? 'border-primary/20' : 'border-border/60',
       )}>
         <button
@@ -715,7 +715,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
       {/* ── 4. Advanced Settings ──────────────────────────────────────── */}
       <div className={cn(
-        'overflow-hidden rounded-lg border bg-background transition-colors',
+        'overflow-hidden rounded-lg border bg-card transition-colors',
         isExpanded('advanced') ? 'border-primary/20' : 'border-border/60',
       )}>
         <button

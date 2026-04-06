@@ -150,7 +150,7 @@ export function PipelineBuilder({
               <div key={state.id} className="flex items-start">
                 {/* State card */}
                 <div className={cn(
-                  'relative w-[180px] shrink-0 rounded-lg border bg-background p-3 transition-colors',
+                  'relative w-[180px] shrink-0 rounded-lg border bg-card p-3 transition-colors',
                   hasExecution ? 'border-violet-300 dark:border-violet-800' : 'border-border',
                   isSaving && 'opacity-60',
                 )}>

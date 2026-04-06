@@ -3,6 +3,10 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
   default_workspace_id?: string;
   created_at: string;
   updated_at: string;
@@ -118,6 +122,10 @@ export interface MemberWithUser {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
 }
 
 export interface AssignableMember {
@@ -127,6 +135,10 @@ export interface AssignableMember {
   email: string;
   display_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
   status: 'pending' | 'active' | 'revoked' | 'inactive';
   invited_by?: string;
   invited_at?: string;

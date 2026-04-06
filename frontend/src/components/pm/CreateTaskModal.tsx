@@ -907,7 +907,7 @@ export function CreateTaskModal({
 
               {/* Checklist */}
               {showChecklist && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <CheckListIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -964,7 +964,7 @@ export function CreateTaskModal({
 
               {/* External Links */}
               {showExternalLinks && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1021,7 +1021,7 @@ export function CreateTaskModal({
 
               {/* Attachments (task mode only) */}
               {!isTemplateMode && showAttachments && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1213,6 +1213,10 @@ export function CreateTaskModal({
                             <UserAvatar
                               name={selectedMember.display_name || selectedMember.email}
                               avatarUrl={selectedMember.avatar_url}
+                              avatarStyle={selectedMember.avatar_style}
+                              avatarSeed={selectedMember.avatar_seed}
+                              avatarBackgroundMode={selectedMember.avatar_background_mode}
+                              avatarBackgroundColor={selectedMember.avatar_background_color}
                               className="h-4 w-4"
                               fallbackClassName="text-[7px]"
                             />
@@ -1245,6 +1249,10 @@ export function CreateTaskModal({
                             <UserAvatar
                               name={selectedMember.display_name || selectedMember.email}
                               avatarUrl={selectedMember.avatar_url}
+                              avatarStyle={selectedMember.avatar_style}
+                              avatarSeed={selectedMember.avatar_seed}
+                              avatarBackgroundMode={selectedMember.avatar_background_mode}
+                              avatarBackgroundColor={selectedMember.avatar_background_color}
                               className="h-4 w-4"
                               fallbackClassName="text-[7px]"
                             />

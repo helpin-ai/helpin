@@ -1433,7 +1433,7 @@ export function AgentsPage() {
                 </section>
 
                 {versionDraftOpen && (
-                  <section className="rounded-2xl border border-foreground/10 bg-background p-4 shadow-sm">
+                  <section className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
                     <div className="space-y-4">
                       <div>
                         <h3 className="text-base font-semibold">New Workspace Version</h3>
@@ -1550,7 +1550,7 @@ export function AgentsPage() {
 
                       <div className="space-y-2">
                         <FieldLabel>Interactive mode</FieldLabel>
-                        <div className="rounded-xl border border-border/60 bg-background p-3">
+                        <div className="rounded-xl border border-border/60 bg-card p-3">
                           <label className="flex items-center justify-between gap-3">
                             <div>
                               <p className="text-sm">Use interactive runs</p>
@@ -1655,7 +1655,7 @@ export function AgentsPage() {
                           </PopoverContent>
                         </Popover>
                       </div>
-                      <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-border/60 bg-background p-3">
+                      <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-border/60 bg-card p-3">
                         {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
                           <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                             <span>{tool}</span>
@@ -2066,7 +2066,7 @@ export function AgentsPage() {
                     ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
                     : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
                 </p>
-                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/70 p-2">
+                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-card/70 p-2">
                   {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
                     <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                       <span>{tool}</span>

@@ -53,26 +53,34 @@ type WorkspaceWithRole struct {
 
 // MemberWithUser is a workspace member with embedded user details.
 type MemberWithUser struct {
-	ID        string  `json:"id"`
-	UserID    string  `json:"user_id"`
-	Role      string  `json:"role"`
-	Email     string  `json:"email"`
-	FullName  string  `json:"full_name"`
-	AvatarURL *string `json:"avatar_url"`
+	ID                    string  `json:"id"`
+	UserID                string  `json:"user_id"`
+	Role                  string  `json:"role"`
+	Email                 string  `json:"email"`
+	FullName              string  `json:"full_name"`
+	AvatarURL             *string `json:"avatar_url"`
+	AvatarStyle           *string `json:"avatar_style,omitempty"`
+	AvatarSeed            *string `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
 }
 
 // AssignableMember is the workspace-level person identity used by PM pickers.
 type AssignableMember struct {
-	ID          string     `json:"id"`
-	UserID      *string    `json:"user_id,omitempty"`
-	Role        string     `json:"role"`
-	Email       string     `json:"email"`
-	DisplayName string     `json:"display_name"`
-	AvatarURL   *string    `json:"avatar_url,omitempty"`
-	Status      string     `json:"status"`
-	InvitedBy   *string    `json:"invited_by,omitempty"`
-	InvitedAt   *time.Time `json:"invited_at,omitempty"`
-	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
+	ID                    string     `json:"id"`
+	UserID                *string    `json:"user_id,omitempty"`
+	Role                  string     `json:"role"`
+	Email                 string     `json:"email"`
+	DisplayName           string     `json:"display_name"`
+	AvatarURL             *string    `json:"avatar_url,omitempty"`
+	AvatarStyle           *string    `json:"avatar_style,omitempty"`
+	AvatarSeed            *string    `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string    `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string    `json:"avatar_background_color,omitempty"`
+	Status                string     `json:"status"`
+	InvitedBy             *string    `json:"invited_by,omitempty"`
+	InvitedAt             *time.Time `json:"invited_at,omitempty"`
+	AcceptedAt            *time.Time `json:"accepted_at,omitempty"`
 }
 
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.

@@ -286,6 +286,10 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                           <UserAvatar
                             name={selectedMember.display_name || selectedMember.email}
                             avatarUrl={selectedMember.avatar_url}
+                            avatarStyle={selectedMember.avatar_style}
+                            avatarSeed={selectedMember.avatar_seed}
+                            avatarBackgroundMode={selectedMember.avatar_background_mode}
+                            avatarBackgroundColor={selectedMember.avatar_background_color}
                             className="h-4 w-4"
                             fallbackClassName="text-[7px]"
                           />
@@ -1060,6 +1064,10 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                               key={member.id}
                               name={member.display_name || member.email}
                               avatarUrl={member.avatar_url}
+                              avatarStyle={member.avatar_style}
+                              avatarSeed={member.avatar_seed}
+                              avatarBackgroundMode={member.avatar_background_mode}
+                              avatarBackgroundColor={member.avatar_background_color}
                               className="h-4 w-4"
                               fallbackClassName="text-[7px]"
                             />
