@@ -513,14 +513,13 @@ importers:
         version: 2.2.4(rollup@2.80.0)
 
   packages/sdk-js:
-    dependencies:
+    devDependencies:
       '@helpin-ai/shared':
         specifier: workspace:*
         version: link:../shared
       '@helpin-ai/widget-core':
         specifier: workspace:*
         version: link:../widget-core
-    devDependencies:
       '@playwright/test':
         specifier: ^1.40.0
         version: 1.58.2
