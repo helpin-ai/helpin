@@ -41,7 +41,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
   const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
-  const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
+  const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced' | 'react' | 'nextjs'>('basic');
 
   // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -323,7 +323,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
     // Identify logged-in users (optional)
     helpin('boot', {
-      key: '${widgetKey}',
+      widgetKey: '${widgetKey}',
+      host: 'https://client.helpin.ai',
       user: {
         email: 'user@example.com',
         name: 'Jane Doe',
@@ -332,6 +333,79 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     });
   })();
 </script>`;
+
+  const reactSnippet = `// 1. Install the package
+npm install @helpin-ai/react
+
+// 2. Wrap your app with HelpinProvider
+import { createClient, HelpinProvider } from '@helpin-ai/react';
+
+const client = createClient({
+  widgetKey: '${widgetKey}',
+  host: 'https://client.helpin.ai',
+});
+
+function App() {
+  return (
+    <HelpinProvider client={client}>
+      {/* Your app */}
+    </HelpinProvider>
+  );
+}
+
+// 3. Identify users (optional)
+import { useHelpin } from '@helpin-ai/react';
+
+function Dashboard() {
+  const { id, lead } = useHelpin();
+
+  useEffect(() => {
+    // Identify a logged-in user
+    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+
+    // Or capture a lead
+    lead({ email: 'visitor@example.com', name: 'New Lead' });
+  }, []);
+}`;
+
+  const nextjsSnippet = `// 1. Install the package
+npm install @helpin-ai/nextjs
+
+// 2. Add to your root layout (app/layout.tsx)
+import { HelpinProvider, createClient } from '@helpin-ai/nextjs';
+
+const client = createClient({
+  widgetKey: '${widgetKey}',
+  host: 'https://client.helpin.ai',
+});
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <HelpinProvider client={client}>
+          {children}
+        </HelpinProvider>
+      </body>
+    </html>
+  );
+}
+
+// 3. Identify users (optional)
+'use client';
+import { useHelpin } from '@helpin-ai/nextjs';
+
+function Dashboard() {
+  const { id, lead } = useHelpin();
+
+  useEffect(() => {
+    // Identify a logged-in user
+    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+
+    // Or capture a lead
+    lead({ email: 'visitor@example.com', name: 'New Lead' });
+  }, []);
+}`;
 
   // Derive help spaces for the widget preview
   const previewHelpSpaces = docsSpaces
@@ -466,16 +540,47 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                       >
                         With User Identity
                       </button>
+                      <button
+                        onClick={() => setSnippetTab('react')}
+                        className={cn(
+                          'px-2.5 py-1 rounded text-xs transition-colors',
+                          snippetTab === 'react'
+                            ? 'bg-background shadow-sm font-medium text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        React
+                      </button>
+                      <button
+                        onClick={() => setSnippetTab('nextjs')}
+                        className={cn(
+                          'px-2.5 py-1 rounded text-xs transition-colors',
+                          snippetTab === 'nextjs'
+                            ? 'bg-background shadow-sm font-medium text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        Next.js
+                      </button>
                     </div>
                     <CodeBlock
-                      code={snippetTab === 'basic' ? embedSnippet : jsApiSnippet}
-                      language="markup"
+                      code={
+                        snippetTab === 'basic' ? embedSnippet
+                        : snippetTab === 'advanced' ? jsApiSnippet
+                        : snippetTab === 'react' ? reactSnippet
+                        : nextjsSnippet
+                      }
+                      language={snippetTab === 'react' || snippetTab === 'nextjs' ? 'typescript' : 'markup'}
                       showLineNumbers
                     />
                     <p className="text-xs text-muted-foreground">
                       {snippetTab === 'basic'
                         ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
-                        : 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'}
+                        : snippetTab === 'advanced'
+                        ? 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'
+                        : snippetTab === 'react'
+                        ? 'Install @helpin-ai/react from npm. Use useHelpin() hook to identify users and capture leads.'
+                        : 'Install @helpin-ai/nextjs from npm. Works with both App Router and Pages Router.'}
                     </p>
                   </div>
                 </>
