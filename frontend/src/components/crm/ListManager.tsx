@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Filter, List, Users } from 'lucide-react';
+import { PlusSignIcon, Delete01Icon, FilterIcon, Menu01Icon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import {
   useCRMLists,
@@ -63,7 +63,7 @@ export function ListManager({ workspaceId }: ListManagerProps) {
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
-              <Plus className="h-4 w-4 mr-1" /> Create List
+              <PlusSignIcon className="h-4 w-4 mr-1" /> Create List
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -77,7 +77,7 @@ export function ListManager({ workspaceId }: ListManagerProps) {
         <CardContent className="p-0">
           {lists.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <List className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <Menu01Icon className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>No lists yet. Create one to organize your CRM records.</p>
             </div>
           ) : (
@@ -145,9 +145,9 @@ function ListRow({
       <TableCell>
         <Badge variant={list.list_type === 'smart' ? 'default' : 'outline'} className="text-xs">
           {list.list_type === 'smart' ? (
-            <><Filter className="h-3 w-3 mr-1" /> Smart</>
+            <><FilterIcon className="h-3 w-3 mr-1" /> Smart</>
           ) : (
-            <><Users className="h-3 w-3 mr-1" /> Static</>
+            <><UserGroupIcon className="h-3 w-3 mr-1" /> Static</>
           )}
         </Badge>
       </TableCell>
@@ -155,7 +155,7 @@ function ListRow({
       <TableCell>{list.member_count}</TableCell>
       <TableCell>
         <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={handleDelete}>
-          <Trash2 className="h-3.5 w-3.5" />
+          <Delete01Icon className="h-3.5 w-3.5" />
         </Button>
       </TableCell>
     </TableRow>
@@ -350,7 +350,7 @@ function ListMemberPanel({
                         className="h-7 w-7 text-destructive"
                         onClick={() => handleRemove(member.object_id)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Delete01Icon className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
                   )}

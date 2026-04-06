@@ -1,28 +1,28 @@
-import { FileText, FileCode, CheckCircle2, GitPullRequest, Bot, ListTodo } from 'lucide-react';
+import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, BotIcon, CheckListIcon } from '@/lib/icons';
 import type { AgentRunArtifact } from '@/lib/pmTypes';
 import { ARTIFACT_TYPE_LABELS } from './agentRunConstants';
 
 const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
-  conversation_log: <FileText className="h-3.5 w-3.5" />,
-  tool_log: <FileText className="h-3.5 w-3.5" />,
-  diff: <FileCode className="h-3.5 w-3.5" />,
-  test_report: <CheckCircle2 className="h-3.5 w-3.5" />,
-  pr_metadata: <GitPullRequest className="h-3.5 w-3.5" />,
-  agent_summary: <Bot className="h-3.5 w-3.5" />,
-  file_bundle: <FileCode className="h-3.5 w-3.5" />,
-  handoff_note: <FileText className="h-3.5 w-3.5" />,
-  opencode_config: <FileText className="h-3.5 w-3.5" />,
-  opencode_stdout: <FileText className="h-3.5 w-3.5" />,
-  opencode_stderr: <FileText className="h-3.5 w-3.5" />,
-  codex_config: <FileText className="h-3.5 w-3.5" />,
-  codex_prompt: <FileText className="h-3.5 w-3.5" />,
-  codex_response: <Bot className="h-3.5 w-3.5" />,
-  codex_stdout: <FileText className="h-3.5 w-3.5" />,
-  codex_stderr: <FileText className="h-3.5 w-3.5" />,
-  git_status: <FileCode className="h-3.5 w-3.5" />,
-  git_diff_stat: <FileCode className="h-3.5 w-3.5" />,
-  git_persistence_result: <FileCode className="h-3.5 w-3.5" />,
-  run_plan: <ListTodo className="h-3.5 w-3.5" />,
+  conversation_log: <File01Icon className="h-3.5 w-3.5" />,
+  tool_log: <File01Icon className="h-3.5 w-3.5" />,
+  diff: <FileCodeIcon className="h-3.5 w-3.5" />,
+  test_report: <CheckmarkCircle02Icon className="h-3.5 w-3.5" />,
+  pr_metadata: <GitPullRequestIcon className="h-3.5 w-3.5" />,
+  agent_summary: <BotIcon className="h-3.5 w-3.5" />,
+  file_bundle: <FileCodeIcon className="h-3.5 w-3.5" />,
+  handoff_note: <File01Icon className="h-3.5 w-3.5" />,
+  opencode_config: <File01Icon className="h-3.5 w-3.5" />,
+  opencode_stdout: <File01Icon className="h-3.5 w-3.5" />,
+  opencode_stderr: <File01Icon className="h-3.5 w-3.5" />,
+  codex_config: <File01Icon className="h-3.5 w-3.5" />,
+  codex_prompt: <File01Icon className="h-3.5 w-3.5" />,
+  codex_response: <BotIcon className="h-3.5 w-3.5" />,
+  codex_stdout: <File01Icon className="h-3.5 w-3.5" />,
+  codex_stderr: <File01Icon className="h-3.5 w-3.5" />,
+  git_status: <FileCodeIcon className="h-3.5 w-3.5" />,
+  git_diff_stat: <FileCodeIcon className="h-3.5 w-3.5" />,
+  git_persistence_result: <FileCodeIcon className="h-3.5 w-3.5" />,
+  run_plan: <CheckListIcon className="h-3.5 w-3.5" />,
 };
 
 interface Props {
@@ -37,7 +37,7 @@ export function AgentRunArtifactView({ artifact, maxContentHeight = 'max-h-32' }
   return (
     <div className="rounded border border-border/60 bg-muted/30 p-2">
       <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium">
-        {ARTIFACT_ICONS[artifact.artifact_type] ?? <FileText className="h-3.5 w-3.5" />}
+        {ARTIFACT_ICONS[artifact.artifact_type] ?? <File01Icon className="h-3.5 w-3.5" />}
         <span className="capitalize">{label}</span>
         <span className="text-muted-foreground">({artifact.format})</span>
       </div>

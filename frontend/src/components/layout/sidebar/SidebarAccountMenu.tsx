@@ -1,4 +1,4 @@
-import { LogOut, User, Users } from 'lucide-react';
+import { Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -30,6 +30,7 @@ type SidebarAccountMenuProps = {
   selectedPresenceMode: 'online' | 'away' | 'offline' | 'auto';
   onPresenceChange: (value: 'online' | 'away' | 'offline' | 'auto') => void;
   onProfile: () => void;
+  onSettings: () => void;
   onWorkspaces: () => void;
   onSignOut: () => void;
 };
@@ -47,6 +48,7 @@ export function SidebarAccountMenu({
   selectedPresenceMode,
   onPresenceChange,
   onProfile,
+  onSettings,
   onWorkspaces,
   onSignOut,
 }: SidebarAccountMenuProps) {
@@ -101,16 +103,20 @@ export function SidebarAccountMenu({
         )}
         {presence && <DropdownMenuSeparator />}
         <DropdownMenuItem onClick={onProfile}>
-          <User className="h-4 w-4" />
+          <UserIcon className="h-4 w-4" />
           <span>Profile</span>
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={onSettings}>
+          <Setting07Icon className="h-4 w-4" />
+          <span>Settings</span>
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={onWorkspaces}>
-          <Users className="h-4 w-4" />
+          <UserGroupIcon className="h-4 w-4" />
           <span>All Workspaces</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onSignOut} variant="destructive">
-          <LogOut className="h-4 w-4" />
+          <Logout01Icon className="h-4 w-4" />
           <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

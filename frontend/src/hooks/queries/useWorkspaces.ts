@@ -39,7 +39,7 @@ export function useAssignableMembers(wsId: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: { name: string; slug: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
+    mutationFn: async (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
       unwrap(await workspacesService.create(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })

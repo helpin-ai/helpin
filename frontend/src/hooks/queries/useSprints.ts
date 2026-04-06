@@ -1,8 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pmSprintService } from '@/lib/services/pmSprintService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { CreateSprintRequest, SprintPlanningFilters, UpdateSprintRequest } from '@/lib/pmTypes'
+import type { CreateSprintRequest, PaginatedResponse, SprintPlanningFilters, SprintPlanningTaskPreview, UpdateSprintRequest } from '@/lib/pmTypes'
 
 interface SprintFilters {
   team_id?: string
@@ -31,6 +31,7 @@ export function useSprintPlanningWorkspace(wsId: string, filters?: SprintPlannin
     queryKey: queryKeys.pm.sprintPlanning(wsId, filters as Record<string, unknown> | undefined),
     queryFn: async () => unwrap(await pmSprintService.planningWorkspace(wsId, filters)),
     enabled: !!wsId,
+    placeholderData: (previous) => previous,
   })
 }
 
@@ -39,6 +40,40 @@ export function useSprintTasks(wsId: string, sprintId: string) {
     queryKey: queryKeys.pm.sprintTasks(wsId, sprintId),
     queryFn: async () => unwrap(await pmSprintService.listTasks(wsId, sprintId)),
     enabled: !!wsId && !!sprintId,
+  })
+}
+
+export function useInfiniteSprintPreviewTasks(
+  wsId: string,
+  sprintId: string,
+  initialTasks: SprintPlanningTaskPreview[],
+  total: number,
+  perPage = 20,
+) {
+  const totalPages = total > 0 ? Math.ceil(total / perPage) : 0
+  const seededInitialData =
+    initialTasks.length > 0 || total === 0
+      ? {
+          pageParams: [1],
+          pages: [{
+            data: initialTasks,
+            total,
+            page: 1,
+            per_page: perPage,
+            total_pages: totalPages,
+          } satisfies PaginatedResponse<SprintPlanningTaskPreview[]>],
+        }
+      : undefined
+
+  return useInfiniteQuery({
+    queryKey: queryKeys.pm.sprintPreviewTasks(wsId, sprintId),
+    queryFn: async ({ pageParam }) =>
+      unwrap(await pmSprintService.listPreviewTasks(wsId, sprintId, { page: pageParam as number, per_page: perPage })),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined,
+    enabled: !!wsId && !!sprintId,
+    staleTime: 30_000,
+    initialData: seededInitialData,
   })
 }
 

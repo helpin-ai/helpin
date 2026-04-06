@@ -151,6 +151,11 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 	onPage := func(record crawler.CrawlRecord) error {
 		contentText, format := crawlRecordText(record)
 		if strings.TrimSpace(contentText) == "" {
+			slog.DebugContext(ctx, "support content page skipped: empty content",
+				"content_source_id", source.ID,
+				"url", record.URL,
+				"status", record.HTTPStatus,
+			)
 			return nil
 		}
 
@@ -240,15 +245,44 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		if pct > 99 {
 			pct = 99 // Reserve 100 for final completion.
 		}
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
+		slog.InfoContext(ctx, "support content page indexed",
+			"workspace_id", source.WorkspaceID,
+			"content_source_id", source.ID,
+			"page_id", savedPage.ID,
+			"url", savedPage.URL,
+			"title", savedPage.Title,
+			"chunks", len(rows),
+			"progress_pct", pct,
+			"indexed_pages", indexedPages,
+			"indexed_chunks", indexedChunks,
+		)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 		return nil
 	}
 
-	_, err = s.crawler.Crawl(ctx, *source, onPage)
+	slog.InfoContext(ctx, "support content crawl starting",
+		"workspace_id", workspaceID,
+		"content_source_id", source.ID,
+		"start_url", source.StartURL,
+	)
+	crawledCount, err := s.crawler.Crawl(ctx, *source, onPage)
 	if err != nil {
+		slog.ErrorContext(ctx, "support content crawl failed",
+			"workspace_id", workspaceID,
+			"content_source_id", source.ID,
+			"crawled_pages", crawledCount,
+			"error", err,
+		)
 		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
 		return err
 	}
+	slog.InfoContext(ctx, "support content crawl finished",
+		"workspace_id", workspaceID,
+		"content_source_id", source.ID,
+		"crawled_pages", crawledCount,
+		"indexed_pages", indexedPages,
+		"indexed_chunks", indexedChunks,
+	)
 
 	// Clean up stale pages that were not seen in this crawl (full crawl only).
 	if source.ModifiedSince == nil {
@@ -408,7 +442,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		if pct > 99 {
 			pct = 99
 		}
-		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil)
+		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, pct, indexedPages, indexedChunks, nil, nil, &startedAt, nil)
 	}
 
 	completedAt := time.Now()

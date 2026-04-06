@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Copy, FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -46,7 +46,7 @@ function TemplateCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={onEdit}>
-                <Pencil className="h-3 w-3" />
+                <PencilEdit01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">Edit</TooltipContent>
@@ -54,7 +54,7 @@ function TemplateCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={onDuplicate}>
-                <Copy className="h-3 w-3" />
+                <Copy01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">Duplicate</TooltipContent>
@@ -62,7 +62,7 @@ function TemplateCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive" onClick={onDelete}>
-                <Trash2 className="h-3 w-3" />
+                <Delete01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">Delete</TooltipContent>
@@ -128,7 +128,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -158,7 +158,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
             setShowCreate(true);
           }}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <PlusSignIcon className="h-3.5 w-3.5" />
           Add template
         </Button>
       </div>
@@ -166,7 +166,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
       {templates.length === 0 && (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <FileText className="h-6 w-6 text-muted-foreground/60" />
+            <File01Icon className="h-6 w-6 text-muted-foreground/60" />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">No task templates yet</p>
@@ -182,7 +182,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
               setShowCreate(true);
             }}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
             Create your first template
           </Button>
         </div>

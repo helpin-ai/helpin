@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -67,11 +68,17 @@ type PMTask struct {
 	BlockingCount             int                    `json:"blocking_count" gorm:"-"`
 	BlockedByTasks            []TaskDependencyTask   `json:"blocked_by_tasks,omitempty" gorm:"-"`
 	BlockingTasks             []TaskDependencyTask   `json:"blocking_tasks,omitempty" gorm:"-"`
+	TaskKey                   string                 `json:"task_key" gorm:"-"`
 	CreatedAt                 time.Time              `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMTask) TableName() string { return "pm_tasks" }
+
+// FormatTaskKey returns the canonical task key like "HLP-123".
+func FormatTaskKey(workspaceKey string, displayID int) string {
+	return workspaceKey + "-" + strconv.Itoa(displayID)
+}
 
 // PMTaskOwner is the join table for many owners per task.
 type PMTaskOwner struct {
@@ -244,6 +251,7 @@ type TaskDependencyTask struct {
 	Name            string `json:"name"`
 	WorkflowStateID string `json:"workflow_state_id"`
 	Completed       bool   `json:"completed"`
+	TaskKey         string `json:"task_key" gorm:"-"`
 }
 
 // BoardTask is a task enriched with relation names for board display.

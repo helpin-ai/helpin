@@ -10,22 +10,22 @@ import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  Check,
-  CalendarDays,
-  ChevronDown,
-  ChevronRight,
-  ListFilter,
-  Layers,
-  Minus,
-  Plus,
-  Search,
-  Sun,
-  Target,
-  TrendingUp,
-  User,
-  UserPlus,
-  X,
-} from 'lucide-react';
+  Tick01Icon,
+  Calendar03Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  FilterHorizontalIcon,
+  PlusSignIcon,
+  Search01Icon,
+  Target01Icon,
+  ChartIncreaseIcon,
+  UserIcon,
+  UserAdd01Icon,
+  Cancel01Icon,
+  Layers01Icon,
+  MinusSignIcon,
+  Sun01Icon,
+} from '@/lib/icons';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { PMDataTable } from '@/components/pm/PMDataTable';
@@ -383,7 +383,7 @@ function FilterValueSelect({
                     onSelect={() => onToggle(option.value)}
                   >
                     <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                      {isSelected ? <Check className="h-3 w-3" /> : null}
+                      {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
                     </div>
                     <span className="truncate">{option.label}</span>
                   </CommandItem>
@@ -418,7 +418,7 @@ function EpicFilterPill({
         onClick={onRemove}
         className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
       >
-        <X className="h-3 w-3" />
+        <Cancel01Icon className="h-3 w-3" />
       </button>
     </div>
   );
@@ -441,7 +441,7 @@ function EpicFilterTrigger({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-          <ListFilter className="h-3.5 w-3.5" />
+          <FilterHorizontalIcon className="h-3.5 w-3.5" />
           Filters
           {activeCount > 0 ? <span className="rounded-full bg-muted px-1.5 py-0 text-[10px]">{activeCount}</span> : null}
         </Button>
@@ -511,9 +511,9 @@ function EpicGroupSection({
         onClick={onToggle}
       >
         {collapsed ? (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         ) : (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         )}
         <span className="min-w-0 truncate font-medium">{group.label}</span>
         <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
@@ -556,7 +556,7 @@ function InlineEpicStateCell({
   const [open, setOpen] = useState(false);
   const state = entry.epic.epic_state_id ? epicStateMap.get(entry.epic.epic_state_id) : null;
   const stateCfg = state ? STATE_TYPE_ICON_CONFIG[state.state_type as StateType] : null;
-  const StateIcon = stateCfg?.icon ?? Minus;
+  const StateIcon = stateCfg?.icon ?? MinusSignIcon;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -588,7 +588,7 @@ function InlineEpicStateCell({
               <CommandGroup>
                 {epicStates.map((epicState) => {
                   const optionCfg = STATE_TYPE_ICON_CONFIG[epicState.state_type as StateType];
-                  const OptionIcon = optionCfg?.icon ?? Minus;
+                  const OptionIcon = optionCfg?.icon ?? MinusSignIcon;
                   return (
                     <CommandItem
                       key={epicState.id}
@@ -604,7 +604,7 @@ function InlineEpicStateCell({
                       <OptionIcon className={`h-3.5 w-3.5 shrink-0 ${optionCfg?.color ?? 'text-muted-foreground'}`} />
                       <span className="truncate">{epicState.name}</span>
                       {entry.epic.epic_state_id === epicState.id ? (
-                        <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                        <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />
                       ) : null}
                     </CommandItem>
                   );
@@ -670,7 +670,7 @@ function InlineEpicHealthCell({
                     }}
                   >
                     <span className={healthConfig[option].color}>{healthConfig[option].label}</span>
-                    {health === option ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
+                    {health === option ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -718,7 +718,7 @@ function InlineEpicOwnerCell({
           </>
         ) : (
           <>
-            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            <UserAdd01Icon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-muted-foreground">Assign</span>
           </>
         );
@@ -785,7 +785,7 @@ function InlineEpicTeamCell({
                     }}
                   >
                     <span className="truncate">{team.name}</span>
-                    {entry.epic.team_id === team.id ? <Check className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
+                    {entry.epic.team_id === team.id ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -824,7 +824,7 @@ function InlineEpicDateCell({
             setOpen(true);
           }}
         >
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+          <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-muted-foreground">
             {selected ? format(selected, 'MMM d') : emptyLabel}
           </span>
@@ -1118,7 +1118,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 280,
         cell: (info) => (
           <div className="flex max-w-full items-center gap-2.5 text-sm">
-            <Layers className="h-4 w-4 shrink-0 text-violet-500" />
+            <Layers01Icon className="h-4 w-4 shrink-0 text-violet-500" />
             <span className="min-w-0 truncate font-normal">{info.getValue()}</span>
           </div>
         ),
@@ -1147,7 +1147,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           const stateCfg = state
             ? STATE_TYPE_ICON_CONFIG[state.state_type as StateType]
             : null;
-          const StateIcon = stateCfg?.icon ?? Minus;
+          const StateIcon = stateCfg?.icon ?? MinusSignIcon;
           return (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <StateIcon className={`h-3.5 w-3.5 shrink-0 ${stateCfg?.color ?? 'text-muted-foreground'}`} />
@@ -1177,7 +1177,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 90,
         cell: (info) => (
           <div className="flex items-center gap-1.5 text-xs">
-            <Sun className="h-3.5 w-3.5 text-amber-500" />
+            <Sun01Icon className="h-3.5 w-3.5 text-amber-500" />
             <span>{completionPct(info.row.original)}%</span>
           </div>
         ),
@@ -1226,7 +1226,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               <span className="truncate text-xs text-muted-foreground">{ownerName}</span>
             </div>
           ) : (
-            <User className="h-4 w-4 text-muted-foreground/50" />
+            <UserIcon className="h-4 w-4 text-muted-foreground/50" />
           );
         },
       }),
@@ -1252,7 +1252,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               {objectives.map((o) => o.name).join(', ')}
             </span>
           ) : (
-            <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+            <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
           );
         },
       }),
@@ -1273,11 +1273,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               {info.row.original.epic.deadline ? (
                 <>
-                  <CalendarDays className="h-3.5 w-3.5" />
+                  <Calendar03Icon className="h-3.5 w-3.5" />
                   <span>{format(parseISO(info.row.original.epic.deadline), 'MMM d')}</span>
                 </>
               ) : (
-                <Minus className="h-3.5 w-3.5" />
+                <MinusSignIcon className="h-3.5 w-3.5" />
               )}
             </div>
           )
@@ -1297,7 +1297,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             />
           ) : (
             <span className="truncate text-xs text-muted-foreground">
-              {findTeamName(info.row.original.epic.team_id) || <Minus className="h-3.5 w-3.5" />}
+              {findTeamName(info.row.original.epic.team_id) || <MinusSignIcon className="h-3.5 w-3.5" />}
             </span>
           )
         ),
@@ -1319,11 +1319,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               {info.row.original.epic.planned_start_date ? (
                 <>
-                  <CalendarDays className="h-3.5 w-3.5" />
+                  <Calendar03Icon className="h-3.5 w-3.5" />
                   <span>{format(parseISO(info.row.original.epic.planned_start_date), 'MMM d')}</span>
                 </>
               ) : (
-                <Minus className="h-3.5 w-3.5" />
+                <MinusSignIcon className="h-3.5 w-3.5" />
               )}
             </div>
           )
@@ -1351,7 +1351,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
                   </span>
                 ))
               ) : (
-                <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+                <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
               )}
             </div>
           )
@@ -1555,7 +1555,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         ) : <div />}
         {showHeaderActions && canEdit ? (
           <Button size="sm" className="gap-2" onClick={() => openCreate('epic', { teamId })}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Create Epic
           </Button>
         ) : null}
@@ -1568,16 +1568,56 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
+        <div
+          className="ui-divider-bottom-fade relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={(el) => {
+            if (!el) return;
+            const update = () => {
+              const sl = el.scrollLeft;
+              const sr = el.scrollWidth - el.clientWidth - sl;
+              el.style.maskImage =
+                sl > 2 && sr > 2
+                  ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+                  : sl > 2
+                    ? 'linear-gradient(to right, transparent, black 24px)'
+                    : sr > 2
+                      ? 'linear-gradient(to left, transparent, black 24px)'
+                      : 'none';
+            };
+            el.addEventListener('scroll', update, { passive: true });
+            const ro = new ResizeObserver(update);
+            ro.observe(el);
+            update();
+          }}
+        >
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
-          <span className="text-xs text-muted-foreground">Group by:</span>
+          {activeFilterKeys.size > 0 ? (
+            <>
+              {filterDefinitions
+                .filter((definition) => activeFilterKeys.has(definition.key))
+                .map((definition) => (
+                  <EpicFilterPill
+                    key={definition.key}
+                    definition={definition}
+                    selected={filters[definition.key] ?? []}
+                    onToggle={(value) => handleToggleFilterValue(definition.key, value)}
+                    onRemove={() => handleRemoveFilter(definition.key)}
+                  />
+                ))}
+              <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={handleClearFilters}>
+                Clear all
+              </Button>
+              <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+            </>
+          ) : null}
+          <span className="shrink-0 text-xs text-muted-foreground">Group by:</span>
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-            <SelectTrigger className="h-7 w-[160px] text-xs">
+            <SelectTrigger className="h-7 w-[160px] shrink-0 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1592,18 +1632,18 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="h-7 shrink-0 px-2 text-xs"
               onClick={() => handleSetAllGroupsCollapsed(!areAllGroupsCollapsed)}
             >
               {areAllGroupsCollapsed ? 'Expand all' : 'Collapse all'}
             </Button>
           ) : null}
-          <span className="text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
           </span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search epics…"
                 value={search}
@@ -1621,29 +1661,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         </div>
       ) : null}
 
-      {activeFilterKeys.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {filterDefinitions
-            .filter((definition) => activeFilterKeys.has(definition.key))
-            .map((definition) => (
-              <EpicFilterPill
-                key={definition.key}
-                definition={definition}
-                selected={filters[definition.key] ?? []}
-                onToggle={(value) => handleToggleFilterValue(definition.key, value)}
-                onRemove={() => handleRemoveFilter(definition.key)}
-              />
-            ))}
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={handleClearFilters}>
-            Clear all
-          </Button>
-        </div>
-      ) : null}
-
       {loading ? null : epics.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <Layers className="h-7 w-7 text-violet-500" />
+            <Layers01Icon className="h-7 w-7 text-violet-500" />
           </div>
           <h3 className="text-lg font-semibold mb-1.5">Create your first epic</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
@@ -1653,14 +1674,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             className="gap-2 mb-8"
             onClick={() => openCreate('epic', { teamId })}
           >
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Create Epic
           </Button>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {[
-              { icon: Layers, title: 'Group tasks', desc: 'Organize related work items under a single initiative' },
-              { icon: TrendingUp, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
-              { icon: Target, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
+              { icon: Layers01Icon, title: 'Group tasks', desc: 'Organize related work items under a single initiative' },
+              { icon: ChartIncreaseIcon, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
+              { icon: Target01Icon, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
             ].map((item) => (
               <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
                 <item.icon className="h-5 w-5 text-muted-foreground mb-3" />

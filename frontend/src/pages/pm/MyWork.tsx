@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { differenceInDays, parseISO, format } from 'date-fns';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
-  AlertCircle,
-  BarChart3,
-  CalendarDays,
-  CircleDot,
-  ClipboardCheck,
-  Clock,
-  PenLine,
-  Timer,
-  Users,
-} from 'lucide-react';
+  AlertCircleIcon,
+  ChartColumnIcon,
+  Calendar03Icon,
+  Clock01Icon,
+  PencilEdit02Icon,
+  Timer01Icon,
+  UserGroupIcon,
+  ClipboardIcon,
+  RecordIcon,
+} from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
@@ -209,10 +209,10 @@ export function MyWorkPage() {
       {/* Summary cards */}
       {tasks.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-          <SummaryCard icon={CircleDot} iconColor="text-amber-500" label="In progress" value={counts.inProgress} />
-          <SummaryCard icon={Clock} iconColor="text-blue-500" label="Due soon" value={counts.dueSoon} />
-          <SummaryCard icon={Timer} iconColor="text-red-500" label="Overdue" value={counts.overdue} />
-          <SummaryCard icon={AlertCircle} iconColor="text-orange-500" label="Blocked" value={counts.blocked} />
+          <SummaryCard icon={RecordIcon} iconColor="text-amber-500" label="In progress" value={counts.inProgress} />
+          <SummaryCard icon={Clock01Icon} iconColor="text-blue-500" label="Due soon" value={counts.dueSoon} />
+          <SummaryCard icon={Timer01Icon} iconColor="text-red-500" label="Overdue" value={counts.overdue} />
+          <SummaryCard icon={AlertCircleIcon} iconColor="text-orange-500" label="Blocked" value={counts.blocked} />
         </div>
       )}
 
@@ -244,7 +244,7 @@ function NoTeamEmptyState() {
   return (
     <div className="flex flex-col items-center py-16 px-4">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">
-        <Users className="h-7 w-7 text-muted-foreground" />
+        <UserGroupIcon className="h-7 w-7 text-muted-foreground" />
       </div>
       <h3 className="text-base font-medium mb-1">No team assigned</h3>
       <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -257,9 +257,9 @@ function NoTeamEmptyState() {
 // ── Empty state ───────────────────────────────────────────────────
 
 const WORKFLOW_STEPS = [
-  { icon: PenLine, title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks' },
-  { icon: Users, title: 'Assign to team', description: 'Set an owner, priority, and deadline for each task' },
-  { icon: BarChart3, title: 'Track progress', description: 'Tasks move through workflow states as work gets done' },
+  { icon: PencilEdit02Icon, title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks' },
+  { icon: UserGroupIcon, title: 'Assign to team', description: 'Set an owner, priority, and deadline for each task' },
+  { icon: ChartColumnIcon, title: 'Track progress', description: 'Tasks move through workflow states as work gets done' },
 ];
 
 function MyWorkEmptyState({ mode }: { mode: Mode }) {
@@ -267,7 +267,7 @@ function MyWorkEmptyState({ mode }: { mode: Mode }) {
     <div className="flex flex-col items-center py-16 px-4">
       {/* Hero */}
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 mb-5">
-        <ClipboardCheck className="h-7 w-7 text-blue-500" />
+        <ClipboardIcon className="h-7 w-7 text-blue-500" />
       </div>
       <h3 className="text-base font-medium mb-1">
         {mode === 'assigned' ? 'No tasks assigned to you yet' : 'No tasks requested by you yet'}
@@ -384,7 +384,7 @@ function TaskRow({ task, onClick, teamName }: {
       className="flex items-center gap-2.5 px-2 py-2.5 w-full text-left rounded-md hover:bg-muted/40 transition-colors group"
     >
       <span className="text-xs text-muted-foreground/50 font-mono shrink-0 w-8 text-right tabular-nums">
-        {task.display_id}
+        {task.task_key}
       </span>
 
       <span className={`text-sm truncate flex-1 min-w-0 ${task.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>
@@ -421,7 +421,7 @@ function TaskRow({ task, onClick, teamName }: {
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={`flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium shrink-0 ${DEADLINE_PILL_STYLE[deadlineInfo.status]}`}>
-                <CalendarDays className="h-3 w-3" />
+                <Calendar03Icon className="h-3 w-3" />
                 <span className="hidden sm:inline">{deadlineInfo.label}</span>
               </span>
             </TooltipTrigger>

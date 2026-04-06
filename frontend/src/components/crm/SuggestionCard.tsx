@@ -1,15 +1,15 @@
-import { Check, X, DollarSign, TrendingUp, AlertTriangle, Mail, Lightbulb } from 'lucide-react'
+import { Tick01Icon, Cancel01Icon, DollarCircleIcon, ChartIncreaseIcon, Alert01Icon, Mail01Icon, BulbIcon } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { CRMSuggestion } from '@/lib/crmTypes'
 
-const typeConfig: Record<string, { label: string; icon: typeof DollarSign; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  deal_create: { label: 'New Deal', icon: DollarSign, variant: 'default' },
-  deal_advance: { label: 'Stage Advance', icon: TrendingUp, variant: 'secondary' },
-  follow_up: { label: 'Follow Up', icon: Mail, variant: 'outline' },
-  risk_alert: { label: 'Risk Alert', icon: AlertTriangle, variant: 'destructive' },
-  enrichment: { label: 'Enrichment', icon: Lightbulb, variant: 'outline' },
+const typeConfig: Record<string, { label: string; icon: typeof DollarCircleIcon; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  deal_create: { label: 'New Deal', icon: DollarCircleIcon, variant: 'default' },
+  deal_advance: { label: 'Stage Advance', icon: ChartIncreaseIcon, variant: 'secondary' },
+  follow_up: { label: 'Follow Up', icon: Mail01Icon, variant: 'outline' },
+  risk_alert: { label: 'Risk Alert', icon: Alert01Icon, variant: 'destructive' },
+  enrichment: { label: 'Enrichment', icon: BulbIcon, variant: 'outline' },
 }
 
 function confidenceColor(confidence: number): string {
@@ -33,7 +33,7 @@ interface SuggestionCardProps {
 }
 
 export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, isDismissing }: SuggestionCardProps) {
-  const config = typeConfig[suggestion.suggestion_type] ?? { label: suggestion.suggestion_type, icon: Lightbulb, variant: 'outline' as const }
+  const config = typeConfig[suggestion.suggestion_type] ?? { label: suggestion.suggestion_type, icon: BulbIcon, variant: 'outline' as const }
   const Icon = config.icon
   const ctx = (suggestion.context || {}) as Record<string, unknown>
 
@@ -105,7 +105,7 @@ export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, i
                 onClick={() => onAccept(suggestion.id)}
                 disabled={isAccepting || isDismissing}
               >
-                <Check className="h-3 w-3" />
+                <Tick01Icon className="h-3 w-3" />
                 Approve
               </Button>
               <Button
@@ -115,7 +115,7 @@ export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, i
                 onClick={() => onDismiss(suggestion.id)}
                 disabled={isAccepting || isDismissing}
               >
-                <X className="h-3 w-3" />
+                <Cancel01Icon className="h-3 w-3" />
                 Dismiss
               </Button>
             </div>

@@ -8,7 +8,7 @@ import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Loader2, Send, ImageIcon, Paperclip, X } from 'lucide-react'
+import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } from '@/lib/icons'
 import { toast } from 'sonner'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
@@ -224,7 +224,7 @@ export function CommentEditor({
           HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
-      Placeholder.configure({ placeholder }),
+      Placeholder.configure({ placeholder, showOnlyCurrent: false, emptyNodeClass: 'is-empty', emptyEditorClass: 'is-editor-empty' }),
       MentionHighlight,
     ]
     if (uploadConfig) {
@@ -238,7 +238,7 @@ export function CommentEditor({
     extensions,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-sm',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px]',
       },
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false
@@ -431,7 +431,7 @@ export function CommentEditor({
                   onClick={() => onRemoveUploadedFile(f.id)}
                   className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
                 >
-                  <X className="h-3 w-3" />
+                  <Cancel01Icon className="h-3 w-3" />
                 </button>
               </div>
             )
@@ -459,7 +459,7 @@ export function CommentEditor({
                 input.click()
               }}
             >
-              <ImageIcon className="h-3.5 w-3.5" />
+              <Image01Icon className="h-3.5 w-3.5" />
             </button>
           )}
           {onFileSelect && (
@@ -469,7 +469,7 @@ export function CommentEditor({
               title="Attach file"
               onClick={onFileSelect}
             >
-              <Paperclip className="h-3.5 w-3.5" />
+              <AttachmentIcon className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -480,9 +480,9 @@ export function CommentEditor({
           onClick={handleSubmit}
         >
           {loading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <Send className="h-3.5 w-3.5" />
+            <SentIcon className="h-3.5 w-3.5" />
           )}
         </button>
       </div>

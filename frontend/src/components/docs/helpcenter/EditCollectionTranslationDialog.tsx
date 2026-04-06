@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpenIcon } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -60,7 +60,7 @@ export function EditCollectionTranslationDialog({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderOpen className="h-4 w-4 text-primary" />
+            <FolderOpenIcon className="h-4 w-4 text-primary" />
             {getHelpcenterLocaleLabel(locale)} collection translation
           </DialogTitle>
           <DialogDescription>

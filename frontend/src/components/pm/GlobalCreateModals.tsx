@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  CalendarDays,
-  Hash,
-  Layers,
-  Loader2,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+  Calendar03Icon,
+  Loading01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+  HashtagIcon,
+  Layers01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -116,9 +116,10 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const descriptionRef = useRef('');
+  const [meta, setMeta] = useState({
     stateId: '',
     teamId: storeTeamId ?? teams[0]?.id ?? '',
     ownerMemberId: '',
@@ -131,16 +132,17 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const selectedTeam = useMemo(
-    () => teams.find((team) => team.id === form.teamId),
-    [teams, form.teamId],
+    () => teams.find((team) => team.id === meta.teamId),
+    [teams, meta.teamId],
   );
   const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
   const mentionTeams = useMemo(
-    () => filterMentionTeams(teams, form.teamId ? [form.teamId] : []),
-    [teams, form.teamId],
+    () => filterMentionTeams(teams, meta.teamId ? [meta.teamId] : []),
+    [teams, meta.teamId],
   );
 
   useEffect(() => {
+    if (!showPlanningRepository) return;
     let cancelled = false;
 
     async function loadRepositories() {
@@ -154,29 +156,29 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     return () => {
       cancelled = true;
     };
-  }, [workspaceId]);
+  }, [workspaceId, showPlanningRepository]);
 
   const cleanupInlineDraftUploads = useCallback(async () => {
-    const attachmentIds = extractInlineAttachmentIds(form.description);
+    const attachmentIds = extractInlineAttachmentIds(descriptionRef.current);
     if (attachmentIds.length === 0) return;
     await Promise.allSettled(
       attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
     );
-  }, [form.description, workspaceId]);
+  }, [workspaceId]);
 
   const create = async () => {
-    if (!form.name.trim() || !form.teamId || submitting || descriptionPendingUploads > 0) return;
+    if (!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
     const { error: createError } = await pmEpicService.create({
       workspace_id: workspaceId,
-      name: form.name.trim(),
-      description: form.description.trim() || undefined,
-      epic_state_id: form.stateId || undefined,
-      team_id: form.teamId || undefined,
-      owner_member_id: form.ownerMemberId || undefined,
-      planned_start_date: form.startDate || undefined,
-      deadline: form.targetDate || undefined,
-      planning_repository_id: showPlanningRepository ? (form.planningRepositoryId || undefined) : undefined,
+      name: name.trim(),
+      description: description.trim() || undefined,
+      epic_state_id: meta.stateId || undefined,
+      team_id: meta.teamId || undefined,
+      owner_member_id: meta.ownerMemberId || undefined,
+      planned_start_date: meta.startDate || undefined,
+      deadline: meta.targetDate || undefined,
+      planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
     });
     setSubmitting(false);
     if (createError) {
@@ -187,7 +189,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     onClose();
   };
 
-  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '';
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -210,7 +212,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create epic</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -225,8 +227,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               <Input
                 autoFocus
                 aria-label="Epic title"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Tab' && !e.shiftKey) {
                     e.preventDefault();
@@ -239,8 +241,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               />
               <div className="mt-4">
                 <TiptapEditor
-                  content={form.description}
-                  onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+                  content={description}
+                  onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
                   className="border-transparent shadow-none"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
@@ -256,9 +258,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 Epics are collections of tasks that together represent a major initiative or feature.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Team *</span>
-                <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
+                <Select value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
                     <SelectValue placeholder="Select team" />
                   </SelectTrigger>
@@ -269,15 +271,15 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </SelectContent>
                 </Select>
 
-                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owner</span>
                 <MemberPickerPopover
-                  value={form.ownerMemberId || '__none__'}
+                  value={meta.ownerMemberId || '__none__'}
                   members={assignableMembers}
                   noneLabel="No owner"
-                  onChange={(value) => setForm((f) => ({ ...f, ownerMemberId: value === '__none__' ? '' : value }))}
+                  onChange={(value) => setMeta((m) => ({ ...m, ownerMemberId: value === '__none__' ? '' : value }))}
                   renderTrigger={() => {
-                    const selectedMember = findAssignableMember(assignableMembers, form.ownerMemberId);
+                    const selectedMember = findAssignableMember(assignableMembers, meta.ownerMemberId);
                     return (
                       <>
                         {selectedMember ? (
@@ -294,9 +296,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   }}
                 />
 
-                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">State</span>
-                <Select value={form.stateId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, stateId: v === '__none__' ? '' : v }))}>
+                <Select value={meta.stateId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, stateId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
@@ -308,21 +310,41 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </SelectContent>
                 </Select>
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
-                  value={form.startDate}
-                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  value={meta.startDate}
+                  onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: meta.targetDate,
+                    onChange: (v) => setMeta((m) => ({ ...m, targetDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
-                  value={form.targetDate}
-                  onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
+                  value={meta.startDate}
+                  onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: meta.targetDate,
+                    onChange: (v) => setMeta((m) => ({ ...m, targetDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -332,11 +354,11 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   <>
                     <Separator className="col-span-3 my-1" />
 
-                    <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                    <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                     <span className="text-xs text-muted-foreground self-center">Plan repo</span>
                     <Select
-                      value={form.planningRepositoryId || '__none__'}
-                      onValueChange={(v) => setForm((f) => ({ ...f, planningRepositoryId: v === '__none__' ? '' : v }))}
+                      value={meta.planningRepositoryId || '__none__'}
+                      onValueChange={(v) => setMeta((m) => ({ ...m, planningRepositoryId: v === '__none__' ? '' : v }))}
                     >
                       <SelectTrigger className="min-h-8 h-auto border-0 bg-transparent px-1.5 py-1 shadow-none text-xs hover:bg-accent [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:break-words [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:leading-tight">
                         <SelectValue placeholder="Not configured" />
@@ -359,8 +381,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+            <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Epic'}
             </Button>
           </div>
@@ -612,7 +634,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 No thanks
               </Button>
               <Button size="sm" onClick={enableAutomations} disabled={enablingAutomation || dismissingAutomation}>
-                {enablingAutomation ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                {enablingAutomation ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                 {enablingAutomation ? 'Enabling...' : 'Enable'}
               </Button>
             </div>
@@ -645,7 +667,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create sprint</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -691,7 +713,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 Sprints are time-boxed periods for planning and tracking work.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Team *</span>
                 <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -704,21 +726,41 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   </SelectContent>
                 </Select>
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.endDate,
+                    onChange: (v) => setForm((f) => ({ ...f, endDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">End date</span>
                 <DatePicker
-                  value={form.endDate}
-                  onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.endDate,
+                    onChange: (v) => setForm((f) => ({ ...f, endDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -733,7 +775,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
               Discard
             </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
           </div>
@@ -889,7 +931,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create objective</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <X className="h-4 w-4" />
+              <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
 
@@ -972,7 +1014,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 Objectives define high-level goals. Tactical objectives track linked Epics; Strategic objectives combine Key Results and Epics.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">State</span>
                 <Select value={form.state} onValueChange={(v) => setForm((f) => ({ ...f, state: v as ObjectiveState }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
@@ -985,7 +1027,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   </SelectContent>
                 </Select>
 
-                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Teams</span>
                 <MultiSelectPopover
                   items={teams.map((t) => ({ id: t.id, name: t.name }))}
@@ -994,7 +1036,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   placeholder="Select teams"
                 />
 
-                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owners</span>
                 <MultiMemberPickerPopover
                   values={form.ownerMemberIds}
@@ -1030,21 +1072,41 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   contentClassName="w-[260px]"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Start date</span>
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.targetDate,
+                    onChange: (v) => setForm((f) => ({ ...f, targetDate: v })),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
                 />
 
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Target date</span>
                 <DatePicker
-                  value={form.targetDate}
-                  onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.targetDate,
+                    onChange: (v) => setForm((f) => ({ ...f, targetDate: v })),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
@@ -1059,7 +1121,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
               Discard
             </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}
             </Button>
           </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { ExternalLink, Trash2 } from 'lucide-react';
+import { LinkSquare01Icon, Delete01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -76,7 +76,7 @@ export function VideoEmbedNodeView({ node, deleteNode, editor, getPos }: NodeVie
                 onClick={() => window.open(sourceUrl, '_blank', 'noopener,noreferrer')}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <LinkSquare01Icon className="h-3.5 w-3.5" />
               </button>
             </QuickTooltip>
             <div className="mx-0.5 h-4 w-px bg-border" />
@@ -86,7 +86,7 @@ export function VideoEmbedNodeView({ node, deleteNode, editor, getPos }: NodeVie
                 onClick={() => deleteNode()}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-destructive cursor-pointer"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Delete01Icon className="h-3.5 w-3.5" />
               </button>
             </QuickTooltip>
           </div>

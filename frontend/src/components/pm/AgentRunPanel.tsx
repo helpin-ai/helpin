@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, Play } from 'lucide-react';
+import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -78,10 +78,6 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       ?? taskRunnableAgents[0]
       ?? null;
   }, [assignedAgentId, taskRunnableAgents]);
-  const selectedAgent = useMemo(
-    () => taskRunnableAgents.find((agent) => agent.id === selectedAgentId) ?? null,
-    [selectedAgentId, taskRunnableAgents],
-  );
 
   useEffect(() => {
     if (!selectedAgentId && preferredAgent) {
@@ -131,26 +127,28 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
 
   return (
     <div className="mt-6">
-      <div className="mb-3 space-y-3">
-        <div className="flex items-center gap-2">
-          {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-6 w-6" /> : <Bot className="h-4 w-4 text-muted-foreground" />}
-          <h3 className="text-sm font-semibold">Agent Runs</h3>
-        </div>
+      <div className="mb-3 space-y-2">
+        {runs.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent Runs</h3>
+          </div>
+        )}
 
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Start with</Label>
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label className="text-[11px] text-muted-foreground">Start with</Label>
             <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
-              <SelectTrigger>
-                <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select a planner or coder'} />
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">No agent selected</SelectItem>
+                <SelectItem value="__none__" className="text-xs">No agent selected</SelectItem>
                 {taskRunnableAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    <div className="flex items-center gap-2">
-                      <AgentAvatar agent={agent} className="h-5 w-5" />
-                      <span>{agent.is_system ? `${agent.name} (System)` : agent.name}</span>
+                  <SelectItem key={agent.id} value={agent.id} className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <AgentAvatar agent={agent} className="h-4 w-4" />
+                      <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
                     </div>
                   </SelectItem>
                 ))}
@@ -162,10 +160,10 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
             variant="outline"
             onClick={handleRunAgent}
             disabled={triggering || loadingAgents || !selectedAgentId}
-            className="gap-1.5 md:min-w-40"
+            className="h-7 gap-1 px-2.5 text-xs"
           >
-            {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Start Run
+            {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
+            Run
           </Button>
         </div>
       </div>

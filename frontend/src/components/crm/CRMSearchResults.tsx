@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Users, Building2, DollarSign } from 'lucide-react';
+import { Search01Icon, UserGroupIcon, Building03Icon, DollarCircleIcon } from '@/lib/icons';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,7 +22,7 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
   return (
     <div className="space-y-4">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search contacts, companies, deals..."
           className="pl-9"
@@ -41,7 +41,7 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <Users className="h-4 w-4" />
+                  <UserGroupIcon className="h-4 w-4" />
                   Contacts
                   <Badge variant="secondary" className="text-xs">{results.contacts.length}</Badge>
                 </CardTitle>
@@ -65,7 +65,7 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <Building2 className="h-4 w-4" />
+                  <Building03Icon className="h-4 w-4" />
                   Companies
                   <Badge variant="secondary" className="text-xs">{results.companies.length}</Badge>
                 </CardTitle>
@@ -98,7 +98,7 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <DollarSign className="h-4 w-4" />
+                  <DollarCircleIcon className="h-4 w-4" />
                   Deals
                   <Badge variant="secondary" className="text-xs">{results.deals.length}</Badge>
                 </CardTitle>

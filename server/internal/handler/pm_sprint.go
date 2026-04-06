@@ -147,3 +147,23 @@ func (h *PMSprintHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, tasks)
 }
+
+// ListPreviewTasks handles GET /api/pm/sprints/{id}/preview-tasks.
+func (h *PMSprintHandler) ListPreviewTasks(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+	tasks, err := h.sprintService.ListPreviewTasksPage(r.Context(), id, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if tasks == nil {
+		tasks = &model.PaginatedResponse{
+			Data:       []model.SprintPlanningTaskPreview{},
+			Page:       pagination.Page,
+			PerPage:    pagination.PerPage,
+			TotalPages: 0,
+		}
+	}
+	writeJSON(w, http.StatusOK, tasks)
+}

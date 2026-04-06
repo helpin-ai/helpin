@@ -1,4 +1,4 @@
-import { FileCode2, GitBranch, Loader2 } from 'lucide-react';
+import { SourceCodeIcon, GitBranchIcon, Loading01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,7 @@ export function CodingRepoPane({
     <section className="flex h-full min-h-[15rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <FileCode2 className="h-3.5 w-3.5" />
+          <SourceCodeIcon className="h-3.5 w-3.5" />
           Repository cockpit
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -32,7 +32,7 @@ export function CodingRepoPane({
           </Badge>
           {repo?.branch ? (
             <Badge variant="outline" className="gap-1 text-[10px]">
-              <GitBranch className="h-3 w-3" />
+              <GitBranchIcon className="h-3 w-3" />
               {repo.branch}
             </Badge>
           ) : null}
@@ -84,7 +84,7 @@ export function CodingRepoPane({
 
           {diffLoading ? (
             <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loading01Icon className="h-4 w-4 animate-spin" />
               Loading diff…
             </div>
           ) : diff?.diff ? (

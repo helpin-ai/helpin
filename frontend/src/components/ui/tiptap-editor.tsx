@@ -2,25 +2,31 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TaskList } from '@tiptap/extension-task-list';
+import { TaskItem } from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import {
-  Bold,
-  Code2,
-  FileCode2,
-  Heading2,
-  Heading3,
-  ImageIcon,
-  Italic,
-  Link2,
-  List,
-  ListOrdered,
-  Minus,
-  Quote,
-  Strikethrough,
-} from 'lucide-react';
+  CheckListIcon,
+  Heading02Icon,
+  Heading03Icon,
+  Image01Icon,
+  Link01Icon,
+  Menu01Icon,
+  MinusSignIcon,
+  QuoteDownIcon,
+  SourceCodeIcon,
+  SourceCodeIcon as FileCode2Icon,
+  TextBoldIcon,
+  TextItalicIcon,
+  TextStrikethroughIcon,
+} from '@/lib/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload';
@@ -44,6 +50,8 @@ interface TiptapEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
+  /** Use compact spacing (for task descriptions) */
+  compact?: boolean;
 }
 
 function ToolbarButton({
@@ -79,7 +87,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady, compact }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -194,6 +202,12 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         emptyNodeClass: 'is-empty',
         emptyEditorClass: 'is-editor-empty',
       }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TaskList,
+      TaskItem.configure({ nested: true }),
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -225,7 +239,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+        class: `prose prose-sm dark:prose-invert max-w-none focus:outline-none ${compact ? 'min-h-[80px] px-2.5 py-1.5 tiptap-compact' : 'min-h-[120px] px-4 py-3'}`,
       },
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false;
@@ -405,28 +419,28 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
           active={editor.isActive('bold')}
           title="Bold"
         >
-          <Bold className="h-4 w-4" />
+          <TextBoldIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleItalic().run()}
           active={editor.isActive('italic')}
           title="Italic"
         >
-          <Italic className="h-4 w-4" />
+          <TextItalicIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleStrike().run()}
           active={editor.isActive('strike')}
           title="Strikethrough"
         >
-          <Strikethrough className="h-4 w-4" />
+          <TextStrikethroughIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCode().run()}
           active={editor.isActive('code')}
           title="Inline code"
         >
-          <Code2 className="h-4 w-4" />
+          <SourceCodeIcon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-1 h-4 w-px bg-border/60" />
@@ -436,58 +450,58 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
           active={editor.isActive('heading', { level: 2 })}
           title="Heading 2"
         >
-          <Heading2 className="h-4 w-4" />
+          <Heading02Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           active={editor.isActive('heading', { level: 3 })}
           title="Heading 3"
         >
-          <Heading3 className="h-4 w-4" />
+          <Heading03Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive('bulletList')}
           title="Bullet list"
         >
-          <List className="h-4 w-4" />
+          <Menu01Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           active={editor.isActive('orderedList')}
           title="Numbered list"
         >
-          <ListOrdered className="h-4 w-4" />
+          <CheckListIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           active={editor.isActive('blockquote')}
           title="Quote"
         >
-          <Quote className="h-4 w-4" />
+          <QuoteDownIcon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           active={editor.isActive('codeBlock')}
           title="Code block"
         >
-          <FileCode2 className="h-4 w-4" />
+          <FileCode2Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
           title="Horizontal rule"
         >
-          <Minus className="h-4 w-4" />
+          <MinusSignIcon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-1 h-4 w-px bg-border/60" />
 
         <ToolbarButton onClick={addLink} active={editor.isActive('link')} title="Link">
-          <Link2 className="h-4 w-4" />
+          <Link01Icon className="h-4 w-4" />
         </ToolbarButton>
         {uploadConfig && (
           <ToolbarButton onClick={addImage} title="Image">
-            <ImageIcon className="h-4 w-4" />
+            <Image01Icon className="h-4 w-4" />
           </ToolbarButton>
         )}
       </div>

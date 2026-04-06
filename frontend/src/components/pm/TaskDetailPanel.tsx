@@ -1,36 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
-  Archive,
-  ArrowRightLeft,
-  Bot,
-  CalendarDays,
-  Check,
-  CheckSquare,
-  ChevronRight,
-  Gauge,
-  GitBranch,
-  Hash,
-  Hexagon,
-  Layers,
-  LayoutGrid,
-  Link2,
-  Loader2,
-  Maximize2,
-  MoreVertical,
-  Paperclip,
-  Pencil,
-  Play,
-  RefreshCw,
-  ShieldAlert,
-  Tag,
-  Target,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+  ArchiveIcon,
+  ArrowLeftRightIcon,
+  BotIcon,
+  Calendar03Icon,
+  DashboardSpeed01Icon,
+  HashtagIcon,
+  HexagonIcon,
+  Layers01Icon,
+  LayoutGridIcon,
+  Tick01Icon,
+  CheckmarkSquare02Icon,
+  ArrowRight01Icon,
+  GitBranchIcon,
+  Link01Icon,
+  Loading01Icon,
+  Maximize01Icon,
+  Message01Icon,
+  MoreVerticalIcon,
+  AttachmentIcon,
+  PencilEdit01Icon,
+  PlayIcon,
+  ArrowReloadHorizontalIcon,
+  Shield02Icon,
+  Tag01Icon,
+  Target01Icon,
+  Upload01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+} from '@/lib/icons';
 import {
   PRIORITY_CONFIG,
   PriorityIcon,
@@ -66,7 +69,7 @@ import {
 import { TaskGitPanel } from '@/components/pm/TaskGitPanel';
 import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
-import { cn, getInitials } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -199,10 +202,6 @@ function formatRelativeTime(iso: string) {
   }
 }
 
-function userInitials(user?: { full_name?: string; email?: string } | null): string {
-  return getInitials(user?.full_name || user?.email);
-}
-
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
@@ -230,14 +229,72 @@ type TimelineItem =
   | { kind: 'activity'; data: ActivityLogEntry; time: string }
   | { kind: 'comment'; data: CommentWithAuthor; time: string };
 
-function TimelineEntry({ item }: { item: TimelineItem }) {
+const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
+  workflow_state_id: { icon: HashtagIcon, color: 'text-blue-500' },
+  owner_member_id: { icon: UserIcon, color: 'text-violet-500' },
+  team_id: { icon: UserGroupIcon, color: 'text-teal-500' },
+  priority: { icon: DashboardSpeed01Icon, color: 'text-orange-500' },
+  sprint_id: { icon: HexagonIcon, color: 'text-green-500' },
+  epic_id: { icon: Layers01Icon, color: 'text-purple-500' },
+  estimate: { icon: LayoutGridIcon, color: 'text-amber-500' },
+  deadline: { icon: Calendar03Icon, color: 'text-red-500' },
+  task_type: { icon: Tag01Icon, color: 'text-indigo-500' },
+  labels: { icon: Tag01Icon, color: 'text-pink-500' },
+  severity: { icon: Shield02Icon, color: 'text-red-500' },
+  name: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
+  description: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
+};
+
+/** Map raw action strings like "comment_added" to readable labels. */
+const ACTION_LABELS: Record<string, string> = {
+  comment_added: 'added a comment',
+  comment_updated: 'edited a comment',
+  comment_deleted: 'deleted a comment',
+  attachment_added: 'attached a file',
+  attachment_removed: 'removed an attachment',
+  task_created: 'created this task',
+  created: 'created this task',
+  label_added: 'added a label',
+  label_removed: 'removed a label',
+};
+
+function formatAction(action?: string): string {
+  if (!action) return '';
+  return ACTION_LABELS[action] ?? action.replace(/_/g, ' ');
+}
+
+function getActivityIcon(action?: string, fieldName?: string): { icon: React.ElementType; color: string } {
+  if (fieldName && ACTIVITY_ICON_MAP[fieldName]) return ACTIVITY_ICON_MAP[fieldName];
+  if (action?.includes('comment')) return { icon: Message01Icon, color: 'text-blue-500' };
+  if (action?.includes('attachment') || action?.includes('file')) return { icon: AttachmentIcon, color: 'text-muted-foreground' };
+  if (action?.includes('label')) return { icon: Tag01Icon, color: 'text-pink-500' };
+  if (action?.includes('moved') || action?.includes('state')) return { icon: HashtagIcon, color: 'text-blue-500' };
+  if (action?.includes('priority')) return { icon: DashboardSpeed01Icon, color: 'text-orange-500' };
+  if (action?.includes('owner') || action?.includes('assigned') || action?.includes('requester')) return { icon: UserIcon, color: 'text-violet-500' };
+  if (action?.includes('team')) return { icon: UserGroupIcon, color: 'text-teal-500' };
+  if (action?.includes('sprint')) return { icon: HexagonIcon, color: 'text-green-500' };
+  if (action?.includes('epic')) return { icon: Layers01Icon, color: 'text-purple-500' };
+  if (action?.includes('blocked')) return { icon: Shield02Icon, color: 'text-red-500' };
+  if (action?.includes('archived')) return { icon: ArchiveIcon, color: 'text-amber-500' };
+  if (action?.includes('created')) return { icon: PlayIcon, color: 'text-green-500' };
+  if (action?.includes('deadline') || action?.includes('due date')) return { icon: Calendar03Icon, color: 'text-red-500' };
+  if (action?.includes('estimate')) return { icon: LayoutGridIcon, color: 'text-amber-500' };
+  if (action?.includes('type')) return { icon: Tag01Icon, color: 'text-indigo-500' };
+  if (action?.includes('severity')) return { icon: Shield02Icon, color: 'text-red-500' };
+  return { icon: ArrowLeftRightIcon, color: 'text-muted-foreground' };
+}
+
+function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: WorkflowState[] }) {
   if (item.kind === 'comment') {
     const { comment, author } = item.data;
     return (
-      <div className="flex items-start gap-2">
-        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-medium">
-          {userInitials(author)}
-        </div>
+      <div className="flex items-start gap-2.5">
+        <UserAvatar
+          name={author.full_name || author.email}
+          avatarUrl={author.avatar_url}
+          className="h-5 w-5"
+          fallbackClassName="text-[7px]"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
             <span className="text-xs font-medium">{author.full_name || author.email}</span>
@@ -250,17 +307,109 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   }
 
   const { activity, actor } = item.data;
+  const iconConfig = getActivityIcon(activity.action, activity.field_name);
+  const ActivityIconEl = iconConfig.icon;
+  const label = formatAction(activity.action);
+
+  // For state changes, extract the target state name and use its color
+  const stateMatch = activity.action?.match(/moved this (?:task|story) to (.+)/);
+  const isStateChange = !!stateMatch;
+  const targetStateName = stateMatch?.[1] ?? null;
+  const matchedState = targetStateName ? states.find((s) => s.name === targetStateName) : null;
+  const stateColor = matchedState?.color ?? null;
+
+  // Always show avatar; fall back to icon for system/no-actor entries
+  const marker = actor ? (
+    <span className="relative z-10">
+      <UserAvatar
+        name={actor.full_name || actor.email}
+        avatarUrl={actor.avatar_url}
+        className="h-5 w-5"
+        fallbackClassName="text-[7px]"
+      />
+    </span>
+  ) : (
+    <span className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+      <ActivityIconEl className={`h-3 w-3 ${iconConfig.color}`} />
+    </span>
+  );
+
+  // Build rich inline label
+  let richLabel: React.ReactNode = null;
+
+  if (isStateChange && targetStateName) {
+    richLabel = (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        moved to
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+          style={stateColor ? { backgroundColor: `${stateColor}18`, color: stateColor, border: `1px solid ${stateColor}30` } : undefined}
+        >
+          {matchedState && <StateTypeIcon stateType={matchedState.state_type} className="h-3 w-3" />}
+          {targetStateName}
+        </span>
+      </span>
+    );
+  } else {
+    // Parse "changed X from Y to Z" patterns
+    const changeMatch = activity.action?.match(/changed (type|priority|severity) from (\S+) to (\S+)/);
+    if (changeMatch) {
+      const [, field, oldVal, newVal] = changeMatch;
+      const renderBadge = (value: string) => {
+        if (field === 'type') {
+          const cfg = TASK_TYPE_CONFIG[value as TaskType];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <TaskTypeIcon taskType={value as TaskType} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        if (field === 'priority') {
+          const cfg = PRIORITY_CONFIG[value as Priority];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <PriorityIcon priority={value as Priority} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        if (field === 'severity') {
+          const cfg = SEVERITY_CONFIG[value as Severity];
+          if (cfg) {
+            return (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
+                <SeverityIcon severity={value as Severity} className="h-3 w-3" />
+                {cfg.label}
+              </span>
+            );
+          }
+        }
+        return <span className="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">{value}</span>;
+      };
+
+      richLabel = (
+        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground flex-wrap">
+          changed {field} from {renderBadge(oldVal)}
+          <ArrowLeftRightIcon className="h-2.5 w-2.5 text-muted-foreground/50" />
+          {renderBadge(newVal)}
+        </span>
+      );
+    }
+  }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-medium text-muted-foreground">
-        {userInitials(actor)}
-      </div>
+    <div className="flex items-center gap-2.5">
+      {marker}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs font-medium">{actor?.full_name || actor?.email || 'System'}</span>
-          <span className="text-[11px] text-muted-foreground">{activity.action}</span>
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatRelativeTime(activity.created_at)}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium shrink-0">{actor?.full_name || actor?.email || 'System'}</span>
+          {richLabel ?? <span className="text-[11px] text-muted-foreground truncate">{label}</span>}
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{formatRelativeTime(activity.created_at)}</span>
         </div>
       </div>
     </div>
@@ -306,6 +455,10 @@ function TaskDetailPanelBody({
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
+  const [panelDragging, setPanelDragging] = useState(false);
+  const openFilePickerRef = useRef<(() => void) | null>(null);
+  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
+  const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const taskId = taskDetail.task.id;
 
@@ -409,7 +562,7 @@ function TaskDetailPanelBody({
   if (taskDetail.task.id !== lastSyncedTaskRef.current) {
     lastSyncedTaskRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
-    url.searchParams.set('task', `${taskDetail.task.display_id}`);
+    url.searchParams.set('task', taskDetail.task.task_key ?? `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
   }
 
@@ -673,6 +826,7 @@ function TaskDetailPanelBody({
       buildTaskCopyUrl({
         currentHref: window.location.href,
         displayId: taskDetail.task.display_id,
+        taskKey: taskDetail.task.task_key,
         origin: window.location.origin,
         slug: workspace?.slug,
         taskId: taskDetail.task.id,
@@ -760,7 +914,7 @@ function TaskDetailPanelBody({
         <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {taskDetail.objective_name && taskDetail.objective_id && workspace && (
             <>
-              <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
@@ -772,12 +926,12 @@ function TaskDetailPanelBody({
               >
                 {taskDetail.objective_name}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {taskDetail.epic_name && taskDetail.task.epic_id && workspace && (
             <>
-              <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <HexagonIcon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               <button
                 type="button"
                 className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
@@ -789,7 +943,7 @@ function TaskDetailPanelBody({
               >
                 {taskDetail.epic_name}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {currentSprintName !== 'No sprint' && form.sprint_id && workspace && teamSprintsEnabled && (
@@ -806,11 +960,11 @@ function TaskDetailPanelBody({
               >
                 {currentSprintName}
               </button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.task_key}</span>
           {taskDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
@@ -823,29 +977,29 @@ function TaskDetailPanelBody({
           <SaveIndicator saving={isSaving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
-              <Check className="h-3.5 w-3.5" />
+              <Tick01Icon className="h-3.5 w-3.5" />
               Copied!
             </span>
           ) : (
             <QuickTooltip label="Copy link">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink}>
-                <Link2 className="h-3.5 w-3.5" />
+                <Link01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreVertical className="h-4 w-4" />
+                <MoreVerticalIcon className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
                 {recurringSummary ? 'Edit recurring' : 'Make recurring'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                <ArchiveIcon className="mr-2 h-4 w-4 text-amber-500" />
                 Archive
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -864,18 +1018,47 @@ function TaskDetailPanelBody({
                   );
                 }}
               >
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-            <X className="h-4 w-4" />
+            <Cancel01Icon className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+      <div
+        className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current++;
+          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragCounterRef.current--;
+          if (dragCounterRef.current === 0) setPanelDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setPanelDragging(false);
+          if (e.dataTransfer.files.length > 0) {
+            uploadFilesRef.current?.(e.dataTransfer.files);
+          }
+        }}
+      >
+        {panelDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
+              <Upload01Icon className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground">Max 10MB per file</p>
+            </div>
+          </div>
+        )}
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
@@ -900,9 +1083,9 @@ function TaskDetailPanelBody({
                             : 'border-border bg-background text-muted-foreground'
                       }`}>
                         {isPast ? (
-                          <Check className="h-2.5 w-2.5" />
+                          <Tick01Icon className="h-2.5 w-2.5" />
                         ) : isAutomated ? (
-                          <Bot className="h-2.5 w-2.5" />
+                          <BotIcon className="h-2.5 w-2.5" />
                         ) : (
                           <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         )}
@@ -937,6 +1120,7 @@ function TaskDetailPanelBody({
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
+                  compact
                 />
                 <div className="mt-2 flex justify-end">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
@@ -951,7 +1135,8 @@ function TaskDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-2 [&_p:empty]:h-4 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
@@ -961,7 +1146,7 @@ function TaskDetailPanelBody({
                   className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                   onClick={() => setEditingDescription(true)}
                 >
-                  <Pencil className="h-3 w-3" />
+                  <PencilEdit01Icon className="h-3 w-3" />
                   Edit description
                 </button>
               </div>
@@ -979,7 +1164,7 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setShowChecklist((v) => !v)}
             >
-              <CheckSquare className="h-3 w-3" />
+              <CheckmarkSquare02Icon className="h-3 w-3" />
               Checklist
             </button>
             <button
@@ -992,7 +1177,7 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setRelationshipComposerOpen(true)}
             >
-              <ArrowRightLeft className="h-3 w-3" />
+              <ArrowLeftRightIcon className="h-3 w-3" />
               Relationships
             </button>
             <button
@@ -1004,17 +1189,15 @@ function TaskDetailPanelBody({
               }`}
               onClick={() => setShowExternalLinks((v) => !v)}
             >
-              <Link2 className="h-3 w-3" />
+              <Link01Icon className="h-3 w-3" />
               External Links
             </button>
             <button
               type="button"
               className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => {
-                document.getElementById('attachments-section')?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={() => openFilePickerRef.current?.()}
             >
-              <Paperclip className="h-3 w-3" />
+              <AttachmentIcon className="h-3 w-3" />
               Attach Files
             </button>
           </div>
@@ -1026,7 +1209,7 @@ function TaskDetailPanelBody({
               className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
               onClick={() => void openRecurringDialog()}
             >
-              <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ArrowReloadHorizontalIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{recurringSummary.rule_summary}</span>
@@ -1038,7 +1221,7 @@ function TaskDetailPanelBody({
                   {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
                 </p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             </button>
           ) : null}
 
@@ -1089,6 +1272,8 @@ function TaskDetailPanelBody({
               entityId={taskDetail.task.id}
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
+              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 
@@ -1126,19 +1311,23 @@ function TaskDetailPanelBody({
             {activity.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
-                <div className="mt-3 space-y-2">
-                  {!showAllActivity && activity.length > 5 && (
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      onClick={() => setShowAllActivity(true)}
-                    >
-                      Show {activity.length - 5} older entries...
-                    </button>
-                  )}
-                  {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
-                    <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} />
-                  ))}
+                <div className="relative mt-3">
+                  {/* Vertical timeline line */}
+                  <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />
+                  <div className="space-y-3">
+                    {!showAllActivity && activity.length > 5 && (
+                      <button
+                        type="button"
+                        className="relative z-10 ml-6 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        onClick={() => setShowAllActivity(true)}
+                      >
+                        Show {activity.length - 5} older entries...
+                      </button>
+                    )}
+                    {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
+                      <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} states={states} />
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -1147,11 +1336,11 @@ function TaskDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
-          <TaskSidebarIdRow displayId={taskDetail.task.display_id} />
+          <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskKey={taskDetail.task.task_key} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
-            <MetadataRow icon={Users} label="Team">
+            <MetadataRow icon={UserGroupIcon} label="Team">
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
@@ -1167,7 +1356,7 @@ function TaskDetailPanelBody({
             </MetadataRow>
 
             {/* State */}
-            <MetadataRow icon={Hash} label="State">
+            <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
                 value={form.workflow_state_id}
                 options={states.map((s) => ({ value: s.id, label: s.name }))}
@@ -1200,7 +1389,7 @@ function TaskDetailPanelBody({
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Owner */}
-            <MetadataRow icon={User} label="Owner">
+            <MetadataRow icon={UserIcon} label="Owner">
               <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
                 members={assignableMembers}
@@ -1229,7 +1418,7 @@ function TaskDetailPanelBody({
             </MetadataRow>
 
             {/* Requester */}
-            <MetadataRow icon={User} label="Requester">
+            <MetadataRow icon={UserIcon} label="Requester">
               <MemberPickerPopover
                 value={form.requester_member_id || '__none__'}
                 members={assignableMembers}
@@ -1262,7 +1451,7 @@ function TaskDetailPanelBody({
 
             {/* Priority */}
             {fieldVis.priority && (
-            <MetadataRow icon={Gauge} label="Priority">
+            <MetadataRow icon={DashboardSpeed01Icon} label="Priority">
               <SidebarPopoverSelect
                 value={form.priority}
                 options={priorityOptions.map((p) => ({ value: p, label: PRIORITY_CONFIG[p].label }))}
@@ -1280,7 +1469,7 @@ function TaskDetailPanelBody({
 
             {/* Severity */}
             {fieldVis.severity && (
-            <MetadataRow icon={ShieldAlert} label="Severity">
+            <MetadataRow icon={Shield02Icon} label="Severity">
               <SidebarPopoverSelect
                 value={form.severity}
                 options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
@@ -1298,7 +1487,7 @@ function TaskDetailPanelBody({
 
             {/* Type */}
             {fieldVis.task_type && (
-            <MetadataRow icon={Hash} label="Type">
+            <MetadataRow icon={HashtagIcon} label="Type">
               <SidebarPopoverSelect
                 value={form.task_type}
                 options={taskTypeOptions.map((t) => ({ value: t, label: TASK_TYPE_CONFIG[t].label }))}
@@ -1316,7 +1505,7 @@ function TaskDetailPanelBody({
 
             {/* Labels */}
             {fieldVis.labels && (
-            <MetadataRow icon={Tag} label="Labels">
+            <MetadataRow icon={Tag01Icon} label="Labels">
               <LabelPicker
                 workspaceId={workspaceId}
                 teamId={form.team_id || undefined}
@@ -1346,7 +1535,7 @@ function TaskDetailPanelBody({
 
             {/* Epic */}
             {fieldVis.epic && (
-            <MetadataRow icon={Layers} label="Epic">
+            <MetadataRow icon={Layers01Icon} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
                 options={[
@@ -1384,7 +1573,7 @@ function TaskDetailPanelBody({
 
             {/* Estimate */}
             {fieldVis.estimate && (
-            <MetadataRow icon={LayoutGrid} label="Estimate">
+            <MetadataRow icon={LayoutGridIcon} label="Estimate">
               <EstimatePicker
                 value={form.estimate}
                 teamId={form.team_id}
@@ -1399,10 +1588,12 @@ function TaskDetailPanelBody({
 
             {/* Due date */}
             {fieldVis.due_date && (
-            <MetadataRow icon={CalendarDays} label="Due date">
+            <MetadataRow icon={Calendar03Icon} label="Due date">
               <DatePicker
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                kind="due"
+                label="Due date"
                 placeholder="None"
                 disablePast
                 hideIcon
@@ -1418,7 +1609,7 @@ function TaskDetailPanelBody({
               <>
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
-                <MetadataRow icon={Bot} label="Agent">
+                <MetadataRow icon={BotIcon} label="Agent">
                   <SidebarPopoverSelect
                     value={delivery.selectedAgentId || '__none__'}
                     options={[
@@ -1435,18 +1626,24 @@ function TaskDetailPanelBody({
                       <>
                         {delivery.selectedAgent && <AgentAvatar agent={delivery.selectedAgent} className="h-5 w-5" />}
                         <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
-                        {delivery.savingAssignment && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {delivery.savingAssignment && <Loading01Icon className="h-3 w-3 animate-spin" />}
                       </>
                     )}
                     renderOption={(v) => {
+                      if (v === '__none__') return <span className="truncate">No agent</span>;
                       const a = delivery.agents.find((ag) => ag.id === v);
                       if (!a) return null;
-                      return <AgentAvatar agent={a} className="h-5 w-5" />;
+                      return (
+                        <>
+                          <AgentAvatar agent={a} className="h-5 w-5" />
+                          <span className="truncate">{a.name}</span>
+                        </>
+                      );
                     }}
                   />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Repository">
+                <MetadataRow icon={GitBranchIcon} label="Repository">
                   <SidebarPopoverSelect
                     value={delivery.repositoryId || '__none__'}
                     options={[
@@ -1465,7 +1662,7 @@ function TaskDetailPanelBody({
                   />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Base">
+                <MetadataRow icon={GitBranchIcon} label="Base">
                   <Popover>
                     <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
                       <TooltipTrigger asChild>
@@ -1499,14 +1696,14 @@ function TaskDetailPanelBody({
                         onClick={delivery.handleSaveDelivery}
                         disabled={delivery.savingTarget || !delivery.repositoryId}
                       >
-                        {delivery.savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
                         Save
                       </Button>
                     </PopoverContent>
                   </Popover>
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranch} label="Branch">
+                <MetadataRow icon={GitBranchIcon} label="Branch">
                   <Tooltip open={isDeliveryTruncated('delivery-branch') ? undefined : false}>
                     <TooltipTrigger asChild>
                       <span
@@ -1521,7 +1718,7 @@ function TaskDetailPanelBody({
                 </MetadataRow>
 
                 {delivery.deliveryStateCfg && (
-                  <MetadataRow icon={Play} label="Status">
+                  <MetadataRow icon={PlayIcon} label="Status">
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.deliveryStateCfg.className}`}>
                       {delivery.deliveryStateCfg.label}
                     </span>
@@ -1600,6 +1797,10 @@ export function TaskDetailPanel({
   onTaskArchived,
 }: TaskDetailPanelProps) {
   const openedAtRef = useRef<number | null>(null);
+  const taskTitle = open && taskDetail
+    ? [taskDetail.task.task_key, taskDetail.task.name].filter(Boolean).join(' ')
+    : undefined;
+  useTitle(taskTitle);
 
   useEffect(() => {
     if (open) {
@@ -1615,6 +1816,7 @@ export function TaskDetailPanel({
         side="right"
         className="w-[80vw] !max-w-[1200px] p-0"
         showCloseButton={false}
+        onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
@@ -1640,7 +1842,7 @@ export function TaskDetailPanel({
           />
         ) : loading ? (
           <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : null}
       </SheetContent>
@@ -1648,7 +1850,8 @@ export function TaskDetailPanel({
   );
 }
 
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
+  if (agent.role) return agent.role;
   switch (agent.preset_key) {
     case 'code_builder':
       return 'Code Builder';

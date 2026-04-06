@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Clock, Loader2, ShieldCheck, XCircle } from 'lucide-react';
+import { CheckmarkCircle02Icon, Clock01Icon, Loading01Icon, SecurityCheckIcon, CancelCircleIcon } from '@/lib/icons';
 
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreviewPanels';
@@ -20,12 +20,12 @@ import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const STATUS_ICON = {
-  queued: <Clock className="h-3.5 w-3.5" />,
-  running: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
-  paused: <ShieldCheck className="h-3.5 w-3.5" />,
-  completed: <CheckCircle2 className="h-3.5 w-3.5" />,
-  failed: <XCircle className="h-3.5 w-3.5" />,
-  cancelled: <XCircle className="h-3.5 w-3.5" />,
+  queued: <Clock01Icon className="h-3.5 w-3.5" />,
+  running: <Loading01Icon className="h-3.5 w-3.5 animate-spin" />,
+  paused: <SecurityCheckIcon className="h-3.5 w-3.5" />,
+  completed: <CheckmarkCircle02Icon className="h-3.5 w-3.5" />,
+  failed: <CancelCircleIcon className="h-3.5 w-3.5" />,
+  cancelled: <CancelCircleIcon className="h-3.5 w-3.5" />,
 } as const;
 
 export function CodingSessionSurface({
@@ -244,7 +244,7 @@ export function CodingSessionSurface({
     )}>
       <CodingSessionHeader
         session={session}
-        statusIcon={STATUS_ICON[session?.status ?? 'queued'] ?? <Clock className="h-3.5 w-3.5" />}
+        statusIcon={STATUS_ICON[session?.status ?? 'queued'] ?? <Clock01Icon className="h-3.5 w-3.5" />}
         workspaceSlug={showBackToRuns ? workspaceSlug : undefined}
         onRefresh={() => void load()}
         refreshing={loading}

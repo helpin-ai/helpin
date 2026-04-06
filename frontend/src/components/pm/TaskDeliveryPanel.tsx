@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserPlus } from 'lucide-react';
+import { AlertCircleIcon, ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlayIcon, FloppyDiskIcon, UserAdd01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -126,7 +126,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
   const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
-  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.display_id, taskDetail.task.name);
+  const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.task_key, taskDetail.task.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
   const agentSelectionSaved = selectedAgentId === assignedAgentId;
   const deliveryTargetSaved =
@@ -361,7 +361,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
   if (d.loading) {
     return (
       <div className="mt-6 flex items-center gap-2 py-3 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
         Loading delivery...
       </div>
     );
@@ -377,8 +377,8 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
         className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 cursor-pointer"
         onClick={() => setExpanded(!isExpanded)}
       >
-        <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowRight01Icon className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-sm font-semibold">Delivery</span>
         {!d.isConfigured && !isExpanded && (
           <span className="text-xs text-muted-foreground">Not configured</span>
@@ -492,7 +492,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
 
             {d.selectedAgent && d.requiresRepo && !d.hasDeliveryTarget && (
               <Alert variant="destructive" className="border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-900/10 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
-                <AlertCircle className="h-4 w-4" />
+                <AlertCircleIcon className="h-4 w-4" />
                 <AlertTitle className="text-xs">Repository required</AlertTitle>
                 <AlertDescription className="text-[11px] text-amber-700 dark:text-amber-400/80">
                   Choose a repository and base branch, then save.
@@ -510,7 +510,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               onClick={d.handleSaveDelivery}
               disabled={d.savingTarget || !d.repositoryId}
             >
-              {d.savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {d.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <FloppyDiskIcon className="h-3 w-3" />}
               Save
             </Button>
             <Button
@@ -519,7 +519,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               onClick={d.handleAssignAgent}
               disabled={d.savingAssignment || !d.selectedAgentId}
             >
-              {d.savingAssignment ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
+              {d.savingAssignment ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <UserAdd01Icon className="h-3 w-3" />}
               Assign
             </Button>
             <Button
@@ -527,7 +527,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               onClick={d.handleRunNow}
               disabled={d.triggeringRun || d.savingAssignment || d.savingTarget || (d.requiresRepo && !d.hasDeliveryTarget)}
             >
-              {d.triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              {d.triggeringRun ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
               Run Now
             </Button>
           </div>
@@ -554,7 +554,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
                     >
-                      <GitPullRequest className="h-3 w-3" />
+                      <GitPullRequestIcon className="h-3 w-3" />
                       <span>#{d.target.active_pr_number}</span>
                       {d.target.active_pr_status && (
                         <Badge variant="outline" className={`text-[9px] ${PR_STATUS_COLORS[d.target.active_pr_status] ?? ''}`}>
@@ -582,7 +582,8 @@ function isTaskDeliveryAgent(agent: { preset_key?: string; allowed_targets?: str
     agent.preset_key === 'review_agent';
 }
 
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string }) {
+function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
+  if (agent.role) return agent.role;
   switch (agent.preset_key) {
     case 'code_builder':
       return 'Code Builder';
@@ -617,8 +618,8 @@ function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: str
   );
 }
 
-function buildBranchPreview(displayId: number, taskName: string) {
-  return `${displayId}-${slugify(taskName)}`;
+function buildBranchPreview(taskKey: string, taskName: string) {
+  return `${taskKey}-${slugify(taskName)}`;
 }
 
 function slugify(value: string) {

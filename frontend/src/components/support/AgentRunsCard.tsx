@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Bot, Loader2, MessageSquareMore, ShieldCheck } from 'lucide-react';
+import { BotIcon, Loading01Icon, MessagePreview01Icon, SecurityCheckIcon } from '@/lib/icons';
 
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +41,7 @@ export function AgentRunsCard({ workspaceId: _workspaceId, agentRuns, onApprove 
       <Card className="space-y-2 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-muted-foreground" />
+            <BotIcon className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Agent Runs</span>
           </div>
           {latestPendingRun ? (
@@ -53,9 +53,9 @@ export function AgentRunsCard({ workspaceId: _workspaceId, agentRuns, onApprove 
               onClick={() => void handleApprove(latestPendingRun.id)}
             >
               {approvingRun === latestPendingRun.id ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loading01Icon className="h-3 w-3 animate-spin" />
               ) : (
-                <ShieldCheck className="h-3 w-3" />
+                <SecurityCheckIcon className="h-3 w-3" />
               )}
               Approve Draft
             </Button>
@@ -78,7 +78,7 @@ export function AgentRunsCard({ workspaceId: _workspaceId, agentRuns, onApprove 
                 <div className="flex items-center gap-2">
                   {run.invocation_mode === 'interactive' ? (
                     <Badge variant="secondary" className="gap-1 text-[10px]">
-                      <MessageSquareMore className="h-3 w-3" />
+                      <MessagePreview01Icon className="h-3 w-3" />
                       Interactive
                     </Badge>
                   ) : null}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
@@ -31,6 +31,10 @@ interface AttachmentsProps {
   entityId: string;
   memberNameMap?: Map<string, string>;
   onDeleteAttachment?: (attachment: AttachmentResponse) => Promise<'handled' | 'prevent' | 'fallback'>;
+  /** Expose a way for the parent to open the file picker */
+  onFilePickerReady?: (openPicker: () => void) => void;
+  /** Allow parent to programmatically upload files (e.g. from drag overlay) */
+  onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
 }
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -82,7 +86,7 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
-export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment }: AttachmentsProps) {
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -154,6 +158,15 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     [workspaceId, entityType, entityId],
   );
 
+  // Expose file picker and upload to parent
+  useEffect(() => {
+    onFilePickerReady?.(() => fileInputRef.current?.click());
+  }, [onFilePickerReady]);
+
+  useEffect(() => {
+    onUploadReady?.(handleUpload);
+  }, [onUploadReady, handleUpload]);
+
   const handleDelete = async (entry: AttachmentResponse) => {
     if (onDeleteAttachment) {
       const action = await onDeleteAttachment(entry);
@@ -188,45 +201,51 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
   const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
 
+  const hasAttachments = attachments.length > 0;
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-1.5">
-        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
-      </div>
+      {hasAttachments && (
+        <div className="flex items-center gap-1.5">
+          <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
+        </div>
+      )}
 
-      {/* Drop zone */}
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors cursor-pointer
-          ${dragging ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-border'}
-        `}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) handleUpload(e.target.files);
-            e.target.value = '';
-          }}
-        />
-        {uploading ? (
-          <div className="flex items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Uploading... {uploadProgress}%</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2">
-            <Upload className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
-          </div>
-        )}
-      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) handleUpload(e.target.files);
+          e.target.value = '';
+        }}
+      />
+
+      {/* Drop zone — only visible when dragging or uploading */}
+      {(dragging || uploading) && (
+        <div
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          className={`rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors
+            ${dragging ? 'border-primary bg-primary/5' : 'border-border/60'}
+          `}
+        >
+          {uploading ? (
+            <div className="flex items-center justify-center gap-2">
+              <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Uploading... {uploadProgress}%</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2">
+              <Upload01Icon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Drop files here</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
@@ -272,7 +291,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
                       onClick={(e) => { e.stopPropagation(); window.open(resolveUrl(entry), '_blank'); }}
                     >
-                      <Download className="h-3 w-3" />
+                      <Download04Icon className="h-3 w-3" />
                     </Button>
                   </QuickTooltip>
                   <QuickTooltip label="Delete">
@@ -282,7 +301,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
                       onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
+                      <Delete01Icon className="h-3 w-3 text-destructive" />
                     </Button>
                   </QuickTooltip>
                 </div>
@@ -325,7 +344,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
               className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20"
               onClick={() => setPreviewEntry(null)}
             >
-              <X className="h-5 w-5" />
+              <Cancel01Icon className="h-5 w-5" />
             </Button>
 
             {hasPrev && (
@@ -335,7 +354,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                 className="absolute left-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
                 onClick={(e) => { e.stopPropagation(); goPrev(); }}
               >
-                <ChevronLeft className="h-6 w-6" />
+                <ArrowLeft01Icon className="h-6 w-6" />
               </Button>
             )}
 
@@ -346,7 +365,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                 className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
                 onClick={(e) => { e.stopPropagation(); goNext(); }}
               >
-                <ChevronRight className="h-6 w-6" />
+                <ArrowRight01Icon className="h-6 w-6" />
               </Button>
             )}
 

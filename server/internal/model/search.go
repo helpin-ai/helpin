@@ -6,6 +6,7 @@ type SearchResult struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	DisplayID int    `json:"display_id,omitempty"`
+	TaskKey   string `json:"task_key,omitempty" gorm:"-"`
 	TeamID    string `json:"team_id,omitempty"`
 	TeamName  string `json:"team_name,omitempty"`
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
-import { FileText } from 'lucide-react'
+import { File01Icon } from '@/lib/icons'
 import { useTitle } from '@/hooks/useTitle'
 import { docsService } from '@/lib/services/docsService'
 import type { DocsDocument, DocsContent } from '@/lib/docsTypes'
@@ -49,7 +49,7 @@ export function SharedDocumentView() {
   if (error || !doc) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-        <FileText className="h-16 w-16 text-muted-foreground/20 mb-4" />
+        <File01Icon className="h-16 w-16 text-muted-foreground/20 mb-4" />
         <h1 className="text-lg font-medium text-foreground mb-1">Document not available</h1>
         <p className="text-sm text-muted-foreground">
           This document may have been removed or sharing has been disabled.

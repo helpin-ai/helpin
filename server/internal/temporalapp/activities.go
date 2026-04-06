@@ -99,6 +99,7 @@ type AgentRunActivities struct {
 	gitLinkRepo         *repository.TaskGitLinkRepository
 	deliveryRepo        *repository.TaskDeliveryTargetRepository
 	settingsRepo        *repository.SettingsRepository
+	workspaceRepo       *repository.WorkspaceRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
 	docsDocRepo         *repository.DocsDocumentRepository
 	docsContentRepo     *repository.DocsContentRepository
@@ -136,6 +137,7 @@ func NewAgentRunActivities(
 	gitLinkRepo *repository.TaskGitLinkRepository,
 	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsContentRepo *repository.DocsContentRepository,
@@ -171,6 +173,7 @@ func NewAgentRunActivities(
 		gitLinkRepo:         gitLinkRepo,
 		deliveryRepo:        deliveryRepo,
 		settingsRepo:        settingsRepo,
+		workspaceRepo:       workspaceRepo,
 		docsSpaceRepo:       docsSpaceRepo,
 		docsDocRepo:         docsDocRepo,
 		docsContentRepo:     docsContentRepo,
@@ -193,6 +196,7 @@ type resolvedRunState struct {
 	run            *model.AgentRun
 	agent          *model.Agent
 	task           *model.PMTask
+	workspaceKey   string
 	epic           *model.PMEpic
 	epicTasks      []model.PMTask
 	conversation   *model.SupportConversation
@@ -3132,6 +3136,13 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		}
 		state.task = task
 
+		if a.workspaceRepo != nil {
+			ws, wsErr := a.workspaceRepo.GetByID(ctx, run.WorkspaceID)
+			if wsErr == nil && ws != nil {
+				state.workspaceKey = ws.WorkspaceKey
+			}
+		}
+
 		target, teamDefault, err := a.resolveDeliveryTarget(ctx, run.WorkspaceID, task)
 		if err != nil {
 			return nil, err
@@ -3278,7 +3289,7 @@ func (a *AgentRunActivities) prepareTaskDelivery(ctx context.Context, state *res
 	}
 
 	if state.resolved.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
-		branchName := buildWorkingBranch(state.task, state.teamDefault)
+		branchName := buildWorkingBranch(state.task, state.teamDefault, state.workspaceKey)
 		target.WorkingBranch = &branchName
 	}
 
@@ -5375,14 +5386,19 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 	}
 }
 
-func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault) string {
-	template := "{display_id}-{slug}"
+func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault, workspaceKey string) string {
+	template := "{task_key}-{slug}"
 	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
 		template = teamDefault.BranchTemplate
 	}
+
+	taskKey := model.FormatTaskKey(workspaceKey, task.DisplayID)
 	replacements := map[string]string{
-		"{display_id}": fmt.Sprintf("%d", task.DisplayID),
-		"{slug}":       slugifyBranchToken(task.Name),
+		"{task_key}":       taskKey,
+		"{workspace_key}":  workspaceKey,
+		"{task_type}":      task.TaskType,
+		"{display_id}":     fmt.Sprintf("%d", task.DisplayID),
+		"{slug}":           slugifyBranchToken(task.Name),
 	}
 	for placeholder, value := range replacements {
 		template = strings.ReplaceAll(template, placeholder, value)
@@ -5390,7 +5406,7 @@ func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault
 	template = strings.ToLower(strings.TrimSpace(template))
 	template = strings.Trim(template, "/-")
 	if template == "" {
-		return fmt.Sprintf("%d-%s", task.DisplayID, slugifyBranchToken(task.Name))
+		return fmt.Sprintf("%s-%s", strings.ToLower(taskKey), slugifyBranchToken(task.Name))
 	}
 	return template
 }

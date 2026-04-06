@@ -1,4 +1,4 @@
-import { createElement, useMemo } from 'react'
+import { createElement, useCallback, useMemo, useRef } from 'react'
 
 import { LoadingImage } from '@/components/ui/loading-image'
 import { MentionText } from '@/components/pm/MentionText'
@@ -9,13 +9,34 @@ interface RichTextMentionContentProps {
   members?: AssignableMember[]
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
   className?: string
+  /** When provided, checkboxes become interactive and changes are reported back */
+  onHtmlChange?: (html: string) => void
 }
 
-function mapAttributes(element: HTMLElement): Record<string, string> {
-  const props: Record<string, string> = {}
+function parseStyleString(style: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const part of style.split(';')) {
+    const colon = part.indexOf(':')
+    if (colon < 0) continue
+    const key = part.slice(0, colon).trim()
+    const value = part.slice(colon + 1).trim()
+    if (!key || !value) continue
+    // Convert kebab-case to camelCase
+    const camel = key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+    result[camel] = value
+  }
+  return result
+}
+
+function mapAttributes(element: HTMLElement): Record<string, unknown> {
+  const props: Record<string, unknown> = {}
   for (const attribute of Array.from(element.attributes)) {
     if (attribute.name === 'class') {
       props.className = attribute.value
+      continue
+    }
+    if (attribute.name === 'style') {
+      props.style = parseStyleString(attribute.value)
       continue
     }
     props[attribute.name] = attribute.value
@@ -28,6 +49,8 @@ function renderNode(
   key: string,
   members: AssignableMember[],
   teams: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[],
+  onCheckToggle?: (index: number) => void,
+  checkCounter?: { current: number },
 ): React.ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent ?? ''
@@ -41,10 +64,33 @@ function renderNode(
 
   const element = node as HTMLElement
   const tag = element.tagName.toLowerCase()
-  const props: Record<string, string> = { key, ...mapAttributes(element) }
+  const props: Record<string, unknown> = { key, ...mapAttributes(element) }
 
   if (tag === 'img') {
     return createElement(LoadingImage, props)
+  }
+
+  // Render checkboxes — interactive when onCheckToggle is provided
+  if (tag === 'input') {
+    const inputEl = element as HTMLInputElement
+    if (inputEl.type === 'checkbox' && checkCounter && onCheckToggle) {
+      const idx = checkCounter.current++
+      const checked = inputEl.checked || inputEl.getAttribute('checked') !== null
+      return (
+        <input
+          key={key}
+          type="checkbox"
+          checked={checked}
+          onChange={() => onCheckToggle(idx)}
+          className="cursor-pointer accent-[var(--primary)]"
+        />
+      )
+    }
+    const inputProps: Record<string, unknown> = { key, type: inputEl.type, readOnly: true }
+    if (inputEl.type === 'checkbox') {
+      inputProps.defaultChecked = inputEl.checked
+    }
+    return createElement('input', inputProps)
   }
 
   // Enforce links open in new tab with consistent styling
@@ -55,10 +101,36 @@ function renderNode(
   }
 
   const children = Array.from(element.childNodes)
-    .map((child, index) => renderNode(child, `${key}-${index}`, members, teams))
+    .map((child, index) => renderNode(child, `${key}-${index}`, members, teams, onCheckToggle, checkCounter))
     .filter((child) => child !== null)
 
   return createElement(tag, props, children.length > 0 ? children : undefined)
+}
+
+/** Toggle the nth checkbox in the HTML string (both <input> and data-checked attributes). */
+function toggleCheckboxInHtml(html: string, targetIndex: number): string {
+  let index = 0
+  // Toggle data-checked on <li> task items
+  let result = html.replace(/data-checked="(true|false)"/g, (match, value) => {
+    if (index++ === targetIndex) {
+      return `data-checked="${value === 'true' ? 'false' : 'true'}"`
+    }
+    return match
+  })
+  // If data-checked didn't match (plain checkbox), toggle checked attribute on <input>
+  if (index === 0) {
+    index = 0
+    result = html.replace(/<input[^>]*type=["']checkbox["'][^>]*>/gi, (match) => {
+      if (index++ === targetIndex) {
+        if (match.includes('checked')) {
+          return match.replace(/\s*checked(?:="[^"]*")?/, '')
+        }
+        return match.replace(/>$/, ' checked="checked">')
+      }
+      return match
+    })
+  }
+  return result
 }
 
 export function RichTextMentionContent({
@@ -66,19 +138,30 @@ export function RichTextMentionContent({
   members = [],
   teams = [],
   className,
+  onHtmlChange,
 }: RichTextMentionContentProps) {
+  const htmlRef = useRef(html)
+  htmlRef.current = html
+
+  const handleCheckToggle = useCallback((index: number) => {
+    if (!onHtmlChange) return
+    const updated = toggleCheckboxInHtml(htmlRef.current, index)
+    onHtmlChange(updated)
+  }, [onHtmlChange])
+
   const content = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
 
     const parsed = new DOMParser().parseFromString(html, 'text/html')
+    const counter = { current: 0 }
     return Array.from(parsed.body.childNodes)
-      .map((node, index) => renderNode(node, `node-${index}`, members, teams))
+      .map((node, index) => renderNode(node, `node-${index}`, members, teams, onHtmlChange ? handleCheckToggle : undefined, onHtmlChange ? counter : undefined))
       .filter((node) => node !== null)
-  }, [html, members, teams])
+  }, [html, members, teams, onHtmlChange, handleCheckToggle])
 
   if (!content) {
     return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
   }
 
-  return <div className={className}>{content}</div>
+  return <div className={`tiptap tiptap-compact ${className ?? ''}`}>{content}</div>
 }

@@ -449,7 +449,7 @@ func (r *SettingsRepository) UpsertTeamRepoDefault(ctx context.Context, teamID s
 			TeamID:         teamID,
 			RepositoryID:   req.RepositoryID,
 			BaseBranch:     "main",
-			BranchTemplate: "{display_id}-{slug}",
+			BranchTemplate: "{task_key}-{slug}",
 			AutoSyncStates: true,
 		}
 	}

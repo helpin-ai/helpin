@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hooks/queries'
 import { ICON_MAP } from '@/components/ui/icon-picker'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpenIcon } from '@/lib/icons'
 import { toast } from 'sonner'
 
 interface CreateDocumentDialogProps {
@@ -153,7 +153,7 @@ export function CreateDocumentDialog({
                       return (
                         <SelectItem key={c.id} value={c.id}>
                           <span className="inline-flex items-center gap-1.5">
-                            {ColIcon ? <ColIcon className="h-4 w-4 shrink-0" /> : <FolderOpen className="h-4 w-4 shrink-0" />}
+                            {ColIcon ? <ColIcon className="h-4 w-4 shrink-0" /> : <FolderOpenIcon className="h-4 w-4 shrink-0" />}
                             <span>{c.name}</span>
                           </span>
                         </SelectItem>

@@ -10,8 +10,7 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowLeftIcon, ArrowRightIcon, ArrowDownIcon } from "@hugeicons/core-free-icons"
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon } from "@/lib/icons"
 
 function Calendar({
   className,
@@ -120,7 +119,7 @@ function Calendar({
           defaultClassNames.range_end
         ),
         today: cn(
-          "rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-none",
+          "rounded-(--cell-radius) bg-red-500/15 text-red-600 dark:bg-red-500/20 dark:text-red-400 data-[selected=true]:rounded-none",
           defaultClassNames.today
         ),
         outside: cn(
@@ -147,20 +146,12 @@ function Calendar({
         },
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === "left") {
-            return (
-              <HugeiconsIcon icon={ArrowLeftIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
-            )
+            return <ArrowLeft01Icon className={cn("size-4", className)} {...props} />
           }
-
           if (orientation === "right") {
-            return (
-              <HugeiconsIcon icon={ArrowRightIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
-            )
+            return <ArrowRight01Icon className={cn("size-4", className)} {...props} />
           }
-
-          return (
-            <HugeiconsIcon icon={ArrowDownIcon} strokeWidth={2} className={cn("size-4", className)} {...props} />
-          )
+          return <ArrowDown01Icon className={cn("size-4", className)} {...props} />
         },
         DayButton: ({ ...props }) => (
           <CalendarDayButton locale={locale} {...props} />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink as ExternalLinkIcon, Link2, Plus, Trash2 } from 'lucide-react';
+import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -64,7 +64,7 @@ export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
-        <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+        <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">External Links</h3>
       </div>
 
@@ -95,14 +95,14 @@ export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
                 rel="noopener noreferrer"
                 className="h-5 w-5 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
               >
-                <ExternalLinkIcon className="h-3 w-3" />
+                <LinkSquare01Icon className="h-3 w-3" />
               </a>
               <button
                 type="button"
                 className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive cursor-pointer"
                 onClick={() => handleDelete(link.id)}
               >
-                <Trash2 className="h-3 w-3" />
+                <Delete01Icon className="h-3 w-3" />
               </button>
             </div>
           ))}
@@ -111,7 +111,7 @@ export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
 
       {/* Add input */}
       <div className="flex items-center gap-2">
-        <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           ref={inputRef}
           type="url"

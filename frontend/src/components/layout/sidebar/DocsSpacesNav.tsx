@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Collapsible } from 'radix-ui';
-import { ChevronRight, CircleHelp, EllipsisVertical, FolderOpen, Inbox, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, Setting06Icon, Delete01Icon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace } from '@/hooks/queries';
 import type { DocsSpace } from '@/lib/docsTypes';
@@ -34,7 +34,7 @@ function SidebarCollectionIcon({ name }: { name?: string | null }) {
     }
   }
 
-  return <FolderOpen className="h-3.5 w-3.5" />;
+  return <FolderOpenIcon className="h-3.5 w-3.5" />;
 }
 
 function DocsSpaceCollections({
@@ -116,7 +116,7 @@ function DocsSpaceCollections({
                 });
               }}
             >
-              <Inbox className="h-3.5 w-3.5" />
+              <InboxIcon className="h-3.5 w-3.5" />
               <span className="truncate">Uncategorized</span>
             </a>
           </SidebarMenuSubButton>
@@ -128,7 +128,7 @@ function DocsSpaceCollections({
           className="cursor-pointer text-muted-foreground/70 hover:text-foreground"
           onClick={() => openCreate('docs_collection', { spaceId })}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <PlusSignIcon className="h-3.5 w-3.5" />
           <span>Add collection</span>
         </SidebarMenuSubButton>
       </SidebarMenuSubItem>
@@ -214,7 +214,7 @@ export function DocsSpacesNav({
                     });
                   }}
                 >
-                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                   <span className="truncate" ref={(element) => checkSpaceTruncation(space.id, element)}>
                     {space.name}
                   </span>
@@ -230,19 +230,19 @@ export function DocsSpacesNav({
                   type="button"
                   className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100 data-[state=open]:opacity-100"
                 >
-                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                  <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start">
                 <DropdownMenuItem onClick={() => setEditingSpace(space)}>
-                  <Settings className="h-4 w-4" />
+                  <Setting06Icon className="h-4 w-4" />
                   Edit space
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setDeletingSpace(space)}
                   className="text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Delete01Icon className="h-4 w-4" />
                   Delete space
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -280,7 +280,7 @@ export function DocsSpacesNav({
           <SidebarGroupLabel className="flex h-7 items-center gap-1 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
             External Spaces
             <QuickTooltip label="Published to your public help center">
-              <CircleHelp className="h-[10px] w-[10px] text-muted-foreground/50" />
+              <HelpCircleIcon className="h-[10px] w-[10px] text-muted-foreground/50" />
             </QuickTooltip>
           </SidebarGroupLabel>
           <SidebarMenu>

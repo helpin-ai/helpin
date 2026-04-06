@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  Building2,
-  FileText,
-  Loader2,
-  MessageSquareText,
-  Search,
-} from 'lucide-react';
+  Building03Icon,
+  File01Icon,
+  Loading01Icon,
+  Message01Icon,
+  Search01Icon,
+} from '@/lib/icons';
 
 import {
   useCreateDocAssociation,
@@ -178,7 +178,7 @@ export function AssociationsPanel({
   if (associationsQuery.isLoading) {
     return (
       <div className={cn('flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground', className)}>
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
         Loading...
       </div>
     );
@@ -202,7 +202,7 @@ export function AssociationsPanel({
     <div className={className}>
       <CollapsibleSection
         title="Support"
-        icon={MessageSquareText}
+        icon={Message01Icon}
         count={supportConversations.length}
         defaultOpen={supportConversations.length > 0}
         onAdd={() => setPickerSection('support')}
@@ -224,7 +224,7 @@ export function AssociationsPanel({
 
       <CollapsibleSection
         title="CRM"
-        icon={Building2}
+        icon={Building03Icon}
         count={crmRecords.length}
         defaultOpen={crmRecords.length > 0}
         onAdd={() => setPickerSection('crm')}
@@ -246,7 +246,7 @@ export function AssociationsPanel({
 
       <CollapsibleSection
         title="Docs"
-        icon={FileText}
+        icon={File01Icon}
         count={docs.length}
         defaultOpen={docs.length > 0}
         onAdd={() => setPickerSection('docs')}
@@ -273,7 +273,7 @@ export function AssociationsPanel({
           </DialogHeader>
           <div className="space-y-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -285,7 +285,7 @@ export function AssociationsPanel({
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Searching...
+                  <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
 
@@ -297,7 +297,7 @@ export function AssociationsPanel({
                   onClick={() => handleAddSupport(conversation.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Message01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium truncate">{conversation.subject}</span>
                     <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                       C-{conversation.display_id}
@@ -314,7 +314,7 @@ export function AssociationsPanel({
                   onClick={() => handleAddCRM(result.type as CRMObjectType, result.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Building03Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium truncate">{result.name}</span>
                   </div>
                 </button>
@@ -328,7 +328,7 @@ export function AssociationsPanel({
                   onClick={() => handleAddDoc(doc.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium truncate">{doc.name}</span>
                   </div>
                 </button>

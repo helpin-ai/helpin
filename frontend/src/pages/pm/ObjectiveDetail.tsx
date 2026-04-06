@@ -3,22 +3,22 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { differenceInDays, format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  ArrowLeft,
-  CalendarDays,
-  Crosshair,
-  Hash,
-  Heart,
-  Hexagon,
-  Info,
-  Loader2,
-  Pencil,
-  Plus,
-  Target,
-  Trash2,
-  User,
-  Users,
-  X,
-} from 'lucide-react';
+  ArrowLeft02Icon,
+  Calendar03Icon,
+  FavouriteIcon,
+  InformationCircleIcon,
+  Loading01Icon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+  Target01Icon,
+  Delete01Icon,
+  UserIcon,
+  UserGroupIcon,
+  Cancel01Icon,
+  HashtagIcon,
+  HexagonIcon,
+  Target02Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
@@ -171,7 +171,7 @@ function MultiValueList({
           <span className="truncate">{item.name}</span>
           {!readOnly && (
             <button type="button" className="text-muted-foreground hover:text-destructive cursor-pointer" onClick={() => onRemove(item.id)}>
-              <X className="h-3 w-3" />
+              <Cancel01Icon className="h-3 w-3" />
             </button>
           )}
         </div>
@@ -183,7 +183,7 @@ function MultiValueList({
               type="button"
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
             >
-              <Plus className="h-3 w-3" />
+              <PlusSignIcon className="h-3 w-3" />
               {placeholder}
             </button>
           </PopoverTrigger>
@@ -346,7 +346,7 @@ function KeyResultRow({
               className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
               onClick={onDelete}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Delete01Icon className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -385,7 +385,7 @@ function LinkEpicPopover({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="h-7 text-xs">
-          <Plus className="mr-1 h-3 w-3" />
+          <PlusSignIcon className="mr-1 h-3 w-3" />
           Add Epics
         </Button>
       </PopoverTrigger>
@@ -398,7 +398,7 @@ function LinkEpicPopover({
               className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
               onClick={() => { onLink(e.epic.id); setOpen(false); }}
             >
-              <Hexagon className="h-3 w-3 shrink-0 text-violet-500" />
+              <HexagonIcon className="h-3 w-3 shrink-0 text-violet-500" />
               <span className="truncate">{e.epic.name}</span>
             </button>
           ))}
@@ -727,7 +727,7 @@ export function ObjectiveDetailPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -737,7 +737,7 @@ export function ObjectiveDetailPage() {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">{error ?? 'Objective not found'}</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to Objectives
         </Button>
       </div>
@@ -758,13 +758,13 @@ export function ObjectiveDetailPage() {
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           {isStrategic
-            ? <Crosshair className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-            : <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
+            ? <Target02Icon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+            : <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
           <span className="text-xs font-medium uppercase tracking-wide">
             {isStrategic ? 'Strategic' : 'Tactical'} Objective
           </span>
@@ -831,7 +831,7 @@ export function ObjectiveDetailPage() {
                       className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                       onClick={() => setEditingDescription(true)}
                     >
-                      <Pencil className="h-3 w-3" />
+                      <PencilEdit01Icon className="h-3 w-3" />
                       Edit description
                     </button>
                   )}
@@ -855,7 +855,7 @@ export function ObjectiveDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Progress Summary</h3>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Heart className="h-3.5 w-3.5" />
+                <FavouriteIcon className="h-3.5 w-3.5" />
                 <span>Health:</span>
                 {canEdit ? (
                   <SidebarPopoverSelect
@@ -876,12 +876,12 @@ export function ObjectiveDetailPage() {
               {/* Epic Progress Card */}
               <div className="rounded-lg border border-border/60 p-5">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Hexagon className="h-4 w-4 text-violet-500" />
+                  <HexagonIcon className="h-4 w-4 text-violet-500" />
                   Epic Progress
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                        <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[240px] text-xs">
                         Percentage of done tasks across all linked epics: done tasks ÷ total tasks.
@@ -902,7 +902,7 @@ export function ObjectiveDetailPage() {
               {/* Target Date Card */}
               <div className="rounded-lg border border-border/60 p-5">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <CalendarDays className="h-4 w-4 text-blue-500" />
+                  <Calendar03Icon className="h-4 w-4 text-blue-500" />
                   Target Date
                 </div>
                 <div className="mt-3">
@@ -968,7 +968,7 @@ export function ObjectiveDetailPage() {
                 )}
                 {canEdit && (
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
-                    <Plus className="mr-1 h-3 w-3" />
+                    <PlusSignIcon className="mr-1 h-3 w-3" />
                     Add Key Results
                   </Button>
                 )}
@@ -1033,7 +1033,7 @@ export function ObjectiveDetailPage() {
                         }
                       }}
                     >
-                      <Hexagon className="h-4 w-4 shrink-0 text-violet-500" />
+                      <HexagonIcon className="h-4 w-4 shrink-0 text-violet-500" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate" title={e.epic.name}>{e.epic.name}</p>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -1055,7 +1055,7 @@ export function ObjectiveDetailPage() {
                                 void handleUnlinkEpic(e.epic.id);
                               }}
                             >
-                              <X className="h-3.5 w-3.5" />
+                              <Cancel01Icon className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
@@ -1077,7 +1077,7 @@ export function ObjectiveDetailPage() {
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
-            <MetadataRow icon={Hash} label="State">
+            <MetadataRow icon={HashtagIcon} label="State">
               {canEdit ? (
                 <SidebarPopoverSelect
                   value={form.state}
@@ -1092,7 +1092,7 @@ export function ObjectiveDetailPage() {
 
             {/* Health */}
             {form.state !== 'closed' && (
-            <MetadataRow icon={Heart} label="Health">
+            <MetadataRow icon={FavouriteIcon} label="Health">
               <div className="flex flex-col gap-1">
                 {canEdit ? (
                   <SidebarPopoverSelect
@@ -1123,7 +1123,7 @@ export function ObjectiveDetailPage() {
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Teams */}
-            <MetadataRow icon={Users} label="Teams">
+            <MetadataRow icon={UserGroupIcon} label="Teams">
               <MultiValueList
                 items={data.teams}
                 allOptions={teams.map((t) => ({ id: t.id, name: t.name }))}
@@ -1135,7 +1135,7 @@ export function ObjectiveDetailPage() {
             </MetadataRow>
 
             {/* Owners */}
-            <MetadataRow icon={User} label="Owners">
+            <MetadataRow icon={UserIcon} label="Owners">
               <MultiMemberPickerPopover
                 values={ownerIds}
                 members={assignableMembers}
@@ -1179,11 +1179,20 @@ export function ObjectiveDetailPage() {
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Start Date */}
-            <MetadataRow icon={CalendarDays} label="Start date">
+            <MetadataRow icon={Calendar03Icon} label="Start date">
               {canEdit ? (
                 <DatePicker
                   value={form.planned_start_date}
                   onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.deadline,
+                    onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                    placeholder: 'None',
+                  }}
                   placeholder="None"
                   hideIcon
                   className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
@@ -1196,11 +1205,22 @@ export function ObjectiveDetailPage() {
             </MetadataRow>
 
             {/* Target Date */}
-            <MetadataRow icon={CalendarDays} label="Target date">
+            <MetadataRow icon={Calendar03Icon} label="Target date">
               {canEdit ? (
                 <DatePicker
-                  value={form.deadline}
-                  onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                  value={form.planned_start_date}
+                  onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'Target date',
+                    kind: 'target',
+                    value: form.deadline,
+                    onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
                   urgencyColor
@@ -1217,7 +1237,7 @@ export function ObjectiveDetailPage() {
             {data.labels && data.labels.length > 0 && (
               <>
                 <div className="col-span-3 h-px bg-border/40 my-1" />
-                <MetadataRow icon={Info} label="Labels">
+                <MetadataRow icon={InformationCircleIcon} label="Labels">
                   <div className="flex flex-wrap gap-1">
                     {data.labels.map((l) => (
                       <span key={l.id} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
@@ -1239,7 +1259,7 @@ export function ObjectiveDetailPage() {
                 className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={() => setDeleteConfirmOpen(true)}
               >
-                <Trash2 className="mr-1 h-3 w-3" />
+                <Delete01Icon className="mr-1 h-3 w-3" />
                 Delete objective
               </Button>
             </div>
@@ -1272,7 +1292,7 @@ export function ObjectiveDetailPage() {
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Info className="h-3 w-3 text-muted-foreground/60 cursor-help" />
+                        <InformationCircleIcon className="h-3 w-3 text-muted-foreground/60 cursor-help" />
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px] text-xs">
                         <p className="font-medium mb-1">Measurement types:</p>

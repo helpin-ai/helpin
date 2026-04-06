@@ -20,6 +20,8 @@ export const gitService = {
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
   createIntegration: (workspaceId: string, payload: CreateGitIntegrationRequest) =>
     api.post<GitIntegration>(`/git/integrations${qs(workspaceId)}`, payload),
+  deleteIntegration: (workspaceId: string, integrationId: string) =>
+    api.del<{ status: string }>(`/git/integrations/${integrationId}${qs(workspaceId)}`),
   syncRepositories: (workspaceId: string, integrationId: string) =>
     api.post<GitRepository[]>(`/git/integrations/${integrationId}/sync${qs(workspaceId)}`, {}),
   listRepositories: (workspaceId: string, options?: { all?: boolean }) =>

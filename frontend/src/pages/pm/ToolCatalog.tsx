@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown,
-  ChevronRight,
-  Code2,
-  FileSearch,
-  FolderOpen,
-  GitBranch,
-  Globe,
-  Headphones,
-  Search,
-  SquareTerminal,
-  TrendingUp,
-  FileText,
-  Wrench,
-  Check,
-} from 'lucide-react';
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  SourceCodeIcon,
+  FolderOpenIcon,
+  GitBranchIcon,
+  GlobeIcon,
+  Search01Icon,
+  ChartIncreaseIcon,
+  File01Icon,
+  Tick01Icon,
+  FileSearchIcon,
+  HeadphonesIcon,
+  TerminalIcon,
+  Wrench01Icon,
+} from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -28,16 +28,16 @@ import { cn } from '@/lib/utils';
 // Constants
 // ---------------------------------------------------------------------------
 
-const CATEGORY_ICONS: Record<string, typeof Wrench> = {
-  Filesystem: FolderOpen,
-  'Code Analysis': Code2,
-  Commands: SquareTerminal,
-  'Web Search': Globe,
-  Git: GitBranch,
-  'PM / Tasks': FileSearch,
-  Support: Headphones,
-  CRM: TrendingUp,
-  Docs: FileText,
+const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
+  Filesystem: FolderOpenIcon,
+  'Code Analysis': SourceCodeIcon,
+  Commands: TerminalIcon,
+  'Web Search': GlobeIcon,
+  Git: GitBranchIcon,
+  'PM / Tasks': FileSearchIcon,
+  Support: HeadphonesIcon,
+  CRM: ChartIncreaseIcon,
+  Docs: File01Icon,
 };
 
 const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: string }> = {
@@ -102,7 +102,7 @@ function ParamRow({
       <td className="py-1.5 pr-3">
         {required ? (
           <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-            <Check className="h-3 w-3" />
+            <Tick01Icon className="h-3 w-3" />
             required
           </span>
         ) : (
@@ -141,7 +141,7 @@ function ToolCard({ tool }: { tool: ToolCatalogEntry }) {
               className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               onClick={() => setOpen(!open)}
             >
-              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              {open ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
               {paramNames.length} param{paramNames.length !== 1 ? 's' : ''}
             </button>
           )}
@@ -186,7 +186,7 @@ function CategorySection({
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const Icon = CATEGORY_ICONS[category] ?? Wrench;
+  const Icon = CATEGORY_ICONS[category] ?? Wrench01Icon;
 
   return (
     <div>
@@ -195,7 +195,7 @@ function CategorySection({
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
         onClick={() => setOpen(!open)}
       >
-        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        {open ? <ArrowDown01Icon className="h-4 w-4 text-muted-foreground" /> : <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />}
         <Icon className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">{category}</span>
         <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
@@ -298,7 +298,7 @@ export function ToolCatalogPage() {
           </p>
         </div>
         <div className="relative w-full sm:w-64">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search01Icon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search tools..."
             value={search}
@@ -323,7 +323,7 @@ export function ToolCatalogPage() {
           All
         </button>
         {catalog.categories.map((cat) => {
-          const Icon = CATEGORY_ICONS[cat] ?? Wrench;
+          const Icon = CATEGORY_ICONS[cat] ?? Wrench01Icon;
           return (
             <button
               key={cat}

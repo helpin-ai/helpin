@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react';
+import { ArrowReloadHorizontalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -90,7 +90,7 @@ export function SupportKnowledgeSourcesField({
                       }}
                       title="Reindex help center docs"
                     >
-                      <RefreshCw className={cn('h-3.5 w-3.5', reindexingSpaceId === space.id && 'animate-spin')} />
+                      <ArrowReloadHorizontalIcon className={cn('h-3.5 w-3.5', reindexingSpaceId === space.id && 'animate-spin')} />
                     </Button>
                   )}
                 </div>

@@ -15,7 +15,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, ChevronDown, ChevronRight, DollarSign, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
+import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Calendar03Icon, ArrowDown01Icon, ArrowRight01Icon, DollarCircleIcon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -378,7 +378,7 @@ export function DealsTable({
   if (isLoading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
         Loading deals...
       </div>
     );
@@ -388,7 +388,7 @@ export function DealsTable({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <DollarSign className="h-8 w-8 text-muted-foreground/50" />
+          <DollarCircleIcon className="h-8 w-8 text-muted-foreground/50" />
         </div>
         <h3 className="mt-4 text-base font-medium">No deals yet</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
@@ -396,7 +396,7 @@ export function DealsTable({
         </p>
         {onCreateClick && (
           <Button size="sm" className="mt-4" onClick={onCreateClick}>
-            <Plus className="mr-1 h-4 w-4" />
+            <PlusSignIcon className="mr-1 h-4 w-4" />
             Create Deal
           </Button>
         )}
@@ -457,11 +457,11 @@ export function DealsTable({
                         {canSort && (
                           <span className="ml-auto shrink-0">
                             {sorted === 'asc' ? (
-                              <ArrowUp className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                              <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                             ) : sorted === 'desc' ? (
-                              <ArrowDown className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                              <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                             ) : (
-                              <ArrowUpDown className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                              <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
                             )}
                           </span>
                         )}
@@ -546,9 +546,9 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       onClick={() => row.toggleExpanded()}
     >
       {row.getIsExpanded() ? (
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
       ) : (
-        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
       )}
       {icon}
       <span>{groupValue}</span>
@@ -727,7 +727,7 @@ function InlineOwnerCell({
           </>
         ) : (
           <span className="flex items-center gap-1 text-muted-foreground">
-            <UserPlus className="h-3 w-3" /> Assign
+            <UserAdd01Icon className="h-3 w-3" /> Assign
           </span>
         );
       }}
@@ -813,7 +813,7 @@ function InlineCloseDateCell({
           className="flex w-full items-center gap-1 text-xs text-muted-foreground hover:text-primary"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
-          <CalendarDays className="h-3 w-3 shrink-0" />
+          <Calendar03Icon className="h-3 w-3 shrink-0" />
           {dateValue ? format(dateValue, 'MMM d, yyyy') : 'Set date'}
         </button>
       </PopoverTrigger>
@@ -856,19 +856,19 @@ function InlineActionsCell({
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
-          <EllipsisVertical className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-3.5 w-3.5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[140px]">
         <DropdownMenuItem onClick={() => onOpen(deal.id)}>
-          <ExternalLink className="mr-2 h-3.5 w-3.5" />
+          <LinkSquare01Icon className="mr-2 h-3.5 w-3.5" />
           Open
         </DropdownMenuItem>
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
           onClick={() => onDelete(deal.id)}
         >
-          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          <Delete01Icon className="mr-2 h-3.5 w-3.5" />
           Delete
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -107,7 +107,7 @@ func addSettingsExtraTables(t *testing.T, db *gorm.DB) {
 			team_id TEXT NOT NULL UNIQUE,
 			repository_id TEXT NOT NULL,
 			base_branch TEXT NOT NULL DEFAULT 'main',
-			branch_template TEXT NOT NULL DEFAULT 'tp-{display_id}-{slug}',
+			branch_template TEXT NOT NULL DEFAULT '{task_key}-{slug}',
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, MessageSquare, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -124,7 +124,7 @@ function CommentReactions({
             type="button"
             className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground cursor-pointer"
           >
-            <SmilePlus className="h-3.5 w-3.5" />
+            <SmilePlusIcon className="h-3.5 w-3.5" />
           </button>
         </PopoverTrigger>
         <PopoverContent side="top" align="start" className="w-auto p-1.5">
@@ -543,7 +543,7 @@ export function CommentThread({
                   type="button"
                   className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
                 >
-                  <SmilePlus className={iconSize} />
+                  <SmilePlusIcon className={iconSize} />
                 </button>
               </PopoverTrigger>
               <PopoverContent side="top" align="end" className="w-auto p-1.5">
@@ -557,7 +557,7 @@ export function CommentThread({
                   className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
                   onClick={() => toggleThread(entry.comment.id)}
                 >
-                  <Reply className={iconSize} />
+                  <ArrowTurnBackwardIcon className={iconSize} />
                 </button>
               </QuickTooltip>
             )}
@@ -569,7 +569,7 @@ export function CommentThread({
                     className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
                     onClick={() => startEditComment(entry)}
                   >
-                    <Pencil className={iconSize} />
+                    <PencilEdit01Icon className={iconSize} />
                   </button>
                 </QuickTooltip>
                 <QuickTooltip label="Delete">
@@ -578,7 +578,7 @@ export function CommentThread({
                     className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-destructive hover:bg-accent transition-colors cursor-pointer`}
                     onClick={() => deleteComment(entry.comment.id)}
                   >
-                    <Trash2 className={iconSize} />
+                    <Delete01Icon className={iconSize} />
                   </button>
                 </QuickTooltip>
               </>
@@ -634,17 +634,17 @@ export function CommentThread({
                   className="mt-2 ml-8 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   onClick={() => toggleThread(entry.comment.id)}
                 >
-                  <MessageSquare className="h-3 w-3" />
+                  <Message01Icon className="h-3 w-3" />
                   <span>
                     {entry.reply_count} {entry.reply_count === 1 ? 'reply' : 'replies'}
                   </span>
-                  <ChevronRight className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  <ArrowRight01Icon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                 </button>
               )}
 
               {/* Nested replies */}
               {isExpanded && (
-                <div className="mt-2 ml-8 border-l-2 border-border/40 pl-4 space-y-3">
+                <div className="mt-3 ml-8 border-l-2 border-border/40 pl-4 space-y-3">
                   {entry.replies?.map((reply) => (
                     <div key={reply.comment.id}>
                       {renderComment(reply, true)}

@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
-  ArrowLeft,
-  Building2,
-  ChevronRight,
-  DollarSign,
-  Globe,
-  Loader2,
-  Trash2,
-  Users,
-} from 'lucide-react';
+  ArrowLeft02Icon,
+  Building03Icon,
+  ArrowRight01Icon,
+  DollarCircleIcon,
+  GlobeIcon,
+  Loading01Icon,
+  Delete01Icon,
+  UserGroupIcon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { Separator } from '@/components/ui/separator';
@@ -116,7 +116,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -126,7 +126,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">Company not found</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to Companies
         </Button>
       </div>
@@ -138,7 +138,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
       {/* Header bar */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
@@ -153,14 +153,14 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Companies
           </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)}>
-            <Trash2 className="h-4 w-4" />
+            <Delete01Icon className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -225,7 +225,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
 
           <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
-            <MetadataRow icon={Globe} label="Domain">
+            <MetadataRow icon={GlobeIcon} label="Domain">
               <div className="flex items-center gap-2">
                 <Favicon
                   src={company.logo_url}
@@ -239,15 +239,15 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                   onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="—" />
               </div>
             </MetadataRow>
-            <MetadataRow icon={Building2} label="Industry">
+            <MetadataRow icon={Building03Icon} label="Industry">
               <input className="w-full bg-transparent text-xs outline-none" value={form.industry}
                 onChange={(e) => updateField('industry', e.target.value, { industry: e.target.value })} placeholder="—" />
             </MetadataRow>
-            <MetadataRow icon={Users} label="Employees">
+            <MetadataRow icon={UserGroupIcon} label="Employees">
               <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.employee_count}
                 onChange={(e) => updateField('employee_count', e.target.value, { employee_count: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="—" />
             </MetadataRow>
-            <MetadataRow icon={DollarSign} label="Revenue">
+            <MetadataRow icon={DollarCircleIcon} label="Revenue">
               <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.annual_revenue}
                 onChange={(e) => updateField('annual_revenue', e.target.value, { annual_revenue: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
             </MetadataRow>

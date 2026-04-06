@@ -7,6 +7,7 @@ interface BuildTaskUrlOptions {
 interface BuildTaskCopyUrlOptions {
   currentHref: string;
   displayId: number | string;
+  taskKey?: string | null;
   origin?: string;
   slug?: string | null;
   taskId?: string | null;
@@ -23,15 +24,18 @@ export function buildTaskUrl({ origin, slug, taskId }: BuildTaskUrlOptions) {
 export function buildTaskCopyUrl({
   currentHref,
   displayId,
+  taskKey,
   origin,
   slug,
   taskId,
 }: BuildTaskCopyUrlOptions) {
   if (origin && slug && taskId) {
-    return buildTaskUrl({ origin, slug, taskId });
+    const url = new URL(buildTaskPath(slug, taskId), origin);
+    url.searchParams.set('task', taskKey || String(displayId));
+    return url.toString();
   }
 
   const url = new URL(currentHref);
-  url.searchParams.set('task', String(displayId));
+  url.searchParams.set('task', taskKey || String(displayId));
   return url.toString();
 }

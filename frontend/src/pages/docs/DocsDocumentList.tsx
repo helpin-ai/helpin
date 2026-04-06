@@ -2,23 +2,23 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowDown,
-  ArrowUp,
-  Check,
-  Clock,
-  Copy,
-  FileText,
-  FolderInput,
-  ListFilter,
-  ChevronDown,
-  MoreHorizontal,
-  PenLine,
-  Send,
-  Trash2,
-  User,
-} from 'lucide-react'
+  ArchiveIcon,
+  ArrowDown02Icon,
+  ArrowUp02Icon,
+  Tick01Icon,
+  Clock01Icon,
+  Copy01Icon,
+  File01Icon,
+  FilterHorizontalIcon,
+  ArrowDown01Icon,
+  MoreHorizontalIcon,
+  PencilEdit02Icon,
+  SentIcon,
+  Delete01Icon,
+  UserIcon,
+  ArchiveRestoreIcon,
+  FolderInputIcon,
+} from '@/lib/icons'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -153,7 +153,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
     }
   }
 
-  const emptyIcon = filterMode === 'recent' ? Clock : filterMode === 'my' ? User : PenLine
+  const emptyIcon = filterMode === 'recent' ? Clock01Icon : filterMode === 'my' ? UserIcon : PencilEdit02Icon
   const EmptyIcon = emptyIcon
 
   if (!workspace) {
@@ -177,7 +177,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
         filterStatus && rawDocuments && rawDocuments.length > 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/40 mb-5">
-              <ListFilter className="h-7 w-7 text-muted-foreground/60" />
+              <FilterHorizontalIcon className="h-7 w-7 text-muted-foreground/60" />
             </div>
             <h3 className="text-lg font-semibold mb-1.5">
               No {DOC_STATUS_LABELS[filterStatus].toLowerCase()} documents
@@ -228,9 +228,9 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                       : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
                   }`}
                 >
-                  <ListFilter className="h-3 w-3" />
+                  <FilterHorizontalIcon className="h-3 w-3" />
                   {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                  <ChevronDown className="h-3 w-3 opacity-50" />
+                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
@@ -239,7 +239,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                   className={!filterStatus ? 'font-medium' : ''}
                 >
                   All
-                  {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
+                  {!filterStatus && <Tick01Icon className="ml-auto h-3.5 w-3.5" />}
                 </DropdownMenuItem>
                 {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
                   <DropdownMenuItem
@@ -248,7 +248,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                     className={filterStatus === key ? 'font-medium' : ''}
                   >
                     {label}
-                    {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
+                    {filterStatus === key && <Tick01Icon className="ml-auto h-3.5 w-3.5" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -260,16 +260,16 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <button type="button" onClick={() => { if (sortField === 'title') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('title'); setSortDir('asc') } }} className="min-w-0 flex-1 flex items-center gap-1 hover:text-foreground transition-colors text-left">
                 Title
-                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               <span className="w-36 shrink-0">Owner</span>
               <button type="button" onClick={() => { if (sortField === 'status') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('status'); setSortDir('asc') } }} className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
                 Status
-                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               <button type="button" onClick={() => { if (sortField === 'updated_at') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('updated_at'); setSortDir('desc') } }} className="w-20 shrink-0 flex items-center gap-1 justify-end hover:text-foreground transition-colors">
                 Updated
-                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
               </button>
               {canEditDocs && <span className="w-8 shrink-0" />}
             </div>
@@ -290,7 +290,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                     }
                     className="flex min-w-0 flex-1 items-center gap-2 text-left justify-start"
                   >
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 truncate font-medium">{doc.title}</span>
                   </button>
                   <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
@@ -321,7 +321,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                             className="rounded p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            <MoreHorizontalIcon className="h-4 w-4" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
@@ -329,11 +329,11 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                             disabled={duplicatingDocId === doc.id}
                             onClick={() => void handleDuplicateDoc(doc)}
                           >
-                            <Copy className="h-3.5 w-3.5" />
+                            <Copy01Icon className="h-3.5 w-3.5" />
                             {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setMovingDoc(doc)}>
-                            <FolderInput className="h-3.5 w-3.5" />
+                            <FolderInputIcon className="h-3.5 w-3.5" />
                             Move to...
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
@@ -346,7 +346,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                                 })
                               }}
                             >
-                              <Send className="h-3.5 w-3.5" />
+                              <SentIcon className="h-3.5 w-3.5" />
                               Publish
                             </DropdownMenuItem>
                           )}
@@ -359,7 +359,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                                 })
                               }}
                             >
-                              <ArchiveRestore className="h-3.5 w-3.5" />
+                              <ArchiveRestoreIcon className="h-3.5 w-3.5" />
                               Unarchive
                             </DropdownMenuItem>
                           ) : (
@@ -371,7 +371,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                                 })
                               }}
                             >
-                              <Archive className="h-3.5 w-3.5" />
+                              <ArchiveIcon className="h-3.5 w-3.5" />
                               Archive
                             </DropdownMenuItem>
                           )}
@@ -380,7 +380,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                             className="text-destructive focus:text-destructive"
                             onClick={() => setDeleteConfirmDoc(doc)}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Delete01Icon className="h-3.5 w-3.5" />
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>

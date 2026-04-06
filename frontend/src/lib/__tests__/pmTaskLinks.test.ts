@@ -25,4 +25,24 @@ describe('pmTaskLinks', () => {
       }),
     ).toBe('https://stage.helpin.ai/w/acme-team/pm/epics/epic-7?tab=active&task=42');
   });
+
+  it('uses task_key format in the URL when available', () => {
+    expect(
+      buildTaskCopyUrl({
+        currentHref: 'https://stage.helpin.ai/w/acme-team/pm/epics/epic-7?tab=active',
+        displayId: 42,
+        taskKey: 'HLP-42',
+      }),
+    ).toBe('https://stage.helpin.ai/w/acme-team/pm/epics/epic-7?tab=active&task=HLP-42');
+  });
+
+  it('falls back to display_id when taskKey is null', () => {
+    expect(
+      buildTaskCopyUrl({
+        currentHref: 'https://stage.helpin.ai/w/acme-team/pm/sprints/s-1',
+        displayId: 99,
+        taskKey: null,
+      }),
+    ).toBe('https://stage.helpin.ai/w/acme-team/pm/sprints/s-1?task=99');
+  });
 });

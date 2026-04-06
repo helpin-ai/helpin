@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { Trash2 } from 'lucide-react';
+import { Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -50,7 +50,7 @@ export function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
                     </Badge>
                     {editable && (
                       <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteRoleConfirm(role)}>
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Delete01Icon className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>

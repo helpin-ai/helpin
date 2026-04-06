@@ -17,9 +17,9 @@ export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-m
 export const TABLE_ROW =
   'group flex h-9 items-center bg-card transition-colors hover:bg-[color-mix(in_oklab,var(--card)_50%,var(--muted)_50%)]';
 
-/** Data cell – right border for grid lines, cell-level hover */
+/** Data cell – right border for grid lines */
 export const TABLE_CELL =
-  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center px-2.5 self-stretch last:bg-none transition-colors';
+  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center px-2.5 self-stretch last:bg-none';
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =

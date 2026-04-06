@@ -7,7 +7,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/tasks/')({
   component: TasksRoute,
   validateSearch: (search: Record<string, unknown>): TasksSearch => ({
     team: typeof search.team === 'string' ? search.team : undefined,
-    task: typeof search.task === 'string' ? search.task : undefined,
+    task: search.task != null ? String(search.task) : undefined,
   }),
 });
 

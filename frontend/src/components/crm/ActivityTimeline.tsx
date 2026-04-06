@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Mail, MessageSquare, Phone, Calendar, CheckSquare, Trash2 } from 'lucide-react';
+import { Mail01Icon, Message01Icon, TelephoneIcon, Calendar01Icon, CheckmarkSquare02Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,19 +19,19 @@ interface ActivityTimelineProps {
   onActivityDeleted?: () => void;
 }
 
-const activityIcons: Record<CRMActivityType, typeof Mail> = {
-  note: MessageSquare,
-  call: Phone,
-  meeting: Calendar,
-  email: Mail,
-  task: CheckSquare,
+const activityIcons: Record<CRMActivityType, typeof Mail01Icon> = {
+  note: Message01Icon,
+  call: TelephoneIcon,
+  meeting: Calendar01Icon,
+  email: Mail01Icon,
+  task: CheckmarkSquare02Icon,
 };
 
-const activityTypes: { type: CRMActivityType; icon: typeof MessageSquare; label: string }[] = [
-  { type: 'note', icon: MessageSquare, label: 'Note' },
-  { type: 'call', icon: Phone, label: 'Call' },
-  { type: 'meeting', icon: Calendar, label: 'Meeting' },
-  { type: 'task', icon: CheckSquare, label: 'Task' },
+const activityTypes: { type: CRMActivityType; icon: typeof Message01Icon; label: string }[] = [
+  { type: 'note', icon: Message01Icon, label: 'Note' },
+  { type: 'call', icon: TelephoneIcon, label: 'Call' },
+  { type: 'meeting', icon: Calendar01Icon, label: 'Meeting' },
+  { type: 'task', icon: CheckmarkSquare02Icon, label: 'Task' },
 ];
 
 const filterOptions = ['all', 'note', 'call', 'meeting', 'email', 'task'] as const;
@@ -164,7 +164,7 @@ export function ActivityTimeline({
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <MessageSquare className="h-6 w-6 text-muted-foreground/50" />
+            <Message01Icon className="h-6 w-6 text-muted-foreground/50" />
           </div>
           <p className="mt-3 text-sm font-medium">No activities yet</p>
           <p className="mt-1 text-xs text-muted-foreground">Log your first activity to track interactions</p>
@@ -172,7 +172,7 @@ export function ActivityTimeline({
       ) : (
         <div className="space-y-4">
           {filtered.map((activity) => {
-            const Icon = activityIcons[activity.activity_type] ?? MessageSquare;
+            const Icon = activityIcons[activity.activity_type] ?? Message01Icon;
             return (
               <div key={activity.id} className="group flex gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -192,7 +192,7 @@ export function ActivityTimeline({
                           className="h-6 w-6"
                           onClick={() => setDeleteId(activity.id)}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Delete01Icon className="h-3 w-3" />
                         </Button>
                       </div>
                     )}

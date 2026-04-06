@@ -573,10 +573,10 @@ export class HelpinClient {
    * If the widget WebSocket is open, sends via session:upgrade; otherwise falls back to HTTP POST.
    */
   private sendIdentifyToBackend(email: string, name: string, source: string): void {
-    // Try widget WS path first (via global helpin widget manager)
-    const widget = (globalThis as any).helpin?.widget;
-    if (widget?.wsConnection?.readyState === WebSocket.OPEN) {
-      widget.wsSend('session:upgrade', { email, name, source });
+    // Try widget WS path first via the public sendSessionUpgrade method
+    const namespace = this.config.namespace || 'helpin';
+    const nsFunc = (globalThis as any)[namespace];
+    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(email, name, source)) {
       return;
     }
 

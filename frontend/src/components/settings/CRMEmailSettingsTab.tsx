@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, Plus, RotateCcw, Mail, Clock, Filter, Building2, Users, ShieldCheck, Save, Check } from 'lucide-react';
+import { Cancel01Icon, PlusSignIcon, RotateLeft01Icon, Mail01Icon, Clock01Icon, FilterIcon, Building03Icon, UserGroupIcon, SecurityCheckIcon, FloppyDiskIcon, Tick01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import type { CRMFilterMode, CRMRecordCreationMode, CRMInternalExclusion } from '@/lib/crmTypes';
 
@@ -64,7 +64,7 @@ function RemovableTag({ label, onRemove }: { label: string; onRemove: () => void
         onClick={onRemove}
         className="ml-0.5 rounded-full p-0.5 opacity-40 transition-opacity group-hover/tag:opacity-100"
       >
-        <X className="h-3 w-3" />
+        <Cancel01Icon className="h-3 w-3" />
       </button>
     </Badge>
   );
@@ -218,7 +218,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="01"
-            icon={Mail}
+            icon={Mail01Icon}
             title="Connected Accounts"
             description="Connect email accounts to sync conversations and detect buyer signals."
           />
@@ -233,7 +233,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="02"
-            icon={Clock}
+            icon={Clock01Icon}
             title="Historical Sync Period"
             description="How many days of email history to backfill on a first connect or when Gmail forces a recovery sync."
           />
@@ -265,7 +265,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="03"
-            icon={Filter}
+            icon={FilterIcon}
             title="Email & Meeting Filtering"
             description="Control which emails are synced using pattern-based filtering."
           />
@@ -306,7 +306,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
                   className="flex-1 font-mono text-sm placeholder:font-sans"
                 />
                 <Button variant="outline" size="icon" onClick={addPattern} disabled={!newPattern.trim()}>
-                  <Plus className="h-4 w-4" />
+                  <PlusSignIcon className="h-4 w-4" />
                 </Button>
               </div>
               {filterPatterns.length > 0 && (
@@ -331,7 +331,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="04"
-            icon={Building2}
+            icon={Building03Icon}
             title="Internal Communication & Meetings"
             description="Configure how internal emails and meetings are handled."
           />
@@ -385,7 +385,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="05"
-            icon={Users}
+            icon={UserGroupIcon}
             title="Record Creation"
             description="Control when new contact records are created from synced emails and calendar meetings."
           />
@@ -432,7 +432,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="p-6">
           <SectionHeader
             number="06"
-            icon={ShieldCheck}
+            icon={SecurityCheckIcon}
             title="Blocked Record Creation Prefixes"
             description="Email prefixes (the part before @) blocked from creating records. Typically automated or system emails."
           />
@@ -451,7 +451,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
                 className="flex-1 font-mono text-sm placeholder:font-sans"
               />
               <Button variant="outline" size="icon" onClick={addPrefix} disabled={!newPrefix.trim()}>
-                <Plus className="h-4 w-4" />
+                <PlusSignIcon className="h-4 w-4" />
               </Button>
             </div>
 
@@ -475,7 +475,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
                 onClick={resetPrefixesToDefault}
                 className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateLeft01Icon className="h-3.5 w-3.5" />
                 Reset to defaults
               </Button>
             </div>
@@ -494,14 +494,14 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
           <Button onClick={handleSave} disabled={saving || saved} className="min-w-[120px] gap-2">
             {saved ? (
               <>
-                <Check className="h-4 w-4" />
+                <Tick01Icon className="h-4 w-4" />
                 Saved
               </>
             ) : saving ? (
               'Saving...'
             ) : (
               <>
-                <Save className="h-4 w-4" />
+                <FloppyDiskIcon className="h-4 w-4" />
                 Save Settings
               </>
             )}

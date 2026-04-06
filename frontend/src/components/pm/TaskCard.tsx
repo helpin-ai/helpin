@@ -1,12 +1,12 @@
 import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
-  AlertTriangle,
-  CalendarDays,
-  Check,
-  Layers,
-  UserPlus,
-} from 'lucide-react';
+  Alert01Icon,
+  Calendar03Icon,
+  Layers01Icon,
+  Tick01Icon,
+  UserAdd01Icon,
+} from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -190,7 +190,7 @@ function TaskCardComponent({
     if (!task.blocked) return null;
     if (task.blocked_by_count && task.blocked_by_count > 0) {
       if (task.blocked_by_count === 1 && task.blocked_by_tasks?.[0]) {
-        return `Blocked by ${task.blocked_by_tasks[0].display_id}`;
+        return `Blocked by ${task.blocked_by_tasks[0].task_key}`;
       }
       return `Blocked by ${task.blocked_by_count} tasks`;
     }
@@ -377,7 +377,7 @@ function TaskCardComponent({
                           >
                             <PriorityIcon priority={p} className="h-3.5 w-3.5" />
                             <span>{cfg.label}</span>
-                            {task.priority === p && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                            {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                           </CommandItem>
                         );
                       })}
@@ -426,7 +426,7 @@ function TaskCardComponent({
       {/* Epic row */}
       {vis.epic && task.epic_name && (
         <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Layers className="h-3 w-3 shrink-0" />
+          <Layers01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate">{task.epic_name}</span>
         </div>
       )}
@@ -478,7 +478,7 @@ function TaskCardComponent({
                           >
                             <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
                             <span>{cfg.label}</span>
-                            {task.severity === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                            {task.severity === sev && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                           </CommandItem>
                         );
                       })}
@@ -499,7 +499,7 @@ function TaskCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
-                <AlertTriangle className="h-3 w-3" />
+                <Alert01Icon className="h-3 w-3" />
                 {blockedLabel}
               </span>
             </TooltipTrigger>
@@ -526,7 +526,7 @@ function TaskCardComponent({
                     ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
                     : 'border-border bg-muted/50 text-muted-foreground',
               )}>
-                <CalendarDays className="h-3 w-3 shrink-0" />
+                <Calendar03Icon className="h-3 w-3 shrink-0" />
                 {due.label}
               </span>
             </TooltipTrigger>
@@ -583,7 +583,7 @@ function TaskCardComponent({
                   />
                 ) : (
                   <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                    <UserPlus className="h-2.5 w-2.5" />
+                    <UserAdd01Icon className="h-2.5 w-2.5" />
                   </span>
                 );
               }}
@@ -596,7 +596,7 @@ function TaskCardComponent({
                     <UserAvatar name={currentOwnerName} className="h-5 w-5" />
                   ) : (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
-                      <UserPlus className="h-2.5 w-2.5" />
+                      <UserAdd01Icon className="h-2.5 w-2.5" />
                     </span>
                   )}
                 </span>

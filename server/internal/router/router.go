@@ -135,6 +135,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/support/attachments", h.SupportAttachment.WidgetCreate)
 			r.Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 		}
+		// Help center routes (used by widget-core helpApi.ts)
+		r.Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+		r.Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+		r.Get("/support/help/articles/{articleSlug}", h.SupportInboxWidget.GetHelpArticle)
+		r.Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
+		if h.SupportAI != nil {
+			r.Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+		}
 	})
 
 	// ---- SDK asset serving (no JWT, open CORS, cache headers) ----
@@ -351,6 +359,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/me", h.Workspace.GetMe)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
+				r.Get("/key-history", h.Workspace.GetKeyHistory)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Update)
@@ -425,6 +434,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/github/install-url", h.Git.GetGitHubInstallURL)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations", h.Git.ListIntegrations)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations", h.Git.CreateIntegration)
+				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/integrations/{id}", h.Git.DeleteIntegration)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations/{id}/sync", h.Git.SyncRepositories)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/repositories", h.Git.ListRepositories)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/repositories/{id}", h.Git.UpdateRepository)
@@ -590,6 +600,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListTasks)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/preview-tasks", h.PMSprint.ListPreviewTasks)
 
 				// Tasks — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)

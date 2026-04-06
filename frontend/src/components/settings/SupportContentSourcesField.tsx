@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import {
-  ChevronRight,
-  Eye,
-  ExternalLink,
-  FileText,
-  Globe,
-  Info,
-  Link2,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-} from 'lucide-react';
+  ArrowRight01Icon,
+  ViewIcon,
+  LinkSquare01Icon,
+  File01Icon,
+  GlobeIcon,
+  InformationCircleIcon,
+  Link01Icon,
+  Loading03Icon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+  ArrowReloadHorizontalIcon,
+  Search01Icon,
+  Delete01Icon,
+} from '@/lib/icons';
 import { toast } from 'sonner';
 import {
   useAgentContentSources,
@@ -221,7 +221,7 @@ export function SupportContentSourcesField({
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Globe className="h-4 w-4" />
+                <GlobeIcon className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-sm font-medium">Website Content</p>
@@ -233,7 +233,7 @@ export function SupportContentSourcesField({
           </div>
 
           <Button type="button" size="sm" onClick={openCreateWizard} disabled={isMutating}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             Add website
           </Button>
         </div>
@@ -247,7 +247,7 @@ export function SupportContentSourcesField({
           {sources.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center">
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Globe className="h-5 w-5" />
+                <GlobeIcon className="h-5 w-5" />
               </div>
               <p className="text-sm font-medium">No websites added yet</p>
               <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
@@ -258,7 +258,7 @@ export function SupportContentSourcesField({
             sources.map((source) => {
               const selected = hasAgent && selectedSet.has(source.id);
               const statusMeta = STATUS_META[source.sync_status];
-              const StatusIcon = statusMeta?.icon ?? Globe;
+              const StatusIcon = statusMeta?.icon ?? GlobeIcon;
               const progress = Math.max(0, Math.min(source.sync_progress ?? 0, 100));
               const indexedPages = source.indexed_pages ?? 0;
               const indexedChunks = source.indexed_chunks ?? 0;
@@ -305,16 +305,16 @@ export function SupportContentSourcesField({
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => setViewingSource(source)} disabled={isMutating} title="View pages">
-                            <FileText className="h-3.5 w-3.5" />
+                            <File01Icon className="h-3.5 w-3.5" />
                           </Button>
                           <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEditWizard(source)} disabled={isMutating} title="Edit">
-                            <Pencil className="h-3.5 w-3.5" />
+                            <PencilEdit01Icon className="h-3.5 w-3.5" />
                           </Button>
                           <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void handleReindex(source.id)} disabled={isMutating} title="Re-sync">
-                            <RefreshCw className={cn('h-3.5 w-3.5', reindexSource.isPending && 'animate-spin')} />
+                            <ArrowReloadHorizontalIcon className={cn('h-3.5 w-3.5', reindexSource.isPending && 'animate-spin')} />
                           </Button>
                           <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteTarget(source)} disabled={isMutating} title="Remove">
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Delete01Icon className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -327,7 +327,7 @@ export function SupportContentSourcesField({
                           rel="noreferrer"
                           className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
                         >
-                          <Link2 className="h-3 w-3" />
+                          <Link01Icon className="h-3 w-3" />
                           {stripProtocol(source.start_url)}
                         </a>
                         <span>Max {source.crawl_limit ?? 100} {(source.crawl_limit ?? 100) === 1 ? 'page' : 'pages'}</span>
@@ -377,7 +377,7 @@ export function SupportContentSourcesField({
           setAdvancedOpen(false);
         }
       }}>
-        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-4xl" showCloseButton>
+        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-6xl" showCloseButton>
           <SheetHeader className="border-b border-border/70 px-6 py-5 text-left">
             <SheetTitle>
               {editingSource ? 'Edit website source' : 'Add website source'}
@@ -400,7 +400,7 @@ export function SupportContentSourcesField({
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                              <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-[280px] space-y-1.5 text-xs leading-relaxed">
                               <p>For best results, sync <strong>support-focused content</strong> like help articles, product guides, or knowledge base pages.</p>
@@ -473,7 +473,7 @@ export function SupportContentSourcesField({
                       onClick={() => setAdvancedOpen((prev) => !prev)}
                       className="flex w-full items-center gap-2 px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      <ChevronRight className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-90')} />
+                      <ArrowRight01Icon className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-90')} />
                       <span className="font-medium">Advanced settings</span>
                     </button>
 
@@ -605,7 +605,7 @@ export function SupportContentSourcesField({
               </Button>
               {wizardStep === 'review' ? (
                 <Button type="button" onClick={() => void submitWizard()} disabled={isMutating}>
-                  {(createSource.isPending || updateSource.isPending || updateAgentSources.isPending) && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                  {(createSource.isPending || updateSource.isPending || updateAgentSources.isPending) && <Loading03Icon className="h-4 w-4 animate-spin" />}
                   {editingSource ? 'Save and re-sync' : 'Add and sync'}
                 </Button>
               ) : (
@@ -619,7 +619,7 @@ export function SupportContentSourcesField({
       </Sheet>
 
       <Sheet open={!!viewingSource} onOpenChange={(open) => { if (!open) setViewingSource(null); }}>
-        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-4xl" showCloseButton>
+        <SheetContent side="right" className="w-full border-l border-border/70 p-0 sm:max-w-6xl" showCloseButton>
           <SheetHeader className="border-b border-border/70 px-6 py-5 text-left">
             <SheetTitle>{viewingSource?.name} — Synced Pages</SheetTitle>
             <SheetDescription>
@@ -645,7 +645,7 @@ export function SupportContentSourcesField({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteSource.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleDelete()} variant="destructive" disabled={deleteSource.isPending}>
-              {deleteSource.isPending && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              {deleteSource.isPending && <Loading03Icon className="h-4 w-4 animate-spin" />}
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -680,7 +680,7 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
     return (
       <div className="px-6 py-16 text-center">
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <FileText className="h-5 w-5" />
+          <File01Icon className="h-5 w-5" />
         </div>
         <p className="text-sm font-medium">No pages synced yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -705,7 +705,7 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
     <div>
       <div className="border-b border-border/70 px-6 py-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -744,7 +744,7 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
                   >
-                    <ExternalLink className="h-3 w-3" />
+                    <LinkSquare01Icon className="h-3 w-3" />
                     <span className="max-w-[360px] truncate">{page.url}</span>
                   </a>
                   {page.content_length > 0 && (
@@ -766,7 +766,7 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
                   onClick={() => setPreviewPageId(page.id)}
                   title="Preview content"
                 >
-                  <Eye className="h-3.5 w-3.5" />
+                  <ViewIcon className="h-3.5 w-3.5" />
                 </Button>
                 <Badge
                   variant="outline"

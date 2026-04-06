@@ -1,16 +1,16 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
-  Bot,
-  CheckCircle2,
-  Clock,
-  KeyRound,
-  Loader2,
-  MessageSquareMore,
-  RefreshCw,
-  ShieldCheck,
-  XCircle,
-} from 'lucide-react';
+  BotIcon,
+  CheckmarkCircle02Icon,
+  Clock01Icon,
+  Key01Icon,
+  Loading01Icon,
+  MessagePreview01Icon,
+  ArrowReloadHorizontalIcon,
+  SecurityCheckIcon,
+  CancelCircleIcon,
+} from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
@@ -24,14 +24,14 @@ import { agentService } from '@/lib/services/agentService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const STATUS_ICONS: Record<string, ReactNode> = {
-  queued: <Clock className="h-3 w-3" />,
-  running: <Loader2 className="h-3 w-3 animate-spin" />,
-  awaiting_input: <MessageSquareMore className="h-3 w-3" />,
-  awaiting_approval: <ShieldCheck className="h-3 w-3" />,
-  awaiting_auth: <KeyRound className="h-3 w-3" />,
-  completed: <CheckCircle2 className="h-3 w-3" />,
-  failed: <XCircle className="h-3 w-3" />,
-  cancelled: <XCircle className="h-3 w-3" />,
+  queued: <Clock01Icon className="h-3 w-3" />,
+  running: <Loading01Icon className="h-3 w-3 animate-spin" />,
+  awaiting_input: <MessagePreview01Icon className="h-3 w-3" />,
+  awaiting_approval: <SecurityCheckIcon className="h-3 w-3" />,
+  awaiting_auth: <Key01Icon className="h-3 w-3" />,
+  completed: <CheckmarkCircle02Icon className="h-3 w-3" />,
+  failed: <CancelCircleIcon className="h-3 w-3" />,
+  cancelled: <CancelCircleIcon className="h-3 w-3" />,
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -236,7 +236,7 @@ export function AgentRunsPage() {
           <Badge variant="outline">{activeRuns.length} active</Badge>
           <Badge variant="outline">{runs.filter((run) => run.invocation_mode === 'interactive').length} interactive</Badge>
           <Button variant="outline" size="sm" onClick={() => void loadData(true)} disabled={refreshing}>
-            {refreshing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+            {refreshing ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}
             Refresh
           </Button>
         </div>
@@ -248,7 +248,7 @@ export function AgentRunsPage() {
 
       {loading ? (
         <div className="flex items-center gap-2 rounded-lg border border-border/60 px-4 py-6 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loading01Icon className="h-4 w-4 animate-spin" />
           Loading agent runs...
         </div>
       ) : error ? (
@@ -257,7 +257,7 @@ export function AgentRunsPage() {
         </div>
       ) : runs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 px-6 py-10 text-center">
-          <Bot className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
+          <BotIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
           <p className="text-sm font-medium">No agent runs yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Start an agent from a task, epic, or support conversation and it will appear here.

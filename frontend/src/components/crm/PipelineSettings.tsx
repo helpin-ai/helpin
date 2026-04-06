@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Pencil, ArrowUp, ArrowDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { PlusSignIcon, Delete01Icon, PencilEdit01Icon, ArrowUp02Icon, ArrowDown02Icon, ArrowDown01Icon, ArrowUp01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -235,7 +235,7 @@ export function PipelineSettings() {
             <Badge variant="secondary" className="text-xs">{pipelineList.length}</Badge>
           </div>
           <Button size="sm" variant="outline" onClick={openCreatePipeline}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
             Create
           </Button>
         </CardHeader>
@@ -266,7 +266,7 @@ export function PipelineSettings() {
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditPipeline(pipeline)}>
-                      <Pencil className="h-3.5 w-3.5" />
+                      <PencilEdit01Icon className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -274,7 +274,7 @@ export function PipelineSettings() {
                       className="h-7 w-7"
                       onClick={() => setExpandedPipelineId(isExpanded ? null : pipeline.id)}
                     >
-                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {isExpanded ? <ArrowUp01Icon className="h-3.5 w-3.5" /> : <ArrowDown01Icon className="h-3.5 w-3.5" />}
                     </Button>
                     <Button
                       variant="ghost"
@@ -284,7 +284,7 @@ export function PipelineSettings() {
                       title={hasDealCount ? 'Pipeline has active deals' : 'Delete pipeline'}
                       onClick={() => setDeletePipelineConfirm(pipeline.id)}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Delete01Icon className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -309,7 +309,7 @@ export function PipelineSettings() {
                               setStageProbability(type === 'won' ? 100 : type === 'lost' ? 0 : 0);
                               setStageDialogOpen(true);
                             }}>
-                              <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                              <PlusSignIcon className="h-3.5 w-3.5 mr-1" /> Add
                             </Button>
                           </div>
                           {groupStages.length === 0 ? (
@@ -335,7 +335,7 @@ export function PipelineSettings() {
                                         disabled={idx === 0}
                                         onClick={() => handleReorder(pipeline.id, stage.id, 'up')}
                                       >
-                                        <ArrowUp className="h-3.5 w-3.5" />
+                                        <ArrowUp02Icon className="h-3.5 w-3.5" />
                                       </Button>
                                       <Button
                                         size="icon"
@@ -344,7 +344,7 @@ export function PipelineSettings() {
                                         disabled={idx === groupStages.length - 1}
                                         onClick={() => handleReorder(pipeline.id, stage.id, 'down')}
                                       >
-                                        <ArrowDown className="h-3.5 w-3.5" />
+                                        <ArrowDown02Icon className="h-3.5 w-3.5" />
                                       </Button>
                                       <Button
                                         size="icon"
@@ -352,7 +352,7 @@ export function PipelineSettings() {
                                         className="h-7 w-7"
                                         onClick={() => openEditStage(pipeline.id, stage)}
                                       >
-                                        <Pencil className="h-3.5 w-3.5" />
+                                        <PencilEdit01Icon className="h-3.5 w-3.5" />
                                       </Button>
                                     </div>
                                   </div>

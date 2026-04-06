@@ -14,7 +14,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { ArchiveIcon, ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, ChartColumnIcon, Calendar03Icon, Tick01Icon, ArrowDown01Icon, ArrowRight01Icon, CheckmarkCircle02Icon, MoreVerticalIcon, LinkSquare01Icon, Link01Icon, Loading01Icon, StickyNote01Icon, UserAdd01Icon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -455,7 +455,7 @@ export function TaskListView({
   // Table columns
   const tableColumns = useMemo(
     () => [
-      columnHelper.accessor('display_id', {
+      columnHelper.accessor('task_key', {
         id: 'displayId',
         header: 'ID',
         size: 90,
@@ -870,7 +870,7 @@ export function TaskListView({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
         Loading tasks...
       </div>
     );
@@ -972,11 +972,11 @@ export function TaskListView({
                       {canSort && (
                         <span className="ml-auto shrink-0">
                           {sorted === 'asc' ? (
-                            <ArrowUp className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                           ) : sorted === 'desc' ? (
-                            <ArrowDown className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                           ) : (
-                            <ArrowUpDown className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                            <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
                           )}
                         </span>
                       )}
@@ -1063,7 +1063,7 @@ export function TaskListView({
           </div>
           {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
               Loading more tasks...
             </div>
           )}
@@ -1104,21 +1104,21 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       onClick={row.getToggleExpandedHandler()}
     >
       {row.getIsExpanded() ? (
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
       ) : (
-        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
       )}
       {stateType && <StateTypeIcon stateType={stateType} className="h-4 w-4" />}
       <span>{String(row.groupingValue)}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
         <span className="flex items-center gap-1" title="Tasks">
-          <StickyNote className="h-3 w-3" /> {storyCount}
+          <StickyNote01Icon className="h-3 w-3" /> {storyCount}
         </span>
         <span className="flex items-center gap-1" title="Total Points">
-          <BarChart3 className="h-3 w-3" /> {totalPoints}
+          <ChartColumnIcon className="h-3 w-3" /> {totalPoints}
         </span>
         <span className="flex items-center gap-1" title="Completed Points">
-          <CircleCheck className="h-3 w-3" /> {completedPoints}
+          <CheckmarkCircle02Icon className="h-3 w-3" /> {completedPoints}
         </span>
       </span>
     </button>
@@ -1196,7 +1196,7 @@ function GroupLoadSentinel({
 
   return isLoading ? (
     <div className="flex w-full items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground">
-      <Loader2 className="h-3 w-3 animate-spin" />
+      <Loading01Icon className="h-3 w-3 animate-spin" />
       Loading...
     </div>
   ) : null;
@@ -1253,7 +1253,7 @@ function InlinePriorityCell({
                     >
                       <PriorityIcon priority={pri} className="h-3.5 w-3.5" />
                       <span>{cfg.label}</span>
-                      {p === pri && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                      {p === pri && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
                   );
                 })}
@@ -1320,7 +1320,7 @@ function InlineStateCell({
                   >
                     <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
                     <span>{s.name}</span>
-                    {task.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.workflow_state_id === s.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1368,7 +1368,7 @@ function InlineOwnerCell({
           </>
         ) : (
           <>
-            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            <UserAdd01Icon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-muted-foreground">Assign</span>
           </>
         );
@@ -1432,7 +1432,7 @@ function InlineSeverityCell({
                     >
                       <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
                       <span>{cfg.label}</span>
-                      {s === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                      {s === sev && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
                   );
                 })}
@@ -1522,7 +1522,7 @@ function InlineTeamCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{t.name}</span>
-                    {task.team_id === t.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.team_id === t.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1588,7 +1588,7 @@ function InlineEpicCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{e.epic.name}</span>
-                    {task.epic_id === e.epic.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.epic_id === e.epic.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1654,7 +1654,7 @@ function InlineSprintCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{sp.sprint.name}</span>
-                    {task.sprint_id === sp.sprint.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.sprint_id === sp.sprint.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1714,14 +1714,14 @@ function InlineDeadlineCell({
         >
           {selected ? (
             <>
-              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className={isOverdue ? 'text-red-500' : 'text-muted-foreground'}>
                 {format(selected, 'MMM d, yyyy')}
               </span>
             </>
           ) : (
             <>
-              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">No date</span>
             </>
           )}
@@ -1809,6 +1809,7 @@ function InlineActionsCell({
     const url = buildTaskCopyUrl({
       currentHref: window.location.href,
       displayId: task.display_id,
+      taskKey: task.task_key,
       origin: window.location.origin,
       slug: workspaceSlug,
       taskId: task.id,
@@ -1831,23 +1832,23 @@ function InlineActionsCell({
             type="button"
             className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
           >
-            <EllipsisVertical className="h-4 w-4" />
+            <MoreVerticalIcon className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => onOpenTask(task)}>
-            <ExternalLink className="mr-2 h-3.5 w-3.5" />
+            <LinkSquare01Icon className="mr-2 h-3.5 w-3.5" />
             Open Task
           </DropdownMenuItem>
           <DropdownMenuItem onClick={copyLink}>
-            <Link2 className="mr-2 h-3.5 w-3.5" />
+            <Link01Icon className="mr-2 h-3.5 w-3.5" />
             Copy Link
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setArchiveOpen(true)}
             className="text-destructive focus:text-destructive"
           >
-            <Archive className="mr-2 h-3.5 w-3.5" />
+            <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
             Archive Task
           </DropdownMenuItem>
         </DropdownMenuContent>

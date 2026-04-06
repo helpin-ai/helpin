@@ -13,13 +13,12 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BarChart3, Bot, ChevronsLeftRight, ChevronsRightLeft, Columns2, LayoutList, Loader2, Plus, StickyNote, User } from 'lucide-react';
+import { ChartColumnIcon, BotIcon, ArrowExpandIcon, ArrowShrinkIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, StickyNote01Icon, UserIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -118,10 +117,10 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         {column.state.color && (
           <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
         )}
-        <ChevronsLeftRight className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         {automatedStateIds?.has(column.state.id) && (
-          <Bot className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <BotIcon className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
         )}
         <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
         <div className="mt-3 flex flex-1 items-start">
@@ -151,7 +150,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
                 {column.state.name}
                 {automatedStateIds?.has(column.state.id) && (
                   <QuickTooltip label="Agent runs automatically on entry">
-                    <Bot className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                    <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
                   </QuickTooltip>
                 )}
               </p>
@@ -162,7 +161,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               {column.state.name}
               {automatedStateIds?.has(column.state.id) && (
                 <QuickTooltip label="Agent runs automatically on entry">
-                  <Bot className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                  <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
                 </QuickTooltip>
               )}
             </p>
@@ -170,13 +169,13 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
-                <StickyNote className="h-3 w-3" />
+                <StickyNote01Icon className="h-3 w-3" />
                 {column.task_count}
               </span>
             </QuickTooltip>
             <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
               <span className="inline-flex items-center gap-1.5">
-                <BarChart3 className="h-3 w-3" />
+                <ChartColumnIcon className="h-3 w-3" />
                 {column.point_total}
               </span>
             </QuickTooltip>
@@ -190,12 +189,12 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity"
               onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
             >
-              <ChevronsRightLeft className="h-3.5 w-3.5" />
+              <ArrowShrinkIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create task">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreate(column.state.id)}>
-              <Plus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
             </Button>
           </QuickTooltip>
         </div>
@@ -243,7 +242,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             >
               {isLoadingMore ? (
                 <>
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   Loading more...
                 </>
               ) : (
@@ -257,7 +256,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             className="w-full justify-start text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreate(column.state.id)}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
             Add task
           </Button>
         </div>
@@ -316,11 +315,11 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           )}
           onClick={() => callbacksRef.current.onToggleCollapse(colKey)}
         >
-          <ChevronsLeftRight className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {column.member ? (
             <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} className="h-5 w-5 text-[10px]" />
           ) : (
-            <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
           <span className="mt-2 text-xs font-medium text-muted-foreground">{column.task_count}</span>
           <div className="mt-3 flex flex-1 items-start">
@@ -344,20 +343,20 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             {column.member ? (
               <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} className="h-5 w-5 text-[10px]" />
             ) : (
-              <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
             {displayName}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
               <span className="inline-flex items-center gap-1.5">
-                <StickyNote className="h-3 w-3" />
+                <StickyNote01Icon className="h-3 w-3" />
                 {column.task_count}
               </span>
             </QuickTooltip>
             <QuickTooltip label={`${column.point_total} estimate ${column.point_total === 1 ? 'point' : 'points'}`}>
               <span className="inline-flex items-center gap-1.5">
-                <BarChart3 className="h-3 w-3" />
+                <ChartColumnIcon className="h-3 w-3" />
                 {column.point_total}
               </span>
             </QuickTooltip>
@@ -366,12 +365,12 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
         <div className="flex items-center gap-0.5">
           <QuickTooltip label="Collapse column">
             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity" onClick={() => callbacksRef.current.onToggleCollapse(colKey)}>
-              <ChevronsRightLeft className="h-3.5 w-3.5" />
+              <ArrowShrinkIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create task">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}>
-              <Plus className="h-4 w-4" />
+              <PlusSignIcon className="h-4 w-4" />
             </Button>
           </QuickTooltip>
         </div>
@@ -397,7 +396,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           {column.has_more ? (
             <div ref={loadMoreRef} className="flex h-8 items-center justify-center text-xs text-muted-foreground">
               {isLoadingMore ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading more...</>
+                <><Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading more...</>
               ) : (
                 <span>{column.task_count - column.tasks.length} remaining</span>
               )}
@@ -409,7 +408,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             className="w-full justify-start text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
             Add task
           </Button>
         </div>
@@ -624,21 +623,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     return () => window.removeEventListener('task-created', handler);
   }, [refreshBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
-  // Open ?task= URL param in global panel on mount
-  useEffect(() => {
-    if (!workflow) return;
-    const maybeTask = new URLSearchParams(window.location.search).get('task');
-    if (!maybeTask) return;
-    const match = maybeTask.match(/^(\d+)$/);
-    if (!match) return;
-    (async () => {
-      const res = await pmTaskService.getByDisplayId(workspaceId, Number(match[1]));
-      if (res.data && workspaceSlug) {
-        openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, workflow, workspaceSlug]);
   const openTask = useCallback(
     (task: Task) => {
       if (!workspaceSlug) return;
@@ -1197,7 +1181,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 className="h-7 w-7"
                 onClick={() => setViewMode('board')}
               >
-                <Columns2 className="h-4 w-4" />
+                <LayoutTwoColumnIcon className="h-4 w-4" />
               </Button>
             </QuickTooltip>
             <QuickTooltip label="List view">
@@ -1207,7 +1191,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 className="h-7 w-7"
                 onClick={() => setViewMode('list')}
               >
-                <LayoutList className="h-4 w-4" />
+                <LayoutTable01Icon className="h-4 w-4" />
               </Button>
             </QuickTooltip>
           </BoardToolbarSlot>
@@ -1225,7 +1209,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
           Loading board...
         </div>
       ) : null}

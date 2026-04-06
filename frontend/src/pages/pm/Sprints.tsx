@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { InfiniteData } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -17,7 +18,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
-const TASK_PREVIEW_LIMIT = 5;
+const TASK_PREVIEW_LIMIT = 20;
 const BACKLOG_LIMIT = 50;
 
 interface SprintsPageProps {
@@ -25,31 +26,36 @@ interface SprintsPageProps {
 }
 
 function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintPlanningWorkspaceData {
+  const buckets = workspace.buckets ?? [];
+  const backlogTasks = workspace.backlog_tasks ?? [];
   return {
     ...workspace,
-    buckets: workspace.buckets.map((bucket) => ({
+    buckets: buckets.map((bucket) => ({
       ...bucket,
       sprints: (bucket.sprints ?? []).map((card) => ({
         ...card,
+        stats: { ...card.stats },
         preview_tasks: [...(card.preview_tasks ?? [])],
       })),
     })),
-    backlog_tasks: [...workspace.backlog_tasks],
+    backlog_tasks: [...backlogTasks],
   };
 }
 
 function removeTaskFromCards(workspace: SprintPlanningWorkspaceData, taskId: string) {
   let found: SprintPlanningTaskPreview | null = null;
   let sourceSprintId: string | null = null;
+  const backlogTasks = workspace.backlog_tasks ?? [];
 
-  const backlogIndex = workspace.backlog_tasks.findIndex((t) => t.id === taskId);
+  const backlogIndex = backlogTasks.findIndex((t) => t.id === taskId);
   if (backlogIndex >= 0) {
-    found = workspace.backlog_tasks[backlogIndex];
-    workspace.backlog_tasks.splice(backlogIndex, 1);
+    found = backlogTasks[backlogIndex];
+    backlogTasks.splice(backlogIndex, 1);
+    workspace.backlog_tasks = backlogTasks;
     workspace.backlog_total = Math.max(0, workspace.backlog_total - 1);
   }
 
-  for (const bucket of workspace.buckets) {
+  for (const bucket of (workspace.buckets ?? [])) {
     for (const card of (bucket.sprints ?? [])) {
       const tasks = card.preview_tasks ?? [];
       const index = tasks.findIndex((t) => t.id === taskId);
@@ -66,8 +72,10 @@ function removeTaskFromCards(workspace: SprintPlanningWorkspaceData, taskId: str
         }
         const hiddenCount = Math.max(card.stats.task_count - card.preview_tasks.length, 0);
         card.task_preview_overflow = hiddenCount;
+        break;
       }
     }
+    if (found) break;
   }
 
   return { found, sourceSprintId };
@@ -87,7 +95,8 @@ function addTaskToSprint(card: SprintPlanningWorkspaceData['buckets'][number]['s
 
 function addTaskToBacklog(workspace: SprintPlanningWorkspaceData, task: SprintPlanningTaskPreview) {
   const nextTask = { ...task, sprint_id: undefined };
-  workspace.backlog_tasks = [nextTask, ...workspace.backlog_tasks.filter((item) => item.id !== task.id)].slice(0, BACKLOG_LIMIT);
+  const backlogTasks = workspace.backlog_tasks ?? [];
+  workspace.backlog_tasks = [nextTask, ...backlogTasks.filter((item) => item.id !== task.id)].slice(0, BACKLOG_LIMIT);
   workspace.backlog_total += 1;
 }
 
@@ -106,7 +115,7 @@ function applyTaskAssignment(
     return next;
   }
 
-  for (const bucket of next.buckets) {
+  for (const bucket of (next.buckets ?? [])) {
     for (const card of (bucket.sprints ?? [])) {
       if (card.sprint.id === targetSprintId) {
         addTaskToSprint(card, movingTask, targetSprintId);
@@ -115,6 +124,32 @@ function applyTaskAssignment(
     }
   }
   return workspace;
+}
+
+function syncPreviewQueryCaches(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  workspace: SprintPlanningWorkspaceData,
+) {
+  for (const bucket of (workspace.buckets ?? [])) {
+    for (const card of (bucket.sprints ?? [])) {
+      const previewTasks = card.preview_tasks ?? [];
+      const total = card.stats.task_count ?? 0;
+      queryClient.setQueryData<InfiniteData<{ data: SprintPlanningTaskPreview[]; total: number; page: number; per_page: number; total_pages: number }>>(
+        queryKeys.pm.sprintPreviewTasks(workspaceId, card.sprint.id),
+        {
+          pageParams: [1],
+          pages: [{
+            data: previewTasks,
+            total,
+            page: 1,
+            per_page: TASK_PREVIEW_LIMIT,
+            total_pages: total > 0 ? Math.ceil(total / TASK_PREVIEW_LIMIT) : 0,
+          }],
+        },
+      );
+    }
+  }
 }
 
 export function SprintsPage({ teamId }: SprintsPageProps) {
@@ -182,11 +217,26 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     if (optimistic === previous) return;
 
     queryClient.setQueryData(planningQueryKey, optimistic);
+    syncPreviewQueryCaches(queryClient, workspaceId, optimistic);
     try {
-      const { error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
+      const { data, error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
       if (error) throw new Error(error);
+      if (data) {
+        queryClient.setQueryData(queryKeys.pm.task(workspaceId, task.id), data);
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: planningQueryKey });
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
+      syncPreviewQueryCaches(queryClient, workspaceId, previous);
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: planningQueryKey });
       toast.error(error instanceof Error ? error.message : 'Failed to update task sprint');
     }
   };
@@ -270,6 +320,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       ) : (
         <SprintPlanningWorkspace
           workspace={filteredWorkspace}
+          workspaceId={workspaceId}
           backlogOpen={backlogOpen}
           onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
           canEdit={canEdit}

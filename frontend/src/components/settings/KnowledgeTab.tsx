@@ -1,4 +1,4 @@
-import { BookOpen, Globe } from 'lucide-react';
+import { BookOpen01Icon, GlobeIcon } from '@/lib/icons';
 import { useDocsSpaces } from '@/hooks/queries';
 import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource, useSupportContentSources, useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -105,7 +105,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         <CardHeader>
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <BookOpen className="h-4 w-4" />
+              <BookOpen01Icon className="h-4 w-4" />
             </div>
             <div>
               <CardTitle className="text-base">Help Center Docs</CardTitle>
@@ -144,7 +144,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         <CardHeader>
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Globe className="h-4 w-4" />
+              <GlobeIcon className="h-4 w-4" />
             </div>
             <div>
               <CardTitle className="text-base">Website Content Sources</CardTitle>

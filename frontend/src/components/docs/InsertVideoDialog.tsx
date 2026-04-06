@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircleIcon } from '@/lib/icons';
 import { parseVideoUrl, SUPPORTED_PROVIDERS, type VideoInfo } from './videoProviders';
 
 interface InsertVideoDialogProps {
@@ -57,7 +57,7 @@ export function InsertVideoDialog({ open, onOpenChange, onInsert }: InsertVideoD
           />
           {showError && (
             <p className="flex items-center gap-1 text-xs text-destructive">
-              <AlertCircle className="h-3 w-3 shrink-0" />
+              <AlertCircleIcon className="h-3 w-3 shrink-0" />
               Unsupported URL. Use {SUPPORTED_PROVIDERS}.
             </p>
           )}

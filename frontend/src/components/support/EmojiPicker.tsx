@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Smile, X } from 'lucide-react';
+import { Search01Icon, SmileIcon, Cancel01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { loadEmojiCatalog, type EmojiCatalog } from '@helpin/widget-core';
 
@@ -108,7 +108,7 @@ export function EmojiPicker({ onEmojiSelect, align = 'start', side = 'top' }: Em
           className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
           aria-label="Open emoji picker"
         >
-          <Smile className="h-4 w-4" />
+          <SmileIcon className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -132,7 +132,7 @@ export function EmojiPicker({ onEmojiSelect, align = 'start', side = 'top' }: Em
         ) : emojiCatalog ? (
           <>
             <div className="flex items-center gap-2 border-b p-2">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Search01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
                 value={search}
@@ -147,7 +147,7 @@ export function EmojiPicker({ onEmojiSelect, align = 'start', side = 'top' }: Em
                   className="shrink-0 rounded p-0.5 hover:bg-muted"
                   aria-label="Clear search"
                 >
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Cancel01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               )}
             </div>

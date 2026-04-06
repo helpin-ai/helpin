@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowLeft,
-  CalendarDays,
-  ChevronRight,
-  Hash,
-  Heart,
-  Layers,
-  Loader2,
-  Pencil,
-  Target as TargetIcon,
-  User,
-  Users,
-} from 'lucide-react';
+  ArchiveIcon,
+  ArrowLeft02Icon,
+  Calendar03Icon,
+  ArrowRight01Icon,
+  FavouriteIcon,
+  Loading01Icon,
+  PencilEdit01Icon,
+  Target01Icon,
+  UserIcon,
+  UserGroupIcon,
+  ArchiveRestoreIcon,
+  HashtagIcon,
+  Layers01Icon,
+} from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -460,7 +460,7 @@ export function EpicDetailPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -470,7 +470,7 @@ export function EpicDetailPage() {
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">{error ?? 'Epic not found'}</p>
         <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
           Back to Epics
         </Button>
       </div>
@@ -482,15 +482,15 @@ export function EpicDetailPage() {
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <Layers className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Epics
           </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
@@ -518,7 +518,7 @@ export function EpicDetailPage() {
               setSaving(false);
             }}
           >
-            {epic.epic.archived ? <><ArchiveRestore className="h-3.5 w-3.5" /> Unarchive</> : <><Archive className="h-3.5 w-3.5" /> Archive</>}
+            {epic.epic.archived ? <><ArchiveRestoreIcon className="h-3.5 w-3.5" /> Unarchive</> : <><ArchiveIcon className="h-3.5 w-3.5" /> Archive</>}
           </Button>
         </div>
       </div>
@@ -575,7 +575,7 @@ export function EpicDetailPage() {
                     className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                     onClick={() => setEditingDescription(true)}
                   >
-                    <Pencil className="h-3 w-3" />
+                    <PencilEdit01Icon className="h-3 w-3" />
                     Edit description
                   </button>
                 )}
@@ -678,7 +678,7 @@ export function EpicDetailPage() {
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}
-            <MetadataRow icon={Hash} label="State">
+            <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
                 value={form.epic_state_id || defaultEpicState?.id || ''}
                 options={epicStates.map((s) => ({ value: s.id, label: s.name, className: STATE_TYPE_ICON_CONFIG[s.state_type as StateType]?.color }))}
@@ -690,7 +690,7 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Health */}
-            <MetadataRow icon={Heart} label="Health">
+            <MetadataRow icon={FavouriteIcon} label="Health">
               <div className="flex flex-col gap-1">
                 <SidebarPopoverSelect
                   value={form.health}
@@ -717,7 +717,7 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Team */}
-            <MetadataRow icon={Users} label="Team">
+            <MetadataRow icon={UserGroupIcon} label="Team">
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
@@ -745,20 +745,19 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Objectives */}
-            <MetadataRow icon={TargetIcon} label="Objective">
+            <MetadataRow icon={Target01Icon} label="Objective">
               <ObjectivePicker
                 objectives={allObjectives}
                 selectedObjectiveIds={(epic.objectives ?? []).map((objective) => objective.id)}
                 selectedObjectives={selectedObjectives}
                 onChange={updateObjectives}
                 addLabel="Add objective"
-                emptyLabel="None"
                 className="min-h-6"
               />
             </MetadataRow>
 
             {/* Owner */}
-            <MetadataRow icon={User} label="Owner">
+            <MetadataRow icon={UserIcon} label="Owner">
               <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
                 members={assignableMembers}
@@ -787,10 +786,19 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Start Date */}
-            <MetadataRow icon={CalendarDays} label="Start date">
+            <MetadataRow icon={Calendar03Icon} label="Start date">
               <DatePicker
                 value={form.planned_start_date}
                 onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'Target date',
+                  kind: 'target',
+                  value: form.deadline,
+                  onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                  placeholder: 'None',
+                }}
                 placeholder="None"
                 hideIcon
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
@@ -798,10 +806,21 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Target Date */}
-            <MetadataRow icon={CalendarDays} label="Target date">
+            <MetadataRow icon={Calendar03Icon} label="Target date">
               <DatePicker
-                value={form.deadline}
-                onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                value={form.planned_start_date}
+                onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                kind="start"
+                label="Start date"
+                linkedDate={{
+                  label: 'Target date',
+                  kind: 'target',
+                  value: form.deadline,
+                  onChange: (v) => updateField('deadline', v, { deadline: v || undefined }),
+                  placeholder: 'None',
+                }}
+                triggerField="linked"
+                defaultActiveField="linked"
                 placeholder="None"
                 hideIcon
                 urgencyColor
@@ -814,7 +833,7 @@ export function EpicDetailPage() {
                 <Separator className="col-span-3 my-1" />
 
                 {/* Planning Repo */}
-                <MetadataRow icon={Layers} label="Plan repo">
+                <MetadataRow icon={Layers01Icon} label="Plan repo">
                   <SidebarPopoverSelect
                     value={form.planning_repository_id || '__none__'}
                     options={[

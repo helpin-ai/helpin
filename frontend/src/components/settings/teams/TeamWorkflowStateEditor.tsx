@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Tick01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
@@ -168,7 +168,7 @@ export function TeamWorkflowStateEditor({
                         setEditName(state.name);
                       }}
                     >
-                      <Pencil className="h-3 w-3" />
+                      <PencilEdit01Icon className="h-3 w-3" />
                     </button>
                     {workflow.states.length > 1 && (
                       <button
@@ -176,7 +176,7 @@ export function TeamWorkflowStateEditor({
                         className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive"
                         onClick={() => setDeleteConfirm(state.id)}
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Delete01Icon className="h-3 w-3" />
                       </button>
                     )}
                   </div>
@@ -219,7 +219,7 @@ export function TeamWorkflowStateEditor({
                   onClick={handleAdd}
                   disabled={saving || !newName.trim()}
                 >
-                  <Check className="h-3.5 w-3.5" />
+                  <Tick01Icon className="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"
@@ -229,7 +229,7 @@ export function TeamWorkflowStateEditor({
                     setNewName('');
                   }}
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <Cancel01Icon className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
@@ -245,7 +245,7 @@ export function TeamWorkflowStateEditor({
                 setNewColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)]);
               }}
             >
-              <Plus className="h-3 w-3" /> Add state
+              <PlusSignIcon className="h-3 w-3" /> Add state
             </button>
           )}
         </div>

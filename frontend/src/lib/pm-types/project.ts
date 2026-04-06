@@ -221,6 +221,7 @@ export interface Task {
   id: string;
   workspace_id: string;
   display_id: number;
+  task_key: string;
   name: string;
   description?: string;
   task_type: TaskType;
@@ -277,6 +278,7 @@ export interface Task {
 export interface TaskDependencyTask {
   id: string;
   display_id: number;
+  task_key: string;
   name: string;
   workflow_state_id: string;
   completed: boolean;
@@ -307,6 +309,7 @@ export interface AssociationObjectSummary {
   object_type: AssociationEntityType | string;
   object_id: string;
   display_id?: string;
+  task_key?: string;
   title: string;
   status?: string;
   workflow_state_id?: string;

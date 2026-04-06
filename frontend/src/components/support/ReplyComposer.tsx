@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Send, Paperclip, StickyNote, MessageCircle, X as XIcon, Loader2, Mail, Sparkles, ChevronUp, ArrowUpDown, RefreshCw, CheckCheck, Smile, Briefcase } from 'lucide-react';
+import { SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon, Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon, TickDouble01Icon, SmileIcon, Briefcase01Icon } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -463,12 +463,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   const content = editor.getText();
   const canUseAITools = content.trim().length > 0 && !rewriteMutation.isPending;
-  const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDown }> = [
-    { operation: 'expand', label: 'Expand', icon: ArrowUpDown },
-    { operation: 'rephrase', label: 'Rephrase', icon: RefreshCw },
-    { operation: 'fix_grammar', label: 'Fix grammar', icon: CheckCheck },
-    { operation: 'more_friendly', label: 'More friendly', icon: Smile },
-    { operation: 'more_formal', label: 'More formal', icon: Briefcase },
+  const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
+    { operation: 'expand', label: 'Expand', icon: ArrowUpDownIcon },
+    { operation: 'rephrase', label: 'Rephrase', icon: ArrowReloadHorizontalIcon },
+    { operation: 'fix_grammar', label: 'Fix grammar', icon: TickDouble01Icon },
+    { operation: 'more_friendly', label: 'More friendly', icon: SmileIcon },
+    { operation: 'more_formal', label: 'More formal', icon: Briefcase01Icon },
   ];
 
   return (
@@ -480,7 +480,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     >
       {emailFallbackHint && !isNote && (
         <div className="flex items-start gap-2 border-b border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
+          <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
           <p>
             User is offline. Replies sent here will also be queued as an email to{' '}
             <span className="font-medium text-foreground">{emailFallbackHint.email}</span>.
@@ -525,7 +525,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <MessageCircle className="h-3 w-3" />
+          <Comment01Icon className="h-3 w-3" />
           Reply
         </button>
         <button
@@ -538,7 +538,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <StickyNote className="h-3 w-3" />
+          <StickyNote01Icon className="h-3 w-3" />
           Note
         </button>
         <DropdownMenu>
@@ -555,12 +555,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
               )}
             >
               {rewriteMutation.isPending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loading01Icon className="h-3 w-3 animate-spin" />
               ) : (
-                <Sparkles className="h-3 w-3" />
+                <SparklesIcon className="h-3 w-3" />
               )}
               AI Tools
-              <ChevronUp className="h-3 w-3 rotate-180" />
+              <ArrowUp01Icon className="h-3 w-3 rotate-180" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-48">
@@ -601,13 +601,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                 <img src={att.previewUrl} alt={att.fileName} className="h-14 w-14 rounded-lg object-cover border border-border" />
               ) : (
                 <div className="flex h-14 w-14 flex-col items-center justify-center rounded-lg border border-border bg-muted px-1">
-                  <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                  <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="mt-0.5 max-w-[48px] truncate text-[8px] text-muted-foreground">{att.fileName}</span>
                 </div>
               )}
               {att.status === 'uploading' && (
                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
-                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  <Loading01Icon className="h-4 w-4 animate-spin text-white" />
                 </div>
               )}
               {att.status === 'error' && (
@@ -620,7 +620,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                 onClick={() => removeAttachment(att.localId)}
                 className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground/80 text-background hover:bg-foreground"
               >
-                <XIcon className="h-2.5 w-2.5" />
+                <Cancel01Icon className="h-2.5 w-2.5" />
               </button>
             </div>
           ))}
@@ -640,7 +640,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => fileInputRef.current?.click()}>
-                <Paperclip className="h-4 w-4" />
+                <AttachmentIcon className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">Attach file</TooltipContent>
@@ -673,7 +673,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
               isNote && 'bg-amber-500 hover:bg-amber-600 text-white'
             )}
           >
-            <Send className="h-3 w-3" />
+            <SentIcon className="h-3 w-3" />
             {isNote ? 'Add Note' : 'Send'}
           </Button>
         </div>

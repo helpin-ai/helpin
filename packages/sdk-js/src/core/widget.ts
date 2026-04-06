@@ -1475,6 +1475,20 @@ export class WidgetManager {
     this.connectWebSocket();
   }
 
+  /**
+   * Sends a session:upgrade message over WebSocket if connected.
+   * Used by the analytics client to upgrade anonymous sessions via the
+   * identify() / lead() SDK methods without going through the HTTP fallback.
+   * Returns true if the message was sent, false if WS is not open.
+   */
+  public sendSessionUpgrade(email: string, name: string, source: string): boolean {
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('session:upgrade', { email, name, source });
+      return true;
+    }
+    return false;
+  }
+
   private wsSend(type: string, data: Record<string, any>): void {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsConnection.send(JSON.stringify({ type, data }));

@@ -1,4 +1,4 @@
-import { Check, CircleAlert, PenLine, Plus, Settings2 } from 'lucide-react'
+import { Tick01Icon, AlertCircleIcon, PencilEdit02Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import type { DocStatus, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
@@ -13,16 +13,16 @@ export interface ArticleLocalePillItem {
 }
 
 const STATUS_ICON: Record<DocsHelpcenterTranslationState, { icon: React.FC<{ className?: string }>; className: string; label: string }> = {
-  missing: { icon: Plus, className: 'text-muted-foreground', label: 'Not translated' },
-  draft: { icon: PenLine, className: 'text-amber-500', label: 'Draft' },
-  published: { icon: Check, className: 'text-emerald-500', label: 'Published' },
-  needs_review: { icon: CircleAlert, className: 'text-blue-500', label: 'Needs review' },
+  missing: { icon: PlusSignIcon, className: 'text-muted-foreground', label: 'Not translated' },
+  draft: { icon: PencilEdit02Icon, className: 'text-amber-500', label: 'Draft' },
+  published: { icon: Tick01Icon, className: 'text-emerald-500', label: 'Published' },
+  needs_review: { icon: AlertCircleIcon, className: 'text-blue-500', label: 'Needs review' },
 }
 
 const SOURCE_ICON: Record<DocStatus, { icon: React.FC<{ className?: string }>; className: string; label: string }> = {
-  draft: { icon: PenLine, className: 'text-amber-500', label: 'Draft' },
-  published: { icon: Check, className: 'text-emerald-500', label: 'Published' },
-  archived: { icon: CircleAlert, className: 'text-muted-foreground', label: 'Archived' },
+  draft: { icon: PencilEdit02Icon, className: 'text-amber-500', label: 'Draft' },
+  published: { icon: Tick01Icon, className: 'text-emerald-500', label: 'Published' },
+  archived: { icon: AlertCircleIcon, className: 'text-muted-foreground', label: 'Archived' },
 }
 
 export function ArticleLocalePillRail({
@@ -77,7 +77,7 @@ export function ArticleLocalePillRail({
                   }}
                   className="ml-0.5 opacity-0 group-hover/pill:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
                 >
-                  <Settings2 className="h-3 w-3" />
+                  <Settings02Icon className="h-3 w-3" />
                 </button>
               )}
             </button>

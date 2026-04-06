@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Bot, Check, Copy, EllipsisVertical, GitBranch, Loader2, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown02Icon, ArrowUp02Icon, BotIcon, Tick01Icon, Copy01Icon, MoreVerticalIcon, GitBranchIcon, Loading01Icon, PencilEdit01Icon, PlayIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { ColorPicker } from '@/components/pm/ColorPicker';
 import { PRESET_COLORS } from '@/components/pm/ColorPicker';
@@ -133,7 +133,7 @@ function PipelineRulesSection({
   return (
     <div className="space-y-2">
       <Label className="flex items-center gap-1.5">
-        <Bot className="h-3.5 w-3.5 text-violet-500" />
+        <BotIcon className="h-3.5 w-3.5 text-violet-500" />
         Pipeline Rules
       </Label>
       <p className="text-xs text-muted-foreground">Automation rules triggered when tasks enter or are approved in this state.</p>
@@ -142,7 +142,7 @@ function PipelineRulesSection({
         <div className="space-y-1">
           {rules.map((rule) => (
             <div key={rule.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs">
-              <Play className="h-3 w-3 shrink-0 text-violet-500" />
+              <PlayIcon className="h-3 w-3 shrink-0 text-violet-500" />
               <span className={cn('flex-1 truncate', !rule.enabled && 'opacity-50 line-through')}>
                 {ruleDescription(rule)}
               </span>
@@ -150,7 +150,7 @@ function PipelineRulesSection({
                 {rule.enabled ? 'On' : 'Off'}
               </button>
               <button type="button" className="shrink-0 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(rule.id)}>
-                <X className="h-3 w-3" />
+                <Cancel01Icon className="h-3 w-3" />
               </button>
             </div>
           ))}
@@ -227,7 +227,7 @@ function PipelineRulesSection({
         </div>
       ) : (
         <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setAdding(true)}>
-          <Plus className="h-3 w-3" /> Add rule
+          <PlusSignIcon className="h-3 w-3" /> Add rule
         </Button>
       )}
     </div>
@@ -572,7 +572,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
           <span className="text-sm font-medium text-muted-foreground">Workflows</span>
           {editable && (
             <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={openCreateWorkflow}>
-              <Plus className="h-3.5 w-3.5" /> New
+              <PlusSignIcon className="h-3.5 w-3.5" /> New
             </Button>
           )}
         </div>
@@ -595,9 +595,9 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     {duplicatingId === entry.workflow.id ? (
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
+                      <Loading01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
                     ) : (
-                      <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     )}
                     <span className="text-sm font-medium truncate">{entry.workflow.name}</span>
                   </div>
@@ -616,15 +616,15 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                         className="h-6 w-6 shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity focus-visible:ring-0 focus-visible:ring-offset-0"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <EllipsisVertical className="h-3.5 w-3.5" />
+                        <MoreVerticalIcon className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => { setSelectedId(entry.workflow.id); openEditWorkflow(entry); }}>
-                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                        <PencilEdit01Icon className="h-3.5 w-3.5 mr-2" /> Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDuplicateWorkflow(entry)}>
-                        <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
+                        <Copy01Icon className="h-3.5 w-3.5 mr-2" /> Duplicate
                       </DropdownMenuItem>
                       {workflows.length <= 1 || (!entry.workflow.team_id && workflows.filter((w) => !w.workflow.team_id).length <= 1) ? (
                         <QuickTooltip label={!entry.workflow.team_id ? 'Must keep at least one default workflow' : 'You must have at least one workflow'} side="left">
@@ -633,7 +633,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                             className="opacity-40 pointer-events-auto cursor-not-allowed"
                             onSelect={(e) => e.preventDefault()}
                           >
-                            <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                            <Delete01Icon className="h-3.5 w-3.5 mr-2" /> Delete
                           </DropdownMenuItem>
                         </QuickTooltip>
                       ) : (
@@ -641,7 +641,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                           variant="destructive"
                           onClick={() => setDeleteWorkflowConfirm(entry.workflow.id)}
                         >
-                          <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                          <Delete01Icon className="h-3.5 w-3.5 mr-2" /> Delete
                         </DropdownMenuItem>
                       )}
                     </DropdownMenuContent>
@@ -662,7 +662,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                 <p>No workflows yet.</p>
                 {editable && (
                   <Button size="sm" onClick={openCreateWorkflow}>
-                    <Plus className="h-4 w-4 mr-1" /> Create your first workflow
+                    <PlusSignIcon className="h-4 w-4 mr-1" /> Create your first workflow
                   </Button>
                 )}
               </div>
@@ -705,7 +705,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                     </div>
                     {editable && (
                       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => openCreateState(type)}>
-                        <Plus className="h-3.5 w-3.5" /> Add
+                        <PlusSignIcon className="h-3.5 w-3.5" /> Add
                       </Button>
                     )}
                   </div>
@@ -731,14 +731,14 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                             {state.is_default && (
                               <QuickTooltip label="New tasks are created in this state">
                                 <Badge variant="secondary" className="text-xs gap-1 shrink-0 cursor-default">
-                                  <Check className="h-3 w-3" /> Default
+                                  <Tick01Icon className="h-3 w-3" /> Default
                                 </Badge>
                               </QuickTooltip>
                             )}
                             {(rulesByStateId.get(state.id)?.length ?? 0) > 0 && (
                               <QuickTooltip label={`${rulesByStateId.get(state.id)!.length} automation rule(s)`}>
                                 <Badge variant="outline" className="text-xs gap-1 shrink-0 cursor-default border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400">
-                                  <Bot className="h-3 w-3" /> {rulesByStateId.get(state.id)!.length}
+                                  <BotIcon className="h-3 w-3" /> {rulesByStateId.get(state.id)!.length}
                                 </Badge>
                               </QuickTooltip>
                             )}
@@ -763,7 +763,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                                   disabled={idx === 0}
                                   onClick={() => handleMoveWithinType(type, state.id, 'up')}
                                 >
-                                  <ArrowUp className="h-3 w-3" />
+                                  <ArrowUp02Icon className="h-3 w-3" />
                                 </Button>
                                 <Button
                                   size="icon"
@@ -772,10 +772,10 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                                   disabled={idx === statesByType[type].length - 1}
                                   onClick={() => handleMoveWithinType(type, state.id, 'down')}
                                 >
-                                  <ArrowDown className="h-3 w-3" />
+                                  <ArrowDown02Icon className="h-3 w-3" />
                                 </Button>
                                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => openEditState(state)}>
-                                  <Pencil className="h-3 w-3" />
+                                  <PencilEdit01Icon className="h-3 w-3" />
                                 </Button>
                               </>
                             )}
@@ -917,7 +917,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               <div>
                 {editState && editable && (
                   <Button type="button" variant="ghost" className="text-destructive" onClick={() => setDeleteStateConfirm(true)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete State
+                    <Delete01Icon className="h-3.5 w-3.5 mr-1" /> Delete State
                   </Button>
                 )}
               </div>

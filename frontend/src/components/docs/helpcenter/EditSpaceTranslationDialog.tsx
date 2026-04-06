@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe2 } from 'lucide-react'
+import { Globe02Icon } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -58,7 +58,7 @@ export function EditSpaceTranslationDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Globe2 className="h-4 w-4 text-primary" />
+            <Globe02Icon className="h-4 w-4 text-primary" />
             {getHelpcenterLocaleLabel(locale)} space translation
           </DialogTitle>
           <DialogDescription>

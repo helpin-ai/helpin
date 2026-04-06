@@ -413,7 +413,7 @@ func defaultOpenCodeModelForProvider(provider string) string {
 	case model.AgentModelProviderOpenRouter:
 		return "openai/gpt-5-mini"
 	default:
-		return "claude-sonnet-4-20250514"
+		return "claude-sonnet-4-6"
 	}
 }
 

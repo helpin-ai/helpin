@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, GripVertical, Inbox, Pencil, Plus } from 'lucide-react';
+import { ArchiveIcon, DragDropVerticalIcon, InboxIcon, PencilEdit01Icon, PlusSignIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -64,7 +64,7 @@ function SortableMailboxItem({
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="h-4 w-4" />
+          <DragDropVerticalIcon className="h-4 w-4" />
         </button>
         {MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : null}
         <div className="min-w-0">
@@ -80,7 +80,7 @@ function SortableMailboxItem({
       </div>
       <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" onClick={() => onEdit(mailbox)}>
-          <Pencil className="h-4 w-4" />
+          <PencilEdit01Icon className="h-4 w-4" />
         </Button>
         <Button
           variant="ghost"
@@ -88,7 +88,7 @@ function SortableMailboxItem({
           disabled={!mailbox.active || isArchiving}
           onClick={() => onArchive(mailbox)}
         >
-          <Archive className="h-4 w-4" />
+          <ArchiveIcon className="h-4 w-4" />
         </Button>
       </div>
     </div>
@@ -159,7 +159,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
       {mailboxes.length > 0 && (
         <div className="flex justify-end">
           <Button className="gap-2" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
+            <PlusSignIcon className="h-4 w-4" />
             New Team Inbox
           </Button>
         </div>
@@ -170,14 +170,14 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
           {!isLoading && mailboxes.length === 0 && (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-12 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Inbox className="h-6 w-6 text-muted-foreground" />
+                <InboxIcon className="h-6 w-6 text-muted-foreground" />
               </div>
               <h3 className="mt-4 text-sm font-medium">No team inboxes</h3>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
                 Create a team inbox to route conversations to a linked team or selected members. The shared inbox stays available to everyone.
               </p>
               <Button className="mt-4 gap-2" onClick={openCreate}>
-                <Plus className="h-4 w-4" />
+                <PlusSignIcon className="h-4 w-4" />
                 Create Team Inbox
               </Button>
             </div>

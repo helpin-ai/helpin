@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarDays, UserPlus } from 'lucide-react';
+import { Calendar03Icon, UserAdd01Icon } from '@/lib/icons';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -154,7 +154,7 @@ export function DealCard({
                     ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
                     : 'border-border bg-muted/50 text-muted-foreground',
               )}>
-                <CalendarDays className="h-3 w-3 shrink-0" />
+                <Calendar03Icon className="h-3 w-3 shrink-0" />
                 {closeDate.label}
               </span>
             </TooltipTrigger>
@@ -188,7 +188,7 @@ export function DealCard({
                 />
               ) : (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                  <UserPlus className="h-2.5 w-2.5" />
+                  <UserAdd01Icon className="h-2.5 w-2.5" />
                 </span>
               );
             }}

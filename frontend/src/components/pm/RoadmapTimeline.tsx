@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   parseISO,
   startOfMonth,
@@ -167,6 +167,32 @@ export function RoadmapTimeline({
   const totalWidthPx = months.length * monthWidthPx;
   const isEpicGrouping = groupBy === 'epic';
 
+  // Resizable first column
+  const [colWidth, setColWidth] = useState(260);
+  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = colWidth;
+    dragRef.current = { startX, startW };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const delta = ev.clientX - dragRef.current.startX;
+      setColWidth(Math.max(160, Math.min(480, dragRef.current.startW + delta)));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [colWidth]);
+
+  const colStyle = { width: colWidth, minWidth: colWidth };
+
   function getBarPosition(epic: RoadmapEpic) {
     const s = parseISO(epic.epic.planned_start_date!);
     const d = parseISO(epic.epic.deadline!);
@@ -188,10 +214,14 @@ export function RoadmapTimeline({
       <div className="relative" style={{ minWidth: `${totalWidthPx}px` }}>
         {/* Month header */}
         <div className="flex sticky top-0 z-20 bg-background border-b border-border">
-          <div className="w-52 shrink-0 sticky left-0 z-30 bg-background border-r border-border px-3 py-2">
+          <div className="shrink-0 sticky left-0 z-30 bg-background border-r border-border px-3 py-2 relative select-none" style={colStyle}>
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
             </span>
+            <div
+              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors"
+              onMouseDown={onResizeStart}
+            />
           </div>
           <div className="flex flex-1">
             {months.map((month) => {
@@ -224,7 +254,7 @@ export function RoadmapTimeline({
           <div key={group.id}>
             {!isEpicGrouping && (
               <div className="flex border-b border-border bg-muted/30">
-                <div className="w-52 shrink-0 sticky left-0 z-10 bg-muted/30 border-r border-border px-3 py-1.5 flex items-center gap-1.5">
+                <div className="shrink-0 sticky left-0 z-10 bg-muted/30 border-r border-border px-3 py-1.5 flex items-center gap-1.5" style={colStyle}>
                   <span className="text-sm font-medium truncate">{group.name}</span>
                   <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0">
                     {group.epics.length}
@@ -239,7 +269,7 @@ export function RoadmapTimeline({
               const { left, width } = getBarPosition(epic);
               return (
                 <div key={`${group.id}-${epic.epic.id}`} className="flex border-b border-border/40">
-                  <div className="w-52 shrink-0 sticky left-0 z-10 bg-background border-r border-border px-3 py-1.5 flex items-center min-w-0">
+                  <div className="shrink-0 sticky left-0 z-10 bg-background border-r border-border px-3 py-1.5 flex items-center min-w-0" style={colStyle}>
                     <span
                       className={`truncate ${isEpicGrouping ? 'text-sm font-medium text-foreground' : 'text-[12px] text-muted-foreground'}`}
                     >

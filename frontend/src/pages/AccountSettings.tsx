@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Building2, Globe, Trash2, Users } from 'lucide-react';
+import { Building03Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -131,60 +131,53 @@ export default function AccountSettings() {
         <h2 className="text-xl font-semibold">Account Settings</h2>
       </div>
 
-      {/* Default Workspace */}
+      {/* Organization & Default Workspace */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
-            Default Workspace
+            <Building03Icon className="h-4 w-4" />
+            Organization & Default Workspace
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            <Label>Redirect to this workspace after login</Label>
-            <Select value={defaultWsId || 'none'} onValueChange={handleDefaultWorkspaceChange} disabled={savingDefault}>
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Select a workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None (first available)</SelectItem>
-                {workspaces.map((ws) => (
-                  <SelectItem key={ws.id} value={ws.id}>
-                    {ws.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Organization Name */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
-            Organization
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="org-name">Name</Label>
-              <Input
-                id="org-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={!isAdminOrOwner}
-                required
-              />
+          <div className="grid grid-cols-2 gap-6">
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="org-name">Organization Name</Label>
+                <Input
+                  id="org-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={!isAdminOrOwner}
+                  required
+                />
+              </div>
+              {isAdminOrOwner && (
+                <Button type="submit" disabled={saving || name === currentOrganization.name}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              )}
+            </form>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Default Workspace</Label>
+                <Select value={defaultWsId || 'none'} onValueChange={handleDefaultWorkspaceChange} disabled={savingDefault}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None (first available)</SelectItem>
+                    {workspaces.map((ws) => (
+                      <SelectItem key={ws.id} value={ws.id}>
+                        {ws.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Redirect to this workspace after login</p>
+              </div>
             </div>
-            {isAdminOrOwner && (
-              <Button type="submit" disabled={saving || name === currentOrganization.name}>
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            )}
-          </form>
+          </div>
         </CardContent>
       </Card>
 
@@ -192,7 +185,7 @@ export default function AccountSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
+            <UserGroupIcon className="h-4 w-4" />
             Members
           </CardTitle>
         </CardHeader>
@@ -267,7 +260,7 @@ export default function AccountSettings() {
                               className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => setRemoveMemberConfirm({ userId: member.user_id, name: member.full_name })}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Delete01Icon className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </TableCell>

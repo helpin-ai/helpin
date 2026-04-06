@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, GitBranch, ListTodo, PlayCircle } from 'lucide-react';
+import { Alert01Icon, ArrowLeft01Icon, ArrowRight01Icon, Clock02Icon, GitBranchIcon, CheckListIcon, PlayCircleIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { RecurringRun, RecurringTemplateStatus, Task } from '@/lib/pmTypes';
@@ -69,10 +69,10 @@ function RunsSection({ runs, compact, onOpenTask }: { runs: RecurringRun[]; comp
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ArrowLeft01Icon className="h-3.5 w-3.5" />
             </Button>
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ArrowRight01Icon className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}
@@ -80,7 +80,7 @@ function RunsSection({ runs, compact, onOpenTask }: { runs: RecurringRun[]; comp
       <div className="space-y-2">
         {visible.map((run) => (
           <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
-            <PlayCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <PlayCircleIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
@@ -136,18 +136,18 @@ export function RecurringTemplateSummary({
 
       <div className="mt-3 grid gap-2 text-sm">
         <div className="flex items-start gap-2 text-muted-foreground">
-          <ListTodo className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <CheckListIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 truncate">{ruleSummary}</span>
         </div>
 
         <div className="flex items-start gap-2 text-muted-foreground">
-          <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <Clock02Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{formatRelative(nextRunAt)}</span>
         </div>
 
         {lastGeneratedTask ? (
           <div className="flex items-start gap-2 text-muted-foreground">
-            <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <GitBranchIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">
               Last generated: {lastGeneratedTask.display_id} {lastGeneratedTask.name}
             </span>
@@ -156,7 +156,7 @@ export function RecurringTemplateSummary({
 
         {lastError ? (
           <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-destructive">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <Alert01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 text-xs">{lastError}</span>
           </div>
         ) : null}

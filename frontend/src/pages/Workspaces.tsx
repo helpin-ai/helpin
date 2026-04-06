@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { Favicon } from '@/components/ui/favicon';
-import { CheckCircle2, Loader2, Plus, X } from 'lucide-react';
+import { CheckmarkCircle02Icon, Loading01Icon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
   buildPresetFieldVisibility,
@@ -91,6 +91,7 @@ export default function Workspaces() {
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
+  const [workspaceKey, setWorkspaceKey] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
@@ -141,6 +142,9 @@ export default function Workspaces() {
   const handleNameChange = (val: string) => {
     setName(val);
     setSlug(generateWorkspaceSlug(val));
+    // Auto-suggest workspace key from name (first 3 alpha chars, uppercase)
+    const alpha = val.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    setWorkspaceKey(alpha.slice(0, 3));
   };
 
   const handleOrgNameChange = (val: string) => {
@@ -242,6 +246,7 @@ export default function Workspaces() {
     const { data: workspace, error } = await workspacesService.create({
       name,
       slug,
+      workspace_key: workspaceKey.toUpperCase(),
       organization_id: currentOrganization.id,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -458,7 +463,7 @@ export default function Workspaces() {
           <Dialog open={dialogOpen} onOpenChange={handleWorkspaceDialogChange}>
             <DialogTrigger asChild>
               <Button disabled={!currentOrganization} onClick={openWorkspaceDialog}>
-                <Plus className="h-4 w-4 mr-2" />
+                <PlusSignIcon className="h-4 w-4 mr-2" />
                 Create Workspace
               </Button>
             </DialogTrigger>
@@ -504,7 +509,7 @@ export default function Workspaces() {
                               <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
                             ))}
                             <SelectItem value="__new_org__" className="text-primary">
-                              <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" /> New Organization</span>
+                              <span className="flex items-center gap-1.5"><PlusSignIcon className="h-3.5 w-3.5" /> New Organization</span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -518,6 +523,20 @@ export default function Workspaces() {
                       <Label htmlFor="ws-slug">Slug</Label>
                       <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
                       <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ws-key">Task Key Prefix</Label>
+                      <Input
+                        id="ws-key"
+                        placeholder="ACM"
+                        value={workspaceKey}
+                        onChange={e => setWorkspaceKey(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
+                        maxLength={5}
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        2-5 uppercase letters. Task IDs will look like: {workspaceKey || '...'}-1, {workspaceKey || '...'}-2, etc.
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ws-website">Website (optional)</Label>
@@ -586,7 +605,7 @@ export default function Workspaces() {
                             )}
                             {team.isCustom && (
                               <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeCustomTeam(team.id)}>
-                                <X className="h-3.5 w-3.5" />
+                                <Cancel01Icon className="h-3.5 w-3.5" />
                               </Button>
                             )}
                           </div>
@@ -598,7 +617,7 @@ export default function Workspaces() {
                       onClick={addCustomTeam}
                       className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <PlusSignIcon className="h-3.5 w-3.5" />
                       Add custom team
                     </button>
                   </div>
@@ -610,9 +629,9 @@ export default function Workspaces() {
                         <div className="flex items-start gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
                             {websiteSourceAdded ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <CheckmarkCircle02Icon className="h-4 w-4 text-emerald-600" />
                             ) : createWebsiteSourceMutation.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <Loading01Icon className="h-4 w-4 animate-spin" />
                             ) : (
                               <Favicon
                                 url={createdWorkspace.website_url}
@@ -748,7 +767,7 @@ export default function Workspaces() {
           <div className="text-center py-16">
             <p className="text-muted-foreground mb-4">No workspaces yet.</p>
             <Button onClick={openWorkspaceDialog} disabled={!currentOrganization}>
-              <Plus className="h-4 w-4 mr-2" />
+              <PlusSignIcon className="h-4 w-4 mr-2" />
               Create your first workspace
             </Button>
           </div>

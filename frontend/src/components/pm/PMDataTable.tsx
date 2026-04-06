@@ -10,7 +10,7 @@ import {
   type SortingState,
   type ColumnSizingState,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon } from '@/lib/icons';
 import {
   TABLE_CONTAINER,
   TABLE_HEADER,
@@ -70,7 +70,7 @@ export function PMDataTable<T>({
     onSortingChange: onSortingChange ?? setInternalSorting,
     onColumnSizingChange: onColumnSizingChange ?? setInternalColumnSizing,
     enableColumnResizing: true,
-    columnResizeMode: 'onChange',
+    columnResizeMode: 'onEnd',
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
@@ -102,11 +102,11 @@ export function PMDataTable<T>({
                       {canSort && (
                         <span className="ml-auto shrink-0">
                           {sorted === 'asc' ? (
-                            <ArrowUp className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                           ) : sorted === 'desc' ? (
-                            <ArrowDown className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
                           ) : (
-                            <ArrowUpDown className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                            <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
                           )}
                         </span>
                       )}

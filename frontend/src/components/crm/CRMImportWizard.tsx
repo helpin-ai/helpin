@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, FileText, ArrowRight, Check, AlertCircle } from 'lucide-react';
+import { Upload01Icon, File01Icon, ArrowRight02Icon, Tick01Icon, AlertCircleIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useCreateCRMImport, useProcessCRMImport } from '@/hooks/queries/useCRM';
 import type { CRMObjectType, ImportColumnMapping, CRMImportJob } from '@/lib/crmTypes';
@@ -110,11 +110,11 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
       {/* Step indicator */}
       <div className="flex items-center gap-2">
         <StepIndicator step="upload" current={step} label="Upload" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        <ArrowRight02Icon className="h-4 w-4 text-muted-foreground" />
         <StepIndicator step="map" current={step} label="Map Columns" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        <ArrowRight02Icon className="h-4 w-4 text-muted-foreground" />
         <StepIndicator step="preview" current={step} label="Preview" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        <ArrowRight02Icon className="h-4 w-4 text-muted-foreground" />
         <StepIndicator step="results" current={step} label="Results" />
       </div>
 
@@ -141,7 +141,7 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
             <div className="space-y-1.5">
               <Label>CSV File</Label>
               <div className="border-2 border-dashed rounded-lg p-8 text-center">
-                <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <Upload01Icon className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground mb-3">Drag and drop or click to upload</p>
                 <Input
                   type="file"
@@ -176,7 +176,7 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
                 {csvHeaders.map((header, idx) => (
                   <TableRow key={idx}>
                     <TableCell className="font-medium">
-                      <FileText className="h-3.5 w-3.5 inline mr-1 text-muted-foreground" />
+                      <File01Icon className="h-3.5 w-3.5 inline mr-1 text-muted-foreground" />
                       {header}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -271,9 +271,9 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               {result.status === 'completed' ? (
-                <><Check className="h-5 w-5 text-green-500" /> Import Complete</>
+                <><Tick01Icon className="h-5 w-5 text-green-500" /> Import Complete</>
               ) : (
-                <><AlertCircle className="h-5 w-5 text-destructive" /> Import Failed</>
+                <><AlertCircleIcon className="h-5 w-5 text-destructive" /> Import Failed</>
               )}
             </CardTitle>
           </CardHeader>
@@ -331,7 +331,7 @@ function StepIndicator({ step, current, label }: { step: WizardStep; current: Wi
 
   return (
     <Badge variant={isActive ? 'default' : isDone ? 'secondary' : 'outline'} className="text-xs">
-      {isDone && <Check className="h-3 w-3 mr-1" />}
+      {isDone && <Tick01Icon className="h-3 w-3 mr-1" />}
       {label}
     </Badge>
   );

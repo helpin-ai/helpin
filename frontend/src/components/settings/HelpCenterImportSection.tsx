@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Check, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { Tick01Icon, Clock01Icon, CheckmarkCircle02Icon, CancelCircleIcon, Loading01Icon, Alert01Icon } from '@/lib/icons';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -230,7 +230,7 @@ export function HelpCenterImportSection({
                       : 'bg-muted text-muted-foreground',
                 )}
               >
-                {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                {i < step ? <Tick01Icon className="h-3.5 w-3.5" /> : i + 1}
               </div>
               <span className={cn('text-sm', i <= step ? 'font-medium' : 'text-muted-foreground')}>
                 {label}
@@ -269,7 +269,7 @@ export function HelpCenterImportSection({
           </div>
           <div className="flex justify-center">
             <Button onClick={handleConnect} disabled={!editable || connecting || !apiKey.trim()}>
-              {connecting ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Connecting...</> : 'Connect & Preview'}
+              {connecting ? <><Loading01Icon className="h-4 w-4 animate-spin mr-1.5" />Connecting...</> : 'Connect & Preview'}
             </Button>
           </div>
         </div>
@@ -489,12 +489,12 @@ export function HelpCenterImportSection({
 
 // ── Import History ──────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; icon: typeof Check; className: string }> = {
-  pending: { label: 'Pending', icon: Clock, className: 'bg-muted text-muted-foreground' },
-  running: { label: 'In Progress', icon: Loader2, className: 'bg-blue-100 text-blue-700' },
-  done: { label: 'Completed', icon: CheckCircle2, className: 'bg-green-100 text-green-700' },
-  failed: { label: 'Failed', icon: XCircle, className: 'bg-red-100 text-red-700' },
-  interrupted: { label: 'Interrupted', icon: AlertTriangle, className: 'bg-amber-100 text-amber-700' },
+const STATUS_CONFIG: Record<string, { label: string; icon: typeof Tick01Icon; className: string }> = {
+  pending: { label: 'Pending', icon: Clock01Icon, className: 'bg-muted text-muted-foreground' },
+  running: { label: 'In Progress', icon: Loading01Icon, className: 'bg-blue-100 text-blue-700' },
+  done: { label: 'Completed', icon: CheckmarkCircle02Icon, className: 'bg-green-100 text-green-700' },
+  failed: { label: 'Failed', icon: CancelCircleIcon, className: 'bg-red-100 text-red-700' },
+  interrupted: { label: 'Interrupted', icon: Alert01Icon, className: 'bg-amber-100 text-amber-700' },
 };
 
 function ImportHistory({ workspaceId }: { workspaceId: string }) {
@@ -587,7 +587,7 @@ function ImportHistory({ workspaceId }: { workspaceId: string }) {
                           onClick={() => setReconvertConfirmId(job.id)}
                         >
                           {reconvertingId === job.id ? (
-                            <><Loader2 className="h-3 w-3 animate-spin mr-1" />Converting...</>
+                            <><Loading01Icon className="h-3 w-3 animate-spin mr-1" />Converting...</>
                           ) : (
                             'Re-convert'
                           )}

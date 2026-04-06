@@ -22,13 +22,13 @@ export function CommentBody({ body, members = [], teams = [], className }: Comme
         html={body}
         members={members}
         teams={teams}
-        className={`prose prose-sm dark:prose-invert max-w-none text-sm [&_img]:rounded-md [&_img]:max-w-full ${className ?? ''}`}
+        className={`prose prose-sm dark:prose-invert max-w-none text-[13px] [&_img]:rounded-md [&_img]:max-w-full ${className ?? ''}`}
       />
     )
   }
 
   return (
-    <p className={`text-sm ${className ?? ''}`}>
+    <p className={`text-[13px] ${className ?? ''}`}>
       <MentionText text={body} members={members} teams={teams} />
     </p>
   )

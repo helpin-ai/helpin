@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  Plus,
-  Search,
-} from "lucide-react";
+  PlusSignIcon,
+  Search01Icon,
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -183,7 +183,7 @@ export function Header() {
             onClick={() => setSearchOpen(true)}
             className="pointer-events-auto relative flex h-8 w-full max-w-xl items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
           >
-            <Search className="h-4 w-4 shrink-0" />
+            <Search01Icon className="h-4 w-4 shrink-0" />
             <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>
             <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground md:inline-block">
               ⌘K
@@ -195,7 +195,7 @@ export function Header() {
       {isSupport && navFilter !== 'mentions' && (
         <div className="ml-auto flex items-center z-10">
           <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
+            <PlusSignIcon className="mr-1.5 h-4 w-4" />
             <span className="hidden sm:inline">New Conversation</span>
           </Button>
         </div>

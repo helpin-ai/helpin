@@ -31,6 +31,7 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS workspace_key_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS team_workspace_memberships (
 			id TEXT PRIMARY KEY,
 			team_id TEXT NOT NULL,
@@ -126,10 +127,11 @@ func TestWorkspaceService_Create(t *testing.T) {
 
 	websiteURL := "example.com"
 	req := model.CreateWorkspaceRequest{
-		Name:       "My Workspace",
-		Slug:       "my-workspace",
-		WebsiteURL: &websiteURL,
-		Timezone:   "America/New_York",
+		Name:         "My Workspace",
+		Slug:         "my-workspace",
+		WorkspaceKey: "MYW",
+		WebsiteURL:   &websiteURL,
+		Timezone:     "America/New_York",
 	}
 	ws, err := svc.Create(ctx, req, "owner-1")
 	if err != nil {
@@ -164,8 +166,9 @@ func TestWorkspaceService_Create_SeedsDefaultEpicAutomations(t *testing.T) {
 	ctx := context.Background()
 
 	ws, err := svc.Create(ctx, model.CreateWorkspaceRequest{
-		Name: "Automation Defaults",
-		Slug: "automation-defaults",
+		Name:         "Automation Defaults",
+		Slug:         "automation-defaults",
+		WorkspaceKey: "AUTO",
 	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -227,8 +230,9 @@ func TestWorkspaceService_Create_SeedsSystemPresetAgents(t *testing.T) {
 	ctx := context.Background()
 
 	ws, err := svc.Create(ctx, model.CreateWorkspaceRequest{
-		Name: "Planner Defaults",
-		Slug: "planner-defaults",
+		Name:         "Planner Defaults",
+		Slug:         "planner-defaults",
+		WorkspaceKey: "PLAN",
 	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -277,8 +281,9 @@ func TestWorkspaceService_Create_EmptyNameFails(t *testing.T) {
 	ctx := context.Background()
 
 	req := model.CreateWorkspaceRequest{
-		Name: "",
-		Slug: "some-slug",
+		Name:         "",
+		Slug:         "some-slug",
+		WorkspaceKey: "SOM",
 	}
 	_, err := svc.Create(ctx, req, "owner-1")
 	if err == nil {
@@ -291,8 +296,9 @@ func TestWorkspaceService_Create_EmptySlugFails(t *testing.T) {
 	ctx := context.Background()
 
 	req := model.CreateWorkspaceRequest{
-		Name: "Valid Name",
-		Slug: "",
+		Name:         "Valid Name",
+		Slug:         "",
+		WorkspaceKey: "VAL",
 	}
 	_, err := svc.Create(ctx, req, "owner-1")
 	if err == nil {
@@ -305,8 +311,9 @@ func TestWorkspaceService_Create_DuplicateSlugFails(t *testing.T) {
 	ctx := context.Background()
 
 	req := model.CreateWorkspaceRequest{
-		Name: "First",
-		Slug: "dup-slug",
+		Name:         "First",
+		Slug:         "dup-slug",
+		WorkspaceKey: "DUP",
 	}
 	_, err := svc.Create(ctx, req, "owner-1")
 	if err != nil {
@@ -314,8 +321,9 @@ func TestWorkspaceService_Create_DuplicateSlugFails(t *testing.T) {
 	}
 
 	req2 := model.CreateWorkspaceRequest{
-		Name: "Second",
-		Slug: "dup-slug",
+		Name:         "Second",
+		Slug:         "dup-slug",
+		WorkspaceKey: "DUPE",
 	}
 	_, err = svc.Create(ctx, req2, "owner-1")
 	if err == nil {
@@ -327,11 +335,11 @@ func TestWorkspaceService_List(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	_, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "WS A", Slug: "ws-a"}, "owner-1")
+	_, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "WS A", Slug: "ws-a", WorkspaceKey: "WSA"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create WS A: %v", err)
 	}
-	_, err = svc.Create(ctx, model.CreateWorkspaceRequest{Name: "WS B", Slug: "ws-b"}, "owner-1")
+	_, err = svc.Create(ctx, model.CreateWorkspaceRequest{Name: "WS B", Slug: "ws-b", WorkspaceKey: "WSB"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create WS B: %v", err)
 	}
@@ -370,7 +378,7 @@ func TestWorkspaceService_GetBySlug(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Slug Test", Slug: "slug-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Slug Test", Slug: "slug-test", WorkspaceKey: "SLG"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -401,7 +409,7 @@ func TestWorkspaceService_GetByID(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "ID Test", Slug: "id-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "ID Test", Slug: "id-test", WorkspaceKey: "IDT"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -435,7 +443,7 @@ func TestWorkspaceService_Update(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Before", Slug: "update-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Before", Slug: "update-test", WorkspaceKey: "UPD"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -443,7 +451,7 @@ func TestWorkspaceService_Update(t *testing.T) {
 	newName := "After"
 	updated, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
 		Name: &newName,
-	})
+	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -465,7 +473,7 @@ func TestWorkspaceService_Update_Description(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Desc Test", Slug: "desc-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Desc Test", Slug: "desc-test", WorkspaceKey: "DSC"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -473,7 +481,7 @@ func TestWorkspaceService_Update_Description(t *testing.T) {
 	desc := "A new description"
 	updated, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
 		Description: &desc,
-	})
+	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -486,7 +494,7 @@ func TestWorkspaceService_Update_WebsiteURL(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Website Test", Slug: "website-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Website Test", Slug: "website-test", WorkspaceKey: "WEB"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -494,7 +502,7 @@ func TestWorkspaceService_Update_WebsiteURL(t *testing.T) {
 	websiteURL := "helpin.ai"
 	updated, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
 		WebsiteURL: &websiteURL,
-	})
+	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -505,7 +513,7 @@ func TestWorkspaceService_Update_WebsiteURL(t *testing.T) {
 	clearWebsite := ""
 	cleared, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
 		WebsiteURL: &clearWebsite,
-	})
+	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Clear website URL: %v", err)
 	}
@@ -518,7 +526,7 @@ func TestWorkspaceService_Update_Timezone(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "TZ Test", Slug: "tz-test", Timezone: "UTC"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "TZ Test", Slug: "tz-test", WorkspaceKey: "TZT", Timezone: "UTC"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -526,7 +534,7 @@ func TestWorkspaceService_Update_Timezone(t *testing.T) {
 	tz := "Europe/London"
 	updated, err := svc.Update(ctx, created.ID, model.UpdateWorkspaceRequest{
 		Timezone: &tz,
-	})
+	}, "owner-1")
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -540,7 +548,7 @@ func TestWorkspaceService_Delete(t *testing.T) {
 	createDeleteStubTables(t, db)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Delete Me", Slug: "delete-me"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Delete Me", Slug: "delete-me", WorkspaceKey: "DEL"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -586,6 +594,7 @@ func TestWorkspaceService_Create_WithOrganizationID(t *testing.T) {
 	req := model.CreateWorkspaceRequest{
 		Name:           "Org WS",
 		Slug:           "org-ws",
+		WorkspaceKey:   "ORG",
 		OrganizationID: "org-123",
 	}
 	ws, err := svc.Create(ctx, req, "owner-1")
@@ -603,9 +612,10 @@ func TestWorkspaceService_Create_WithDescription(t *testing.T) {
 
 	desc := "A workspace description"
 	req := model.CreateWorkspaceRequest{
-		Name:        "Desc WS",
-		Slug:        "desc-ws",
-		Description: &desc,
+		Name:         "Desc WS",
+		Slug:         "desc-ws",
+		WorkspaceKey: "DWS",
+		Description:  &desc,
 	}
 	ws, err := svc.Create(ctx, req, "owner-1")
 	if err != nil {
@@ -620,7 +630,7 @@ func TestWorkspaceService_GetMyRole(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Role Test", Slug: "role-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Role Test", Slug: "role-test", WorkspaceKey: "ROL"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -639,7 +649,7 @@ func TestWorkspaceService_GetMyRole_NonMember(t *testing.T) {
 	ctx := context.Background()
 	seedUser(t, newTestDB(t), "other-user", "other@test.com", "Other User", "hashed")
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Role Test 2", Slug: "role-test-2"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Role Test 2", Slug: "role-test-2", WorkspaceKey: "RLT"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -657,7 +667,7 @@ func TestWorkspaceService_GetMyMembership(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Membership Test", Slug: "membership-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Membership Test", Slug: "membership-test", WorkspaceKey: "MEM"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -681,7 +691,7 @@ func TestWorkspaceService_GetMyMembership_NotFound(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Membership NF", Slug: "membership-nf"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Membership NF", Slug: "membership-nf", WorkspaceKey: "MNF"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -696,7 +706,7 @@ func TestWorkspaceService_UploadLogo_NilS3Client(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Logo Test", Slug: "logo-test"}, "owner-1")
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Logo Test", Slug: "logo-test", WorkspaceKey: "LOG"}, "owner-1")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

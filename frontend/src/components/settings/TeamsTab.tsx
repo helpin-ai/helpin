@@ -24,7 +24,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronRight, Eye, FileText, GitBranch, GitPullRequest, LayoutGrid, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowRight01Icon, ViewIcon, File01Icon, GitBranchIcon, GitPullRequestIcon, LayoutGridIcon, PlusSignIcon, ArrowReloadHorizontalIcon, Settings02Icon, Tag01Icon, Delete01Icon, UserGroupIcon, Cancel01Icon, type IconComponent } from '@/lib/icons';
 import { useDocsSpaces, useUpdateDocsSpace } from '@/hooks/queries';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -384,13 +384,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       : 'Not configured';
     const settingsGroups: {
       label?: string;
-      rows: { key: string; icon: LucideIcon; title: string; description: string; meta: React.ReactNode; action: () => void; disabled: boolean }[];
+      rows: { key: string; icon: IconComponent; title: string; description: string; meta: React.ReactNode; action: () => void; disabled: boolean }[];
     }[] = [
       {
         rows: [
           {
             key: 'general',
-            icon: Settings2,
+            icon: Settings02Icon,
             title: 'General',
             description: 'Name, identifier, team type, and task defaults',
             meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering / dev team' : 'Non-engineering team']
@@ -401,7 +401,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           },
           {
             key: 'members',
-            icon: Users,
+            icon: UserGroupIcon,
             title: 'Members',
             description: 'Manage team members',
             meta: (() => {
@@ -433,7 +433,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         rows: [
           {
             key: 'workflow',
-            icon: GitBranch,
+            icon: GitBranchIcon,
             title: 'Workflow states',
             description: 'Manage workflow states for this team',
             meta: workflowMeta,
@@ -460,7 +460,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           },
           {
             key: 'automations',
-            icon: RefreshCw,
+            icon: ArrowReloadHorizontalIcon,
             title: 'Automations',
             description: 'Sprint and epic automations for this team',
             meta: '',
@@ -474,7 +474,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         rows: [
           {
             key: 'field-visibility',
-            icon: Eye,
+            icon: ViewIcon,
             title: 'Task fields',
             description: 'Configure which fields and panels appear on tasks',
             meta: fieldVisMeta,
@@ -483,7 +483,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           },
           {
             key: 'labels',
-            icon: Tag,
+            icon: Tag01Icon,
             title: 'Task labels',
             description: "Labels available to this team's tasks",
             meta: '',
@@ -492,7 +492,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           },
           {
             key: 'estimates',
-            icon: LayoutGrid,
+            icon: LayoutGridIcon,
             title: 'Task estimates',
             description: 'Configure estimate scale and options',
             meta: estimateMeta,
@@ -501,7 +501,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           },
           {
             key: 'sprints',
-            icon: RefreshCw,
+            icon: ArrowReloadHorizontalIcon,
             title: 'Sprints',
             description: 'Enable sprints and configure automation',
             meta: selectedTeam?.sprints_enabled !== false ? 'Enabled' : 'Disabled',
@@ -515,7 +515,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         rows: [
           {
             key: 'delivery-defaults',
-            icon: GitPullRequest,
+            icon: GitPullRequestIcon,
             title: 'Delivery defaults',
             description: repositories.length > 0 || teamRepoDefault
               ? 'Choose the team repository, base branch, and branch template'
@@ -537,7 +537,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         rows: [
           {
             key: 'spaces',
-            icon: FileText,
+            icon: File01Icon,
             title: 'Spaces',
             description: 'Docs spaces this team has access to',
             meta: (() => {
@@ -569,7 +569,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             }}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ChevronRight className="h-4 w-4 rotate-180" />
+            <ArrowRight01Icon className="h-4 w-4 rotate-180" />
             Teams
           </button>
 
@@ -587,12 +587,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               {teamEditable && (
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => openMembers(selectedTeam)}>
-                    <Users className="h-4 w-4 mr-1" />
+                    <UserGroupIcon className="h-4 w-4 mr-1" />
                     Add member
                   </Button>
                   {editable && (
                     <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTeamConfirm(selectedTeam.id)}>
-                      <Trash2 className="h-4 w-4 mr-1" />
+                      <Delete01Icon className="h-4 w-4 mr-1" />
                       Delete
                     </Button>
                   )}
@@ -629,7 +629,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     {row.meta && (
                       <span className="hidden text-sm text-muted-foreground md:block">{row.meta}</span>
                     )}
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </button>
                 ))}
               </div>
@@ -750,7 +750,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleRemoveMember(membership.team_id, membership.user_id)}>
-                                          <X className="h-3 w-3" />
+                                          <Cancel01Icon className="h-3 w-3" />
                                         </Button>
                                       </TooltipTrigger>
                                       <TooltipContent side="top">Remove from team</TooltipContent>
@@ -780,7 +780,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button size="icon" variant="ghost" className="absolute right-0 h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover/member:opacity-100 transition-opacity" onClick={() => handleRemoveInvitation(selectedTeam.id, pa.invitation_id)}>
-                                        <X className="h-3 w-3" />
+                                        <Cancel01Icon className="h-3 w-3" />
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent side="top">Remove from team</TooltipContent>
@@ -861,7 +861,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                   <p className="truncate text-sm">{member.full_name || member.email}</p>
                                   {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
                                 </div>
-                                <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               </button>
                             ))}
                             {filteredInvitations.length > 0 && (
@@ -885,7 +885,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                       <p className="truncate text-sm">{inv.email}</p>
                                     </div>
                                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
-                                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                   </button>
                                 ))}
                               </>
@@ -1185,7 +1185,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           </div>
           {editable && (
             <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1" />
+              <PlusSignIcon className="h-4 w-4 mr-1" />
               New Team
             </Button>
           )}
@@ -1194,7 +1194,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         {teams.length === 0 ? (
           <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/60">
-              <Users className="h-5 w-5 text-muted-foreground" />
+              <UserGroupIcon className="h-5 w-5 text-muted-foreground" />
             </div>
             <div className="space-y-1">
               <p className="font-medium">No teams yet</p>
@@ -1204,7 +1204,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             </div>
             {editable && (
               <Button onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-1" />
+                <PlusSignIcon className="h-4 w-4 mr-1" />
                 Create Team
               </Button>
             )}

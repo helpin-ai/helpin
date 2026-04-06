@@ -14,6 +14,7 @@ type Workspace struct {
 	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	Name           string    `json:"name" gorm:"not null"`
 	Slug           string    `json:"slug" gorm:"uniqueIndex;not null"`
+	WorkspaceKey   string    `json:"workspace_key" gorm:"type:varchar(5);uniqueIndex"`
 	OwnerID        string    `json:"owner_id" gorm:"type:uuid;not null"`
 	OrganizationID *string   `json:"organization_id" gorm:"type:uuid"`
 	Description    *string   `json:"description"`
@@ -78,6 +79,7 @@ type AssignableMember struct {
 type CreateWorkspaceRequest struct {
 	Name           string  `json:"name"`
 	Slug           string  `json:"slug"`
+	WorkspaceKey   string  `json:"workspace_key"`
 	OrganizationID string  `json:"organization_id"`
 	Description    *string `json:"description"`
 	WebsiteURL     *string `json:"website_url"`
@@ -86,12 +88,25 @@ type CreateWorkspaceRequest struct {
 
 // UpdateWorkspaceRequest is the payload for PUT /api/workspaces/{id}.
 type UpdateWorkspaceRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	WebsiteURL  *string `json:"website_url"`
-	LogoURL     *string `json:"logo_url"`
-	Timezone    *string `json:"timezone"`
+	Name         *string `json:"name"`
+	Description  *string `json:"description"`
+	WebsiteURL   *string `json:"website_url"`
+	LogoURL      *string `json:"logo_url"`
+	Timezone     *string `json:"timezone"`
+	WorkspaceKey *string `json:"workspace_key,omitempty"`
 }
+
+// WorkspaceKeyHistory tracks workspace key changes for alias resolution.
+type WorkspaceKeyHistory struct {
+	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	OldKey      string    `json:"old_key" gorm:"type:varchar(5);not null;uniqueIndex"`
+	NewKey      string    `json:"new_key" gorm:"type:varchar(5);not null"`
+	ChangedAt   time.Time `json:"changed_at" gorm:"autoCreateTime"`
+	ChangedBy   string    `json:"changed_by" gorm:"type:uuid"`
+}
+
+func (WorkspaceKeyHistory) TableName() string { return "workspace_key_history" }
 
 // UpdateWorkspaceMemberRequest is the payload for PUT /api/workspaces/{id}/members/{memberId}.
 type UpdateWorkspaceMemberRequest struct {

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAIAutomations } from '@/hooks/queries/useSettings';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { ChevronRight, Gauge, ShieldCheck, Bot } from 'lucide-react';
+import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type { AutomationHealthStatus, AutomationInventoryItem } from '@/lib/types';
 
@@ -115,7 +115,7 @@ function AutomationRow({ item, slug }: { item: AutomationInventoryItem; slug?: s
         {/* Manage link */}
         {managePath ? (
           <a href={managePath} className="shrink-0 text-muted-foreground hover:text-foreground">
-            <ChevronRight className="h-4 w-4" />
+            <ArrowRight01Icon className="h-4 w-4" />
           </a>
         ) : (
           <span className="w-4 shrink-0" />
@@ -198,7 +198,7 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
       <Card className={LINEAR_CARD_CLASS}>
         <CardContent className="flex flex-col gap-2 py-8">
           <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <Gauge className="h-4 w-4" />
+            <DashboardSpeed01Icon className="h-4 w-4" />
             Could not load AI & Automations inventory
           </div>
           <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : 'Unknown error'}</p>
@@ -221,7 +221,7 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
         <Card className={LINEAR_CARD_CLASS}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <SecurityCheckIcon className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Built-in Automations</CardTitle>
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {items.filter((i) => i.kind === 'built_in_automation').length}
@@ -252,7 +252,7 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
         <Card className={LINEAR_CARD_CLASS}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-muted-foreground" />
+              <BotIcon className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Automation Rules</CardTitle>
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {items.filter((i) => i.kind === 'automation_rule').length}

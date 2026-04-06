@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  BookOpen,
-  CircleDot,
-  Crosshair,
-  FileText,
-  Loader2,
-  Target,
-  User,
-} from 'lucide-react';
+  BookOpen01Icon,
+  BotIcon,
+  Briefcase01Icon,
+  File01Icon,
+  FolderKanbanIcon,
+  Loading01Icon,
+  Message01Icon,
+  RecordIcon,
+  Target01Icon,
+  Target02Icon,
+  UserIcon,
+} from '@/lib/icons';
 import {
   CommandDialog,
   CommandEmpty,
@@ -18,6 +22,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { SETTINGS_ROUTE_SECTIONS } from '@/lib/settingsSections';
 import {
   searchService,
   type SearchResponse,
@@ -88,16 +93,24 @@ export function SearchCommandPalette({
     };
   }, [query, workspace?.id]);
 
-  const totalResults =
-    results.tasks.length +
-    results.epics.length +
-    results.sprints.length +
-    results.objectives.length +
-    results.members.length +
-    (results.documents?.length ?? 0);
-
   const slug = workspace?.slug ?? '';
   const taskResults = results.tasks;
+
+  const quickNavItems = [
+    { label: 'Projects', icon: FolderKanbanIcon, path: `/w/${slug}/pm/my-work` },
+    { label: 'CRM', icon: Briefcase01Icon, path: `/w/${slug}/crm/contacts` },
+    { label: 'Support', icon: Message01Icon, path: `/w/${slug}/support` },
+    { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
+    { label: 'Agents', icon: BotIcon, path: `/w/${slug}/pm/agents` },
+  ];
+
+  const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
+    (s) => s.sidebar !== false,
+  ).map((s) => ({
+    label: s.label,
+    icon: s.icon,
+    path: `/w/${slug}/settings/${s.id}`,
+  }));
 
   type EntityType = 'task' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
 
@@ -106,7 +119,7 @@ export function SearchCommandPalette({
       onOpenChange(false);
       switch (type) {
         case 'task':
-          window.location.assign(`/w/${slug}/pm/tasks?task=${item.display_id}`);
+          window.location.assign(`/w/${slug}/pm/tasks?task=${item.task_key || item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });
@@ -147,20 +160,45 @@ export function SearchCommandPalette({
       <CommandList>
         {searching && (
           <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loading01Icon className="h-4 w-4 animate-spin" />
             Searching...
           </div>
         )}
 
-        {!searching && query.trim() && totalResults === 0 && (
-          <CommandEmpty>No results found.</CommandEmpty>
-        )}
+        <CommandEmpty>No results found.</CommandEmpty>
 
-        {!searching && !query.trim() && (
-          <div className="py-6 text-center text-sm text-muted-foreground">
-            Start typing to search...
-          </div>
-        )}
+        <CommandGroup heading="Go to">
+          {quickNavItems.map((item) => (
+            <CommandItem
+              key={item.label}
+              value={`nav-${item.label}`}
+              onSelect={() => {
+                onOpenChange(false);
+                navigate({ to: item.path });
+              }}
+              className="cursor-pointer"
+            >
+              <item.icon className="h-4 w-4 text-muted-foreground" />
+              <span>{item.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        <CommandGroup heading="Settings">
+          {settingsNavItems.map((item) => (
+            <CommandItem
+              key={item.label}
+              value={`settings-${item.label}`}
+              onSelect={() => {
+                onOpenChange(false);
+                navigate({ to: item.path });
+              }}
+              className="cursor-pointer"
+            >
+              <item.icon className="h-4 w-4 text-muted-foreground" />
+              <span>{item.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
 
         {taskResults.length > 0 && (
           <CommandGroup heading="Tasks">
@@ -171,9 +209,9 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('task', item)}
                 className="cursor-pointer"
               >
-                <CircleDot className="h-4 w-4 text-blue-500" />
+                <RecordIcon className="h-4 w-4 text-blue-500" />
                 <span className="text-muted-foreground text-xs font-mono mr-1">
-                  #{item.display_id}
+                  {item.task_key || `#${item.display_id}`}
                 </span>
                 <span className="truncate">{item.name}</span>
               </CommandItem>
@@ -190,7 +228,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('epic', item)}
                 className="cursor-pointer"
               >
-                <BookOpen className="h-4 w-4 text-purple-500" />
+                <BookOpen01Icon className="h-4 w-4 text-purple-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -206,7 +244,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('sprint', item)}
                 className="cursor-pointer"
               >
-                <Crosshair className="h-4 w-4 text-green-500" />
+                <Target02Icon className="h-4 w-4 text-green-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -222,7 +260,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('objective', item)}
                 className="cursor-pointer"
               >
-                <Target className="h-4 w-4 text-orange-500" />
+                <Target01Icon className="h-4 w-4 text-orange-500" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -238,7 +276,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('document', item)}
                 className="cursor-pointer"
               >
-                <FileText className="h-4 w-4 text-blue-400" />
+                <File01Icon className="h-4 w-4 text-blue-400" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}
@@ -254,7 +292,7 @@ export function SearchCommandPalette({
                 onSelect={() => handleSelect('member', item)}
                 className="cursor-pointer"
               >
-                <User className="h-4 w-4 text-cyan-500" />
+                <UserIcon className="h-4 w-4 text-cyan-500" />
                 <span className="truncate">{item.name}</span>
                 {item.team_name && (
                   <span className="ml-auto text-xs text-muted-foreground truncate">

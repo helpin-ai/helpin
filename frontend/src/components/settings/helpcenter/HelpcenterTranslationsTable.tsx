@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Loader2, PenLine, Plus, WandSparkles, X } from 'lucide-react'
+import { Tick01Icon, Loading01Icon, PencilEdit02Icon, PlusSignIcon, MagicWand01Icon, Cancel01Icon } from '@/lib/icons'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -176,7 +176,7 @@ export function HelpcenterTranslationsTable({
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loading01Icon className="h-4 w-4 animate-spin" />
         Loading translations...
       </div>
     )
@@ -204,7 +204,7 @@ export function HelpcenterTranslationsTable({
             disabled={generatingAll}
             onClick={() => void handleGenerateAll()}
           >
-            <WandSparkles className="h-3 w-3" />
+            <MagicWand01Icon className="h-3 w-3" />
             {generatingAll ? 'Generating...' : 'Generate all missing'}
           </Button>
         )}
@@ -254,10 +254,10 @@ export function HelpcenterTranslationsTable({
                                 className="h-7 text-xs"
                               />
                               <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" disabled={saving} onClick={() => void handleSaveEdit()}>
-                                <Check className="h-3 w-3" />
+                                <Tick01Icon className="h-3 w-3" />
                               </Button>
                               <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEditing(null)}>
-                                <X className="h-3 w-3" />
+                                <Cancel01Icon className="h-3 w-3" />
                               </Button>
                             </div>
                           ) : cell.exists ? (
@@ -267,7 +267,7 @@ export function HelpcenterTranslationsTable({
                               className="group flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors"
                             >
                               <span className="truncate max-w-[140px]">{cell.name}</span>
-                              <PenLine className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+                              <PencilEdit02Icon className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
                             </button>
                           ) : (
                             <button
@@ -276,7 +276,7 @@ export function HelpcenterTranslationsTable({
                               onClick={() => void handleGenerateCell('space', space.id, locale)}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
                             >
-                              {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                              {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
                               Generate
                             </button>
                           )}
@@ -310,10 +310,10 @@ export function HelpcenterTranslationsTable({
                                   className="h-7 text-xs"
                                 />
                                 <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" disabled={saving} onClick={() => void handleSaveEdit()}>
-                                  <Check className="h-3 w-3" />
+                                  <Tick01Icon className="h-3 w-3" />
                                 </Button>
                                 <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEditing(null)}>
-                                  <X className="h-3 w-3" />
+                                  <Cancel01Icon className="h-3 w-3" />
                                 </Button>
                               </div>
                             ) : cell.exists ? (
@@ -323,7 +323,7 @@ export function HelpcenterTranslationsTable({
                                 className="group flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors"
                               >
                                 <span className="truncate max-w-[140px]">{cell.name}</span>
-                                <PenLine className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+                                <PencilEdit02Icon className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
                               </button>
                             ) : (
                               <button
@@ -332,7 +332,7 @@ export function HelpcenterTranslationsTable({
                                 onClick={() => void handleGenerateCell('collection', coll.id, locale)}
                                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
                               >
-                                {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                                {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
                                 Generate
                               </button>
                             )}

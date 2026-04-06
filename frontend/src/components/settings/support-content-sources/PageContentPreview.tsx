@@ -1,4 +1,4 @@
-import { ExternalLink, X } from 'lucide-react';
+import { LinkSquare01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -21,7 +21,7 @@ export function PageContentPreview({
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border/70 px-6 py-3">
         <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={onBack} title="Back to pages">
-          <X className="h-4 w-4" />
+          <Cancel01Icon className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -41,7 +41,7 @@ export function PageContentPreview({
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ExternalLink className="h-3 w-3" />
+              <LinkSquare01Icon className="h-3 w-3" />
               <span className="max-w-[400px] truncate">{page.url}</span>
             </a>
           )}

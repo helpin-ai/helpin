@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Check, Link2, X } from 'lucide-react'
+import { Tick01Icon, Link01Icon, Cancel01Icon } from '@/lib/icons'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
 interface SlugDisplayProps {
@@ -44,7 +44,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
   if (editing) {
     return (
       <div className="mb-3 flex items-center gap-1.5">
-        <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <Link01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="text-sm font-mono text-muted-foreground">/</span>
         <input
           ref={inputRef}
@@ -64,7 +64,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
             onClick={() => void handleSave()}
             className="rounded p-0.5 text-emerald-600 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
           >
-            <Check className="h-3.5 w-3.5" />
+            <Tick01Icon className="h-3.5 w-3.5" />
           </button>
         </QuickTooltip>
         <QuickTooltip label="Cancel">
@@ -73,7 +73,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
             onClick={() => setEditing(false)}
             className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/60"
           >
-            <X className="h-3.5 w-3.5" />
+            <Cancel01Icon className="h-3.5 w-3.5" />
           </button>
         </QuickTooltip>
       </div>
@@ -87,7 +87,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
         onClick={canEdit ? handleStartEdit : undefined}
         className={`flex items-center gap-1.5 text-sm font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover/title:opacity-100 ${canEdit ? 'cursor-pointer hover:text-muted-foreground' : ''}`}
       >
-        <Link2 className="h-3.5 w-3.5" />
+        <Link01Icon className="h-3.5 w-3.5" />
         /{slug}
       </button>
       {helperText ? (

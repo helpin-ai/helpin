@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Star, Users } from 'lucide-react';
+import { StarIcon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 const MAX_VISIBLE_AVATARS = 5;
@@ -81,7 +81,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                       <CardDescription className="text-xs truncate">{ws.slug}</CardDescription>
                       {isDefault && (
                         <Badge variant="secondary" className="shrink-0 gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0">
-                          <Star className="h-2.5 w-2.5 fill-current" />
+                          <StarIcon className="h-2.5 w-2.5 fill-current" />
                           Default
                         </Badge>
                       )}
@@ -125,7 +125,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                     )}
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Users className="h-3.5 w-3.5" />
+                    <UserGroupIcon className="h-3.5 w-3.5" />
                     <span>{members.length}</span>
                   </div>
                 </div>
@@ -141,7 +141,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                     : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary hover:bg-primary/10'
                 }`}
               >
-                <Star className="h-3 w-3" />
+                <StarIcon className="h-3 w-3" />
                 {isDefault ? 'Remove default' : 'Set as default'}
               </button>
             </Card>

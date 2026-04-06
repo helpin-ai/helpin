@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
+import { Message01Icon, BotIcon, Loading01Icon, MoreHorizontalIcon, CheckmarkCircle02Icon, CancelCircleIcon, Link01Icon, MailOpenIcon, Shield02Icon, Delete01Icon, PencilEdit01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -478,7 +478,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   if (!conversationId) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
-        <MessageSquare className="h-12 w-12 opacity-20" />
+        <Message01Icon className="h-12 w-12 opacity-20" />
         <p className="text-sm">Select a conversation to view</p>
       </div>
     );
@@ -508,7 +508,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 disabled={runAgent.isPending}
                 onClick={() => runAgent.mutate(conversation.id)}
               >
-                {runAgent.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
+                {runAgent.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <BotIcon className="h-3 w-3" />}
                 Run
               </Button>
             )}
@@ -521,7 +521,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 className="h-7 gap-1 text-xs"
                 onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'open' as ConversationStatus })}
               >
-                <CircleX className="h-3.5 w-3.5" />
+                <CancelCircleIcon className="h-3.5 w-3.5" />
                 Unresolve
               </Button>
             ) : (
@@ -531,7 +531,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 className="h-7 gap-1 text-xs"
                 onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
                 Resolve
               </Button>
             )}
@@ -540,7 +540,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontalIcon className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -548,14 +548,14 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                   markUnread.mutate(conversation.id);
                   toast.success('Marked as unread');
                 }}>
-                  <MailOpen className="h-4 w-4" />
+                  <MailOpenIcon className="h-4 w-4" />
                   Mark as unread
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
                   navigator.clipboard.writeText(window.location.href);
                   toast.success('Link copied to clipboard');
                 }}>
-                  <Link2 className="h-4 w-4" />
+                  <Link01Icon className="h-4 w-4" />
                   Copy link
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
@@ -564,7 +564,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                     updateSubject.mutate({ conversationId: conversation.id, subject: newSubject.trim() });
                   }
                 }}>
-                  <Pencil className="h-4 w-4" />
+                  <PencilEdit01Icon className="h-4 w-4" />
                   Set conversation subject
                 </DropdownMenuItem>
                 {moveOptions.length > 0 && (
@@ -586,7 +586,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                           });
                         }}
                       >
-                        <MessageSquare className="h-4 w-4" />
+                        <Message01Icon className="h-4 w-4" />
                         Move to {option!.name}
                       </DropdownMenuItem>
                     ))}
@@ -600,7 +600,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                     toast.success('Conversation marked as spam');
                   }}
                 >
-                  <ShieldAlert className="h-4 w-4" />
+                  <Shield02Icon className="h-4 w-4" />
                   Mark as spam
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -621,7 +621,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                     });
                   }}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Delete01Icon className="h-4 w-4" />
                   Delete conversation
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -710,7 +710,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-              <MessageSquare className="h-8 w-8 opacity-30" />
+              <Message01Icon className="h-8 w-8 opacity-30" />
               <p className="text-sm">No messages yet. Start the conversation below.</p>
             </div>
           )}
@@ -739,6 +739,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
                 receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                 fallbackAvatarUrl={
                   (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
                   ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)

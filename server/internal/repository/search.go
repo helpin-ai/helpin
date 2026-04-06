@@ -20,7 +20,7 @@ func NewSearchRepository(db *gorm.DB) *SearchRepository {
 
 const searchLimit = 20
 
-func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string) (*model.SearchResponse, error) {
+func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string, taskKeyDisplayID int) (*model.SearchResponse, error) {
 	if query == "" {
 		return &model.SearchResponse{
 			Tasks:      []model.SearchResult{},
@@ -58,6 +58,24 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 
 	go func() {
 		defer wg.Done()
+
+		// When a task key display_id is provided, do an exact lookup
+		// plus the normal text search, then merge with the exact match first.
+		var exactMatch []model.SearchResult
+		if taskKeyDisplayID > 0 {
+			if err := r.db.WithContext(ctx).
+				Raw(`SELECT id, name, 'task' AS type, display_id, team_id
+					FROM pm_tasks
+					WHERE workspace_id = ? AND archived = false
+					  AND display_id = ?
+					LIMIT 1`, workspaceID, taskKeyDisplayID).
+				Scan(&exactMatch).Error; err != nil {
+				setErr(fmt.Errorf("search task by key: %w", err))
+				return
+			}
+		}
+
+		var textResults []model.SearchResult
 		if err := r.db.WithContext(ctx).
 			Raw(`SELECT id, name, 'task' AS type, display_id, team_id
 				FROM pm_tasks
@@ -65,8 +83,23 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				  AND (name ILIKE ? OR CAST(display_id AS TEXT) ILIKE ?)
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
-			Scan(&stories).Error; err != nil {
+			Scan(&textResults).Error; err != nil {
 			setErr(fmt.Errorf("search stories: %w", err))
+			return
+		}
+
+		// Prepend exact match, deduplicating against text results.
+		if len(exactMatch) > 0 {
+			exactID := exactMatch[0].ID
+			deduped := make([]model.SearchResult, 0, len(textResults))
+			for _, r := range textResults {
+				if r.ID != exactID {
+					deduped = append(deduped, r)
+				}
+			}
+			stories = append(exactMatch, deduped...)
+		} else {
+			stories = textResults
 		}
 	}()
 

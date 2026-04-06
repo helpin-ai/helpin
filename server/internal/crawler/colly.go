@@ -89,6 +89,7 @@ func crawlWithColly(
 			r.Abort()
 			return
 		}
+		logger.Debug("crawl request started", "url", r.URL.String(), "depth", r.Depth)
 	})
 
 	// Follow links if source discovery allows it.
@@ -207,10 +208,18 @@ func crawlWithColly(
 		mu.Unlock()
 
 		pageCount.Add(1)
+		logger.Info("crawl page extracted",
+			"url", pageURL.String(),
+			"title", title,
+			"status", r.StatusCode,
+			"content_length", len(contentText),
+			"page_count", pageCount.Load(),
+			"limit", limit,
+		)
 	})
 
 	collector.OnError(func(r *colly.Response, err error) {
-		logger.Debug("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
+		logger.Warn("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
 	})
 
 	// Create an HTTP client for sitemap discovery (reuses proxy if configured).

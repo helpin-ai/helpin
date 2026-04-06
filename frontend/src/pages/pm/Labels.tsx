@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Loader2, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2 } from 'lucide-react';
+import { Loading01Icon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Search01Icon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { Card, CardContent } from '@/components/ui/card';
@@ -117,7 +117,7 @@ function LabelDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={saving || !form.name.trim()}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {saving && <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />}
               Save
             </Button>
           </DialogFooter>
@@ -304,19 +304,19 @@ export function LabelsPage() {
                   className="text-muted-foreground hover:text-foreground"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontalIcon className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem onClick={() => handleEditRef.current(entry)}>
-                  <Pencil className="h-4 w-4" />
+                  <PencilEdit01Icon className="h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onClick={() => setDeleteLabelConfirm(entry)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Delete01Icon className="h-4 w-4" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -342,7 +342,7 @@ export function LabelsPage() {
           </p>
         </div>
         <Button size="sm" onClick={handleCreate}>
-          <Plus className="mr-1.5 h-4 w-4" />
+          <PlusSignIcon className="mr-1.5 h-4 w-4" />
           Create Label
         </Button>
       </header>
@@ -350,7 +350,7 @@ export function LabelsPage() {
       {/* Filter bar */}
       <div className="flex items-center gap-3">
         <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search01Icon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Filter Labels by name"
             value={search}
@@ -395,7 +395,7 @@ export function LabelsPage() {
       ) : filteredLabels.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <Tag className="h-10 w-10 text-muted-foreground/40" />
+            <Tag01Icon className="h-10 w-10 text-muted-foreground/40" />
             <div>
               <p className="text-sm font-medium text-muted-foreground">No labels found</p>
               <p className="text-xs text-muted-foreground/70">
@@ -406,7 +406,7 @@ export function LabelsPage() {
             </div>
             {!search && !onlyArchived && (
               <Button size="sm" variant="outline" onClick={handleCreate}>
-                <Plus className="mr-1.5 h-4 w-4" />
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
                 Create Label
               </Button>
             )}

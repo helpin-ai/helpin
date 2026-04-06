@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Loader2, Plus, Tag, X } from 'lucide-react';
+import { Tick01Icon, Loading01Icon, PlusSignIcon, Tag01Icon, Cancel01Icon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -65,7 +65,7 @@ export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
           }}
           className="ml-0.5 rounded-sm opacity-60 transition-opacity hover:opacity-100"
         >
-          <X className="h-3 w-3" />
+          <Cancel01Icon className="h-3 w-3" />
         </button>
       )}
     </span>
@@ -161,7 +161,7 @@ export function LabelPicker({
               setOpen(true);
             }}
           >
-            {selectedLabels.length > 0 && <Tag className="h-3 w-3" />}
+            {selectedLabels.length > 0 && <Tag01Icon className="h-3 w-3" />}
             {selectedLabels.length === 0 ? '+ Add label' : 'Add'}
           </button>
         </PopoverTrigger>
@@ -189,9 +189,9 @@ export function LabelPicker({
                     disabled={creating}
                   >
                     {creating ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                      <Loading01Icon className="h-3.5 w-3.5 animate-spin shrink-0" />
                     ) : (
-                      <Plus className="h-3.5 w-3.5 shrink-0" />
+                      <PlusSignIcon className="h-3.5 w-3.5 shrink-0" />
                     )}
                     Create &ldquo;{search.trim()}&rdquo;
                   </button>
@@ -220,7 +220,7 @@ export function LabelPicker({
                         <span className="text-[10px] text-muted-foreground">
                           {label.team_id ? 'Team' : 'Shared'}
                         </span>
-                        {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                        {isSelected && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
                       </CommandItem>
                     );
                   })}

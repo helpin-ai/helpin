@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown02Icon, ArrowUp02Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -243,7 +243,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                       </h4>
                       {editable && (
                         <Button variant="ghost" size="sm" onClick={() => openCreateForType(type)}>
-                          <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                          <PlusSignIcon className="h-3.5 w-3.5 mr-1" /> Add
                         </Button>
                       )}
                     </div>
@@ -277,7 +277,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                                     disabled={idx === 0}
                                     onClick={() => handleMoveWithinType(type, state.id, 'up')}
                                   >
-                                    <ArrowUp className="h-3.5 w-3.5" />
+                                    <ArrowUp02Icon className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     size="icon"
@@ -285,10 +285,10 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
                                     disabled={idx === statesByType[type].length - 1}
                                     onClick={() => handleMoveWithinType(type, state.id, 'down')}
                                   >
-                                    <ArrowDown className="h-3.5 w-3.5" />
+                                    <ArrowDown02Icon className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button size="icon" variant="ghost" onClick={() => openEdit(state)}>
-                                    <Pencil className="h-3.5 w-3.5" />
+                                    <PencilEdit01Icon className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
                               )}
@@ -346,7 +346,7 @@ export function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: 
               <div>
                 {editState && editable && (
                   <Button type="button" variant="ghost" className="text-destructive" onClick={() => setDeleteStateConfirm(true)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete State
+                    <Delete01Icon className="h-3.5 w-3.5 mr-1" /> Delete State
                   </Button>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import type { ElementType } from 'react';
-import { AlertTriangle, ArrowRight, Loader2, Sparkles, TrendingUp, Users, Zap } from 'lucide-react';
+import { Alert01Icon, ArrowRight02Icon, Loading01Icon, SparklesIcon, ChartIncreaseIcon, UserGroupIcon, ZapIcon } from '@/lib/icons';
 import { formatDistanceToNow } from 'date-fns';
 
 import { Badge } from '@/components/ui/badge';
@@ -14,11 +14,11 @@ interface EntitySummaryCardProps {
 }
 
 const highlightIcons: Record<SummaryHighlight['kind'], ElementType> = {
-  momentum: TrendingUp,
-  risk: AlertTriangle,
-  next_step: ArrowRight,
-  stakeholder: Users,
-  signal: Zap,
+  momentum: ChartIncreaseIcon,
+  risk: Alert01Icon,
+  next_step: ArrowRight02Icon,
+  stakeholder: UserGroupIcon,
+  signal: ZapIcon,
 };
 
 function statusLabel(summary: CRMEntitySummary): string {
@@ -65,7 +65,7 @@ function SummaryBody({ summary }: { summary: CRMEntitySummary }) {
       {summary.highlights.length > 0 ? (
         <div className="mt-4 grid gap-2">
           {summary.highlights.map((highlight, index) => {
-            const Icon = highlightIcons[highlight.kind] ?? Sparkles;
+            const Icon = highlightIcons[highlight.kind] ?? SparklesIcon;
             return (
               <div key={`${highlight.kind}-${index}`} className="flex items-start gap-2 rounded-sm border border-border/60 bg-muted/30 px-3 py-2">
                 <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -97,11 +97,11 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
       <Card className="gap-0 rounded-md border-border/70 py-0">
         <CardHeader className="px-4 py-3">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-            <Sparkles className="h-4 w-4 text-sky-500" />
+            <SparklesIcon className="h-4 w-4 text-sky-500" />
             {label}
           </CardTitle>
           <CardDescription className="flex items-center gap-2">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
             Loading latest summary
           </CardDescription>
         </CardHeader>
@@ -114,7 +114,7 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
       <Card className="gap-0 rounded-md border-border/70 py-0">
         <CardHeader className="px-4 py-3">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-            <Sparkles className="h-4 w-4 text-sky-500" />
+            <SparklesIcon className="h-4 w-4 text-sky-500" />
             {label}
           </CardTitle>
           <CardDescription>
@@ -131,7 +131,7 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="h-4 w-4 text-sky-500" />
+              <SparklesIcon className="h-4 w-4 text-sky-500" />
               {label}
             </CardTitle>
             <CardDescription className="mt-1">

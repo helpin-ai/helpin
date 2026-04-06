@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, GlobeLock } from 'lucide-react'
+import { GlobeIcon } from '@/lib/icons'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import {
@@ -76,7 +76,7 @@ export function ExternalPublishPanel({
       <SheetContent className="w-80 sm:w-96">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
+            <GlobeIcon className="h-4 w-4" />
             External Publishing
           </SheetTitle>
           <SheetDescription>
@@ -87,7 +87,7 @@ export function ExternalPublishPanel({
         <div className="mt-4 space-y-4">
           {!isExternalCapable ? (
             <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-center">
-              <GlobeLock className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+              <GlobeIcon className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
               <p className="text-sm text-muted-foreground">
                 Only documents in external-capable spaces can be published.
               </p>
@@ -97,7 +97,7 @@ export function ExternalPublishPanel({
             </div>
           ) : doc.status !== 'published' ? (
             <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-center">
-              <GlobeLock className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+              <GlobeIcon className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
               <p className="text-sm text-muted-foreground">
                 This document must be published internally before it can be made public.
               </p>
@@ -124,7 +124,7 @@ export function ExternalPublishPanel({
                   onClick={handlePublish}
                   disabled={publishExternally.isPending}
                 >
-                  <Globe className="h-3.5 w-3.5" />
+                  <GlobeIcon className="h-3.5 w-3.5" />
                   {publishExternally.isPending ? 'Publishing...' : 'Publish Externally'}
                 </Button>
               </div>

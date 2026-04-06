@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { Copy, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
+import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -252,7 +252,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
           <div className="flex items-center gap-3">
             {members.length > 10 && (
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -263,7 +263,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
             )}
             {editable && (
               <Button size="sm" onClick={openInviteDialog}>
-                <Plus className="h-4 w-4 mr-1" /> Invite Member
+                <PlusSignIcon className="h-4 w-4 mr-1" /> Invite Member
               </Button>
             )}
           </div>
@@ -279,7 +279,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
             </div>
             {editable && (
               <Button onClick={openInviteDialog}>
-                <Plus className="h-4 w-4 mr-1" />
+                <PlusSignIcon className="h-4 w-4 mr-1" />
                 Invite Member
               </Button>
             )}
@@ -405,18 +405,18 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                           {inv.join_url && (
                             <QuickTooltip label="Copy invite link">
                               <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)}>
-                                <Copy className="h-3.5 w-3.5" />
+                                <Copy01Icon className="h-3.5 w-3.5" />
                               </Button>
                             </QuickTooltip>
                           )}
                           <QuickTooltip label="Resend">
                             <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)}>
-                              <RefreshCw className="h-3.5 w-3.5" />
+                              <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
                             </Button>
                           </QuickTooltip>
                           <QuickTooltip label="Revoke">
                             <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Delete01Icon className="h-3.5 w-3.5" />
                             </Button>
                           </QuickTooltip>
                         </div>
@@ -442,7 +442,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 <div className="flex gap-2">
                   <Input value={createdJoinUrl} readOnly className="bg-muted text-xs" />
                   <Button type="button" variant="outline" size="icon" onClick={() => handleCopyLink(createdJoinUrl)}>
-                    <Copy className="h-4 w-4" />
+                    <Copy01Icon className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -463,7 +463,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                       <Popover>
                         <PopoverTrigger asChild>
                           <button type="button" className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors">
-                            <Users className="h-3 w-3" />
+                            <UserGroupIcon className="h-3 w-3" />
                             Add from organization
                           </button>
                         </PopoverTrigger>

@@ -1,18 +1,18 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
-  ArrowRightLeft,
-  Check,
-  Copy,
-  FileText,
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Search,
-  ShieldAlert,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react';
+  ArrowLeftRightIcon,
+  Tick01Icon,
+  Copy01Icon,
+  File01Icon,
+  Loading01Icon,
+  MoreHorizontalIcon,
+  PlusSignIcon,
+  Search01Icon,
+  Shield02Icon,
+  Delete01Icon,
+  Alert01Icon,
+} from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,25 +71,25 @@ interface TaskRelationshipsSectionProps {
 const RELATIONSHIP_OPTIONS: Array<{
   value: TaskRelationshipAction;
   label: string;
-  icon: typeof ArrowRightLeft;
+  icon: typeof ArrowLeftRightIcon | typeof Alert01Icon;
 }> = [
-  { value: 'relates_to', label: 'relates to', icon: ArrowRightLeft },
-  { value: 'blocks', label: 'blocks', icon: TriangleAlert },
-  { value: 'is_blocked_by', label: 'is blocked by', icon: ShieldAlert },
-  { value: 'duplicates', label: 'duplicates', icon: Copy },
-  { value: 'is_duplicated_by', label: 'is duplicated by', icon: Copy },
+  { value: 'relates_to', label: 'relates to', icon: ArrowLeftRightIcon },
+  { value: 'blocks', label: 'blocks', icon: Alert01Icon },
+  { value: 'is_blocked_by', label: 'is blocked by', icon: Shield02Icon },
+  { value: 'duplicates', label: 'duplicates', icon: Copy01Icon },
+  { value: 'is_duplicated_by', label: 'is duplicated by', icon: Copy01Icon },
 ];
 
 const UPDATE_TYPE_OPTIONS: Array<{
   value: TaskRelationshipAction;
   label: string;
-  icon: typeof ArrowRightLeft;
+  icon: typeof ArrowLeftRightIcon | typeof Alert01Icon;
 }> = [
-  { value: 'blocks', label: 'Blocks', icon: TriangleAlert },
-  { value: 'is_blocked_by', label: 'Blocked by', icon: ShieldAlert },
-  { value: 'duplicates', label: 'Duplicates', icon: Copy },
-  { value: 'is_duplicated_by', label: 'Duplicated by', icon: Copy },
-  { value: 'relates_to', label: 'Relates to', icon: ArrowRightLeft },
+  { value: 'blocks', label: 'Blocks', icon: Alert01Icon },
+  { value: 'is_blocked_by', label: 'Blocked by', icon: Shield02Icon },
+  { value: 'duplicates', label: 'Duplicates', icon: Copy01Icon },
+  { value: 'is_duplicated_by', label: 'Duplicated by', icon: Copy01Icon },
+  { value: 'relates_to', label: 'Relates to', icon: ArrowLeftRightIcon },
 ];
 
 const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon: string }> = {
@@ -118,18 +118,18 @@ const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon
 function getRelationshipMeta(linkType: string) {
   switch (linkType) {
     case 'blocks':
-      return { label: 'Blocks', icon: TriangleAlert, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' };
+      return { label: 'Blocks', icon: Alert01Icon, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' };
     case 'is_blocked_by':
-      return { label: 'Blocked by', icon: ShieldAlert, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/40' };
+      return { label: 'Blocked by', icon: Shield02Icon, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/40' };
     case 'relates_to':
     case 'related_by':
-      return { label: 'Relates to', icon: ArrowRightLeft, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' };
+      return { label: 'Relates to', icon: ArrowLeftRightIcon, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' };
     case 'duplicates':
-      return { label: 'Duplicates', icon: Copy, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicates', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
     case 'is_duplicated_by':
-      return { label: 'Duplicated by', icon: Copy, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicated by', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
     default:
-      return { label: linkType, icon: ArrowRightLeft, color: 'text-muted-foreground', bg: 'bg-muted/60' };
+      return { label: linkType, icon: ArrowLeftRightIcon, color: 'text-muted-foreground', bg: 'bg-muted/60' };
   }
 }
 
@@ -449,7 +449,7 @@ export function TaskRelationshipsSection({
         ) : null}
 
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -461,7 +461,7 @@ export function TaskRelationshipsSection({
         <div className="max-h-56 space-y-1 overflow-y-auto">
           {searching ? (
             <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
               Searching...
             </div>
           ) : null}
@@ -476,9 +476,9 @@ export function TaskRelationshipsSection({
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <span className="min-w-0 flex-1 truncate text-ui font-medium">{task.name}</span>
-                {task.display_id ? (
+                {(task.task_key || task.display_id) ? (
                   <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
-                    {task.display_id}
+                    {task.task_key ?? task.display_id}
                   </Badge>
                 ) : null}
               </button>
@@ -493,7 +493,7 @@ export function TaskRelationshipsSection({
                 onClick={() => handleLinkDoc(doc.id)}
                 className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.name}</span>
               </button>
             ))}
@@ -518,7 +518,7 @@ export function TaskRelationshipsSection({
               disabled={query.trim().length === 0}
               onClick={handleCreateRelatedTask}
             >
-              <Plus className="h-3 w-3" />
+              <PlusSignIcon className="h-3 w-3" />
               Create Related Task
             </Button>
           </div>
@@ -535,7 +535,7 @@ export function TaskRelationshipsSection({
   return (
     <section id="task-relationships-section" className={cn('mt-6', className)}>
       <div className="flex items-center gap-1.5">
-        <ArrowRightLeft className="h-3.5 w-3.5 text-muted-foreground" />
+        <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Task Relationships</h3>
       </div>
 
@@ -575,14 +575,14 @@ export function TaskRelationshipsSection({
                 </button>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {relatedTask.display_id ? (
+                {(relatedTask.task_key || relatedTask.display_id) ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
                     {relatedTask.task_type ? (
                       <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
-                    {relatedTask.display_id}
+                    {relatedTask.task_key ?? relatedTask.display_id}
                     {(relatedTask.completed || resolved) ? (
-                      <Check className="h-3 w-3 text-green-600" />
+                      <Tick01Icon className="h-3 w-3 text-green-600" />
                     ) : null}
                   </Badge>
                 ) : null}
@@ -592,7 +592,7 @@ export function TaskRelationshipsSection({
                       type="button"
                       className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
                     >
-                      <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                      <MoreHorizontalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -614,7 +614,7 @@ export function TaskRelationshipsSection({
                       className="text-destructive focus:text-destructive"
                       onClick={() => deleteRelationship.mutate(item.relationship_id)}
                     >
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      <Delete01Icon className="mr-2 h-3.5 w-3.5" />
                       Remove relationship
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -630,7 +630,7 @@ export function TaskRelationshipsSection({
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
             className="group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40"
           >
-            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
             <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
             {doc.association_id ? (
@@ -641,7 +641,7 @@ export function TaskRelationshipsSection({
                       type="button"
                       className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
                     >
-                      <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                      <MoreHorizontalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -649,7 +649,7 @@ export function TaskRelationshipsSection({
                       className="text-destructive focus:text-destructive"
                       onClick={() => deleteDocAssociation.mutate(doc.association_id!)}
                     >
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      <Delete01Icon className="mr-2 h-3.5 w-3.5" />
                       Remove link
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -673,13 +673,13 @@ export function TaskRelationshipsSection({
             onComposerOpenChange(true);
           }}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <PlusSignIcon className="h-3.5 w-3.5" />
           Add Relationship
         </Button>
 
         {busy ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loading01Icon className="h-3 w-3 animate-spin" />
           </span>
         ) : null}
       </div>
@@ -693,7 +693,7 @@ export function TaskRelationshipsSection({
       {externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by') ? (
         <div className="mt-4 space-y-1.5">
           <div className="flex items-center gap-1.5">
-            <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
+            <Shield02Icon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">External blocker</span>
           </div>
           <textarea

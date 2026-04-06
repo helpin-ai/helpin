@@ -53,7 +53,7 @@ func TestPMSprintHandler_PlanningWorkspace(t *testing.T) {
 	labelRepo := repository.NewPMLabelRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := service.NewPMActivityService(activityRepo)
-	sprintService := service.NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), activityService, nil, nil)
+	sprintService := service.NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), nil, activityService, nil, nil)
 	handler := NewPMSprintHandler(sprintService)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/pm/sprints/planning?workspace_id=%s&team_id=%s", workspaceID, teamID), nil)

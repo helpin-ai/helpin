@@ -706,7 +706,19 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
 				  AND sc.assigned_agent_id IS NULL
 				  AND sc.opened_by_user_id IS NULL
-			) AS unassigned
+			) AS unassigned,
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND sc.ai_state = 'pending'
+			) AS ai_pending
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status != 'closed'
@@ -734,7 +746,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		args = append(args, workspaceMemberID, workspaceMemberID)
 	}
 
-	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

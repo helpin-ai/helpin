@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Inbox } from 'lucide-react'
+import { InboxIcon } from '@/lib/icons'
 import { toast } from 'sonner'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { usePendingSuggestions, useAcceptSuggestion, useDismissSuggestion } from '@/hooks/queries'
@@ -82,7 +82,7 @@ export function ReviewFeed() {
           </div>
         ) : suggestions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Inbox className="h-10 w-10 text-muted-foreground/40 mb-3" />
+            <InboxIcon className="h-10 w-10 text-muted-foreground/40 mb-3" />
             <h3 className="text-sm font-medium text-muted-foreground">No pending suggestions</h3>
             <p className="mt-1 text-xs text-muted-foreground/70">
               {activeTab === 'all'

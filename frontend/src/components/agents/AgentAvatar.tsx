@@ -1,4 +1,4 @@
-import { Bot } from 'lucide-react';
+import { BotIcon } from '@/lib/icons';
 
 import type { Agent, AgentPresetKey } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
@@ -230,7 +230,7 @@ function PersonaSvg({ persona, className }: { persona: AgentPersonaKey; classNam
     default:
       return (
         <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-          <Bot className="h-1/2 w-1/2" />
+          <BotIcon className="h-1/2 w-1/2" />
         </div>
       );
   }

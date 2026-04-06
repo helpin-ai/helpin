@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 )
+
+var workspaceKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}$`)
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
@@ -51,6 +54,22 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
+	// Validate and normalize workspace key.
+	req.WorkspaceKey = strings.ToUpper(strings.TrimSpace(req.WorkspaceKey))
+	if req.WorkspaceKey == "" {
+		return nil, fmt.Errorf("workspace_key is required")
+	}
+	if !workspaceKeyPattern.MatchString(req.WorkspaceKey) {
+		return nil, fmt.Errorf("workspace_key must be 2-5 uppercase letters")
+	}
+	available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, req.WorkspaceKey, "")
+	if err != nil {
+		return nil, fmt.Errorf("check workspace key: %w", err)
+	}
+	if !available {
+		return nil, fmt.Errorf("workspace_key %q is already in use", req.WorkspaceKey)
+	}
+
 	websiteURL, err := normalizeWorkspaceWebsiteURL(req.WebsiteURL)
 	if err != nil {
 		return nil, err
@@ -64,7 +83,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		orgID = &req.OrganizationID
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, orgID, req.Description, websiteURL, req.Timezone)
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, req.WorkspaceKey, ownerID, orgID, req.Description, websiteURL, req.Timezone)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create workspace", "error", err, "slug", req.Slug)
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -121,10 +140,42 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 }
 
 // Update modifies a workspace.
-func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
+func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest, actorID string) (*model.Workspace, error) {
 	websiteURL, err := normalizeWorkspaceWebsiteURL(req.WebsiteURL)
 	if err != nil {
 		return nil, err
+	}
+
+	// Handle workspace key change if requested.
+	if req.WorkspaceKey != nil {
+		newKey := strings.ToUpper(strings.TrimSpace(*req.WorkspaceKey))
+		if !workspaceKeyPattern.MatchString(newKey) {
+			return nil, fmt.Errorf("workspace_key must be 2-5 uppercase letters")
+		}
+
+		current, err := s.workspaceRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("get workspace for key change: %w", err)
+		}
+		if current == nil {
+			return nil, fmt.Errorf("workspace not found")
+		}
+
+		if newKey != current.WorkspaceKey {
+			available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, newKey, id)
+			if err != nil {
+				return nil, fmt.Errorf("check workspace key: %w", err)
+			}
+			if !available {
+				return nil, fmt.Errorf("workspace_key %q is already in use", newKey)
+			}
+
+			if err := s.workspaceRepo.UpdateWorkspaceKey(ctx, id, current.WorkspaceKey, newKey, actorID); err != nil {
+				s.logger.ErrorContext(ctx, "failed to change workspace key", "error", err, "workspace_id", id, "old_key", current.WorkspaceKey, "new_key", newKey)
+				return nil, fmt.Errorf("change workspace key: %w", err)
+			}
+			s.logger.InfoContext(ctx, "workspace key changed", "workspace_id", id, "old_key", current.WorkspaceKey, "new_key", newKey)
+		}
 	}
 
 	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, websiteURL, req.LogoURL, req.Timezone)
@@ -134,6 +185,11 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 	}
 	s.logger.InfoContext(ctx, "workspace updated", "workspace_id", id)
 	return ws, nil
+}
+
+// GetKeyHistory returns all key changes for a workspace, newest first.
+func (s *WorkspaceService) GetKeyHistory(ctx context.Context, workspaceID string) ([]model.WorkspaceKeyHistory, error) {
+	return s.workspaceRepo.GetKeyHistory(ctx, workspaceID)
 }
 
 func normalizeWorkspaceWebsiteURL(raw *string) (*string, error) {

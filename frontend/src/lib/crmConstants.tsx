@@ -1,13 +1,13 @@
-import { Circle, CircleCheck, CircleX } from 'lucide-react';
+import { CircleIcon, CheckmarkCircle02Icon, CancelCircleIcon } from '@/lib/icons';
 import type { PipelineStageType } from './crmTypes';
 
 export const STAGE_TYPE_CONFIG: Record<
   PipelineStageType,
   { icon: React.ElementType; color: string; label: string }
 > = {
-  open: { icon: Circle, color: 'text-blue-500', label: 'Open' },
-  won: { icon: CircleCheck, color: 'text-green-500', label: 'Won' },
-  lost: { icon: CircleX, color: 'text-red-500', label: 'Lost' },
+  open: { icon: CircleIcon, color: 'text-blue-500', label: 'Open' },
+  won: { icon: CheckmarkCircle02Icon, color: 'text-green-500', label: 'Won' },
+  lost: { icon: CancelCircleIcon, color: 'text-red-500', label: 'Lost' },
 };
 
 export function StageTypeIcon({

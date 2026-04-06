@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2, PlayCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft01Icon, ArrowRight01Icon, Loading01Icon, PlayCircleIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -50,10 +50,10 @@ function RunHistory({ runs, onOpenTask }: { runs: RecurringRun[]; onOpenTask?: (
         {totalPages > 1 && (
           <div className="flex items-center gap-1">
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ArrowLeft01Icon className="h-3.5 w-3.5" />
             </Button>
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ArrowRight01Icon className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}
@@ -61,7 +61,7 @@ function RunHistory({ runs, onOpenTask }: { runs: RecurringRun[]; onOpenTask?: (
       <div className="space-y-1.5">
         {visible.map((run) => (
           <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-2 text-xs">
-            <PlayCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <PlayCircleIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{formatRunTrigger(run)}</span>
             <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
             <span className="shrink-0 text-muted-foreground">{formatRunRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
@@ -213,14 +213,14 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
           </SelectContent>
         </Select>
         <Button type="button" variant="outline" size="sm" className="ml-auto" onClick={() => void reload()} disabled={loading}>
-          <RefreshCw className="h-3.5 w-3.5" />
+          <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
           Refresh
         </Button>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
           Loading recurring templates...
         </div>
       ) : (

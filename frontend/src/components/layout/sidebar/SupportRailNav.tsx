@@ -1,6 +1,8 @@
-import { Inbox, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   SidebarGroup,
@@ -41,9 +43,14 @@ type SupportRailNavProps = {
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
   canManageSettings: boolean;
+  wsSlug: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
+  aiHasUnread?: boolean;
   onCreateMailbox: () => void;
+  onEditMailbox: (mailboxId: string) => void;
+  onArchiveMailbox: (mailboxId: string) => void;
+  onNavigate: (to: string) => void;
 };
 
 export function SupportRailNav({
@@ -53,11 +60,21 @@ export function SupportRailNav({
   inboxScopes,
   selectedMailboxId,
   canManageSettings,
+  wsSlug,
   onNavFilterChange,
   onMailboxSelect,
+  aiHasUnread,
   onCreateMailbox,
+  onEditMailbox,
+  onArchiveMailbox,
+  onNavigate,
 }: SupportRailNavProps) {
   const mailboxes = inboxScopes?.mailboxes ?? [];
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  const handleSettingsNavigate = (section: string) => {
+    onNavigate(`/w/${wsSlug}/settings/${section}`);
+  };
 
   return (
     <>
@@ -82,7 +99,7 @@ export function SupportRailNav({
                 <item.icon />
                 <span className="flex-1">{item.label}</span>
                 {badge != null && badge > 0 && (
-                  <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                  <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
                     {badge > 99 ? '99+' : badge}
                   </span>
                 )}
@@ -105,7 +122,10 @@ export function SupportRailNav({
                 onClick={() => onNavFilterChange(item.key)}
               >
                 <item.icon />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {aiHasUnread && item.key === 'ai_pending' && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-red-500" />
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
@@ -126,7 +146,7 @@ export function SupportRailNav({
                   className="h-5 w-5 rounded-sm text-muted-foreground hover:text-foreground"
                   onClick={onCreateMailbox}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <PlusSignIcon className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">Create Team Inbox</TooltipContent>
@@ -135,11 +155,12 @@ export function SupportRailNav({
         </div>
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
-            const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? Inbox) : Inbox;
+            const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
             const isActiveMailbox = selectedMailboxId === mailbox.id;
+            const isMenuOpen = openMenuId === mailbox.id;
 
             return (
-              <SidebarMenuItem key={mailbox.id}>
+              <SidebarMenuItem key={mailbox.id} className="group/mailbox">
                 <SidebarMenuButton
                   isActive={isActiveMailbox}
                   className="h-8 rounded-md px-2 text-sm"
@@ -147,10 +168,35 @@ export function SupportRailNav({
                 >
                   <MailboxIcon className="h-4 w-4" />
                   <span className="flex-1 truncate">{mailbox.name}</span>
-                  {mailbox.unread_count > 0 && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                  {mailbox.unread_count > 0 && !isMenuOpen && (
+                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white group-hover/mailbox:hidden">
                       {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
                     </span>
+                  )}
+                  {canManageSettings && (
+                    <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <span
+                          role="button"
+                          className={`ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover/mailbox:opacity-100'}`}
+                        >
+                          <MoreVerticalIcon className="h-3.5 w-3.5" />
+                        </span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="right" align="start" className="w-36">
+                        <DropdownMenuItem onClick={() => onEditMailbox(mailbox.id)}>
+                          <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => onArchiveMailbox(mailbox.id)}
+                        >
+                          <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -162,13 +208,54 @@ export function SupportRailNav({
                 className="h-8 rounded-md px-2 text-sm"
                 onClick={onCreateMailbox}
               >
-                <Plus className="h-4 w-4" />
+                <PlusSignIcon className="h-4 w-4" />
                 <span>Create Inbox</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
         </SidebarMenu>
       </SidebarGroup>
+
+      <div className="fixed inset-x-0 bottom-0 z-10 ml-16 w-[calc(var(--sidebar-width)-4rem)] border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
+        <div className="flex items-center justify-around">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('knowledge')}
+              >
+                <BookOpen01Icon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Knowledge</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('inboxes-routing')}
+              >
+                <InboxIcon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Inboxes & Routing</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => handleSettingsNavigate('chat-general')}
+              >
+                <LifebuoyIcon className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Chat Widget</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
     </>
   );
 }
