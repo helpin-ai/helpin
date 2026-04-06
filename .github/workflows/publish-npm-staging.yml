@@ -61,10 +61,8 @@ jobs:
         run: |
           VERSION=${{ steps.rc_version.outputs.RC_VERSION }}
           for pkg in packages/shared packages/widget-core packages/sdk-js packages/react packages/nextjs; do
-            if [ -d "$pkg" ]; then
-              cd $pkg
-              npm version $VERSION --no-git-tag-version --allow-same-version
-              cd ${{ github.workspace }}
+            if [ -f "$pkg/package.json" ]; then
+              node -e "const p=require('./$pkg/package.json'); p.version='$VERSION'; require('fs').writeFileSync('./$pkg/package.json', JSON.stringify(p, null, 2) + '\n')"
             fi
           done
 
