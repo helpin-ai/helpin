@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { HelpSpace } from '@helpin/shared';
+import type { HelpSpace } from '@helpin-ai/shared';
 import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
 import { fetchHelpCollections, type HelpCollection } from './helpApi';
 

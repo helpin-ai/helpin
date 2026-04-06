@@ -1,6 +1,6 @@
 import { useCallback, useContext } from 'react';
 import HelpinContext from './HelpinContext';
-import { EventPayload, UserProps } from '@helpin/sdk-js';
+import { EventPayload, UserProps } from '@helpin-ai/sdk-js';
 
 export type HelpinClient = {
   trackPageView: () => void;

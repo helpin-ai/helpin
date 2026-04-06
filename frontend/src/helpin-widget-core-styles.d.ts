@@ -1,4 +1,4 @@
-declare module '@helpin/widget-core/styles' {
+declare module '@helpin-ai/widget-core/styles' {
   const styles: string;
   export default styles;
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ClientProperties } from '@helpin/sdk-js';
+import { ClientProperties } from '@helpin-ai/sdk-js';
 import { serialize, CookieSerializeOptions } from 'cookie';
 
 // Helper type guards for Next.js 13.2+ cookie API

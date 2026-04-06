@@ -16,7 +16,7 @@ Learn how to send first-party lead data to Helpin using the JavaScript SDK’s `
 ## Basic Usage
 
 ```ts
-import { helpinClient } from '@helpin/sdk-js';
+import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
   key: 'UM_PUBLIC_KEY',

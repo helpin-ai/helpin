@@ -64,7 +64,7 @@ pnpm test                 # vitest run (jsdom environment)
 pnpm test:watch           # vitest (watch mode)
 pnpm typecheck            # tsc --noEmit
 ```
-Depends on `@helpin/shared`. Built with Vite + `vite-plugin-dts` (rollup types). Peer deps: React 18/19 or Preact 10.
+Depends on `@helpin-ai/shared`. Built with Vite + `vite-plugin-dts` (rollup types). Peer deps: React 18/19 or Preact 10.
 
 #### `packages/sdk-js` — Embeddable JS SDK
 ```bash

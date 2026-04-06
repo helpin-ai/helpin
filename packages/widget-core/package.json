@@ -1,5 +1,5 @@
 {
-  "name": "@helpin/widget-core",
+  "name": "@helpin-ai/widget-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@helpin/shared": "workspace:*"
+    "@helpin-ai/shared": "workspace:*"
   },
   "peerDependencies": {
     "preact": "^10.0.0 || *",

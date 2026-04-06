@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import useHelpin, { HelpinClient } from './useHelpin';
-import { EventPayload } from '@helpin/sdk-js';
+import { EventPayload } from '@helpin-ai/sdk-js';
 
 // Custom hook to track URL changes
 function useUrlChange() {

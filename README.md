@@ -28,12 +28,12 @@ Flow:
 1. `packages/sdk-js/src/loader.ts` builds to stable `dist/lib.js`.
 2. `packages/sdk-js/vite.config.ts` injects the hashed SDK filename into `lib.js`.
 3. `lib.js` loads `helpin.[hash].js`.
-4. `packages/sdk-js/src/core/widget.ts` mounts the widget from `@helpin/widget-core`.
-5. `sdk-js` aliases `@helpin/widget-core` to `packages/widget-core/src/*`, so the SDK build bundles widget-core source directly.
+4. `packages/sdk-js/src/core/widget.ts` mounts the widget from `@helpin-ai/widget-core`.
+5. `sdk-js` aliases `@helpin-ai/widget-core` to `packages/widget-core/src/*`, so the SDK build bundles widget-core source directly.
 
 Important consequence:
 
-- If `widget-core` changes, rebuild `@helpin/sdk-js` for the embed widget to pick it up.
+- If `widget-core` changes, rebuild `@helpin-ai/sdk-js` for the embed widget to pick it up.
 - Building `widget-core` alone does not update the live `lib.js` widget.
 
 ### 2. Frontend App
@@ -41,10 +41,10 @@ Important consequence:
 The frontend uses emoji-related code in two different places:
 
 - Support composer: `frontend/src/components/support/EmojiPicker.tsx`
-  - Uses `loadEmojiCatalog()` from `@helpin/widget-core`
+  - Uses `loadEmojiCatalog()` from `@helpin-ai/widget-core`
 - Widget preview in settings: `frontend/src/components/settings/WidgetPreview.tsx`
-  - Uses `@helpin/widget-core`
-  - Frontend aliases `@helpin/widget-core` to `packages/widget-core/dist/index.js`
+  - Uses `@helpin-ai/widget-core`
+  - Frontend aliases `@helpin-ai/widget-core` to `packages/widget-core/dist/index.js`
 
 Important consequence:
 
@@ -80,7 +80,7 @@ This is the source of truth for:
 - frontend support composer, via widget-core's loader
 - widget-core lazy emoji catalog
 
-The frontend app reaches this catalog through `@helpin/widget-core`'s exported `loadEmojiCatalog()` helper, rather than importing the dataset eagerly.
+The frontend app reaches this catalog through `@helpin-ai/widget-core`'s exported `loadEmojiCatalog()` helper, rather than importing the dataset eagerly.
 
 ### Embedded Widget Emoji Load
 
@@ -89,7 +89,7 @@ Flow:
 1. User clicks the emoji button in widget-core.
 2. `packages/widget-core/src/components/EmojiPicker.tsx` calls `emoji-loader.ts`.
 3. `packages/widget-core/src/components/emoji-loader.ts` dynamically imports `emoji-catalog.ts`.
-4. `packages/widget-core/src/components/emoji-catalog.ts` reads from `@helpin/shared`.
+4. `packages/widget-core/src/components/emoji-catalog.ts` reads from `@helpin-ai/shared`.
 5. The SDK build emits a lazy chunk like `dist/chunks/emoji-catalog.[hash].js`.
 6. Browser fetches that chunk only when the picker is opened.
 
@@ -117,9 +117,9 @@ This is separate from the `sdk-js` lazy chunk approach.
 Useful commands:
 
 ```bash
-pnpm --filter @helpin/shared build
-pnpm --filter @helpin/widget-core build
-pnpm --filter @helpin/sdk-js build
+pnpm --filter @helpin-ai/shared build
+pnpm --filter @helpin-ai/widget-core build
+pnpm --filter @helpin-ai/sdk-js build
 pnpm --filter frontend build
 bash widget/build.sh
 ```
@@ -151,7 +151,7 @@ The shared dataset was also cleaned up:
 
 ## Quick Rules of Thumb
 
-- Change `packages/widget-core` and want the embed widget updated: rebuild `@helpin/sdk-js`
+- Change `packages/widget-core` and want the embed widget updated: rebuild `@helpin-ai/sdk-js`
 - Change the standalone widget under `widget/`: run `bash widget/build.sh`
 - Change only shared emoji data: rebuild anything that consumes it
 - Debug a broken embed-widget emoji picker first by checking `/chunks/emoji-catalog.*.js` delivery and MIME type

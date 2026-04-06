@@ -13,7 +13,7 @@
 We have recently hardened two critical live-chat surfaces:
 
 - the internal support inbox in `frontend`
-- the customer-facing widget in `packages/sdk-js` and `@helpin/widget-core`
+- the customer-facing widget in `packages/sdk-js` and `@helpin-ai/widget-core`
 
 The product risk is not just API correctness. The highest-risk failures are browser-session failures:
 

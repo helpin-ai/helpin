@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { EventPayload, HelpinClient } from '@helpin/sdk-js';
+import { EventPayload, HelpinClient } from '@helpin-ai/sdk-js';
 
 // Type for the hook options
 interface UsePageViewOptions {

@@ -3,21 +3,21 @@
 
 ## General
 
-This package is a wrapper around `@helpin/sdk-js`, with added functionality related to React.
+This package is a wrapper around `@helpin-ai/sdk-js`, with added functionality related to React.
 
 ## Installation
 
 To use Helpin SDK, install npm package
 
 ```bash
-npm install @helpin/react
+npm install @helpin-ai/react
 ```
 
 Import and configure Helpin SDK Provider
 
 ```typescript jsx
 //...
-import { createClient, HelpinProvider } from "@helpin/react";
+import { createClient, HelpinProvider } from "@helpin-ai/react";
 
 // initialize Helpin core
 const helpinClient = createClient({
@@ -41,7 +41,7 @@ See [parameters list](https://helpin.com/docs/sending-data/js-sdk/parameters-ref
 ## Usage
 
 ```typescript jsx
-import { useHelpin } from "@helpin/react";
+import { useHelpin } from "@helpin-ai/react";
 
 const App = () => {
   const {id, track, trackPageView} = useHelpin(); // import methods from useHelpin hook
