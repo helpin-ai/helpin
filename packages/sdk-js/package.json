@@ -2,9 +2,16 @@
   "name": "@helpin-ai/sdk-js",
   "version": "0.0.0",
   "description": "Helpin JavaScript SDK",
-  "main": "dist/lib.js",
+  "main": "dist/helpin.es.js",
   "module": "dist/helpin.es.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/helpin.es.js",
+      "require": "./dist/helpin.es.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": [
     "dist"
   ],

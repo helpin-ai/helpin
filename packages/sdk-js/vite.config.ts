@@ -18,7 +18,7 @@ function injectSDKFilename() {
       );
       if (!sdkChunk) return;
 
-      const sdkFilename = (sdkChunk as any).fileName;
+      const sdkFilename = (sdkChunk as any).fileName; // 'helpin.es.js'
       const outDir = options.dir || 'dist';
       const loaderPath = resolve(outDir, 'lib.js');
 
@@ -56,6 +56,7 @@ export default defineConfig(({ command }) => {
         output: {
           entryFileNames: (chunkInfo) => {
             if (chunkInfo.name === 'loader') return 'lib.js';
+            if (chunkInfo.name === 'index') return 'helpin.es.js';
             return 'helpin.[hash].js';
           },
           chunkFileNames: 'chunks/[name].[hash].js',
