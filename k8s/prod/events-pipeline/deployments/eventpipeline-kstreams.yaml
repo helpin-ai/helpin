@@ -52,7 +52,7 @@ spec:
       #     emptyDir: {}
       containers:
         - name: main
-          image: ghcr.io/helpin-ai/helpin/events-pipeline-kstreams:ep-v0.1.5
+          image: ghcr.io/helpin-ai/helpin/events-pipeline-kstreams:ep-v0.1.7
           envFrom:
             - secretRef:
                 name: helpin-secrets
