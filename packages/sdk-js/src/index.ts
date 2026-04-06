@@ -260,6 +260,9 @@ function initializeNamespacedClient(
   // Set the function on the window
   (window as any)[namespace] = namespacedFunction;
 
+  // Expose widget manager for the analytics client's sendIdentifyToBackend WS path
+  namespacedFunction._widgetManager = widgetManager;
+
   // Initialize queue processing
   const queueName = `${namespace}Q`;
   const existingQueue = (window as any)[queueName] || [];
