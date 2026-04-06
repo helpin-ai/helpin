@@ -1,5 +1,6 @@
 # Go
 server/api
+server/migrate
 server/bin/
 server/tmp/
 server/temporal-worker

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
@@ -35,6 +36,36 @@ export default function RootLayout({
         <Navbar />
         <main>{children}</main>
         <Footer />
+
+        {/* Usermaven */}
+        <Script
+          id="um-tracker"
+          strategy="afterInteractive"
+          data-tracking-host="https://events.usermaven.com"
+          data-key="UMpgKYZLxR"
+          data-autocapture="true"
+          data-form-tracking="all"
+          src="https://t.usermaven.com/lib.js"
+        />
+        <Script id="um-init" strategy="afterInteractive">{`
+          window.usermaven = window.usermaven || function(){ (window.usermavenQ = window.usermavenQ || []).push(arguments); };
+        `}</Script>
+
+        {/* Customer.io */}
+        <Script id="cio-init" strategy="afterInteractive">{`
+          var _cio = _cio || [];
+          (function(){
+            var a,b,c;a=function(f){return function(){_cio.push([f].concat(Array.prototype.slice.call(arguments,0)))}};b=["load","identify","sidentify","track","page"];for(c=0;c<b.length;c++){_cio[b[c]]=a(b[c])};
+          })();
+        `}</Script>
+        <Script
+          id="cio-tracker"
+          strategy="afterInteractive"
+          data-site-id="a3fced22111b6be05726"
+          data-use-array-params="true"
+          data-auto-track-page="true"
+          src="https://assets.customer.io/assets/track.js"
+        />
       </body>
     </html>
   );
