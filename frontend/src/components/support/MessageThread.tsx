@@ -739,6 +739,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
                 receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                 fallbackAvatarUrl={
                   (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
                   ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
