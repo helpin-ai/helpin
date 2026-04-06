@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WidgetManager } from '../../../src/core/widget';
-import { mountWidget } from '@helpin/widget-core';
+import { mountWidget } from '@helpin-ai/widget-core';
 
 class MockWebSocket {
   static OPEN = 1;

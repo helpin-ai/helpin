@@ -1,7 +1,7 @@
-import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin/widget-core';
+import { mountWidget, unmountWidget } from '@helpin-ai/widget-core';
+import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
-import widgetStyles from '@helpin/widget-core/styles?inline';
+import widgetStyles from '@helpin-ai/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
 import {
   getOrCreateAnonymousId,

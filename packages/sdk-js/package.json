@@ -1,5 +1,5 @@
 {
-  "name": "@helpin/sdk-js",
+  "name": "@helpin-ai/sdk-js",
   "version": "0.0.0",
   "description": "Helpin JavaScript SDK",
   "main": "dist/lib.js",
@@ -36,8 +36,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@helpin/widget-core": "workspace:*",
-    "@helpin/shared": "workspace:*"
+    "@helpin-ai/widget-core": "workspace:*",
+    "@helpin-ai/shared": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

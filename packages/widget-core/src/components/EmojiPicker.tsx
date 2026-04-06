@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
-import type { EmojiCategory } from '@helpin/shared';
+import type { EmojiCategory } from '@helpin-ai/shared';
 import type { EmojiCatalog } from './emoji-catalog';
 import { loadEmojiCatalog } from './emoji-loader';
 import { SearchIcon, SmileIcon, XIcon } from './icons';

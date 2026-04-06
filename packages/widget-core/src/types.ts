@@ -1,4 +1,4 @@
-import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, PendingAttachment as SharedPendingAttachment } from '@helpin/shared';
+import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, PendingAttachment as SharedPendingAttachment } from '@helpin-ai/shared';
 
 // Re-export shared types
 export type Message = SharedMessage;

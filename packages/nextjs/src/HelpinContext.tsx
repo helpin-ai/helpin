@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import { HelpinClient } from '@helpin/sdk-js';
+import { HelpinClient } from '@helpin-ai/sdk-js';
 
 const HelpinContext = createContext<HelpinClient | null>(null);
 

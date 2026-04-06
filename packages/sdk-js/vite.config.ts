@@ -39,9 +39,9 @@ export default defineConfig(({ command }) => {
   return {
     resolve: {
       alias: [
-        { find: /^@helpin\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
-        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/src/index.ts') },
-        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
+        { find: /^@helpin-ai\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
+        { find: /^@helpin-ai\/widget-core$/, replacement: resolve(__dirname, '../widget-core/src/index.ts') },
+        { find: /^@helpin-ai\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
         { find: /^\.\.\/transport\/https$/, replacement: resolve(__dirname, 'src/transport/https.browser.ts') },
       ],
     },
@@ -85,7 +85,7 @@ export default defineConfig(({ command }) => {
       },
     },
     optimizeDeps: {
-      exclude: ['@helpin/sdk-js'],
+      exclude: ['@helpin-ai/sdk-js'],
     },
   };
 });

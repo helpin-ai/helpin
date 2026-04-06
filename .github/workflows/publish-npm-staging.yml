@@ -1,0 +1,168 @@
+# Publish npm packages (RC) on merge to develop
+# Packages: @helpin-ai/sdk-js, @helpin-ai/react, @helpin-ai/nextjs
+# Required GitHub secrets: NODE_AUTH_TOKEN (npm access token)
+
+name: Publish npm Packages (Staging)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - develop
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    outputs:
+      rc_version: ${{ steps.rc_version.outputs.RC_VERSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          always-auth: true
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Generate RC version
+        id: rc_version
+        run: |
+          LATEST_TAG=$(git tag | grep -E "^[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="0.1.0"
+          fi
+          IFS='.' read -r -a version_parts <<< "$LATEST_TAG"
+          MAJOR="${version_parts[0]}"
+          MINOR="${version_parts[1]}"
+          PATCH="${version_parts[2]}"
+          RC_VERSION="$MAJOR.$MINOR.$PATCH-rc.${{ github.run_number }}"
+          echo "RC_VERSION=${RC_VERSION}" >> $GITHUB_OUTPUT
+          echo "RC version: ${RC_VERSION}"
+
+      - name: Update package versions
+        run: |
+          VERSION=${{ steps.rc_version.outputs.RC_VERSION }}
+          for pkg in packages/sdk-js packages/react packages/nextjs; do
+            if [ -d "$pkg" ]; then
+              cd $pkg
+              npm version $VERSION --no-git-tag-version --allow-same-version
+              cd ${{ github.workspace }}
+            fi
+          done
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-artifacts
+          path: |
+            packages/
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            !**/node_modules/**
+
+  publish-sdk-js:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-artifacts
+          path: .
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Publish SDK package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/sdk-js
+          pnpm publish --no-git-checks --tag rc --access public
+
+  publish-react:
+    needs: publish-sdk-js
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-artifacts
+          path: .
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Publish React package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/react
+          pnpm publish --no-git-checks --tag rc --access public
+
+  publish-nextjs:
+    needs: publish-sdk-js
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-artifacts
+          path: .
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Publish Next.js package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/nextjs
+          pnpm publish --no-git-checks --tag rc --access public

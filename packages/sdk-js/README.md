@@ -19,13 +19,13 @@ Helpin SDK is a powerful and flexible JavaScript/TypeScript library for tracking
 You can install the Helpin SDK using npm:
 
 ```bash
-npm install @helpin/sdk-js
+npm install @helpin-ai/sdk-js
 ```
 
 Or using yarn:
 
 ```bash
-yarn add @helpin/sdk-js
+yarn add @helpin-ai/sdk-js
 ```
 
 ### UMD (Universal Module Definition)
@@ -49,7 +49,7 @@ Replace `https://cdn.helpin.ai/sdk/v1/lib.js` with the actual URL where the Help
 ### Using as a module
 
 ```javascript
-import { helpinClient } from '@helpin/sdk-js';
+import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
   apiKey: 'your-api-key',
@@ -137,7 +137,7 @@ Refer to the `Config` interface in `src/core/config.ts` for a full list of confi
 The SDK can also be used in server-side environments:
 
 ```javascript
-const { helpinClient } = require('@helpin/sdk-js');
+const { helpinClient } = require('@helpin-ai/sdk-js');
 
 const client = helpinClient({
   apiKey: 'your-api-key',
@@ -166,7 +166,7 @@ To set up the project for development:
 To run unit tests:
 
 ```bash
-pnpm --filter @helpin/sdk-js test
+pnpm --filter @helpin-ai/sdk-js test
 ```
 
 Unit tests cover:
@@ -199,7 +199,7 @@ Widget E2E tests cover:
 To run end-to-end tests with a specific browser (e.g., Chrome):
 
 ```bash
-pnpm --filter @helpin/sdk-js test:e2e --project=chromium
+pnpm --filter @helpin-ai/sdk-js test:e2e --project=chromium
 ```
 
 You can replace `chromium` with other browsers like `firefox` or `webkit` to test on different browsers.
@@ -207,7 +207,7 @@ You can replace `chromium` with other browsers like `firefox` or `webkit` to tes
 To run E2E tests with a UI for debugging:
 
 ```bash
-pnpm --filter @helpin/sdk-js test:e2e:ui
+pnpm --filter @helpin-ai/sdk-js test:e2e:ui
 ```
 
 To view the Playwright report after running tests:

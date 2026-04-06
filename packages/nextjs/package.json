@@ -1,5 +1,5 @@
 {
-  "name": "@helpin/nextjs",
+  "name": "@helpin-ai/nextjs",
   "version": "0.0.0",
   "description": "Helpin JavaScript SDK for NextJS",
   "author": "Helpin <hello@helpin.ai>",
@@ -18,7 +18,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@helpin/sdk-js": "workspace:*",
+    "@helpin-ai/sdk-js": "workspace:*",
     "cookie": "^0.5.0"
   },
   "peerDependencies": {

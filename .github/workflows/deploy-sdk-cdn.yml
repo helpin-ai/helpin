@@ -42,7 +42,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build SDK (shared → widget-core → sdk-js)
-        run: pnpm build --filter @helpin/sdk-js...
+        run: pnpm build --filter @helpin-ai/sdk-js...
 
       - name: Prepare CDN deploy directory
         run: |

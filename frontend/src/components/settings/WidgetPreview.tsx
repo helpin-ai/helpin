@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
-import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin/widget-core';
+import { mountWidget, unmountWidget, type WidgetConfig } from '@helpin-ai/widget-core';
 
 // Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
-import '@helpin/widget-core/styles';
+import '@helpin-ai/widget-core/styles';
 
 interface WidgetPreviewProps {
   brandColor: string;
@@ -27,7 +27,7 @@ interface WidgetPreviewProps {
 
 /**
  * Full-height sticky widget preview panel (Intercom-style).
- * Uses mountWidget() from @helpin/widget-core so the widget renders
+ * Uses mountWidget() from @helpin-ai/widget-core so the widget renders
  * with its own bundled Preact instance — no dual-instance __H errors.
  */
 export function WidgetPreview({

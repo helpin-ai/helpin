@@ -1,6 +1,6 @@
 import * as React from 'react';
 import HelpinContext from './HelpinContext';
-import { HelpinClient } from '@helpin/sdk-js';
+import { HelpinClient } from '@helpin-ai/sdk-js';
 import { PropsWithChildren } from 'react';
 
 export interface HelpinProviderProps {

@@ -8,8 +8,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@helpin/shared": ["../packages/shared/src/index.ts"],
-      "@helpin/widget-core": ["../packages/widget-core/dist/index.d.ts"]
+      "@helpin-ai/shared": ["../packages/shared/src/index.ts"],
+      "@helpin-ai/widget-core": ["../packages/widget-core/dist/index.d.ts"]
     }
   }
 }

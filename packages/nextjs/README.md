@@ -3,7 +3,7 @@
 
 ## General
 
-This package is a wrapper around `@helpin/sdk-js`, with added functionality related to NextJS.
+This package is a wrapper around `@helpin-ai/sdk-js`, with added functionality related to NextJS.
 
 ## Installation
 
@@ -13,7 +13,7 @@ With NextJS there're several ways on how to add Helpin tracking
 
 First, create or update your `_app.js` following this code
 ```jsx
-import { createClient, HelpinProvider } from "@helpin/nextjs";
+import { createClient, HelpinProvider } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({
@@ -35,7 +35,7 @@ See [parameters list](https://helpin.com/docs/sending-data/js-sdk/parameters-ref
 
 After helpin client and provider are configured you will be able to use `useHelpin` hook in your components
 ```jsx
-import { useHelpin } from "@helpin/nextjs";
+import { useHelpin } from "@helpin-ai/nextjs";
 
 const Main = () => {
   const {id, trackPageView, track} = useHelpin(); // import methods from useHelpin hook
@@ -60,7 +60,7 @@ Please note, that `useHelpin` uses `useEffect()` with related side effects.
 To enable automatic pageview tracking, add `usePageView()` hook to your `_app.js`. This hook will send pageview each time
 user loads a new page. This hook relies on [NextJS Router](https://nextjs.org/docs/api-reference/next/router)
 ```jsx
-import { createClient, HelpinProvider } from "@helpin/nextjs";
+import { createClient, HelpinProvider } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({
@@ -95,7 +95,7 @@ Helpin can track events on server-side:
 
 For manual tracking you need to initialize Helpin client
 ```javascript
-import { createClient } from "@helpin/nextjs";
+import { createClient } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({

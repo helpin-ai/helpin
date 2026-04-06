@@ -1,5 +1,5 @@
 {
-  "name": "@helpin/react",
+  "name": "@helpin-ai/react",
   "version": "0.0.0",
   "description": "Helpin JavaScript SDK for React",
   "author": "Helpin <hello@helpin.ai>",
@@ -18,7 +18,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@helpin/sdk-js": "workspace:*"
+    "@helpin-ai/sdk-js": "workspace:*"
   },
   "peerDependencies": {
     "react": "15.x || 16.x || 17.x || 18.x || 19.x",

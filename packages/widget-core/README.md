@@ -1,11 +1,11 @@
-# @helpin/widget-core
+# @helpin-ai/widget-core
 
 React/Preact components for building a chat widget.
 
 ## Installation
 
 ```bash
-pnpm add @helpin/widget-core
+pnpm add @helpin-ai/widget-core
 ```
 
 ## Usage
@@ -23,8 +23,8 @@ import {
   TypingIndicator,
   CsatRating,
   StreamingText
-} from '@helpin/widget-core';
-import '@helpin/widget-core/dist/style.css';
+} from '@helpin-ai/widget-core';
+import '@helpin-ai/widget-core/dist/style.css';
 ```
 
 ## Components
@@ -53,7 +53,7 @@ import type {
   WidgetAdapter,
   AiSource,
   Attachment 
-} from '@helpin/widget-core';
+} from '@helpin-ai/widget-core';
 ```
 
 ## Development
