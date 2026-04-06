@@ -232,9 +232,9 @@
   pointer-events: none;
   height: 0;
 }
-/* TipTap v3 fallback — placeholder on empty paragraph with data-placeholder attr */
-.tiptap p.is-empty::before,
-.ProseMirror p.is-empty::before {
+/* TipTap v3 fallback — placeholder on empty paragraph only when entire editor is empty */
+.tiptap.is-editor-empty p.is-empty::before,
+.ProseMirror.is-editor-empty p.is-empty::before {
   content: attr(data-placeholder);
   float: left;
   color: var(--muted-foreground);

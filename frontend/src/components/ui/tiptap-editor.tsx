@@ -198,7 +198,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       }),
       Placeholder.configure({
         placeholder,
-        showOnlyCurrent: true,
+        showOnlyCurrent: false,
         emptyNodeClass: 'is-empty',
         emptyEditorClass: 'is-editor-empty',
       }),
