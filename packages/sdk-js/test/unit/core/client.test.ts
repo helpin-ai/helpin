@@ -6,9 +6,8 @@ describe('HelpinClient', () => {
   let client: HelpinClient;
   let addSpy: ReturnType<typeof vi.spyOn>;
   const mockConfig: Config = {
-    key: 'test-api-key',
-    trackingHost: 'https://test.helpin.ai',
-    tracking_host: 'https://test.helpin.ai',
+    widgetKey: 'test-api-key',
+    host: 'https://test.helpin.ai',
   };
 
   beforeEach(() => {

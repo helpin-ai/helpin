@@ -3,10 +3,10 @@ import type { Config } from '@/core/types';
 
 export class HttpsTransport implements Transport {
   constructor(
-    private trackingHost: string,
+    private host: string,
     private config: Config,
   ) {
-    void this.trackingHost;
+    void this.host;
     void this.config;
   }
 

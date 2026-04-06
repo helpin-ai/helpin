@@ -33,16 +33,16 @@ yarn add @helpin-ai/sdk-js
 For quick integration without a module bundler, you can include the SDK directly in your HTML using a script tag:
 
 ```html
-<script src="https://cdn.helpin.ai/sdk/v1/lib.js"
-        data-key="your-api-key"
-        data-tracking-host="https://events.yourdomain.com"
+<script src="https://cdn.helpin.ai/lib.js"
+        data-widget-key="your-api-key"
+        data-host="https://events.yourdomain.com"
         data-log-level="debug"
-        data-autocapture="true"
-        data-form-tracking="true"
-        data-auto-pageview="true"></script>
+        data-auto-pageview="true"
+        data-use-beacon-api="false"
+        data-ga-hook="false"></script>
 ```
 
-Replace `https://cdn.helpin.ai/sdk/v1/lib.js` with the actual URL where the Helpin SDK is hosted.
+The `data-widget-key` attribute (or `data-key`) and `data-host` (or `data-tracking-host`) are required. See the full list of supported data attributes below.
 
 ## Basic Usage
 
@@ -52,8 +52,8 @@ Replace `https://cdn.helpin.ai/sdk/v1/lib.js` with the actual URL where the Help
 import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com',
+  widgetKey: 'your-api-key',
+  host: 'https://events.yourdomain.com',
   // Add other configuration options as needed
 });
 
@@ -104,14 +104,13 @@ The SDK supports various configuration options to customize its behavior. When u
 
 ```javascript
 const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com',
-  cookieDomain: '.yourdomain.com',
+  widgetKey: 'your-api-key',
+  host: 'https://events.yourdomain.com',
   logLevel: 'DEBUG',
   useBeaconApi: true,
-  autocapture: true,
-  formTracking: 'all',
   autoPageview: true,
+  gaHook: false,
+  segmentHook: false,
   // ... other options
 });
 ```
@@ -119,15 +118,22 @@ const client = helpinClient({
 When using via UMD, you can set these options using data attributes on the script tag:
 
 ```html
-<script src="https://cdn.helpin.ai/sdk/v1/lib.js"
-        data-key="your-api-key"
-        data-tracking-host="https://events.yourdomain.com"
+<script src="https://cdn.helpin.ai/lib.js"
+        data-widget-key="your-api-key"
+        data-host="https://events.yourdomain.com"
         data-log-level="debug"
-        data-autocapture="true"
-        data-form-tracking="all"
         data-auto-pageview="true"
         data-use-beacon-api="true"
-        data-cookie-domain=".yourdomain.com"></script>
+        data-ga-hook="false"
+        data-segment-hook="false"
+        data-randomize-url="false"
+        data-id-method="cookie"
+        data-privacy-policy="strict"
+        data-ip-policy="strict"
+        data-cookie-policy="strict"
+        data-namespace="helpin"
+        data-cross-domain-linking="true"
+        data-no-auto-init="false"></script>
 ```
 
 Refer to the `Config` interface in `src/core/config.ts` for a full list of configuration options.
@@ -140,8 +146,8 @@ The SDK can also be used in server-side environments:
 const { helpinClient } = require('@helpin-ai/sdk-js');
 
 const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com'
+  widgetKey: 'your-api-key',
+  host: 'https://events.yourdomain.com'
 });
 
 client.track('server_event', {
@@ -149,6 +155,20 @@ client.track('server_event', {
   action: 'item_purchased'
 });
 ```
+
+## Public Exports
+
+The SDK exports the following from `@helpin-ai/sdk-js`:
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `helpinClient` | Function | Factory function to create a configured client instance |
+| `HelpinClient` | Class | The core analytics client class |
+| `HelpinOptions` | Type | Configuration options (alias for `Config`) |
+| `UserProps` | Type | User identification properties |
+| `EventPayload` | Type | Event tracking payload type |
+| `LogLevel` | Enum | Logging levels (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `ClientProperties` | Type | Client environment properties |
 
 ## Development
 

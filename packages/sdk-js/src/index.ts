@@ -18,12 +18,12 @@ function helpinClient(config: Partial<Config>): HelpinClient {
     ...camelCaseConfig,
   } as Config;
 
-  if (!mergedConfig.key) {
-    throw new Error('API key is required!');
+  if (!mergedConfig.widgetKey) {
+    throw new Error('Widget key is required!');
   }
 
-  if (!mergedConfig.trackingHost) {
-    throw new Error('Tracking host is required!');
+  if (!mergedConfig.host) {
+    throw new Error('Host is required!');
   }
 
   return new HelpinClient(mergedConfig);
@@ -31,8 +31,8 @@ function helpinClient(config: Partial<Config>): HelpinClient {
 
 function initFromScript(script: HTMLScriptElement): HelpinClient {
   const config: Partial<Config> = {
-    key: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
-    trackingHost:
+    widgetKey: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
+    host:
       script.getAttribute('data-host') || script.getAttribute('data-tracking-host') || undefined,
     logLevel: parseLogLevel(script.getAttribute('data-log-level')),
     autoPageview:
@@ -107,10 +107,10 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
   initializeNamespacedClient(namespace, client);
 
   // Auto-boot widget using the same key and host from script attributes
-  if (config.key) {
+  if (config.widgetKey) {
     widgetManager.boot({
-      key: config.key,
-      host: config.trackingHost,
+      widgetKey: config.widgetKey,
+      host: config.host,
     });
   }
 
@@ -355,11 +355,11 @@ if (isWindowAvailable()) {
       function widgetFunction(...args: any[]) {
         const method = args[0];
 
-        // Analytics client initialization: helpin('init', { key, trackingHost, ... })
+        // Analytics client initialization: helpin('init', { widgetKey, host, ... })
         if (method === 'init') {
           const config = args[1] as Partial<Config>;
-          if (!config?.key || !config?.trackingHost) {
-            console.error('Helpin: init requires key and trackingHost');
+          if (!config?.widgetKey || !config?.host) {
+            console.error('Helpin: init requires widgetKey and host');
             return;
           }
           analyticsClient = helpinClient(config);

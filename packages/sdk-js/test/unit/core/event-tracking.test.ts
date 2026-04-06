@@ -5,8 +5,8 @@ import { Config } from '../../../src/core/types';
 describe('HelpinClient Event Tracking', () => {
   let client: HelpinClient;
   const mockConfig: Config = {
-    key: 'UM00AcZHGY',
-    trackingHost: 'https://test.helpin.ai',
+    widgetKey: 'UM00AcZHGY',
+    host: 'https://test.helpin.ai',
   };
 
   beforeEach(() => {
@@ -247,8 +247,8 @@ describe('HelpinClient Event Tracking', () => {
   // Test for cross-domain linking functionality
   it('should handle cross-domain linking', () => {
     const mockConfig: Config = {
-      key: 'test-key',
-      trackingHost: 'https://test.helpin.ai',
+      widgetKey: 'test-key',
+      host: 'https://test.helpin.ai',
       crossDomainLinking: true,
       domains: 'domain1.com,domain2.com',
     };
@@ -261,8 +261,8 @@ describe('HelpinClient Event Tracking', () => {
   // Test for different transport methods
   it('should use the correct transport method', () => {
     const beaconConfig: Config = {
-      key: 'test-key',
-      trackingHost: 'https://test.helpin.ai',
+      widgetKey: 'test-key',
+      host: 'https://test.helpin.ai',
       useBeaconApi: true,
     };
     const beaconClient = new HelpinClient(beaconConfig);

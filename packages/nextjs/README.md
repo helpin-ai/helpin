@@ -17,8 +17,8 @@ import { createClient, HelpinProvider } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({
-  tracking_host: "__HELPIN_HOST__",
-  key: "__API_KET__",
+  host: "__HELPIN_HOST__",
+  widgetKey: "__API_KEY__",
   // See Helpin SDK parameters section for more options
 });
 
@@ -60,17 +60,17 @@ Please note, that `useHelpin` uses `useEffect()` with related side effects.
 To enable automatic pageview tracking, add `usePageView()` hook to your `_app.js`. This hook will send pageview each time
 user loads a new page. This hook relies on [NextJS Router](https://nextjs.org/docs/api-reference/next/router)
 ```jsx
-import { createClient, HelpinProvider } from "@helpin-ai/nextjs";
+import { createClient, HelpinProvider, usePageView } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({
-  tracking_host: "__HELPIN_HOST__",
-  key: "__API_KET__",
+  host: "__HELPIN_HOST__",
+  widgetKey: "__API_KEY__",
   // See Helpin SDK parameters section for more options
 });
 
 function MyApp({Component, pageProps}) {
-  usePageView(helpinClient); // this hook will send pageview track event on router change
+  usePageView(helpinClient); // this hook will send pageview track event on URL change
 
   // wrap our app with Helpin provider
   return <HelpinProvider client={helpinClient}>
@@ -99,8 +99,8 @@ import { createClient } from "@helpin-ai/nextjs";
 
 // initialize Helpin core
 const helpinClient = createClient({
-  tracking_host: "__HELPIN_HOST__",
-  key: "__API_KET__",
+  host: "__HELPIN_HOST__",
+  widgetKey: "__API_KEY__",
   // See Helpin SDK parameters section for more options
 });
 ```
@@ -113,20 +113,65 @@ export async function getServerSideProps() {
 }
 ```
 
-### Automated page view tracking
+### Automated page view tracking with middleware
 
-Helpin could track page views automatically via use of `_middleware.js` which has been introduced in NextJS 12
+Helpin provides a `middlewareEnv` helper for Next.js middleware (introduced in Next.js 12). It handles anonymous ID management, source IP extraction, and client property collection:
 
 ```javascript
-export function middleware(req, ev) {
-  const {page} = req
-  if ( !page?.name ) {
-    return;
-  }
-  helpin.track("page_view", {page: req.page})
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient, middlewareEnv } from "@helpin-ai/nextjs";
+
+const helpinClient = createClient({
+  host: "__HELPIN_HOST__",
+  widgetKey: "__API_KEY__",
+});
+
+export function middleware(req) {
+  const res = NextResponse.next();
+  const env = middlewareEnv(req, res, { disableCookies: false });
+
+  helpinClient.track("page_view", {
+    ...env.describeClient(),
+    source_ip: env.getSourceIp(),
+    anonymous_id: env.getAnonymousId({ name: "__helpin_id", domain: ".yourdomain.com" }),
+  });
+
+  return res;
 }
 ```
 
+The `middlewareEnv(req, res, opts?)` function returns:
+- `getAnonymousId({ name, domain? })` - Gets or creates an anonymous visitor ID via cookies
+- `getSourceIp()` - Extracts the client IP from request headers
+- `describeClient()` - Returns `ClientProperties` (URL, user agent, language, referrer, etc.)
+
+## Exports
+
+The `@helpin-ai/nextjs` package exports the following:
+
+| Export | Description |
+|--------|-------------|
+| `HelpinProvider` | React context provider for the Helpin client |
+| `HelpinContext` | React context object |
+| `createClient` | Factory function to create a configured client |
+| `useHelpin` | Hook returning tracking methods (`id`, `track`, `trackPageView`, `lead`, `rawTrack`, `set`, `unset`) |
+| `usePageView` | Hook for automatic pageview tracking on URL changes |
+| `middlewareEnv` | Helper for Next.js middleware (anonymous IDs, IP, client properties) |
+
+### `usePageView` signature
+
+```typescript
+usePageView(
+  helpin: HelpinClient | null,
+  opts?: {
+    before?: (helpin: HelpinClient) => void;
+    typeName?: string;
+    payload?: EventPayload;
+  }
+): HelpinClient | null
+```
+
+This hook monitors URL changes (including `pushState`/`replaceState` and `popstate`) and automatically sends pageview events. It does not depend on Next.js Router -- it uses the History API directly.
 
 ## Example app
 

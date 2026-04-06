@@ -33,9 +33,9 @@ export class HelpinClient {
   private namespace: string;
 
   constructor(config: Config) {
-    // Ensure trackingHost has protocol so URLs aren't treated as relative paths
-    if (config.trackingHost && !/^https?:\/\//.test(config.trackingHost)) {
-      config.trackingHost = `https://${config.trackingHost}`;
+    // Ensure host has protocol so URLs aren't treated as relative paths
+    if (config.host && !/^https?:\/\//.test(config.host)) {
+      config.host = `https://${config.host}`;
     }
     this.config = this.mergeConfig(config, defaultConfig);
     this.logger = getLogger(this.config.logLevel);
@@ -132,7 +132,7 @@ export class HelpinClient {
 
     const domains = this.config.domains.split(',').map((d) => d.trim());
     const cookieName =
-      this.config.cookieName || `helpin_aid_${this.config.key}`;
+      this.config.cookieName || `helpin_aid_${this.config.widgetKey}`;
 
     document.addEventListener('click', (event) => {
       const target = this.findClosestLink(event.target as HTMLElement);
@@ -169,7 +169,7 @@ export class HelpinClient {
     const fallback = 'https://events.helpin.ai';
 
     if (!isWindowAvailable()) {
-      return new HttpsTransport(config.trackingHost || fallback, config);
+      return new HttpsTransport(config.host || fallback, config);
     }
 
     const isXhrAvailable = 'XMLHttpRequest' in window;
@@ -179,25 +179,25 @@ export class HelpinClient {
 
     if (config.useBeaconApi && isBeaconAvailable) {
       return new BeaconTransport(
-        config.trackingHost || fallback,
+        config.host || fallback,
         config,
         this.logger,
       );
     } else if (config.forceUseFetch && isFetchAvailable) {
       return new FetchTransport(
-        config.trackingHost || fallback,
+        config.host || fallback,
         config,
         this.logger,
       );
     } else if (isXhrAvailable) {
       return new XhrTransport(
-        config.trackingHost || fallback,
+        config.host || fallback,
         config,
         this.logger,
       );
     } else if (isFetchAvailable) {
       return new FetchTransport(
-        config.trackingHost || fallback,
+        config.host || fallback,
         config,
         this.logger,
       );
@@ -211,7 +211,7 @@ export class HelpinClient {
       return new MemoryPersistence();
     } else {
       return new LocalStoragePersistence(
-        `${this.namespace}_${this.config.key}`,
+        `${this.namespace}_${this.config.widgetKey}`,
         this.logger,
       );
     }
@@ -230,7 +230,7 @@ export class HelpinClient {
     }
 
     const cookieName =
-      this.config.cookieName || `helpin_aid_${this.config.key}`;
+      this.config.cookieName || `helpin_aid_${this.config.widgetKey}`;
     let id = this.cookieManager?.get(cookieName);
 
     if (!id) {
@@ -438,7 +438,7 @@ export class HelpinClient {
       ids: this.getThirdPartyIds(),
       utc_time: new Date().toISOString(),
       local_tz_offset: new Date().getTimezoneOffset(),
-      api_key: this.config.key,
+      api_key: this.config.widgetKey,
       src: 'helpin',
       event_type: eventName,
       namespace: this.namespace,
@@ -581,12 +581,12 @@ export class HelpinClient {
     }
 
     // HTTP fallback: POST /api/widget/identify
-    const host = this.config.trackingHost || 'https://events.helpin.ai';
-    // Derive the API host from tracking host (strip /api/v1/event suffix if present)
+    const host = this.config.host || 'https://events.helpin.ai';
+    // Derive the API host from host (strip /api/v1/event suffix if present)
     const apiHost = host.replace(/\/api\/v1\/event\/?$/, '').replace(/\/+$/, '');
 
     const body = JSON.stringify({
-      api_key: this.config.key,
+      api_key: this.config.widgetKey,
       anonymous_id: this.anonymousId,
       email,
       name,
@@ -617,7 +617,7 @@ export class HelpinClient {
 
     if (resetAnonId && this.cookieManager) {
       const cookieName =
-        this.config.cookieName || `helpin_aid_${this.config.key}`;
+        this.config.cookieName || `helpin_aid_${this.config.widgetKey}`;
       this.cookieManager.delete(cookieName);
       this.anonymousId = this.getOrCreateAnonymousId();
     }

@@ -51,8 +51,8 @@ export type ClientProperties = {
 };
 
 type CamelCaseConfig = {
-  key: string;
-  trackingHost: string;
+  widgetKey: string;
+  host: string;
   cookieDomain?: string;
   cookieName?: string;
   logLevel?: LogLevel;
@@ -81,8 +81,8 @@ type CamelCaseConfig = {
 };
 
 type SnakeCaseConfig = {
-  key: string;
-  tracking_host: string;
+  widget_key: string;
+  host: string;
   cookie_domain?: string;
   cookie_name?: string;
   log_level?: LogLevel;
@@ -111,10 +111,10 @@ type SnakeCaseConfig = {
 };
 
 export type Config = Partial<CamelCaseConfig & SnakeCaseConfig> & {
-  key: string;
-  trackingHost?: string;
-  tracking_host?: string;
-} & ({ trackingHost: string } | { tracking_host: string });
+  widgetKey: string;
+  host?: string;
+  widget_key?: string;
+} & { host: string };
 
 /**
  * HelpinGlobal interface that supports both command-style and object-oriented API styles
@@ -151,7 +151,7 @@ export interface HelpinGlobal {
   (command: 'showNewMessage', content?: string): void;
   (command: 'showConversation', conversationId: string): void;
   (command: 'showArticle', articleId: string): void;
-  (command: 'boot', settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  (command: 'boot', settings: { widgetKey: string; host?: string; user?: Record<string, unknown> }): void;
   (command: 'shutdown', ...args: never[]): void;
 
   // Object-oriented API
@@ -171,7 +171,7 @@ export interface HelpinGlobal {
   rawTrack(payload: any): void;
   lead(payload: EventPayload, directSend?: boolean): void;
   setUserId(userId: string): void;
-  boot(settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  boot(settings: { widgetKey: string; host?: string; user?: Record<string, unknown> }): void;
   shutdown(): void;
   show(): void;
   hide(): void;

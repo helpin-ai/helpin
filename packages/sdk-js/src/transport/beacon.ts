@@ -7,7 +7,7 @@ export class BeaconTransport implements Transport {
   private config: Config;
 
   constructor(
-    private trackingHost: string,
+    private host: string,
     config: Config,
     private logger = getLogger(),
   ) {
@@ -15,7 +15,7 @@ export class BeaconTransport implements Transport {
   }
 
   async send(payloads: any[]): Promise<void> {
-    const apiKey = this.config.key;
+    const apiKey = this.config.widgetKey;
     const url = this.constructUrl(apiKey);
     const blob = new Blob([JSON.stringify(payloads)], {
       type: 'application/json',
@@ -47,9 +47,9 @@ export class BeaconTransport implements Transport {
       : '/api/v1/s2s/event';
 
     if (this.config.randomizeUrl) {
-      return `${this.trackingHost}/api.${generateRandom()}?p_${generateRandom()}=${apiKey}${cookiePolicy}${ipPolicy}`;
+      return `${this.host}/api.${generateRandom()}?p_${generateRandom()}=${apiKey}${cookiePolicy}${ipPolicy}`;
     } else {
-      return `${this.trackingHost}${urlPrefix}?token=${apiKey}${cookiePolicy}${ipPolicy}`;
+      return `${this.host}${urlPrefix}?token=${apiKey}${cookiePolicy}${ipPolicy}`;
     }
   }
 

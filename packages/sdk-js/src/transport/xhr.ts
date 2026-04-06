@@ -7,7 +7,7 @@ export class XhrTransport implements Transport {
   private config: Config;
 
   constructor(
-    private trackingHost: string,
+    private host: string,
     config: Config,
     private logger = getLogger(),
   ) {
@@ -17,7 +17,7 @@ export class XhrTransport implements Transport {
   send(payloads: any[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      const apiKey = this.config.key;
+      const apiKey = this.config.widgetKey;
 
       const url = this.constructUrl(apiKey);
 
@@ -70,9 +70,9 @@ export class XhrTransport implements Transport {
       : '/api/v1/s2s/event';
 
     if (this.config.randomizeUrl) {
-      return `${this.trackingHost}/api.${generateRandom()}?p_${generateRandom()}=${apiKey}${cookiePolicy}${ipPolicy}`;
+      return `${this.host}/api.${generateRandom()}?p_${generateRandom()}=${apiKey}${cookiePolicy}${ipPolicy}`;
     } else {
-      return `${this.trackingHost}${urlPrefix}?token=${apiKey}${cookiePolicy}${ipPolicy}`;
+      return `${this.host}${urlPrefix}?token=${apiKey}${cookiePolicy}${ipPolicy}`;
     }
   }
 
