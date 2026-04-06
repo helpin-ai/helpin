@@ -1,624 +1,1585 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
 
-/* ─── Intersection-observer hooks ───────────────── */
+// ─── Early Access Form ───
 
-function useReveal() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { el.classList.add('visible'); obs.disconnect(); } },
-      { threshold: 0.08 }
+function EarlyAccessForm({ dark = false, id = 'early-access', bg }: { dark?: boolean; id?: string; bg?: string }) {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !email.includes('@')) return;
+    setStatus('submitting');
+
+    try {
+      const w = window as unknown as {
+        usermaven?: (cmd: string, ...args: unknown[]) => void;
+        _cio?: { identify: (obj: Record<string, unknown>) => void; track: (event: string, obj?: Record<string, unknown>) => void };
+      };
+      // Usermaven
+      if (w.usermaven) {
+        w.usermaven('lead', { email });
+        w.usermaven('track', 'early_access_signup', { form_id: id, email });
+      }
+      // Customer.io
+      if (w._cio) {
+        w._cio.identify({ id: email, email, created_at: Math.floor(Date.now() / 1000) });
+        w._cio.track('early_access_signup', { form_id: id });
+      }
+      setStatus('success');
+      setEmail('');
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  if (status === 'success') {
+    return (
+      <div className={`text-[15px] font-medium ${dark ? 'text-white/70' : 'text-foreground'}`}>
+        You're on the list. We'll be in touch soon.
+      </div>
     );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
+  }
 
-function useStagger() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const children = Array.from(el.children) as HTMLElement[];
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
-          children.forEach((c, i) => setTimeout(() => c.classList.add('visible'), i * 60));
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.04 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return ref;
-}
-
-/* ─── Data ───────────────────────────────────────── */
-
-const STACK = [
-  { tool: 'Linear',   desc: 'tasks live here' },
-  { tool: 'Notion',   desc: 'docs live here' },
-  { tool: 'Intercom', desc: 'support lives here' },
-  { tool: 'HubSpot',  desc: 'customers live here' },
-  { tool: 'Slack',    desc: 'decisions die here' },
-  { tool: 'ChatGPT',  desc: 'AI lives here — alone, without context' },
-  { tool: 'You',      desc: 'holding it all together, manually, every day', dim: true },
-];
-
-const AGENTS = [
-  { n: '01', name: 'Project Agent',    role: 'Turns strategy into epics, sprints, and tasks. Keeps execution connected to why it matters.' },
-  { n: '02', name: 'Support Agent',    role: 'Triages conversations, resolves known issues, escalates to the right human — with full context intact.' },
-  { n: '03', name: 'Docs Agent',       role: 'Writes, updates, and connects documentation to the work that created it. Docs that stay alive.' },
-  { n: '04', name: 'Knowledge Agent',  role: 'Surfaces the right answer at the right moment. Ends the question "where did we write that down?"' },
-  { n: '05', name: 'CRM Agent',        role: 'Keeps customer context where work happens. Bridges sales and product without copy-paste.' },
-  { n: '06', name: 'Escalation Agent', role: 'Catches what slips through. Routes unresolved issues before they become the Friday fire.' },
-  { n: '07', name: 'Operations Agent', role: 'Runs recurring workflows on autopilot. Standups, reports, reviews — no manual kick-off ever again.' },
-  { n: '08', name: 'Onboarding Agent', role: 'Personalised activation for every new customer, every time. Zero manual touchpoints from your team.' },
-];
-
-const SCENARIOS = [
-  {
-    before: 'A support ticket gets resolved but the underlying bug never reaches the product team.',
-    after:  'Support Agent logs it, Escalation Agent routes it to product, it lands in the sprint — automatically.',
-  },
-  {
-    before: 'Docs go stale the moment the product ships. Nobody has time to update them.',
-    after:  'Docs Agent detects the change and updates documentation before anyone notices it\'s wrong.',
-  },
-  {
-    before: '12 Slack messages asking where a decision was made. You wrote it somewhere.',
-    after:  'Knowledge Agent surfaces the decision, the context, and who made it — in seconds.',
-  },
-  {
-    before: 'New customers churn in week two because onboarding is a PDF and a prayer.',
-    after:  'Onboarding Agent runs a personalised activation flow for every customer, every time.',
-  },
-  {
-    before: 'Your AI tools write summaries. They can\'t actually do anything with them.',
-    after:  'Helpin agents don\'t summarise — they move the next step forward inside the system.',
-  },
-  {
-    before: 'Leadership wants a status update. You spend your Friday pulling it together manually.',
-    after:  'Operations Agent assembles it from live data and sends it before you open your laptop.',
-  },
-];
-
-const LAWS = [
-  { n: '01', title: 'Knowledge compounds',   body: 'Every decision, doc, and resolved issue becomes shared context. Nothing gets buried or forgotten.' },
-  { n: '02', title: 'Agents get sharper',    body: 'Helpin agents operate with full company context. The more they handle, the more accurately they act.' },
-  { n: '03', title: 'Teams stay aligned',    body: 'When the system is shared, silos disappear. Every team operates from the same source of truth.' },
-  { n: '04', title: 'Execution accelerates', body: 'No more manual handoffs. Agents carry context from step to step without you bridging the gap.' },
-];
-
-const LOGOS = ['Acme Corp', 'Buildfast', 'Launchpad', 'Nexus Studio', 'Orbit HQ', 'Skyline'];
-
-/* ─── Mockup component ───────────────────────────── */
-
-function AppMockup() {
   return (
-    <div className="w-full rounded-xl overflow-hidden border border-[oklch(27%_0.046_265)] bg-[oklch(17%_0.043_265)] shadow-[0_0_0_1px_oklch(100%_0_0/0.04),0_32px_80px_oklch(0%_0_0/0.6)]">
-      {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 h-10 border-b border-[oklch(18%_0.015_250)] bg-[oklch(14%_0.040_265)]">
-        <div className="flex gap-1.5">
-          {['bg-red-500/40', 'bg-yellow-500/40', 'bg-green-500/40'].map((c, i) => (
-            <div key={i} className={`w-2.5 h-2.5 rounded-full ${c}`} />
-          ))}
-        </div>
-        <div className="flex-1 flex justify-center">
-          <div className="bg-[oklch(20%_0.045_265)] rounded-md px-3 h-5 flex items-center">
-            <span className="text-[var(--fs-label)] text-[oklch(38%_0.018_250)]">app.helpin.ai/workspace</span>
-          </div>
-        </div>
+    <div className="email-glow-wrapper w-full max-w-lg">
+      <div className="email-glow-wrapper-glow" />
+      <form onSubmit={handleSubmit} className="relative z-10 flex flex-col sm:flex-row gap-3 w-full rounded-[14px] p-2" style={{ background: bg || (dark ? 'var(--color-foreground)' : 'var(--color-background)'), border: '1px solid oklch(0.12 0.02 55 / 0.08)' }}>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Enter your work email"
+          required
+          className="flex-1 px-4 py-3 rounded-lg text-[15px] outline-none"
+          style={{
+            color: dark ? 'white' : 'var(--color-foreground)',
+            background: dark ? 'oklch(1 0 0 / 0.05)' : 'white',
+            border: dark ? '1px solid oklch(1 0 0 / 0.08)' : '1px solid oklch(0.12 0.02 55 / 0.12)',
+          }}
+        />
+        <button
+          type="submit"
+          disabled={status === 'submitting'}
+          className="btn-primary whitespace-nowrap"
+          style={dark ? { background: 'white', color: 'var(--color-foreground)' } : {}}
+        >
+          {status === 'submitting' ? 'Submitting...' : 'Get early access'}
+          {status === 'idle' && <ArrowRight className="h-4 w-4" />}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ─── Reveal hook ───
+
+function useReveal(threshold = 0.1) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [cls, setCls] = useState('');
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { setCls('visible'); obs.disconnect(); } },
+      { threshold, rootMargin: '0px 0px -32px 0px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return { ref, cls };
+}
+
+function Reveal({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const { ref, cls } = useReveal();
+  return <div ref={ref} className={`reveal ${cls} ${className}`}>{children}</div>;
+}
+
+function RevealLeft({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const { ref, cls } = useReveal();
+  return <div ref={ref} className={`reveal-left ${cls} ${className}`}>{children}</div>;
+}
+
+function RevealRight({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const { ref, cls } = useReveal();
+  return <div ref={ref} className={`reveal-right ${cls} ${className}`}>{children}</div>;
+}
+
+// ─── Data ───
+
+const COMPANIES = [
+  { name: 'ContentStudio', domain: 'contentstudio.io' },
+  { name: 'Replug',        domain: 'replug.io' },
+  { name: 'Usermaven',     domain: 'usermaven.com' },
+  { name: 'ContentPen',    domain: 'contentpen.ai' },
+  { name: 'Hyperengage',   domain: 'hyperengage.io' },
+];
+
+const OLD_STACK = [
+  { tool: 'Linear',   role: 'Work is tracked here',          domain: 'linear.app' },
+  { tool: 'Notion',   role: 'Knowledge is buried here',      domain: 'notion.so' },
+  { tool: 'Intercom', role: 'Support starts here',           domain: 'intercom.com' },
+  { tool: 'HubSpot',  role: 'Customer context sits here',    domain: 'hubspot.com' },
+  { tool: 'Slack',    role: 'Decisions disappear here',      domain: 'slack.com' },
+  { tool: 'ChatGPT',  role: 'AI works here, alone',          domain: 'openai.com' },
+];
+
+const TEAM_AGENTS = [
+  {
+    team: 'Engineering & Product',
+    agents: [
+      { name: 'Epic Planner',              Icon: Layers,       color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)', desc: 'Breaks strategy into epics, sprints, and tasks' },
+      { name: 'Code Builder',              Icon: Code2,        color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Writes and ships code with full project context' },
+      { name: 'Review Agent',              Icon: CheckCircle,  color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)', desc: 'Validates changes and runs checks before merge' },
+      { name: 'Bug Triage Agent',           Icon: AlertCircle,  color: 'oklch(0.55 0.18 15)',  bg: 'oklch(0.55 0.18 15 / 0.08)',  desc: 'Classifies bugs, assigns priority, links related issues' },
+      { name: 'Release Agent',             Icon: Rocket,       color: 'oklch(0.55 0.15 280)', bg: 'oklch(0.55 0.15 280 / 0.08)', desc: 'Manages release notes, coordinates deploys, notifies stakeholders' },
+      { name: 'Dependency Agent',           Icon: Shield,       color: 'oklch(0.50 0.12 220)', bg: 'oklch(0.50 0.12 220 / 0.08)', desc: 'Monitors outdated packages and security vulnerabilities' },
+      { name: 'Incident Agent',            Icon: AlertCircle,  color: 'oklch(0.55 0.18 25)',  bg: 'oklch(0.55 0.18 25 / 0.08)',  desc: 'Detects production issues, pages the right people, creates postmortems' },
+      { name: 'Feedback Synthesis Agent',   Icon: MessageCircle,color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)',  desc: 'Aggregates user feedback into themes from support, sales, and surveys' },
+      { name: 'Roadmap Agent',             Icon: Target,       color: 'oklch(0.52 0.14 28)',  bg: 'oklch(0.52 0.14 28 / 0.08)',  desc: 'Connects customer requests to roadmap items, tracks demand' },
+      { name: 'Competitor Agent',          Icon: Search,       color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)', desc: 'Monitors competitor launches, pricing, and feature updates' },
+      { name: 'Research & Planning Agent',  Icon: BookOpen,     color: 'oklch(0.55 0.14 160)', bg: 'oklch(0.55 0.14 160 / 0.08)', desc: 'Investigates approaches and evaluates tradeoffs' },
+      { name: 'Docs Agent',               Icon: FileText,     color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Keeps technical documentation in sync with changes' },
+    ],
+  },
+  {
+    team: 'Support',
+    agents: [
+      { name: 'Support Agent',     Icon: MessageCircle, color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)',  desc: 'Triages, drafts replies, escalates with full context' },
+      { name: 'Escalation Agent',  Icon: AlertCircle,   color: 'oklch(0.55 0.18 15)',  bg: 'oklch(0.55 0.18 15 / 0.08)',  desc: 'Catches unresolved issues before they become fires' },
+      { name: 'SLA Agent',         Icon: Clock,         color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)', desc: 'Tracks response time commitments, warns before breaches' },
+      { name: 'Feedback Agent',    Icon: MessageCircle, color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)', desc: 'Extracts product insights from support conversations' },
+      { name: 'Translation Agent', Icon: Globe,         color: 'oklch(0.55 0.14 200)', bg: 'oklch(0.55 0.14 200 / 0.08)', desc: 'Handles multilingual support, translates tickets and articles' },
+      { name: 'Knowledge Agent',   Icon: Search,        color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)', desc: 'Surfaces answers instantly from all company knowledge' },
+      { name: 'Docs Agent',        Icon: FileText,      color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Maintains help center and support articles' },
+      { name: 'Onboarding Agent',  Icon: UserPlus,      color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)', desc: 'Guides new users through activation' },
+    ],
+  },
+  {
+    team: 'Sales & CRM',
+    agents: [
+      { name: 'CRM Operator',              Icon: Users,        color: 'oklch(0.52 0.14 28)',  bg: 'oklch(0.52 0.14 28 / 0.08)',  desc: 'Keeps deals moving with full customer context' },
+      { name: 'Outreach Agent',            Icon: Send,         color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)', desc: 'Drafts personalized follow-ups from deal activity' },
+      { name: 'Lead Scoring Agent',         Icon: Target,       color: 'oklch(0.55 0.18 15)',  bg: 'oklch(0.55 0.18 15 / 0.08)',  desc: 'Qualifies inbound leads based on behavior and fit' },
+      { name: 'Renewal Agent',             Icon: RefreshCw,    color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)', desc: 'Tracks contract timelines, flags churn risk' },
+      { name: 'Proposal Agent',            Icon: FileText,     color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)',  desc: 'Generates proposals and quotes from deal context' },
+      { name: 'Forecast Agent',            Icon: TrendingUp,   color: 'oklch(0.55 0.15 280)', bg: 'oklch(0.55 0.15 280 / 0.08)', desc: 'Projects revenue based on pipeline, churn, and trends' },
+      { name: 'Health Score Agent',         Icon: BarChart3,    color: 'oklch(0.55 0.14 160)', bg: 'oklch(0.55 0.14 160 / 0.08)', desc: 'Monitors usage patterns, flags at-risk accounts' },
+      { name: 'Expansion Agent',           Icon: TrendingUp,   color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)', desc: 'Identifies upsell opportunities from usage data' },
+      { name: 'Research & Planning Agent',  Icon: BookOpen,     color: 'oklch(0.55 0.14 160)', bg: 'oklch(0.55 0.14 160 / 0.08)', desc: 'Researches prospects, prepares for calls' },
+      { name: 'Onboarding Agent',          Icon: UserPlus,     color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)', desc: 'Runs post-sale customer activation' },
+      { name: 'Reporting Agent',           Icon: BarChart3,    color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Generates pipeline and forecast reports' },
+    ],
+  },
+  {
+    team: 'Marketing',
+    agents: [
+      { name: 'Content Agent',             Icon: PenTool,      color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)', desc: 'Drafts posts, changelogs, and announcements from product activity' },
+      { name: 'SEO Agent',                Icon: Search,       color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)', desc: 'Monitors rankings, suggests optimizations' },
+      { name: 'Campaign Agent',            Icon: Rocket,       color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)', desc: 'Plans and coordinates multi-channel campaigns' },
+      { name: 'Social Agent',             Icon: Share2,       color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)',  desc: 'Drafts and schedules social posts, monitors engagement' },
+      { name: 'Analytics Agent',           Icon: BarChart3,    color: 'oklch(0.55 0.15 280)', bg: 'oklch(0.55 0.15 280 / 0.08)', desc: 'Tracks campaign performance, surfaces what\'s working' },
+      { name: 'Brand Agent',              Icon: Shield,       color: 'oklch(0.52 0.14 28)',  bg: 'oklch(0.52 0.14 28 / 0.08)',  desc: 'Enforces voice, tone, and style guidelines across content' },
+      { name: 'Research & Planning Agent',  Icon: BookOpen,     color: 'oklch(0.55 0.14 160)', bg: 'oklch(0.55 0.14 160 / 0.08)', desc: 'Analyzes market, competitors, and positioning' },
+    ],
+  },
+  {
+    team: 'Operations',
+    agents: [
+      { name: 'Task Planner',      Icon: Layers,     color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)', desc: 'Decomposes and refines work across teams' },
+      { name: 'Meeting Agent',     Icon: Calendar,   color: 'oklch(0.55 0.15 280)', bg: 'oklch(0.55 0.15 280 / 0.08)', desc: 'Prepares agendas, captures action items, follows up' },
+      { name: 'Hiring Agent',      Icon: UserPlus,   color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)', desc: 'Screens resumes, schedules interviews, coordinates hiring' },
+      { name: 'Compliance Agent',  Icon: Shield,     color: 'oklch(0.55 0.18 15)',  bg: 'oklch(0.55 0.18 15 / 0.08)',  desc: 'Monitors policy adherence, flags violations, maintains audit trails' },
+      { name: 'Reporting Agent',   Icon: BarChart3,  color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Generates standups, summaries, and performance reports' },
+      { name: 'Knowledge Agent',   Icon: Search,     color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)', desc: 'Company-wide context search' },
+      { name: 'Docs Agent',        Icon: FileText,   color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)', desc: 'Maintains internal documentation' },
+    ],
+  },
+];
+
+const PROBLEMS_SOLUTIONS = [
+  {
+    problem: 'Product planning is still manual',
+    problemDesc: 'Your team copies requirements into ChatGPT, pastes the output into Jira, then manually breaks it down into tasks. Every sprint.',
+    solutions: [
+      'Planning Agent turns strategy into epics with full context',
+      'Task Agent decomposes epics into stories and tasks',
+      'Code Agent starts building, Review Agent validates',
+      'Human approves, it ships — changelog generated automatically',
+    ],
+  },
+  {
+    problem: 'Development is slow despite having AI',
+    problemDesc: 'Your developers use Copilot and ChatGPT, but the workflow is still manual — read the ticket, understand context, write code, create PR, wait for review, deploy. Every step is a context switch.',
+    solutions: [
+      'Code Agent picks up the task with full project context — no briefing needed',
+      'Writes the implementation, opens a PR automatically',
+      'Review Agent validates the code, runs checks, flags issues',
+      'Human approves with one click — deployed to production',
+    ],
+  },
+  {
+    problem: 'Support is reactive, not intelligent',
+    problemDesc: 'Every ticket starts from scratch. Agents don\'t know what\'s already documented. Bugs get reported but never routed to engineering.',
+    solutions: [
+      'Incoming requests triaged by AI, relevant docs surfaced instantly',
+      'Unresolved issues become tickets — AI agent picks them up and fixes the bug',
+      'Human reviews, approves, and it goes live. Customer notified automatically',
+      'Docs Agent updates help articles after every fix and release',
+    ],
+  },
+  {
+    problem: 'Documentation is always outdated',
+    problemDesc: 'Nobody maintains docs. They go stale after every release. Support answers questions that should be in the knowledge base. New hires learn from outdated information.',
+    solutions: [
+      'Docs Agent auto-updates documentation after every release',
+      'Support conversations feed back into the knowledge base',
+      'Missing docs flagged and created automatically from product changes',
+      'Internal and external knowledge stays accurate without anyone maintaining it',
+    ],
+  },
+  {
+    problem: 'Sales prep is scattered and manual',
+    problemDesc: 'Reps walk into meetings unprepared. Notes get lost. Follow-ups depend on memory. Deals go quiet because nobody nudged.',
+    solutions: [
+      'AI prepares a brief before every meeting — deal context, history, signals',
+      'Meeting notes captured automatically, action items created',
+      'Follow-up nudges sent when deals go quiet',
+      'Pipeline reports generated without anyone asking',
+    ],
+  },
+  {
+    problem: 'Marketing depends on developers',
+    problemDesc: 'Every landing page change, headline test, or new page requires a developer. Marketing moves at engineering\'s pace.',
+    solutions: [
+      'Marketing team edits pages directly — no developer needed',
+      'A/B test headlines, CTAs, and layouts autonomously',
+      'Create and publish new pages with AI assistance',
+      'Review, approve, and go live — all within Helpin',
+    ],
+  },
+];
+
+const COMPOUNDS = [
+  {
+    title: 'Knowledge compounds',
+    desc: 'Every decision, doc, and resolved issue becomes shared context. Nothing gets buried or forgotten.',
+  },
+  {
+    title: 'Agents get sharper',
+    desc: 'Helpin agents operate with full company context. The more they handle, the more accurately they act.',
+  },
+  {
+    title: 'Teams stay aligned',
+    desc: 'When the system is shared, silos disappear. Every team operates from the same source of truth.',
+  },
+  {
+    title: 'Execution accelerates',
+    desc: 'No more manual handoffs. Agents carry context from step to step without you bridging the gap.',
+  },
+];
+
+// ─── Visual Comparison Section ───
+
+const BEFORE_TOOLS = [
+  { domain: 'linear.app' }, { domain: 'notion.so' }, { domain: 'intercom.com' },
+  { domain: 'hubspot.com' }, { domain: 'zendesk.com' }, { domain: 'atlassian.com' },
+  { domain: 'openai.com' }, { domain: 'asana.com' },
+];
+
+// ─── Agent Roster (tabbed by team) ───
+
+function AgentRoster() {
+  const [activeTeam, setActiveTeam] = useState(0);
+  const team = TEAM_AGENTS[activeTeam];
+
+  return (
+    <div>
+      {/* Team selector pills */}
+      <div className="flex flex-wrap justify-center gap-2 mb-12">
+        {TEAM_AGENTS.map((t, i) => (
+          <button
+            key={t.team}
+            onClick={() => setActiveTeam(i)}
+            className="px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all duration-200"
+            style={{
+              background: i === activeTeam ? 'var(--color-foreground)' : 'transparent',
+              color: i === activeTeam ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: i === activeTeam ? '1px solid var(--color-foreground)' : '1px solid var(--color-border)',
+            }}
+          >
+            {t.team}
+          </button>
+        ))}
       </div>
 
-      {/* App layout */}
-      <div className="flex" style={{ height: '420px' }}>
-        {/* Sidebar */}
-        <div className="w-48 shrink-0 border-r border-[oklch(22%_0.046_265)] bg-[oklch(15%_0.041_265)] flex flex-col p-3 hidden sm:flex">
-          <div className="flex items-center gap-2 px-2 py-2 mb-3">
-            <div className="w-5 h-5 rounded-md bg-[var(--color-pop)] flex items-center justify-center shrink-0">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 5h8M5 1.5l3.5 3.5L5 8.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      {/* Agent grid */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-0 max-w-5xl mx-auto" key={activeTeam}>
+        {team.agents.map((agent) => (
+          <div
+            key={agent.name}
+            className="py-6 flex gap-4 border-b border-border/40"
+          >
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: agent.bg }}>
+              <agent.Icon className="w-[16px] h-[16px]" style={{ color: agent.color }} />
             </div>
-            <span className="text-[var(--fs-secondary)] font-semibold text-[oklch(88%_0.006_80)]">Helpin</span>
-          </div>
-
-          <div className="space-y-0.5 flex-1">
-            {[
-              { label: 'Projects',  color: 'bg-sky-400',    active: false },
-              { label: 'Support',   color: 'bg-[var(--color-pop)]', active: true  },
-              { label: 'CRM',       color: 'bg-emerald-400', active: false },
-              { label: 'Docs',      color: 'bg-violet-400',  active: false },
-              { label: 'Knowledge', color: 'bg-amber-400',   active: false },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className={`flex items-center gap-2.5 px-2 py-[7px] rounded-md text-[var(--fs-secondary)] ${item.active ? 'bg-[oklch(16%_0.014_250)] text-[oklch(90%_0.006_80)]' : 'text-[oklch(62%_0.018_260)] hover:text-[oklch(70%_0.01_80)]'}`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${item.color} opacity-80`} />
-                {item.label}
-              </div>
-            ))}
-          </div>
-
-          <div className="border-t border-[oklch(22%_0.046_265)] pt-3 mt-3">
-            <div className="text-[var(--fs-label)] font-semibold tracking-[0.14em] uppercase text-[oklch(38%_0.022_265)] px-2 mb-2">Agents live</div>
-            {['Support', 'Docs', 'Onboarding'].map((a) => (
-              <div key={a} className="flex items-center gap-2 px-2 py-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[var(--fs-sm)] text-[oklch(40%_0.018_250)]">{a}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Main panel */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Panel header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[oklch(22%_0.046_265)] shrink-0">
             <div>
-              <h3 className="text-[var(--fs-base)] font-semibold text-[oklch(90%_0.006_80)]">Support Queue</h3>
-              <p className="text-[var(--fs-sm)] text-[oklch(42%_0.018_250)] mt-0.5">6 open · 4 handled by agent</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--color-pop-10)] border border-[var(--color-pop-20)]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-pop)] animate-pulse" />
-                <span className="text-[var(--fs-sm)] font-medium text-[var(--color-pop-light)]">Support Agent active</span>
-              </div>
+              <h3 className="text-[16px] font-semibold text-foreground mb-1">{agent.name}</h3>
+              <p className="text-[14px] text-muted-foreground leading-relaxed">{agent.desc}</p>
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Ticket list */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {[
-              { title: 'Billing issue — charged twice',   status: 'Resolved',    statusColor: 'text-emerald-400 bg-emerald-400/10',     ai: true,  time: '2m ago'  },
-              { title: 'How to export reports?',          status: 'In progress', statusColor: 'text-sky-400 bg-sky-400/10',             ai: true,  time: '7m ago'  },
-              { title: 'API rate limit hit',              status: 'Escalated',   statusColor: 'text-[var(--color-pop-light)] bg-[var(--color-pop-12)]', ai: false, time: '14m ago' },
-              { title: 'SSO setup not working',          status: 'Open',        statusColor: 'text-[oklch(58%_0.018_260)] bg-[oklch(22%_0.046_265)]',  ai: false, time: '22m ago' },
-              { title: 'Data export via API endpoint?',  status: 'Resolved',    statusColor: 'text-emerald-400 bg-emerald-400/10',     ai: true,  time: '38m ago' },
-              { title: 'Webhook events not firing',      status: 'In progress', statusColor: 'text-sky-400 bg-sky-400/10',             ai: true,  time: '1h ago'  },
-            ].map((t, i) => (
-              <div
-                key={i}
-                className="group flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[oklch(19%_0.044_265)] border border-[oklch(18%_0.014_250/0.6)] hover:border-[oklch(28%_0.046_265)] transition-colors cursor-default"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-[var(--fs-secondary)] font-medium text-[oklch(82%_0.006_80)] truncate">{t.title}</p>
-                  <p className="text-[var(--fs-sm)] text-[oklch(48%_0.020_262)] mt-0.5">{t.time}{t.ai ? ' · AI handled' : ''}</p>
-                </div>
-                <span className={`shrink-0 text-[var(--fs-sm)] font-medium px-2.5 py-1 rounded-full ${t.statusColor}`}>
-                  {t.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right panel — agent activity */}
-        <div className="w-56 shrink-0 border-l border-[oklch(22%_0.046_265)] p-4 hidden lg:block overflow-y-auto">
-          <div className="text-[var(--fs-label)] font-semibold tracking-[0.14em] uppercase text-[oklch(38%_0.022_265)] mb-3">Agent activity</div>
-          <div className="space-y-3">
-            {[
-              { agent: 'Support Agent',    action: 'Resolved billing issue #4821',    time: '2m' },
-              { agent: 'Docs Agent',       action: 'Updated API rate limits article',  time: '8m' },
-              { agent: 'Escalation Agent', action: 'Routed #4819 → Engineering',       time: '14m' },
-              { agent: 'CRM Agent',        action: 'Linked ticket to Acme account',    time: '22m' },
-              { agent: 'Support Agent',    action: 'Resolved export question #4817',   time: '38m' },
-              { agent: 'Onboarding Agent', action: 'Sent day-3 activation to 3 users', time: '1h' },
-            ].map((item, i) => (
-              <div key={i} className="flex gap-2.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-pop)] shrink-0 mt-1.5" />
-                <div>
-                  <p className="text-[var(--fs-sm)] font-medium text-[oklch(55%_0.018_250)]">{item.agent}</p>
-                  <p className="text-[var(--fs-label)] text-[oklch(38%_0.015_250)] leading-tight mt-0.5">{item.action}</p>
-                  <p className="text-[var(--fs-label)] text-[oklch(28%_0.013_250)] mt-1">{item.time} ago</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Custom agent callout */}
+      <div className="mt-10 text-center">
+        <p className="text-[14px] text-muted-foreground">
+          Need a custom agent?
+        </p>
+        <p className="text-[14px] text-muted-foreground mt-1">
+          <span className="font-semibold text-foreground">Build your own</span> — choose the tools, targets, schedule, and approval mode.
+        </p>
       </div>
     </div>
   );
 }
 
-/* ─── Page ───────────────────────────────────────── */
+// ─── Stack Transition Visual (scroll-scrubbed) ───
 
-export default function HomePage() {
-  const problemRef  = useReveal();
-  const stackRef    = useStagger();
-  const catRef      = useReveal();
-  const agentHdRef  = useReveal();
-  const agentsRef   = useStagger();
-  const baHdRef     = useReveal();
-  const baRef       = useReveal();
-  const lawsHdRef   = useReveal();
-  const lawsRef     = useStagger();
-  const nowRef      = useReveal();
-  const ctaRef      = useReveal();
+const TOOL_CATEGORIES = [
+  {
+    label: 'Work tracking',
+    tools: [
+      { name: 'Linear', domain: 'linear.app' },
+      { name: 'Jira', domain: 'atlassian.com' },
+      { name: 'Asana', domain: 'asana.com' },
+      { name: 'Monday', domain: 'monday.com' },
+      { name: 'ClickUp', domain: 'clickup.com' },
+    ],
+  },
+  {
+    label: 'Knowledge',
+    tools: [
+      { name: 'Notion', domain: 'notion.so' },
+      { name: 'Confluence', domain: 'atlassian.com' },
+      { name: 'Coda', domain: 'coda.io' },
+      { name: 'Slite', domain: 'slite.com' },
+    ],
+  },
+  {
+    label: 'Support',
+    tools: [
+      { name: 'Intercom', domain: 'intercom.com' },
+      { name: 'Zendesk', domain: 'zendesk.com' },
+      { name: 'Freshdesk', domain: 'freshdesk.com' },
+    ],
+  },
+  {
+    label: 'CRM',
+    tools: [
+      { name: 'HubSpot', domain: 'hubspot.com' },
+      { name: 'Salesforce', domain: 'salesforce.com' },
+    ],
+  },
+  {
+    label: 'AI',
+    tools: [
+      { name: 'ChatGPT', domain: 'openai.com' },
+      { name: 'Claude', domain: 'anthropic.com' },
+    ],
+  },
+];
+
+const HELPIN_MODULES = [
+  { label: 'Work',             Icon: Layers,         color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
+  { label: 'Knowledge',        Icon: BookOpen,        color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
+  { label: 'Support',          Icon: MessageCircle,   color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)' },
+  { label: 'Customer Context', Icon: Users,           color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
+  { label: 'AI',               Icon: Zap,             color: 'oklch(0.58 0.16 30)',  bg: 'oklch(0.58 0.16 30 / 0.08)' },
+];
+
+const remap = (v: number, lo: number, hi: number) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+
+function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject<HTMLDivElement | null> }) {
+  const [progress, setProgress] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pillRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [pillPositions, setPillPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [measured, setMeasured] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const zone = scrollZoneRef.current;
+      if (!zone) return;
+      const rect = zone.getBoundingClientRect();
+      const stickyTopPx = window.innerHeight * 0.30;
+      const scrolled = stickyTopPx - rect.top;
+      const p = scrolled / (window.innerHeight * 3.5);
+      setProgress(Math.max(0, Math.min(1, p)));
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [scrollZoneRef]);
+
+  // ── Measure pill positions relative to container center ──
+  useEffect(() => {
+    const measure = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const cRect = container.getBoundingClientRect();
+      const cx = cRect.left + cRect.width / 2;
+      const cy = cRect.top + cRect.height / 2;
+      const positions = new Map<string, { x: number; y: number }>();
+      pillRefs.current.forEach((el, key) => {
+        const r = el.getBoundingClientRect();
+        positions.set(key, {
+          x: (r.left + r.width / 2) - cx,
+          y: (r.top + r.height / 2) - cy,
+        });
+      });
+      if (positions.size > 0) {
+        setPillPositions(positions);
+        setMeasured(true);
+      }
+    };
+
+    // Measure after layout settles
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(measure);
+    });
+
+    const observer = new ResizeObserver(measure);
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
+
+  // ── Phases ──
+  const convergeT    = remap(progress, 0.04, 0.22);  // pills converge toward category nodes
+  const mergeT       = remap(progress, 0.16, 0.26);  // pills fully merge into category nodes
+  const arrangeT     = remap(progress, 0.26, 0.40);  // pentagon → orbital positions
+  const centerHintT  = remap(progress, 0.20, 0.30);  // faint center disk
+  const centerT      = remap(progress, 0.30, 0.38);  // solid center
+  const linesT       = remap(progress, 0.36, 0.46);  // orbital lines + ring
+  const aliveT       = remap(progress, 0.46, 0.56);  // living system
+
+  // Orbital geometry
+  const SIZE = 460;
+  const CX = SIZE / 2;
+  const CY = SIZE / 2;
+  const R = 135;
+  const CENTER_SIZE = 92;
+  const NODE_SIZE = 44;
+  const ANGLES_DEG = [-90, -18, 54, 126, 198];
+
+  const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  // Pentagon positions (pre-arrangement) — nearly at orbital radius, same angles
+  const PENT_R = R * 0.92;
+  const pentPositions = ANGLES_DEG.map(deg => {
+    const rad = deg * Math.PI / 180;
+    return { x: PENT_R * Math.cos(rad), y: PENT_R * Math.sin(rad) };
+  });
+
+  // Orbital positions (final)
+  const orbPositions = ANGLES_DEG.map(deg => {
+    const rad = deg * Math.PI / 180;
+    return { x: R * Math.cos(rad), y: R * Math.sin(rad) };
+  });
+
+  // Category target positions: pills converge to pentagon, then pentagon → orbit
+  const at = easeInOutCubic(arrangeT);
+  const nodePositions = pentPositions.map((pent, i) => ({
+    x: pent.x + (orbPositions[i].x - pent.x) * at,
+    y: pent.y + (orbPositions[i].y - pent.y) * at,
+  }));
+
+  // ── Build flat pill list with category index ──
+  const allPills: { name: string; domain: string; catIndex: number; pillIndex: number; catSize: number }[] = [];
+  TOOL_CATEGORIES.forEach((cat, catIndex) => {
+    cat.tools.forEach((tool, pillIndex) => {
+      allPills.push({ ...tool, catIndex, pillIndex, catSize: cat.tools.length });
+    });
+  });
+
+  // How far pills have converged (0 = original pos, 1 = at category target)
+  const ec = easeInOutCubic(convergeT);
+
+  // Pill text fades out faster than favicon
+  const textOpacity = Math.max(0, 1 - convergeT * 2.5);
+  const faviconExtraOpacity = Math.max(0, 1 - convergeT * 1.6);
+
+  // Pill scale shrinks slightly during convergence
+  const pillScale = 1 - convergeT * 0.35;
+
+  // Once merge is complete, pills are gone
+  const pillsVisible = mergeT < 1;
+
+  // Category nodes fade in as pills converge
+  const categoryNodeOpacity = Math.min(1, convergeT * 1.5);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative', width: '100%', minHeight: 380,
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+      }}
+    >
+
+      {/* ── LAYER 1: Tool pills — converge toward category nodes ── */}
+      {pillsVisible && (
+        <div style={{
+          width: '100%',
+          opacity: convergeT > 0.01 && !measured ? Math.max(0, 1 - convergeT * 3) : 1,
+          pointerEvents: convergeT > 0.5 ? 'none' : 'auto',
+        }}>
+          {TOOL_CATEGORIES.map((cat, catIndex) => (
+            <div key={cat.label} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
+                {cat.tools.map((tool, pillIndex) => {
+                  const key = `${catIndex}-${pillIndex}`;
+                  const measuredPos = pillPositions.get(key);
+
+                  // Target: the pentagon position for this category (in container-center-relative coords)
+                  const target = pentPositions[catIndex];
+
+                  // Stagger within category: first pills move slightly before later ones
+                  const stagger = pillIndex / (cat.tools.length) * 0.08;
+                  const staggeredEc = easeInOutCubic(Math.max(0, Math.min(1, (convergeT - stagger) / (1 - stagger))));
+
+                  // Compute transform if we have measured positions
+                  let tx = 0, ty = 0;
+                  if (measured && measuredPos && convergeT > 0) {
+                    // Move from measured position toward target
+                    tx = (target.x - measuredPos.x) * staggeredEc;
+                    ty = (target.y - measuredPos.y) * staggeredEc;
+                  }
+
+                  // Overall pill opacity: fade out during merge phase
+                  const pillOpacity = Math.max(0, 1 - mergeT * 1.5);
+
+                  return (
+                    <div
+                      key={tool.name}
+                      ref={(el) => {
+                        if (el) pillRefs.current.set(key, el);
+                        else pillRefs.current.delete(key);
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        padding: '8px 14px', borderRadius: 10,
+                        border: '1px solid oklch(0.91 0.008 75)',
+                        background: 'var(--color-background)',
+                        fontSize: 13, fontWeight: 500, color: 'var(--color-foreground)',
+                        transform: `translate(${tx}px, ${ty}px) scale(${pillScale})`,
+                        opacity: pillOpacity,
+                        transition: 'none',
+                        willChange: 'transform, opacity',
+                      }}
+                    >
+                      <img
+                        src={`https://www.google.com/s2/favicons?domain=${tool.domain}&sz=32`}
+                        style={{
+                          width: 16, height: 16, flexShrink: 0,
+                          opacity: 0.72 * faviconExtraOpacity,
+                        }}
+                        alt=""
+                      />
+                      <span style={{ whiteSpace: 'nowrap', opacity: textOpacity }}>
+                        {tool.name}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── LAYER 2: Category nodes + orbital system ── */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        opacity: categoryNodeOpacity,
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+        pointerEvents: categoryNodeOpacity < 0.3 ? 'none' : 'auto',
+      }}>
+        <div style={{ position: 'relative', width: SIZE, height: SIZE, maxWidth: '100%' }}>
+
+          {/* Layer 1: Soft radial background halo */}
+          <div style={{
+            position: 'absolute',
+            left: CX - R - 40, top: CY - R - 40,
+            width: (R + 40) * 2, height: (R + 40) * 2,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, oklch(0.92 0.005 250 / 0.5) 0%, transparent 70%)',
+            opacity: linesT,
+            pointerEvents: 'none',
+          }} />
+
+          {/* Layer 2: SVG — orbit ring + radial connectors */}
+          <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+            {/* Solid orbit ring */}
+            <circle cx={CX} cy={CY} r={R} fill="none"
+              stroke={`oklch(0.88 0.01 250 / ${linesT * 0.35})`}
+              strokeWidth="1"
+            />
+            {/* Dotted orbit ring */}
+            <circle cx={CX} cy={CY} r={R} fill="none"
+              stroke={`oklch(0.82 0.01 250 / ${linesT * 0.2})`}
+              strokeWidth="1"
+              strokeDasharray="2 8"
+            />
+            {/* Radial connectors — center to each node */}
+            {nodePositions.map((pos, i) => (
+              <line key={i}
+                x1={CX} y1={CY}
+                x2={CX + pos.x} y2={CY + pos.y}
+                stroke={`oklch(0.88 0.005 75 / ${linesT * 0.35})`}
+                strokeWidth="1"
+              />
+            ))}
+          </svg>
+
+          {/* Pulse rings */}
+          {aliveT > 0 && [0, 1].map((i) => (
+            <div key={i} style={{
+              position: 'absolute',
+              left: CX - 20, top: CY - 20,
+              width: 40, height: 40,
+              borderRadius: '50%',
+              border: '1.5px solid oklch(0.48 0.22 252 / 0.10)',
+              transformOrigin: 'center',
+              animation: aliveT >= 1 ? `orbital-pulse-ring 4s ease-out ${i * 2}s infinite` : 'none',
+              opacity: aliveT >= 1 ? 1 : 0,
+              pointerEvents: 'none',
+            }} />
+          ))}
+
+          {/* Traveling dot */}
+          {aliveT > 0 && (
+            <div style={{
+              position: 'absolute',
+              left: CX - 3, top: CY - 3,
+              width: 6, height: 6,
+              transformOrigin: '3px 3px',
+              animation: aliveT >= 1 ? 'orbital-travel 10s linear infinite' : 'none',
+              opacity: aliveT >= 1 ? 0.5 : 0,
+              pointerEvents: 'none',
+            }}>
+              <div style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: 'var(--color-pop)',
+                boxShadow: '0 0 6px oklch(0.48 0.22 252 / 0.4)',
+              }} />
+            </div>
+          )}
+
+          {/* Center node — refined with gradient, glow ring, depth */}
+          <div style={{
+            position: 'absolute',
+            left: '50%', top: '50%',
+            transform: 'translate(-50%, -50%)',
+            opacity: Math.min(1, centerHintT * 0.3 + centerT * 0.7),
+            pointerEvents: 'none',
+          }}>
+            {/* Outer glow ring */}
+            <div style={{
+              position: 'absolute',
+              inset: -10, borderRadius: '50%',
+              border: '1px solid oklch(0.12 0.02 55 / 0.05)',
+              boxShadow: '0 0 40px oklch(0.12 0.02 55 / 0.06)',
+              opacity: centerT,
+            }} />
+            {/* Core */}
+            <div style={{
+              width: CENTER_SIZE, height: CENTER_SIZE, borderRadius: '50%',
+              background: 'linear-gradient(145deg, oklch(0.18 0.02 55), oklch(0.10 0.02 55))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 12px 48px oklch(0.12 0.02 55 / ${0.22 * centerT}), 0 4px 16px oklch(0.12 0.02 55 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.04)`,
+              transform: aliveT >= 1 ? undefined : `scale(${0.7 + Math.min(1, centerHintT + centerT) * 0.3})`,
+              transformOrigin: 'center',
+              animation: aliveT >= 1 ? 'orbital-center-breathe 4s ease-in-out infinite' : 'none',
+            }}>
+              <span style={{
+                fontSize: 14, fontWeight: 700, letterSpacing: '0.08em',
+                textTransform: 'uppercase', color: 'oklch(0.98 0.003 75)',
+              }}>
+                Helpin
+              </span>
+            </div>
+          </div>
+
+          {/* Module nodes — refined with halo + inner circle */}
+          {HELPIN_MODULES.map(({ label, Icon, color, bg }, i) => {
+            const pos = nodePositions[i];
+            const nodeAppear = Math.min(1, convergeT * 2);
+            const iconScale = 0.6 + mergeT * 0.4;
+
+            return (
+              <div key={label} style={{
+                position: 'absolute',
+                left: CX + pos.x, top: CY + pos.y,
+                transform: 'translate(-50%, -50%)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                opacity: nodeAppear,
+              }}>
+                {/* Outer halo */}
+                <div style={{
+                  position: 'relative',
+                  width: NODE_SIZE + 14, height: NODE_SIZE + 14,
+                  borderRadius: '50%',
+                  background: bg,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: `0 4px 20px ${color}12, 0 1px 4px oklch(0.12 0.02 55 / 0.05)`,
+                  transform: `scale(${iconScale})`,
+                }}>
+                  {/* Inner circle */}
+                  <div style={{
+                    width: NODE_SIZE, height: NODE_SIZE, borderRadius: '50%',
+                    background: 'var(--color-background)',
+                    border: `1px solid ${color}18`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: 'inset 0 1px 2px oklch(0.12 0.02 55 / 0.03)',
+                  }}>
+                    <Icon style={{ width: 19, height: 19, color }} />
+                  </div>
+                </div>
+                {/* Label — tighter, refined */}
+                <span style={{
+                  fontSize: 10, fontWeight: 600, letterSpacing: '0.05em',
+                  color: 'var(--color-muted-foreground)', whiteSpace: 'nowrap',
+                  textTransform: 'uppercase',
+                  opacity: mergeT,
+                }}>
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Problem → Solution combined scroll section ───
+
+function ProblemSolutionSection() {
+  const scrollZoneRef = useRef<HTMLDivElement>(null);
 
   return (
     <>
-      {/* ═══════════════════════════════════════════
-          HERO
-      ═══════════════════════════════════════════ */}
-      <section className="relative bg-[oklch(13%_0.038_265)] overflow-hidden">
-        {/* Ambient glow */}
-        <div
-          aria-hidden
-          className="accent-glow w-[700px] h-[400px] top-[-80px] left-1/2 -translate-x-1/2"
-          style={{ background: 'radial-gradient(ellipse, oklch(0.65 0.17 42 / 0.08) 0%, transparent 70%)' }}
-        />
+      <div ref={scrollZoneRef} style={{ minHeight: '230vh', position: 'relative' }}>
+        <div style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', minHeight: '230vh', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5rem', alignItems: 'start' }}>
 
-        {/* Subtle grid */}
-        <div aria-hidden className="absolute inset-0 grid-lines opacity-30" />
+          {/* LEFT: 3 text sections — fixed gap between them, no flex spacer */}
+          <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '12rem', paddingBottom: '3rem', alignSelf: 'stretch' }}>
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-20 pb-0">
+            {/* 1. Problem */}
+            <div>
+              <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
+                Your current stack isn't built to work together.
+              </h2>
+              <p className="text-[17px] text-muted-foreground leading-relaxed">
+                Product, sales, support, and marketing all use different tools. Important context gets lost between them, and teams waste time chasing updates across systems.
+              </p>
+            </div>
 
-          {/* Badge */}
-          <div
-            className="hero-fade inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] bg-[oklch(17%_0.043_265)] px-3.5 py-1.5 mb-7"
-            style={{ animationDelay: '80ms' }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-pop)]" />
-            <span className="text-[var(--fs-sm)] font-semibold text-[oklch(58%_0.018_250)] tracking-wide">
-              AI Work Operating System · Early Access
-            </span>
+            {/* 2. Bridge */}
+            <div style={{ marginTop: '40vh' }}>
+              <RevealLeft>
+                <p className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-3">
+                  AI can't fix disconnected systems.
+                </p>
+                <p className="text-[17px] text-muted-foreground leading-relaxed">
+                  AI is only useful when it has the full picture. If your projects, customers, support, and docs live in separate tools, AI can only work with part of the context.
+                </p>
+              </RevealLeft>
+            </div>
+
+            {/* 3. Solution — matches right column sticky exactly so they unstick together */}
+            <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center', paddingTop: '10vh', marginTop: '25vh' }}>
+              <div>
+                <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
+                  <span style={{ position: 'relative', display: 'inline-block' }}>Helpin<svg style={{ position: 'absolute', bottom: -4, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> is built differently.
+                </h2>
+                <p className="text-[17px] text-muted-foreground leading-relaxed">
+                  It brings development, support, sales and knowledge into one connected system. That gives humans and AI agents the full context they need to move work forward seamlessly.
+                </p>
+              </div>
+            </div>
+
           </div>
 
-          {/* Headline */}
-          <h1
-            className="hero-fade text-[clamp(2.4rem,5.6vw,4.8rem)] font-bold leading-[1.06] tracking-[-0.03em] text-[oklch(96%_0.005_80)] max-w-[820px] mb-5"
-            style={{ animationDelay: '200ms' }}
-          >
-            Stop managing tools.
-            <br />
-            <span className="text-[oklch(48%_0.02_250)]">Start running a company.</span>
-          </h1>
-
-          {/* Sub */}
-          <p
-            className="hero-fade text-[oklch(68%_0.018_260)] text-[var(--fs-lg)] max-w-[480px] leading-[1.7] mb-9"
-            style={{ animationDelay: '340ms' }}
-          >
-            Helpin agents handle your projects, docs, support, and customers — connected, automated, always on. One system that actually runs the company.
-          </p>
-
-          {/* CTAs */}
-          <div
-            className="hero-fade flex items-center gap-3 flex-wrap justify-center mb-16"
-            style={{ animationDelay: '460ms' }}
-          >
-            <Link
-              href="https://helpin.ai"
-              className="inline-flex items-center gap-2 rounded-lg bg-[oklch(96%_0.005_80)] text-[oklch(15%_0.041_265)] px-5 py-2.5 text-[var(--fs-base)] font-semibold tracking-tight transition-all duration-200 hover:bg-white hover:shadow-[0_0_20px_oklch(96%_0.005_80/0.15)] hover:-translate-y-px"
-            >
-              Get started free
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                <path d="M1 6h10M6.5 1.5L11 6l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </Link>
-            <Link
-              href="https://helpin.ai"
-              className="inline-flex items-center gap-2 rounded-lg border border-[oklch(28%_0.046_265)] bg-transparent text-[oklch(66%_0.018_260)] px-5 py-2.5 text-[var(--fs-base)] font-medium tracking-tight transition-all duration-200 hover:border-[oklch(30%_0.018_250)] hover:text-[oklch(78%_0.010_80)]"
-            >
-              See how it works
-            </Link>
+          {/* RIGHT: sticky — plays full motion story as user scrolls */}
+          <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center' }}>
+            <ToolStackTransition scrollZoneRef={scrollZoneRef} />
           </div>
 
-          {/* App mockup */}
-          <div
-            className="hero-fade w-full max-w-6xl mx-auto"
-            style={{ animationDelay: '580ms' }}
-          >
-            <AppMockup />
-          </div>
-        </div>
-
-        {/* Bottom fade */}
-        <div aria-hidden className="absolute bottom-0 left-0 right-0 h-1 bg-[oklch(12%_0.013_250)]" />
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          LOGO BAR
-      ═══════════════════════════════════════════ */}
-      <div className="bg-[oklch(15%_0.041_265)] border-b border-[oklch(22%_0.046_265)] py-5 px-6">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
-          <span className="text-[var(--fs-sm)] font-semibold tracking-[0.12em] uppercase text-[oklch(38%_0.022_265)] whitespace-nowrap">
-            Trusted by teams at
-          </span>
-          <div className="w-px h-4 bg-[oklch(27%_0.046_265)] hidden sm:block" />
-          <div className="flex items-center gap-6 flex-wrap justify-center">
-            {LOGOS.map((name) => (
-              <span key={name} className="text-[var(--fs-secondary)] font-semibold text-[oklch(34%_0.016_250)] tracking-tight">
-                {name}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════
-          THE PROBLEM
-      ═══════════════════════════════════════════ */}
-      <section className="max-w-6xl mx-auto px-6 py-24 lg:py-36">
-        <div ref={problemRef} className="reveal grid grid-cols-1 lg:grid-cols-2 gap-14 lg:gap-20">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-6">
-              <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">The Problem</span>
-            </div>
-            <h2 className="text-[clamp(1.8rem,3.2vw,2.8rem)] font-bold leading-[1.1] tracking-[-0.025em] text-[oklch(92%_0.006_80)] mb-5">
-              Your company is paying rent on ten empty buildings
-            </h2>
-            <p className="text-[oklch(68%_0.018_260)] text-[var(--fs-md)] leading-[1.75] mb-4">
-              Every tool you use was built to solve one problem. None of them were built to run a company. So you become the human API — copying, pasting, bridging the gap that no one else closes.
-            </p>
-            <p className="text-[oklch(68%_0.018_260)] text-[var(--fs-md)] leading-[1.75]">
-              And when you add AI on top of disconnected tools, you don't get a smarter company. You get smarter chaos.
-            </p>
-          </div>
-
-          <div ref={stackRef} className="stagger self-center">
-            {STACK.map((item) => (
-              <div
-                key={item.tool}
-                className="reveal flex items-baseline justify-between py-3.5 border-b border-[oklch(22%_0.046_265)] first:border-t"
-              >
-                <span className={`text-[var(--fs-base)] font-semibold ${item.dim ? 'text-[oklch(52%_0.018_260)]' : 'text-[oklch(80%_0.006_80)]'}`}>
-                  {item.tool}
-                </span>
-                <span className="text-[oklch(52%_0.018_260)] text-[var(--fs-secondary)] text-right ml-4">{item.desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          MARQUEE
-      ═══════════════════════════════════════════ */}
-      <div className="overflow-hidden border-y border-[oklch(22%_0.046_265)] py-3 bg-[oklch(12%_0.036_265)]" aria-hidden>
-        <div className="marquee-track">
-          {[0, 1].map((outer) => (
-            <div key={outer} className="flex shrink-0">
-              {AGENTS.map((a) => (
-                <span key={a.n} className="flex items-center gap-4 px-6 whitespace-nowrap">
-                  <span className="text-[var(--color-pop)] text-[var(--fs-label)] font-bold tracking-[0.16em] uppercase">{a.n}</span>
-                  <span className="text-[oklch(32%_0.016_250)] text-[var(--fs-sm)] font-semibold tracking-[0.06em] uppercase">{a.name}</span>
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ═══════════════════════════════════════════
-          CATEGORY
-      ═══════════════════════════════════════════ */}
-      <section className="px-6 py-8">
-        <div ref={catRef} className="reveal max-w-6xl mx-auto rounded-2xl bg-[oklch(16%_0.042_265)] border border-[oklch(17%_0.014_250)] px-8 py-14 lg:px-16 lg:py-20 overflow-hidden relative">
-          <div aria-hidden className="absolute top-0 right-0 w-[500px] h-[300px] opacity-50" style={{background: 'radial-gradient(ellipse at top right, oklch(0.65 0.17 42 / 0.06), transparent 70%)'}} />
-          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-12 lg:gap-16 items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-6">
-                <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">A New Category</span>
-              </div>
-              <h2 className="text-[clamp(1.8rem,3.4vw,3rem)] font-bold leading-[1.08] tracking-[-0.025em] text-[oklch(93%_0.006_80)] mb-5">
-                Your tools manage work.
-                <br />
-                <span className="text-[oklch(58%_0.018_260)]">Helpin runs the company.</span>
-              </h2>
-              <p className="text-[oklch(66%_0.018_260)] text-[var(--fs-md)] leading-[1.75] max-w-md">
-                One system where agents connect projects, docs, support, and customer context — so nothing falls through the cracks and AI can actually move work forward.
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--fs-label)] font-bold tracking-[0.18em] uppercase text-[oklch(36%_0.022_265)] mb-4">Replaces your entire stack</p>
-              <div className="flex flex-wrap gap-2 mb-5">
-                {['project management', 'help desk', 'knowledge base', 'CRM', 'AI chatbot', 'wiki', 'automation tool'].map((item) => (
-                  <span key={item} className="border border-[oklch(24%_0.046_265)] text-[oklch(38%_0.022_265)] px-2.5 py-1 text-[var(--fs-sm)] rounded line-through decoration-[oklch(24%_0.014_250)]">
-                    {item}
-                  </span>
-                ))}
-              </div>
-              <div className="inline-flex items-center gap-2.5 bg-[var(--color-pop-10)] border border-[var(--color-pop-25)] rounded-lg px-4 py-2.5">
-                <div className="w-2 h-2 rounded-full bg-[var(--color-pop)]" />
-                <span className="text-[var(--fs-secondary)] font-semibold text-[var(--color-pop-light)]">AI Work Operating System</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          AGENTS
-      ═══════════════════════════════════════════ */}
-      <section className="max-w-6xl mx-auto px-6 py-24 lg:py-36">
-        <div ref={agentHdRef} className="reveal mb-12">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-6">
-            <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">Meet the Team</span>
-          </div>
-          <h2 className="text-[clamp(1.8rem,3.2vw,2.8rem)] font-bold leading-[1.1] tracking-[-0.025em] text-[oklch(92%_0.006_80)] max-w-2xl mb-4">
-            Hire a Helpin agent for every job your company needs done
-          </h2>
-          <p className="text-[oklch(68%_0.018_260)] text-[var(--fs-md)] leading-[1.75] max-w-xl">
-            Helpin agents aren't features. They're workers. Each one owns a job, shares context with the others, and operates across the full system — not inside a single tool.
-          </p>
-        </div>
-
-        <div ref={agentsRef} className="stagger border-t border-[oklch(22%_0.046_265)]">
-          {AGENTS.map((agent) => (
-            <div
-              key={agent.n}
-              className="reveal group flex items-start gap-6 lg:gap-10 py-4 border-b border-[oklch(22%_0.046_265)] -mx-3 px-3 rounded-lg transition-colors duration-150 hover:bg-[oklch(17%_0.043_265)] cursor-default"
-            >
-              <span className="text-[var(--color-pop)] text-[var(--fs-label)] font-bold font-mono tracking-widest pt-[3px] shrink-0 w-7 text-right">
-                {agent.n}
-              </span>
-              <div className="flex-1 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-8">
-                <span className="text-[oklch(82%_0.006_80)] font-semibold text-[var(--fs-base)] shrink-0 min-w-[164px]">
-                  {agent.name}
-                </span>
-                <span className="text-[oklch(62%_0.018_260)] text-[var(--fs-base)] leading-[1.6]">
-                  {agent.role}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          BEFORE / AFTER
-      ═══════════════════════════════════════════ */}
-      <section className="bg-[oklch(14%_0.040_265)] border-y border-[oklch(22%_0.046_265)] py-24 lg:py-36">
-        <div className="max-w-6xl mx-auto px-6">
-          <div ref={baHdRef} className="reveal mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-6">
-              <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">Life with Helpin</span>
-            </div>
-            <h2 className="text-[clamp(1.8rem,3.2vw,2.8rem)] font-bold leading-[1.1] tracking-[-0.025em] text-[oklch(92%_0.006_80)] max-w-2xl">
-              What changes when agents run the work
-            </h2>
-          </div>
-
-          <div ref={baRef} className="reveal grid grid-cols-1 sm:grid-cols-2 rounded-2xl overflow-hidden border border-[oklch(24%_0.046_265)]">
-            <div className="bg-[oklch(15%_0.041_265)] p-7 lg:p-10 border-b sm:border-b-0 sm:border-r border-[oklch(24%_0.046_265)]">
-              <div className="text-[var(--fs-label)] font-bold tracking-[0.16em] uppercase text-[oklch(36%_0.022_265)] mb-6 pb-4 border-b border-[oklch(22%_0.046_265)]">
-                Without Helpin
-              </div>
-              <div className="divide-y divide-[oklch(20%_0.045_265)]">
-                {SCENARIOS.map((s, i) => (
-                  <p key={i} className="py-3.5 text-[var(--fs-base)] leading-[1.65] text-[oklch(56%_0.018_260)]">
-                    {s.before}
-                  </p>
-                ))}
-              </div>
-            </div>
-            <div className="bg-[oklch(17%_0.043_265)] p-7 lg:p-10">
-              <div className="text-[var(--fs-label)] font-bold tracking-[0.16em] uppercase text-[var(--color-pop-muted)] mb-6 pb-4 border-b border-[var(--color-pop-15)]">
-                With Helpin Agents
-              </div>
-              <div className="divide-y divide-[oklch(20%_0.045_265)]">
-                {SCENARIOS.map((s, i) => (
-                  <p key={i} className="py-3.5 text-[var(--fs-base)] leading-[1.65] text-[oklch(78%_0.008_80)]">
-                    {s.after}
-                  </p>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          FOUR LAWS
-      ═══════════════════════════════════════════ */}
-      <section className="max-w-6xl mx-auto px-6 py-24 lg:py-36">
-        <div ref={lawsHdRef} className="reveal mb-14">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-6">
-            <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">The Compounding Advantage</span>
-          </div>
-          <h2 className="text-[clamp(1.8rem,3.2vw,2.8rem)] font-bold leading-[1.1] tracking-[-0.025em] text-[oklch(92%_0.006_80)] max-w-2xl mb-4">
-            Most tools make you more dependent as you scale.
-            <br />
-            <span className="text-[oklch(58%_0.018_260)]">Helpin makes you smarter.</span>
-          </h2>
-          <p className="text-[oklch(68%_0.018_260)] text-[var(--fs-md)] leading-[1.75] max-w-xl">
-            Every Helpin agent operates inside the same connected system. As your company grows, the context grows with it. Agents improve because they know more — not because you configure more.
-          </p>
-        </div>
-
-        <div ref={lawsRef} className="stagger grid grid-cols-1 sm:grid-cols-2 gap-px bg-[oklch(22%_0.046_265)] rounded-2xl overflow-hidden border border-[oklch(22%_0.046_265)]">
-          {LAWS.map((law) => (
-            <div key={law.n} className="reveal bg-[oklch(14%_0.040_265)] p-8 hover:bg-[oklch(10.5%_0.012_250)] transition-colors">
-              <div className="text-[3.5rem] font-bold text-[oklch(16%_0.014_250)] leading-none mb-5 select-none tabular-nums">
-                {law.n}
-              </div>
-              <div className="text-[oklch(82%_0.006_80)] font-semibold text-[var(--fs-md)] mb-2">{law.title}</div>
-              <div className="text-[oklch(62%_0.018_260)] text-[var(--fs-base)] leading-[1.65]">{law.body}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          WHY NOW
-      ═══════════════════════════════════════════ */}
-      <section className="bg-[oklch(14%_0.040_265)] border-y border-[oklch(22%_0.046_265)] py-24 lg:py-36 overflow-hidden relative">
-        <div aria-hidden className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] opacity-60" style={{background: 'radial-gradient(ellipse, oklch(0.65 0.17 42 / 0.05), transparent 70%)'}} />
-        <div ref={nowRef} className="reveal max-w-6xl mx-auto px-6 relative z-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(28%_0.046_265)] px-3 py-1 mb-8">
-            <span className="text-[var(--fs-sm)] font-semibold text-[var(--color-pop)] tracking-wide uppercase">Why Now</span>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-12 items-end">
-            <div>
-              <h2 className="text-[clamp(2rem,4vw,3.6rem)] font-bold leading-[1.06] tracking-[-0.03em] text-[oklch(93%_0.006_80)] mb-6 max-w-3xl">
-                The companies that run on connected systems today will be{' '}
-                <span className="text-[var(--color-pop)]">untouchable</span> in three years.
-              </h2>
-              <p className="text-[oklch(66%_0.018_260)] text-[var(--fs-md)] leading-[1.75] max-w-xl mb-4">
-                AI is not a feature you add to a broken stack. It's a reason to replace it. Helpin was built from scratch for a world where people and agents operate together — not in separate apps that don't talk.
-              </p>
-              <p className="text-[oklch(52%_0.018_260)] text-[var(--fs-md)] leading-[1.75] max-w-xl">
-                The companies adopting this model now are not just moving faster. They are building an operational advantage that is very difficult to undo.
-              </p>
-            </div>
-            <div className="hidden lg:block pb-1 text-right" aria-hidden>
-              <div className="text-[6rem] font-black text-[oklch(20%_0.045_265)] leading-none select-none tabular-nums tracking-tight">
-                2026
-              </div>
-              <p className="text-[oklch(26%_0.014_250)] text-[var(--fs-label)] font-bold tracking-[0.16em] uppercase mt-1">
-                The window is open.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════
-          FINAL CTA
-      ═══════════════════════════════════════════ */}
-      <section className="max-w-6xl mx-auto px-6 py-28 lg:py-44">
-        <div ref={ctaRef} className="reveal text-center max-w-3xl mx-auto">
-          <h2 className="text-[clamp(2.2rem,4.8vw,4.2rem)] font-bold leading-[1.06] tracking-[-0.03em] text-[oklch(93%_0.006_80)] mb-5">
-            Your first agent is one click away.
-            <br />
-            <span className="text-[oklch(52%_0.018_260)]">The rest of your team can wait.</span>
-          </h2>
-          <p className="text-[oklch(58%_0.018_260)] text-[var(--fs-md)] leading-[1.75] mb-10">
-            Free during early access. No credit card required.
-          </p>
-          <div className="flex items-center gap-3 justify-center flex-wrap">
-            <Link
-              href="https://helpin.ai"
-              className="inline-flex items-center gap-2 rounded-lg bg-[oklch(96%_0.005_80)] text-[oklch(15%_0.041_265)] px-6 py-3 text-[var(--fs-md)] font-semibold tracking-tight transition-all duration-200 hover:bg-white hover:shadow-[0_0_30px_oklch(96%_0.005_80/0.12)] hover:-translate-y-px"
-            >
-              Start free
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                <path d="M1 6h10M6.5 1.5L11 6l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </Link>
-            <Link
-              href="https://helpin.ai"
-              className="inline-flex items-center rounded-lg border border-[oklch(28%_0.046_265)] text-[oklch(56%_0.018_250)] px-6 py-3 text-[var(--fs-md)] font-medium tracking-tight transition-all duration-200 hover:border-[oklch(30%_0.018_250)] hover:text-[oklch(72%_0.012_80)]"
-            >
-              See the demo
-            </Link>
-          </div>
-          <p className="text-[oklch(28%_0.014_250)] text-[var(--fs-secondary)] mt-6">
-            Free during early access — pricing comes later. Get in now.
-          </p>
-        </div>
-      </section>
+      {/* Fixed breathing room below solution */}
+      <div style={{ height: '8vh' }} />
     </>
+  );
+}
+
+// ─── Main Page ───
+
+export default function HomePage() {
+  return (
+    <main>
+
+      {/* ══════════════════════════════════
+          HERO
+          ══════════════════════════════════ */}
+      <section className="grid-section relative">
+        <div className="grid-lines-inner" />
+        <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-24 pb-0">
+
+          {/* Centered text block */}
+          <div className="text-center mb-14">
+            <Reveal>
+              <h1 className="text-[clamp(2.25rem,5vw,4.75rem)] font-bold tracking-[-0.04em] leading-[1.0] text-foreground mb-6">
+                <span className="block">The AI operating system</span>
+                <span className="block">for modern work</span>
+              </h1>
+            </Reveal>
+            <Reveal>
+              <p className="text-[1.125rem] text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-8">
+                Helpin brings projects, docs, support, CRM, and company knowledge into one connected system — so teams and AI agents can move work forward without silos.
+              </p>
+            </Reveal>
+            <Reveal>
+              <div className="flex flex-col items-center gap-3">
+                <EarlyAccessForm id="hero" />
+              </div>
+            </Reveal>
+          </div>
+
+          {/* AI Workflow Visual */}
+          <Reveal>
+            <AIWorkflowVisual />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          TRUSTED BY
+          ══════════════════════════════════ */}
+      <section className="border-y border-border py-12 mt-16">
+        <p className="text-center text-[11px] font-semibold tracking-[0.18em] text-muted-foreground/60 uppercase mb-10">
+          Trusted by teams at
+        </p>
+        <div className="mx-auto max-w-5xl px-8 flex items-center justify-center gap-8 flex-nowrap overflow-x-auto">
+          {COMPANIES.map((c, i) => (
+            <div key={c.domain} className="flex items-center gap-8">
+              <div className="flex items-center gap-2 opacity-75 hover:opacity-100 transition-opacity duration-200 shrink-0">
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${c.domain}&sz=64`}
+                  alt=""
+                  className="h-5 w-5 object-contain"
+                />
+                <span className="text-[15px] font-semibold text-foreground/90 whitespace-nowrap">{c.name}</span>
+              </div>
+              {i < COMPANIES.length - 1 && (
+                <span className="text-border text-lg shrink-0 select-none">·</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          PROBLEM → SOLUTION
+          Right side sticky, collapses as you scroll.
+          Left: problem text (top) → solution text (bottom, rises naturally).
+          ══════════════════════════════════ */}
+      <ProblemSolutionSection />
+
+      {/* ══════════════════════════════════
+          AGENT ROSTER
+          ══════════════════════════════════ */}
+      <section className="relative" id="agents">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-32">
+
+          <Reveal className="mb-6 text-center max-w-3xl mx-auto">
+            <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
+              An agent for every team, every workflow.
+            </h2>
+          </Reveal>
+          <Reveal className="mb-12 text-center max-w-2xl mx-auto">
+            <p className="text-[17px] text-muted-foreground leading-relaxed">
+              Each agent works autonomously or with your approval. They share context, escalate when needed, and get smarter over time.
+            </p>
+          </Reveal>
+
+          {/* Team selector */}
+          <AgentRoster />
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          BEFORE / AFTER  (dark)
+          ══════════════════════════════════ */}
+      <section className="relative border-t border-border" id="how">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+
+          {/* Heading */}
+          <Reveal className="mb-6 text-center max-w-3xl mx-auto">
+            <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
+              The real problems you're dealing with
+            </h2>
+          </Reveal>
+          <Reveal className="mb-16 text-center max-w-2xl mx-auto">
+            <p className="text-[17px] text-muted-foreground leading-relaxed">
+              Helpin replaces disconnected tools with one connected system — so context flows, agents act, and nothing falls through.
+            </p>
+          </Reveal>
+
+          {/* Visual: Before → After — aligned to problem/solution columns */}
+          <Reveal className="mb-24">
+            <div className="grid md:grid-cols-2 gap-8 md:gap-16 max-w-5xl mx-auto items-center">
+              {/* Before: scattered tool icons — centered in left column */}
+              <div className="flex flex-col items-center relative">
+                <div className="relative w-[250px] h-[115px] mb-5">
+                  {BEFORE_TOOLS.map((t, i) => {
+                    const positions = [
+                      { top: 0, left: 5, rotate: -5 },   { top: 3, left: 65, rotate: 3 },
+                      { top: 0, left: 125, rotate: -3 }, { top: 5, left: 185, rotate: 4 },
+                      { top: 58, left: 25, rotate: 4 },  { top: 55, left: 85, rotate: -4 },
+                      { top: 60, left: 145, rotate: 5 }, { top: 56, left: 195, rotate: -3 },
+                    ];
+                    const p = positions[i];
+                    return (
+                      <div key={t.domain} className="absolute" style={{ top: p.top, left: p.left, transform: `rotate(${p.rotate}deg)` }}>
+                        <div className="w-[52px] h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
+                          style={{ boxShadow: '0 2px 8px oklch(0.12 0.02 55 / 0.06), 0 0 0 1px oklch(0.12 0.02 55 / 0.03)' }}>
+                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-7 h-7" alt="" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <span className="inline-block text-[12px] font-bold uppercase tracking-widest text-foreground bg-muted px-5 py-2 rounded-full">Before</span>
+                {/* Swoosh arrow — positioned to bridge the gap */}
+                <div className="absolute right-[-80px] top-1/2 -translate-y-1/2 hidden md:block">
+                  <svg width="140" height="56" viewBox="0 0 140 56" fill="none">
+                    <path d="M4 20C35 20 45 38 70 38C95 38 105 26 128 26" stroke="oklch(0.12 0.02 55 / 0.22)" strokeWidth="4.5" strokeLinecap="round" fill="none" />
+                    <path d="M118 16L130 26L118 36" stroke="oklch(0.12 0.02 55 / 0.22)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* After: Helpin — slightly left of center in right column */}
+              <div className="flex flex-col items-center md:mr-auto md:ml-16">
+                <div className="w-[100px] h-[100px] rounded-3xl bg-foreground flex items-center justify-center mb-5"
+                  style={{ boxShadow: '0 12px 40px oklch(0.12 0.02 55 / 0.25), 0 4px 12px oklch(0.12 0.02 55 / 0.1)' }}>
+                  <span className="text-[14px] font-bold uppercase tracking-wider text-background">Helpin</span>
+                </div>
+                <span className="inline-block text-[12px] font-bold uppercase tracking-widest rounded-full px-5 py-2" style={{ color: 'oklch(0.45 0.15 155)', background: 'oklch(0.45 0.15 155 / 0.08)' }}>After</span>
+              </div>
+            </div>
+          </Reveal>
+
+          {/* Problem / Solution rows */}
+          <div className="max-w-5xl mx-auto">
+            {PROBLEMS_SOLUTIONS.map((row, i) => (
+              <Reveal key={i}>
+                <div className="grid md:grid-cols-2 gap-8 md:gap-16 py-8 border-b border-border/50">
+                  {/* Problem */}
+                  <div className="flex gap-4">
+                    <span className="text-[18px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.55 0.2 25)' }}>✕</span>
+                    <div>
+                      <h3 className="text-[15px] font-bold text-foreground mb-2">{row.problem}</h3>
+                      <p className="text-[14px] text-muted-foreground leading-relaxed">{row.problemDesc}</p>
+                    </div>
+                  </div>
+                  {/* Solutions */}
+                  <div className="flex flex-col gap-3">
+                    {row.solutions.map((s, j) => (
+                      <div key={j} className="flex gap-3">
+                        <span className="text-[16px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.45 0.15 155)' }}>✓</span>
+                        <p className="text-[14px] font-medium text-foreground leading-relaxed">{s}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          HOW IT WORKS
+          ══════════════════════════════════ */}
+      <section className="relative border-t border-border">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+          <Reveal className="mb-6 text-center max-w-3xl mx-auto">
+            <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
+              How it works
+            </h2>
+          </Reveal>
+          <Reveal className="mb-20 text-center max-w-2xl mx-auto">
+            <p className="text-[17px] text-muted-foreground leading-relaxed">
+              Your team stays lean. Your output doesn't. Helpin agents handle the repetitive work across every department — so your people focus on what actually moves the needle.
+            </p>
+          </Reveal>
+
+          {/* Step cards — progressive elevation */}
+          <div className="flex flex-col lg:flex-row gap-3 max-w-5xl mx-auto items-stretch">
+            {[
+              {
+                num: '01',
+                Icon: Users,
+                title: 'Set up your workspace',
+                desc: 'Create your workspace, invite your team, and import your data.',
+                intensity: 0,
+              },
+              {
+                num: '02',
+                Icon: Shield,
+                title: 'Configure your agents',
+                desc: 'Pick built-in agents or build your own. Set tools, targets, and approval mode.',
+                intensity: 1,
+              },
+              {
+                num: '03',
+                Icon: Zap,
+                title: 'Agents go to work',
+                desc: 'They plan, build, triage, and follow up — using your real company context.',
+                intensity: 2,
+              },
+              {
+                num: '04',
+                Icon: TrendingUp,
+                title: 'Increase autonomy',
+                desc: 'Start supervised. Increase trust over time. From approval-required to fully autonomous.',
+                intensity: 3,
+                highlight: true,
+              },
+            ].map((step, i, arr) => {
+              const bgTint = step.highlight ? 'var(--color-pop-light)' : 'var(--color-background)';
+              const borderStyle = step.highlight ? '1.5px solid var(--color-pop)' : '1px solid var(--color-border)';
+              const shadow = step.highlight ? '0 8px 32px oklch(0.12 0.02 55 / 0.08)' : '0 2px 8px oklch(0.12 0.02 55 / 0.04)';
+              return (
+                <div key={step.num} className="contents">
+                  <Reveal className="flex-1">
+                    <div
+                      className="relative rounded-2xl p-7 h-full transition-all duration-300"
+                      style={{
+                        background: bgTint,
+                        border: borderStyle,
+                        boxShadow: shadow,
+                      }}
+                    >
+                      {/* Number — large faint background */}
+                      <span className="absolute top-4 right-5 text-[48px] font-bold leading-none select-none"
+                        style={{ color: step.highlight ? 'oklch(0.52 0.14 28 / 0.12)' : 'oklch(0.12 0.02 55 / 0.04)' }}>
+                        {step.num}
+                      </span>
+                      {/* Icon */}
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-5"
+                        style={{
+                          background: step.highlight ? 'var(--color-pop-medium)' : 'var(--color-muted)',
+                        }}>
+                        <step.Icon className="w-5 h-5" style={{ color: step.highlight ? 'var(--color-pop)' : 'var(--color-foreground)' }} />
+                      </div>
+                      {/* Content */}
+                      <h3 className="text-[16px] font-bold text-foreground mb-2">{step.title}</h3>
+                      <p className="text-[14px] text-muted-foreground leading-relaxed">{step.desc}</p>
+                    </div>
+                  </Reveal>
+                  {/* Arrow between cards */}
+                  {i < arr.length - 1 && (
+                    <div className="hidden lg:flex items-center justify-center flex-shrink-0 px-1">
+                      <ArrowRight className="w-6 h-6 text-muted-foreground/50" strokeWidth={2.5} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* CTA */}
+          <Reveal className="mt-14 flex justify-center">
+            <EarlyAccessForm id="how-it-works" />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          FAQ
+          ══════════════════════════════════ */}
+      <section className="relative border-t border-border">
+        <div className="mx-auto max-w-3xl px-6 lg:px-8 py-32">
+          <Reveal className="mb-16 text-center">
+            <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
+              Frequently asked questions
+            </h2>
+          </Reveal>
+
+          <div className="space-y-0">
+            {[
+              {
+                q: 'What happens to my existing tools?',
+                a: 'You keep GitHub — Helpin integrates directly. For everything else (Jira, Notion, Intercom, HubSpot), you can import your data. Don\'t see your tool? We\'ll add any importer you need.',
+              },
+              {
+                q: 'How do agents work under the hood?',
+                a: 'Helpin runs its own CLI runtime — similar to Claude Code or OpenAI Codex, but built into the platform. You can watch agents work in real-time, interact with them mid-run, or let them run fully autonomously. No black box.',
+              },
+              {
+                q: 'Which AI models does Helpin use?',
+                a: 'You bring your own API keys. Helpin supports Claude, GPT, and other providers — you choose the model per agent. Switch anytime. Your keys, your cost control.',
+              },
+              {
+                q: 'I already use Claude Code / Cursor / Copilot. How is this different?',
+                a: 'Those tools help individual developers write code. Helpin orchestrates work across your entire company — planning, building, reviewing, supporting, and selling. One agent writes the code, another reviews it, another updates the docs. They share context. That\'s something a code editor can\'t do.',
+              },
+              {
+                q: 'Can agents act without my approval?',
+                a: 'You control the dial. Every agent can be set to require human approval, or run fully autonomously. Most teams start supervised and increase trust over time.',
+              },
+              {
+                q: 'Is my data safe?',
+                a: 'Yes. Your data is encrypted at rest and in transit. It\'s never shared across workspaces and never used to train AI models.',
+              },
+              {
+                q: 'How is this different from using ChatGPT + my current stack?',
+                a: 'ChatGPT doesn\'t know your company. It can\'t read your tickets, check your roadmap, or update your docs. Helpin agents operate inside your system with full context — they don\'t just answer questions, they do the work.',
+              },
+              {
+                q: 'What does it cost?',
+                a: 'Free during early access. No credit card required. Start with your full team today.',
+              },
+              {
+                q: 'How long does setup take?',
+                a: 'Most teams are up and running in under 10 minutes. Import your data, configure your first agent, and it starts working immediately.',
+              },
+            ].map((faq, i) => (
+              <Reveal key={i}>
+                <details className="group border-b border-border/50 py-6">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <h3 className="text-[16px] font-semibold text-foreground pr-8">{faq.q}</h3>
+                    <span className="text-muted-foreground/40 text-xl flex-shrink-0 transition-transform duration-200 group-open:rotate-45">+</span>
+                  </summary>
+                  <p className="text-[15px] text-muted-foreground leading-relaxed mt-4 pr-12">{faq.a}</p>
+                </details>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════
+          CLOSING CTA  (dark)
+          ══════════════════════════════════ */}
+      <section className="relative overflow-hidden" style={{ background: '#fcf8f4' }}>
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-28 lg:py-36">
+          <div className="grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
+
+            {/* Left: Illustration — large, breathing, environmental */}
+            <RevealLeft>
+              <div className="flex justify-center lg:justify-start">
+                <img
+                  src="/images/cta-illustration.png"
+                  alt="Helpin connects Project Management, Docs, Support, and Sales"
+                  className="w-full max-w-[520px]"
+                  style={{ animation: 'cta-breathe 6s ease-in-out infinite', mixBlendMode: 'multiply' }}
+                />
+              </div>
+            </RevealLeft>
+
+            {/* Right: Copy + CTA */}
+            <RevealRight>
+              <div className="lg:pl-8">
+                <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground mb-2">
+                  The way companies operate is changing.
+                </h2>
+                <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-muted-foreground/50 mb-8">
+                  You can keep up — or fall behind.
+                </h2>
+                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg">
+                  Bring your work, knowledge, support, and customer context into one system — and let agents start moving work forward from day one.
+                </p>
+                <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
+              </div>
+            </RevealRight>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  );
+}
+
+// ─── AI Workflow Visual (10X) ───
+// Hybrid HTML cards + SVG constellation with triple-layer comet signals
+
+const WF_DATA = [
+  { id: 'support',   module: 'Support',    action: 'Triaged ticket',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const },
+  { id: 'pm',        module: 'PM',         action: 'Created story',        dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 3, signalAt: 3, signalDir: 'out' as const },
+  { id: 'docs',      module: 'Docs',       action: 'Updated runbook',      dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 4, signalAt: 4, signalDir: 'out' as const },
+  { id: 'knowledge', module: 'Knowledge',  action: 'Found 3 articles',     dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const },
+  { id: 'crm',       module: 'CRM',        action: 'Matched account',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 3, signalAt: 3, signalDir: 'out' as const },
+  { id: 'customer',  module: 'Customer',   action: 'Sent resolution',      dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const },
+];
+
+const WF_CTR = { x: 450, y: 240 };
+
+function wfCurve(x1: number, y1: number, x2: number, y2: number) {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return `M ${x1} ${y1} Q ${mx - dy * 0.12} ${my + dx * 0.12} ${x2} ${y2}`;
+}
+
+function WfMicroUI({ id, on }: { id: string; on: boolean }) {
+  const t = (v: string, off: string) => ({ color: on ? v : off, transition: 'color 0.4s ease' });
+
+  /* ── Support: chat bubble ── */
+  if (id === 'support') return (
+    <div>
+      <div className="rounded-lg rounded-tl-sm px-2.5 py-2" style={{
+        background: on ? 'oklch(0.95 0.01 75)' : 'oklch(0.96 0.005 75 / 0.5)',
+        transition: 'background 0.4s ease',
+      }}>
+        <p className="text-[11px] font-medium leading-snug" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+          Billing charge incorrect
+        </p>
+      </div>
+      <p className="text-[9px] mt-1" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
+        Taylor M. · Acme Corp
+      </p>
+    </div>
+  );
+
+  /* ── PM: task card with priority bar ── */
+  if (id === 'pm') return (
+    <div className="flex rounded-md overflow-hidden" style={{
+      border: `1px solid ${on ? 'oklch(0.9 0.008 75)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
+      background: on ? 'oklch(1 0 0 / 0.8)' : 'oklch(1 0 0 / 0.25)',
+      transition: 'all 0.4s ease',
+    }}>
+      <div className="w-1 shrink-0" style={{
+        background: on ? '#ef4444' : 'oklch(0.85 0.005 75)',
+        transition: 'background 0.4s ease',
+      }} />
+      <div className="px-2 py-1.5 min-w-0">
+        <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+          Fix billing calc error
+        </p>
+        <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
+          Sprint 12 · High
+        </p>
+      </div>
+    </div>
+  );
+
+  /* ── Docs: mini document page ── */
+  if (id === 'docs') return (
+    <div className="rounded-md overflow-hidden" style={{
+      border: `1px solid ${on ? 'oklch(0.88 0.04 155)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
+      background: on ? 'oklch(1 0 0 / 0.8)' : 'oklch(1 0 0 / 0.25)',
+      transition: 'all 0.4s ease',
+    }}>
+      <div className="px-2 py-0.5" style={{
+        background: on ? 'oklch(0.95 0.03 155)' : 'oklch(0.96 0.005 75 / 0.5)',
+        transition: 'background 0.4s ease',
+      }}>
+        <p className="text-[8px] font-medium" style={t('oklch(0.35 0.1 155)', 'oklch(0.12 0.02 55 / 0.12)')}>DOC</p>
+      </div>
+      <div className="px-2 py-1.5">
+        <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+          Billing API Runbook
+        </p>
+        <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
+          Auto-updated
+        </p>
+      </div>
+    </div>
+  );
+
+  /* ── CRM: account card with health ── */
+  if (id === 'crm') return (
+    <div className="rounded-md px-2.5 py-2" style={{
+      border: `1px solid ${on ? 'oklch(0.9 0.008 75)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
+      background: on ? 'oklch(1 0 0 / 0.8)' : 'oklch(1 0 0 / 0.25)',
+      transition: 'all 0.4s ease',
+    }}>
+      <div className="flex items-center gap-1.5">
+        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{
+          background: on ? 'oklch(0.94 0.03 50)' : 'oklch(0.95 0.005 75)',
+          transition: 'background 0.4s ease',
+        }}>
+          <span className="text-[8px] font-bold" style={t('oklch(0.4 0.08 50)', 'oklch(0.12 0.02 55 / 0.12)')}>AC</span>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>Acme Corp</p>
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{
+              background: on ? '#f59e0b' : 'oklch(0.88 0.005 75)',
+              transition: 'background 0.4s ease',
+            }} />
+            <span className="text-[9px]" style={t('oklch(0.55 0.12 70)', 'oklch(0.12 0.02 55 / 0.1)')}>At risk</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Knowledge: search result with match ── */
+  if (id === 'knowledge') return (
+    <div className="rounded-md px-2.5 py-2" style={{
+      border: `1px solid ${on ? 'oklch(0.9 0.008 75)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
+      background: on ? 'oklch(1 0 0 / 0.8)' : 'oklch(1 0 0 / 0.25)',
+      transition: 'all 0.4s ease',
+    }}>
+      <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+        Billing issues
+      </p>
+      <div className="flex items-center gap-1.5 mt-1">
+        <div className="h-1 flex-1 rounded-full overflow-hidden" style={{
+          background: on ? 'oklch(0.93 0.01 75)' : 'oklch(0.95 0.005 75)',
+          transition: 'background 0.4s ease',
+        }}>
+          <div className="h-full rounded-full" style={{
+            width: on ? '92%' : '0%',
+            background: 'oklch(0.55 0.15 300)',
+            transition: 'width 0.9s cubic-bezier(0.16,1,0.3,1) 0.15s',
+          }} />
+        </div>
+        <span className="text-[9px] font-semibold shrink-0" style={t('oklch(0.5 0.15 300)', 'transparent')}>92%</span>
+      </div>
+    </div>
+  );
+
+  /* ── Customer: success notification ── */
+  if (id === 'customer') return (
+    <div className="rounded-md px-2.5 py-2 flex items-center gap-2" style={{
+      background: on ? 'oklch(0.95 0.04 160)' : 'oklch(0.96 0.005 75 / 0.4)',
+      border: `1px solid ${on ? 'oklch(0.88 0.06 160)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
+      transition: 'all 0.4s ease',
+    }}>
+      <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{
+        background: on ? 'oklch(0.45 0.15 160)' : 'oklch(0.88 0.005 75)',
+        transition: 'background 0.4s ease',
+      }}>
+        <span className="text-[10px] font-bold" style={{ color: on ? '#fff' : 'transparent', transition: 'color 0.4s ease' }}>&#10003;</span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium" style={t('oklch(0.2 0.05 160)', 'oklch(0.15 0.02 55 / 0.18)')}>Resolved</p>
+        <p className="text-[9px]" style={t('oklch(0.35 0.08 160)', 'oklch(0.12 0.02 55 / 0.1)')}>8 min</p>
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+function AIWorkflowVisual() {
+  const [step, setStep] = useState(-1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setStep(0), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (step < 0) return;
+    const d = [600, 1600, 1400, 1500, 1500, 1500, 1000];
+    const t = setTimeout(() => setStep((s) => (s + 1) % 7), d[step]);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  const { x: cx, y: cy } = WF_CTR;
+  const centerOn = step >= 2 && step <= 6;
+
+  return (
+    <div className="relative w-full" style={{ aspectRatio: '900 / 480' }}>
+
+      {/* ══ SVG Layer ══ */}
+      <svg viewBox="0 0 900 480" fill="none" className="absolute inset-0 w-full h-full select-none">
+        <defs>
+          <filter id="wf-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="6" result="b" />
+            <feComposite in="SourceGraphic" in2="b" operator="over" />
+          </filter>
+          <radialGradient id="wf-ambient" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="oklch(0.48 0.22 252 / 0.06)" />
+            <stop offset="100%" stopColor="oklch(0.48 0.22 252 / 0)" />
+          </radialGradient>
+          {/* Mask: hide lines inside center circle */}
+          <mask id="wf-center-mask">
+            <rect width="900" height="480" fill="white" />
+            <circle cx={cx} cy={cy} r={42} fill="black" />
+          </mask>
+        </defs>
+
+        {/* Background rings */}
+        {[100, 165, 230, 295].map((r) => (
+          <circle key={r} cx={cx} cy={cy} r={r} stroke="oklch(0.12 0.02 55 / 0.02)" strokeWidth="1" />
+        ))}
+
+        {/* Center ambient glow */}
+        <circle cx={cx} cy={cy} r={140} fill={centerOn ? 'url(#wf-ambient)' : 'none'}
+          style={{ transition: 'opacity 1s ease' }} />
+
+        {/* Lines masked to stop at center circle edge */}
+        <g mask="url(#wf-center-mask)">
+        {/* ── Connection lines (dotted base) ── */}
+        {WF_DATA.map((n) => (
+          <path key={`base-${n.id}`}
+            d={wfCurve(n.svg.x, n.svg.y, cx, cy)}
+            stroke="oklch(0.12 0.02 55 / 0.07)" strokeWidth="1.5"
+            strokeDasharray="3 8" strokeLinecap="round" />
+        ))}
+
+        {/* ── Flowing dotted lines (active — continuous data flow) ── */}
+        {WF_DATA.map((n) => {
+          const on = step >= n.activateAt && step > 0;
+          const d = n.signalDir === 'out'
+            ? wfCurve(cx, cy, n.svg.x, n.svg.y)
+            : wfCurve(n.svg.x, n.svg.y, cx, cy);
+          return (
+            <path key={`flow-${n.id}`}
+              d={d}
+              stroke="oklch(0.48 0.22 252)"
+              strokeWidth="2"
+              strokeDasharray="3 8"
+              strokeLinecap="round"
+              className={on ? 'wf-flow-in' : ''}
+              opacity={on ? (step === 6 ? 0.55 : 0.35) : 0}
+              style={{ transition: 'opacity 0.6s ease' }} />
+          );
+        })}
+
+        {/* ── Triple-layer comet signals ── */}
+        {WF_DATA.map((n) => {
+          if (step !== n.signalAt) return null;
+          const rev = n.signalDir === 'out';
+          const d = rev ? wfCurve(cx, cy, n.svg.x, n.svg.y) : wfCurve(n.svg.x, n.svg.y, cx, cy);
+          return (
+            <g key={`sig-${n.id}-${step}`}>
+              {/* Wide area glow */}
+              <path d={d} stroke="oklch(0.48 0.22 252 / 0.12)" strokeWidth="14"
+                strokeLinecap="round" pathLength={1} strokeDasharray="0.14 1"
+                className="wf-signal-path" style={{ animationDuration: '1.2s' }} />
+              {/* Bright core */}
+              <path d={d} stroke="oklch(0.48 0.22 252)" strokeWidth="4"
+                strokeLinecap="round" pathLength={1} strokeDasharray="0.08 1"
+                className="wf-signal-path" filter="url(#wf-glow)" />
+              {/* Trail */}
+              <path d={d} stroke="oklch(0.48 0.22 252 / 0.45)" strokeWidth="3"
+                strokeLinecap="round" pathLength={1} strokeDasharray="0.05 1"
+                className="wf-signal-path"
+                style={{ animationDuration: '1.15s', animationDelay: '0.06s' }} />
+            </g>
+          );
+        })}
+
+        </g>{/* end masked lines */}
+
+        {/* ── Center AI hub ── */}
+        <g>
+          <circle cx={cx} cy={cy} r={68}
+            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.1)' : 'oklch(0.12 0.02 55 / 0.03)'}
+            strokeWidth="1" strokeDasharray="6 10" className="wf-ring-outer"
+            style={{ transition: 'stroke 1s ease' }} />
+          <circle cx={cx} cy={cy} r={50}
+            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.2)' : 'oklch(0.12 0.02 55 / 0.04)'}
+            strokeWidth="1" strokeDasharray="3 6" className="wf-ring-inner"
+            style={{ transition: 'stroke 0.8s ease' }} />
+
+          {(step === 2 || step === 6) && (
+            <>
+              <circle key={`p1-${step}`} cx={cx} cy={cy} r={34}
+                stroke="oklch(0.48 0.22 252 / 0.3)" strokeWidth="1.5" className="wf-pulse" />
+              <circle key={`p2-${step}`} cx={cx} cy={cy} r={34}
+                stroke="oklch(0.48 0.22 252 / 0.18)" strokeWidth="1" className="wf-pulse"
+                style={{ animationDelay: '0.3s' }} />
+            </>
+          )}
+
+          <circle cx={cx} cy={cy} r={36}
+            fill={centerOn ? 'oklch(0.48 0.22 252 / 0.06)' : 'oklch(0.12 0.02 55 / 0.012)'}
+            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.22)' : 'oklch(0.12 0.02 55 / 0.05)'}
+            strokeWidth="1" className="wf-core-breathe"
+            style={{ transition: 'fill 0.6s ease, stroke 0.6s ease' }} />
+          <text x={cx} y={cy - 6} textAnchor="middle" dominantBaseline="middle"
+            fontSize="9" fontWeight="700" letterSpacing="0.14em"
+            fill={centerOn ? 'oklch(0.48 0.22 252 / 0.8)' : 'oklch(0.12 0.02 55 / 0.2)'}
+            style={{ transition: 'fill 0.5s ease', fontFamily: 'var(--font-sans)' }}>HELPIN</text>
+          <text x={cx} y={cy + 10} textAnchor="middle" dominantBaseline="middle"
+            fontSize="15" fontWeight="800" letterSpacing="0.2em"
+            fill={centerOn ? 'oklch(0.48 0.22 252)' : 'oklch(0.12 0.02 55 / 0.15)'}
+            style={{ transition: 'fill 0.5s ease', fontFamily: 'var(--font-sans)' }}>AI</text>
+
+          {step === 2 && (
+            <text x={cx} y={cy + 56} textAnchor="middle" fontSize="10" fontWeight="500"
+              fill="oklch(0.48 0.22 252 / 0.55)"
+              style={{ fontFamily: 'var(--font-sans)' }}>Triaging...</text>
+          )}
+        </g>
+
+        {/* ── Small anchor dots at node positions ── */}
+        {WF_DATA.map((n) => {
+          const on = step >= n.activateAt && step > 0;
+          return (
+            <circle key={`anchor-${n.id}`}
+              cx={n.svg.x} cy={n.svg.y} r={3}
+              fill={on ? 'oklch(0.48 0.22 252 / 0.5)' : 'oklch(0.12 0.02 55 / 0.06)'}
+              style={{ transition: 'fill 0.4s ease' }} />
+          );
+        })}
+      </svg>
+
+      {/* ══ HTML Layer: Product Cards with Micro UI ══ */}
+      <div className="absolute inset-0 pointer-events-none">
+        {WF_DATA.map((n) => {
+          const on = step >= n.activateAt && step > 0;
+          return (
+            <div key={`card-${n.id}`} className={`wf-card ${on ? 'on' : ''}`}
+              style={{ left: n.css.left, top: n.css.top }}>
+              {/* Module label */}
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: on ? n.dot : 'oklch(0.12 0.02 55 / 0.12)', transition: 'background 0.4s ease' }} />
+                <span className="text-[9px] font-semibold tracking-wide"
+                  style={{ color: on ? 'oklch(0.12 0.02 55 / 0.6)' : 'oklch(0.12 0.02 55 / 0.2)', transition: 'color 0.4s ease' }}>
+                  {n.module}
+                </span>
+              </div>
+              {/* Micro UI row */}
+              <WfMicroUI id={n.id} on={on} />
+              {/* Action label */}
+              <div className="mt-1.5 flex items-center gap-1"
+                style={{ opacity: on ? 1 : 0, transition: 'opacity 0.4s ease 0.12s' }}>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-[9px] font-medium" style={{ color: 'oklch(0.12 0.02 55 / 0.5)' }}>{n.action}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import Script from 'next/script';
+import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import './globals.css';
@@ -7,14 +8,21 @@ import './globals.css';
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
   variable: '--font-sans',
-  weight: ['300', '400', '500', '600', '700', '800'],
+  display: 'swap',
+});
+
+const instrumentSerif = Instrument_Serif({
+  weight: '400',
+  style: ['normal', 'italic'],
+  subsets: ['latin'],
+  variable: '--font-display',
   display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'Helpin — The AI Work Operating System',
+  title: 'Helpin — PM, CRM, Support & Docs with AI Agents',
   description:
-    'Stop managing tools. Start running a company. Helpin agents handle your projects, docs, support, and customers — connected, automated, always on.',
+    'One platform for project management, CRM, support, and docs — with AI agents that plan features, handle tickets, and drive deals autonomously.',
 };
 
 export default function RootLayout({
@@ -23,11 +31,41 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={jakarta.variable}>
+    <html lang="en" className={`${jakarta.variable} ${instrumentSerif.variable}`}>
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
         <Navbar />
         <main>{children}</main>
         <Footer />
+
+        {/* Usermaven */}
+        <Script
+          id="um-tracker"
+          strategy="afterInteractive"
+          data-tracking-host="https://events.usermaven.com"
+          data-key="UMpgKYZLxR"
+          data-autocapture="true"
+          data-form-tracking="all"
+          src="https://t.usermaven.com/lib.js"
+        />
+        <Script id="um-init" strategy="afterInteractive">{`
+          window.usermaven = window.usermaven || function(){ (window.usermavenQ = window.usermavenQ || []).push(arguments); };
+        `}</Script>
+
+        {/* Customer.io */}
+        <Script id="cio-init" strategy="afterInteractive">{`
+          var _cio = _cio || [];
+          (function(){
+            var a,b,c;a=function(f){return function(){_cio.push([f].concat(Array.prototype.slice.call(arguments,0)))}};b=["load","identify","sidentify","track","page"];for(c=0;c<b.length;c++){_cio[b[c]]=a(b[c])};
+          })();
+        `}</Script>
+        <Script
+          id="cio-tracker"
+          strategy="afterInteractive"
+          data-site-id="a3fced22111b6be05726"
+          data-use-array-params="true"
+          data-auto-track-page="true"
+          src="https://assets.customer.io/assets/track.js"
+        />
       </body>
     </html>
   );

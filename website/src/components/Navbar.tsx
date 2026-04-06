@@ -54,10 +54,11 @@ export function Navbar() {
             Log in
           </Link>
           <Link
-            href="https://helpin.ai/login"
+            href="#early-access"
             className="rounded-xl bg-foreground px-5 py-2.5 text-[15px] font-semibold text-background transition-all hover:shadow-lg hover:shadow-foreground/10 hover:-translate-y-0.5"
+            onClick={(e) => { e.preventDefault(); document.getElementById('hero')?.scrollIntoView({ behavior: 'smooth' }); }}
           >
-            Get Started
+            Get early access
           </Link>
         </div>
 
@@ -90,10 +91,11 @@ export function Navbar() {
               Log in
             </Link>
             <Link
-              href="https://helpin.ai/login"
+              href="#early-access"
               className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background text-center"
+              onClick={(e) => { e.preventDefault(); setMobileOpen(false); document.getElementById('hero')?.scrollIntoView({ behavior: 'smooth' }); }}
             >
-              Get Started
+              Get early access
             </Link>
           </div>
         </div>
