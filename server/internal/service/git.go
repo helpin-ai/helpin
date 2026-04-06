@@ -81,6 +81,31 @@ func (s *GitService) ListIntegrations(ctx context.Context, workspaceID string) (
 	return s.integrationRepo.List(ctx, workspaceID)
 }
 
+// DeleteIntegration removes a git integration and its synced repositories.
+func (s *GitService) DeleteIntegration(ctx context.Context, workspaceID, integrationID, actorID string) error {
+	if workspaceID == "" || integrationID == "" {
+		return fmt.Errorf("workspace_id and integration_id are required")
+	}
+	existing, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
+	if err != nil {
+		return fmt.Errorf("get integration: %w", err)
+	}
+	if existing == nil {
+		return fmt.Errorf("integration not found")
+	}
+	if err := s.repoRepo.DeleteByIntegration(ctx, workspaceID, integrationID); err != nil {
+		return fmt.Errorf("delete integration repositories: %w", err)
+	}
+	if err := s.integrationRepo.Delete(ctx, workspaceID, integrationID); err != nil {
+		return err
+	}
+	if s.activitySvc != nil && actorID != "" {
+		_ = s.activitySvc.Log(ctx, workspaceID, "git_integration", existing.ID, &actorID, "deleted", nil, nil, &existing.DisplayName, nil)
+	}
+	s.publishSimpleEvent("deleted", "git_integration", existing.ID, workspaceID, actorID)
+	return nil
+}
+
 // CreateIntegration creates a new git integration.
 func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitIntegrationRequest, actorID string) (*model.GitIntegration, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.DisplayName) == "" {
@@ -779,7 +804,7 @@ func (s *GitService) workspaceSettingsURL(workspaceSlug string) string {
 	if base == "" {
 		base = "http://localhost:5173"
 	}
-	return fmt.Sprintf("%s/w/%s/settings/system", base, workspaceSlug)
+	return fmt.Sprintf("%s/w/%s/settings/delivery", base, workspaceSlug)
 }
 
 func withGitHubInstallStatus(baseURL, status, message string, params map[string]string) string {
