@@ -53,13 +53,11 @@ export default defineConfig(({ command }) => {
         input: {
           loader: resolve(__dirname, 'src/loader.ts'),
           index: resolve(__dirname, 'src/index.ts'),
-          esm: resolve(__dirname, 'src/esm-entry.ts'),
         },
         external: [],
         output: {
           entryFileNames: (chunkInfo) => {
             if (chunkInfo.name === 'loader') return 'lib.js';
-            if (chunkInfo.name === 'esm') return 'helpin.es.js';
             return 'helpin.[hash].js';
           },
           chunkFileNames: 'chunks/[name].[hash].js',
