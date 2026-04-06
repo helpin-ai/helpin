@@ -28,15 +28,21 @@
     "@rollup/plugin-commonjs": "^21.0.2",
     "@rollup/plugin-node-resolve": "^13.1.4",
     "@rollup/plugin-typescript": "^8.3.1",
-    "@types/react": "17.0.43",
-    "react": "17.0.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "18.3.28",
+    "jsdom": "^29.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-router": "6.2.2",
     "rollup": "^2.70.1",
-    "rollup-plugin-peer-deps-external": "^2.2.4"
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "vitest": "^4.1.2"
   },
   "scripts": {
     "build": "rollup -c && tsc",
-    "test": "echo \"Error: run tests from root\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
