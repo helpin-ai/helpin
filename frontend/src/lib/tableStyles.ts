@@ -11,19 +11,19 @@ export const TABLE_HEADER_CELL =
   'ui-divider-bottom-fade ui-divider-right-fade relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:bg-none';
 
 /** Sortable header cell – adds cursor pointer */
-export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted/40';
+export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
 
 /** Data row – compact h-9 (36px), `group` class for hover-reveal actions */
 export const TABLE_ROW =
-  'group flex h-9 items-center bg-card transition-colors hover:bg-[color-mix(in_oklab,var(--card)_50%,var(--muted)_50%)]';
+  'group group/row flex h-9 items-center bg-card transition-colors hover:bg-muted';
 
 /** Data cell – right border for grid lines */
 export const TABLE_CELL =
-  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center px-2.5 self-stretch last:bg-none';
+  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center self-stretch bg-inherit px-2.5 last:bg-none';
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =
-  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center gap-2 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted/40';
+  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center gap-2 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =
@@ -43,11 +43,11 @@ export const ACTIONS_COL_SIZE = 44;
 
 /** Pinned cell (left) – sticky with background so content doesn't bleed through */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[2] bg-inherit';
+  'sticky z-[3] bg-card group-hover:bg-muted group-hover/row:bg-muted';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[2] bg-inherit';
+  'sticky right-0 z-[3] bg-card group-hover:bg-muted group-hover/row:bg-muted';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
 export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card';

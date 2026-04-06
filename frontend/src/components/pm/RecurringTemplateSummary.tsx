@@ -115,7 +115,7 @@ export function RecurringTemplateSummary({
   onOpenTask,
 }: RecurringTemplateSummaryProps) {
   return (
-    <section className={cn('rounded-lg border border-border/60 bg-background', compact ? 'p-3' : 'p-4')}>
+    <section className={cn('rounded-lg border border-border/60 bg-card', compact ? 'p-3' : 'p-4')}>
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-0 flex-1">
           {title ? <div className="truncate text-sm font-semibold text-foreground">{title}</div> : null}

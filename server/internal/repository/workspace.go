@@ -600,7 +600,7 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	var results []model.MemberWithUser
 	err := r.db.WithContext(ctx).
 		Table("workspace_members wm").
-		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.avatar_url").
+		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
 		Joins("JOIN users u ON u.id = wm.user_id").
 		Where("wm.workspace_id = ? AND wm.status = ?", workspaceID, model.WorkspaceMemberStatusActive).
 		Order("COALESCE(NULLIF(wm.display_name, ''), u.full_name) ASC").
@@ -623,6 +623,10 @@ func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspa
 			wm.email,
 			COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name,
 			u.avatar_url,
+			u.avatar_style,
+			u.avatar_seed,
+			u.avatar_background_mode,
+			u.avatar_background_color,
 			wm.status,
 			wm.invited_by,
 			wm.invited_at,
@@ -665,6 +669,10 @@ func (r *WorkspaceRepository) GetAssignableMemberByID(ctx context.Context, works
 			wm.email,
 			wm.display_name,
 			u.avatar_url,
+			u.avatar_style,
+			u.avatar_seed,
+			u.avatar_background_mode,
+			u.avatar_background_color,
 			wm.status,
 			wm.invited_by,
 			wm.invited_at,

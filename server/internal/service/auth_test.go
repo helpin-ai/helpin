@@ -318,6 +318,42 @@ func TestUpdateProfile(t *testing.T) {
 		}
 	})
 
+	t.Run("update generated avatar preferences", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "generated@example.com",
+			Password: "password123",
+			FullName: "Generated Avatar",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		updated, err := svc.UpdateProfile(ctx, signupResp.User.ID, model.UpdateProfileRequest{
+			AvatarStyle:           ptr("personas"),
+			AvatarSeed:            ptr("generated-avatar-seed"),
+			AvatarBackgroundMode:  ptr("color"),
+			AvatarBackgroundColor: ptr("#f59e0b"),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updated.AvatarStyle == nil || *updated.AvatarStyle != "personas" {
+			t.Errorf("expected avatar style personas, got %v", updated.AvatarStyle)
+		}
+		if updated.AvatarSeed == nil || *updated.AvatarSeed != "generated-avatar-seed" {
+			t.Errorf("expected avatar seed generated-avatar-seed, got %v", updated.AvatarSeed)
+		}
+		if updated.AvatarBackgroundMode == nil || *updated.AvatarBackgroundMode != "color" {
+			t.Errorf("expected avatar background mode color, got %v", updated.AvatarBackgroundMode)
+		}
+		if updated.AvatarBackgroundColor == nil || *updated.AvatarBackgroundColor != "#f59e0b" {
+			t.Errorf("expected avatar background color #f59e0b, got %v", updated.AvatarBackgroundColor)
+		}
+	})
+
 	t.Run("update default workspace id", func(t *testing.T) {
 		svc, _ := newAuthService(t)
 		ctx := context.Background()

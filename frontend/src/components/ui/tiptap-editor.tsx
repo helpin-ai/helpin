@@ -411,9 +411,9 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
   };
 
   return (
-    <div className={`overflow-hidden rounded-lg border border-border/60 bg-background ${className ?? ''}`}>
+    <div className={`overflow-hidden rounded-2xl border border-transparent bg-input/50 ${className ?? ''}`}>
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-border/60 px-2.5 py-2">
+      <div className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2.5 py-2">
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}

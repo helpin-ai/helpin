@@ -16,7 +16,7 @@ export function useCurrentUser(enabled = true) {
 export function useUpdateProfile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: { full_name?: string }) => unwrap(await authService.updateProfile(data)),
+    mutationFn: async (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => unwrap(await authService.updateProfile(data)),
     onSuccess: (user) => {
       qc.setQueryData<User>(queryKeys.user.me, user)
     },

@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 
@@ -238,7 +239,14 @@ export const MessageBubble = memo(function MessageBubble({
   const resolvedAvatarUrl = message.sender_avatar_url
     ?? fallbackAvatarUrl
     ?? ((message.sender_user_id && message.sender_user_id === currentUser?.id)
-      ? (currentUser.avatar_url ?? undefined)
+      ? resolveTeamMemberAvatarSrc({
+          avatarUrl: currentUser.avatar_url,
+          avatarStyle: currentUser.avatar_style,
+          avatarSeed: currentUser.avatar_seed,
+          avatarBackgroundMode: currentUser.avatar_background_mode,
+          avatarBackgroundColor: currentUser.avatar_background_color,
+          fallbackSeed: currentUser.full_name ?? currentUser.email,
+        })
       : undefined);
   const avatarSeed = message.sender_user_id || message.sender_agent_id || resolvedSenderName;
   const fallbackAvatar = (

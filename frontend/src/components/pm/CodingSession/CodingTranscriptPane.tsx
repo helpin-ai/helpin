@@ -246,7 +246,7 @@ function InterruptionOverlay({
               : 'Start sign-in to continue this session.'}
           </p>
           {session.auth_state?.user_code ? (
-            <div className="mt-3 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm tracking-widest">
+            <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm tracking-widest">
               {session.auth_state.user_code}
             </div>
           ) : null}
@@ -552,13 +552,13 @@ function ThinkingStrip({
         {hasVisibleContent ? (
           <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
         ) : (
-          <div className="rounded-lg border border-border bg-background px-3 py-2 text-muted-foreground">
+          <div className="rounded-lg border border-border bg-card px-3 py-2 text-muted-foreground">
             Reasoning is being tracked separately from the assistant reply.
           </div>
         )}
 
         {reasoning.encrypted_value ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
             <LockKeyIcon className="h-3.5 w-3.5" />
             Encrypted reasoning payload attached.
           </div>

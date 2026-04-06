@@ -648,6 +648,10 @@ function InlineOwnerCell({
             <UserAvatar
               name={selectedMember.display_name || selectedMember.email}
               avatarUrl={selectedMember.avatar_url}
+              avatarStyle={selectedMember.avatar_style}
+              avatarSeed={selectedMember.avatar_seed}
+              avatarBackgroundMode={selectedMember.avatar_background_mode}
+              avatarBackgroundColor={selectedMember.avatar_background_color}
               className="h-5 w-5 shrink-0"
             />
             <span className="truncate">{ownerName}</span>

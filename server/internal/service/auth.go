@@ -172,7 +172,7 @@ func (s *AuthService) GetProfile(ctx context.Context, userID string) (*model.Use
 
 // UpdateProfile updates the authenticated user's profile.
 func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req model.UpdateProfileRequest) (*model.UserProfile, error) {
-	user, err := s.userRepo.Update(ctx, userID, req.FullName, req.AvatarURL, req.DefaultWorkspaceID)
+	user, err := s.userRepo.Update(ctx, userID, req.FullName, req.AvatarURL, req.AvatarStyle, req.AvatarSeed, req.AvatarBackgroundMode, req.AvatarBackgroundColor, req.DefaultWorkspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
 	}
@@ -215,7 +215,7 @@ func (s *AuthService) UploadAvatar(ctx context.Context, userID string, body io.R
 	}
 
 	avatarURL := s.s3Client.PublicURL(key)
-	user, err = s.userRepo.Update(ctx, userID, nil, &avatarURL, nil)
+	user, err = s.userRepo.Update(ctx, userID, nil, &avatarURL, nil, nil, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("upload avatar: %w", err)
 	}
@@ -238,7 +238,7 @@ func (s *AuthService) DeleteAvatar(ctx context.Context, userID string) (*model.U
 	}
 
 	emptyURL := ""
-	user, err := s.userRepo.Update(ctx, userID, nil, &emptyURL, nil)
+	user, err := s.userRepo.Update(ctx, userID, nil, &emptyURL, nil, nil, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("delete avatar: %w", err)
 	}
@@ -322,11 +322,15 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, req mod
 
 func toUserProfile(u *model.User) model.UserProfile {
 	return model.UserProfile{
-		ID:                 u.ID,
-		Email:              u.Email,
-		FullName:           u.FullName,
-		AvatarURL:          u.AvatarURL,
-		DefaultWorkspaceID: u.DefaultWorkspaceID,
-		CreatedAt:          u.CreatedAt,
+		ID:                    u.ID,
+		Email:                 u.Email,
+		FullName:              u.FullName,
+		AvatarURL:             u.AvatarURL,
+		AvatarStyle:           u.AvatarStyle,
+		AvatarSeed:            u.AvatarSeed,
+		AvatarBackgroundMode:  u.AvatarBackgroundMode,
+		AvatarBackgroundColor: u.AvatarBackgroundColor,
+		DefaultWorkspaceID:    u.DefaultWorkspaceID,
+		CreatedAt:             u.CreatedAt,
 	}
 }

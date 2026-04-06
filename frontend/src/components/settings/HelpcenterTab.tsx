@@ -504,7 +504,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Branding ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('branding') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('branding') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('branding')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <PaintBoardIcon className="h-4 w-4" />
@@ -680,7 +680,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Domain & SEO ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('domain-seo') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('domain-seo')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <GlobeIcon className="h-4 w-4" />
@@ -759,7 +759,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Homepage ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('homepage') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('homepage') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('homepage')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <LayoutGridIcon className="h-4 w-4" />
@@ -869,7 +869,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Navigation ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('navigation') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('navigation') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('navigation')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <Link01Icon className="h-4 w-4" />
@@ -964,7 +964,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Locales ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-background transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <LanguageCircleIcon className="h-4 w-4" />

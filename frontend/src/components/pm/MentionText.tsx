@@ -62,6 +62,10 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
           <UserAvatar
             name={mention.member.display_name}
             avatarUrl={mention.member.avatar_url}
+            avatarStyle={mention.member.avatar_style}
+            avatarSeed={mention.member.avatar_seed}
+            avatarBackgroundMode={mention.member.avatar_background_mode}
+            avatarBackgroundColor={mention.member.avatar_background_color}
             className="h-8 w-8 text-xs"
           />
           <span className="flex flex-col">

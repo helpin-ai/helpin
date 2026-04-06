@@ -94,7 +94,7 @@ function AgentRunRow({
   const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-background/80">
+    <div className="rounded-lg border border-border/60 bg-card/80">
       <button
         type="button"
         className="w-full px-4 py-3 text-left transition-colors hover:bg-accent/40"

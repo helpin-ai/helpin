@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateCompany } from '@/hooks/queries';
+import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
 
 interface CreateCompanyDialogProps {
   open: boolean;
@@ -28,6 +30,7 @@ const industryOptions = [
 ];
 
 export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogProps) {
+  const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createCompany = useCreateCompany(wsId);
@@ -53,7 +56,7 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
     if (!name.trim()) return;
 
     try {
-      await createCompany.mutateAsync({
+      const company = await createCompany.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
         domain: domain.trim() || undefined,
@@ -62,7 +65,18 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
         annual_revenue: annualRevenue ? parseFloat(annualRevenue) : undefined,
         description: description.trim() || undefined,
       });
-      toast.success('Company created');
+      showEntityCreatedToast({
+        entityLabel: 'Company',
+        title: company.name,
+        tone: 'crm',
+        icon: entityCreatedToastIcons.company,
+        onOpen: currentWorkspace?.slug
+          ? () => navigate({
+              to: '/w/$slug/crm/companies/$companyId',
+              params: { slug: currentWorkspace.slug, companyId: company.id },
+            })
+          : undefined,
+      });
       onOpenChange(false);
       resetForm();
     } catch {

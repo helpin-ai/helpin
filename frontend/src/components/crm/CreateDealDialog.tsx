@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
+import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -16,6 +18,7 @@ interface CreateDealDialogProps {
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
 export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) {
+  const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
@@ -56,7 +59,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
     if (!name.trim() || !contactId || !pipelineId || !stageId) return;
 
     try {
-      await createDeal.mutateAsync({
+      const deal = await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
         contact_id: contactId,
@@ -67,7 +70,19 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
         probability: probability ? parseInt(probability) : undefined,
       });
-      toast.success('Deal created');
+      showEntityCreatedToast({
+        entityLabel: 'Deal',
+        title: deal.name,
+        subtitle: deal.amount ? `${deal.currency} ${deal.amount.toLocaleString()}` : undefined,
+        tone: 'crm',
+        icon: entityCreatedToastIcons.deal,
+        onOpen: currentWorkspace?.slug
+          ? () => navigate({
+              to: '/w/$slug/crm/deals/$dealId',
+              params: { slug: currentWorkspace.slug, dealId: deal.id },
+            })
+          : undefined,
+      });
       onOpenChange(false);
       resetForm();
     } catch {

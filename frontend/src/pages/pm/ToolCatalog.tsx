@@ -122,7 +122,7 @@ function ToolCard({ tool }: { tool: ToolCatalogEntry }) {
   const hasParams = paramNames.length > 0;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-background/80 transition-colors hover:border-border">
+    <div className="rounded-lg border border-border/60 bg-card/80 transition-colors hover:border-border">
       <div className="px-4 py-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1">

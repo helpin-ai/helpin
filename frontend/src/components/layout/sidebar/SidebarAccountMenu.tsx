@@ -1,5 +1,6 @@
 import { Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,10 @@ type SidebarAccountMenuProps = {
     full_name?: string | null;
     email?: string | null;
     avatar_url?: string | null;
+    avatar_style?: string | null;
+    avatar_seed?: string | null;
+    avatar_background_mode?: string | null;
+    avatar_background_color?: string | null;
   } | null;
   initials: string;
   presence: SupportPresence | null;
@@ -52,6 +57,15 @@ export function SidebarAccountMenu({
   onWorkspaces,
   onSignOut,
 }: SidebarAccountMenuProps) {
+  const avatarSrc = resolveTeamMemberAvatarSrc({
+    avatarUrl: user?.avatar_url,
+    avatarStyle: user?.avatar_style,
+    avatarSeed: user?.avatar_seed,
+    avatarBackgroundMode: user?.avatar_background_mode,
+    avatarBackgroundColor: user?.avatar_background_color,
+    fallbackSeed: user?.full_name ?? user?.email,
+  });
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -61,7 +75,7 @@ export function SidebarAccountMenu({
           aria-label="Account menu"
         >
           <Avatar className="size-8">
-            <AvatarImage src={user?.avatar_url ?? undefined} alt={user?.full_name || user?.email || 'Account'} />
+            <AvatarImage src={avatarSrc} alt={user?.full_name || user?.email || 'Account'} />
             <AvatarFallback className="text-[11px]">
               {initials}
             </AvatarFallback>

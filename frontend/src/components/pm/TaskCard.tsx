@@ -294,7 +294,7 @@ function TaskCardComponent({
         }
       }}
       className={cn(
-        'group/card relative shrink-0 cursor-pointer rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
+        'group/card relative shrink-0 cursor-pointer rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
@@ -579,11 +579,15 @@ function TaskCardComponent({
                   <UserAvatar
                     name={selectedMember.display_name || selectedMember.email}
                     avatarUrl={selectedMember.avatar_url}
-                    className="h-5 w-5"
+                    avatarStyle={selectedMember.avatar_style}
+                    avatarSeed={selectedMember.avatar_seed}
+                    avatarBackgroundMode={selectedMember.avatar_background_mode}
+                    avatarBackgroundColor={selectedMember.avatar_background_color}
+                    className="h-7 w-7"
                   />
                 ) : (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                    <UserAdd01Icon className="h-2.5 w-2.5" />
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                    <UserAdd01Icon className="h-3.5 w-3.5" />
                   </span>
                 );
               }}
@@ -593,10 +597,10 @@ function TaskCardComponent({
               <TooltipTrigger asChild>
                 <span className="shrink-0">
                   {currentOwnerName ? (
-                    <UserAvatar name={currentOwnerName} className="h-5 w-5" />
+                    <UserAvatar name={currentOwnerName} className="h-7 w-7" />
                   ) : (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
-                      <UserAdd01Icon className="h-2.5 w-2.5" />
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground">
+                      <UserAdd01Icon className="h-3.5 w-3.5" />
                     </span>
                   )}
                 </span>
