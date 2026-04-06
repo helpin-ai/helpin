@@ -210,6 +210,10 @@ func (r *SupportMailboxRepository) ListMembers(ctx context.Context, mailboxID st
 			wm.email,
 			COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name,
 			u.avatar_url,
+			u.avatar_style,
+			u.avatar_seed,
+			u.avatar_background_mode,
+			u.avatar_background_color,
 			wm.role
 		`).
 		Scan(&members).Error; err != nil {

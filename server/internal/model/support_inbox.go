@@ -368,12 +368,16 @@ type SupportMailboxMembership struct {
 func (SupportMailboxMembership) TableName() string { return "support_mailbox_memberships" }
 
 type SupportMailboxMember struct {
-	WorkspaceMemberID string  `json:"workspace_member_id"`
-	UserID            *string `json:"user_id,omitempty"`
-	Email             string  `json:"email"`
-	DisplayName       string  `json:"display_name"`
-	AvatarURL         *string `json:"avatar_url,omitempty"`
-	Role              string  `json:"role"`
+	WorkspaceMemberID     string  `json:"workspace_member_id"`
+	UserID                *string `json:"user_id,omitempty"`
+	Email                 string  `json:"email"`
+	DisplayName           string  `json:"display_name"`
+	AvatarURL             *string `json:"avatar_url,omitempty"`
+	AvatarStyle           *string `json:"avatar_style,omitempty"`
+	AvatarSeed            *string `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
+	Role                  string  `json:"role"`
 }
 
 type SupportEmailRoute struct {

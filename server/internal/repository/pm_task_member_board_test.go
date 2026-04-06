@@ -95,6 +95,10 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			avatar_style TEXT,
+			avatar_seed TEXT,
+			avatar_background_mode TEXT,
+			avatar_background_color TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

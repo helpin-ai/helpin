@@ -7,12 +7,27 @@ import type { WorkflowWithStates } from '@/lib/pmTypes'
 
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
+const navigate = vi.fn()
+const showEntityCreatedToast = vi.fn()
 
 vi.mock('sonner', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
   },
+}))
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigate,
+}))
+
+vi.mock('@/stores/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ currentWorkspace: { slug: 'acme' } }),
+}))
+
+vi.mock('@/components/ui/entity-created-toast', () => ({
+  showEntityCreatedToast: (...args: unknown[]) => showEntityCreatedToast(...args),
+  entityCreatedToastIcons: { task: () => null },
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -232,6 +247,8 @@ describe('CreateTaskModal', () => {
   beforeEach(() => {
     toastSuccess.mockReset()
     toastError.mockReset()
+    navigate.mockReset()
+    showEntityCreatedToast.mockReset()
   })
 
   afterEach(() => {
@@ -293,7 +310,13 @@ describe('CreateTaskModal', () => {
         workflow_state_id: 'state-1',
       }),
     )
-    expect(toastSuccess).toHaveBeenCalledWith('Task created')
+    expect(showEntityCreatedToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityLabel: 'Task',
+        title: 'New task',
+        onOpen: expect.any(Function),
+      }),
+    )
 
     act(() => {
       root.unmount()

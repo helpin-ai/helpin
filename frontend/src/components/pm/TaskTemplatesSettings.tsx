@@ -29,7 +29,7 @@ function TemplateCard({
   const desc = template.description?.replace(/<[^>]*>/g, '').trim();
 
   return (
-    <div className="group relative flex flex-col gap-2 rounded-lg border border-border/60 bg-background p-3.5 transition-colors hover:border-border hover:bg-muted/30">
+    <div className="group relative flex flex-col gap-2 rounded-lg border border-border/60 bg-card p-3.5 transition-colors hover:border-border hover:bg-muted/30">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

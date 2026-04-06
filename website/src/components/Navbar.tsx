@@ -4,12 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
 
-const NAV_LINKS = [
-  { label: 'Product', href: '/features' },
-  { label: 'Pricing', href: '/pricing' },
-  { label: 'About', href: '/about' },
-  { label: 'Contact', href: '/contact' },
-];
+const NAV_LINKS: { label: string; href: string }[] = [];
 
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -56,7 +51,18 @@ export function Navbar() {
           <Link
             href="#early-access"
             className="rounded-xl bg-foreground px-5 py-2.5 text-[15px] font-semibold text-background transition-all hover:shadow-lg hover:shadow-foreground/10 hover:-translate-y-0.5"
-            onClick={(e) => { e.preventDefault(); document.getElementById('hero')?.scrollIntoView({ behavior: 'smooth' }); }}
+            onClick={(e) => {
+              e.preventDefault();
+              const forms = document.querySelectorAll('.email-glow-wrapper');
+              let target: Element | null = null;
+              for (const form of forms) {
+                const rect = form.getBoundingClientRect();
+                if (rect.top > window.innerHeight * 0.2) { target = form; break; }
+              }
+              if (!target) target = forms[forms.length - 1];
+              target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              setTimeout(() => (target?.querySelector('input') as HTMLInputElement)?.focus(), 600);
+            }}
           >
             Get early access
           </Link>
@@ -93,7 +99,21 @@ export function Navbar() {
             <Link
               href="#early-access"
               className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background text-center"
-              onClick={(e) => { e.preventDefault(); setMobileOpen(false); document.getElementById('hero')?.scrollIntoView({ behavior: 'smooth' }); }}
+              onClick={(e) => {
+                e.preventDefault();
+                setMobileOpen(false);
+                setTimeout(() => {
+                  const forms = document.querySelectorAll('.email-glow-wrapper');
+                  let target: Element | null = null;
+                  for (const form of forms) {
+                    const rect = form.getBoundingClientRect();
+                    if (rect.top > window.innerHeight * 0.2) { target = form; break; }
+                  }
+                  if (!target) target = forms[forms.length - 1];
+                  target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  setTimeout(() => (target?.querySelector('input') as HTMLInputElement)?.focus(), 600);
+                }, 300);
+              }}
             >
               Get early access
             </Link>

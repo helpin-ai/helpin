@@ -57,7 +57,7 @@ function LabelCard({
 }) {
   const { label, stats } = entry;
   return (
-    <div className="group relative flex flex-col gap-2.5 rounded-lg border border-border/60 bg-background p-3.5 transition-colors hover:border-border hover:bg-muted/30">
+    <div className="group relative flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card p-3.5 transition-colors hover:border-border hover:bg-muted/30">
       <div className="flex items-start gap-2.5">
         <span
           className="mt-0.5 h-3.5 w-3.5 rounded-full shrink-0 ring-2 ring-background"

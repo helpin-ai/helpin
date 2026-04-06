@@ -7,7 +7,7 @@ export const authService = {
   signin: (email: string, password: string, rememberMe = false) =>
     api.post<AuthResponse>('/auth/signin', { email, password, remember_me: rememberMe }),
   me: () => api.get<User>('/auth/me'),
-  updateProfile: (data: { full_name?: string; avatar_url?: string; default_workspace_id?: string }) =>
+  updateProfile: (data: { full_name?: string; avatar_url?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string; default_workspace_id?: string }) =>
     api.put<User>('/auth/me', data),
   refresh: (refreshToken: string) =>
     api.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken }),

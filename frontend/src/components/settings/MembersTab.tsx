@@ -308,6 +308,10 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                           <UserAvatar
                             name={m.full_name || m.email}
                             avatarUrl={m.avatar_url}
+                            avatarStyle={m.avatar_style}
+                            avatarSeed={m.avatar_seed}
+                            avatarBackgroundMode={m.avatar_background_mode}
+                            avatarBackgroundColor={m.avatar_background_color}
                             className="h-8 w-8"
                             fallbackClassName="text-[10px]"
                           />
@@ -488,6 +492,10 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                                   <UserAvatar
                                     name={m.full_name || m.email}
                                     avatarUrl={m.avatar_url}
+                                    avatarStyle={m.avatar_style}
+                                    avatarSeed={m.avatar_seed}
+                                    avatarBackgroundMode={m.avatar_background_mode}
+                                    avatarBackgroundColor={m.avatar_background_color}
                                     className="h-6 w-6"
                                     fallbackClassName="text-[10px]"
                                   />

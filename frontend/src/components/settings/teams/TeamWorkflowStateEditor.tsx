@@ -124,7 +124,7 @@ export function TeamWorkflowStateEditor({
           </p>
           <div className="space-y-1">
             {group.states.map((state) => (
-              <div key={state.id} className="group flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5">
+              <div key={state.id} className="group flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
@@ -185,7 +185,7 @@ export function TeamWorkflowStateEditor({
             ))}
 
             {addingType === group.type && (
-              <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-background px-2.5 py-1.5">
+              <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-card px-2.5 py-1.5">
                 <Popover>
                   <PopoverTrigger asChild>
                     <button

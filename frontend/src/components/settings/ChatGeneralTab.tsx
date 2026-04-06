@@ -457,7 +457,7 @@ function Dashboard() {
           </div>
         )}
         {/* Widget Installation */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
@@ -563,7 +563,7 @@ function Dashboard() {
         </div>
 
         {/* Identity Capture */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('identity-capture')}
@@ -620,7 +620,7 @@ function Dashboard() {
         </div>
 
         {/* Appearance */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('appearance')}
@@ -865,7 +865,7 @@ function Dashboard() {
         </div>
 
         {/* Help Center */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('help-center')}
@@ -919,7 +919,7 @@ function Dashboard() {
           </div>
         </div>
           {/* AI Auto-Reply */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('ai-auto-reply')}
@@ -1097,7 +1097,7 @@ function Dashboard() {
           </div>
 
           {/* Availability */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('business-hours')}
@@ -1192,7 +1192,7 @@ function Dashboard() {
           </div>
 
           {/* Chat Features — merged CSAT, File Uploads, Email */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('chat-features')}

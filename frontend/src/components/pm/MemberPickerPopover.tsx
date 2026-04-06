@@ -99,6 +99,10 @@ function MemberList({
                 <UserAvatar
                   name={member.display_name || member.email}
                   avatarUrl={member.avatar_url}
+                  avatarStyle={member.avatar_style}
+                  avatarSeed={member.avatar_seed}
+                  avatarBackgroundMode={member.avatar_background_mode}
+                  avatarBackgroundColor={member.avatar_background_color}
                   className="h-5 w-5"
                   fallbackClassName="text-[8px]"
                 />

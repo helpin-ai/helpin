@@ -392,7 +392,7 @@ export function CommentEditor({
   const canSubmit = !loading && pendingUploads === 0 && (hasContent || uploadedFiles.length > 0)
 
   return (
-    <div className="rounded-lg border border-border/60 bg-background transition-colors focus-within:border-border">
+    <div className="rounded-2xl border border-transparent bg-input/50 transition-[color,box-shadow,background-color] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
       <EditorContent editor={editor} />
       {mentionState && mentionState.items.length > 0 ? (
         <div className="border-t border-border/60 bg-muted/40 px-2 py-2">

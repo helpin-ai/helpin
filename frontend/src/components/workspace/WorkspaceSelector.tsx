@@ -100,6 +100,10 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                             <UserAvatar
                               name={member.full_name}
                               avatarUrl={member.avatar_url}
+                              avatarStyle={member.avatar_style}
+                              avatarSeed={member.avatar_seed}
+                              avatarBackgroundMode={member.avatar_background_mode}
+                              avatarBackgroundColor={member.avatar_background_color}
                               className="h-7 w-7 ring-2 ring-background"
                             />
                           </div>

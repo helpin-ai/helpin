@@ -491,7 +491,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       {/* Mention suggestions popover — floats above the composer */}
       {mentionState && mentionState.items.length > 0 && (
         <div className="absolute bottom-full left-0 right-0 z-50 mb-1 px-3">
-          <div className="max-h-[240px] overflow-y-auto rounded-lg border border-border/60 bg-background px-2 py-2 shadow-md">
+          <div className="max-h-[240px] overflow-y-auto rounded-lg border border-border/60 bg-card px-2 py-2 shadow-md">
             <MentionSuggestionsList
               items={mentionState.items}
               selectedIndex={mentionState.selectedIndex}

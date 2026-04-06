@@ -128,7 +128,17 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
         to_object_id: taskId,
       });
     }
-    return taskId ? { id: taskId } : undefined;
+    return data?.task
+      ? {
+          id: data.task.id,
+          task: {
+            id: data.task.id,
+            name: data.task.name,
+            display_id: data.task.display_id,
+            task_key: data.task.task_key,
+          },
+        }
+      : undefined;
   };
 
   if (associationsQuery.isLoading) {

@@ -65,7 +65,7 @@ function EarlyAccessForm({ dark = false, id = 'early-access', bg }: { dark?: boo
         <button
           type="submit"
           disabled={status === 'submitting'}
-          className="btn-primary whitespace-nowrap"
+          className="btn-primary whitespace-nowrap justify-center w-full sm:w-auto"
           style={dark ? { background: 'white', color: 'var(--color-foreground)' } : {}}
         >
           {status === 'submitting' ? 'Submitting...' : 'Get early access'}
@@ -300,7 +300,7 @@ function AgentRoster() {
   return (
     <div>
       {/* Team selector pills */}
-      <div className="flex flex-wrap justify-center gap-2 mb-12">
+      <div className="sticky top-16 z-30 bg-background/90 backdrop-blur-md py-3 -mx-6 px-6 md:static md:bg-transparent md:backdrop-blur-none md:py-0 md:mx-0 md:px-0 flex flex-wrap justify-center gap-2 mb-12">
         {TEAM_AGENTS.map((t, i) => (
           <button
             key={t.team}
@@ -318,7 +318,7 @@ function AgentRoster() {
       </div>
 
       {/* Agent grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-0 max-w-5xl mx-auto" key={activeTeam}>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-4 md:gap-x-10 gap-y-0 max-w-5xl mx-auto" key={activeTeam}>
         {team.agents.map((agent) => (
           <div
             key={agent.name}
@@ -336,7 +336,7 @@ function AgentRoster() {
       </div>
 
       {/* Custom agent callout */}
-      <div className="mt-10 text-center">
+      <div className="mt-10 text-center px-4">
         <p className="text-[14px] text-muted-foreground">
           Need a custom agent?
         </p>
@@ -657,7 +657,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               left: CX - 20, top: CY - 20,
               width: 40, height: 40,
               borderRadius: '50%',
-              border: '1.5px solid oklch(0.48 0.22 252 / 0.10)',
+              border: '1.5px solid oklch(0.48 0.15 155 / 0.10)',
               transformOrigin: 'center',
               animation: aliveT >= 1 ? `orbital-pulse-ring 4s ease-out ${i * 2}s infinite` : 'none',
               opacity: aliveT >= 1 ? 1 : 0,
@@ -679,7 +679,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               <div style={{
                 width: 6, height: 6, borderRadius: '50%',
                 background: 'var(--color-pop)',
-                boxShadow: '0 0 6px oklch(0.48 0.22 252 / 0.4)',
+                boxShadow: '0 0 6px oklch(0.48 0.15 155 / 0.4)',
               }} />
             </div>
           )}
@@ -781,11 +781,11 @@ function ProblemSolutionSection() {
 
   return (
     <>
-      <div ref={scrollZoneRef} style={{ minHeight: '230vh', position: 'relative' }}>
-        <div style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', minHeight: '230vh', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5rem', alignItems: 'start' }}>
+      <div ref={scrollZoneRef} className="lg:min-h-[230vh]" style={{ position: 'relative' }}>
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-20 lg:min-h-[230vh]" style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', alignItems: 'start' }}>
 
           {/* LEFT: 3 text sections — fixed gap between them, no flex spacer */}
-          <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '12rem', paddingBottom: '3rem', alignSelf: 'stretch' }}>
+          <div className="flex flex-col pt-16 pb-3 lg:pt-48 lg:pb-3 lg:self-stretch">
 
             {/* 1. Problem */}
             <div>
@@ -798,7 +798,7 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 2. Bridge */}
-            <div style={{ marginTop: '40vh' }}>
+            <div className="mt-12 lg:mt-[40vh]">
               <RevealLeft>
                 <p className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-3">
                   AI can't fix disconnected systems.
@@ -810,7 +810,7 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 3. Solution — matches right column sticky exactly so they unstick together */}
-            <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center', paddingTop: '10vh', marginTop: '25vh' }}>
+            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh]" style={{ top: '15vh' }}>
               <div>
                 <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
                   <span style={{ position: 'relative', display: 'inline-block' }}>Helpin<svg style={{ position: 'absolute', bottom: -4, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> is built differently.
@@ -823,8 +823,8 @@ function ProblemSolutionSection() {
 
           </div>
 
-          {/* RIGHT: sticky — plays full motion story as user scrolls */}
-          <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center' }}>
+          {/* RIGHT: sticky — plays full motion story as user scrolls (hidden on mobile) */}
+          <div className="hidden lg:flex lg:sticky" style={{ top: '15vh', height: '70vh', alignItems: 'center' }}>
             <ToolStackTransition scrollZoneRef={scrollZoneRef} />
           </div>
 
@@ -846,9 +846,8 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           HERO
           ══════════════════════════════════ */}
-      <section className="grid-section relative">
-        <div className="grid-lines-inner" />
-        <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-24 pb-0">
+      <section className="relative">
+        <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-16 md:pt-24 pb-0">
 
           {/* Centered text block */}
           <div className="text-center mb-14">
@@ -870,9 +869,26 @@ export default function HomePage() {
             </Reveal>
           </div>
 
-          {/* AI Workflow Visual */}
+          {/* AI Workflow Visual — full on desktop, simplified on mobile */}
+          <div className="mt-16" />
           <Reveal>
-            <AIWorkflowVisual />
+            <div className="hidden md:block">
+              <AIWorkflowVisual />
+            </div>
+            {/* Mobile: simplified module list */}
+            <div className="md:hidden flex flex-col items-center gap-3 py-8">
+              <div className="w-14 h-14 rounded-full bg-foreground flex items-center justify-center mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-background">Helpin</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {['Support', 'PM', 'Docs', 'Knowledge', 'CRM', 'Customer'].map((m) => (
+                  <span key={m} className="text-[12px] font-medium text-muted-foreground px-3 py-1.5 rounded-full border border-border bg-background">
+                    {m}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[13px] text-muted-foreground/60 mt-2">Agents connect every module automatically</p>
+            </div>
           </Reveal>
         </div>
       </section>
@@ -880,7 +896,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           TRUSTED BY
           ══════════════════════════════════ */}
-      <section className="border-y border-border py-12 mt-16">
+      <section className="border-y border-border py-8 md:py-12 mt-10 md:mt-16">
         <p className="text-center text-[11px] font-semibold tracking-[0.18em] text-muted-foreground/60 uppercase mb-10">
           Trusted by teams at
         </p>
@@ -913,8 +929,8 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           AGENT ROSTER
           ══════════════════════════════════ */}
-      <section className="relative" id="agents">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-32">
+      <section className="relative border-t border-border" id="agents">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-32">
 
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
@@ -936,7 +952,7 @@ export default function HomePage() {
           BEFORE / AFTER  (dark)
           ══════════════════════════════════ */}
       <section className="relative border-t border-border" id="how">
-        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-16 md:py-32">
 
           {/* Heading */}
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
@@ -955,7 +971,7 @@ export default function HomePage() {
             <div className="grid md:grid-cols-2 gap-8 md:gap-16 max-w-5xl mx-auto items-center">
               {/* Before: scattered tool icons — centered in left column */}
               <div className="flex flex-col items-center relative">
-                <div className="relative w-[250px] h-[115px] mb-5">
+                <div className="relative w-[200px] sm:w-[250px] h-[95px] sm:h-[115px] mb-5">
                   {BEFORE_TOOLS.map((t, i) => {
                     const positions = [
                       { top: 0, left: 5, rotate: -5 },   { top: 3, left: 65, rotate: 3 },
@@ -966,15 +982,17 @@ export default function HomePage() {
                     const p = positions[i];
                     return (
                       <div key={t.domain} className="absolute" style={{ top: p.top, left: p.left, transform: `rotate(${p.rotate}deg)` }}>
-                        <div className="w-[52px] h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
+                        <div className="w-[40px] h-[40px] sm:w-[52px] sm:h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
                           style={{ boxShadow: '0 2px 8px oklch(0.12 0.02 55 / 0.06), 0 0 0 1px oklch(0.12 0.02 55 / 0.03)' }}>
-                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-7 h-7" alt="" />
+                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-5 h-5 sm:w-7 sm:h-7" alt="" />
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <span className="inline-block text-[12px] font-bold uppercase tracking-widest text-foreground bg-muted px-5 py-2 rounded-full">Before</span>
+                {/* Down arrow — mobile only */}
+                <div className="md:hidden flex justify-center py-4"><ArrowRight className="w-6 h-6 text-muted-foreground/30 rotate-90" /></div>
                 {/* Swoosh arrow — positioned to bridge the gap */}
                 <div className="absolute right-[-80px] top-1/2 -translate-y-1/2 hidden md:block">
                   <svg width="140" height="56" viewBox="0 0 140 56" fill="none">
@@ -985,7 +1003,7 @@ export default function HomePage() {
               </div>
 
               {/* After: Helpin — slightly left of center in right column */}
-              <div className="flex flex-col items-center md:mr-auto md:ml-16">
+              <div className="flex flex-col items-center md:items-center md:mr-auto md:ml-16">
                 <div className="w-[100px] h-[100px] rounded-3xl bg-foreground flex items-center justify-center mb-5"
                   style={{ boxShadow: '0 12px 40px oklch(0.12 0.02 55 / 0.25), 0 4px 12px oklch(0.12 0.02 55 / 0.1)' }}>
                   <span className="text-[14px] font-bold uppercase tracking-wider text-background">Helpin</span>
@@ -1001,21 +1019,27 @@ export default function HomePage() {
               <Reveal key={i}>
                 <div className="grid md:grid-cols-2 gap-8 md:gap-16 py-8 border-b border-border/50">
                   {/* Problem */}
-                  <div className="flex gap-4">
+                  <div>
+                    <span className="md:hidden inline-block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mb-2">Without Helpin</span>
+                    <div className="flex gap-4">
                     <span className="text-[18px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.55 0.2 25)' }}>✕</span>
                     <div>
                       <h3 className="text-[15px] font-bold text-foreground mb-2">{row.problem}</h3>
                       <p className="text-[14px] text-muted-foreground leading-relaxed">{row.problemDesc}</p>
                     </div>
+                    </div>
                   </div>
                   {/* Solutions */}
-                  <div className="flex flex-col gap-3">
-                    {row.solutions.map((s, j) => (
-                      <div key={j} className="flex gap-3">
-                        <span className="text-[16px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.45 0.15 155)' }}>✓</span>
-                        <p className="text-[14px] font-medium text-foreground leading-relaxed">{s}</p>
-                      </div>
-                    ))}
+                  <div>
+                    <span className="md:hidden inline-block text-[10px] font-bold uppercase tracking-widest text-pop/60 mb-2">With Helpin</span>
+                    <div className="flex flex-col gap-3">
+                      {row.solutions.map((s, j) => (
+                        <div key={j} className="flex gap-3">
+                          <span className="text-[16px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.45 0.15 155)' }}>✓</span>
+                          <p className="text-[14px] font-medium text-foreground leading-relaxed">{s}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </Reveal>
@@ -1028,7 +1052,7 @@ export default function HomePage() {
           HOW IT WORKS
           ══════════════════════════════════ */}
       <section className="relative border-t border-border">
-        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-16 md:py-32">
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
               How it works
@@ -1116,7 +1140,7 @@ export default function HomePage() {
           </div>
 
           {/* CTA */}
-          <Reveal className="mt-14 flex justify-center">
+          <Reveal className="mt-14 flex justify-center px-4">
             <EarlyAccessForm id="how-it-works" />
           </Reveal>
         </div>
@@ -1126,7 +1150,7 @@ export default function HomePage() {
           FAQ
           ══════════════════════════════════ */}
       <section className="relative border-t border-border">
-        <div className="mx-auto max-w-3xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-3xl px-6 lg:px-8 py-16 md:py-32">
           <Reveal className="mb-16 text-center">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
               Frequently asked questions
@@ -1190,8 +1214,8 @@ export default function HomePage() {
           CLOSING CTA  (dark)
           ══════════════════════════════════ */}
       <section className="relative overflow-hidden" style={{ background: '#fcf8f4' }}>
-        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-28 lg:py-36">
-          <div className="grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-28 lg:py-36">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-8 items-center">
 
             {/* Left: Illustration — large, breathing, environmental */}
             <RevealLeft>
@@ -1207,17 +1231,19 @@ export default function HomePage() {
 
             {/* Right: Copy + CTA */}
             <RevealRight>
-              <div className="lg:pl-8">
+              <div className="lg:pl-8 text-center lg:text-left">
                 <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground mb-2">
                   The way companies operate is changing.
                 </h2>
                 <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-muted-foreground/50 mb-8">
                   You can keep up — or fall behind.
                 </h2>
-                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg">
+                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg mx-auto lg:mx-0">
                   Bring your work, knowledge, support, and customer context into one system — and let agents start moving work forward from day one.
                 </p>
-                <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
+                <div className="flex justify-center lg:justify-start">
+                  <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
+                </div>
               </div>
             </RevealRight>
 
@@ -1233,12 +1259,12 @@ export default function HomePage() {
 // Hybrid HTML cards + SVG constellation with triple-layer comet signals
 
 const WF_DATA = [
-  { id: 'support',   module: 'Support',    action: 'Triaged ticket',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const },
-  { id: 'pm',        module: 'PM',         action: 'Created story',        dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 3, signalAt: 3, signalDir: 'out' as const },
-  { id: 'docs',      module: 'Docs',       action: 'Updated runbook',      dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 4, signalAt: 4, signalDir: 'out' as const },
-  { id: 'knowledge', module: 'Knowledge',  action: 'Found 3 articles',     dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const },
-  { id: 'crm',       module: 'CRM',        action: 'Matched account',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 3, signalAt: 3, signalDir: 'out' as const },
-  { id: 'customer',  module: 'Customer',   action: 'Sent resolution',      dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const },
+  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const, packet: 'Login bug' },
+  { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
+  { id: 'crm',       module: 'CRM',        action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
+  { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
+  { id: 'knowledge', module: 'Knowledge',  action: '3 matches found',      dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 7, signalAt: 7, signalDir: 'out' as const, packet: 'Find related' },
+  { id: 'customer',  module: 'Customer',   action: 'Update sent',           dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 8, signalAt: 8, signalDir: 'out' as const, packet: 'Investigating' },
 ];
 
 const WF_CTR = { x: 450, y: 240 };
@@ -1251,7 +1277,98 @@ function wfCurve(x1: number, y1: number, x2: number, y2: number) {
   return `M ${x1} ${y1} Q ${mx - dy * 0.12} ${my + dx * 0.12} ${x2} ${y2}`;
 }
 
-function WfMicroUI({ id, on }: { id: string; on: boolean }) {
+function wfCurveReversed(x1: number, y1: number, x2: number, y2: number) {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const qx = mx - dy * 0.12;
+  const qy = my + dx * 0.12;
+  return `M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`;
+}
+
+function TravelingPacket({ pathD, label, duration = 2200 }: { pathD: string; label: string; duration?: number }) {
+  const pathRef = useRef<SVGPathElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const el = pathRef.current;
+    if (!el) return;
+    const totalLen = el.getTotalLength();
+    const endPt = el.getPointAtLength(totalLen);
+    const startPt = el.getPointAtLength(0);
+    const cx = 450, cy = 240;
+    const endDist = Math.sqrt((endPt.x - cx) ** 2 + (endPt.y - cy) ** 2);
+    const startDist = Math.sqrt((startPt.x - cx) ** 2 + (startPt.y - cy) ** 2);
+    const trimStart = startDist < endDist ? 36 : 0;
+    const trimEnd = endDist < startDist ? 36 : 0;
+    const usableLen = totalLen - trimStart - trimEnd;
+
+    const start = performance.now();
+    let raf: number;
+
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const pt = el.getPointAtLength(trimStart + eased * usableLen);
+      setPos({ x: pt.x, y: pt.y });
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [pathD, duration]);
+
+  return (
+    <>
+      <path ref={pathRef} d={pathD} fill="none" stroke="none" />
+      {pos && (() => {
+        const w = Math.max(48, label.length * 6.5 + 20);
+        const hw = w / 2;
+        return (
+          <g transform={`translate(${pos.x}, ${pos.y})`}>
+            <rect x={-hw + 1} y="-9" width={w - 2} height="18" rx="9"
+              fill="oklch(0.12 0.02 55 / 0.15)" />
+            <rect x={-hw} y="-10" width={w} height="20" rx="10"
+              fill="var(--color-pop)" />
+            <rect x={-hw} y="-10" width={w} height="20" rx="10"
+              fill="var(--color-pop)" opacity="0.3" filter="url(#wf-glow)" />
+            <text x="0" y="3.5" textAnchor="middle"
+              fill="white" fontSize="8" fontWeight="700" fontFamily="var(--font-sans)"
+              style={{ letterSpacing: '0.03em' }}>
+              {label}
+            </text>
+          </g>
+        );
+      })()}
+    </>
+  );
+}
+
+function getNodeActions(id: string, step: number): { text: string; done: boolean }[] {
+  const actions: { text: string; done: boolean }[] = [];
+  if (id === 'support') {
+    if (step >= 1) actions.push({ text: 'Ticket received', done: step >= 3 });
+    if (step >= 4) actions.push({ text: 'Triaged by AI', done: step >= 4 });
+    if (step >= 12) actions.push({ text: 'Resolved', done: true });
+  } else if (id === 'pm') {
+    if (step >= 5) actions.push({ text: 'Task created', done: step >= 6 });
+    if (step >= 6) actions.push({ text: 'Assigned to sprint', done: step >= 9 });
+    if (step >= 9) actions.push({ text: 'Bug fixed', done: true });
+  } else if (id === 'crm') {
+    if (step >= 6) actions.push({ text: 'Account flagged', done: step >= 7 });
+    if (step >= 7) actions.push({ text: 'Risk alert sent', done: true });
+  } else if (id === 'docs') {
+    if (step >= 7) actions.push({ text: 'Guide updated', done: true });
+  } else if (id === 'knowledge') {
+    if (step >= 8) actions.push({ text: '3 matches found', done: true });
+  } else if (id === 'customer') {
+    if (step >= 9) actions.push({ text: 'Update sent', done: step >= 12 });
+    if (step >= 12) actions.push({ text: 'Issue resolved', done: true });
+  }
+  return actions;
+}
+
+function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) {
   const t = (v: string, off: string) => ({ color: on ? v : off, transition: 'color 0.4s ease' });
 
   /* ── Support: chat bubble ── */
@@ -1262,11 +1379,11 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
         transition: 'background 0.4s ease',
       }}>
         <p className="text-[11px] font-medium leading-snug" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Billing charge incorrect
+          Login not working on mobile
         </p>
       </div>
       <p className="text-[9px] mt-1" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
-        Taylor M. · Acme Corp
+        Sarah K. · Acme Corp
       </p>
     </div>
   );
@@ -1284,10 +1401,10 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
       }} />
       <div className="px-2 py-1.5 min-w-0">
         <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Fix billing calc error
+          Fix mobile auth token refresh
         </p>
         <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
-          Sprint 12 · High
+          Sprint 14 · Urgent
         </p>
       </div>
     </div>
@@ -1308,10 +1425,10 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
       </div>
       <div className="px-2 py-1.5">
         <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Billing API Runbook
+          Mobile auth guide
         </p>
         <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
-          Auto-updated
+          Updated automatically
         </p>
       </div>
     </div>
@@ -1332,7 +1449,7 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
           <span className="text-[8px] font-bold" style={t('oklch(0.4 0.08 50)', 'oklch(0.12 0.02 55 / 0.12)')}>AC</span>
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>Acme Corp</p>
+          <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>Acme Corp · $48k</p>
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{
               background: on ? '#f59e0b' : 'oklch(0.88 0.005 75)',
@@ -1353,7 +1470,7 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
       transition: 'all 0.4s ease',
     }}>
       <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-        Billing issues
+        Mobile login issues
       </p>
       <div className="flex items-center gap-1.5 mt-1">
         <div className="h-1 flex-1 rounded-full overflow-hidden" style={{
@@ -1371,25 +1488,34 @@ function WfMicroUI({ id, on }: { id: string; on: boolean }) {
     </div>
   );
 
-  /* ── Customer: success notification ── */
-  if (id === 'customer') return (
-    <div className="rounded-md px-2.5 py-2 flex items-center gap-2" style={{
-      background: on ? 'oklch(0.95 0.04 160)' : 'oklch(0.96 0.005 75 / 0.4)',
-      border: `1px solid ${on ? 'oklch(0.88 0.06 160)' : 'oklch(0.94 0.005 75 / 0.4)'}`,
-      transition: 'all 0.4s ease',
-    }}>
-      <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{
-        background: on ? 'oklch(0.45 0.15 160)' : 'oklch(0.88 0.005 75)',
-        transition: 'background 0.4s ease',
+  /* ── Customer: first = investigating, after return = resolved ── */
+  if (id === 'customer') {
+    const resolved = step >= 11;
+    return (
+      <div className="rounded-md px-2.5 py-2 flex items-center gap-2" style={{
+        background: on ? (resolved ? 'oklch(0.95 0.04 160)' : 'oklch(0.95 0.02 55)') : 'oklch(0.96 0.005 75 / 0.4)',
+        border: `1px solid ${on ? (resolved ? 'oklch(0.88 0.06 160)' : 'oklch(0.90 0.01 55)') : 'oklch(0.94 0.005 75 / 0.4)'}`,
+        transition: 'all 0.4s ease',
       }}>
-        <span className="text-[10px] font-bold" style={{ color: on ? '#fff' : 'transparent', transition: 'color 0.4s ease' }}>&#10003;</span>
+        <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{
+          background: on ? (resolved ? 'oklch(0.45 0.15 160)' : 'oklch(0.6 0.12 55)') : 'oklch(0.88 0.005 75)',
+          transition: 'background 0.4s ease',
+        }}>
+          <span className="text-[10px] font-bold" style={{ color: on ? '#fff' : 'transparent', transition: 'color 0.4s ease' }}>
+            {resolved ? '\u2713' : '\u2026'}
+          </span>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium" style={t(resolved ? 'oklch(0.2 0.05 160)' : 'oklch(0.2 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+            {resolved ? 'Resolved' : 'Investigating'}
+          </p>
+          <p className="text-[9px]" style={t(resolved ? 'oklch(0.35 0.08 160)' : 'oklch(0.4 0.02 55)', 'oklch(0.12 0.02 55 / 0.1)')}>
+            {resolved ? 'Fixed in 8 min' : 'Looking into it'}
+          </p>
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium" style={t('oklch(0.2 0.05 160)', 'oklch(0.15 0.02 55 / 0.18)')}>Resolved</p>
-        <p className="text-[9px]" style={t('oklch(0.35 0.08 160)', 'oklch(0.12 0.02 55 / 0.1)')}>8 min</p>
-      </div>
-    </div>
-  );
+    );
+  }
 
   return null;
 }
@@ -1404,13 +1530,14 @@ function AIWorkflowVisual() {
 
   useEffect(() => {
     if (step < 0) return;
-    const d = [600, 1600, 1400, 1500, 1500, 1500, 1000];
-    const t = setTimeout(() => setStep((s) => (s + 1) % 7), d[step]);
+    const d = [800, 1800, 2000, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 1600];
+    const t = setTimeout(() => setStep((s) => (s + 1) % 13), d[step]);
     return () => clearTimeout(t);
   }, [step]);
 
   const { x: cx, y: cy } = WF_CTR;
-  const centerOn = step >= 2 && step <= 6;
+  const centerOn = step >= 2 && step <= 12;
+  const processing = step === 3 || step === 10;
 
   return (
     <div className="relative w-full" style={{ aspectRatio: '900 / 480' }}>
@@ -1423,8 +1550,8 @@ function AIWorkflowVisual() {
             <feComposite in="SourceGraphic" in2="b" operator="over" />
           </filter>
           <radialGradient id="wf-ambient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="oklch(0.48 0.22 252 / 0.06)" />
-            <stop offset="100%" stopColor="oklch(0.48 0.22 252 / 0)" />
+            <stop offset="0%" stopColor="oklch(0.48 0.15 155 / 0.06)" />
+            <stop offset="100%" stopColor="oklch(0.48 0.15 155 / 0)" />
           </radialGradient>
           {/* Mask: hide lines inside center circle */}
           <mask id="wf-center-mask">
@@ -1452,91 +1579,89 @@ function AIWorkflowVisual() {
             strokeDasharray="3 8" strokeLinecap="round" />
         ))}
 
-        {/* ── Flowing dotted lines (active — continuous data flow) ── */}
+        {/* ── Active connection (subtle solid line when node is on) ── */}
         {WF_DATA.map((n) => {
           const on = step >= n.activateAt && step > 0;
-          const d = n.signalDir === 'out'
-            ? wfCurve(cx, cy, n.svg.x, n.svg.y)
-            : wfCurve(n.svg.x, n.svg.y, cx, cy);
           return (
-            <path key={`flow-${n.id}`}
-              d={d}
-              stroke="oklch(0.48 0.22 252)"
-              strokeWidth="2"
-              strokeDasharray="3 8"
+            <path key={`active-${n.id}`}
+              d={wfCurve(n.svg.x, n.svg.y, cx, cy)}
+              stroke="var(--color-pop)"
+              strokeWidth="1"
               strokeLinecap="round"
-              className={on ? 'wf-flow-in' : ''}
-              opacity={on ? (step === 6 ? 0.55 : 0.35) : 0}
+              opacity={on ? 0.15 : 0}
               style={{ transition: 'opacity 0.6s ease' }} />
-          );
-        })}
-
-        {/* ── Triple-layer comet signals ── */}
-        {WF_DATA.map((n) => {
-          if (step !== n.signalAt) return null;
-          const rev = n.signalDir === 'out';
-          const d = rev ? wfCurve(cx, cy, n.svg.x, n.svg.y) : wfCurve(n.svg.x, n.svg.y, cx, cy);
-          return (
-            <g key={`sig-${n.id}-${step}`}>
-              {/* Wide area glow */}
-              <path d={d} stroke="oklch(0.48 0.22 252 / 0.12)" strokeWidth="14"
-                strokeLinecap="round" pathLength={1} strokeDasharray="0.14 1"
-                className="wf-signal-path" style={{ animationDuration: '1.2s' }} />
-              {/* Bright core */}
-              <path d={d} stroke="oklch(0.48 0.22 252)" strokeWidth="4"
-                strokeLinecap="round" pathLength={1} strokeDasharray="0.08 1"
-                className="wf-signal-path" filter="url(#wf-glow)" />
-              {/* Trail */}
-              <path d={d} stroke="oklch(0.48 0.22 252 / 0.45)" strokeWidth="3"
-                strokeLinecap="round" pathLength={1} strokeDasharray="0.05 1"
-                className="wf-signal-path"
-                style={{ animationDuration: '1.15s', animationDelay: '0.06s' }} />
-            </g>
           );
         })}
 
         </g>{/* end masked lines */}
 
+        {/* ── Traveling packets (outside mask so they stay visible) ── */}
+        {WF_DATA.map((n) => {
+          if (step !== n.signalAt) return null;
+          const travelPath = n.signalDir === 'in'
+            ? wfCurve(n.svg.x, n.svg.y, cx, cy)
+            : wfCurveReversed(n.svg.x, n.svg.y, cx, cy);
+          return (
+            <TravelingPacket key={`pkt-${n.id}-${step}`} pathD={travelPath} label={n.packet} />
+          );
+        })}
+
+        {/* ── Return packets (closing the loop) ── */}
+        {step === 9 && (
+          <TravelingPacket key={`pkt-return-done-${step}`}
+            pathD={wfCurve(WF_DATA[1].svg.x, WF_DATA[1].svg.y, cx, cy)}
+            label="Done ✓" />
+        )}
+        {step === 11 && (
+          <TravelingPacket key={`pkt-return-resolved-${step}`}
+            pathD={wfCurveReversed(WF_DATA[0].svg.x, WF_DATA[0].svg.y, cx, cy)}
+            label="Resolved" />
+        )}
+
         {/* ── Center AI hub ── */}
         <g>
           <circle cx={cx} cy={cy} r={68}
-            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.1)' : 'oklch(0.12 0.02 55 / 0.03)'}
+            stroke={centerOn ? 'oklch(0.48 0.15 155 / 0.1)' : 'oklch(0.12 0.02 55 / 0.03)'}
             strokeWidth="1" strokeDasharray="6 10" className="wf-ring-outer"
             style={{ transition: 'stroke 1s ease' }} />
           <circle cx={cx} cy={cy} r={50}
-            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.2)' : 'oklch(0.12 0.02 55 / 0.04)'}
+            stroke={centerOn ? 'oklch(0.48 0.15 155 / 0.2)' : 'oklch(0.12 0.02 55 / 0.04)'}
             strokeWidth="1" strokeDasharray="3 6" className="wf-ring-inner"
             style={{ transition: 'stroke 0.8s ease' }} />
 
-          {(step === 2 || step === 6) && (
+          {(step === 2 || step === 3 || step === 9 || step === 10 || step === 12) && (
             <>
               <circle key={`p1-${step}`} cx={cx} cy={cy} r={34}
-                stroke="oklch(0.48 0.22 252 / 0.3)" strokeWidth="1.5" className="wf-pulse" />
+                stroke="oklch(0.48 0.15 155 / 0.3)" strokeWidth="1.5" className="wf-pulse" />
               <circle key={`p2-${step}`} cx={cx} cy={cy} r={34}
-                stroke="oklch(0.48 0.22 252 / 0.18)" strokeWidth="1" className="wf-pulse"
+                stroke="oklch(0.48 0.15 155 / 0.18)" strokeWidth="1" className="wf-pulse"
                 style={{ animationDelay: '0.3s' }} />
             </>
           )}
 
           <circle cx={cx} cy={cy} r={36}
-            fill={centerOn ? 'oklch(0.48 0.22 252 / 0.06)' : 'oklch(0.12 0.02 55 / 0.012)'}
-            stroke={centerOn ? 'oklch(0.48 0.22 252 / 0.22)' : 'oklch(0.12 0.02 55 / 0.05)'}
+            fill={processing ? 'oklch(0.48 0.15 155 / 0.12)' : centerOn ? 'oklch(0.48 0.15 155 / 0.06)' : 'oklch(0.12 0.02 55 / 0.012)'}
+            stroke={processing ? 'oklch(0.48 0.15 155 / 0.35)' : centerOn ? 'oklch(0.48 0.15 155 / 0.22)' : 'oklch(0.12 0.02 55 / 0.05)'}
             strokeWidth="1" className="wf-core-breathe"
-            style={{ transition: 'fill 0.6s ease, stroke 0.6s ease' }} />
+            style={{ transition: 'fill 0.3s ease, stroke 0.3s ease' }} />
+
+          {/* HELPIN AI text — hidden during processing */}
           <text x={cx} y={cy - 6} textAnchor="middle" dominantBaseline="middle"
             fontSize="9" fontWeight="700" letterSpacing="0.14em"
-            fill={centerOn ? 'oklch(0.48 0.22 252 / 0.8)' : 'oklch(0.12 0.02 55 / 0.2)'}
-            style={{ transition: 'fill 0.5s ease', fontFamily: 'var(--font-sans)' }}>HELPIN</text>
+            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155 / 0.8)' : 'oklch(0.12 0.02 55 / 0.2)'}
+            style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>HELPIN</text>
           <text x={cx} y={cy + 10} textAnchor="middle" dominantBaseline="middle"
             fontSize="15" fontWeight="800" letterSpacing="0.2em"
-            fill={centerOn ? 'oklch(0.48 0.22 252)' : 'oklch(0.12 0.02 55 / 0.15)'}
-            style={{ transition: 'fill 0.5s ease', fontFamily: 'var(--font-sans)' }}>AI</text>
+            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155)' : 'oklch(0.12 0.02 55 / 0.15)'}
+            style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>AI</text>
 
-          {step === 2 && (
-            <text x={cx} y={cy + 56} textAnchor="middle" fontSize="10" fontWeight="500"
-              fill="oklch(0.48 0.22 252 / 0.55)"
-              style={{ fontFamily: 'var(--font-sans)' }}>Triaging...</text>
-          )}
+          {/* Processing label */}
+          <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="600" letterSpacing="0.06em"
+            fill={processing ? 'oklch(0.48 0.15 155)' : 'transparent'}
+            style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>
+            {step === 3 ? 'Triaging...' : step === 10 ? 'Resolving...' : ''}
+          </text>
         </g>
 
         {/* ── Small anchor dots at node positions ── */}
@@ -1545,7 +1670,7 @@ function AIWorkflowVisual() {
           return (
             <circle key={`anchor-${n.id}`}
               cx={n.svg.x} cy={n.svg.y} r={3}
-              fill={on ? 'oklch(0.48 0.22 252 / 0.5)' : 'oklch(0.12 0.02 55 / 0.06)'}
+              fill={on ? 'oklch(0.48 0.15 155 / 0.5)' : 'oklch(0.12 0.02 55 / 0.06)'}
               style={{ transition: 'fill 0.4s ease' }} />
           );
         })}
@@ -1568,12 +1693,21 @@ function AIWorkflowVisual() {
                 </span>
               </div>
               {/* Micro UI row */}
-              <WfMicroUI id={n.id} on={on} />
-              {/* Action label */}
-              <div className="mt-1.5 flex items-center gap-1"
-                style={{ opacity: on ? 1 : 0, transition: 'opacity 0.4s ease 0.12s' }}>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-[9px] font-medium" style={{ color: 'oklch(0.12 0.02 55 / 0.5)' }}>{n.action}</span>
+              <WfMicroUI id={n.id} on={on} step={step} />
+              {/* Action labels — progressive, step-aware */}
+              <div className="mt-1.5 flex flex-col gap-0.5">
+                {getNodeActions(n.id, step).map((action, ai) => (
+                  <div key={ai} className="flex items-center gap-1"
+                    style={{ opacity: 1, transition: 'opacity 0.3s ease' }}>
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{
+                      background: action.done ? 'oklch(0.48 0.15 155)' : 'oklch(0.55 0.12 55)',
+                    }} />
+                    <span className="text-[10px] font-medium" style={{
+                      color: action.done ? 'oklch(0.12 0.02 55 / 0.4)' : 'oklch(0.12 0.02 55 / 0.55)',
+                      textDecoration: action.done ? 'line-through' : 'none',
+                    }}>{action.text}</span>
+                  </div>
+                ))}
               </div>
             </div>
           );
