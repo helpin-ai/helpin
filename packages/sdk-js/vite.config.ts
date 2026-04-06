@@ -9,12 +9,11 @@ import dts from 'vite-plugin-dts';
  * 1. Injects the hashed SDK filename into the loader (lib.js) for CDN cache busting
  * 2. Copies the hashed SDK bundle to helpin.es.js for npm consumers (stable filename)
  */
-function postBuildSDK() {
+function injectSDKFilename() {
   return {
-    name: 'post-build-sdk',
+    name: 'inject-sdk-filename',
     writeBundle(options: any, bundle: Record<string, any>) {
-      const fs = require('fs');
-      // Find the hashed SDK bundle filename
+      // Find the hashed SDK bundle filename (index.ts entry, not esm-entry.ts)
       const sdkChunk = Object.values(bundle).find(
         (chunk: any) => chunk.type === 'chunk' && chunk.facadeModuleId?.endsWith('index.ts')
       );
@@ -22,26 +21,14 @@ function postBuildSDK() {
 
       const sdkFilename = (sdkChunk as any).fileName;
       const outDir = options.dir || 'dist';
-
-      // 1. Inject hashed filename into loader for CDN
       const loaderPath = resolve(outDir, 'lib.js');
+
       try {
         let loaderCode = readFileSync(loaderPath, 'utf-8');
         loaderCode = loaderCode.replace(/__SDK_FILENAME__/g, sdkFilename);
-        fs.writeFileSync(loaderPath, loaderCode);
+        require('fs').writeFileSync(loaderPath, loaderCode);
       } catch {
         // loader might not exist yet in watch mode
-      }
-
-      // 2. Copy hashed bundle to stable helpin.es.js for npm imports
-      try {
-        const hashedPath = resolve(outDir, sdkFilename);
-        const stablePath = resolve(outDir, 'helpin.es.js');
-        if (hashedPath !== stablePath) {
-          fs.copyFileSync(hashedPath, stablePath);
-        }
-      } catch {
-        // ignore in watch mode
       }
     },
   };
@@ -60,16 +47,19 @@ export default defineConfig(({ command }) => {
       ],
     },
     build: {
+      minify: false,
       cssCodeSplit: false,
       rollupOptions: {
         input: {
           loader: resolve(__dirname, 'src/loader.ts'),
           index: resolve(__dirname, 'src/index.ts'),
+          esm: resolve(__dirname, 'src/esm-entry.ts'),
         },
         external: [],
         output: {
           entryFileNames: (chunkInfo) => {
             if (chunkInfo.name === 'loader') return 'lib.js';
+            if (chunkInfo.name === 'esm') return 'helpin.es.js';
             return 'helpin.[hash].js';
           },
           chunkFileNames: 'chunks/[name].[hash].js',
@@ -89,7 +79,7 @@ export default defineConfig(({ command }) => {
           exclude: ['test', 'node_modules', 'src/loader.ts'],
           outDir: 'dist',
         }),
-      isBuild && postBuildSDK(),
+      isBuild && injectSDKFilename(),
     ].filter(Boolean),
     server: {
       open: '/examples/index.html',

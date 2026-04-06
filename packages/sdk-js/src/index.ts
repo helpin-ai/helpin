@@ -457,19 +457,6 @@ if (isWindowAvailable()) {
 }
 
 // For CommonJS/Node.js environments
-if (typeof module !== 'undefined' && module.exports && !isAMDEnvironment()) {
-  module.exports = {
-    helpinClient,
-    HelpinClient,
-    Config: undefined as any,
-    UserProps: undefined as any,
-    EventPayload: undefined as any,
-    LogLevel,
-    ClientProperties: undefined as any,
-  };
-}
-
-// For ES modules
 export {
   helpinClient,
   HelpinClient,
