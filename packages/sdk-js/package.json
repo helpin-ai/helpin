@@ -35,11 +35,9 @@
     "tracking"
   ],
   "license": "MIT",
-  "dependencies": {
-    "@helpin-ai/widget-core": "workspace:*",
-    "@helpin-ai/shared": "workspace:*"
-  },
   "devDependencies": {
+    "@helpin-ai/widget-core": "workspace:*",
+    "@helpin-ai/shared": "workspace:*",
     "@playwright/test": "^1.40.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.5.0",
