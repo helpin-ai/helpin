@@ -65,7 +65,7 @@ function EarlyAccessForm({ dark = false, id = 'early-access', bg }: { dark?: boo
         <button
           type="submit"
           disabled={status === 'submitting'}
-          className="btn-primary whitespace-nowrap"
+          className="btn-primary whitespace-nowrap justify-center w-full sm:w-auto"
           style={dark ? { background: 'white', color: 'var(--color-foreground)' } : {}}
         >
           {status === 'submitting' ? 'Submitting...' : 'Get early access'}
@@ -300,7 +300,7 @@ function AgentRoster() {
   return (
     <div>
       {/* Team selector pills */}
-      <div className="flex flex-wrap justify-center gap-2 mb-12">
+      <div className="sticky top-16 z-30 bg-background/90 backdrop-blur-md py-3 -mx-6 px-6 md:static md:bg-transparent md:backdrop-blur-none md:py-0 md:mx-0 md:px-0 flex flex-wrap justify-center gap-2 mb-12">
         {TEAM_AGENTS.map((t, i) => (
           <button
             key={t.team}
@@ -318,7 +318,7 @@ function AgentRoster() {
       </div>
 
       {/* Agent grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-0 max-w-5xl mx-auto" key={activeTeam}>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-x-4 md:gap-x-10 gap-y-0 max-w-5xl mx-auto" key={activeTeam}>
         {team.agents.map((agent) => (
           <div
             key={agent.name}
@@ -336,7 +336,7 @@ function AgentRoster() {
       </div>
 
       {/* Custom agent callout */}
-      <div className="mt-10 text-center">
+      <div className="mt-10 text-center px-4">
         <p className="text-[14px] text-muted-foreground">
           Need a custom agent?
         </p>
@@ -781,11 +781,11 @@ function ProblemSolutionSection() {
 
   return (
     <>
-      <div ref={scrollZoneRef} style={{ minHeight: '230vh', position: 'relative' }}>
-        <div style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', minHeight: '230vh', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5rem', alignItems: 'start' }}>
+      <div ref={scrollZoneRef} className="lg:min-h-[230vh]" style={{ position: 'relative' }}>
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-20 lg:min-h-[230vh]" style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', alignItems: 'start' }}>
 
           {/* LEFT: 3 text sections — fixed gap between them, no flex spacer */}
-          <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '12rem', paddingBottom: '3rem', alignSelf: 'stretch' }}>
+          <div className="flex flex-col pt-16 pb-3 lg:pt-48 lg:pb-3 lg:self-stretch">
 
             {/* 1. Problem */}
             <div>
@@ -798,7 +798,7 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 2. Bridge */}
-            <div style={{ marginTop: '40vh' }}>
+            <div className="mt-12 lg:mt-[40vh]">
               <RevealLeft>
                 <p className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-3">
                   AI can't fix disconnected systems.
@@ -810,7 +810,7 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 3. Solution — matches right column sticky exactly so they unstick together */}
-            <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center', paddingTop: '10vh', marginTop: '25vh' }}>
+            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh]" style={{ top: '15vh' }}>
               <div>
                 <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
                   <span style={{ position: 'relative', display: 'inline-block' }}>Helpin<svg style={{ position: 'absolute', bottom: -4, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> is built differently.
@@ -823,8 +823,8 @@ function ProblemSolutionSection() {
 
           </div>
 
-          {/* RIGHT: sticky — plays full motion story as user scrolls */}
-          <div style={{ position: 'sticky', top: '15vh', height: '70vh', display: 'flex', alignItems: 'center' }}>
+          {/* RIGHT: sticky — plays full motion story as user scrolls (hidden on mobile) */}
+          <div className="hidden lg:flex lg:sticky" style={{ top: '15vh', height: '70vh', alignItems: 'center' }}>
             <ToolStackTransition scrollZoneRef={scrollZoneRef} />
           </div>
 
@@ -847,8 +847,7 @@ export default function HomePage() {
           HERO
           ══════════════════════════════════ */}
       <section className="relative">
-        <div className="grid-lines-inner" />
-        <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-24 pb-0">
+        <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-16 md:pt-24 pb-0">
 
           {/* Centered text block */}
           <div className="text-center mb-14">
@@ -870,9 +869,26 @@ export default function HomePage() {
             </Reveal>
           </div>
 
-          {/* AI Workflow Visual */}
+          {/* AI Workflow Visual — full on desktop, simplified on mobile */}
+          <div className="mt-16" />
           <Reveal>
-            <AIWorkflowVisual />
+            <div className="hidden md:block">
+              <AIWorkflowVisual />
+            </div>
+            {/* Mobile: simplified module list */}
+            <div className="md:hidden flex flex-col items-center gap-3 py-8">
+              <div className="w-14 h-14 rounded-full bg-foreground flex items-center justify-center mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-background">Helpin</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {['Support', 'PM', 'Docs', 'Knowledge', 'CRM', 'Customer'].map((m) => (
+                  <span key={m} className="text-[12px] font-medium text-muted-foreground px-3 py-1.5 rounded-full border border-border bg-background">
+                    {m}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[13px] text-muted-foreground/60 mt-2">Agents connect every module automatically</p>
+            </div>
           </Reveal>
         </div>
       </section>
@@ -880,7 +896,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           TRUSTED BY
           ══════════════════════════════════ */}
-      <section className="border-y border-border py-12 mt-16">
+      <section className="border-y border-border py-8 md:py-12 mt-10 md:mt-16">
         <p className="text-center text-[11px] font-semibold tracking-[0.18em] text-muted-foreground/60 uppercase mb-10">
           Trusted by teams at
         </p>
@@ -913,8 +929,8 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           AGENT ROSTER
           ══════════════════════════════════ */}
-      <section className="relative" id="agents">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-32">
+      <section className="relative border-t border-border" id="agents">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-32">
 
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
@@ -936,7 +952,7 @@ export default function HomePage() {
           BEFORE / AFTER  (dark)
           ══════════════════════════════════ */}
       <section className="relative border-t border-border" id="how">
-        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-16 md:py-32">
 
           {/* Heading */}
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
@@ -955,7 +971,7 @@ export default function HomePage() {
             <div className="grid md:grid-cols-2 gap-8 md:gap-16 max-w-5xl mx-auto items-center">
               {/* Before: scattered tool icons — centered in left column */}
               <div className="flex flex-col items-center relative">
-                <div className="relative w-[250px] h-[115px] mb-5">
+                <div className="relative w-[200px] sm:w-[250px] h-[95px] sm:h-[115px] mb-5">
                   {BEFORE_TOOLS.map((t, i) => {
                     const positions = [
                       { top: 0, left: 5, rotate: -5 },   { top: 3, left: 65, rotate: 3 },
@@ -966,15 +982,17 @@ export default function HomePage() {
                     const p = positions[i];
                     return (
                       <div key={t.domain} className="absolute" style={{ top: p.top, left: p.left, transform: `rotate(${p.rotate}deg)` }}>
-                        <div className="w-[52px] h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
+                        <div className="w-[40px] h-[40px] sm:w-[52px] sm:h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
                           style={{ boxShadow: '0 2px 8px oklch(0.12 0.02 55 / 0.06), 0 0 0 1px oklch(0.12 0.02 55 / 0.03)' }}>
-                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-7 h-7" alt="" />
+                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-5 h-5 sm:w-7 sm:h-7" alt="" />
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <span className="inline-block text-[12px] font-bold uppercase tracking-widest text-foreground bg-muted px-5 py-2 rounded-full">Before</span>
+                {/* Down arrow — mobile only */}
+                <div className="md:hidden flex justify-center py-4"><ArrowRight className="w-6 h-6 text-muted-foreground/30 rotate-90" /></div>
                 {/* Swoosh arrow — positioned to bridge the gap */}
                 <div className="absolute right-[-80px] top-1/2 -translate-y-1/2 hidden md:block">
                   <svg width="140" height="56" viewBox="0 0 140 56" fill="none">
@@ -985,7 +1003,7 @@ export default function HomePage() {
               </div>
 
               {/* After: Helpin — slightly left of center in right column */}
-              <div className="flex flex-col items-center md:mr-auto md:ml-16">
+              <div className="flex flex-col items-center md:items-center md:mr-auto md:ml-16">
                 <div className="w-[100px] h-[100px] rounded-3xl bg-foreground flex items-center justify-center mb-5"
                   style={{ boxShadow: '0 12px 40px oklch(0.12 0.02 55 / 0.25), 0 4px 12px oklch(0.12 0.02 55 / 0.1)' }}>
                   <span className="text-[14px] font-bold uppercase tracking-wider text-background">Helpin</span>
@@ -1001,21 +1019,27 @@ export default function HomePage() {
               <Reveal key={i}>
                 <div className="grid md:grid-cols-2 gap-8 md:gap-16 py-8 border-b border-border/50">
                   {/* Problem */}
-                  <div className="flex gap-4">
+                  <div>
+                    <span className="md:hidden inline-block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mb-2">Without Helpin</span>
+                    <div className="flex gap-4">
                     <span className="text-[18px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.55 0.2 25)' }}>✕</span>
                     <div>
                       <h3 className="text-[15px] font-bold text-foreground mb-2">{row.problem}</h3>
                       <p className="text-[14px] text-muted-foreground leading-relaxed">{row.problemDesc}</p>
                     </div>
+                    </div>
                   </div>
                   {/* Solutions */}
-                  <div className="flex flex-col gap-3">
-                    {row.solutions.map((s, j) => (
-                      <div key={j} className="flex gap-3">
-                        <span className="text-[16px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.45 0.15 155)' }}>✓</span>
-                        <p className="text-[14px] font-medium text-foreground leading-relaxed">{s}</p>
-                      </div>
-                    ))}
+                  <div>
+                    <span className="md:hidden inline-block text-[10px] font-bold uppercase tracking-widest text-pop/60 mb-2">With Helpin</span>
+                    <div className="flex flex-col gap-3">
+                      {row.solutions.map((s, j) => (
+                        <div key={j} className="flex gap-3">
+                          <span className="text-[16px] font-black flex-shrink-0 mt-0.5" style={{ color: 'oklch(0.45 0.15 155)' }}>✓</span>
+                          <p className="text-[14px] font-medium text-foreground leading-relaxed">{s}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </Reveal>
@@ -1028,7 +1052,7 @@ export default function HomePage() {
           HOW IT WORKS
           ══════════════════════════════════ */}
       <section className="relative border-t border-border">
-        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-6xl px-6 lg:px-8 py-16 md:py-32">
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
               How it works
@@ -1116,7 +1140,7 @@ export default function HomePage() {
           </div>
 
           {/* CTA */}
-          <Reveal className="mt-14 flex justify-center">
+          <Reveal className="mt-14 flex justify-center px-4">
             <EarlyAccessForm id="how-it-works" />
           </Reveal>
         </div>
@@ -1126,7 +1150,7 @@ export default function HomePage() {
           FAQ
           ══════════════════════════════════ */}
       <section className="relative border-t border-border">
-        <div className="mx-auto max-w-3xl px-6 lg:px-8 py-32">
+        <div className="mx-auto max-w-3xl px-6 lg:px-8 py-16 md:py-32">
           <Reveal className="mb-16 text-center">
             <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground">
               Frequently asked questions
@@ -1190,8 +1214,8 @@ export default function HomePage() {
           CLOSING CTA  (dark)
           ══════════════════════════════════ */}
       <section className="relative overflow-hidden" style={{ background: '#fcf8f4' }}>
-        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-28 lg:py-36">
-          <div className="grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-28 lg:py-36">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-8 items-center">
 
             {/* Left: Illustration — large, breathing, environmental */}
             <RevealLeft>
@@ -1207,17 +1231,19 @@ export default function HomePage() {
 
             {/* Right: Copy + CTA */}
             <RevealRight>
-              <div className="lg:pl-8">
+              <div className="lg:pl-8 text-center lg:text-left">
                 <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground mb-2">
                   The way companies operate is changing.
                 </h2>
                 <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-muted-foreground/50 mb-8">
                   You can keep up — or fall behind.
                 </h2>
-                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg">
+                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg mx-auto lg:mx-0">
                   Bring your work, knowledge, support, and customer context into one system — and let agents start moving work forward from day one.
                 </p>
-                <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
+                <div className="flex justify-center lg:justify-start">
+                  <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
+                </div>
               </div>
             </RevealRight>
 

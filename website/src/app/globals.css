@@ -101,6 +101,10 @@
   background: oklch(1 0 0 / 0.06);
 }
 
+/* Hide scrollbar */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* ═══════════════════════════════════════════
    Reveal system
    ═══════════════════════════════════════════ */
