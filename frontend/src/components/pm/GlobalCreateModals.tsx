@@ -54,6 +54,7 @@ import {
   shouldPromptSprintAutomation,
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
+import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 
 
 // ── Task wrapper ─────────────────────────────────────────────────────
@@ -101,7 +102,17 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
         window.dispatchEvent(new CustomEvent('task-created', {
           detail: { ownerMemberId: data?.task?.owner_member_id, teamId: data?.task?.team_id },
         }));
-        return data?.task ? { id: data.task.id } : undefined;
+        return data?.task
+          ? {
+              id: data.task.id,
+              task: {
+                id: data.task.id,
+                name: data.task.name,
+                display_id: data.task.display_id,
+                task_key: data.task.task_key,
+              },
+            }
+          : undefined;
       }}
     />
   );
@@ -110,6 +121,8 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
 // ── Epic dialog ──────────────────────────────────────────────────────
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
   const confirm = useConfirm();
   const { data: epicStates = [] } = useEpicStates(workspaceId);
   const { teams } = useAccessibleTeams(workspaceId);
@@ -169,7 +182,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const create = async () => {
     if (!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
-    const { error: createError } = await pmEpicService.create({
+    const { data, error: createError } = await pmEpicService.create({
       workspace_id: workspaceId,
       name: name.trim(),
       description: description.trim() || undefined,
@@ -184,6 +197,22 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     if (createError) {
       setError(createError);
       return;
+    }
+    if (data?.epic) {
+      showEntityCreatedToast({
+        entityLabel: 'Epic',
+        title: data.epic.name,
+        tone: 'pm',
+        icon: entityCreatedToastIcons.epic,
+        onOpen: currentWorkspace?.slug
+          ? () => navigate({
+              to: '/w/$slug/pm/epics/$epicId',
+              params: { slug: currentWorkspace.slug, epicId: data.epic.id },
+            })
+          : undefined,
+      });
+    } else {
+      toast.success('Epic created');
     }
     window.dispatchEvent(new CustomEvent('epic-created'));
     onClose();

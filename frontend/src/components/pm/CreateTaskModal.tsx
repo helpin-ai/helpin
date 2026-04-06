@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Alert01Icon,
   Calendar03Icon,
@@ -44,6 +45,7 @@ import type {
   SprintWithStats,
   Priority,
   Severity,
+  Task,
   TaskType,
   WorkflowWithStates,
   EpicWithStats,
@@ -79,6 +81,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
 import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
+import { showEntityCreatedToast, entityCreatedToastIcons } from "@/components/ui/entity-created-toast";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -89,10 +93,15 @@ interface CreateTaskModalProps {
   initialTeamId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
-  onCreate?: (payload: CreateTaskRequest) => Promise<{ id: string } | void>;
+  onCreate?: (payload: CreateTaskRequest) => Promise<CreatedTaskResult | void>;
   mode?: 'task' | 'template';
   editingTemplate?: TaskTemplate | null;
   onSaveTemplate?: (template: TaskTemplate) => void;
+}
+
+interface CreatedTaskResult {
+  id: string;
+  task?: Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>;
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
@@ -252,6 +261,8 @@ export function CreateTaskModal({
   editingTemplate,
   onSaveTemplate,
 }: CreateTaskModalProps) {
+  const navigate = useNavigate();
+  const { currentWorkspace } = useWorkspaceStore();
   const isTemplateMode = mode === 'template';
   const [form, setForm] = useState(defaultState);
   const initialDescRef = useRef('');
@@ -647,7 +658,24 @@ export function CreateTaskModal({
         if (recurringSetupError) {
           toast.error(`Task created, but recurring setup failed: ${recurringSetupError}`);
         } else {
-          toast.success(recurringDraft ? 'Task created with recurring schedule' : 'Task created');
+          if (result?.id) {
+            const createdTitle = result.task?.name || form.name.trim();
+            const taskKey = result.task?.task_key
+              || (result.task?.display_id !== undefined ? `#${result.task.display_id}` : undefined);
+            showEntityCreatedToast({
+              entityLabel: 'Task',
+              title: createdTitle,
+              subtitle: recurringDraft ? 'Recurring schedule added.' : undefined,
+              identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
+              tone: 'pm',
+              icon: entityCreatedToastIcons.task,
+              onOpen: currentWorkspace?.slug
+                ? () => navigate({ to: `/w/${currentWorkspace.slug}/pm/tasks/${result.id}` } as any)
+                : undefined,
+            });
+          } else {
+            toast.success(recurringDraft ? 'Task created with recurring schedule' : 'Task created');
+          }
         }
 
         if (createMore) {
@@ -768,8 +796,8 @@ export function CreateTaskModal({
               {/* Description — Tiptap rich text editor */}
               <div className="relative flex flex-col min-h-0 flex-1">
                 {descriptionMode === 'markdown' ? (
-                  <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/60 bg-muted/20">
-                    <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                  <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-transparent bg-input/50">
+                    <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Markdown Source
                       </span>

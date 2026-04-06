@@ -700,7 +700,7 @@ export function TaskRelationshipsSection({
             value={externalBlocker}
             onChange={(event) => onExternalBlockerChange(event.target.value)}
             placeholder="Customer dependency, vendor issue, legal review..."
-            className="min-h-[60px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40"
+            className="min-h-[60px] w-full rounded-2xl border border-transparent bg-input/50 px-3 py-2 text-sm outline-none transition-[color,box-shadow,background-color] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
           />
         </div>
       ) : null}

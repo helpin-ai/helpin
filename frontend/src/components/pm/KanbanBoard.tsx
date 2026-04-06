@@ -1036,7 +1036,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const handleCreate = useCallback(
     async (payload: CreateTaskRequest) => {
       const task = await createTask(payload);
-      return task ? { id: task.id } : undefined;
+      return task
+        ? {
+            id: task.id,
+            task: {
+              id: task.id,
+              name: task.name,
+              display_id: task.display_id,
+              task_key: task.task_key,
+            },
+          }
+        : undefined;
     },
     [createTask]
   );
