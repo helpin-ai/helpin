@@ -8,7 +8,7 @@ export class HttpsTransport implements Transport {
   private config: Config;
 
   constructor(
-    private trackingHost: string,
+    private host: string,
     config: Config,
     private logger = getLogger(),
   ) {
@@ -16,7 +16,7 @@ export class HttpsTransport implements Transport {
   }
 
   async send(payloads: any[]): Promise<void> {
-    const apiKey = this.config.key;
+    const apiKey = this.config.widgetKey;
     const urlObject = new url.URL(this.constructUrl(apiKey));
 
     const options = {
@@ -67,7 +67,7 @@ export class HttpsTransport implements Transport {
       this.config.ipPolicy !== 'keep'
         ? `&ip_policy=${this.config.ipPolicy}`
         : '';
-    return `${this.trackingHost}/api/v1/s2s/event?token=${apiKey}${cookiePolicy}${ipPolicy}`;
+    return `${this.host}/api/v1/s2s/event?token=${apiKey}${cookiePolicy}${ipPolicy}`;
   }
 
   private getCustomHeaders(): Record<string, string> {

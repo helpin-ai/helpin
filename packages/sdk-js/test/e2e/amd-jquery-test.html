@@ -273,8 +273,8 @@
 
                 try {
                     const client = window.helpinClient({
-                        key: 'UMaugVPOWz',
-                        trackingHost: 'https://events.helpin.ai'
+                        widgetKey: 'UMaugVPOWz',
+                        host: 'https://events.helpin.ai'
                     });
                     client.track('non_amd_test_event', { source: 'script_tag' });
                     log('test2', '✓ Event tracked via helpinClient', 'success');
@@ -312,8 +312,8 @@
                         
                         try {
                             const client = helpin.helpinClient({
-                                key: 'UMaugVPOWz',
-                                trackingHost: 'https://events.helpin.ai'
+                                widgetKey: 'UMaugVPOWz',
+                                host: 'https://events.helpin.ai'
                             });
                             log('test3', '✓ Client created via AMD', 'success');
                             
@@ -347,8 +347,8 @@
                         
                         // Simulate e-commerce tracking
                         const client = helpin.helpinClient({
-                            key: 'UMaugVPOWz',
-                            trackingHost: 'https://events.helpin.ai'
+                            widgetKey: 'UMaugVPOWz',
+                            host: 'https://events.helpin.ai'
                         });
                         
                         // Track page view

@@ -26,8 +26,8 @@ const {
 
 // Create a client (will be null in this environment since there's no window)
 const client = createClient({
-  trackingHost: 'https://events.helpin.ai',
-  key: 'test-key',
+  host: 'https://events.helpin.ai',
+  widgetKey: 'test-key',
   autocapture: true,
 });
 

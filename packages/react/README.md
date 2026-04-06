@@ -21,8 +21,8 @@ import { createClient, HelpinProvider } from "@helpin-ai/react";
 
 // initialize Helpin core
 const helpinClient = createClient({
-  tracking_host: "__HELPIN_HOST__",
-  key: "__API_KET__",
+  host: "__HELPIN_HOST__",
+  widgetKey: "__API_KEY__",
   // See Helpin SDK parameters section for more options
 });
 
@@ -86,7 +86,19 @@ usePageView({before: (helpin) => helpin.id({id: '__USER_ID__', email: '__USER_EM
 
 ### useHelpin
 
-Returns object with `id`, `track`, `trackPageView`, `rawTrack`, `set`, `unset` and `interceptAnalytics` [methods of Helpin SDK](https://helpin.com/docs/sending-data/js-sdk/methods-reference).
+Returns an object with the following methods from the Helpin SDK:
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `id` | `(userData: UserProps, doNotSendEvent?: boolean) => Promise<void>` | Identify the current user |
+| `track` | `(typeName: string, payload?: EventPayload) => void` | Track a custom event |
+| `trackPageView` | `() => void` | Send a pageview event |
+| `lead` | `(payload: EventPayload, directSend?: boolean) => void` | Send a lead event |
+| `rawTrack` | `(payload: any) => void` | Send a raw tracking payload |
+| `set` | `(properties: Record<string, any>, opts?) => void` | Set persistent or event-level properties |
+| `unset` | `(propertyName: string, opts?) => void` | Unset a previously set property |
+
+See [methods reference](https://helpin.com/docs/sending-data/js-sdk/methods-reference) for details.
 
 ### usePageView
 

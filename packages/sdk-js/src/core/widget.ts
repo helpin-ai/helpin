@@ -24,7 +24,7 @@ export interface WidgetUser {
 }
 
 export interface WidgetSettings {
-  key: string;
+  widgetKey: string;
   host?: string;
   user?: WidgetUser;
 }
@@ -132,7 +132,7 @@ export class WidgetManager {
 
     this.isShutdown = false;
     this.config = settings;
-    this.widgetKey = settings.key;
+    this.widgetKey = settings.widgetKey;
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -144,7 +144,7 @@ export class WidgetManager {
     }
 
     // Get or create anonymous ID from cookie
-    this.anonymousId = getOrCreateAnonymousId(settings.key);
+    this.anonymousId = getOrCreateAnonymousId(settings.widgetKey);
 
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {
@@ -944,10 +944,10 @@ export class WidgetManager {
   // ─── API / Session ─────────────────────────────────────────
 
   private async fetchWidgetConfig(): Promise<void> {
-    if (!this.config?.key) return;
+    if (!this.config?.widgetKey) return;
 
     // Try localStorage cache first
-    const cached = getCachedConfig(this.config.key);
+    const cached = getCachedConfig(this.config.widgetKey);
     if (cached) {
       this.widgetConfig = normalizeWidgetConfig(cached);
       this.ensureWidget();
@@ -957,7 +957,7 @@ export class WidgetManager {
 
     try {
       const response = await fetch(
-        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.key)}`
+        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.widgetKey)}`
       );
 
       if (!response.ok) {
@@ -967,8 +967,8 @@ export class WidgetManager {
       this.widgetConfig = normalizeWidgetConfig(await response.json());
 
       // Cache in localStorage
-      if (this.widgetConfig && this.config.key) {
-        cacheConfig(this.config.key, this.widgetConfig);
+      if (this.widgetConfig && this.config.widgetKey) {
+        cacheConfig(this.config.widgetKey, this.widgetConfig);
       }
 
       this.ensureWidget();
