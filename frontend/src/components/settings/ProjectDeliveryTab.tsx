@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
 import { gitService } from '@/lib/services/gitService';
 import type { GitIntegration, GitRepository } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlusSignIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
+import { GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -19,6 +19,7 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
   const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
+  const [disconnectingIntegrationId, setDisconnectingIntegrationId] = useState<string | null>(null);
   const [installingGitHubApp, setInstallingGitHubApp] = useState(false);
   const [installActionError, setInstallActionError] = useState<string | null>(null);
   const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
@@ -31,6 +32,16 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
   const hasIntegrations = integrations.length > 0;
   const hasRepositories = repositories.length > 0;
   const hasGitHubAppIntegration = integrations.some((integration) => integration.provider === 'github' && Boolean(integration.installation_id));
+
+  const reposByIntegration = useMemo(() => {
+    const map = new Map<string, GitRepository[]>();
+    for (const repo of repositories) {
+      const list = map.get(repo.integration_id) ?? [];
+      list.push(repo);
+      map.set(repo.integration_id, list);
+    }
+    return map;
+  }, [repositories]);
 
   const loadGitStatus = useCallback(async () => {
     const [integrationsRes, reposRes] = await Promise.all([
@@ -167,57 +178,119 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
               No integrations connected yet.
             </div>
           ) : (
-            <div className="space-y-2">
-              {integrations.map((integration) => (
-                <div key={integration.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{integration.display_name}</p>
-                      <Badge
-                        variant="outline"
-                        className={integration.active
-                          ? 'border-green-500/30 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : ''
-                        }
-                      >
-                        {integration.active ? 'Active' : 'Inactive'}
-                      </Badge>
+            <div className="space-y-3">
+              {integrations.map((integration) => {
+                const integrationRepos = reposByIntegration.get(integration.id) ?? [];
+                const activeRepos = integrationRepos.filter((r) => !r.archived);
+                return (
+                  <div key={integration.id} className="rounded-lg border border-border/60">
+                    {/* Integration header */}
+                    <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{integration.display_name}</p>
+                          <Badge
+                            variant="outline"
+                            className={integration.active
+                              ? 'border-green-500/30 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : ''
+                            }
+                          >
+                            {integration.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                          {activeRepos.length > 0 && (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {activeRepos.length} {activeRepos.length === 1 ? 'repo' : 'repos'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {integration.provider}
+                          {integration.account_login ? ` · ${integration.account_login}` : ''}
+                          {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
+                        </p>
+                        {integration.last_sync_error && (
+                          <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={syncingIntegrationId === integration.id || disconnectingIntegrationId === integration.id}
+                          onClick={async () => {
+                            setSyncingIntegrationId(integration.id);
+                            const { error } = await gitService.syncRepositories(workspaceId, integration.id);
+                            setSyncingIntegrationId(null);
+                            if (error) {
+                              toast.error(error);
+                              return;
+                            }
+                            toast.success('Repositories synced');
+                            await loadGitStatus();
+                          }}
+                        >
+                          {syncingIntegrationId === integration.id
+                            ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                            : <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
+                          }
+                          {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync'}
+                        </Button>
+                        {editable && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={disconnectingIntegrationId === integration.id || syncingIntegrationId === integration.id}
+                            onClick={async () => {
+                              setDisconnectingIntegrationId(integration.id);
+                              const { error } = await gitService.deleteIntegration(workspaceId, integration.id);
+                              setDisconnectingIntegrationId(null);
+                              if (error) {
+                                toast.error(error);
+                                return;
+                              }
+                              toast.success('Integration disconnected');
+                              await loadGitStatus();
+                            }}
+                          >
+                            {disconnectingIntegrationId === integration.id
+                              ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                              : <Delete01Icon className="h-3.5 w-3.5" />
+                            }
+                            {disconnectingIntegrationId === integration.id ? 'Disconnecting...' : 'Disconnect'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {integration.provider}
-                      {integration.account_login ? ` · ${integration.account_login}` : ''}
-                      {integration.installation_id ? ` · installation ${integration.installation_id}` : ''}
-                      {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
-                    </p>
-                    {integration.last_sync_error && (
-                      <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p>
+
+                    {/* Repository list for this integration */}
+                    {activeRepos.length > 0 && (
+                      <div className="border-t border-border/60 px-4 py-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">Repositories with access</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeRepos.map((repo) => (
+                            <span
+                              key={repo.id}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/50 px-2 py-1 text-xs"
+                            >
+                              <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
+                              <span className="font-medium">{repo.full_name}</span>
+                              {repo.private && <Badge variant="outline" className="h-4 px-1 text-[9px]">Private</Badge>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {activeRepos.length === 0 && integration.last_synced_at && (
+                      <div className="border-t border-border/60 px-4 py-3">
+                        <p className="text-xs text-muted-foreground">No repositories synced. Click Sync to pull repositories from GitHub.</p>
+                      </div>
                     )}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={syncingIntegrationId === integration.id}
-                    onClick={async () => {
-                      setSyncingIntegrationId(integration.id);
-                      const { error } = await gitService.syncRepositories(workspaceId, integration.id);
-                      setSyncingIntegrationId(null);
-                      if (error) {
-                        toast.error(error);
-                        return;
-                      }
-                      toast.success('Repositories synced');
-                      await loadGitStatus();
-                    }}
-                  >
-                    {syncingIntegrationId === integration.id
-                      ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-                      : <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
-                    }
-                    {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync'}
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

@@ -50,7 +50,7 @@ func TestSignGitHubInstallState(t *testing.T) {
 
 func TestWithGitHubInstallStatus(t *testing.T) {
 	result := withGitHubInstallStatus(
-		"http://localhost:5173/w/demo/settings/system?tab=delivery",
+		"http://localhost:5173/w/demo/settings/delivery?tab=delivery",
 		"connected",
 		"Connected successfully.",
 		map[string]string{"integration_id": "abc123"},
@@ -60,7 +60,7 @@ func TestWithGitHubInstallStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse result URL: %v", err)
 	}
-	if parsed.Path != "/w/demo/settings/system" {
+	if parsed.Path != "/w/demo/settings/delivery" {
 		t.Fatalf("unexpected path %q", parsed.Path)
 	}
 	if parsed.Query().Get("tab") != "delivery" {

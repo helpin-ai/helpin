@@ -58,6 +58,22 @@ func (r *GitIntegrationRepository) Update(ctx context.Context, integration *mode
 	return nil
 }
 
+// Delete removes an integration by workspace and ID.
+func (r *GitIntegrationRepository) Delete(ctx context.Context, workspaceID, id string) error {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).Delete(&model.GitIntegration{}).Error; err != nil {
+		return fmt.Errorf("delete git integration: %w", err)
+	}
+	return nil
+}
+
+// DeleteRepositoriesByIntegration removes all repositories tied to an integration.
+func (r *GitRepositoryRepository) DeleteByIntegration(ctx context.Context, workspaceID, integrationID string) error {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND integration_id = ?", workspaceID, integrationID).Delete(&model.GitRepository{}).Error; err != nil {
+		return fmt.Errorf("delete git repositories by integration: %w", err)
+	}
+	return nil
+}
+
 // GetByInstallationID returns the active integration for an app installation.
 func (r *GitIntegrationRepository) GetByInstallationID(ctx context.Context, provider, installationID string) (*model.GitIntegration, error) {
 	var integration model.GitIntegration

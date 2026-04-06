@@ -89,6 +89,19 @@ func (h *GitHandler) CreateIntegration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, integration)
 }
 
+// DeleteIntegration handles DELETE /api/git/integrations/{id}.
+func (h *GitHandler) DeleteIntegration(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	integrationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	if err := h.gitService.DeleteIntegration(r.Context(), workspaceID, integrationID, actorID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // SyncRepositories handles POST /api/git/integrations/{id}/sync.
 func (h *GitHandler) SyncRepositories(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
