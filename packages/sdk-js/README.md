@@ -63,15 +63,33 @@ client.track('button_click', {
   pageUrl: window.location.href
 });
 
-// Identify a user
+// Identify a logged-in user
 client.id({
   id: 'user123',
   email: 'user@example.com',
   name: 'John Doe'
 });
 
+// Capture a lead (e.g. from a signup form)
+client.lead({
+  email: 'visitor@example.com',
+  name: 'New Lead',
+  company: 'Acme Inc'
+});
+
 // Track a page view
 client.pageview();
+
+// Boot the widget with user identity
+client.boot({
+  widgetKey: 'your-widget-key',
+  host: 'https://client.helpin.ai',
+  user: {
+    email: 'user@example.com',
+    name: 'Jane Doe',
+    userId: 'your-internal-id'
+  }
+});
 ```
 
 ### Using via UMD
@@ -86,11 +104,29 @@ When you include the SDK via a script tag, it automatically initializes with the
     pageUrl: window.location.href
   });
 
-  // Identify a user
+  // Identify a logged-in user
   helpin('id', {
     id: 'user123',
     email: 'user@example.com',
     name: 'John Doe'
+  });
+
+  // Capture a lead
+  helpin('lead', {
+    email: 'visitor@example.com',
+    name: 'New Lead',
+    company: 'Acme Inc'
+  });
+
+  // Boot widget with user identity
+  helpin('boot', {
+    widgetKey: 'your-widget-key',
+    host: 'https://client.helpin.ai',
+    user: {
+      email: 'user@example.com',
+      name: 'Jane Doe',
+      userId: 'your-internal-id'
+    }
   });
 
   // Track a page view (if not set to automatic in the script tag)
