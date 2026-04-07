@@ -362,7 +362,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    label: 'Knowledge',
+    label: 'Docs',
     tools: [
       { name: 'Notion', domain: 'notion.so' },
       { name: 'Confluence', domain: 'atlassian.com' },
@@ -379,7 +379,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    label: 'CRM',
+    label: 'Sales',
     tools: [
       { name: 'HubSpot', domain: 'hubspot.com' },
       { name: 'Salesforce', domain: 'salesforce.com' },
@@ -1223,7 +1223,7 @@ export default function HomePage() {
 const WF_DATA = [
   { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const, packet: 'Login bug' },
   { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
-  { id: 'crm',       module: 'CRM',        action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
+  { id: 'crm',       module: 'Sales',      action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
   { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
   { id: 'knowledge', module: 'Knowledge',  action: '3 matches found',      dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 7, signalAt: 7, signalDir: 'out' as const, packet: 'Find related' },
   { id: 'customer',  module: 'Customer',   action: 'Update sent',           dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 8, signalAt: 8, signalDir: 'out' as const, packet: 'Investigating' },
@@ -1249,7 +1249,7 @@ function wfCurveReversed(x1: number, y1: number, x2: number, y2: number) {
   return `M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`;
 }
 
-function TravelingPacket({ pathD, label, duration = 2200 }: { pathD: string; label: string; duration?: number }) {
+function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: string; label: string; color?: string; duration?: number }) {
   const pathRef = useRef<SVGPathElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -1288,15 +1288,18 @@ function TravelingPacket({ pathD, label, duration = 2200 }: { pathD: string; lab
         const hw = w / 2;
         return (
           <g transform={`translate(${pos.x}, ${pos.y})`}>
-            <rect x={-hw + 1} y="-9" width={w - 2} height="18" rx="9"
-              fill="oklch(0.12 0.02 55 / 0.15)" />
+            {/* Shadow */}
+            <rect x={-hw + 1} y="-8" width={w - 2} height="18" rx="9"
+              fill={color ? `${color}20` : 'oklch(0.12 0.02 55 / 0.1)'} />
+            {/* Pastel background */}
             <rect x={-hw} y="-10" width={w} height="20" rx="10"
-              fill="var(--color-pop)" />
-            <rect x={-hw} y="-10" width={w} height="20" rx="10"
-              fill="var(--color-pop)" opacity="0.3" filter="url(#wf-glow)" />
+              fill={color ? `${color}30` : 'var(--color-pop-light)'}
+              stroke={color ? `${color}50` : 'var(--color-pop)'}
+              strokeWidth="1.5" />
+            {/* Text */}
             <text x="0" y="3.5" textAnchor="middle"
-              fill="white" fontSize="8" fontWeight="700" fontFamily="var(--font-sans)"
-              style={{ letterSpacing: '0.03em' }}>
+              fill={color || 'var(--color-pop)'} fontSize="8.5" fontWeight="800" fontFamily="var(--font-sans)"
+              style={{ letterSpacing: '0.02em' }}>
               {label}
             </text>
           </g>
@@ -1564,7 +1567,7 @@ function AIWorkflowVisual() {
             ? wfCurve(n.svg.x, n.svg.y, cx, cy)
             : wfCurveReversed(n.svg.x, n.svg.y, cx, cy);
           return (
-            <TravelingPacket key={`pkt-${n.id}-${step}`} pathD={travelPath} label={n.packet} />
+            <TravelingPacket key={`pkt-${n.id}-${step}`} pathD={travelPath} label={n.packet} color={n.dot} />
           );
         })}
 
@@ -1572,12 +1575,12 @@ function AIWorkflowVisual() {
         {step === 9 && (
           <TravelingPacket key={`pkt-return-done-${step}`}
             pathD={wfCurve(WF_DATA[1].svg.x, WF_DATA[1].svg.y, cx, cy)}
-            label="Done ✓" />
+            label="Done ✓" color="#16a34a" />
         )}
         {step === 11 && (
           <TravelingPacket key={`pkt-return-resolved-${step}`}
             pathD={wfCurveReversed(WF_DATA[0].svg.x, WF_DATA[0].svg.y, cx, cy)}
-            label="Resolved" />
+            label="Resolved" color="#16a34a" />
         )}
 
         {/* ── Center AI hub ── */}
