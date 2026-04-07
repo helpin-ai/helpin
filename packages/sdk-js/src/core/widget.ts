@@ -601,21 +601,36 @@ export class WidgetManager {
     }
 
     let changed = false;
+    const current = this.widgetConfig.availableTeammates;
+    const next = status === 'offline'
+      ? current.filter((teammate) => {
+          const keep = teammate.userId !== userId;
+          if (!keep) {
+            changed = true;
+          }
+          return keep;
+        })
+      : current.map((teammate) => {
+          if (teammate.userId !== userId || teammate.status === status) {
+            return teammate;
+          }
+          changed = true;
+          return {
+            ...teammate,
+            status,
+          };
+        });
+
+    if (!changed) {
+      return false;
+    }
+
     this.widgetConfig = {
       ...this.widgetConfig,
-      availableTeammates: this.widgetConfig.availableTeammates.map((teammate) => {
-        if (teammate.userId !== userId || teammate.status === status) {
-          return teammate;
-        }
-        changed = true;
-        return {
-          ...teammate,
-          status,
-        };
-      }),
+      availableTeammates: next,
     };
 
-    return changed;
+    return true;
   }
 
   private mapConversation(raw: any): WidgetConversation {
