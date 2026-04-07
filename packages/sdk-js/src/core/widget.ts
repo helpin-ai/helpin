@@ -27,7 +27,8 @@ export interface WidgetUser {
 }
 
 export interface WidgetSettings {
-  widgetKey: string;
+  widgetKey?: string;
+  key?: string;
   host?: string;
   user?: WidgetUser;
 }
@@ -137,8 +138,12 @@ export class WidgetManager {
     }
 
     this.isShutdown = false;
-    this.config = settings;
-    this.widgetKey = settings.widgetKey;
+    const widgetKey = settings.widgetKey || settings.key || '';
+    this.config = {
+      ...settings,
+      widgetKey,
+    };
+    this.widgetKey = widgetKey;
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -150,7 +155,7 @@ export class WidgetManager {
     }
 
     // Get or create anonymous ID from cookie
-    this.anonymousId = getOrCreateAnonymousId(settings.widgetKey);
+    this.anonymousId = this.widgetKey ? getOrCreateAnonymousId(this.widgetKey) : null;
 
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {

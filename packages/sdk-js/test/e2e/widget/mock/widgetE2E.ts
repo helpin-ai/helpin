@@ -14,6 +14,7 @@ export type WidgetE2EController = {
   getSentMessages: () => Array<{ type: string; data?: Record<string, unknown> }>
   getSocketCount: () => number
   isReady: boolean
+  setSocketBehavior: (mode: 'open' | 'fail') => void
 }
 
 declare global {
@@ -98,6 +99,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
         },
       ],
       requests: [] as Array<{ method: string; url: string; body?: Record<string, unknown> }>,
+      socketBehavior: 'open' as 'open' | 'fail',
     }
 
     const buildSessionPayload = () => ({
@@ -271,6 +273,12 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
         this.url = url
         MockWebSocket.instances.push(this)
         queueMicrotask(() => {
+          if (state.socketBehavior === 'fail') {
+            this.readyState = MockWebSocket.CLOSED
+            this.onerror?.(new Event('error'))
+            this.onclose?.(new CloseEvent('close'))
+            return
+          }
           this.readyState = MockWebSocket.OPEN
           this.onopen?.(new Event('open'))
         })
@@ -449,6 +457,9 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       getRequests: () => [...state.requests],
       getSentMessages: () => [...MockWebSocket.sentMessages],
       getSocketCount: () => MockWebSocket.instances.length,
+      setSocketBehavior: (mode) => {
+        state.socketBehavior = mode
+      },
     }
 
     try {
