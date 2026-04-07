@@ -40,7 +40,7 @@ export function Footer() {
   };
 
   return (
-    <footer className="relative" style={{ backgroundImage: 'url(/images/footer-bg.jpg)', backgroundSize: 'cover', backgroundPosition: 'center bottom' }}>
+    <footer className="relative" style={{ backgroundImage: 'image-set(url(/images/footer-bg.webp) type("image/webp"), url(/images/footer-bg.jpg) type("image/jpeg"))', backgroundSize: 'cover', backgroundPosition: 'center bottom' }}>
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/60" />
 
@@ -97,7 +97,7 @@ export function Footer() {
           <div className="flex flex-col sm:flex-row justify-between gap-10">
             <div>
               <Link href="/">
-                <img src="https://assets.helpin.ai/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-9 brightness-0 invert" />
+                <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-9 brightness-0 invert" />
               </Link>
               <p className="mt-4 text-sm leading-relaxed text-white/50 max-w-xs">
                 PM, CRM, support, sales & docs — connected

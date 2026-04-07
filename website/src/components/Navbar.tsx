@@ -26,7 +26,7 @@ export function Navbar() {
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/">
-          <img src="https://assets.helpin.ai/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
+          <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
         </Link>
 
         <div className="hidden md:flex items-center gap-8">

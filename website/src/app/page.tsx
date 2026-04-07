@@ -588,7 +588,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
                       }}
                     >
                       <img
-                        src={`https://www.google.com/s2/favicons?domain=${tool.domain}&sz=32`}
+                        src={`/favicons/${tool.domain}.png`}
                         style={{
                           width: 16, height: 16, flexShrink: 0,
                           opacity: 0.72 * faviconExtraOpacity,
@@ -907,7 +907,7 @@ export default function HomePage() {
             <div key={c.domain} className="flex items-center gap-8">
               <div className="flex items-center gap-2 opacity-75 hover:opacity-100 transition-opacity duration-200 shrink-0">
                 <img
-                  src={`https://www.google.com/s2/favicons?domain=${c.domain}&sz=64`}
+                  src={`/favicons/${c.domain}.png`}
                   alt=""
                   className="h-5 w-5 object-contain"
                 />
@@ -986,7 +986,7 @@ export default function HomePage() {
                       <div key={t.domain} className="absolute" style={{ top: p.top, left: p.left, transform: `rotate(${p.rotate}deg)` }}>
                         <div className="w-[40px] h-[40px] sm:w-[52px] sm:h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
                           style={{ boxShadow: '0 2px 8px oklch(0.12 0.02 55 / 0.06), 0 0 0 1px oklch(0.12 0.02 55 / 0.03)' }}>
-                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-5 h-5 sm:w-7 sm:h-7" alt="" />
+                          <img src={`/favicons/${t.domain}.png`} className="w-5 h-5 sm:w-7 sm:h-7" alt="" />
                         </div>
                       </div>
                     );
