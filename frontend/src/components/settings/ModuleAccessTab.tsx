@@ -36,12 +36,15 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
+import { UserAvatar } from '@/components/pm/UserAvatar'
 import {
   useCreateModuleGrant,
   useDeleteModuleGrant,
   useWorkspaceModuleAccess,
 } from '@/hooks/queries/useSettings'
+import { useWorkspaceMembers } from '@/hooks/queries'
 import type {
+  MemberWithUser,
   WorkspaceModuleGrant,
   WorkspacePerson,
   WorkspaceTeam,
@@ -190,6 +193,7 @@ const ModuleCard = memo(function ModuleCard({
 }: ModuleCardProps) {
   const createGrant = useCreateModuleGrant(workspaceId)
   const deleteGrant = useDeleteModuleGrant(workspaceId)
+  const { data: members } = useWorkspaceMembers(workspaceId)
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
 
@@ -222,6 +226,15 @@ const ModuleCard = memo(function ModuleCard({
     return map
   }, [activePeople])
 
+  // Map user_id → MemberWithUser for avatar lookup
+  const memberByUserId = useMemo(() => {
+    const map = new Map<string, MemberWithUser>()
+    if (members) {
+      for (const m of members) map.set(m.user_id, m)
+    }
+    return map
+  }, [members])
+
   const availableTeamItems = useMemo(() => {
     const grantedIds = new Set(teamGrants.map((g) => g.subject_id))
     return teams
@@ -239,8 +252,28 @@ const ModuleCard = memo(function ModuleCard({
     const grantedIds = new Set(memberGrants.map((g) => g.subject_id))
     return activePeople
       .filter((p) => !grantedIds.has(p.id))
-      .map((p) => ({ id: p.id, label: p.name, detail: p.email }))
-  }, [activePeople, memberGrants])
+      .map((p) => {
+        const member = p.user_id
+          ? memberByUserId.get(p.user_id)
+          : undefined
+        return {
+          id: p.id,
+          label: p.name,
+          detail: p.email,
+          avatar: (
+            <UserAvatar
+              name={p.name}
+              avatarUrl={member?.avatar_url}
+              avatarStyle={member?.avatar_style}
+              avatarSeed={member?.avatar_seed}
+              avatarBackgroundMode={member?.avatar_background_mode}
+              avatarBackgroundColor={member?.avatar_background_color}
+              className="h-5 w-5"
+            />
+          ),
+        }
+      })
+  }, [activePeople, memberGrants, memberByUserId])
 
   // Stable callbacks
   const handleDeleteGrant = useCallback(
@@ -423,11 +456,25 @@ const ModuleCard = memo(function ModuleCard({
               <div className="flex flex-wrap gap-1.5">
                 {memberGrants.map((grant) => {
                   const person = personMap.get(grant.subject_id)
+                  const member = person?.user_id
+                    ? memberByUserId.get(person.user_id)
+                    : undefined
                   return (
                     <CompactChip
                       key={grant.id}
                       title={person?.name ?? 'Unknown member'}
                       displayId={person?.email}
+                      avatar={
+                        <UserAvatar
+                          name={person?.name}
+                          avatarUrl={member?.avatar_url}
+                          avatarStyle={member?.avatar_style}
+                          avatarSeed={member?.avatar_seed}
+                          avatarBackgroundMode={member?.avatar_background_mode}
+                          avatarBackgroundColor={member?.avatar_background_color}
+                          className="h-5 w-5"
+                        />
+                      }
                       onRemove={() => handleDeleteGrant(grant.id)}
                     />
                   )
@@ -470,6 +517,7 @@ type SelectableItem = {
   id: string
   label: string
   detail?: string
+  avatar?: React.ReactNode
 }
 
 const MultiSelectAdd = memo(function MultiSelectAdd({
@@ -516,7 +564,7 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="inline-flex h-7 max-w-[280px] items-center gap-1 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             <span className="truncate">
               {selectedIds.length > 0
@@ -526,7 +574,7 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
             <ArrowDown01Icon className="ml-auto h-3 w-3 shrink-0 opacity-50" />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-[240px] p-0" align="start">
+        <PopoverContent className="w-[280px] p-0" align="start">
           <Command>
             <CommandInput
               placeholder={placeholder}
@@ -544,7 +592,7 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
                       key={item.id}
                       value={`${item.label} ${item.detail ?? ''}`}
                       onSelect={() => handleToggle(item.id)}
-                      className="flex items-center gap-2 text-xs py-1"
+                      className="flex items-center gap-2 text-xs py-1.5"
                       data-checked={isSelected}
                     >
                       <Checkbox
@@ -552,14 +600,19 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
                         className="pointer-events-none size-3.5"
                         tabIndex={-1}
                       />
-                      <span className="min-w-0 flex-1 truncate">
-                        {item.label}
-                      </span>
-                      {item.detail && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {item.detail}
-                        </span>
+                      {item.avatar && (
+                        <span className="flex shrink-0 items-center justify-center h-6 w-6">{item.avatar}</span>
                       )}
+                      <div className="min-w-0 flex-1">
+                        <span className="truncate block">
+                          {item.label}
+                        </span>
+                        {item.detail && (
+                          <span className="truncate block text-[10px] text-muted-foreground">
+                            {item.detail}
+                          </span>
+                        )}
+                      </div>
                     </CommandItem>
                   )
                 })}
@@ -597,8 +650,8 @@ function EmptyGrants({
       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
         <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
       </div>
-      <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <p className="text-[11px] text-muted-foreground/70 leading-snug max-w-[200px]">
+      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
+      <p className="text-xs text-muted-foreground/70 leading-snug max-w-[220px]">
         {description}
       </p>
     </div>
