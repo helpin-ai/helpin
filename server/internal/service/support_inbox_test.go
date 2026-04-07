@@ -426,6 +426,12 @@ func TestSupportConversationRepository(t *testing.T) {
 		if stats.Unassigned != 1 {
 			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
 		}
+		if stats.AIAll != 2 {
+			t.Fatalf("expected all AI unread count 2, got %d", stats.AIAll)
+		}
+		if stats.AIPending != 1 {
+			t.Fatalf("expected AI pending unread count 1, got %d", stats.AIPending)
+		}
 	})
 
 	t.Run("Mailbox unread counts exclude AI-managed conversations that stay in AI views", func(t *testing.T) {
