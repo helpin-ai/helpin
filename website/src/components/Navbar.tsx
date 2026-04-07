@@ -26,7 +26,7 @@ export function Navbar() {
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/">
-          <img src="https://assets.helpin.ai/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
+          <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
@@ -43,7 +43,7 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-4">
           <Link
-            href="https://helpin.ai/login"
+            href="https://app.helpin.ai"
             className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             Log in
@@ -91,7 +91,7 @@ export function Navbar() {
           ))}
           <div className="pt-2 flex flex-col gap-2">
             <Link
-              href="https://helpin.ai/login"
+              href="https://app.helpin.ai"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               Log in
