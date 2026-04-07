@@ -432,6 +432,54 @@ describe('ChatWindow', () => {
     expect(queryByText('Talk to a human')).toBeNull();
   });
 
+  it('shows a reconnecting banner while the widget is temporarily disconnected', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+        connectionStatus="disconnected"
+      />,
+    );
+
+    expect(getByText('Connection lost. Reconnecting...')).toBeTruthy();
+    expect(queryByText('Reconnect')).toBeNull();
+  });
+
+  it('shows a reconnect prompt and disables the composer after prolonged disconnection', () => {
+    const handleRetry = vi.fn();
+    const { getByText, container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+        connectionStatus="failed"
+        onRetryConnection={handleRetry}
+      />,
+    );
+
+    expect(getByText("We've been offline for a while. We'll keep trying in the background, or reconnect now.")).toBeTruthy();
+
+    fireEvent.click(getByText('Reconnect'));
+    expect(handleRetry).toHaveBeenCalledTimes(1);
+
+    const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(true);
+    expect(textarea.placeholder).toBe('Offline. Reconnecting in the background...');
+  });
+
   it('hides talk to human after a human teammate has already replied', () => {
     const { queryByText } = render(
       <ChatWindow

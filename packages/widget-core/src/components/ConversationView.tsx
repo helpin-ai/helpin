@@ -33,6 +33,7 @@ interface ConversationViewProps {
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   onImageClick?: (src: string, alt: string) => void;
+  connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
@@ -58,6 +59,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   showPreChatForm = false,
   onPreChatSubmit,
   onImageClick: externalImageClick,
+  connectionStatus = 'connected',
 }) => {
   const conversationKey = conversation?.id || '__new__';
   const [introCreatedAt] = useState(() => new Date().toISOString());
@@ -83,6 +85,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const hasHumanReply = messages.some((message) => message.role === 'agent');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
+  const composeDisabled = connectionStatus === 'connecting' || connectionStatus === 'disconnected' || connectionStatus === 'failed';
+  const composePlaceholder = connectionStatus === 'failed'
+    ? 'Offline. Reconnecting in the background...'
+    : connectionStatus === 'disconnected'
+      ? 'Connection lost. Reconnecting...'
+      : connectionStatus === 'connecting'
+        ? 'Connecting to support...'
+        : 'Ask a question...';
   const hasHumanHandoffAlready = Boolean(
     hasHumanReply ||
       conversation?.aiState === 'escalated' ||
@@ -521,6 +531,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         pendingAttachments={pendingAttachments}
         onRemoveAttachment={handleRemoveAttachment}
         fileUploadsEnabled={fileUploadsEnabled}
+        disabled={composeDisabled}
+        placeholder={composePlaceholder}
       />
 
       {lightboxImage && (

@@ -1368,6 +1368,11 @@
   color: var(--helpin-fg-muted);
 }
 
+.helpin-connection-banner--disconnected {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .helpin-connection-banner--failed {
   background: #fef2f2;
   color: #991b1b;
@@ -1884,6 +1889,11 @@
 .helpin-compose-tool-btn:hover {
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
+}
+
+.helpin-compose-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Send button — circle with arrow */
