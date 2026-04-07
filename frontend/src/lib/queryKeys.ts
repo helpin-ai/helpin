@@ -12,6 +12,7 @@ export const queryKeys = {
     all: (orgId?: string) => ['workspaces', { orgId }] as const,
     bySlug: (slug: string) => ['workspaces', 'slug', slug] as const,
     members: (wsId: string) => ['workspaces', wsId, 'members'] as const,
+    memberPresence: (wsId: string) => ['workspaces', wsId, 'members', 'presence'] as const,
     assignableMembers: (wsId: string) => ['workspaces', wsId, 'assignableMembers'] as const,
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
     moduleAccess: (wsId: string) => ['workspaces', wsId, 'module-access'] as const,

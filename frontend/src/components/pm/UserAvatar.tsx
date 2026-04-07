@@ -59,6 +59,7 @@ interface UserAvatarProps {
   avatarSeed?: string | null;
   avatarBackgroundMode?: string | null;
   avatarBackgroundColor?: string | null;
+  presenceStatus?: 'online' | 'away' | 'offline' | null;
   className?: string;
   fallbackClassName?: string;
 }
@@ -70,6 +71,7 @@ export function UserAvatar({
   avatarSeed,
   avatarBackgroundMode,
   avatarBackgroundColor,
+  presenceStatus,
   className,
   fallbackClassName,
 }: UserAvatarProps) {
@@ -85,11 +87,16 @@ export function UserAvatar({
   });
 
   return (
-    <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
-      <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
-      <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
-        {getInitials(name)}
-      </AvatarFallback>
-    </Avatar>
+    <span className="relative inline-flex shrink-0">
+      <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
+        <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
+        <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
+          {getInitials(name)}
+        </AvatarFallback>
+      </Avatar>
+      {presenceStatus === 'online' ? (
+        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-background bg-emerald-500" />
+      ) : null}
+    </span>
   );
 }

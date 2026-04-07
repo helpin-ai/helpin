@@ -611,6 +611,37 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	return results, nil
 }
 
+// ListSupportAccessibleUserIDs returns active linked user IDs that can access the support module.
+func (r *WorkspaceRepository) ListSupportAccessibleUserIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	var userIDs []string
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Joins("LEFT JOIN team_workspace_memberships twm ON twm.workspace_member_id = wm.id").
+		Joins(
+			"LEFT JOIN workspace_module_grants member_grant ON member_grant.workspace_id = wm.workspace_id AND member_grant.module = ? AND member_grant.subject_type = ? AND member_grant.subject_id = wm.id",
+			model.ModuleSupport,
+			model.ModuleGrantSubjectWorkspaceMember,
+		).
+		Joins(
+			"LEFT JOIN workspace_module_grants team_grant ON team_grant.workspace_id = wm.workspace_id AND team_grant.module = ? AND team_grant.subject_type = ? AND team_grant.subject_id = twm.team_id",
+			model.ModuleSupport,
+			model.ModuleGrantSubjectTeam,
+		).
+		Where(
+			"wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL AND (wm.role IN ? OR member_grant.id IS NOT NULL OR team_grant.id IS NOT NULL)",
+			workspaceID,
+			model.WorkspaceMemberStatusActive,
+			[]string{model.RoleOwner, model.RoleAdmin},
+		).
+		Distinct().
+		Order("wm.user_id ASC").
+		Pluck("wm.user_id", &userIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list support accessible user ids: %w", err)
+	}
+	return userIDs, nil
+}
+
 // ListAssignableMembers returns both joined and pending identities for PM assignment pickers.
 func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
 	var members []model.AssignableMember

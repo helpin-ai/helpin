@@ -167,6 +167,14 @@ export interface AssignableMember {
   accepted_at?: string;
 }
 
+export interface WorkspaceMemberPresenceStatus {
+  user_id: string;
+  status: 'online' | 'away' | 'offline';
+  source: 'auto' | 'manual';
+  manual_status?: 'online' | 'away' | 'offline';
+  last_seen_at?: string;
+}
+
 export interface WorkspaceSettings {
   settings: WorkspaceConfig;
   teams: WorkspaceTeam[];

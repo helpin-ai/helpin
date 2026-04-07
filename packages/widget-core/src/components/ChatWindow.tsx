@@ -156,9 +156,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
-  const homeTeammates = activeTeammate?.name
-    ? [activeTeammate]
-    : (config.availableTeammates ?? []).slice(0, 4);
+  const homeTeammates = (config.availableTeammates ?? []).slice(0, 4);
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';

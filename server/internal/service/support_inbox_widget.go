@@ -764,6 +764,15 @@ func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspace
 		return []model.WidgetActiveTeammate{}
 	}
 
+	supportUserIDs, err := s.workspaceRepo.ListSupportAccessibleUserIDs(ctx, workspaceID)
+	if err != nil || len(supportUserIDs) == 0 {
+		return []model.WidgetActiveTeammate{}
+	}
+	supportUserIDSet := make(map[string]struct{}, len(supportUserIDs))
+	for _, userID := range supportUserIDs {
+		supportUserIDSet[userID] = struct{}{}
+	}
+
 	statusByUserID := map[string]string{}
 	statuses, err := resolveSupportTeammatePresenceStatuses(
 		ctx,
@@ -789,11 +798,18 @@ func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspace
 		if strings.TrimSpace(member.UserID) == "" || strings.TrimSpace(member.FullName) == "" {
 			continue
 		}
+		if _, ok := supportUserIDSet[member.UserID]; !ok {
+			continue
+		}
+		status := statusByUserID[member.UserID]
+		if status != model.SupportTeammateStatusOnline && status != model.SupportTeammateStatusAway {
+			continue
+		}
 		teammates = append(teammates, model.WidgetActiveTeammate{
 			UserID:    member.UserID,
 			Name:      member.FullName,
 			AvatarURL: member.AvatarURL,
-			Status:    statusByUserID[member.UserID],
+			Status:    status,
 		})
 	}
 
