@@ -802,8 +802,8 @@ func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspace
 			continue
 		}
 		status := statusByUserID[member.UserID]
-		if status != model.SupportTeammateStatusOnline && status != model.SupportTeammateStatusAway {
-			continue
+		if status == "" {
+			status = model.SupportTeammateStatusOffline
 		}
 		teammates = append(teammates, model.WidgetActiveTeammate{
 			UserID:    member.UserID,
