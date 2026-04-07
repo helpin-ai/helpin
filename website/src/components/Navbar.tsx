@@ -43,7 +43,7 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-4">
           <Link
-            href="https://helpin.ai/login"
+            href="https://app.helpin.ai"
             className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             Log in
@@ -91,7 +91,7 @@ export function Navbar() {
           ))}
           <div className="pt-2 flex flex-col gap-2">
             <Link
-              href="https://helpin.ai/login"
+              href="https://app.helpin.ai"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               Log in
