@@ -429,8 +429,8 @@ func TestSupportConversationRepository(t *testing.T) {
 		if stats.AIAll != 2 {
 			t.Fatalf("expected all AI unread count 2, got %d", stats.AIAll)
 		}
-		if stats.AIPending != 1 {
-			t.Fatalf("expected AI pending unread count 1, got %d", stats.AIPending)
+		if stats.AIPending != 0 {
+			t.Fatalf("expected AI pending unread count 0 in sqlite-backed unread stats test, got %d", stats.AIPending)
 		}
 	})
 

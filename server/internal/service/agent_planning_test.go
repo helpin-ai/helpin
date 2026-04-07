@@ -263,7 +263,7 @@ func TestPlannerStoryTeamIDRequiresEpicTeam(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing epic team to be rejected")
 	}
-	if !strings.Contains(err.Error(), "must have a team before stories can be created") {
+	if !strings.Contains(err.Error(), "must have a team before tasks can be created") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

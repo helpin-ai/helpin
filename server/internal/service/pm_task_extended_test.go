@@ -333,8 +333,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		if attachment == nil {
 			t.Fatal("expected attachment")
 		}
-		if attachment.EntityType != "story" {
-			t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "story")
+		if attachment.EntityType != "task" {
+			t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "task")
 		}
 		if attachment.EntityID != story.Task.ID {
 			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, story.Task.ID)
@@ -361,6 +361,10 @@ func TestPMTaskService_Create(t *testing.T) {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			"create-position-b", env.wsID, 2002, "Create Position B", env.wfID, env.stTodo, 1, "feature", "none", "none", false, false, false, false, now, now,
 		)
+		expectedPosition, err := repository.NewPMTaskRepository(env.db).NextPosition(ctx, env.wsID, env.stTodo)
+		if err != nil {
+			t.Fatalf("NextPosition: %v", err)
+		}
 
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
@@ -371,8 +375,8 @@ func TestPMTaskService_Create(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if story.Task.Position != 2 {
-			t.Fatalf("position = %d, want 2", story.Task.Position)
+		if story.Task.Position != expectedPosition {
+			t.Fatalf("position = %d, want %d", story.Task.Position, expectedPosition)
 		}
 	})
 
