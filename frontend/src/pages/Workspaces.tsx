@@ -174,7 +174,7 @@ export default function Workspaces() {
   const handleWorkspaceDialogChange = (open: boolean) => {
     if (!open && creating) return;
     setDialogOpen(open);
-    if (!open) resetWorkspaceDialog();
+    if (!open) setTimeout(resetWorkspaceDialog, 300);
   };
 
   const handleCreateOrg = async (e: FormEvent) => {
@@ -201,14 +201,6 @@ export default function Workspaces() {
     }
     if (!name.trim() || !slug.trim()) {
       toast.error('Enter a workspace name and slug');
-      return;
-    }
-    // Check slug availability
-    setCheckingSlug(true);
-    const { data: existing } = await workspacesService.getBySlug(slug.trim());
-    setCheckingSlug(false);
-    if (existing) {
-      toast.error(`The slug "${slug.trim()}" is already taken. Please choose a different one.`);
       return;
     }
     setWorkspaceStep('teams');
@@ -377,10 +369,10 @@ export default function Workspaces() {
   const finishWorkspaceSetup = () => {
     const ws = createdWorkspace;
     setDialogOpen(false);
-    resetWorkspaceDialog();
     if (ws) {
       void navigate({ to: `/w/${ws.slug}/pm/my-work` });
     }
+    setTimeout(resetWorkspaceDialog, 300);
   };
 
   const handleOrgSwitch = (org: OrganizationWithRole) => {
@@ -519,10 +511,9 @@ export default function Workspaces() {
                       <Label htmlFor="ws-name">Workspace Name</Label>
                       <Input id="ws-name" placeholder="Acme Corporation" value={name} onChange={e => handleNameChange(e.target.value)} required />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="ws-slug">Slug</Label>
-                      <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
-                      <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
+                    {/* Slug auto-generated from name — hidden to reduce cognitive load */}
+                    <input type="hidden" value={slug} />
+                    <div className="hidden space-y-2">
                     </div>
                     {/* Task key prefix auto-generated from name — hidden to reduce cognitive load */}
                     <input type="hidden" value={workspaceKey} />
@@ -767,7 +758,7 @@ export default function Workspaces() {
               <div key={org.id}>
                 <div className="flex items-center gap-2 mb-4">
                   <UserAvatar name={org.name} avatarUrl={org.logo_url} className="h-5 w-5 rounded" fallbackClassName="text-[8px] rounded" />
-                  <h2 className="text-sm font-medium text-muted-foreground">{org.name} Organization</h2>
+                  <h2 className="text-sm font-medium text-muted-foreground">{org.name}</h2>
                 </div>
                 <WorkspaceSelector workspaces={orgWs} />
               </div>

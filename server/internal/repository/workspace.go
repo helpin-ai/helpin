@@ -78,12 +78,16 @@ func (r *WorkspaceRepository) FindWorkspaceByKeyOrAlias(ctx context.Context, key
 
 // IsWorkspaceKeyAvailable checks that a key is not used in workspaces.workspace_key or workspace_key_history.old_key.
 // excludeWorkspaceID allows the current workspace to be excluded from the check.
-func (r *WorkspaceRepository) IsWorkspaceKeyAvailable(ctx context.Context, key string, excludeWorkspaceID string) (bool, error) {
+// orgID scopes the check to the organization (if provided).
+func (r *WorkspaceRepository) IsWorkspaceKeyAvailable(ctx context.Context, key string, excludeWorkspaceID string, orgID *string) (bool, error) {
 	// Check current keys.
 	var wsCount int64
 	q := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("workspace_key = ?", key)
 	if excludeWorkspaceID != "" {
 		q = q.Where("id != ?", excludeWorkspaceID)
+	}
+	if orgID != nil {
+		q = q.Where("organization_id = ?", *orgID)
 	}
 	if err := q.Count(&wsCount).Error; err != nil {
 		return false, fmt.Errorf("check workspace key availability: %w", err)
@@ -94,7 +98,12 @@ func (r *WorkspaceRepository) IsWorkspaceKeyAvailable(ctx context.Context, key s
 
 	// Check retired keys.
 	var histCount int64
-	if err := r.db.WithContext(ctx).Model(&model.WorkspaceKeyHistory{}).Where("old_key = ?", key).Count(&histCount).Error; err != nil {
+	hq := r.db.WithContext(ctx).Model(&model.WorkspaceKeyHistory{}).Where("old_key = ?", key)
+	if orgID != nil {
+		hq = hq.Joins("JOIN workspaces ON workspaces.id = workspace_key_history.workspace_id").
+			Where("workspaces.organization_id = ?", *orgID)
+	}
+	if err := hq.Count(&histCount).Error; err != nil {
 		return false, fmt.Errorf("check workspace key history: %w", err)
 	}
 	return histCount == 0, nil
