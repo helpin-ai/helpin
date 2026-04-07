@@ -8,6 +8,9 @@ import {
   getStoredSession,
   persistSession,
   clearSession,
+  getStoredIdentity,
+  persistIdentity,
+  clearIdentity,
   clearConfigCache,
   getCachedConfig,
   cacheConfig,
@@ -184,9 +187,10 @@ export class WidgetManager {
       }
     }
 
-    // 2. Clear persisted session (but NOT anonymous_id cookie)
+    // 2. Clear persisted session + identity (but NOT anonymous_id cookie)
     if (this.widgetKey) {
       clearSession(this.widgetKey);
+      clearIdentity(this.widgetKey);
       clearConfigCache(this.widgetKey);
       try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
     }
@@ -826,6 +830,10 @@ export class WidgetManager {
     if (data.email) {
       this.triggerCallback('onUserEmailSupplied', data.email);
       this.currentEmail = data.email;
+      // Persist identity so it survives page refresh
+      if (this.widgetKey) {
+        persistIdentity(this.widgetKey, data.email, '');
+      }
     }
 
     // Mark pre-chat as done so it doesn't reappear on reload.
@@ -1187,14 +1195,21 @@ export class WidgetManager {
           this.currentEmail = payload.customer_email;
         }
 
-        // If user data was provided at boot, upgrade the session (source=identify for SDK)
-        if (this.config?.user?.email && payload.is_anonymous) {
-          this.wsSend('session:upgrade', {
-            email: this.config.user.email,
-            name: this.config.user.name || '',
-            source: 'sdk_identify',
-          });
-          this.currentEmail = this.config.user.email;
+        // If session is anonymous, try to auto-upgrade from boot config or stored identity
+        if (payload.is_anonymous) {
+          const bootEmail = this.config?.user?.email;
+          const storedIdentity = this.widgetKey ? getStoredIdentity(this.widgetKey) : null;
+          const email = bootEmail || storedIdentity?.email;
+          const name = (bootEmail ? this.config?.user?.name : storedIdentity?.name) || '';
+
+          if (email) {
+            this.wsSend('session:upgrade', {
+              email,
+              name,
+              source: bootEmail ? 'sdk_identify' : 'stored_identity',
+            });
+            this.currentEmail = email;
+          }
         }
 
         this.render();
@@ -1514,6 +1529,10 @@ export class WidgetManager {
   public sendSessionUpgrade(email: string, name: string, source: string): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email, name, source });
+      // Persist identity so it survives page refresh
+      if (this.widgetKey && email) {
+        persistIdentity(this.widgetKey, email, name);
+      }
       return true;
     }
     return false;

@@ -20,6 +20,7 @@ import {
 import { RetryQueue } from '../utils/queue';
 import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
+import { persistIdentity, clearIdentity } from './identity';
 
 export class HelpinClient {
   private config: Config;
@@ -283,6 +284,11 @@ export class HelpinClient {
     const userId = userData.id;
     this.persistence.set('userId', userId);
     this.persistence.set('userProps', userData);
+
+    // Persist identity for widget auto-restore on page refresh
+    if (userData.email && this.config.widgetKey) {
+      persistIdentity(this.config.widgetKey, userData.email.trim(), userData.name || '');
+    }
 
     if (!doNotSendEvent) {
       const identifyPayload = {
@@ -614,6 +620,11 @@ export class HelpinClient {
 
   public async reset(resetAnonId: boolean = false): Promise<void> {
     this.persistence.clear();
+
+    // Clear persisted identity so widget won't auto-restore on next page load
+    if (this.config.widgetKey) {
+      clearIdentity(this.config.widgetKey);
+    }
 
     if (resetAnonId && this.cookieManager) {
       const cookieName =
