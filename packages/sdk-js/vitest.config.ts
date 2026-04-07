@@ -21,8 +21,8 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: path.resolve(__dirname, './src') },
-      { find: /^@helpin\/widget-core\/styles/, replacement: path.resolve(__dirname, './test/__mocks__/widget-styles.ts') },
-      { find: /^@helpin\/widget-core$/, replacement: path.resolve(__dirname, './test/__mocks__/widget-core.ts') },
+      { find: /^@helpin-ai\/widget-core\/styles/, replacement: path.resolve(__dirname, './test/__mocks__/widget-styles.ts') },
+      { find: /^@helpin-ai\/widget-core$/, replacement: path.resolve(__dirname, './test/__mocks__/widget-core.ts') },
       { find: /^@helpin\/shared$/, replacement: path.resolve(__dirname, '../shared/dist/index.js') },
     ],
   },

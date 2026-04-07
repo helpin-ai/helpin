@@ -591,6 +591,29 @@ export class WidgetManager {
     };
   }
 
+  private updateAvailableTeammateStatus(userId: string, status: 'online' | 'away' | 'offline'): boolean {
+    if (!this.widgetConfig?.availableTeammates?.length) {
+      return false;
+    }
+
+    let changed = false;
+    this.widgetConfig = {
+      ...this.widgetConfig,
+      availableTeammates: this.widgetConfig.availableTeammates.map((teammate) => {
+        if (teammate.userId !== userId || teammate.status === status) {
+          return teammate;
+        }
+        changed = true;
+        return {
+          ...teammate,
+          status,
+        };
+      }),
+    };
+
+    return changed;
+  }
+
   private mapConversation(raw: any): WidgetConversation {
     return {
       id: raw.id,
@@ -1415,6 +1438,8 @@ export class WidgetManager {
           break;
         }
 
+        const configChanged = this.updateAvailableTeammateStatus(userId, status);
+
         this.conversations = this.conversations.map((conversation) => {
           const teammate = conversation.activeTeammate;
           if (!teammate || teammate.userId !== userId) {
@@ -1431,6 +1456,7 @@ export class WidgetManager {
           };
         });
 
+        let shouldRender = configChanged;
         const activeTeammate = this.activeTeammate;
         if (activeTeammate && activeTeammate.userId === userId) {
           this.activeTeammate = {
@@ -1439,6 +1465,10 @@ export class WidgetManager {
             avatarUrl: activeTeammate.avatarUrl,
             status,
           };
+          shouldRender = true;
+        }
+
+        if (shouldRender) {
           this.render();
         }
         break;

@@ -829,6 +829,33 @@ describe('WidgetManager', () => {
       );
     });
 
+    it('updates home teammate presence from teammate:presence events', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+        availableTeammates: [
+          { userId: 'user-1', name: 'Agent One', status: 'offline' },
+          { userId: 'user-2', name: 'Agent Two', status: 'away' },
+        ],
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).handleWSMessage({
+        type: 'teammate:presence',
+        data: {
+          user_id: 'user-1',
+          status: 'online',
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.config?.availableTeammates).toEqual([
+        { userId: 'user-1', name: 'Agent One', status: 'online' },
+        { userId: 'user-2', name: 'Agent Two', status: 'away' },
+      ]);
+    });
+
     it('marks selected conversations read locally and requests their message history', () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {
