@@ -28,7 +28,7 @@ func TestRBACEngine_ViewerRestrictions(t *testing.T) {
 	denied := []Permission{
 		PermPMEdit,
 		PermTeamManage, PermTeamMembersManage,
-		PermSettingsManage, PermWorkspaceUpdate, PermWorkspaceDelete,
+		PermSettingsManage, PermModuleAccessManage, PermWorkspaceUpdate, PermWorkspaceDelete,
 		PermWorkspaceMembersManage, PermWorkspaceInvitesManage, PermWorkspaceRolesManage,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 	}
@@ -52,7 +52,7 @@ func TestRBACEngine_MemberPermissions(t *testing.T) {
 
 	// Member does NOT get admin perms.
 	denied := []Permission{
-		PermTeamManage, PermSettingsManage,
+		PermTeamManage, PermSettingsManage, PermModuleAccessManage,
 		PermWorkspaceUpdate, PermWorkspaceDelete,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 	}
@@ -67,7 +67,7 @@ func TestRBACEngine_AdminPermissions(t *testing.T) {
 	e := NewRBACEngine()
 
 	adminPerms := []Permission{
-		PermTeamManage, PermTeamMembersManage, PermSettingsManage,
+		PermTeamManage, PermTeamMembersManage, PermSettingsManage, PermModuleAccessManage,
 		PermWorkspaceUpdate, PermWorkspaceMembersManage,
 		PermWorkspaceInvitesManage, PermWorkspaceRolesManage,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,

@@ -1,4 +1,5 @@
 import type { FC, CSSProperties } from 'react';
+import type { Permission } from '@/lib/types';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
@@ -23,6 +24,7 @@ import {
   SparklesIcon,
   BubbleChatIcon,
   Route01Icon,
+  Shield01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -58,11 +60,13 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const AIAutomations = hi(SparklesIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
+const Access = hi(Shield01Icon);
 
 export type SettingsSection =
   | 'general'
   | 'members'
   | 'teams'
+  | 'access'
   | 'knowledge'
   | 'workflows'
   | 'labels'
@@ -89,6 +93,7 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   icon: IconComponent;
   group: string;
   requiresManageSettings?: boolean;
+  requiredPermission?: Permission;
   sidebar?: boolean;
 };
 
@@ -134,6 +139,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     description: '',
     icon: Teams,
     group: 'Workspace',
+  },
+  {
+    id: 'access',
+    label: 'Module Access',
+    description: 'Grant CRM and Support access by team or by direct workspace member exception.',
+    icon: Access,
+    group: 'Workspace',
+    requiredPermission: 'module_access.manage',
   },
   {
     id: 'knowledge',
@@ -276,11 +289,14 @@ export type SettingsSidebarGroup = {
   sections: SettingsSectionMeta[];
 };
 
-export function getSettingsSidebarGroups(canManageSettings: boolean): SettingsSidebarGroup[] {
+export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>): SettingsSidebarGroup[] {
   const groups: SettingsSidebarGroup[] = [];
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
     if (section.requiresManageSettings && !canManageSettings) {
+      continue;
+    }
+    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission)) {
       continue;
     }
     if (section.sidebar === false) {

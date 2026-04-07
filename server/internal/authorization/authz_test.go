@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // mockMemberRepo is a test double for MemberRepository.
 type mockMemberRepo struct {
-	memberships    map[string]*MemberInfo // key: "workspaceID:userID"
+	memberships     map[string]*MemberInfo // key: "workspaceID:userID"
 	teamMemberships map[string][]TeamRole  // key: workspaceMemberID
+}
+
+type mockModuleRepo struct {
+	accessible map[string][]model.ModuleID
 }
 
 func newMockMemberRepo() *mockMemberRepo {
@@ -17,6 +23,10 @@ func newMockMemberRepo() *mockMemberRepo {
 		memberships:     make(map[string]*MemberInfo),
 		teamMemberships: make(map[string][]TeamRole),
 	}
+}
+
+func newMockModuleRepo() *mockModuleRepo {
+	return &mockModuleRepo{accessible: make(map[string][]model.ModuleID)}
 }
 
 func (m *mockMemberRepo) GetMembership(_ context.Context, workspaceID, userID string) (*MemberInfo, error) {
@@ -39,6 +49,14 @@ func (m *mockMemberRepo) addMember(workspaceID, userID, memberID, role, status s
 
 func (m *mockMemberRepo) addTeamMembership(memberID, teamID, role string) {
 	m.teamMemberships[memberID] = append(m.teamMemberships[memberID], TeamRole{TeamID: teamID, Role: role})
+}
+
+func (m *mockModuleRepo) ListAccessibleModules(_ context.Context, workspaceID, workspaceMemberID string, _ []string) ([]model.ModuleID, error) {
+	return m.accessible[workspaceID+":"+workspaceMemberID], nil
+}
+
+func (m *mockModuleRepo) setAccessibleModules(workspaceID, workspaceMemberID string, modules ...model.ModuleID) {
+	m.accessible[workspaceID+":"+workspaceMemberID] = append([]model.ModuleID(nil), modules...)
 }
 
 func TestAuthzService_ResolveActor_ActiveMember(t *testing.T) {
@@ -243,6 +261,65 @@ func TestAuthzService_CrossWorkspaceIsolation(t *testing.T) {
 	_, err = svc.ResolveActor(context.Background(), "ws-2", "user-1")
 	if err != ErrNotAMember {
 		t.Errorf("expected ErrNotAMember for cross-workspace access, got %v", err)
+	}
+}
+
+func TestAuthzService_AccessibleModules_DefaultsForMember(t *testing.T) {
+	svc := &AuthzService{rbac: NewRBACEngine(), moduleRepo: newMockModuleRepo()}
+	actor := &Actor{WorkspaceID: "ws-1", WorkspaceMemberID: "wm-1", Role: model.RoleMember}
+
+	modules, err := svc.AccessibleModules(context.Background(), actor)
+	if err != nil {
+		t.Fatalf("AccessibleModules() error = %v", err)
+	}
+	want := []model.ModuleID{model.ModulePM, model.ModuleDocs}
+	if len(modules) != len(want) {
+		t.Fatalf("expected %d modules, got %d", len(want), len(modules))
+	}
+	for i := range want {
+		if modules[i] != want[i] {
+			t.Fatalf("expected module %q at %d, got %q", want[i], i, modules[i])
+		}
+	}
+}
+
+func TestAuthzService_AccessibleModules_IncludesManagedGrants(t *testing.T) {
+	moduleRepo := newMockModuleRepo()
+	moduleRepo.setAccessibleModules("ws-1", "wm-1", model.ModuleSupport, model.ModuleCRM)
+	svc := &AuthzService{rbac: NewRBACEngine(), moduleRepo: moduleRepo}
+	actor := &Actor{WorkspaceID: "ws-1", WorkspaceMemberID: "wm-1", Role: model.RoleMember}
+
+	modules, err := svc.AccessibleModules(context.Background(), actor)
+	if err != nil {
+		t.Fatalf("AccessibleModules() error = %v", err)
+	}
+	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport}
+	if len(modules) != len(want) {
+		t.Fatalf("expected %d modules, got %d", len(want), len(modules))
+	}
+	for i := range want {
+		if modules[i] != want[i] {
+			t.Fatalf("expected module %q at %d, got %q", want[i], i, modules[i])
+		}
+	}
+}
+
+func TestAuthzService_AccessibleModules_AdminBypass(t *testing.T) {
+	svc := &AuthzService{rbac: NewRBACEngine()}
+	actor := &Actor{WorkspaceID: "ws-1", WorkspaceMemberID: "wm-1", Role: model.RoleAdmin}
+
+	modules, err := svc.AccessibleModules(context.Background(), actor)
+	if err != nil {
+		t.Fatalf("AccessibleModules() error = %v", err)
+	}
+	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport}
+	if len(modules) != len(want) {
+		t.Fatalf("expected %d modules, got %d", len(want), len(modules))
+	}
+	for i := range want {
+		if modules[i] != want[i] {
+			t.Fatalf("expected module %q at %d, got %q", want[i], i, modules[i])
+		}
 	}
 }
 

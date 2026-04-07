@@ -11,6 +11,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // Handlers aggregates all HTTP handlers.
@@ -101,6 +102,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	// Permission middleware helpers for readability.
 	requirePerm := func(perm authorization.Permission) func(http.Handler) http.Handler {
 		return authorization.RequirePermission(authz, perm)
+	}
+	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
+		return authorization.RequireModuleAccess(authz, module)
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
 
@@ -381,12 +385,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Read
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/", h.Settings.GetAll)
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/ai-automations", h.Settings.GetAIAutomations)
+				r.With(requirePerm(authorization.PermModuleAccessManage)).Get("/module-access", h.Settings.GetModuleAccess)
 
 				// Settings management (admin+)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/initialize", h.Settings.Initialize)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
 				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/job-roles", h.Settings.DeleteJobRole)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/system", h.Settings.UpdateSystem)
+				r.With(requirePerm(authorization.PermModuleAccessManage)).Post("/module-access", h.Settings.UpsertModuleAccessGrant)
+				r.With(requirePerm(authorization.PermModuleAccessManage)).Delete("/module-access/{id}", h.Settings.DeleteModuleAccessGrant)
 
 				// People management
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Post("/people", h.Settings.CreatePerson)
@@ -451,6 +458,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/support", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(requireModule(model.ModuleSupport))
 
 				// Legacy /tickets routes (backward compat)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets", h.SupportInbox.ListConversations)
@@ -905,6 +913,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/crm", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(requireModule(model.ModuleCRM))
 
 				// Contacts — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts", h.CRMContact.List)

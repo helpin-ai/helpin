@@ -21,7 +21,7 @@ func NewRBACEngine() *RBACEngine {
 	adminPerms := copyPerms(memberPerms)
 	addPerms(adminPerms,
 		PermTeamManage, PermTeamMembersManage,
-		PermSettingsManage, PermWorkspaceUpdate,
+		PermSettingsManage, PermModuleAccessManage, PermWorkspaceUpdate,
 		PermWorkspaceMembersManage, PermWorkspaceInvitesManage,
 		PermWorkspaceRolesManage,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,

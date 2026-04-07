@@ -10,6 +10,8 @@ import type {
   EstimateScale,
   TeamRepoDefault,
   AutomationInventoryResponse,
+  WorkspaceModuleAccessSettings,
+  WorkspaceModuleGrant,
 } from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
@@ -106,4 +108,10 @@ export const settingsService = {
   ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`, data),
   getAIAutomations: (workspaceId: string) =>
     api.get<AutomationInventoryResponse>(`/settings/ai-automations${qs(workspaceId)}`),
+  getModuleAccess: (workspaceId: string) =>
+    api.get<WorkspaceModuleAccessSettings>(`/settings/module-access${qs(workspaceId)}`),
+  createModuleGrant: (workspaceId: string, data: { module: 'crm' | 'support'; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
+    api.post<WorkspaceModuleGrant>(`/settings/module-access${qs(workspaceId)}`, { workspace_id: workspaceId, ...data }),
+  deleteModuleGrant: (workspaceId: string, grantId: string) =>
+    api.del(`/settings/module-access/${grantId}${qs(workspaceId)}`),
 };

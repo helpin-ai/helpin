@@ -14,6 +14,7 @@ export const queryKeys = {
     members: (wsId: string) => ['workspaces', wsId, 'members'] as const,
     assignableMembers: (wsId: string) => ['workspaces', wsId, 'assignableMembers'] as const,
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
+    moduleAccess: (wsId: string) => ['workspaces', wsId, 'module-access'] as const,
     aiAutomations: (wsId: string) => ['workspaces', wsId, 'ai-automations'] as const,
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
