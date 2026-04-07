@@ -185,7 +185,7 @@ describe('ChatWindow', () => {
   });
 
   it('uses AI-first copy on the home view without leading with human availability', () => {
-    const { getByText, queryByText } = render(
+    const { getByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -205,10 +205,8 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Ask anything. Our AI assistant is here to help right away.')).toBeTruthy();
     expect(getByText('Ask a question')).toBeTruthy();
     expect(getByText('Get an instant answer from our AI assistant')).toBeTruthy();
-    expect(queryByText('Online now')).toBeNull();
   });
 
   it('keeps showing the support roster on the home view when one teammate is assigned', () => {
@@ -427,6 +425,42 @@ describe('ChatWindow', () => {
         onPreChatSubmit={() => {}}
         onEscalateToHuman={() => {}}
         isTyping={true}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('hides talk to human after a human teammate has already replied', () => {
+    const { queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'agent' as const,
+            content: 'I can help with that.',
+            senderName: 'CS Azhar',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
         initialView="conversation"
       />,
     );

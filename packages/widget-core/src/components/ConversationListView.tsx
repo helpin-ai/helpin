@@ -1,6 +1,7 @@
 import { FunctionComponent } from 'preact';
 import type { Conversation, WidgetConfig } from '../types';
 import { MessageSquareIcon, ChevronRightIcon, XIcon, SendIcon } from './icons';
+import { timeAgo } from '../utils';
 
 interface ConversationListViewProps {
   config: WidgetConfig;
@@ -8,20 +9,6 @@ interface ConversationListViewProps {
   onSelectConversation: (conversationId: string) => void;
   onStartConversation: () => void;
   onClose?: () => void;
-}
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(dateStr).toLocaleDateString();
 }
 
 export const ConversationListView: FunctionComponent<ConversationListViewProps> = ({
@@ -88,8 +75,20 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
             className="helpin-conversation-item"
             onClick={() => onSelectConversation(conv.id)}
           >
-            <div className="helpin-conversation-item-avatar" style={{ backgroundColor: brandColor }}>
-              <MessageSquareIcon size={14} />
+            <div className="helpin-conversation-item-avatar-wrap">
+              {conv.activeTeammate?.avatarUrl ? (
+                <img
+                  src={conv.activeTeammate.avatarUrl}
+                  alt={conv.activeTeammate.name}
+                  className="helpin-conversation-item-avatar-img"
+                />
+              ) : (
+                <div className="helpin-conversation-item-avatar" style={{ backgroundColor: brandColor }}>
+                  {conv.activeTeammate?.name
+                    ? conv.activeTeammate.name.charAt(0).toUpperCase()
+                    : <MessageSquareIcon size={14} />}
+                </div>
+              )}
             </div>
             <div className="helpin-conversation-item-content">
               <span className={`helpin-conversation-item-preview${conv.unreadCount ? ' helpin-conversation-item-preview--unread' : ''}`}>
@@ -100,7 +99,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
                   : (conv.subject || 'Untitled conversation')}
               </span>
               <span className="helpin-conversation-item-meta">
-                {companyName}
+                {conv.activeTeammate?.name || companyName}
                 {conv.lastMessageAt && ` \u00B7 ${timeAgo(conv.lastMessageAt)}`}
               </span>
             </div>

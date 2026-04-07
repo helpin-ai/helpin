@@ -664,7 +664,7 @@ type SupportInboxSettings struct {
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
-	AIMaxFollowups        int     `json:"ai_max_followups"`        // max AI turns before forced handoff (default: 3)
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 3)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
@@ -890,6 +890,9 @@ type SupportAIPreviewResponse struct {
 
 type SupportAIPreviewQueryPlan struct {
 	Decision           string   `json:"decision"`
+	IssueKey           string   `json:"issue_key"`
+	IssueSummary       string   `json:"issue_summary"`
+	ProgressSignal     string   `json:"progress_signal"`
 	StandaloneQuery    string   `json:"standalone_query"`
 	SearchQueries      []string `json:"search_queries"`
 	ClarifyingQuestion string   `json:"clarifying_question"`

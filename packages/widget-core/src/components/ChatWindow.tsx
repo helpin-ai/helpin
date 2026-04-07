@@ -157,6 +157,19 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
   const homeTeammates = (config.availableTeammates ?? []).slice(0, 4);
+
+  // Enrich conversations with activeTeammate fallback.
+  // The SDK may strip activeTeammate when refreshing the list, so we fall back to:
+  // 1. The current activeTeammate prop (if this is the active conversation)
+  // 2. The first available teammate from config
+  const fallbackTeammate = homeTeammates.length > 0 ? homeTeammates[0] : undefined;
+  const enrichedConversations = conversations.map((conv) => ({
+    ...conv,
+    activeTeammate: conv.activeTeammate
+      || (activeConversation?.id === conv.id ? activeTeammate : undefined)
+      || fallbackTeammate,
+  }));
+  const enrichedRecentConversation = enrichedConversations.length > 0 ? enrichedConversations[0] : undefined;
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';
@@ -219,33 +232,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     >
       {activeView === 'home' && (
         <div className="helpin-window-actions helpin-window-actions--home">
-          {homeTeammates.length > 0 && (
-            <div className="helpin-home-header-team">
-              {homeTeammates.map((teammate, index) => (
-                <div
-                  key={teammate.userId || `${teammate.name}-${index}`}
-                  className="helpin-home-header-presence helpin-avatar-tooltip"
-                  aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
-                  data-tooltip={teammate.name}
-                >
-                  <div className="helpin-home-teammate-avatar-wrap">
-                    {teammate.avatarUrl ? (
-                      <img src={teammate.avatarUrl} alt={teammate.name} className="helpin-home-teammate-avatar" />
-                    ) : (
-                      <div className="helpin-home-teammate-avatar helpin-home-teammate-avatar--placeholder">
-                        <span>{teammate.name.charAt(0).toUpperCase()}</span>
-                      </div>
-                    )}
-                    <span
-                      className={`helpin-presence-dot helpin-presence-dot--${teammate.status || 'online'}`}
-                      aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           <button
             className="helpin-window-close helpin-window-close--home"
             onClick={onClose}
@@ -289,6 +275,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         {activeView === 'home' && (
           <HomeView
             config={config}
+            teammates={homeTeammates}
+            recentConversation={enrichedRecentConversation}
             onSendMessage={handleSendFromHome}
             onNavigate={(view) => {
               if (view === 'conversation') {
@@ -296,6 +284,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
                 return;
               }
               handleNavigate(view);
+            }}
+            onSelectConversation={(id) => {
+              onSelectConversation(id);
+              setActiveView('conversation');
+              onViewChange?.('conversation');
             }}
           />
         )}
@@ -332,7 +325,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           conversations.length > 0 ? (
             <ConversationListView
               config={config}
-              conversations={conversations}
+              conversations={enrichedConversations}
               onSelectConversation={(id) => {
                 onSelectConversation(id);
                 setPreviousView('messages');

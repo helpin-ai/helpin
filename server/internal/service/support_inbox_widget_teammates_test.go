@@ -9,7 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-func TestListWidgetTeammates_ShowsOnlySupportAccessibleOnlineAndAwayMembers(t *testing.T) {
+func TestListWidgetTeammates_ShowsSupportAccessibleMembersIncludingOffline(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
@@ -95,8 +95,8 @@ func TestListWidgetTeammates_ShowsOnlySupportAccessibleOnlineAndAwayMembers(t *t
 	svc.SetPresenceProvider(presence)
 
 	teammates := svc.listWidgetTeammates(ctx, workspaceID, 10)
-	if len(teammates) != 3 {
-		t.Fatalf("teammate count = %d, want 3", len(teammates))
+	if len(teammates) != 4 {
+		t.Fatalf("teammate count = %d, want 4", len(teammates))
 	}
 
 	if teammates[0].UserID != ownerID || teammates[0].Status != model.SupportTeammateStatusOnline {
@@ -107,5 +107,8 @@ func TestListWidgetTeammates_ShowsOnlySupportAccessibleOnlineAndAwayMembers(t *t
 	}
 	if teammates[2].UserID != awayID || teammates[2].Status != model.SupportTeammateStatusAway {
 		t.Fatalf("third teammate = %#v, want away teammate", teammates[2])
+	}
+	if teammates[3].UserID != offlineID || teammates[3].Status != model.SupportTeammateStatusOffline {
+		t.Fatalf("fourth teammate = %#v, want offline teammate", teammates[3])
 	}
 }

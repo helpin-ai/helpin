@@ -84,7 +84,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const hasHumanHandoffAlready = Boolean(
-    conversation?.aiState === 'escalated' ||
+    hasHumanReply ||
+      conversation?.aiState === 'escalated' ||
       conversation?.status === 'resolved' ||
       conversation?.status === 'closed' ||
       conversation?.flowState === 'waiting_for_human' ||

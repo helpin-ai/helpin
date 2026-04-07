@@ -305,6 +305,9 @@ export interface SupportAIRewriteDraftResponse {
 
 export interface SupportAIPreviewQueryPlan {
   decision: string;
+  issue_key: string;
+  issue_summary: string;
+  progress_signal: string;
   standalone_query: string;
   search_queries: string[];
   clarifying_question: string;
@@ -367,6 +370,10 @@ export interface AIMessageMetadata {
   ai_model: string;
   ai_tokens_used: number;
   ai_agent_id: string;
+  ai_reply_kind?: string;
+  ai_issue_key?: string;
+  ai_issue_summary?: string;
+  ai_progress_state?: string;
   link_previews?: SupportLinkPreview[];
 }
 

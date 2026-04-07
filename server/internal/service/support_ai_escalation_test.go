@@ -295,6 +295,24 @@ func aiMsgWithKind(agentID, content, kind string, confidence float64) model.Supp
 	}
 }
 
+func aiMsgWithIssue(agentID, content, kind, issueKey, progressState string, confidence float64) model.SupportMessage {
+	meta := AIMessageMetadata{
+		AIAutoReply:     true,
+		AIConfidence:    confidence,
+		AIAgentID:       agentID,
+		AIReplyKind:     kind,
+		AIIssueKey:      issueKey,
+		AIProgressState: progressState,
+	}
+	b, _ := json.Marshal(meta)
+	return model.SupportMessage{
+		SenderType:    "ai",
+		SenderAgentID: strPtr(agentID),
+		Content:       content,
+		Metadata:      string(b),
+	}
+}
+
 func customerMsg(content string) model.SupportMessage {
 	return model.SupportMessage{SenderType: "customer", Content: content}
 }
@@ -436,6 +454,95 @@ func TestEvaluatePreLLMEscalation_PriorityOrder(t *testing.T) {
 	}
 	if signal.Reason != escalationReasonRepetitionLoop {
 		t.Errorf("reason = %q, want %q (repetition has priority over consecutive low conf)", signal.Reason, escalationReasonRepetitionLoop)
+	}
+}
+
+func TestCollectSupportIssueHistoryStats(t *testing.T) {
+	agentID := "agent-1"
+	history := []model.SupportMessage{
+		customerMsg("How do I reset my password?"),
+		aiMsgWithIssue(agentID, "What product are you referring to?", supportReplyKindClarify, "password_reset", supportStateProgressing, 0.92),
+		customerMsg("The same password issue"),
+		aiMsgWithIssue(agentID, "Try the reset flow in settings.", supportReplyKindAnswer, "password_reset", supportStateStalled, 0.61),
+		customerMsg("What about pricing?"),
+		aiMsgWithIssue(agentID, "Here is pricing info.", supportReplyKindAnswer, "pricing", supportStateProgressing, 0.95),
+	}
+
+	stats := collectSupportIssueHistoryStats(history, agentID, "password_reset", 0.70)
+	if stats.AIReplyCount != 2 {
+		t.Fatalf("ai_reply_count = %d, want 2", stats.AIReplyCount)
+	}
+	if stats.ClarifyCount != 1 {
+		t.Fatalf("clarify_count = %d, want 1", stats.ClarifyCount)
+	}
+	if stats.StalledAttemptCount != 1 {
+		t.Fatalf("stalled_attempt_count = %d, want 1", stats.StalledAttemptCount)
+	}
+	if stats.LowConfidenceCount != 1 {
+		t.Fatalf("low_confidence_count = %d, want 1", stats.LowConfidenceCount)
+	}
+}
+
+func TestDetectStuckOnSameIssue_RepeatedClarifyHitsLimit(t *testing.T) {
+	plan := SupportQueryPlanContract{
+		Decision:       supportDecisionClarify,
+		IssueKey:       "password_reset",
+		ProgressSignal: supportProgressSameUnclear,
+	}
+	stats := supportIssueHistoryStats{
+		IssueKey:            "password_reset",
+		AIReplyCount:        1,
+		StalledAttemptCount: 1,
+		ClarifyCount:        1,
+		LastReplyKind:       supportReplyKindClarify,
+		LastConfidence:      0.92,
+	}
+
+	signal := detectStuckOnSameIssue(plan, customerMsg("Reset password"), stats, 0.70, 2)
+	if signal == nil {
+		t.Fatal("detectStuckOnSameIssue() = nil, want signal")
+	}
+	if signal.Reason != escalationReasonSameIssueStalled {
+		t.Fatalf("reason = %q, want %q", signal.Reason, escalationReasonSameIssueStalled)
+	}
+}
+
+func TestDetectStuckOnSameIssue_NewInfoDoesNotHandoff(t *testing.T) {
+	plan := SupportQueryPlanContract{
+		Decision:       supportDecisionAnswer,
+		IssueKey:       "sso_okta_setup",
+		ProgressSignal: supportProgressSameNewInfo,
+	}
+	stats := supportIssueHistoryStats{
+		IssueKey:            "sso_okta_setup",
+		AIReplyCount:        2,
+		StalledAttemptCount: 1,
+		ClarifyCount:        1,
+		LastReplyKind:       supportReplyKindClarify,
+		LastConfidence:      0.92,
+	}
+
+	signal := detectStuckOnSameIssue(plan, customerMsg("It is Okta and the error is on step 3"), stats, 0.70, 2)
+	if signal != nil {
+		t.Fatalf("detectStuckOnSameIssue() = %+v, want nil", signal)
+	}
+}
+
+func TestDetermineAIProgressState(t *testing.T) {
+	stats := supportIssueHistoryStats{IssueKey: "password_reset", ClarifyCount: 1}
+
+	if got := determineAIProgressState(SupportQueryPlanContract{
+		IssueKey:       "password_reset",
+		ProgressSignal: supportProgressSameRepeat,
+	}, supportReplyKindClarify, 0.92, 0.70, stats); got != supportStateStalled {
+		t.Fatalf("clarify progress state = %q, want %q", got, supportStateStalled)
+	}
+
+	if got := determineAIProgressState(SupportQueryPlanContract{
+		IssueKey:       "sso_okta_setup",
+		ProgressSignal: supportProgressSameNewInfo,
+	}, supportReplyKindAnswer, 0.82, 0.70, supportIssueHistoryStats{}); got != supportStateProgressing {
+		t.Fatalf("answer progress state = %q, want %q", got, supportStateProgressing)
 	}
 }
 
