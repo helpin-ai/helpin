@@ -910,6 +910,8 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	workspaceService.SetPresenceProvider(wsHub.Presence)
+	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {

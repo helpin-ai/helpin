@@ -219,6 +219,20 @@ func (h *WorkspaceHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, members)
 }
 
+// ListMemberPresence handles GET /api/workspaces/{id}/members/presence.
+func (h *WorkspaceHandler) ListMemberPresence(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	statuses, err := h.workspaceService.ListMemberPresence(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if statuses == nil {
+		statuses = []model.WorkspaceMemberPresenceStatus{}
+	}
+	writeJSON(w, http.StatusOK, statuses)
+}
+
 // ListAssignableMembers handles GET /api/workspaces/{id}/assignable-members.
 func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

@@ -276,6 +276,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'support_teammate_presence') {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.memberPresence(workspaceId) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
         const s = useSupportPresenceStore.getState()

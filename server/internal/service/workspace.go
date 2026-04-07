@@ -8,13 +8,16 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 var workspaceKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}$`)
@@ -25,6 +28,8 @@ type WorkspaceService struct {
 	attachmentRepo      *repository.PMAttachmentRepository
 	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
+	presence            websocket.PresenceProvider
+	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
 	logger              *slog.Logger
 }
 
@@ -46,6 +51,14 @@ func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, attachme
 		defaultsInitializer: initializer,
 		logger:              slog.Default().With("service", "workspace"),
 	}
+}
+
+func (s *WorkspaceService) SetPresenceProvider(p websocket.PresenceProvider) {
+	s.presence = p
+}
+
+func (s *WorkspaceService) SetStatusOverrideRepo(repo *repository.SupportTeammateStatusOverrideRepository) {
+	s.statusOverrideRepo = repo
 }
 
 // Create creates a workspace and adds the creator as the owner member.
@@ -304,6 +317,38 @@ func (s *WorkspaceService) GetMyMembership(ctx context.Context, workspaceID, use
 // ListMembers returns all members of a workspace with user details.
 func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
 	return s.workspaceRepo.ListMembers(ctx, workspaceID)
+}
+
+// ListMemberPresence returns live presence for active workspace members.
+func (s *WorkspaceService) ListMemberPresence(ctx context.Context, workspaceID string) ([]model.WorkspaceMemberPresenceStatus, error) {
+	statuses, err := resolveSupportTeammatePresenceStatuses(
+		ctx,
+		s.workspaceRepo,
+		s.presence,
+		s.statusOverrideRepo,
+		workspaceID,
+		time.Now(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.WorkspaceMemberPresenceStatus, 0, len(statuses))
+	for _, status := range statuses {
+		result = append(result, model.WorkspaceMemberPresenceStatus{
+			UserID:       status.UserID,
+			Status:       status.Status,
+			Source:       status.Source,
+			ManualStatus: status.ManualStatus,
+			LastSeenAt:   status.LastSeenAt,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UserID < result[j].UserID
+	})
+
+	return result, nil
 }
 
 // ListAssignableMembers returns joined and pending workspace identities for PM pickers.
