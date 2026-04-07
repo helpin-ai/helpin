@@ -54,10 +54,20 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
-	// Validate and normalize workspace key.
+	// Validate and normalize workspace key. Auto-generate from name if empty.
 	req.WorkspaceKey = strings.ToUpper(strings.TrimSpace(req.WorkspaceKey))
 	if req.WorkspaceKey == "" {
-		return nil, fmt.Errorf("workspace_key is required")
+		alpha := strings.Map(func(r rune) rune {
+			if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
+				return r
+			}
+			return -1
+		}, req.Name)
+		if len(alpha) >= 2 {
+			req.WorkspaceKey = strings.ToUpper(alpha[:min(3, len(alpha))])
+		} else {
+			req.WorkspaceKey = "WS"
+		}
 	}
 	if !workspaceKeyPattern.MatchString(req.WorkspaceKey) {
 		return nil, fmt.Errorf("workspace_key must be 2-5 uppercase letters")

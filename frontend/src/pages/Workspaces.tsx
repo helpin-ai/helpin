@@ -246,7 +246,7 @@ export default function Workspaces() {
     const { data: workspace, error } = await workspacesService.create({
       name,
       slug,
-      workspace_key: workspaceKey.toUpperCase(),
+      workspace_key: (workspaceKey || name.replace(/[^a-zA-Z]/g, '').slice(0, 3) || 'WS').toUpperCase(),
       organization_id: currentOrganization.id,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -524,20 +524,8 @@ export default function Workspaces() {
                       <Input id="ws-slug" placeholder="acme-corporation" value={slug} onChange={e => setSlug(e.target.value)} required />
                       <p className="text-xs text-muted-foreground">Used in the workspace URL: /w/{slug || '...'}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="ws-key">Task Key Prefix</Label>
-                      <Input
-                        id="ws-key"
-                        placeholder="ACM"
-                        value={workspaceKey}
-                        onChange={e => setWorkspaceKey(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 5))}
-                        maxLength={5}
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        2-5 uppercase letters. Task IDs will look like: {workspaceKey || '...'}-1, {workspaceKey || '...'}-2, etc.
-                      </p>
-                    </div>
+                    {/* Task key prefix auto-generated from name — hidden to reduce cognitive load */}
+                    <input type="hidden" value={workspaceKey} />
                     <div className="space-y-2">
                       <Label htmlFor="ws-website">Website (optional)</Label>
                       <Input
